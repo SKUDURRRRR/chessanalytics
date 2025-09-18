@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { fetchDeepAnalysis, DeepAnalysisData } from '../../services/deepAnalysisService'
 import { PersonalityRadar } from './PersonalityRadar'
 import { LongTermPlanner } from './LongTermPlanner'
@@ -80,25 +80,25 @@ export function DeepAnalysisBlock({ userId, platform }: DeepAnalysisBlockProps) 
 
       {/* Data Generator for testing */}
       <DataGenerator userId={userId} platform={platform} onAnalysisComplete={refreshData} />
-      
+
       {/* Long-term Planner */}
       <LongTermPlanner data={data} />
-      
+
       {/* Main Analysis Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Personality Radar */}
         <PersonalityRadar scores={data.personalityScores} />
-        
+
         {/* Opening Player Card */}
-        <OpeningPlayerCard 
+        <OpeningPlayerCard
           score={data.personalityScores.opening}
           phaseAccuracy={data.phaseAccuracies.opening}
         />
       </div>
-      
+
       {/* Score Cards */}
       <ScoreCards scores={data.personalityScores} />
-      
+
       {/* Move Analyses Section */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold mb-4">Move Analyses Data</h3>
@@ -107,9 +107,17 @@ export function DeepAnalysisBlock({ userId, platform }: DeepAnalysisBlockProps) 
         </div>
         <div className="bg-gray-50 rounded-lg p-4">
           <div className="text-sm text-gray-700">
-            <p><strong>Note:</strong> Move analyses data is stored in the database and used to calculate personality scores.</p>
-            <p className="mt-2">The personality radar above is calculated from this detailed analysis data.</p>
-            <p className="mt-2">To view individual game move analyses, use the Two-Tier Analysis Panel for specific games.</p>
+            <p>
+              <strong>Note:</strong> Move analyses data is stored in the database and used to
+              calculate personality scores.
+            </p>
+            <p className="mt-2">
+              The personality radar above is calculated from this detailed analysis data.
+            </p>
+            <p className="mt-2">
+              To view individual game move analyses, use the Two-Tier Analysis Panel for specific
+              games.
+            </p>
           </div>
         </div>
       </div>

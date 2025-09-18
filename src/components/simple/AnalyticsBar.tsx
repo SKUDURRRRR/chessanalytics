@@ -1,5 +1,5 @@
 // Simple Analytics Bar - Shows key statistics at a glance
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { AnalysisService, AnalysisStats } from '../../services/analysisService'
 
 interface AnalyticsBarProps {
@@ -23,7 +23,6 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
 
       const data = await AnalysisService.getAnalysisStats(userId, platform)
       setAnalytics(data)
-
     } catch (err) {
       console.error('Error fetching analytics:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch analytics')
@@ -59,7 +58,9 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
         <div className="text-center text-gray-600">
           <div className="text-2xl mb-2">📊</div>
-          <p>No analysis data found for {userId} on {platform}</p>
+          <p>
+            No analysis data found for {userId} on {platform}
+          </p>
           <p className="text-sm">Start analysis to see your chess insights!</p>
         </div>
       </div>
@@ -74,7 +75,7 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
           {platform === 'chess.com' ? 'Chess.com' : 'Lichess'} • {userId}
         </div>
       </div>
-      
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {/* Total Games Analyzed */}
         <div className="text-center">
@@ -106,7 +107,8 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
         <div className="text-center">
           <div className="text-sm text-gray-600 mb-1">Analysis Summary</div>
           <div className="text-sm text-gray-700">
-            {analytics.total_brilliant_moves} brilliant moves • {analytics.total_inaccuracies} inaccuracies
+            {analytics.total_brilliant_moves} brilliant moves • {analytics.total_inaccuracies}{' '}
+            inaccuracies
           </div>
         </div>
       </div>

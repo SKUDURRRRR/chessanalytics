@@ -27,7 +27,7 @@ interface AnalyticsResponse {
   }>
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async req => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -41,17 +41,14 @@ Deno.serve(async (req) => {
     const { userId, platform, fromDate, toDate, color }: AnalyticsRequest = await req.json()
 
     if (!userId) {
-      return new Response(
-        JSON.stringify({ error: 'userId is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return new Response(JSON.stringify({ error: 'userId is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     // Build simple query
-    let query = supabase
-      .from('games')
-      .select('*')
-      .eq('user_id', userId)
+    let query = supabase.from('games').select('*').eq('user_id', userId)
 
     if (platform) query = query.eq('platform', platform)
     if (fromDate) query = query.gte('played_at', fromDate)
@@ -70,7 +67,7 @@ Deno.serve(async (req) => {
           wins: 0,
           losses: 0,
           draws: 0,
-          openings: []
+          openings: [],
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -98,7 +95,7 @@ Deno.serve(async (req) => {
       .map(([opening, stats]) => ({
         opening,
         games: stats.games,
-        wins: stats.wins
+        wins: stats.wins,
       }))
       .sort((a, b) => b.wins - a.wins) // Sort by wins
       .slice(0, 10) // Top 10 openings
@@ -108,19 +105,17 @@ Deno.serve(async (req) => {
       wins,
       losses,
       draws,
-      openings
+      openings,
     }
 
-    return new Response(
-      JSON.stringify(result),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-
+    return new Response(JSON.stringify(result), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   } catch (error) {
     console.error('Analytics error:', error)
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 })

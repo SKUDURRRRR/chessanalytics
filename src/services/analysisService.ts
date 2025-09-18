@@ -1,47 +1,37 @@
-// Analysis Service - Frontend integration with Chess Analysis API
+/**
+ * Analysis Service - Frontend integration with Chess Analysis API
+ * Provides methods for starting analysis, retrieving results, and checking API availability.
+ * 
+ * @module AnalysisService
+ */
+
 import { supabase } from '../lib/supabase'
+import {
+  GameAnalysisSummary,
+  AnalysisStats,
+  Platform,
+  AnalysisResponse
+} from '../types'
+import { config } from '../lib/config'
+// Error handling imports removed for now to avoid TypeScript issues
 
-const ANALYSIS_API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8003'
+const ANALYSIS_API_URL = config.getApi().baseUrl
 
-export interface GameAnalysisSummary {
-  game_id: string
-  accuracy: number
-  blunders: number
-  mistakes: number
-  inaccuracies: number
-  brilliant_moves: number
-  opening_accuracy: number
-  middle_game_accuracy: number
-  endgame_accuracy: number
-}
-
-export interface AnalysisStats {
-  total_games_analyzed: number
-  average_accuracy: number
-  total_blunders: number
-  total_mistakes: number
-  total_inaccuracies: number
-  total_brilliant_moves: number
-  total_material_sacrifices: number
-  average_opening_accuracy: number
-  average_middle_game_accuracy: number
-  average_endgame_accuracy: number
-  average_aggressiveness_index: number
-  blunders_per_game: number
-  mistakes_per_game: number
-  inaccuracies_per_game: number
-  brilliant_moves_per_game: number
-  material_sacrifices_per_game: number
-}
+// Re-export types for backward compatibility
+export type { GameAnalysisSummary, AnalysisStats } from '../types'
 
 export class AnalysisService {
   // Start analysis for a user
-  static async startAnalysis(userId: string, platform: 'lichess' | 'chess.com', limit: number = 10): Promise<{ success: boolean; message: string }> {
+  static async startAnalysis(
+    userId: string,
+    platform: Platform,
+    limit: number = 10
+  ): Promise<AnalysisResponse> {
     try {
       // Temporarily disable authentication for development
       // const { data: { session } } = await supabase.auth.getSession()
       // const token = session?.access_token
-      
+
       // if (!token) {
       //   throw new Error('No authentication token found. Please log in.')
       // }
@@ -55,8 +45,10 @@ export class AnalysisService {
         body: JSON.stringify({
           user_id: userId,
           platform: platform,
-          limit: limit
-        })
+          analysis_type: 'stockfish',
+          limit: limit,
+          skill_level: 8,
+        }),
       })
 
       if (!response.ok) {
@@ -72,9 +64,15 @@ export class AnalysisService {
   }
 
   // Get analysis results for a user
-  static async getAnalysisResults(userId: string, platform: 'lichess' | 'chess.com', limit: number = 10): Promise<GameAnalysisSummary[]> {
+  static async getAnalysisResults(
+    userId: string,
+    platform: Platform,
+    limit: number = 10
+  ): Promise<GameAnalysisSummary[]> {
     try {
-      const response = await fetch(`${ANALYSIS_API_URL}/analysis/${userId}/${platform}?limit=${limit}`)
+      const response = await fetch(
+        `${ANALYSIS_API_URL}/analysis/${userId}/${platform}?limit=${limit}`
+      )
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
@@ -89,11 +87,14 @@ export class AnalysisService {
   }
 
   // Get analysis statistics for a user
-  static async getAnalysisStats(userId: string, platform: 'lichess' | 'chess.com'): Promise<AnalysisStats | null> {
+  static async getAnalysisStats(
+    userId: string,
+    platform: Platform
+  ): Promise<AnalysisStats | null> {
     try {
-      const url = `${ANALYSIS_API_URL}/analysis-stats/${userId}/${platform}`
+      const url = `${ANALYSIS_API_URL}/analysis-stats/${userId}/${platform}?analysis_type=stockfish`
       console.log(`Fetching analysis stats from: ${url}`)
-      
+
       const response = await fetch(url)
 
       if (!response.ok) {
@@ -122,7 +123,10 @@ export class AnalysisService {
   }
 
   // Get analysis progress
-  static async getAnalysisProgress(userId: string, platform: 'lichess' | 'chess.com'): Promise<{
+  static async getAnalysisProgress(
+    userId: string,
+    platform: Platform
+  ): Promise<{
     analyzed_games: number
     total_games: number
     progress_percentage: number
@@ -132,16 +136,18 @@ export class AnalysisService {
   } | null> {
     try {
       // Get auth token from Supabase
-      const { data: { session } } = await supabase.auth.getSession()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
       const token = session?.access_token
-      
+
       const headers: HeadersInit = {}
       if (token) {
         headers['Authorization'] = `Bearer ${token}`
       }
 
       const response = await fetch(`${ANALYSIS_API_URL}/analysis-progress/${userId}/${platform}`, {
-        headers
+        headers,
       })
 
       if (!response.ok) {

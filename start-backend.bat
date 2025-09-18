@@ -10,8 +10,9 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Run the PowerShell script
-powershell -ExecutionPolicy Bypass -File "scripts/start-backend.ps1" -Port 8003 -ServerType simple
+REM Change to python directory and run the PowerShell script
+cd python
+powershell -ExecutionPolicy Bypass -File "..\scripts\start-backend.ps1" -Port 8003 -ServerType main
 
 echo.
 echo Press any key to exit...

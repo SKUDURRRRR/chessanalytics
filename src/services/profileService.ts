@@ -28,7 +28,7 @@ export interface RecentUser {
 export class ProfileService {
   // Get or create user profile
   static async getOrCreateProfile(
-    userId: string, 
+    userId: string,
     platform: 'lichess' | 'chess.com',
     displayName?: string
   ): Promise<UserProfile> {
@@ -63,7 +63,7 @@ export class ProfileService {
           display_name: displayName || userId,
           current_rating: 1200,
           total_games: 0,
-          win_rate: 0
+          win_rate: 0,
         })
         .select()
         .single()
@@ -81,7 +81,7 @@ export class ProfileService {
 
   // Update last accessed time
   static async updateLastAccessed(
-    userId: string, 
+    userId: string,
     platform: 'lichess' | 'chess.com'
   ): Promise<void> {
     try {
@@ -116,7 +116,7 @@ export class ProfileService {
           win_rate: analyticsData.winRate,
           most_played_time_control: analyticsData.mostPlayedTimeControl,
           most_played_opening: analyticsData.mostPlayedOpening,
-          last_accessed: new Date().toISOString()
+          last_accessed: new Date().toISOString(),
         })
         .eq('user_id', userId)
         .eq('platform', platform)
@@ -128,20 +128,22 @@ export class ProfileService {
   // Get recent users (last 10)
   static async getRecentUsers(): Promise<RecentUser[]> {
     try {
+      console.log('Fetching recent users...')
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('user_id, platform, display_name, updated_at, total_games, current_rating')
-        .order('updated_at', { ascending: false })
+        .select('user_id, platform, display_name, last_accessed, total_games, current_rating')
+        .order('last_accessed', { ascending: false })
         .limit(10)
 
       if (error) {
-        console.warn('Error fetching recent users:', error)
+        console.error('Error fetching recent users:', error)
         return []
       }
 
+      console.log('Recent users fetched successfully:', data)
       return data || []
     } catch (error) {
-      console.warn('Error fetching recent users:', error)
+      console.error('Error fetching recent users:', error)
       return []
     }
   }
@@ -149,6 +151,7 @@ export class ProfileService {
   // Get all profiles for a specific platform
   static async getProfilesByPlatform(platform: 'lichess' | 'chess.com'): Promise<UserProfile[]> {
     try {
+      console.log(`Fetching profiles for platform: ${platform}`)
       const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
@@ -156,15 +159,15 @@ export class ProfileService {
         .order('last_accessed', { ascending: false })
 
       if (error) {
-        console.warn('Error fetching profiles by platform:', error)
+        console.error('Error fetching profiles by platform:', error)
         return []
       }
 
+      console.log(`Profiles fetched successfully for ${platform}:`, data)
       return data || []
     } catch (error) {
-      console.warn('Error fetching profiles by platform:', error)
+      console.error('Error fetching profiles by platform:', error)
       return []
     }
   }
-
 }

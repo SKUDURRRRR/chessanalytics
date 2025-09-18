@@ -1,6 +1,5 @@
 // Simple Analytics Component - One component, everything you need
-import React, { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { useState, useEffect } from 'react'
 import { AnalysisService, AnalysisStats } from '../../services/analysisService'
 
 interface SimpleAnalyticsProps {
@@ -25,9 +24,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
       }
       setError(null)
 
-      const result = await AnalysisService.getAnalysisStats(userId, platform || 'lichess')
+      const result = await AnalysisService.getAnalysisStats(
+        userId,
+        (platform as 'lichess' | 'chess.com') || 'lichess'
+      )
       setData(result)
-
     } catch (err) {
       console.error('Failed to load analytics:', err)
       setError(err instanceof Error ? err.message : 'Failed to load analytics')
@@ -40,7 +41,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
   useEffect(() => {
     loadData()
   }, [userId, platform, fromDate, toDate])
-
 
   if (loading) {
     return (
@@ -62,7 +62,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
       <div className="bg-white p-6 rounded-lg shadow">
         <h2 className="text-xl font-bold mb-4">Error</h2>
         <p className="text-red-600 mb-4">{error}</p>
-        <button 
+        <button
           onClick={() => loadData(true)}
           className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
@@ -110,7 +110,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
       <div className="bg-white p-6 rounded-lg shadow">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Analysis Statistics</h2>
-          <button 
+          <button
             onClick={() => loadData(true)}
             disabled={refreshing}
             className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50"
@@ -118,7 +118,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-3">
             <div className="flex justify-between">
@@ -136,16 +136,16 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
           </div>
           <div className="space-y-3">
             <div className="flex justify-between">
-              <span className="text-gray-600">Inaccuracies:</span>
-              <span className="font-medium">{data.total_inaccuracies}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Brilliant Moves:</span>
-              <span className="font-medium text-green-600">{data.total_brilliant_moves}</span>
-            </div>
-            <div className="flex justify-between">
               <span className="text-gray-600">Blunders per Game:</span>
               <span className="font-medium">{data.blunders_per_game}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Inaccuracies per Game:</span>
+              <span className="font-medium">{data.inaccuracies_per_game}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Brilliant Moves per Game:</span>
+              <span className="font-medium text-green-600">{data.brilliant_moves_per_game}</span>
             </div>
           </div>
         </div>

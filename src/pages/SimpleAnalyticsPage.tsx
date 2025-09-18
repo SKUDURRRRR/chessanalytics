@@ -1,5 +1,5 @@
 // Simple Analytics Page - One page, everything you need
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom'
 import { SimpleAnalytics } from '../components/simple/SimpleAnalytics'
 import { AnalyticsBar } from '../components/simple/AnalyticsBar'
@@ -9,19 +9,20 @@ import { ErrorBoundary } from '../components/ErrorBoundary'
 import { AnalysisService } from '../services/analysisService'
 
 export default function SimpleAnalyticsPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const params = useParams()
   const navigate = useNavigate()
   const [userId, setUserId] = useState('')
   const [platform, setPlatform] = useState<'lichess' | 'chess.com'>('lichess')
-  const [activeTab, setActiveTab] = useState<'analytics' | 'deepAnalysis' | 'matchHistory'>('analytics')
+  const [activeTab, setActiveTab] = useState<'analytics' | 'deepAnalysis' | 'matchHistory'>(
+    'analytics'
+  )
   const [refreshKey, setRefreshKey] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [apiAvailable, setApiAvailable] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
-  
 
   useEffect(() => {
     // Check for route parameters first, then URL parameters
@@ -29,10 +30,16 @@ export default function SimpleAnalyticsPage() {
     const routePlatform = params.platform as 'lichess' | 'chess.com'
     const urlUser = searchParams.get('user')
     const urlPlatform = searchParams.get('platform') as 'lichess' | 'chess.com'
-    
+    const urlTab = searchParams.get('tab') as 'analytics' | 'deepAnalysis' | 'matchHistory'
+
     const finalUser = routeUser || urlUser
     const finalPlatform = routePlatform || urlPlatform
-    
+
+    // Set tab from URL parameter, default to 'analytics' if not specified or invalid
+    if (urlTab && ['analytics', 'deepAnalysis', 'matchHistory'].includes(urlTab)) {
+      setActiveTab(urlTab)
+    }
+
     if (finalUser && finalPlatform) {
       setUserId(finalUser)
       setPlatform(finalPlatform)
@@ -63,13 +70,21 @@ export default function SimpleAnalyticsPage() {
     setLastRefresh(new Date())
   }
 
+  const handleTabChange = (tab: 'analytics' | 'deepAnalysis' | 'matchHistory') => {
+    setActiveTab(tab)
+    // Update URL search params to persist tab state
+    const newSearchParams = new URLSearchParams(searchParams)
+    newSearchParams.set('tab', tab)
+    setSearchParams(newSearchParams, { replace: true })
+  }
+
   const startAnalysis = async () => {
     try {
       setAnalyzing(true)
       setAnalysisError(null)
 
       const result = await AnalysisService.startAnalysis(userId, platform, 100)
-      
+
       if (result.success) {
         // Refresh data after successful analysis
         handleRefresh()
@@ -79,14 +94,13 @@ export default function SimpleAnalyticsPage() {
     } catch (err) {
       console.error('Error starting analysis:', err)
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
-      setAnalysisError(`Failed to start analysis: ${errorMessage}. Please ensure the Python backend server is running.`)
+      setAnalysisError(
+        `Failed to start analysis: ${errorMessage}. Please ensure the Python backend server is running.`
+      )
     } finally {
       setAnalyzing(false)
     }
   }
-
-
-
 
   if (isLoading) {
     return (
@@ -110,11 +124,15 @@ export default function SimpleAnalyticsPage() {
             className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 19l-7-7m0 0l7-7m-7 7h18"
+              />
             </svg>
             <span>Back to Search</span>
           </button>
-          
           <div className="text-center space-y-2">
             <div className="flex items-center justify-center space-x-2 text-lg text-gray-700">
               <span className="font-medium">{userId}</span>
@@ -136,7 +154,6 @@ export default function SimpleAnalyticsPage() {
               )}
             </div>
           </div>
-          
           <div className="w-32"></div> {/* Spacer for centering */}
         </div>
       )}
@@ -144,7 +161,7 @@ export default function SimpleAnalyticsPage() {
       {/* Tab Navigation */}
       <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg max-w-xl mx-auto">
         <button
-          onClick={() => setActiveTab('analytics')}
+          onClick={() => handleTabChange('analytics')}
           className={`flex-1 py-2 px-4 rounded-md text-sm font-medium ${
             activeTab === 'analytics'
               ? 'bg-white text-gray-900 shadow'
@@ -154,7 +171,7 @@ export default function SimpleAnalyticsPage() {
           Analytics
         </button>
         <button
-          onClick={() => setActiveTab('deepAnalysis')}
+          onClick={() => handleTabChange('deepAnalysis')}
           className={`flex-1 py-2 px-4 rounded-md text-sm font-medium ${
             activeTab === 'deepAnalysis'
               ? 'bg-white text-gray-900 shadow'
@@ -164,7 +181,7 @@ export default function SimpleAnalyticsPage() {
           Deep Analysis
         </button>
         <button
-          onClick={() => setActiveTab('matchHistory')}
+          onClick={() => handleTabChange('matchHistory')}
           className={`flex-1 py-2 px-4 rounded-md text-sm font-medium ${
             activeTab === 'matchHistory'
               ? 'bg-white text-gray-900 shadow'
@@ -175,16 +192,11 @@ export default function SimpleAnalyticsPage() {
         </button>
       </div>
 
-
       {/* Tab Content */}
       {activeTab === 'analytics' && (
         <div className="space-y-4">
           {/* Quick Stats Bar */}
-          <AnalyticsBar
-            key={`analytics-bar-${refreshKey}`}
-            userId={userId}
-            platform={platform}
-          />
+          <AnalyticsBar key={`analytics-bar-${refreshKey}`} userId={userId} platform={platform} />
 
           {/* Analytics Display */}
           <SimpleAnalytics
@@ -207,11 +219,7 @@ export default function SimpleAnalyticsPage() {
 
       {activeTab === 'matchHistory' && (
         <ErrorBoundary>
-          <MatchHistory
-            key={`match-history-${refreshKey}`}
-            userId={userId}
-            platform={platform}
-          />
+          <MatchHistory key={`match-history-${refreshKey}`} userId={userId} platform={platform} />
         </ErrorBoundary>
       )}
 
@@ -224,8 +232,6 @@ export default function SimpleAnalyticsPage() {
           </div>
         </div>
       )}
-
-
     </div>
   )
 }

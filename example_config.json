@@ -8,8 +8,8 @@
   },
   "stockfish": {
     "path": "C:\\Users\\Martynas\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe\\stockfish\\stockfish-windows-x86-64-avx2.exe",
-    "depth": 15,
-    "skill_level": 20,
+    "depth": 8,
+    "skill_level": 8,
     "time_limit": 1.0,
     "use_opening_book": true,
     "use_endgame_tablebase": true,

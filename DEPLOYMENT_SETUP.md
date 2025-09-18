@@ -33,8 +33,8 @@ API_PORT=8002
 2. Edit `.env` with your actual values:
    ```bash
    # .env
-   VITE_SUPABASE_URL=https://nkeaifrhtyigfmicfwch.supabase.co
-   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5rZWFpZnJodHlpZ2ZtaWNmd2NoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzcxMDEsImV4cCI6MjA3MzYxMzEwMX0.xl_IHUFUAMaOiiMSnDLWVFEi_JujwbJ26-Uj-wwJkbs
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-key-here
    VITE_ANALYSIS_API_URL=http://localhost:8002
    ```
 
@@ -47,8 +47,8 @@ API_PORT=8002
 2. Edit `python/.env` with your actual values:
    ```bash
    # python/.env
-   SUPABASE_URL=https://nkeaifrhtyigfmicfwch.supabase.co
-   SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5rZWFpZnJodHlpZ2ZtaWNmd2NoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzcxMDEsImV4cCI6MjA3MzYxMzEwMX0.xl_IHUFUAMaOiiMSnDLWVFEi_JujwbJ26-Uj-wwJkbs
+   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_ANON_KEY=your-anon-key-here
    STOCKFISH_PATH=stockfish
    API_HOST=127.0.0.1
    API_PORT=8002

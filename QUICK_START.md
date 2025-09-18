@@ -58,14 +58,14 @@ You need to get these from your Supabase project:
 ### Frontend (.env)
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
 VITE_ANALYSIS_API_URL=http://localhost:8002
 ```
 
 ### Backend (python\.env)
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_ANON_KEY=your-anon-key-here
 STOCKFISH_PATH=stockfish
 API_HOST=127.0.0.1
 API_PORT=8002

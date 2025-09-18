@@ -60,7 +60,7 @@ class ChessAnalysisService:
         # Initialize Stockfish with configured path
         self.stockfish = Stockfish(path=stockfish_path)
         self.stockfish.set_depth(12)  # Analysis depth
-        self.stockfish.set_skill_level(20)  # Maximum skill level
+        self.stockfish.set_skill_level(8)  # Skill level 8
 ```
 
 **Key Methods:**
@@ -153,7 +153,7 @@ CREATE TABLE game_analyses (
 ```python
 # Engine settings
 depth = 12                    # Analysis depth (balance of speed vs accuracy)
-skill_level = 20             # Maximum skill level
+skill_level = 8              # Skill level 8
 time_management = 75.0       # Default time management score
 ```
 

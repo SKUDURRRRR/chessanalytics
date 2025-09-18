@@ -23,8 +23,8 @@ class DatabaseConfig:
 class StockfishConfig:
     """Stockfish engine configuration."""
     path: Optional[str] = None
-    depth: int = 15
-    skill_level: int = 20
+    depth: int = 8
+    skill_level: int = 8
     time_limit: float = 1.0
     use_opening_book: bool = True
     use_endgame_tablebase: bool = True
@@ -97,8 +97,8 @@ class ChessAnalysisConfig:
         
         return StockfishConfig(
             path=stockfish_path,
-            depth=int(os.getenv("STOCKFISH_DEPTH", "15")),
-            skill_level=int(os.getenv("STOCKFISH_SKILL_LEVEL", "20")),
+            depth=int(os.getenv("STOCKFISH_DEPTH", "8")),
+            skill_level=int(os.getenv("STOCKFISH_SKILL_LEVEL", "8")),
             time_limit=float(os.getenv("STOCKFISH_TIME_LIMIT", "1.0")),
             use_opening_book=os.getenv("STOCKFISH_USE_OPENING_BOOK", "true").lower() == "true",
             use_endgame_tablebase=os.getenv("STOCKFISH_USE_ENDGAME_TB", "true").lower() == "true",

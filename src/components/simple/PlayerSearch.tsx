@@ -15,6 +15,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   const [showResults, setShowResults] = useState(false)
   const [isAutoImporting, setIsAutoImporting] = useState(false)
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null)
+  const [showImportPrompt, setShowImportPrompt] = useState(false)
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -22,48 +23,54 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
     setIsSearching(true)
     setImportProgress(null)
-    
+
     try {
       // First search for existing profiles on the selected platform
       const profiles = await ProfileService.getProfilesByPlatform(selectedPlatform)
-      const filtered = profiles.filter(profile => 
-        profile.user_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (profile.display_name && profile.display_name.toLowerCase().includes(searchQuery.toLowerCase()))
+      const filtered = profiles.filter(
+        profile =>
+          profile.user_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (profile.display_name &&
+            profile.display_name.toLowerCase().includes(searchQuery.toLowerCase()))
       )
-      
+
       // If no results on selected platform, also search other platforms
       if (filtered.length === 0) {
         const otherPlatform = selectedPlatform === 'lichess' ? 'chess.com' : 'lichess'
         const otherProfiles = await ProfileService.getProfilesByPlatform(otherPlatform)
-        const otherFiltered = otherProfiles.filter(profile => 
-          profile.user_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (profile.display_name && profile.display_name.toLowerCase().includes(searchQuery.toLowerCase()))
+        const otherFiltered = otherProfiles.filter(
+          profile =>
+            profile.user_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (profile.display_name &&
+              profile.display_name.toLowerCase().includes(searchQuery.toLowerCase()))
         )
-        
+
         // Add a note to results from other platform
         const otherResults = otherFiltered.map(profile => ({
           ...profile,
           platform_mismatch: true,
-          original_platform: profile.platform
+          original_platform: profile.platform,
         }))
-        
+
         setSearchResults([...filtered, ...otherResults])
       } else {
         setSearchResults(filtered)
       }
-      
+
       setShowResults(true)
-      
-      // If no results found on any platform, automatically start import
+
+      // If no results found on any platform, show import prompt instead of auto-importing
       if (filtered.length === 0) {
-        await handleAutoImport()
+        setShowImportPrompt(true)
+      } else {
+        setShowImportPrompt(false)
       }
     } catch (error) {
       console.error('Error searching players:', error)
       setSearchResults([])
       setShowResults(true)
-      // If there's an error, still try auto-import
-      await handleAutoImport()
+      // If there's an error, show import prompt
+      setShowImportPrompt(true)
     } finally {
       setIsSearching(false)
     }
@@ -73,10 +80,10 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
     try {
       // Create or get profile
       await ProfileService.getOrCreateProfile(userId, platform)
-      
+
       // Select the player
       onPlayerSelect(userId, platform)
-      
+
       // Reset search
       setSearchQuery('')
       setSearchResults([])
@@ -88,41 +95,45 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
     }
   }
 
-  const handleAutoImport = async () => {
+  const handleManualImport = async () => {
     if (!searchQuery.trim()) return
 
     setIsAutoImporting(true)
+    setShowImportPrompt(false)
     setImportProgress({
       status: 'starting',
       message: 'Validating user on platform...',
       progress: 0,
-      importedGames: 0
+      importedGames: 0,
     })
 
     try {
       // First validate that the user exists on the platform
-      const validation = await AutoImportService.validateUserOnPlatform(searchQuery, selectedPlatform)
-      
+      const validation = await AutoImportService.validateUserOnPlatform(
+        searchQuery,
+        selectedPlatform
+      )
+
       if (!validation.exists) {
         setImportProgress({
           status: 'error',
           message: `User "${searchQuery}" not found on ${selectedPlatform === 'chess.com' ? 'Chess.com' : 'Lichess'}. Please check the username and try again.`,
           progress: 0,
-          importedGames: 0
+          importedGames: 0,
         })
         return
       }
 
       // Check if user already exists in our database
       const userExists = await AutoImportService.checkUserExists(searchQuery, selectedPlatform)
-      
+
       if (userExists) {
         // User already exists, just select them
         await handlePlayerSelect(searchQuery, selectedPlatform)
         return
       }
 
-      // Proceed with auto-import
+      // Proceed with import
       const result = await AutoImportService.importLast100Games(
         searchQuery,
         selectedPlatform,
@@ -137,16 +148,16 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           status: 'error',
           message: result.message,
           progress: 0,
-          importedGames: 0
+          importedGames: 0,
         })
       }
     } catch (error) {
-      console.error('Auto import error:', error)
+      console.error('Import error:', error)
       setImportProgress({
         status: 'error',
-        message: `Auto import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         progress: 0,
-        importedGames: 0
+        importedGames: 0,
       })
     } finally {
       setIsAutoImporting(false)
@@ -174,7 +185,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={e => setSearchQuery(e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter player username..."
               required
@@ -221,7 +232,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               'Search Player'
             )}
           </button>
-          
+
           <button
             type="button"
             onClick={() => {
@@ -229,6 +240,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               setSearchResults([])
               setShowResults(false)
               setImportProgress(null)
+              setShowImportPrompt(false)
             }}
             className="px-6 py-3 bg-gray-500 text-white rounded-lg font-medium hover:bg-gray-600 transition-colors"
           >
@@ -243,7 +255,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           <h3 className="text-lg font-semibold text-gray-800 mb-3">
             Search Results ({searchResults.length})
           </h3>
-          
+
           {searchResults.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               {isAutoImporting ? (
@@ -252,23 +264,51 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                   <p className="text-lg font-medium">Importing games for "{searchQuery}"...</p>
                   <p className="text-sm">This may take a few moments</p>
                 </div>
+              ) : showImportPrompt ? (
+                <div className="space-y-4">
+                  <div className="text-4xl mb-2">🔍</div>
+                  <p className="text-lg font-medium">No players found in database</p>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Player "{searchQuery}" is not in our database yet.
+                  </p>
+                  <div className="space-x-3">
+                    <button
+                      onClick={handleManualImport}
+                      disabled={isAutoImporting}
+                      className="bg-blue-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Import 100 Games
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowImportPrompt(false)
+                        setSearchQuery('')
+                        setSearchResults([])
+                        setShowResults(false)
+                      }}
+                      className="bg-gray-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-gray-600 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-2">
                   <div className="text-4xl mb-2">🔍</div>
                   <p>No players found matching "{searchQuery}"</p>
-                  <p className="text-sm">Searching and importing games automatically...</p>
+                  <p className="text-sm">Try a different search term</p>
                 </div>
               )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {searchResults.map((player) => (
+              {searchResults.map(player => (
                 <div
                   key={`${player.user_id}-${player.platform}`}
                   onClick={() => handlePlayerSelect(player.user_id, player.platform)}
                   className={`p-4 border rounded-lg cursor-pointer hover:shadow-md transition-all ${
-                    player.platform_mismatch 
-                      ? 'border-yellow-300 bg-yellow-50 hover:border-yellow-400' 
+                    player.platform_mismatch
+                      ? 'border-yellow-300 bg-yellow-50 hover:border-yellow-400'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
@@ -288,7 +328,8 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                       </div>
                       {player.platform_mismatch && (
                         <div className="text-xs text-yellow-600 font-medium mt-1">
-                          ⚠️ Found on {player.original_platform}, but you selected {selectedPlatform}
+                          ⚠️ Found on {player.original_platform}, but you selected{' '}
+                          {selectedPlatform}
                         </div>
                       )}
                     </div>
@@ -314,35 +355,44 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               {importProgress.importedGames} games imported
             </div>
           </div>
-          
+
           <div className="mb-2">
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
+              <div
                 className={`h-2 rounded-full transition-all duration-300 ${
-                  importProgress.status === 'error' ? 'bg-red-500' :
-                  importProgress.status === 'completed' ? 'bg-green-500' : 'bg-blue-500'
+                  importProgress.status === 'error'
+                    ? 'bg-red-500'
+                    : importProgress.status === 'completed'
+                      ? 'bg-green-500'
+                      : 'bg-blue-500'
                 }`}
                 style={{ width: `${importProgress.progress}%` }}
               ></div>
             </div>
           </div>
-          
-          <p className={`text-sm ${
-            importProgress.status === 'error' ? 'text-red-600' :
-            importProgress.status === 'completed' ? 'text-green-600' : 'text-gray-600'
-          }`}>
+
+          <p
+            className={`text-sm ${
+              importProgress.status === 'error'
+                ? 'text-red-600'
+                : importProgress.status === 'completed'
+                  ? 'text-green-600'
+                  : 'text-gray-600'
+            }`}
+          >
             {importProgress.message}
           </p>
-          
+
           {importProgress.status === 'completed' && (
             <div className="mt-3 text-center">
               <div className="text-2xl mb-2">✅</div>
               <p className="text-green-600 font-medium">
-                {importProgress.importedGames} games imported successfully! You can now view analytics.
+                {importProgress.importedGames} games imported successfully! You can now view
+                analytics.
               </p>
             </div>
           )}
-          
+
           {importProgress.status === 'error' && (
             <div className="mt-3 text-center">
               <div className="text-2xl mb-2">❌</div>

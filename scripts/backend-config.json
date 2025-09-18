@@ -1,5 +1,5 @@
 {
-  "defaultPort": 8003,
+  "defaultPort": 8002,
   "frontendPort": 3000,
   "backendPorts": {
     "simple": 8003,
@@ -18,8 +18,8 @@
       "file": "python/main.py",
       "requiresEnv": true,
       "envVars": {
-        "SUPABASE_URL": "https://nkeaifrhtyigfmicfwch.supabase.co",
-        "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5rZWFpZnJodHlpZ2ZtaWNmd2NoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ0NzQwMDAsImV4cCI6MjA1MDA1MDAwMH0.Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8"
+        "SUPABASE_URL": "https://your-project.supabase.co",
+        "SUPABASE_ANON_KEY": "your-anon-key-here"
       }
     }
   }

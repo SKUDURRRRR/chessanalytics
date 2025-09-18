@@ -10,7 +10,7 @@ export function parseTimeControl(timeControl: string): TimeControlInfo {
     return {
       category: 'unknown',
       displayName: 'Unknown',
-      totalTime: 0
+      totalTime: 0,
     }
   }
 
@@ -20,12 +20,12 @@ export function parseTimeControl(timeControl: string): TimeControlInfo {
   // Format: "900+10" (seconds + increment)
   if (timeControl.includes('+')) {
     const [time, increment] = timeControl.split('+').map(Number)
-    totalTime = time + (increment * 40) // Estimate 40 moves average
+    totalTime = time + increment * 40 // Estimate 40 moves average
   }
   // Format: "15+10" (minutes + increment)
-  else if (timeControl.includes('+') && timeControl.split('+')[0] < 100) {
+  else if (timeControl.includes('+') && Number(timeControl.split('+')[0]) < 100) {
     const [time, increment] = timeControl.split('+').map(Number)
-    totalTime = (time * 60) + (increment * 40) // Convert minutes to seconds
+    totalTime = time * 60 + increment * 40 // Convert minutes to seconds
   }
   // Format: "900" (seconds only)
   else if (!isNaN(Number(timeControl))) {
@@ -40,29 +40,33 @@ export function parseTimeControl(timeControl: string): TimeControlInfo {
   }
 
   // Categorize based on total time
-  if (totalTime <= 180) { // 3 minutes or less
+  if (totalTime <= 180) {
+    // 3 minutes or less
     return {
       category: 'bullet',
       displayName: 'Bullet',
-      totalTime
+      totalTime,
     }
-  } else if (totalTime <= 600) { // 10 minutes or less
+  } else if (totalTime <= 600) {
+    // 10 minutes or less
     return {
       category: 'blitz',
       displayName: 'Blitz',
-      totalTime
+      totalTime,
     }
-  } else if (totalTime <= 1800) { // 30 minutes or less
+  } else if (totalTime <= 1800) {
+    // 30 minutes or less
     return {
       category: 'rapid',
       displayName: 'Rapid',
-      totalTime
+      totalTime,
     }
-  } else { // More than 30 minutes
+  } else {
+    // More than 30 minutes
     return {
       category: 'classical',
       displayName: 'Classical',
-      totalTime
+      totalTime,
     }
   }
 }

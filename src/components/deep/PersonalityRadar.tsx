@@ -1,5 +1,11 @@
-import React from 'react'
-import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
+import {
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  ResponsiveContainer,
+} from 'recharts'
 
 interface PersonalityRadarProps {
   scores: {
@@ -7,8 +13,8 @@ interface PersonalityRadarProps {
     positional: number
     aggressive: number
     patient: number
-    endgame: number
-    opening: number
+    novelty: number
+    staleness: number
   }
 }
 
@@ -17,9 +23,9 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
     { skill: 'Tactical', score: scores.tactical },
     { skill: 'Positional', score: scores.positional },
     { skill: 'Aggressive', score: scores.aggressive },
+    { skill: 'Novelty', score: scores.novelty },
     { skill: 'Patient', score: scores.patient },
-    { skill: 'Endgame', score: scores.endgame },
-    { skill: 'Opening', score: scores.opening }
+    { skill: 'Staleness', score: scores.staleness },
   ]
 
   return (
@@ -28,7 +34,7 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
         Your Chess Personality Radar
         <span className="ml-2 text-gray-400 text-sm">?</span>
       </h3>
-      
+
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={data}>

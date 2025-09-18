@@ -42,9 +42,8 @@ supabase link --project-ref your-project-ref
 # Reset database to simple schema
 supabase db reset
 
-# Deploy the simple functions
+# Deploy the analytics function
 supabase functions deploy analytics
-supabase functions deploy import-games
 ```
 
 ### 4. Install Stockfish Engine
@@ -110,23 +109,24 @@ The Python backend server provides real-time chess analysis powered by Stockfish
 
 ```
 src/
-├── components/simple/
-│   ├── SimpleAnalytics.tsx    # One analytics component
-│   └── SimpleImport.tsx       # One import component
-├── services/
-│   └── simpleAnalytics.ts     # One service
-├── pages/
-│   └── SimpleAnalyticsPage.tsx # One page
-├── lib/
-│   └── supabase.ts            # Supabase client
-└── App.tsx                    # Main app
+├── components/simple/          # Core analytics components
+├── components/deep/            # Advanced analysis components
+├── services/                   # API service layers
+├── pages/                      # React pages
+├── lib/                        # Utilities and Supabase client
+└── App.tsx                     # Main app
+
+python/
+├── core/                       # Unified analysis system
+│   ├── analysis_engine.py     # Core analysis engine
+│   ├── api_server.py          # Unified API server
+│   └── config.py              # Configuration management
+└── main.py                     # Entry point (uses unified core)
 
 supabase/
 ├── functions/
-│   ├── analytics/index.ts     # One analytics function
-│   └── import-games/index.ts  # One import function
-└── migrations/
-    └── 20240101000000_initial_schema.sql # Simple schema
+│   └── analytics/index.ts     # Analytics function
+└── migrations/                 # Database schema migrations
 ```
 
 ## 🎉 How to Use

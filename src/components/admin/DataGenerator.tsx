@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { AnalysisService } from '../../services/analysisService'
 
 interface DataGeneratorProps {
@@ -17,21 +17,25 @@ export function DataGenerator({ userId, platform, onAnalysisComplete }: DataGene
       setIsGenerating(true)
       setMessage('Starting Stockfish analysis...')
       setProgress(0)
-      
+
       // Start the analysis process
-      const result = await AnalysisService.startAnalysis(userId, platform, 10)
-      
+      const result = await AnalysisService.startAnalysis(userId, platform, 100)
+
       if (result.success) {
-        setMessage('Stockfish analysis started successfully! This may take a few minutes. The page will refresh automatically when complete.')
-        
+        setMessage(
+          'Stockfish analysis started successfully! Analyzing your last 100 games - this may take several minutes. The page will refresh automatically when complete.'
+        )
+
         // Poll for progress
         const pollProgress = async () => {
           try {
             const progressResult = await AnalysisService.getAnalysisProgress(userId, platform)
             if (progressResult && progressResult.progress_percentage !== undefined) {
               setProgress(progressResult.progress_percentage)
-              setMessage(`Analysis in progress... ${progressResult.progress_percentage}% complete (${progressResult.analyzed_games}/${progressResult.total_games} games)`)
-              
+              setMessage(
+                `Analysis in progress... ${progressResult.progress_percentage}% complete (${progressResult.analyzed_games}/${progressResult.total_games} games)`
+              )
+
               if (progressResult.progress_percentage < 100 && !progressResult.is_complete) {
                 setTimeout(pollProgress, 2000) // Poll every 2 seconds
               } else {
@@ -54,16 +58,17 @@ export function DataGenerator({ userId, platform, onAnalysisComplete }: DataGene
             setTimeout(pollProgress, 5000) // Poll every 5 seconds on error
           }
         }
-        
+
         // Start polling after a short delay
         setTimeout(pollProgress, 1000)
-        
       } else {
         setMessage(`Error: ${result.message || 'Failed to start analysis'}`)
       }
     } catch (error) {
       console.error('Error starting analysis:', error)
-      setMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error occurred. Please ensure the Python backend server is running.'}`)
+      setMessage(
+        `Error: ${error instanceof Error ? error.message : 'Unknown error occurred. Please ensure the Python backend server is running.'}`
+      )
     } finally {
       setIsGenerating(false)
     }
@@ -75,7 +80,7 @@ export function DataGenerator({ userId, platform, onAnalysisComplete }: DataGene
         <div>
           <h3 className="text-lg font-semibold text-blue-800">Stockfish Analysis</h3>
           <p className="text-sm text-blue-700">
-            Run real Stockfish analysis on your games to get accurate personality insights
+            Run real Stockfish analysis on your last 100 games to get accurate personality insights
           </p>
         </div>
         <button
@@ -96,15 +101,15 @@ export function DataGenerator({ userId, platform, onAnalysisComplete }: DataGene
           )}
         </button>
       </div>
-      
+
       {message && (
         <div className="mt-3 p-3 bg-white rounded border">
           <p className="text-sm text-gray-700">{message}</p>
           {progress > 0 && progress < 100 && (
             <div className="mt-2">
               <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 ></div>
               </div>

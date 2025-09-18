@@ -6,15 +6,15 @@ Create a `.env` file in the project root with the following content:
 
 ```bash
 # Supabase Configuration
-VITE_SUPABASE_URL=https://nkeaifrhtyigfmicfwch.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5rZWFpZnJodHlpZ2ZtaWNmd2NoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzcxMDEsImV4cCI6MjA3MzYxMzEwMX0.xl_IHUFUAMaOiiMSnDLWVFEi_JujwbJ26-Uj-wwJkbs
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
 
 # Service Role Key (for server-side operations)
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5rZWFpZnJodHlpZ2ZtaWNmd2NoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODAzNzEwMSwiZXhwIjoyMDczNjEzMTAxfQ.K85dhD6MNMYzM0zlzeBZY5FIZxCzT1k0L3wczfBucRs
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 
 # Database URL for health checks and migrations
 # You'll need to get the database password from your Supabase dashboard
-DATABASE_URL=postgresql://postgres:[YOUR_DB_PASSWORD]@db.nkeaifrhtyigfmicfwch.supabase.co:5432/postgres
+DATABASE_URL=postgresql://postgres:[YOUR_DB_PASSWORD]@db.your-project.supabase.co:5432/postgres
 ```
 
 ## Database Setup
@@ -28,7 +28,7 @@ You need to run the database migrations to set up the schema:
 npm install -g supabase
 
 # Link to your project
-supabase link --project-ref nkeaifrhtyigfmicfwch
+supabase link --project-ref your-project-ref
 
 # Run migrations
 supabase db push

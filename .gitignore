@@ -1,1 +1,40 @@
+# Dependencies
 node_modules
+python/__pycache__/
+python/core/__pycache__/
+python/*/__pycache__/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Test outputs
+test-results/
+playwright-report/
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp

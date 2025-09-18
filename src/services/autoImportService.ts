@@ -18,7 +18,7 @@ export interface ImportResult {
 export class AutoImportService {
   // Validate that a user exists on the specified platform
   static async validateUserOnPlatform(
-    username: string, 
+    username: string,
     platform: 'lichess' | 'chess.com'
   ): Promise<{ exists: boolean; userInfo?: any }> {
     try {
@@ -34,10 +34,12 @@ export class AutoImportService {
   }
 
   // Validate Lichess user
-  private static async validateLichessUser(username: string): Promise<{ exists: boolean; userInfo?: any }> {
+  private static async validateLichessUser(
+    username: string
+  ): Promise<{ exists: boolean; userInfo?: any }> {
     try {
       const response = await fetch(`https://lichess.org/api/user/${username}`)
-      
+
       if (response.ok) {
         const userInfo = await response.json()
         return { exists: true, userInfo }
@@ -53,12 +55,17 @@ export class AutoImportService {
   }
 
   // Validate Chess.com user
-  private static async validateChessComUser(username: string): Promise<{ exists: boolean; userInfo?: any }> {
+  private static async validateChessComUser(
+    username: string
+  ): Promise<{ exists: boolean; userInfo?: any }> {
     try {
-      const response = await fetch(`https://api.chess.com/pub/player/${username}`)
-      
+      const response = await fetch(`http://localhost:8002/proxy/chess-com/${username}`)
+
       if (response.ok) {
         const userInfo = await response.json()
+        if (userInfo.error) {
+          return { exists: false }
+        }
         return { exists: true, userInfo }
       } else if (response.status === 404) {
         return { exists: false }
@@ -73,7 +80,7 @@ export class AutoImportService {
 
   // Check if user already exists in our database
   static async checkUserExists(
-    username: string, 
+    username: string,
     platform: 'lichess' | 'chess.com'
   ): Promise<boolean> {
     try {
@@ -84,7 +91,8 @@ export class AutoImportService {
         .eq('platform', platform)
         .single()
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+      if (error && error.code !== 'PGRST116') {
+        // PGRST116 = no rows returned
         console.error('Error checking user existence:', error)
         return false
       }
@@ -104,24 +112,24 @@ export class AutoImportService {
   ): Promise<ImportResult> {
     try {
       console.log(`Starting import for ${username} on ${platform}`)
-      
+
       onProgress?.({
         status: 'starting',
         message: 'Validating user and preparing import...',
         progress: 0,
-        importedGames: 0
+        importedGames: 0,
       })
 
       // Validate user exists
       const validation = await this.validateUserOnPlatform(username, platform)
       console.log('User validation result:', validation)
-      
+
       if (!validation.exists) {
         console.log(`User ${username} not found on ${platform}`)
         return {
           success: false,
           message: `User "${username}" not found on ${platform === 'chess.com' ? 'Chess.com' : 'Lichess'}`,
-          importedGames: 0
+          importedGames: 0,
         }
       }
 
@@ -129,20 +137,20 @@ export class AutoImportService {
         status: 'importing',
         message: 'Fetching games from platform...',
         progress: 10,
-        importedGames: 0
+        importedGames: 0,
       })
 
       // Fetch games from platform
       console.log(`Fetching games for ${username} from ${platform}`)
       const games = await this.fetchGamesFromPlatform(username, platform, 100)
       console.log(`Fetched ${games.length} games`)
-      
+
       if (games.length === 0) {
         console.log(`No games found for ${username} on ${platform}`)
         return {
           success: false,
           message: `No games found for user "${username}" on ${platform}`,
-          importedGames: 0
+          importedGames: 0,
         }
       }
 
@@ -150,58 +158,62 @@ export class AutoImportService {
         status: 'importing',
         message: `Found ${games.length} games. Creating profile...`,
         progress: 30,
-        importedGames: 0
+        importedGames: 0,
       })
 
       // Create or get profile
       // First check if profile exists, then either update or insert
-      let { data: existingProfile, error: checkError } = await supabase
+      let { data: existingProfile, error: _checkError } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('user_id', username)
         .eq('platform', platform)
         .single()
 
-      let profile, profileError
+      let profileError
 
       if (existingProfile) {
         // Update existing record
-        const { data: updateData, error: updateError } = await supabase
+        const { data: _updateData, error: updateError } = await supabase
           .from('user_profiles')
           .update({
             display_name: validation.userInfo?.username || username,
-            current_rating: validation.userInfo?.perfs?.classical?.rating || 
-                           validation.userInfo?.perfs?.rapid?.rating || 
-                           validation.userInfo?.perfs?.blitz?.rating || 1200,
+            current_rating:
+              validation.userInfo?.perfs?.classical?.rating ||
+              validation.userInfo?.perfs?.rapid?.rating ||
+              validation.userInfo?.perfs?.blitz?.rating ||
+              1200,
             total_games: games.length,
             win_rate: 0,
-            last_accessed: new Date().toISOString()
+            last_accessed: new Date().toISOString(),
           })
           .eq('user_id', username)
           .eq('platform', platform)
           .select()
           .single()
-        
-        profile = updateData
+
+        // Profile updated successfully
         profileError = updateError
       } else {
         // Insert new record
-        const { data: insertData, error: insertError } = await supabase
+        const { data: _insertData, error: insertError } = await supabase
           .from('user_profiles')
           .insert({
             user_id: username,
             platform: platform,
             display_name: validation.userInfo?.username || username,
-            current_rating: validation.userInfo?.perfs?.classical?.rating || 
-                           validation.userInfo?.perfs?.rapid?.rating || 
-                           validation.userInfo?.perfs?.blitz?.rating || 1200,
+            current_rating:
+              validation.userInfo?.perfs?.classical?.rating ||
+              validation.userInfo?.perfs?.rapid?.rating ||
+              validation.userInfo?.perfs?.blitz?.rating ||
+              1200,
             total_games: games.length,
-            win_rate: 0
+            win_rate: 0,
           })
           .select()
           .single()
-        
-        profile = insertData
+
+        // Profile created successfully
         profileError = insertError
       }
 
@@ -210,39 +222,43 @@ export class AutoImportService {
         return {
           success: false,
           message: 'Failed to create user profile',
-          importedGames: 0
+          importedGames: 0,
         }
       }
 
       onProgress?.({
         status: 'importing',
-        message: 'Saving games to database...',
+        message: 'Extracting and saving game data...',
         progress: 50,
-        importedGames: 0
+        importedGames: 0,
       })
 
-      // Save games to database (simplified - just store basic game data)
+      // Step 1: Extract structured data from PGN and save to games table first
       let savedGames = 0
       let errors = 0
 
       for (const game of games) {
         try {
-          const { error } = await supabase
-            .from('games')
-            .upsert({
-              game_id: game.id,
-              user_id: username,
-              platform: platform,
-              pgn: game.pgn,
-              white_player: game.white?.username || 'Unknown',
-              black_player: game.black?.username || 'Unknown',
-              result: game.winner || 'Unknown',
-              time_control: game.timeControl || 'Unknown',
-              created_at: new Date().toISOString()
-            })
+          // Parse PGN to extract game information
+          const gameInfo = this.parsePGNForGameInfo(game.pgn, username)
 
-          if (error) {
-            console.error(`Error saving game ${game.id}:`, error)
+          const { error: gameError } = await supabase.from('games').upsert({
+            user_id: username,
+            platform: platform,
+            provider_game_id: game.id,
+            result: gameInfo.result,
+            color: gameInfo.color,
+            time_control: gameInfo.timeControl,
+            opening: gameInfo.opening,
+            opening_family: gameInfo.openingFamily,
+            opponent_rating: gameInfo.opponentRating,
+            my_rating: gameInfo.myRating,
+            played_at: gameInfo.playedAt,
+            created_at: new Date().toISOString(),
+          })
+
+          if (gameError) {
+            console.error(`Error saving structured data for game ${game.id}:`, gameError)
             errors++
           } else {
             savedGames++
@@ -253,11 +269,42 @@ export class AutoImportService {
         }
       }
 
+      // Step 2: Save raw PGN data to games_pgn table (after games table has the records)
+      if (savedGames > 0) {
+        console.log(`Saving PGN data for ${savedGames} games...`)
+
+        onProgress?.({
+          status: 'importing',
+          message: 'Saving PGN data to database...',
+          progress: 70,
+          importedGames: savedGames,
+        })
+
+        for (const game of games) {
+          try {
+            // Save raw PGN to games_pgn table
+            const { error: pgnError } = await supabase.from('games_pgn').upsert({
+              user_id: username,
+              platform: platform,
+              provider_game_id: game.id,
+              pgn: game.pgn,
+              created_at: new Date().toISOString(),
+            })
+
+            if (pgnError) {
+              console.error(`Error saving PGN for game ${game.id}:`, pgnError)
+            }
+          } catch (err) {
+            console.error(`Error saving PGN for game ${game.id}:`, err)
+          }
+        }
+      }
+
       onProgress?.({
         status: 'importing',
         message: 'Updating profile...',
         progress: 80,
-        importedGames: savedGames
+        importedGames: savedGames,
       })
 
       // Update profile with final stats
@@ -265,39 +312,90 @@ export class AutoImportService {
         .from('user_profiles')
         .update({
           total_games: savedGames,
-          last_accessed: new Date().toISOString()
+          last_accessed: new Date().toISOString(),
         })
         .eq('user_id', username)
         .eq('platform', platform)
 
       onProgress?.({
+        status: 'importing',
+        message: 'Starting basic analysis...',
+        progress: 90,
+        importedGames: savedGames,
+      })
+
+      // Trigger basic analysis for the imported games
+      try {
+        const analysisResult = await this.triggerBasicAnalysis(username, platform, savedGames)
+        console.log('Basic analysis result:', analysisResult)
+      } catch (analysisError) {
+        console.warn('Basic analysis failed, but import was successful:', analysisError)
+      }
+
+      onProgress?.({
         status: 'completed',
-        message: `Successfully imported ${savedGames} games`,
+        message: `Successfully imported ${savedGames} games and started analysis`,
         progress: 100,
-        importedGames: savedGames
+        importedGames: savedGames,
       })
 
       return {
         success: true,
-        message: `Successfully imported ${savedGames} games`,
+        message: `Successfully imported ${savedGames} games and started analysis`,
         importedGames: savedGames,
-        errors: errors
+        errors: errors as unknown as string[],
       }
-
     } catch (error) {
       console.error('Error importing games:', error)
       onProgress?.({
         status: 'error',
         message: `Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         progress: 0,
-        importedGames: 0
+        importedGames: 0,
       })
 
       return {
         success: false,
         message: `Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        importedGames: 0
+        importedGames: 0,
       }
+    }
+  }
+
+  // Trigger basic analysis for imported games
+  private static async triggerBasicAnalysis(
+    username: string,
+    platform: 'lichess' | 'chess.com',
+    gameCount: number
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      // Call the backend analysis API with basic analysis type
+      const response = await fetch(
+        `${import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'}/analyze-games`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_id: username,
+            platform: platform,
+            analysis_type: 'basic', // Use basic analysis, not Stockfish
+            limit: gameCount,
+            skill_level: 8,
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Error triggering basic analysis:', error)
+      throw error
     }
   }
 
@@ -316,9 +414,19 @@ export class AutoImportService {
 
   // Fetch games from Lichess
   private static async fetchLichessGames(
-    username: string, 
+    username: string,
     maxGames: number
-  ): Promise<Array<{ id: string; pgn: string; date: string }>> {
+  ): Promise<
+    Array<{
+      id: string
+      pgn: string
+      date: string
+      white?: any
+      black?: any
+      winner?: string
+      timeControl?: string
+    }>
+  > {
     try {
       const response = await fetch(
         `https://lichess.org/api/games/user/${username}?max=${maxGames}&perfType=classical,rapid,blitz&moves=true&pgnInJson=true`
@@ -330,53 +438,63 @@ export class AutoImportService {
 
       const text = await response.text()
       console.log('Raw Lichess API response (first 1000 chars):', text.substring(0, 1000))
-      
+
       // Try to parse as JSON first (with pgnInJson=true)
       let games = []
       try {
         const jsonData = JSON.parse(text)
         console.log('Parsed as JSON, found games:', jsonData.length)
-        
+
         for (const game of jsonData) {
           if (game.pgn) {
             console.log(`Found game ${game.id}, PGN length: ${game.pgn.length}`)
             console.log('Full PGN for this game:', game.pgn)
-            
+
             games.push({
               id: game.id || `${username}-${Date.now()}-${Math.random()}`,
               pgn: game.pgn,
-              date: game.createdAt || new Date().toISOString()
+              date: game.createdAt || new Date().toISOString(),
+              white: { username: game.players?.white?.user?.name },
+              black: { username: game.players?.black?.user?.name },
+              winner: game.winner,
+              timeControl: game.perf || 'Unknown',
             })
           }
         }
       } catch (jsonError) {
         console.log('Not JSON format, trying PGN format')
-        
+
         // Fallback to PGN format parsing
         const gameBlocks = text.trim().split('\n\n')
         console.log(`Split into ${gameBlocks.length} game blocks`)
-        
+
         for (const gameBlock of gameBlocks) {
           if (gameBlock.trim()) {
             console.log('Processing game block:', gameBlock.substring(0, 200) + '...')
-            
+
             // Check if this is a PGN game (contains PGN headers)
             if (gameBlock.includes('[Event') && gameBlock.includes('[Site')) {
               // Extract game ID from PGN
               const gameIdMatch = gameBlock.match(/\[Site "https:\/\/lichess\.org\/([^"]+)"/)
-              const gameId = gameIdMatch ? gameIdMatch[1] : `${username}-${Date.now()}-${Math.random()}`
-              
+              const gameId = gameIdMatch
+                ? gameIdMatch[1]
+                : `${username}-${Date.now()}-${Math.random()}`
+
               // Extract date from PGN
               const dateMatch = gameBlock.match(/\[UTCDate "([^"]+)"/)
               const date = dateMatch ? dateMatch[1] : new Date().toISOString()
-              
+
               console.log(`Found game ${gameId}, PGN length: ${gameBlock.length}`)
               console.log('Full PGN for this game:', gameBlock)
-              
+
               games.push({
                 id: gameId,
                 pgn: gameBlock,
-                date: date
+                date: date,
+                white: { username: this.extractPlayerFromPGN(gameBlock, 'White') },
+                black: { username: this.extractPlayerFromPGN(gameBlock, 'Black') },
+                winner: this.extractResultFromPGN(gameBlock),
+                timeControl: this.extractTimeControlFromPGN(gameBlock),
               })
             } else {
               // Skip unrecognized blocks
@@ -396,9 +514,19 @@ export class AutoImportService {
 
   // Fetch games from Chess.com
   private static async fetchChessComGames(
-    username: string, 
+    username: string,
     maxGames: number
-  ): Promise<Array<{ id: string; pgn: string; date: string }>> {
+  ): Promise<
+    Array<{
+      id: string
+      pgn: string
+      date: string
+      white?: any
+      black?: any
+      winner?: string
+      timeControl?: string
+    }>
+  > {
     try {
       // Chess.com API requires multiple calls for different time periods
       const games = []
@@ -412,7 +540,7 @@ export class AutoImportService {
 
         try {
           const response = await fetch(
-            `https://api.chess.com/pub/player/${username}/games/${year}/${month}`
+            `http://localhost:8002/proxy/chess-com/${username}/games/${year}/${month}`
           )
 
           if (response.ok) {
@@ -420,15 +548,21 @@ export class AutoImportService {
             if (data.games) {
               for (const game of data.games) {
                 if (games.length >= maxGames) break
-                
+
                 if (game.pgn) {
                   // Log the full PGN to debug the format
                   console.log('Chess.com PGN sample:', game.pgn.substring(0, 1000) + '...')
-                  
+
                   games.push({
                     id: game.url?.split('/').pop() || `${username}-${Date.now()}-${Math.random()}`,
                     pgn: game.pgn,
-                    date: game.end_time ? new Date(game.end_time * 1000).toISOString() : new Date().toISOString()
+                    date: game.end_time
+                      ? new Date(game.end_time * 1000).toISOString()
+                      : new Date().toISOString(),
+                    white: { username: game.white?.username },
+                    black: { username: game.black?.username },
+                    winner: game.white?.result || game.black?.result,
+                    timeControl: game.time_class || 'Unknown',
                   })
                 }
               }
@@ -472,7 +606,7 @@ export class AutoImportService {
       return {
         isImported: true,
         totalGames: data.total_games || 0,
-        lastImportDate: data.updated_at
+        lastImportDate: data.updated_at,
       }
     } catch (error) {
       console.error('Error getting import status:', error)
@@ -487,13 +621,165 @@ export class AutoImportService {
     onProgress?: (progress: ImportProgress) => void
   ): Promise<ImportResult> {
     // First clear existing data
-    await supabase
-      .from('game_features')
-      .delete()
-      .eq('user_id', username)
-      .eq('platform', platform)
+    await supabase.from('game_features').delete().eq('user_id', username).eq('platform', platform)
 
     // Then import fresh
     return await this.importLast100Games(username, platform, onProgress)
+  }
+
+  // Parse PGN to extract game information for database storage
+  private static parsePGNForGameInfo(
+    pgn: string,
+    username: string
+  ): {
+    result: string
+    color: string
+    timeControl: string
+    opening: string
+    openingFamily: string
+    opponentRating: number | null
+    myRating: number | null
+    playedAt: string
+  } {
+    try {
+      // Extract headers from PGN
+      const headers: { [key: string]: string } = {}
+      const headerLines = pgn.split('\n').filter(line => line.startsWith('[') && line.endsWith(']'))
+
+      for (const line of headerLines) {
+        const match = line.match(/\[(\w+)\s+"([^"]+)"/)
+        if (match) {
+          headers[match[1]] = match[2]
+        }
+      }
+
+      // Determine result
+      let result = 'draw'
+      if (headers.Result) {
+        if (headers.Result === '1-0') {
+          result = 'win'
+        } else if (headers.Result === '0-1') {
+          result = 'loss'
+        }
+      }
+
+      // Determine player color
+      let color = 'white'
+      if (headers.Black === username) {
+        color = 'black'
+        // If we're black and lost, it's a loss; if we won, it's a win
+        if (headers.Result === '0-1') {
+          result = 'win'
+        } else if (headers.Result === '1-0') {
+          result = 'loss'
+        }
+      }
+
+      // Extract time control
+      const timeControl = headers.TimeControl || headers.Time || 'Unknown'
+
+      // Extract opening information
+      const opening = headers.Opening || 'Unknown'
+      const openingFamily = this.categorizeOpening(opening)
+
+      // Extract ratings
+      const myRating =
+        color === 'white'
+          ? headers.WhiteElo
+            ? parseInt(headers.WhiteElo)
+            : null
+          : headers.BlackElo
+            ? parseInt(headers.BlackElo)
+            : null
+
+      const opponentRating =
+        color === 'white'
+          ? headers.BlackElo
+            ? parseInt(headers.BlackElo)
+            : null
+          : headers.WhiteElo
+            ? parseInt(headers.WhiteElo)
+            : null
+
+      // Extract date
+      const playedAt = headers.UTCDate || headers.Date || new Date().toISOString()
+
+      return {
+        result,
+        color,
+        timeControl,
+        opening,
+        openingFamily,
+        opponentRating,
+        myRating,
+        playedAt,
+      }
+    } catch (error) {
+      console.error('Error parsing PGN:', error)
+      // Return default values if parsing fails
+      return {
+        result: 'draw',
+        color: 'white',
+        timeControl: 'Unknown',
+        opening: 'Unknown',
+        openingFamily: 'Unknown',
+        opponentRating: null,
+        myRating: null,
+        playedAt: new Date().toISOString(),
+      }
+    }
+  }
+
+  // Categorize opening into family
+  private static categorizeOpening(opening: string): string {
+    const openingLower = opening.toLowerCase()
+
+    if (openingLower.includes('sicilian')) return 'Sicilian Defense'
+    if (openingLower.includes('french')) return 'French Defense'
+    if (openingLower.includes('catalan')) return 'Catalan Opening'
+    if (openingLower.includes("queen's gambit") || openingLower.includes('queens gambit'))
+      return "Queen's Gambit"
+    if (openingLower.includes("king's indian") || openingLower.includes('kings indian'))
+      return "King's Indian Defense"
+    if (openingLower.includes('italian')) return 'Italian Game'
+    if (openingLower.includes('english')) return 'English Opening'
+    if (openingLower.includes('caro-kann')) return 'Caro-Kann Defense'
+    if (openingLower.includes('pirc')) return 'Pirc Defense'
+    if (openingLower.includes('dutch')) return 'Dutch Defense'
+    if (openingLower.includes('nimzo-indian') || openingLower.includes('nimzo indian'))
+      return 'Nimzo-Indian Defense'
+    if (openingLower.includes('grünfeld') || openingLower.includes('gruenfeld'))
+      return 'Grünfeld Defense'
+    if (openingLower.includes('benoni')) return 'Benoni Defense'
+    if (openingLower.includes('scandinavian')) return 'Scandinavian Defense'
+    if (openingLower.includes('alekhine')) return 'Alekhine Defense'
+    if (openingLower.includes('modern')) return 'Modern Defense'
+    if (openingLower.includes('reti')) return 'Réti Opening'
+    if (openingLower.includes('bird')) return 'Bird Opening'
+    if (openingLower.includes('larsen')) return 'Larsen Opening'
+    if (openingLower.includes('bogo-indian') || openingLower.includes('bogo indian'))
+      return 'Bogo-Indian Defense'
+    if (openingLower.includes("queen's indian") || openingLower.includes('queens indian'))
+      return "Queen's Indian Defense"
+
+    return 'Other'
+  }
+
+  // Helper method to extract player name from PGN
+  private static extractPlayerFromPGN(pgn: string, color: 'White' | 'Black'): string | undefined {
+    const match = pgn.match(new RegExp(`\\[${color}\\s+"([^"]+)"`))
+    return match ? match[1] : undefined
+  }
+
+  // Helper method to extract result from PGN
+  private static extractResultFromPGN(pgn: string): string | undefined {
+    const match = pgn.match(/\[Result\s+"([^"]+)"/)
+    return match ? match[1] : undefined
+  }
+
+  // Helper method to extract time control from PGN
+  private static extractTimeControlFromPGN(pgn: string): string {
+    const timeMatch = pgn.match(/\[TimeControl\s+"([^"]+)"/)
+    return timeMatch ? timeMatch[1] : 'Unknown'
   }
 }

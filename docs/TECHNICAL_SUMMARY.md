@@ -16,21 +16,23 @@ Frontend (React) → FastAPI Backend → Stockfish Engine → Supabase Database
 
 #### 2. API Layer
 - **Technology**: FastAPI (Python)
-- **File**: `python/main.py`
+- **File**: `python/core/api_server.py` (unified system)
 - **Features**: 
   - RESTful endpoints
   - Background task processing
   - Rate limiting
-  - JWT authentication
+  - JWT authentication (optional via AUTH_ENABLED env var)
+  - Unified analysis engine integration
 
 #### 3. Analysis Engine
 - **Technology**: Stockfish 17.1 + Python wrapper
-- **File**: `python/chess_analysis_service.py`
+- **File**: `python/core/analysis_engine.py`
 - **Features**:
   - Position evaluation
   - Move quality assessment
   - Game analysis
   - PGN parsing
+  - Unified configuration system
 
 #### 4. Database Layer
 - **Technology**: Supabase (PostgreSQL)
@@ -66,7 +68,7 @@ class ChessAnalysisService:
     def __init__(self, stockfish_path: Optional[str] = None):
         self.stockfish = Stockfish(path=stockfish_path)
         self.stockfish.set_depth(12)
-        self.stockfish.set_skill_level(20)
+        self.stockfish.set_skill_level(8)
     
     def analyze_position(self, fen: str) -> Dict
     def analyze_move(self, board: chess.Board, move: chess.Move) -> MoveAnalysis
@@ -179,9 +181,11 @@ CREATE TABLE game_analyses (
 ## Security
 
 ### Authentication
-- **JWT Tokens**: Supabase JWT authentication
+- **JWT Tokens**: Supabase JWT authentication (optional)
 - **User Isolation**: RLS policies ensure users only see their data
 - **Rate Limiting**: 2 requests per minute per IP
+- **Configurable**: Authentication can be enabled/disabled via `AUTH_ENABLED` environment variable
+- **Development Mode**: Authentication disabled by default for easier development
 
 ### Data Protection
 - **Row Level Security**: Database-level access control
@@ -268,8 +272,66 @@ npm run dev
 - **Performance Monitoring**: Track system resources
 - **Database Queries**: Check data integrity
 
+## Personality Analysis System
+
+### Improved Trait Score Calculations
+
+The system now uses sophisticated algorithms to calculate six personality traits that better reflect actual chess playing styles:
+
+#### 1. Tactical Score (0-100)
+- **Formula**: `base_score + positive_bonus + pattern_bonus`
+- **Base Score**: `100 - (blunders * 15 + mistakes * 8) / total_moves`
+- **Positive Bonus**: `(brilliant_moves * 20 + best_moves * 5) / total_moves`
+- **Pattern Bonus**: `min(20, tactical_patterns_count * 2 / total_moves)`
+- **Improvements**: Considers both positive and negative indicators, includes tactical patterns
+
+#### 2. Positional Score (0-100)
+- **Formula**: `(base_score * centipawn_factor) + pattern_bonus`
+- **Base Score**: `100 - (inaccuracies * 3 + mistakes * 6 + blunders * 12) / total_moves`
+- **Centipawn Factor**: `max(0, 1 - (avg_centipawn_loss / 100))`
+- **Pattern Bonus**: `min(25, positional_patterns_count * 3 / total_moves)`
+- **Improvements**: Uses centipawn loss for accuracy, includes positional patterns
+
+#### 3. Aggressive Score (0-100)
+- **Formula**: `(base_aggression * 0.4) + (move_score * 0.4) + (sacrifice_bonus * 0.2)`
+- **Base Aggression**: `aggressiveness_index * 100`
+- **Move Score**: `(brilliant_moves * 15 + tactical_moves * 3 + king_attacks * 8) / total_moves`
+- **Sacrifice Bonus**: `min(30, material_sacrifices * 5)`
+- **Improvements**: Uses dedicated aggressiveness metrics and material sacrifices
+
+#### 4. Patient Score (0-100)
+- **Formula**: `base_score * time_factor + endgame_accuracy * 20`
+- **Base Score**: `100 - (blunders * 12 + mistakes * 6 + inaccuracies * 2) / total_moves`
+- **Time Factor**: `time_management_score / 100`
+- **Endgame Accuracy**: `best_moves_in_endgame / endgame_moves`
+- **Improvements**: Incorporates time management and endgame performance
+
+#### 5. Novelty Score (0-100)
+- **Formula**: `creative_score + unorthodox_score + diversity_score`
+- **Creative Score**: `(creative_moves / total_moves) * 60`
+- **Unorthodox Score**: `(unorthodox_moves / total_moves) * 30`
+- **Diversity Score**: `min(20, unique_move_types * 5)`
+- **Improvements**: Measures actual creativity and move diversity
+
+#### 6. Staleness Score (0-100)
+- **Formula**: `(pattern_staleness * 0.6) + (opening_staleness_score * 0.4)`
+- **Pattern Staleness**: `100 - pattern_diversity`
+- **Opening Staleness**: `opening_ratio * 40 + opening_repetition * 30`
+- **Improvements**: Analyzes pattern repetition and opening variety
+
+### Key Improvements Over Previous System
+
+1. **Multi-dimensional Analysis**: Each trait now considers multiple factors instead of single metrics
+2. **Positive Reinforcement**: Rewards good play, not just penalizes mistakes
+3. **Pattern Recognition**: Incorporates tactical and positional pattern analysis
+4. **Contextual Factors**: Uses time management, material sacrifices, and other advanced metrics
+5. **Balanced Scoring**: More sophisticated logic beyond simple linear penalties
+6. **Realistic Ranges**: Ensures scores stay within meaningful 0-100 bounds
+
 ## Conclusion
 
 The Stockfish integration provides a robust, scalable chess analysis system with professional-grade accuracy. The architecture supports multiple users, concurrent analysis, and detailed move-by-move evaluation, making it a powerful tool for chess improvement and analysis.
+
+The improved personality analysis system now provides much more accurate and meaningful trait scores that better reflect actual chess playing styles and abilities, utilizing the full richness of the available move analysis data.
 
 The system is production-ready with comprehensive error handling, security measures, and monitoring capabilities, ensuring reliable operation in a real-world environment.

@@ -1,5 +1,5 @@
 // Match History Component - Shows recent games in a table format
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
 interface Game {
@@ -37,7 +37,6 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
       setLoading(true)
       setError(null)
 
-
       const { data, error: dbError } = await supabase
         .from('games')
         .select('*')
@@ -72,19 +71,27 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
 
   const getResultColor = (result: string) => {
     switch (result) {
-      case 'win': return 'text-green-600'
-      case 'loss': return 'text-red-600'
-      case 'draw': return 'text-gray-600'
-      default: return 'text-gray-600'
+      case 'win':
+        return 'text-green-600'
+      case 'loss':
+        return 'text-red-600'
+      case 'draw':
+        return 'text-gray-600'
+      default:
+        return 'text-gray-600'
     }
   }
 
   const getResultIcon = (result: string) => {
     switch (result) {
-      case 'win': return '✓'
-      case 'loss': return '✗'
-      case 'draw': return '='
-      default: return '?'
+      case 'win':
+        return '✓'
+      case 'loss':
+        return '✗'
+      case 'draw':
+        return '='
+      default:
+        return '?'
     }
   }
 
@@ -93,7 +100,7 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric'
+      year: 'numeric',
     })
   }
 
@@ -101,7 +108,7 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
     const date = new Date(dateString)
     return date.toLocaleTimeString('en-US', {
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     })
   }
 
@@ -144,9 +151,7 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-gray-800">Match History</h2>
-          <div className="text-sm text-gray-500">
-            {games.length} games loaded
-          </div>
+          <div className="text-sm text-gray-500">{games.length} games loaded</div>
         </div>
 
         <div className="overflow-x-auto">
@@ -157,14 +162,16 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
                 <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">Result</th>
                 <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">Color</th>
                 <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">Opponent</th>
-                <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">Time Control</th>
+                <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">
+                  Time Control
+                </th>
                 <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">Opening</th>
                 <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">Moves</th>
                 <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">Rating</th>
               </tr>
             </thead>
             <tbody>
-              {games.map((game) => (
+              {games.map(game => (
                 <tr key={game.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-3 px-2 text-sm text-gray-600">
                     <div>{formatDate(game.played_at)}</div>
@@ -175,23 +182,15 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
                       {getResultIcon(game.result)} {game.result.toUpperCase()}
                     </span>
                   </td>
-                  <td className="py-3 px-2 text-sm text-gray-600 capitalize">
-                    {game.color}
-                  </td>
-                  <td className="py-3 px-2 text-sm text-gray-900">
-                    {game.opponent}
-                  </td>
-                  <td className="py-3 px-2 text-sm text-gray-600">
-                    {game.time_control}
-                  </td>
+                  <td className="py-3 px-2 text-sm text-gray-600 capitalize">{game.color}</td>
+                  <td className="py-3 px-2 text-sm text-gray-900">{game.opponent}</td>
+                  <td className="py-3 px-2 text-sm text-gray-600">{game.time_control}</td>
                   <td className="py-3 px-2 text-sm text-gray-600">
                     <div className="max-w-32 truncate" title={game.opening_family}>
                       {game.opening_family || 'Unknown'}
                     </div>
                   </td>
-                  <td className="py-3 px-2 text-sm text-gray-600">
-                    {game.moves}
-                  </td>
+                  <td className="py-3 px-2 text-sm text-gray-600">{game.moves}</td>
                   <td className="py-3 px-2 text-sm text-gray-600">
                     <div>{game.rating}</div>
                     <div className="text-xs text-gray-400">vs {game.opponent_rating}</div>

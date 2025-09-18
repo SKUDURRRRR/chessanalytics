@@ -62,12 +62,17 @@ foreach ($file in $frontendFiles) {
     }
 }
 
+# Change to the python directory where the core module is located
+Write-Host "Changing to python directory..." -ForegroundColor Yellow
+Set-Location python
+Write-Host "Current directory: $(Get-Location)" -ForegroundColor Cyan
+
 # Start the appropriate server
 Write-Host "Starting backend server..." -ForegroundColor Yellow
 
 if ($ServerType -eq "simple") {
     # Start simple analysis server
-    $serverPath = "python/simple_analysis_server.py"
+    $serverPath = "simple_analysis_server.py"
     if (Test-Path $serverPath) {
         # Update the port in the server file
         $serverContent = Get-Content $serverPath -Raw
@@ -81,17 +86,11 @@ if ($ServerType -eq "simple") {
         exit 1
     }
 } elseif ($ServerType -eq "main") {
-    # Start main server
-    $serverPath = "python/main.py"
-    if (Test-Path $serverPath) {
-        Write-Host "Starting main server on port $Port..." -ForegroundColor Cyan
-        $env:SUPABASE_URL = "https://nkeaifrhtyigfmicfwch.supabase.co"
-        $env:SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5rZWFpZnJodHlpZ2ZtaWNmd2NoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ0NzQwMDAsImV4cCI6MjA1MDA1MDAwMH0.Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8"
-        Start-Process python -ArgumentList $serverPath -WindowStyle Normal
-    } else {
-        Write-Host "❌ Could not find $serverPath" -ForegroundColor Red
-        exit 1
-    }
+    # Start main server using the core API server
+    Write-Host "Starting core API server on port $Port..." -ForegroundColor Cyan
+    $env:SUPABASE_URL = "https://your-project.supabase.co"
+    $env:SUPABASE_ANON_KEY = "your-anon-key-here"
+    Start-Process python -ArgumentList "-m", "core.api_server" -WindowStyle Normal
 } else {
     Write-Host "❌ Unknown server type: $ServerType" -ForegroundColor Red
     Write-Host "Valid options: 'simple' or 'main'" -ForegroundColor Yellow
