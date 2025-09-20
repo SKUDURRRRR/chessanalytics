@@ -1,5 +1,7 @@
 // Auto Import Service - Automatically import games for new players
 import { supabase } from '../lib/supabase'
+import { normalizeUserId } from '../lib/security'
+import { config } from '../lib/config'
 
 export interface ImportProgress {
   status: 'starting' | 'importing' | 'completed' | 'error'
@@ -12,20 +14,27 @@ export interface ImportResult {
   success: boolean
   message: string
   importedGames: number
+  errorCount?: number
   errors?: string[]
 }
 
+const API_BASE_URL = config.getApi().baseUrl
+const buildApiUrl = (path: string) => new URL(path, API_BASE_URL).toString()
+
 export class AutoImportService {
+
   // Validate that a user exists on the specified platform
   static async validateUserOnPlatform(
     username: string,
     platform: 'lichess' | 'chess.com'
   ): Promise<{ exists: boolean; userInfo?: any }> {
+
     try {
+      const normalizedUsername = normalizeUserId(username, platform)
       if (platform === 'lichess') {
-        return await this.validateLichessUser(username)
+        return await this.validateLichessUser(normalizedUsername)
       } else {
-        return await this.validateChessComUser(username)
+        return await this.validateChessComUser(normalizedUsername)
       }
     } catch (error) {
       console.error('Error validating user:', error)
@@ -59,7 +68,8 @@ export class AutoImportService {
     username: string
   ): Promise<{ exists: boolean; userInfo?: any }> {
     try {
-      const response = await fetch(`http://localhost:8002/proxy/chess-com/${username}`)
+      const normalizedUsername = username.trim().toLowerCase()
+      const response = await fetch(buildApiUrl(`/proxy/chess-com/${normalizedUsername}`))
 
       if (response.ok) {
         const userInfo = await response.json()
@@ -84,10 +94,11 @@ export class AutoImportService {
     platform: 'lichess' | 'chess.com'
   ): Promise<boolean> {
     try {
+      const normalizedUsername = normalizeUserId(username, platform)
       const { data, error } = await supabase
         .from('user_profiles')
         .select('user_id')
-        .eq('user_id', username)
+        .eq('user_id', normalizedUsername)
         .eq('platform', platform)
         .single()
 
@@ -110,8 +121,14 @@ export class AutoImportService {
     platform: 'lichess' | 'chess.com',
     onProgress?: (progress: ImportProgress) => void
   ): Promise<ImportResult> {
+    const displayName = username.trim()
+    const normalizedUsername = normalizeUserId(username, platform)
+    let savedGames = 0
+    let errorCount = 0
+    const errorMessages: string[] = []
+
     try {
-      console.log(`Starting import for ${username} on ${platform}`)
+      console.log(`Starting import for ${displayName} on ${platform}`)
 
       onProgress?.({
         status: 'starting',
@@ -120,15 +137,15 @@ export class AutoImportService {
         importedGames: 0,
       })
 
-      // Validate user exists
-      const validation = await this.validateUserOnPlatform(username, platform)
+      // Validate user exists (keep original display name for API call)
+      const validation = await this.validateUserOnPlatform(displayName, platform)
       console.log('User validation result:', validation)
 
       if (!validation.exists) {
-        console.log(`User ${username} not found on ${platform}`)
+        console.log(`User ${displayName} not found on ${platform}`)
         return {
           success: false,
-          message: `User "${username}" not found on ${platform === 'chess.com' ? 'Chess.com' : 'Lichess'}`,
+          message: `User "${displayName}" not found on ${platform === 'chess.com' ? 'Chess.com' : 'Lichess'}`,
           importedGames: 0,
         }
       }
@@ -140,16 +157,16 @@ export class AutoImportService {
         importedGames: 0,
       })
 
-      // Fetch games from platform
-      console.log(`Fetching games for ${username} from ${platform}`)
-      const games = await this.fetchGamesFromPlatform(username, platform, 100)
+      // Fetch games from platform using normalized username
+      console.log(`Fetching games for ${normalizedUsername} from ${platform}`)
+      const games = await this.fetchGamesFromPlatform(normalizedUsername, platform, 100)
       console.log(`Fetched ${games.length} games`)
 
       if (games.length === 0) {
-        console.log(`No games found for ${username} on ${platform}`)
+        console.log(`No games found for ${normalizedUsername} on ${platform}`)
         return {
           success: false,
-          message: `No games found for user "${username}" on ${platform}`,
+          message: `No games found for user "${displayName}" on ${platform}`,
           importedGames: 0,
         }
       }
@@ -161,23 +178,20 @@ export class AutoImportService {
         importedGames: 0,
       })
 
-      // Create or get profile
-      // First check if profile exists, then either update or insert
       let { data: existingProfile, error: _checkError } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('user_id', username)
+        .eq('user_id', normalizedUsername)
         .eq('platform', platform)
         .single()
 
       let profileError
 
       if (existingProfile) {
-        // Update existing record
         const { data: _updateData, error: updateError } = await supabase
           .from('user_profiles')
           .update({
-            display_name: validation.userInfo?.username || username,
+            display_name: validation.userInfo?.username || displayName,
             current_rating:
               validation.userInfo?.perfs?.classical?.rating ||
               validation.userInfo?.perfs?.rapid?.rating ||
@@ -187,21 +201,19 @@ export class AutoImportService {
             win_rate: 0,
             last_accessed: new Date().toISOString(),
           })
-          .eq('user_id', username)
+          .eq('user_id', normalizedUsername)
           .eq('platform', platform)
           .select()
           .single()
 
-        // Profile updated successfully
         profileError = updateError
       } else {
-        // Insert new record
         const { data: _insertData, error: insertError } = await supabase
           .from('user_profiles')
           .insert({
-            user_id: username,
+            user_id: normalizedUsername,
             platform: platform,
-            display_name: validation.userInfo?.username || username,
+            display_name: validation.userInfo?.username || displayName,
             current_rating:
               validation.userInfo?.perfs?.classical?.rating ||
               validation.userInfo?.perfs?.rapid?.rating ||
@@ -213,7 +225,6 @@ export class AutoImportService {
           .select()
           .single()
 
-        // Profile created successfully
         profileError = insertError
       }
 
@@ -233,17 +244,12 @@ export class AutoImportService {
         importedGames: 0,
       })
 
-      // Step 1: Extract structured data from PGN and save to games table first
-      let savedGames = 0
-      let errors = 0
-
       for (const game of games) {
         try {
-          // Parse PGN to extract game information
-          const gameInfo = this.parsePGNForGameInfo(game.pgn, username)
+          const gameInfo = this.parsePGNForGameInfo(game.pgn, normalizedUsername)
 
           const { error: gameError } = await supabase.from('games').upsert({
-            user_id: username,
+            user_id: normalizedUsername,
             platform: platform,
             provider_game_id: game.id,
             result: gameInfo.result,
@@ -259,17 +265,18 @@ export class AutoImportService {
 
           if (gameError) {
             console.error(`Error saving structured data for game ${game.id}:`, gameError)
-            errors++
+            errorCount++
+            errorMessages.push(`games.upsert failed for ${game.id}: ${gameError.message ?? 'Unknown error'}`)
           } else {
             savedGames++
           }
         } catch (err) {
           console.error(`Error processing game ${game.id}:`, err)
-          errors++
+          errorCount++
+          errorMessages.push(`parse failed for ${game.id}: ${err instanceof Error ? err.message : 'Unknown error'}`)
         }
       }
 
-      // Step 2: Save raw PGN data to games_pgn table (after games table has the records)
       if (savedGames > 0) {
         console.log(`Saving PGN data for ${savedGames} games...`)
 
@@ -282,9 +289,8 @@ export class AutoImportService {
 
         for (const game of games) {
           try {
-            // Save raw PGN to games_pgn table
             const { error: pgnError } = await supabase.from('games_pgn').upsert({
-              user_id: username,
+              user_id: normalizedUsername,
               platform: platform,
               provider_game_id: game.id,
               pgn: game.pgn,
@@ -293,9 +299,11 @@ export class AutoImportService {
 
             if (pgnError) {
               console.error(`Error saving PGN for game ${game.id}:`, pgnError)
+              errorMessages.push(`games_pgn.upsert failed for ${game.id}: ${pgnError.message ?? 'Unknown error'}`)
             }
           } catch (err) {
             console.error(`Error saving PGN for game ${game.id}:`, err)
+            errorMessages.push(`games_pgn.upsert threw for ${game.id}: ${err instanceof Error ? err.message : 'Unknown error'}`)
           }
         }
       }
@@ -307,14 +315,21 @@ export class AutoImportService {
         importedGames: savedGames,
       })
 
-      // Update profile with final stats
+      const { count: totalGamesCount } = await supabase
+        .from('games')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', normalizedUsername)
+        .eq('platform', platform)
+
+      const totalGames = typeof totalGamesCount === 'number' ? totalGamesCount : savedGames
+
       await supabase
         .from('user_profiles')
         .update({
-          total_games: savedGames,
+          total_games: totalGames,
           last_accessed: new Date().toISOString(),
         })
-        .eq('user_id', username)
+        .eq('user_id', normalizedUsername)
         .eq('platform', platform)
 
       onProgress?.({
@@ -324,9 +339,8 @@ export class AutoImportService {
         importedGames: savedGames,
       })
 
-      // Trigger basic analysis for the imported games
       try {
-        const analysisResult = await this.triggerBasicAnalysis(username, platform, savedGames)
+        const analysisResult = await this.triggerBasicAnalysis(normalizedUsername, platform, savedGames)
         console.log('Basic analysis result:', analysisResult)
       } catch (analysisError) {
         console.warn('Basic analysis failed, but import was successful:', analysisError)
@@ -343,21 +357,26 @@ export class AutoImportService {
         success: true,
         message: `Successfully imported ${savedGames} games and started analysis`,
         importedGames: savedGames,
-        errors: errors as unknown as string[],
+        errorCount,
+        errors: errorMessages,
       }
     } catch (error) {
       console.error('Error importing games:', error)
+      const failureMessage = `Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      errorMessages.push(failureMessage)
       onProgress?.({
         status: 'error',
-        message: `Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: failureMessage,
         progress: 0,
         importedGames: 0,
       })
 
       return {
         success: false,
-        message: `Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        importedGames: 0,
+        message: failureMessage,
+        importedGames: savedGames,
+        errorCount,
+        errors: errorMessages,
       }
     }
   }
@@ -369,18 +388,18 @@ export class AutoImportService {
     gameCount: number
   ): Promise<{ success: boolean; message: string }> {
     try {
-      // Call the backend analysis API with basic analysis type
+      const normalizedUsername = normalizeUserId(username, platform)
       const response = await fetch(
-        `${import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'}/analyze-games`,
+        buildApiUrl('/api/v1/analyze'),
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            user_id: username,
+            user_id: normalizedUsername,
             platform: platform,
-            analysis_type: 'basic', // Use basic analysis, not Stockfish
+            analysis_type: 'basic',
             limit: gameCount,
             skill_level: 8,
           }),
@@ -405,10 +424,11 @@ export class AutoImportService {
     platform: 'lichess' | 'chess.com',
     maxGames: number
   ): Promise<Array<{ id: string; pgn: string; date: string }>> {
+    const normalizedUsername = normalizeUserId(username, platform)
     if (platform === 'lichess') {
-      return await this.fetchLichessGames(username, maxGames)
+      return await this.fetchLichessGames(normalizedUsername, maxGames)
     } else {
-      return await this.fetchChessComGames(username, maxGames)
+      return await this.fetchChessComGames(normalizedUsername, maxGames)
     }
   }
 
@@ -528,6 +548,7 @@ export class AutoImportService {
     }>
   > {
     try {
+      const canonicalUsername = username.trim().toLowerCase()
       // Chess.com API requires multiple calls for different time periods
       const games = []
       const currentDate = new Date()
@@ -540,7 +561,7 @@ export class AutoImportService {
 
         try {
           const response = await fetch(
-            `http://localhost:8002/proxy/chess-com/${username}/games/${year}/${month}`
+            buildApiUrl(`/proxy/chess-com/${canonicalUsername}/games/${year}/${month}`)
           )
 
           if (response.ok) {
@@ -554,7 +575,7 @@ export class AutoImportService {
                   console.log('Chess.com PGN sample:', game.pgn.substring(0, 1000) + '...')
 
                   games.push({
-                    id: game.url?.split('/').pop() || `${username}-${Date.now()}-${Math.random()}`,
+                    id: game.url?.split('/').pop() || `${canonicalUsername}-${Date.now()}-${Math.random()}`,
                     pgn: game.pgn,
                     date: game.end_time
                       ? new Date(game.end_time * 1000).toISOString()
@@ -592,10 +613,11 @@ export class AutoImportService {
     lastImportDate?: string
   }> {
     try {
+      const normalizedUsername = normalizeUserId(username, platform)
       const { data, error } = await supabase
         .from('user_profiles')
         .select('total_games, updated_at')
-        .eq('user_id', username)
+        .eq('user_id', normalizedUsername)
         .eq('platform', platform)
         .single()
 
@@ -620,11 +642,15 @@ export class AutoImportService {
     platform: 'lichess' | 'chess.com',
     onProgress?: (progress: ImportProgress) => void
   ): Promise<ImportResult> {
-    // First clear existing data
-    await supabase.from('game_features').delete().eq('user_id', username).eq('platform', platform)
+    const normalizedUsername = normalizeUserId(username, platform)
 
-    // Then import fresh
-    return await this.importLast100Games(username, platform, onProgress)
+    await supabase
+      .from('game_features')
+      .delete()
+      .eq('user_id', normalizedUsername)
+      .eq('platform', platform)
+
+    return await this.importLast100Games(normalizedUsername, platform, onProgress)
   }
 
   // Parse PGN to extract game information for database storage
@@ -642,6 +668,8 @@ export class AutoImportService {
     playedAt: string
   } {
     try {
+      const canonicalUsername = username.trim().toLowerCase()
+
       // Extract headers from PGN
       const headers: { [key: string]: string } = {}
       const headerLines = pgn.split('\n').filter(line => line.startsWith('[') && line.endsWith(']'))
@@ -665,9 +693,8 @@ export class AutoImportService {
 
       // Determine player color
       let color = 'white'
-      if (headers.Black === username) {
+      if ((headers.Black || '').toLowerCase() === canonicalUsername) {
         color = 'black'
-        // If we're black and lost, it's a loss; if we won, it's a win
         if (headers.Result === '0-1') {
           result = 'win'
         } else if (headers.Result === '1-0') {

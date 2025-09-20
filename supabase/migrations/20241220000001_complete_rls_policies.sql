@@ -23,6 +23,28 @@ DROP POLICY IF EXISTS "Users can insert own game features" ON game_features;
 DROP POLICY IF EXISTS "Users can update own game features" ON game_features;
 DROP POLICY IF EXISTS "Users can delete own game features" ON game_features;
 
+-- Drop previously standardized policy names if present
+DROP POLICY IF EXISTS "games_select_own" ON games;
+DROP POLICY IF EXISTS "games_insert_own" ON games;
+DROP POLICY IF EXISTS "games_update_own" ON games;
+DROP POLICY IF EXISTS "games_delete_own" ON games;
+DROP POLICY IF EXISTS "user_profiles_select_all" ON user_profiles;
+DROP POLICY IF EXISTS "user_profiles_insert_own" ON user_profiles;
+DROP POLICY IF EXISTS "user_profiles_update_own" ON user_profiles;
+DROP POLICY IF EXISTS "user_profiles_delete_own" ON user_profiles;
+DROP POLICY IF EXISTS "game_analyses_select_all" ON game_analyses;
+DROP POLICY IF EXISTS "game_analyses_insert_own" ON game_analyses;
+DROP POLICY IF EXISTS "game_analyses_update_own" ON game_analyses;
+DROP POLICY IF EXISTS "game_analyses_delete_own" ON game_analyses;
+DROP POLICY IF EXISTS "move_analyses_select_all" ON move_analyses;
+DROP POLICY IF EXISTS "move_analyses_insert_own" ON move_analyses;
+DROP POLICY IF EXISTS "move_analyses_update_own" ON move_analyses;
+DROP POLICY IF EXISTS "move_analyses_delete_own" ON move_analyses;
+DROP POLICY IF EXISTS "game_features_select_all" ON game_features;
+DROP POLICY IF EXISTS "game_features_insert_own" ON game_features;
+DROP POLICY IF EXISTS "game_features_update_own" ON game_features;
+DROP POLICY IF EXISTS "game_features_delete_own" ON game_features;
+
 -- ============================================================================
 -- 2. GAMES TABLE RLS POLICIES
 -- ============================================================================

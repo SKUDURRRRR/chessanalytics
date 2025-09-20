@@ -42,7 +42,7 @@ SELECT
     user_id,
     platform,
     COALESCE(analysis_method, 'stockfish') as analysis_type,
-    COALESCE(accuracy, best_move_percentage) as accuracy,
+    COALESCE(best_move_percentage, 0) as accuracy,
     -- Calculate blunders, mistakes, inaccuracies from moves_analysis JSONB
     (SELECT COUNT(*) FROM jsonb_array_elements(moves_analysis) WHERE value->>'is_blunder' = 'true') as blunders,
     (SELECT COUNT(*) FROM jsonb_array_elements(moves_analysis) WHERE value->>'is_mistake' = 'true') as mistakes,
@@ -50,8 +50,9 @@ SELECT
     COALESCE(material_sacrifices, 0) as brilliant_moves,
     (SELECT COUNT(*) FROM jsonb_array_elements(moves_analysis) WHERE value->>'is_best' = 'true') as best_moves,
     -- Calculate opening accuracy from first 15 moves
-    (SELECT ROUND(
-        (COUNT(*) FILTER (WHERE value->>'is_best' = 'true')::FLOAT / NULLIF(COUNT(*), 0)) * 100, 1
+    (SELECT COALESCE(
+        (COUNT(*) FILTER (WHERE value->>'is_best' = 'true')::FLOAT / NULLIF(COUNT(*), 0)) * 100,
+        0
     ) FROM jsonb_array_elements(moves_analysis) 
     WHERE (value->>'opening_ply')::INT <= 15) as opening_accuracy,
     middle_game_accuracy,
@@ -76,11 +77,6 @@ SELECT
     processing_time_ms,
     stockfish_depth
 FROM move_analyses;
-
--- Create index on the view for better performance
-CREATE INDEX IF NOT EXISTS idx_unified_analyses_user_platform ON unified_analyses(user_id, platform);
-CREATE INDEX IF NOT EXISTS idx_unified_analyses_analysis_date ON unified_analyses(analysis_date DESC);
-CREATE INDEX IF NOT EXISTS idx_unified_analyses_analysis_type ON unified_analyses(analysis_type);
 
 -- Grant permissions
 GRANT SELECT ON unified_analyses TO authenticated;

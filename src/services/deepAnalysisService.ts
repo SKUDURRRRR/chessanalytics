@@ -417,7 +417,6 @@ function calculatePersonalityFromMoveAnalyses(
   const patient = moveAnalyses.reduce((sum, a) => sum + (a.patient_score || 0), 0) / totalAnalyses
   const endgame = moveAnalyses.reduce((sum, a) => sum + (a.endgame_score || 0), 0) / totalAnalyses
   const opening = moveAnalyses.reduce((sum, a) => sum + (a.opening_score || 0), 0) / totalAnalyses
-
   // Calculate novelty and staleness from move analysis data
   const novelty = calculateNoveltyScore(moveAnalyses)
   const staleness = calculateStalenessScore(moveAnalyses)

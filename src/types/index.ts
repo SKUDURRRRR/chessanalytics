@@ -40,8 +40,6 @@ export interface GameAnalysis {
   positional_score: number
   aggressive_score: number
   patient_score: number
-  endgame_score: number
-  opening_score: number
   novelty_score: number
   staleness_score: number
   tactical_patterns: any[]
@@ -72,8 +70,6 @@ export interface MoveAnalysis {
   positional_score: number
   aggressive_score: number
   patient_score: number
-  endgame_score: number
-  opening_score: number
   novelty_score: number
   staleness_score: number
   tactical_patterns: any[]
@@ -134,8 +130,6 @@ export interface AnalysisStats {
   average_positional_score: number
   average_aggressive_score: number
   average_patient_score: number
-  average_endgame_score: number
-  average_opening_score: number
   average_novelty_score: number
   average_staleness_score: number
 }
@@ -227,6 +221,7 @@ export interface ImportResult {
   imported: number
   errors: string[]
   message: string
+  errorCount?: number
 }
 
 // API request types

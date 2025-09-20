@@ -57,6 +57,11 @@ VITE_LOG_LEVEL=info
 - CORS properly configured
 - Error responses don't leak information
 
+### Logging Hygiene
+- Avoid logging Supabase URLs, keys, or other credentials in client or server logs.
+- Prefer feature flags or boolean indicators when verifying configuration (`NODE_ENV`, `LOG_LEVEL`).
+- Use dedicated diagnostics scripts (e.g. `npm run validate-env`) for environment troubleshooting instead of printing raw secrets.
+
 ## ⚠️ Security Considerations
 
 ### Development vs Production
@@ -108,3 +113,9 @@ The application sets appropriate security headers:
 - [Supabase Security Guide](https://supabase.com/docs/guides/auth/row-level-security)
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 - [CORS Security Guide](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
+
+
+### Development Diagnostics
+- `DatabaseDiagnosticsComponent` (and helpers in `src/components/debug/` and `src/utils/`) are for local troubleshooting only.
+- Import them manually during development; they throw if bundled in production builds.
+- Keep them out of deployed routes to avoid exposing database structure.

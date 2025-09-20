@@ -5,7 +5,6 @@
  * @module UnifiedAnalysisService
  */
 
-import { supabase } from '../lib/supabase'
 import {
   GameAnalysisSummary,
   AnalysisStats,

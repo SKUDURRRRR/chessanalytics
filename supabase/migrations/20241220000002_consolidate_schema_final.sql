@@ -4,7 +4,17 @@
 -- First, ensure all required tables exist
 -- (The individual table creation migrations should have run first)
 
+ALTER TABLE IF EXISTS game_analyses
+  ADD COLUMN IF NOT EXISTS endgame_score REAL;
+ALTER TABLE IF EXISTS game_analyses
+  ADD COLUMN IF NOT EXISTS opening_score REAL;
+ALTER TABLE IF EXISTS move_analyses
+  ADD COLUMN IF NOT EXISTS endgame_score REAL;
+ALTER TABLE IF EXISTS move_analyses
+  ADD COLUMN IF NOT EXISTS opening_score REAL;
+
 -- Update the combined_game_analysis view to handle missing tables gracefully
+DROP VIEW IF EXISTS combined_game_analysis CASCADE;
 CREATE OR REPLACE VIEW combined_game_analysis AS
 SELECT 
     ga.id as basic_analysis_id,
