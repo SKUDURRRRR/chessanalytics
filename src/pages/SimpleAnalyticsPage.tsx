@@ -7,6 +7,7 @@ import { MatchHistory } from '../components/simple/MatchHistory'
 import { DeepAnalysisBlock } from '../components/deep/DeepAnalysisBlock'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { AnalysisService } from '../services/analysisService'
+import { AutoImportService } from '../services/autoImportService'
 import DatabaseDiagnosticsComponent from '../components/debug/DatabaseDiagnostics'
 
 export default function SimpleAnalyticsPage() {
@@ -24,6 +25,9 @@ export default function SimpleAnalyticsPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [apiAvailable, setApiAvailable] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importStatus, setImportStatus] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
   const [showDebug, setShowDebug] = useState(false)
 
   useEffect(() => {
@@ -78,6 +82,37 @@ export default function SimpleAnalyticsPage() {
     const newSearchParams = new URLSearchParams(searchParams)
     newSearchParams.set('tab', tab)
     setSearchParams(newSearchParams, { replace: true })
+  }
+
+  const importGames = async () => {
+    if (!userId) {
+      return
+    }
+
+    try {
+      setImporting(true)
+      setImportError(null)
+      setImportStatus('Starting import...')
+
+      const result = await AutoImportService.importLast100Games(userId, platform, progress => {
+        setImportStatus(progress.message)
+      })
+
+      if (result.success) {
+        setImportStatus(`Imported ${result.importedGames} games. Refreshing...`)
+        handleRefresh()
+        setTimeout(() => setImportStatus(null), 3000)
+      } else {
+        const message = result.message || 'Import failed'
+        setImportError([message, ...(result.errors || [])].join(' – '))
+      }
+    } catch (error) {
+      console.error('Error importing games:', error)
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      setImportError(message)
+    } finally {
+      setImporting(false)
+    }
   }
 
   const startAnalysis = async () => {
@@ -141,7 +176,14 @@ export default function SimpleAnalyticsPage() {
               <span className="text-gray-400">•</span>
               <span className="capitalize font-medium">{platform}</span>
             </div>
-            <div className="flex items-center justify-center space-x-4">
+            <div className="flex items-center justify-center space-x-3">
+              <button
+                onClick={importGames}
+                disabled={importing}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+              >
+                {importing ? 'Importing...' : 'Import Games'}
+              </button>
               <button
                 onClick={startAnalysis}
                 disabled={analyzing || !apiAvailable}
@@ -161,6 +203,9 @@ export default function SimpleAnalyticsPage() {
                 </span>
               )}
             </div>
+            {importStatus && (
+              <div className="text-xs text-blue-600 pt-2">{importStatus}</div>
+            )}
           </div>
           <div className="w-32"></div> {/* Spacer for centering */}
         </div>
@@ -245,6 +290,15 @@ export default function SimpleAnalyticsPage() {
         </div>
       )}
 
+      {/* Import Error Message */}
+      {importError && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <div className="text-yellow-600">!</div>
+            <span className="text-yellow-800">{importError}</span>
+          </div>
+        </div>
+      )}
       {/* Analysis Error Message */}
       {analysisError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">

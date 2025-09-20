@@ -47,12 +47,12 @@ if config.database.url and config.database.anon_key:
     # Use service role key for move_analyses operations if available
     if config.database.service_role_key:
         supabase_service: Client = create_client(str(config.database.url), config.database.service_role_key)
-        print("✅ Using service role key for move_analyses operations")
+        print("Using service role key for move_analyses operations")
     else:
         supabase_service: Client = supabase
-        print("⚠️  Service role key not found, using anon key for move_analyses operations")
+        print("Service role key not found, using anon key for move_analyses operations")
 else:
-    print("⚠️  Database configuration not found. Using mock clients for development.")
+    print("[warn]  Database configuration not found. Using mock clients for development.")
     # Create mock clients for development
     supabase = None
     supabase_service = None
@@ -368,7 +368,7 @@ async def get_analysis_results(
         
         # Use unified view for consistent data access
         if not supabase and not supabase_service:
-            print("⚠️  Database not available. Returning empty results.")
+            print("[warn]  Database not available. Returning empty results.")
             return []
             
         if analysis_type in ["stockfish", "deep"]:
@@ -396,7 +396,7 @@ async def get_analysis_results(
         
         if not response.data or len(response.data) == 0:
             # Return mock data for development when no real data is available
-            print("📊 No data found, returning mock analysis results for development")
+            print("[stats] No data found, returning mock analysis results for development")
             return _get_mock_analysis_results()
         
         results = []
@@ -423,7 +423,7 @@ async def get_analysis_stats(
         
         # Use unified view for consistent data access
         if not supabase and not supabase_service:
-            print("⚠️  Database not available. Returning empty stats.")
+            print("[warn]  Database not available. Returning empty stats.")
             return _get_empty_stats()
             
         if analysis_type in ["stockfish", "deep"]:
@@ -447,7 +447,7 @@ async def get_analysis_stats(
         
         if not response.data or len(response.data) == 0:
             # Return mock data for development when no real data is available
-            print("📊 No data found, returning mock stats for development")
+            print("[stats] No data found, returning mock stats for development")
             return _get_mock_stats()
         
         return _calculate_unified_stats(response.data, analysis_type)
@@ -517,7 +517,7 @@ async def get_deep_analysis(
 # ============================================================================
 @app.post("/api/v1/import/games", response_model=BulkGameImportResponse)
 async def import_games(payload: BulkGameImportRequest):
-    """Import games and PGN data using service role credentials."
+    """Import games and PGN data using service role credentials."""
     if not supabase_service:
         raise HTTPException(status_code=503, detail="Database not configured for imports")
 
@@ -652,7 +652,7 @@ async def proxy_chess_com_user(username: str):
 
 
 def _normalize_played_at(value: Optional[str]) -> str:
-    """Ensure played_at values are ISO timestamps."
+    """Ensure played_at values are ISO timestamps."""
     if not value:
         return datetime.utcnow().isoformat()
     try:
@@ -830,7 +830,7 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             games_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).limit(limit).execute()
             games = games_response.data or []
         else:
-            print("⚠️  Database not available. Using mock data for development.")
+            print("[warn]  Database not available. Using mock data for development.")
             games = []
         
         if not games:
@@ -904,7 +904,7 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
         print(f"Batch analysis complete for {user_id}! Processed: {processed}, Failed: {failed}")
         
     except Exception as e:
-        print(f"❌ ERROR in batch analysis: {e}")
+        print(f"[error] ERROR in batch analysis: {e}")
         import traceback
         traceback.print_exc()
         analysis_progress[key].update({
@@ -941,7 +941,7 @@ async def _analyze_single_game(engine, game, user_id, platform, analysis_type_en
             return None
             
     except Exception as e:
-        print(f"❌ ERROR analyzing game {game.get('provider_game_id', 'unknown')}: {e}")
+        print(f"[error] ERROR analyzing game {game.get('provider_game_id', 'unknown')}: {e}")
         return None
 
 async def _save_basic_analysis(analysis: GameAnalysis) -> bool:
