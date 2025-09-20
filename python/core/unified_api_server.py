@@ -217,6 +217,34 @@ class MoveAnalysisResult(BaseModel):
     centipawn_loss: float
     depth_analyzed: int
 
+
+class GameImportItem(BaseModel):
+    provider_game_id: str
+    pgn: str
+    result: Optional[str] = None
+    color: Optional[str] = None
+    time_control: Optional[str] = None
+    opening: Optional[str] = None
+    opening_family: Optional[str] = None
+    opponent_rating: Optional[int] = None
+    my_rating: Optional[int] = None
+    played_at: Optional[str] = None
+    total_moves: Optional[int] = None
+
+
+class BulkGameImportRequest(BaseModel):
+    user_id: str
+    platform: str
+    display_name: Optional[str] = None
+    games: List[GameImportItem]
+
+
+class BulkGameImportResponse(BaseModel):
+    success: bool
+    imported_games: int
+    errors: List[str] = []
+    error_count: Optional[int] = None
+
 class DeepAnalysisData(BaseModel):
     """Deep analysis data for personality insights."""
     total_games: int
@@ -487,6 +515,88 @@ async def get_deep_analysis(
 # ============================================================================
 # PROXY ENDPOINTS (for external APIs)
 # ============================================================================
+@app.post("/api/v1/import/games", response_model=BulkGameImportResponse)
+async def import_games(payload: BulkGameImportRequest):
+    """Import games and PGN data using service role credentials."
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured for imports")
+
+    canonical_user_id = _canonical_user_id(payload.user_id, payload.platform)
+    errors: List[str] = []
+    now_iso = datetime.utcnow().isoformat()
+
+    games_rows: List[Dict[str, Any]] = []
+    pgn_rows: List[Dict[str, Any]] = []
+
+    for game in payload.games:
+        played_at = _normalize_played_at(game.played_at)
+        games_rows.append({
+            "user_id": canonical_user_id,
+            "platform": payload.platform,
+            "provider_game_id": game.provider_game_id,
+            "result": game.result,
+            "color": game.color,
+            "time_control": game.time_control,
+            "opening": game.opening,
+            "opening_family": game.opening_family,
+            "opponent_rating": game.opponent_rating,
+            "my_rating": game.my_rating,
+            "played_at": played_at,
+            "created_at": now_iso,
+        })
+        pgn_rows.append({
+            "user_id": canonical_user_id,
+            "platform": payload.platform,
+            "provider_game_id": game.provider_game_id,
+            "pgn": game.pgn,
+            "created_at": now_iso,
+        })
+
+    try:
+        if games_rows:
+            supabase_service.table('games').upsert(
+                games_rows,
+                on_conflict='user_id,platform,provider_game_id'
+            ).execute()
+    except Exception as exc:
+        errors.append(f"games upsert failed: {exc}")
+
+    try:
+        if pgn_rows:
+            supabase_service.table('games_pgn').upsert(
+                pgn_rows,
+                on_conflict='user_id,platform,provider_game_id'
+            ).execute()
+    except Exception as exc:
+        errors.append(f"games_pgn upsert failed: {exc}")
+
+    total_games = 0
+    try:
+        total_response = supabase_service.table('games').select('id', count='exact', head=True)
+        total_response = total_response.eq('user_id', canonical_user_id).eq('platform', payload.platform).execute()
+        total_games = getattr(total_response, 'count', None) or 0
+        profile_payload = {
+            "user_id": canonical_user_id,
+            "platform": payload.platform,
+            "display_name": payload.display_name or payload.user_id,
+            "total_games": total_games,
+            "last_accessed": now_iso,
+        }
+        supabase_service.table('user_profiles').upsert(
+            profile_payload,
+            on_conflict='user_id,platform'
+        ).execute()
+    except Exception as exc:
+        errors.append(f"profile update failed: {exc}")
+
+    return BulkGameImportResponse(
+        success=len(errors) == 0,
+        imported_games=len(games_rows),
+        errors=errors,
+        error_count=len(errors)
+    )
+
+
 
 @app.get("/proxy/chess-com/{username}/games/{year}/{month}")
 async def proxy_chess_com_games(username: str, year: int, month: int):
@@ -538,6 +648,18 @@ async def proxy_chess_com_user(username: str):
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+
+
+def _normalize_played_at(value: Optional[str]) -> str:
+    """Ensure played_at values are ISO timestamps."
+    if not value:
+        return datetime.utcnow().isoformat()
+    try:
+        cleaned = value.replace('Z', '+00:00') if value.endswith('Z') else value
+        return datetime.fromisoformat(cleaned).isoformat()
+    except Exception:
+        return value
 
 def _canonical_user_id(user_id: str, platform: str) -> str:
     """Canonicalize user ID for database operations.

@@ -239,19 +239,19 @@ export class AutoImportService {
 
       onProgress?.({
         status: 'importing',
-        message: 'Extracting and saving game data...',
+        message: 'Preparing game data...',
         progress: 50,
         importedGames: 0,
       })
 
+      const preparedGames: Array<Record<string, any>> = []
+
       for (const game of games) {
         try {
           const gameInfo = this.parsePGNForGameInfo(game.pgn, normalizedUsername)
-
-          const { error: gameError } = await supabase.from('games').upsert({
-            user_id: normalizedUsername,
-            platform: platform,
+          preparedGames.push({
             provider_game_id: game.id,
+            pgn: game.pgn,
             result: gameInfo.result,
             color: gameInfo.color,
             time_control: gameInfo.timeControl,
@@ -260,16 +260,7 @@ export class AutoImportService {
             opponent_rating: gameInfo.opponentRating,
             my_rating: gameInfo.myRating,
             played_at: gameInfo.playedAt,
-            created_at: new Date().toISOString(),
           })
-
-          if (gameError) {
-            console.error(`Error saving structured data for game ${game.id}:`, gameError)
-            errorCount++
-            errorMessages.push(`games.upsert failed for ${game.id}: ${gameError.message ?? 'Unknown error'}`)
-          } else {
-            savedGames++
-          }
         } catch (err) {
           console.error(`Error processing game ${game.id}:`, err)
           errorCount++
@@ -277,60 +268,63 @@ export class AutoImportService {
         }
       }
 
-      if (savedGames > 0) {
-        console.log(`Saving PGN data for ${savedGames} games...`)
-
-        onProgress?.({
-          status: 'importing',
-          message: 'Saving PGN data to database...',
-          progress: 70,
-          importedGames: savedGames,
-        })
-
-        for (const game of games) {
-          try {
-            const { error: pgnError } = await supabase.from('games_pgn').upsert({
-              user_id: normalizedUsername,
-              platform: platform,
-              provider_game_id: game.id,
-              pgn: game.pgn,
-              created_at: new Date().toISOString(),
-            })
-
-            if (pgnError) {
-              console.error(`Error saving PGN for game ${game.id}:`, pgnError)
-              errorMessages.push(`games_pgn.upsert failed for ${game.id}: ${pgnError.message ?? 'Unknown error'}`)
-            }
-          } catch (err) {
-            console.error(`Error saving PGN for game ${game.id}:`, err)
-            errorMessages.push(`games_pgn.upsert threw for ${game.id}: ${err instanceof Error ? err.message : 'Unknown error'}`)
-          }
+      if (preparedGames.length === 0) {
+        return {
+          success: false,
+          message: 'No valid games could be parsed from the platform response',
+          importedGames: 0,
+          errorCount,
+          errors: errorMessages,
         }
       }
 
       onProgress?.({
         status: 'importing',
-        message: 'Updating profile...',
-        progress: 80,
+        message: 'Saving game data to database...',
+        progress: 70,
         importedGames: savedGames,
       })
 
-      const { count: totalGamesCount } = await supabase
-        .from('games')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', normalizedUsername)
-        .eq('platform', platform)
+      const importResponse = await fetch(buildApiUrl('/api/v1/import/games'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: normalizedUsername,
+          platform,
+          display_name: validation.userInfo?.username || displayName,
+          games: preparedGames,
+        }),
+      })
 
-      const totalGames = typeof totalGamesCount === 'number' ? totalGamesCount : savedGames
+      if (!importResponse.ok) {
+        const errorText = await importResponse.text()
+        throw new Error(`Import API failed: ${importResponse.status} ${errorText}`)
+      }
 
-      await supabase
-        .from('user_profiles')
-        .update({
-          total_games: totalGames,
-          last_accessed: new Date().toISOString(),
-        })
-        .eq('user_id', normalizedUsername)
-        .eq('platform', platform)
+      const importResult = await importResponse.json() as {
+        success: boolean
+        imported_games?: number
+        errors?: string[]
+        error_count?: number
+      }
+
+      savedGames = importResult?.imported_games ?? preparedGames.length
+      if (!importResult?.success) {
+        errorMessages.push(...(importResult?.errors || []))
+        errorCount += importResult?.error_count || importResult?.errors?.length || 1
+      } else if (importResult?.errors?.length) {
+        errorMessages.push(...importResult.errors)
+        errorCount += importResult.errors.length
+      }
+
+      onProgress?.({
+        status: 'importing',
+        message: 'Games saved. Preparing next steps...',
+        progress: 80,
+        importedGames: savedGames,
+      })
 
       onProgress?.({
         status: 'importing',
