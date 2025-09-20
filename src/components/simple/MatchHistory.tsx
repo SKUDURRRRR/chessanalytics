@@ -2,6 +2,15 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
+// Canonicalize user ID to match backend logic
+function canonicalizeUserId(userId: string, platform: string): string {
+  if (platform === 'chess.com') {
+    return userId.trim().toLowerCase()
+  } else { // lichess
+    return userId.trim()
+  }
+}
+
 interface Game {
   id: string
   played_at: string
@@ -37,10 +46,11 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
       setLoading(true)
       setError(null)
 
+      const canonicalUserId = canonicalizeUserId(userId, platform)
       const { data, error: dbError } = await supabase
         .from('games')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', canonicalUserId)
         .eq('platform', platform)
         .order('played_at', { ascending: false })
         .range((page - 1) * gamesPerPage, page * gamesPerPage - 1)

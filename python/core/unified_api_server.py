@@ -383,8 +383,8 @@ async def get_analysis_results(
             else:
                 response = type('MockResponse', (), {'data': []})()
         else:
-            if supabase:
-                response = supabase.table('unified_analyses').select('*').eq(
+            if supabase_service:
+                response = supabase_service.table('unified_analyses').select('*').eq(
                     'user_id', canonical_user_id
                 ).eq('platform', platform).eq(
                     'analysis_type', 'basic'
@@ -418,8 +418,10 @@ async def get_analysis_stats(
 ):
     """Get analysis statistics for a user."""
     try:
+        print(f"[DEBUG] get_analysis_stats called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
+        print(f"[DEBUG] canonical_user_id={canonical_user_id}")
         
         # Use unified view for consistent data access
         if not supabase and not supabase_service:
@@ -436,8 +438,8 @@ async def get_analysis_stats(
             else:
                 response = type('MockResponse', (), {'data': []})()
         else:
-            if supabase:
-                response = supabase.table('unified_analyses').select('*').eq(
+            if supabase_service:
+                response = supabase_service.table('unified_analyses').select('*').eq(
                     'user_id', canonical_user_id
                 ).eq('platform', platform).eq(
                     'analysis_type', 'basic'
@@ -447,7 +449,8 @@ async def get_analysis_stats(
         
         if not response.data or len(response.data) == 0:
             # Return mock data for development when no real data is available
-            print("[stats] No data found, returning mock stats for development")
+            print(f"[stats] No data found for user {canonical_user_id} on {platform} with analysis_type {analysis_type}, returning mock stats for development")
+            print(f"[stats] Query was: unified_analyses where user_id={canonical_user_id} AND platform={platform} AND analysis_type={analysis_type}")
             return _get_mock_stats()
         
         return _calculate_unified_stats(response.data, analysis_type)
@@ -554,19 +557,21 @@ async def import_games(payload: BulkGameImportRequest):
 
     try:
         if games_rows:
-            supabase_service.table('games').upsert(
+            games_response = supabase_service.table('games').upsert(
                 games_rows,
                 on_conflict='user_id,platform,provider_game_id'
             ).execute()
+            print('[import_games] games upsert response:', getattr(games_response, 'data', None), getattr(games_response, 'count', None))
     except Exception as exc:
         errors.append(f"games upsert failed: {exc}")
 
     try:
         if pgn_rows:
-            supabase_service.table('games_pgn').upsert(
+            pgn_response = supabase_service.table('games_pgn').upsert(
                 pgn_rows,
                 on_conflict='user_id,platform,provider_game_id'
             ).execute()
+            print('[import_games] pgn upsert response:', getattr(pgn_response, 'data', None), getattr(pgn_response, 'count', None))
     except Exception as exc:
         errors.append(f"games_pgn upsert failed: {exc}")
 
@@ -582,10 +587,11 @@ async def import_games(payload: BulkGameImportRequest):
             "total_games": total_games,
             "last_accessed": now_iso,
         }
-        supabase_service.table('user_profiles').upsert(
+        profile_response = supabase_service.table('user_profiles').upsert(
             profile_payload,
             on_conflict='user_id,platform'
         ).execute()
+        print('[import_games] profile upsert response:', getattr(profile_response, 'data', None))
     except Exception as exc:
         errors.append(f"profile update failed: {exc}")
 
@@ -689,13 +695,21 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
     try:
         engine = get_analysis_engine()
         
-        # Configure analysis type
+        # Configure analysis type with optimized settings
         analysis_type_enum = AnalysisType(request.analysis_type)
-        config = AnalysisConfig(
-            analysis_type=analysis_type_enum,
-            depth=request.depth
-        )
-        engine.config = config
+        
+        # Use optimized configuration based on analysis type
+        if request.analysis_type == "basic":
+            engine.config = AnalysisConfig.for_basic_analysis()
+        elif request.analysis_type == "deep":
+            engine.config = AnalysisConfig.for_deep_analysis()
+        else:
+            # Use custom configuration for other types
+            engine.config = AnalysisConfig(
+                analysis_type=analysis_type_enum,
+                depth=request.depth,
+                skill_level=request.skill_level
+            )
         
         # Analyze game
         game_analysis = await engine.analyze_game(
@@ -758,13 +772,21 @@ async def _handle_move_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnaly
         
         engine = get_analysis_engine()
         
-        # Configure analysis type
+        # Configure analysis type with optimized settings
         analysis_type_enum = AnalysisType(request.analysis_type)
-        config = AnalysisConfig(
-            analysis_type=analysis_type_enum,
-            depth=request.depth
-        )
-        engine.config = config
+        
+        # Use optimized configuration based on analysis type
+        if request.analysis_type == "basic":
+            engine.config = AnalysisConfig.for_basic_analysis()
+        elif request.analysis_type == "deep":
+            engine.config = AnalysisConfig.for_deep_analysis()
+        else:
+            # Use custom configuration for other types
+            engine.config = AnalysisConfig(
+                analysis_type=analysis_type_enum,
+                depth=request.depth,
+                skill_level=request.skill_level
+            )
         
         # Parse position and move
         board = chess.Board(request.fen)
@@ -850,14 +872,21 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
         
         engine = get_analysis_engine()
         
-        # Configure analysis type
+        # Configure analysis type with optimized settings
         analysis_type_enum = AnalysisType(analysis_type)
-        config = AnalysisConfig(
-            analysis_type=analysis_type_enum,
-            depth=depth,
-            skill_level=skill_level
-        )
-        engine.config = config
+        
+        # Use optimized configuration based on analysis type
+        if analysis_type == "basic":
+            engine.config = AnalysisConfig.for_basic_analysis()
+        elif analysis_type == "deep":
+            engine.config = AnalysisConfig.for_deep_analysis()
+        else:
+            # Use custom configuration for other types
+            engine.config = AnalysisConfig(
+                analysis_type=analysis_type_enum,
+                depth=depth,
+                skill_level=skill_level
+            )
         
         processed = 0
         failed = 0

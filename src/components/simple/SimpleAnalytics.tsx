@@ -29,6 +29,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
         (platform as 'lichess' | 'chess.com') || 'lichess',
         'basic' // Use basic analysis type
       )
+      console.log('SimpleAnalytics received data:', result)
+      console.log('Opening accuracy:', result?.average_opening_accuracy)
+      console.log('Middle game accuracy:', result?.average_middle_game_accuracy)
+      console.log('Endgame accuracy:', result?.average_endgame_accuracy)
       setData(result)
     } catch (err) {
       console.error('Failed to load analytics:', err)
@@ -150,15 +154,15 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-gray-600">Opening Accuracy:</span>
-              <span className="font-medium">{data.average_opening_accuracy}%</span>
+              <span className="font-medium">{data.average_opening_accuracy || 'N/A'}%</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">Middle Game Accuracy:</span>
-              <span className="font-medium">{data.average_middle_game_accuracy}%</span>
+              <span className="font-medium">{data.average_middle_game_accuracy || 'N/A'}%</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">Endgame Accuracy:</span>
-              <span className="font-medium">{data.average_endgame_accuracy}%</span>
+              <span className="font-medium">{data.average_endgame_accuracy || 'N/A'}%</span>
             </div>
           </div>
           <div className="space-y-3">

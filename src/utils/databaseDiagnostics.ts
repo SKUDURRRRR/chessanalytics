@@ -5,6 +5,15 @@
 
 import { supabase } from '../lib/supabase'
 
+// Canonicalize user ID to match backend logic
+function canonicalizeUserId(userId: string, platform: string): string {
+  if (platform === 'chess.com') {
+    return userId.trim().toLowerCase()
+  } else { // lichess
+    return userId.trim()
+  }
+}
+
 export interface DatabaseDiagnostics {
   connectionStatus: 'connected' | 'disconnected' | 'error'
   tablesAvailable: string[]
@@ -15,6 +24,7 @@ export interface DatabaseDiagnostics {
 }
 
 export async function runDatabaseDiagnostics(userId: string, platform: string): Promise<DatabaseDiagnostics> {
+  const canonicalUserId = canonicalizeUserId(userId, platform)
   const diagnostics: DatabaseDiagnostics = {
     connectionStatus: 'disconnected',
     tablesAvailable: [],
@@ -63,7 +73,7 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
     const { data: gamesData, error: gamesError } = await supabase
       .from('games')
       .select('id, user_id, platform')
-      .eq('user_id', userId)
+      .eq('user_id', canonicalUserId)
       .eq('platform', platform)
       .limit(1)
 
@@ -78,7 +88,7 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
     const { data: analysisData, error: analysisError } = await supabase
       .from('unified_analyses')
       .select('game_id, user_id, platform, analysis_type')
-      .eq('user_id', userId)
+      .eq('user_id', canonicalUserId)
       .eq('platform', platform)
       .limit(1)
 
@@ -95,7 +105,7 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
       const { data: gameAnalysesData } = await supabase
         .from('game_analyses')
         .select('game_id, user_id, platform, analysis_type')
-        .eq('user_id', userId)
+        .eq('user_id', canonicalUserId)
         .eq('platform', platform)
         .limit(1)
 
@@ -103,7 +113,7 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
       const { data: moveAnalysesData } = await supabase
         .from('move_analyses')
         .select('game_id, user_id, platform, analysis_method')
-        .eq('user_id', userId)
+        .eq('user_id', canonicalUserId)
         .eq('platform', platform)
         .limit(1)
 
@@ -164,6 +174,7 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
 export async function testAnalysisTypes(userId: string, platform: string): Promise<{
   [analysisType: string]: { exists: boolean; count: number }
 }> {
+  const canonicalUserId = canonicalizeUserId(userId, platform)
   const results: { [analysisType: string]: { exists: boolean; count: number } } = {}
   
   const analysisTypes = ['basic', 'stockfish', 'deep']
@@ -173,7 +184,7 @@ export async function testAnalysisTypes(userId: string, platform: string): Promi
       const { data, error } = await supabase
         .from('unified_analyses')
         .select('game_id')
-        .eq('user_id', userId)
+        .eq('user_id', canonicalUserId)
         .eq('platform', platform)
         .eq('analysis_type', analysisType)
       

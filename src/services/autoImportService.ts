@@ -170,81 +170,22 @@ export class AutoImportService {
           importedGames: 0,
         }
       }
-
       onProgress?.({
         status: 'importing',
-        message: `Found ${games.length} games. Creating profile...`,
+        message: `Preparing ${games.length} games for import...`,
         progress: 30,
         importedGames: 0,
       })
 
-      let { data: existingProfile, error: _checkError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('user_id', normalizedUsername)
-        .eq('platform', platform)
-        .single()
 
-      let profileError
-
-      if (existingProfile) {
-        const { data: _updateData, error: updateError } = await supabase
-          .from('user_profiles')
-          .update({
-            display_name: validation.userInfo?.username || displayName,
-            current_rating:
-              validation.userInfo?.perfs?.classical?.rating ||
-              validation.userInfo?.perfs?.rapid?.rating ||
-              validation.userInfo?.perfs?.blitz?.rating ||
-              1200,
-            total_games: games.length,
-            win_rate: 0,
-            last_accessed: new Date().toISOString(),
-          })
-          .eq('user_id', normalizedUsername)
-          .eq('platform', platform)
-          .select()
-          .single()
-
-        profileError = updateError
-      } else {
-        const { data: _insertData, error: insertError } = await supabase
-          .from('user_profiles')
-          .insert({
-            user_id: normalizedUsername,
-            platform: platform,
-            display_name: validation.userInfo?.username || displayName,
-            current_rating:
-              validation.userInfo?.perfs?.classical?.rating ||
-              validation.userInfo?.perfs?.rapid?.rating ||
-              validation.userInfo?.perfs?.blitz?.rating ||
-              1200,
-            total_games: games.length,
-            win_rate: 0,
-          })
-          .select()
-          .single()
-
-        profileError = insertError
-      }
-
-      if (profileError) {
-        console.error('Error creating profile:', profileError)
-        return {
-          success: false,
-          message: 'Failed to create user profile',
-          importedGames: 0,
-        }
-      }
-
-      onProgress?.({
+      const preparedGames: Array<Record<string, any>> = []
+onProgress?.({
         status: 'importing',
-        message: 'Preparing game data...',
-        progress: 50,
+        message: 'Preparing parsed game data...',
+        progress: 40,
         importedGames: 0,
       })
 
-      const preparedGames: Array<Record<string, any>> = []
 
       for (const game of games) {
         try {
@@ -284,6 +225,8 @@ export class AutoImportService {
         progress: 70,
         importedGames: savedGames,
       })
+
+      console.log('Importing games via API:', buildApiUrl('/api/v1/import/games'), preparedGames.length)
 
       const importResponse = await fetch(buildApiUrl('/api/v1/import/games'), {
         method: 'POST',

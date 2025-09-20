@@ -5,12 +5,23 @@
 
 import { supabase } from '../lib/supabase'
 
+// Canonicalize user ID to match backend logic
+function canonicalizeUserId(userId: string, platform: string): string {
+  if (platform === 'chess.com') {
+    return userId.trim().toLowerCase()
+  } else { // lichess
+    return userId.trim()
+  }
+}
+
 export async function checkUserDataInDatabase(userId: string, platform: string) {
-  console.log(`🔍 Checking database for user: "${userId}" on platform: "${platform}"`)
+  const canonicalUserId = canonicalizeUserId(userId, platform)
+  console.log(`🔍 Checking database for user: "${userId}" (canonical: "${canonicalUserId}") on platform: "${platform}"`)
   
   // Check different variations of the user ID
   const variations = [
     userId, // Original
+    canonicalUserId, // Canonicalized
     userId.toLowerCase(), // Lowercase
     userId.toUpperCase(), // Uppercase
     userId.trim(), // Trimmed
@@ -138,7 +149,8 @@ export async function checkAllUsersInDatabase(platform: string) {
 }
 
 export async function testUnifiedAnalysesView(userId: string, platform: string) {
-  console.log(`🔍 Testing unified_analyses view for user: "${userId}" on platform: "${platform}"`)
+  const canonicalUserId = canonicalizeUserId(userId, platform)
+  console.log(`🔍 Testing unified_analyses view for user: "${userId}" (canonical: "${canonicalUserId}") on platform: "${platform}"`)
   
   try {
     // Test with different analysis types
@@ -149,7 +161,7 @@ export async function testUnifiedAnalysesView(userId: string, platform: string) 
       const { data, error } = await supabase
         .from('unified_analyses')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', canonicalUserId)
         .eq('platform', platform)
         .eq('analysis_type', analysisType)
         .limit(5)
@@ -170,7 +182,7 @@ export async function testUnifiedAnalysesView(userId: string, platform: string) 
     const { data: allData, error: allError } = await supabase
       .from('unified_analyses')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', canonicalUserId)
       .eq('platform', platform)
       .limit(10)
     

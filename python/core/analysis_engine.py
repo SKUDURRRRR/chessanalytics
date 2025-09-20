@@ -50,6 +50,34 @@ class AnalysisConfig:
     use_endgame_tablebase: bool = True
     parallel_analysis: bool = False
     max_concurrent: int = 4
+    
+    @classmethod
+    def for_basic_analysis(cls) -> 'AnalysisConfig':
+        """Configuration optimized for basic analysis (fast, good accuracy)."""
+        return cls(
+            analysis_type=AnalysisType.STOCKFISH,
+            depth=6,
+            skill_level=2,
+            time_limit=0.1,  # 100ms per position
+            use_opening_book=True,
+            use_endgame_tablebase=True,
+            parallel_analysis=False,
+            max_concurrent=4
+        )
+    
+    @classmethod
+    def for_deep_analysis(cls) -> 'AnalysisConfig':
+        """Configuration optimized for deep analysis (thorough, high accuracy)."""
+        return cls(
+            analysis_type=AnalysisType.STOCKFISH,
+            depth=12,
+            skill_level=8,
+            time_limit=0.5,  # 500ms per position
+            use_opening_book=True,
+            use_endgame_tablebase=True,
+            parallel_analysis=False,
+            max_concurrent=4
+        )
 
 @dataclass
 class MoveAnalysis:
@@ -327,27 +355,39 @@ class ChessAnalysisEngine:
             return await self._analyze_position_basic(fen)
     
     async def _analyze_move_basic(self, board: chess.Board, move: chess.Move) -> MoveAnalysis:
-        """Basic move analysis using heuristics."""
+        """Basic move analysis using improved heuristics."""
         move_san = board.san(move)
         
-        # Simple heuristics for move quality
+        # Improved heuristics for move quality
         is_tactical = any(char in move_san for char in ['x', '+', '#'])
-        is_developing = move_san in ['Nf3', 'Nc3', 'Bc4', 'Bf4', 'O-O', 'O-O-O']
+        is_developing = move_san in ['Nf3', 'Nc3', 'Bc4', 'Bf4', 'O-O', 'O-O-O', 'e4', 'd4', 'Nf6', 'Nc6']
         is_center = any(square in [chess.E4, chess.E5, chess.D4, chess.D5] for square in [move.from_square, move.to_square])
+        is_castling = move_san in ['O-O', 'O-O-O']
+        is_pawn_push = move_san[0].islower() and len(move_san) <= 3
         
-        # Estimate move quality based on heuristics
-        centipawn_loss = 0
-        if is_tactical and is_center:
-            centipawn_loss = 10  # Good move
+        # More realistic move quality estimation
+        centipawn_loss = 25  # Default to decent move
+        
+        if is_castling:
+            centipawn_loss = 5   # Castling is almost always good
+        elif is_tactical and is_center:
+            centipawn_loss = 10  # Tactical center moves are good
         elif is_developing:
-            centipawn_loss = 30  # Decent move
+            centipawn_loss = 15  # Development moves are good
+        elif is_center:
+            centipawn_loss = 20  # Center moves are decent
+        elif is_pawn_push:
+            centipawn_loss = 30  # Pawn pushes are okay
+        elif is_tactical:
+            centipawn_loss = 35  # Tactical moves are okay
         else:
-            centipawn_loss = 50  # Average move
+            centipawn_loss = 40  # Other moves are average
         
-        is_best = centipawn_loss < 20
-        is_blunder = centipawn_loss > 200
-        is_mistake = 100 < centipawn_loss <= 200
-        is_inaccuracy = 50 < centipawn_loss <= 100
+        # More realistic thresholds
+        is_best = centipawn_loss < 25      # More moves qualify as "best"
+        is_blunder = centipawn_loss > 150  # Higher threshold for blunders
+        is_mistake = 75 < centipawn_loss <= 150
+        is_inaccuracy = 40 < centipawn_loss <= 75
         
         return MoveAnalysis(
             move=move.uci(),

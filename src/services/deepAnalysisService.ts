@@ -1,5 +1,14 @@
 import { supabase } from '../lib/supabase'
 
+// Canonicalize user ID to match backend logic
+function canonicalizeUserId(userId: string, platform: string): string {
+  if (platform === 'chess.com') {
+    return userId.trim().toLowerCase()
+  } else { // lichess
+    return userId.trim()
+  }
+}
+
 export interface DeepAnalysisData {
   // Basic stats
   totalGames: number
@@ -50,13 +59,15 @@ export async function fetchDeepAnalysis(
   userId: string,
   platform: 'lichess' | 'chess.com'
 ): Promise<DeepAnalysisData> {
+  const canonicalUserId = canonicalizeUserId(userId, platform)
+  
   // Fetch games data - only select columns that exist
   const { data: games, error: gamesError } = await supabase
     .from('games')
     .select(
       'id, user_id, platform, result, color, provider_game_id, opening, opening_family, accuracy, opponent_rating, my_rating, time_control, played_at, created_at'
     )
-    .eq('user_id', userId)
+    .eq('user_id', canonicalUserId)
     .eq('platform', platform === 'chess.com' ? 'chess.com' : 'lichess')
     .order('played_at', { ascending: false })
 
@@ -72,7 +83,7 @@ export async function fetchDeepAnalysis(
   const { data: analyses, error: analysesError } = await supabase
     .from('game_analyses')
     .select('*')
-    .eq('user_id', userId)
+    .eq('user_id', canonicalUserId)
     .eq('platform', platform === 'chess.com' ? 'chess.com' : 'lichess')
     .order('analysis_date', { ascending: false })
 
