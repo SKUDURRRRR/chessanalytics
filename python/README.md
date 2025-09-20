@@ -39,10 +39,10 @@ pip install stockfish
 
 ### 3. Configure Environment
 
-Copy `env.example` to `.env` and update with your Supabase credentials:
+Copy `.env.example` to `.env.local` (or `.env`) and update with your Supabase credentials:
 
 ```bash
-cp env.example .env
+cp .env.example .env.local
 ```
 
 ### 4. Run the API

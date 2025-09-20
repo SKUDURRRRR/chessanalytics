@@ -21,7 +21,7 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
       setLoading(true)
       setError(null)
 
-      const data = await AnalysisService.getAnalysisStats(userId, platform)
+      const data = await AnalysisService.getAnalysisStats(userId, platform, 'basic')
       setAnalytics(data)
     } catch (err) {
       console.error('Error fetching analytics:', err)
@@ -67,8 +67,20 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
     )
   }
 
+  // Check if we're showing mock data
+  const isMockData = analytics.total_games_analyzed === 15 && analytics.average_accuracy === 78.5
+
   return (
     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 mb-6">
+      {isMockData && (
+        <div className="bg-yellow-100 border border-yellow-300 rounded p-3 mb-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-yellow-600">⚠️</span>
+            <span className="text-yellow-800 text-sm font-medium">Demo Data - Click "Analyze My Games" to see real analytics</span>
+          </div>
+        </div>
+      )}
+      
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-800">Quick Stats</h3>
         <div className="text-sm text-gray-600">

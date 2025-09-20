@@ -1,5 +1,6 @@
 // Profile Service - Manages user profiles and recent users
 import { supabase } from '../lib/supabase'
+import { normalizeUserId } from '../lib/security'
 
 export interface UserProfile {
   id: string
@@ -26,6 +27,8 @@ export interface RecentUser {
 }
 
 export class ProfileService {
+
+
   // Get or create user profile
   static async getOrCreateProfile(
     userId: string,
@@ -33,18 +36,19 @@ export class ProfileService {
     displayName?: string
   ): Promise<UserProfile> {
     try {
+      const canonicalUserId = normalizeUserId(userId, platform)
       // Try to get existing profile
       const { data: existingProfile, error: fetchError } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', canonicalUserId)
         .eq('platform', platform)
         .maybeSingle()
 
       // If profile exists and no error, return it
       if (existingProfile && !fetchError) {
         // Update last accessed time
-        await this.updateLastAccessed(userId, platform)
+        await this.updateLastAccessed(canonicalUserId, platform)
         return existingProfile
       }
 
@@ -58,7 +62,7 @@ export class ProfileService {
       const { data: newProfile, error: createError } = await supabase
         .from('user_profiles')
         .insert({
-          user_id: userId,
+          user_id: canonicalUserId,
           platform: platform,
           display_name: displayName || userId,
           current_rating: 1200,
@@ -84,11 +88,12 @@ export class ProfileService {
     userId: string,
     platform: 'lichess' | 'chess.com'
   ): Promise<void> {
+    const canonicalUserId = normalizeUserId(userId, platform)
     try {
       await supabase
         .from('user_profiles')
         .update({ last_accessed: new Date().toISOString() })
-        .eq('user_id', userId)
+        .eq('user_id', canonicalUserId)
         .eq('platform', platform)
     } catch (error) {
       console.error('Error updating last accessed:', error)
@@ -107,6 +112,7 @@ export class ProfileService {
       mostPlayedOpening?: string
     }
   ): Promise<void> {
+    const canonicalUserId = normalizeUserId(userId, platform)
     try {
       await supabase
         .from('user_profiles')
@@ -118,7 +124,7 @@ export class ProfileService {
           most_played_opening: analyticsData.mostPlayedOpening,
           last_accessed: new Date().toISOString(),
         })
-        .eq('user_id', userId)
+        .eq('user_id', canonicalUserId)
         .eq('platform', platform)
     } catch (error) {
       console.error('Error updating profile with analytics:', error)

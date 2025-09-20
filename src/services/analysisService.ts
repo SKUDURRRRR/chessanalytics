@@ -36,7 +36,7 @@ export class AnalysisService {
       //   throw new Error('No authentication token found. Please log in.')
       // }
 
-      const response = await fetch(`${ANALYSIS_API_URL}/analyze-games`, {
+      const response = await fetch(`${ANALYSIS_API_URL}/api/v1/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -45,7 +45,7 @@ export class AnalysisService {
         body: JSON.stringify({
           user_id: userId,
           platform: platform,
-          analysis_type: 'stockfish',
+          analysis_type: 'basic',
           limit: limit,
           skill_level: 8,
         }),
@@ -67,11 +67,12 @@ export class AnalysisService {
   static async getAnalysisResults(
     userId: string,
     platform: Platform,
-    limit: number = 10
+    limit: number = 10,
+    analysisType: string = 'basic'
   ): Promise<GameAnalysisSummary[]> {
     try {
       const response = await fetch(
-        `${ANALYSIS_API_URL}/analysis/${userId}/${platform}?limit=${limit}`
+        `${ANALYSIS_API_URL}/api/v1/results/${userId}/${platform}?limit=${limit}&analysis_type=${analysisType}`
       )
 
       if (!response.ok) {
@@ -79,6 +80,12 @@ export class AnalysisService {
       }
 
       const data = await response.json()
+      
+      // Check if we got mock data and log a warning
+      if (data.length > 0 && data[0].game_id?.startsWith('mock_game_')) {
+        console.warn('⚠️ Received mock analysis results - no real analysis data found in database')
+      }
+      
       return data
     } catch (error) {
       console.error('Error fetching analysis results:', error)
@@ -89,10 +96,11 @@ export class AnalysisService {
   // Get analysis statistics for a user
   static async getAnalysisStats(
     userId: string,
-    platform: Platform
+    platform: Platform,
+    analysisType: string = 'basic'
   ): Promise<AnalysisStats | null> {
     try {
-      const url = `${ANALYSIS_API_URL}/analysis-stats/${userId}/${platform}?analysis_type=stockfish`
+      const url = `${ANALYSIS_API_URL}/api/v1/stats/${userId}/${platform}?analysis_type=${analysisType}`
       console.log(`Fetching analysis stats from: ${url}`)
 
       const response = await fetch(url)
@@ -104,6 +112,17 @@ export class AnalysisService {
 
       const data = await response.json()
       console.log(`Analysis stats response for ${userId}:`, data)
+      
+      // Check if we got mock data and log a warning
+      if (data.total_games_analyzed === 15 && data.average_accuracy === 78.5) {
+        console.warn('⚠️ Received mock data - no real analysis data found in database')
+        console.warn('This usually means:')
+        console.warn('1. ✅ Games exist but no analysis has been performed yet - Click "Analyze My Games"')
+        console.warn('2. The analysis data is stored under a different analysis_type')
+        console.warn('3. There might be a user ID canonicalization issue')
+        console.warn('💡 To fix: Run basic analysis on your games to generate real analytics data')
+      }
+      
       return data
     } catch (error) {
       console.error('Error fetching analysis stats:', error)
@@ -146,7 +165,7 @@ export class AnalysisService {
         headers['Authorization'] = `Bearer ${token}`
       }
 
-      const response = await fetch(`${ANALYSIS_API_URL}/analysis-progress/${userId}/${platform}`, {
+      const response = await fetch(`${ANALYSIS_API_URL}/api/v1/progress/${userId}/${platform}`, {
         headers,
       })
 

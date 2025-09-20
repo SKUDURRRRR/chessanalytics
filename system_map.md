@@ -1,173 +1,96 @@
 # Chess Analytics System Map
 
 ## Architecture Overview
-
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        FRONTEND (React + Vite)                 │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │   HomePage      │  │ SimpleAnalytics │  │ DeepAnalysis    │  │
-│  │   (Search)      │  │   Page          │  │   Components    │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-│           │                     │                     │          │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  AuthContext    │  │  Services Layer │  │  Components     │  │
-│  │  (Supabase)     │  │  (API Calls)    │  │  (UI)           │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    BACKEND (Python FastAPI)                    │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │   API Server    │  │ Analysis Engine │  │ Stockfish       │  │
-│  │   (FastAPI)     │  │   (Unified)     │  │   Integration   │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-│           │                     │                     │          │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  Configuration  │  │  Move Analysis  │  │  Game Analysis  │  │
-│  │  Management     │  │  (UCI/SAN)      │  │  (PGN)          │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    DATABASE (Supabase)                         │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │   games         │  │  user_profiles  │  │  move_analyses  │  │
-│  │   (Basic)       │  │  (User Data)    │  │  (Stockfish)    │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  game_analyses  │  │  games_pgn      │  │ unified_analyses│  │
-│  │  (Basic)        │  │  (PGN Data)     │  │  (View)         │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+                  +------------------------------+
+                  |  React SPA (Vite + TS)       |
+                  |  src/main.tsx / App.tsx      |
+                  |  - PlayerSearch / MatchHistory|
+                  |  - SimpleAnalytics dashboard |
+                  |  - DeepAnalysis area         |
+                  +---------------+--------------+
+                                  | (supabase-js anon key)
+                                  v
+       +--------------------------+--------------------------+
+       |        Supabase Postgres (managed)                  |
+       |  Tables: games, user_profiles, games_pgn, *(missing |
+       |           game_analyses/move_analyses/game_features)|
+       |  Views: unified_analyses, combined_game_analysis    |
+       |  Edge Functions (Deno): analytics, parity, imports  |
+       +--------------------------+--------------------------+
+                                  ^
+                                  | (REST over HTTPS / service key)
+                  +---------------+--------------+
+                  |  Python API (FastAPI)        |
+                  |  python/core/unified_api     |
+                  |  - Unified /api/v1 endpoints |
+                  |  - Background Stockfish jobs |
+                  |  - Supabase client (anon/service)|
+                  +---------------+--------------+
+                                  ^
+                                  | (fetch from frontend)
+                                  |
+                        External services
+                     -----------------------
+                     |  Lichess REST API   |
+                     |  Chess.com REST API |
+                     |  Local Stockfish    |
+                     -----------------------
 ```
 
-## Data Flow
+## Runtime Components
+- **Frontend**: Vite-powered React SPA (TypeScript). Router lives in `src/App.tsx`; state via hooks and a custom `AuthContext` that wraps Supabase auth.
+- **Services layer** (`src/services/*`): wraps fetch calls to the Python API (`analysisService`, `unifiedAnalysisService`) and direct Supabase queries (`profileService`, `autoImportService`, `deepAnalysisService`).
+- **Backend API**: `python/core/unified_api_server.py` (FastAPI) exposes unified analysis endpoints, coordinates Stockfish via `analysis_engine.py`, and persists results to Supabase using the service-role key when available.
+- **Data tier**: Supabase Postgres schema + Row Level Security policies, plus a `games_pgn` table for raw PGNs and `unified_analyses`/`combined_game_analysis` views for reporting.
+- **Edge functions**: Deno functions under `supabase/functions` provide lightweight analytics endpoints that the frontend can call directly via Supabase.
+- **Tooling**: Vitest/Jest DOM for unit tests, Playwright config present for E2E, GitHub Actions workflow (`.github/workflows/ci.yml`), Supabase CLI scripts, Python uses Uvicorn for dev server.
 
-### 1. Game Import Flow
-```
-User Input → AutoImportService → Chess.com/Lichess API → games_pgn table → Analysis Trigger
-```
+## Request & Data Flow
+- **Player lookup**: `PlayerSearch` queries Supabase directly for cached profiles and offers auto-import. Auto-import validates usernames against Lichess/Chess.com (direct HTTP or via FastAPI proxy) and populates `games`, `games_pgn`, and profile metadata via Supabase upserts. It may also trigger analysis jobs through `AnalysisService.startAnalysis`.
+- **Analysis workflow**:
+  1. Frontend hits `POST {VITE_ANALYSIS_API_URL}/api/v1/analyze` (`AnalysisService` or `UnifiedAnalysisService`).
+  2. FastAPI validates inputs, enqueues `_perform_batch_analysis` background task, and returns an `analysis_id`.
+  3. Background task reads PGNs from `games_pgn`, runs Stockfish via `ChessAnalysisEngine`, and persists summaries to Supabase tables (intended: `game_analyses`, `move_analyses`, `game_features`). It also updates in-memory `analysis_progress` for UI polling.
+  4. Frontend polls `/api/v1/progress/{user}/{platform}` and refreshes stats via `/api/v1/stats/...` and `/api/v1/results/...`.
+- **Dashboards**: Components such as `SimpleAnalytics`, `AnalyticsBar`, and `MatchHistory` either call the FastAPI stats endpoint or query Supabase directly (`supabase.from('games')`, `unified_analyses`). Deep analysis UI currently derives results from Supabase tables rather than the Python endpoint (which returns placeholder data).
+- **Diagnostics**: `DatabaseDiagnosticsComponent` aggregates Supabase checks via helper utilities (`src/utils/databaseDiagnostics.ts`, `databaseQuery.ts`). Console-heavy logging is used for troubleshooting.
 
-### 2. Analysis Flow
-```
-PGN Data → Analysis Engine → Stockfish Engine → Move Analysis → Database Storage → Frontend Display
-```
+## Entry Points & Key Modules
+- `src/main.tsx`: React bootstrap (StrictMode) rendering `App`.
+- `src/App.tsx`: React Router configuration for `/`, `/search`, `/simple-analytics`, and `/profile/:userId/:platform`, wrapped in page/component error boundaries.
+- Contexts: `AuthContext` handles Supabase session state.
+- Services: `analysisService`, `unifiedAnalysisService`, `profileService`, `autoImportService`, `deepAnalysisService`.
+- Utilities: `src/lib/env.ts` (Zod env validation), `config.ts` (central configuration manager), `supabase.ts` (singleton client), error handling helpers, `utils/` (analytics diagnostics, formatting helpers).
+- Python backend: `python/main.py` (uvicorn entry), `core/unified_api_server.py` (routing & orchestration), `analysis_engine.py` (Stockfish integration), `config.py` (env loader), `env_validation.py`, `cors_security.py`, `error_handlers.py`.
+- Supabase artifacts: SQL migrations in `supabase/migrations`, helper SQL in `supabase/sql`, edge functions in `supabase/functions/*`.
 
-### 3. Authentication Flow
-```
-User → Supabase Auth → JWT Token → API Authorization → Database RLS
-```
+## Database Schema (Supabase)
+- **games**: Imported game metadata (`user_id`, `platform`, `provider_game_id`, results, ratings, timestamps). Unique index on `(user_id, platform, provider_game_id)`; RLS intended to scope to owner.
+- **games_pgn**: Raw PGNs (unique on user/platform/game). Currently grants full access to `anon` role.
+- **user_profiles**: Cached profile data (`display_name`, ratings, totals, last_accessed`). Conflicting definitions create uniqueness on `user_id` only in latest migration.
+- **Intended but missing in repo**: `game_analyses`, `move_analyses`, `game_features` tables referenced throughout services, migrations, and docs but no DDL present. Corresponding RLS migrations assume they exist. Views `unified_analyses` and `combined_game_analysis` union data from those tables when available.
+- **Indexes/Policies**: Numerous policies defined in `20241220_complete_rls_policies.sql` covering CRUD per table, plus helper functions for RLS validation.
 
-## Key Modules
+## External Integrations & Dependencies
+- **Supabase**: `@supabase/supabase-js` on frontend; Supabase Python client on backend. Requires anon key for client, service role for server writes.
+- **Stockfish**: Bundled binary in `stockfish/`; Python engine wrapper orchestrates depth/skill configuration.
+- **Lichess API**: Used by `AutoImportService` to fetch latest games directly from the browser.
+- **Chess.com API (proxied)**: Frontend hits FastAPI proxy endpoints (`/proxy/chess-com/...`) to bypass CORS and rate limits.
+- **React ecosystem**: `react-router-dom`, `recharts` for charts, Tailwind CSS classes for styling.
+- **Testing**: `vitest` + Testing Library, `@playwright/test` (configured but no scripts wired), Supabase CLI (`supabase db ...`).
 
-### Frontend (React + TypeScript)
-- **App.tsx**: Main application with routing
-- **Pages**: HomePage, SimpleAnalyticsPage
-- **Components**: 
-  - Simple: AnalyticsBar, MatchHistory, SimpleAnalytics, PlayerSearch
-  - Deep: DeepAnalysisBlock, PersonalityRadar, ScoreCards, etc.
-- **Services**: analysisService, autoImportService, deepAnalysisService, profileService
-- **Contexts**: AuthContext (Supabase integration)
+## Configuration & Environments
+- Frontend env: `.env` & `env.ts` demand valid URLs for `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_ANALYSIS_API_URL`. Validation happens at module load and throws on failure.
+- Backend env: `python/.env` (currently committed with secrets) and `python/core/config.py` (loads `../.env`, i.e., the frontend file). Missing or malformed values fall back to mock clients causing the API to operate in degraded mode.
+- Scripts: `npm run dev/build/start/typecheck/lint/format/test/e2e`, Playwright config, Supabase CLI helpers (`db:reset`, `db:push`, `db:diff`), PowerShell helpers to start backend.
 
-### Backend (Python + FastAPI)
-- **main.py**: Entry point using unified core
-- **core/api_server.py**: Unified API server with all endpoints
-- **core/analysis_engine.py**: Chess analysis engine with Stockfish integration
-- **core/config.py**: Configuration management
-- **core/unified_config.py**: Unified configuration system
+## Observability & Diagnostics
+- Extensive console logging with emoji markers in both TS and Python for tracing flows (env load, API calls, database diagnostics).
+- `tests/setup.ts` turns console methods into spies to keep unit tests quiet.
+- No centralized metrics/log aggregation; relies on manual diagnostics components and CLI scripts (`validate-env.js`, `supabase/sql/health.sql`).
 
-### Database Schema (Supabase PostgreSQL)
-- **games**: Basic game data (result, rating, opening, etc.)
-- **user_profiles**: User information and statistics
-- **games_pgn**: PGN data for analysis
-- **move_analyses**: Detailed Stockfish analysis results
-- **game_analyses**: Basic analysis results
-- **unified_analyses**: View combining all analysis types
-
-## External Dependencies
-
-### Frontend
-- React 18.3.1
-- Vite 5.4.19
-- Supabase JS 2.57.2
-- Recharts 3.2.1
-- React Router DOM 6.30.1
-
-### Backend
-- FastAPI
-- Uvicorn
-- Chess 1.999
-- Stockfish (external binary)
-- Supabase Python client
-
-### Database
-- Supabase (PostgreSQL)
-- Row Level Security (RLS)
-- Real-time subscriptions
-
-## Entry Points
-
-### Frontend
-- **Development**: `npm run dev` → http://localhost:3000
-- **Production**: `npm run build` → Static files
-
-### Backend
-- **Development**: `python main.py` → http://localhost:8002
-- **Production**: `uvicorn core.api_server:app` → http://localhost:8002
-
-### Database
-- **Supabase Dashboard**: https://app.supabase.com
-- **Direct Connection**: PostgreSQL connection string
-
-## API Endpoints
-
-### Analysis API (Port 8002)
-- `GET /` - Health check
-- `GET /health` - Service status
-- `POST /analyze-games` - Batch game analysis
-- `POST /analyze-position` - Position analysis
-- `POST /analyze-move` - Move analysis
-- `POST /analyze-game` - Single game analysis
-- `GET /analysis/{user_id}/{platform}` - Get analysis results
-- `GET /analysis-stats/{user_id}/{platform}` - Get statistics
-- `GET /analysis-progress/{user_id}/{platform}` - Get progress
-
-### Proxy Endpoints
-- `GET /proxy/chess-com/{username}/games/{year}/{month}` - Chess.com games
-- `GET /proxy/chess-com/{username}` - Chess.com user info
-
-## Configuration
-
-### Environment Variables
-- `VITE_SUPABASE_URL`: Supabase project URL
-- `VITE_SUPABASE_ANON_KEY`: Supabase anonymous key
-- `VITE_ANALYSIS_API_URL`: Backend API URL
-- `SUPABASE_JWT_SECRET`: JWT secret for authentication
-
-### Database Configuration
-- Row Level Security enabled
-- Service role key for admin operations
-- Anonymous key for public operations
-
-## Security Model
-
-### Authentication
-- Supabase Auth with JWT tokens
-- Optional authentication (can be disabled for development)
-- User-specific data access via RLS
-
-### Authorization
-- Row Level Security policies
-- User can only access their own data
-- Service role for system operations
-
-### Data Protection
-- Environment variable validation
-- Input sanitization
-- SQL injection prevention via parameterized queries
+## Test & Automation Footprint
+- Unit tests under `tests/` (components/services) rely on mocks; coverage for analytics logic is thin.
+- Playwright config (`playwright.config.ts`) exists but `package.json` lacks `e2e` wiring in CI.
+- GitHub Actions workflow `ci.yml` attempts multi-stage checks but references non-existent npm scripts (`test:contract`, `test:fe`, etc.).

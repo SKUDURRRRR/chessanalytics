@@ -91,8 +91,8 @@ npm install
 pip install -r requirements.txt
 
 # Set up environment variables
-cp env.example .env
-cp python/env.example python/.env
+cp env.example .env.local
+cp python/.env.example python/.env.local
 ```
 
 ### Development

@@ -2,7 +2,7 @@
 # This script ensures the frontend and backend use the same port
 
 param(
-    [int]$Port = 8003,
+    [int]$Port = 8002,
     [string]$ServerType = "simple"
 )
 
@@ -18,14 +18,23 @@ if ($portInUse) {
     Write-Host "Killing existing processes on port $Port..." -ForegroundColor Yellow
     
     # Kill processes using the port
-    $processes = Get-NetTCPConnection -LocalPort $Port | Select-Object -ExpandProperty OwningProcess
-    foreach ($pid in $processes) {
-        try {
-            Stop-Process -Id $pid -Force
-            Write-Host "✅ Killed process $pid" -ForegroundColor Green
-        } catch {
-            Write-Host "⚠️ Could not kill process $pid" -ForegroundColor Yellow
+    try {
+        $processes = Get-NetTCPConnection -LocalPort $Port -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess
+        if ($processes) {
+            foreach ($processId in $processes) {
+                try {
+                    $process = Get-Process -Id $processId -ErrorAction Stop
+                    Stop-Process -Id $processId -Force -ErrorAction Stop
+                    Write-Host "✅ Killed process $processId ($($process.ProcessName))" -ForegroundColor Green
+                } catch {
+                    Write-Host "⚠️ Could not kill process $processId`: $($_.Exception.Message)" -ForegroundColor Yellow
+                }
+            }
+        } else {
+            Write-Host "ℹ️ No processes found using port $Port" -ForegroundColor Cyan
         }
+    } catch {
+        Write-Host "⚠️ Could not retrieve processes using port $Port`: $($_.Exception.Message)" -ForegroundColor Yellow
     }
     
     Start-Sleep -Seconds 2
@@ -37,10 +46,14 @@ Write-Host "Updating frontend configuration..." -ForegroundColor Yellow
 # Update analysisService.ts
 $analysisServicePath = "src/services/analysisService.ts"
 if (Test-Path $analysisServicePath) {
-    $content = Get-Content $analysisServicePath -Raw
-    $newContent = $content -replace 'http://localhost:\d+', "http://localhost:$Port"
-    Set-Content $analysisServicePath -Value $newContent -NoNewline
-    Write-Host "✅ Updated $analysisServicePath" -ForegroundColor Green
+    try {
+        $content = Get-Content $analysisServicePath -Raw -ErrorAction Stop
+        $newContent = $content -replace 'http://localhost:\d+', "http://localhost:$Port"
+        Set-Content $analysisServicePath -Value $newContent -NoNewline -ErrorAction Stop
+        Write-Host "✅ Updated $analysisServicePath" -ForegroundColor Green
+    } catch {
+        Write-Host "⚠️ Could not update $analysisServicePath`: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 } else {
     Write-Host "⚠️ Could not find $analysisServicePath" -ForegroundColor Yellow
 }
@@ -53,12 +66,18 @@ $frontendFiles = @(
 
 foreach ($file in $frontendFiles) {
     if (Test-Path $file) {
-        $content = Get-Content $file -Raw
-        if ($content -match 'localhost:\d+') {
-            $newContent = $content -replace 'localhost:\d+', "localhost:$Port"
-            Set-Content $file -Value $newContent -NoNewline
-            Write-Host "✅ Updated $file" -ForegroundColor Green
+        try {
+            $content = Get-Content $file -Raw -ErrorAction Stop
+            if ($content -match 'localhost:\d+') {
+                $newContent = $content -replace 'localhost:\d+', "localhost:$Port"
+                Set-Content $file -Value $newContent -NoNewline -ErrorAction Stop
+                Write-Host "✅ Updated $file" -ForegroundColor Green
+            }
+        } catch {
+            Write-Host "⚠️ Could not update $file`: $($_.Exception.Message)" -ForegroundColor Yellow
         }
+    } else {
+        Write-Host "⚠️ Could not find $file" -ForegroundColor Yellow
     }
 }
 
@@ -83,13 +102,41 @@ if ($ServerType -eq "simple") {
         Start-Process python -ArgumentList $serverPath -WindowStyle Normal
     } else {
         Write-Host "❌ Could not find $serverPath" -ForegroundColor Red
-        exit 1
+        Write-Host "The simple analysis server file is missing." -ForegroundColor Yellow
+        Write-Host "Falling back to main server..." -ForegroundColor Yellow
+        Write-Host ""
+        
+        # Fallback to main server
+        Write-Host "Starting core API server on port $Port..." -ForegroundColor Cyan
+        
+        # Check for environment variables or .env file
+        if (-not $env:SUPABASE_URL -or $env:SUPABASE_URL -eq "https://your-project.supabase.co") {
+            Write-Host "⚠️ SUPABASE_URL not set or using default value" -ForegroundColor Yellow
+            Write-Host "Please set SUPABASE_URL environment variable or check your .env file" -ForegroundColor Yellow
+        }
+        
+        if (-not $env:SUPABASE_ANON_KEY -or $env:SUPABASE_ANON_KEY -eq "your-anon-key-here") {
+            Write-Host "⚠️ SUPABASE_ANON_KEY not set or using default value" -ForegroundColor Yellow
+            Write-Host "Please set SUPABASE_ANON_KEY environment variable or check your .env file" -ForegroundColor Yellow
+        }
+        
+        Start-Process python -ArgumentList "-m", "core.api_server" -WindowStyle Normal
     }
 } elseif ($ServerType -eq "main") {
     # Start main server using the core API server
     Write-Host "Starting core API server on port $Port..." -ForegroundColor Cyan
-    $env:SUPABASE_URL = "https://your-project.supabase.co"
-    $env:SUPABASE_ANON_KEY = "your-anon-key-here"
+    
+    # Check for environment variables or .env file
+    if (-not $env:SUPABASE_URL -or $env:SUPABASE_URL -eq "https://your-project.supabase.co") {
+        Write-Host "⚠️ SUPABASE_URL not set or using default value" -ForegroundColor Yellow
+        Write-Host "Please set SUPABASE_URL environment variable or check your .env file" -ForegroundColor Yellow
+    }
+    
+    if (-not $env:SUPABASE_ANON_KEY -or $env:SUPABASE_ANON_KEY -eq "your-anon-key-here") {
+        Write-Host "⚠️ SUPABASE_ANON_KEY not set or using default value" -ForegroundColor Yellow
+        Write-Host "Please set SUPABASE_ANON_KEY environment variable or check your .env file" -ForegroundColor Yellow
+    }
+    
     Start-Process python -ArgumentList "-m", "core.api_server" -WindowStyle Normal
 } else {
     Write-Host "❌ Unknown server type: $ServerType" -ForegroundColor Red

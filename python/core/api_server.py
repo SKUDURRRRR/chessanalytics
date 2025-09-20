@@ -165,8 +165,8 @@ class GameAnalysisSummary(BaseModel):
     positional_score: float
     aggressive_score: float
     patient_score: float
-    endgame_score: float
-    opening_score: float
+    novelty_score: float
+    staleness_score: float
     analysis_type: str
     analysis_date: str
     processing_time_ms: int
@@ -250,8 +250,8 @@ def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> Game
         'positional_score': analysis.get('positional_score', 0),
         'aggressive_score': analysis.get('aggressive_score', 0),
         'patient_score': analysis.get('patient_score', 0),
-        'endgame_score': analysis.get('endgame_score', 0),
-        'opening_score': analysis.get('opening_score', 0),
+        'novelty_score': analysis.get('novelty_score', 0),
+        'staleness_score': analysis.get('staleness_score', 0),
         'analysis_type': analysis.get('analysis_type', analysis.get('analysis_method', 'unknown')),
         'analysis_date': analysis.get('analysis_date', ''),
         'processing_time_ms': analysis.get('processing_time_ms', 0)
@@ -276,8 +276,8 @@ def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> Game
             positional_score=base_fields['positional_score'],
             aggressive_score=base_fields['aggressive_score'],
             patient_score=base_fields['patient_score'],
-            endgame_score=base_fields['endgame_score'],
-            opening_score=base_fields['opening_score'],
+            novelty_score=base_fields['novelty_score'],
+            staleness_score=base_fields['staleness_score'],
             analysis_type=base_fields['analysis_type'],
             analysis_date=base_fields['analysis_date'],
             processing_time_ms=base_fields['processing_time_ms']
@@ -299,8 +299,8 @@ def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> Game
             positional_score=base_fields['positional_score'],
             aggressive_score=base_fields['aggressive_score'],
             patient_score=base_fields['patient_score'],
-            endgame_score=base_fields['endgame_score'],
-            opening_score=base_fields['opening_score'],
+            novelty_score=base_fields['novelty_score'],
+            staleness_score=base_fields['staleness_score'],
             analysis_type=base_fields['analysis_type'],
             analysis_date=base_fields['analysis_date'],
             processing_time_ms=base_fields['processing_time_ms']
@@ -418,8 +418,8 @@ def map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
         positional_score=analysis.get('positional_score', 0),
         aggressive_score=analysis.get('aggressive_score', 0),
         patient_score=analysis.get('patient_score', 0),
-        endgame_score=analysis.get('endgame_score', 0),
-        opening_score=analysis.get('opening_score', 0),
+        novelty_score=analysis.get('novelty_score', 0),
+        staleness_score=analysis.get('staleness_score', 0),
         analysis_type=analysis.get('analysis_type', 'unknown'),
         analysis_date=analysis.get('analysis_date', ''),
         processing_time_ms=analysis.get('processing_time_ms', 0)
@@ -428,7 +428,9 @@ def map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
 async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str, 
                                 limit: int, depth: int, skill_level: int):
     """Perform batch analysis for a user's games."""
-    print(f"🚀 BACKGROUND TASK STARTED: perform_batch_analysis for {user_id} on {platform}")
+    # Canonicalize user ID for database operations
+    canonical_user_id = _canonical_user_id(user_id, platform)
+    print(f"🚀 BACKGROUND TASK STARTED: perform_batch_analysis for {user_id} (canonical: {canonical_user_id}) on {platform}")
     key = f"{user_id}_{platform}"
     analysis_progress[key] = {
         "analyzed_games": 0,
@@ -447,7 +449,7 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
         analysis_progress[key]["progress_percentage"] = 10
         
         # Get games from database (games_pgn table)
-        games_response = supabase.table('games_pgn').select('*').eq('user_id', user_id).eq('platform', platform).limit(limit).execute()
+        games_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).limit(limit).execute()
         games = games_response.data or []
         
         if not games:
@@ -485,7 +487,7 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
         
         async def analyze_with_semaphore(game):
             async with semaphore:
-                return await _analyze_single_game(engine, game, user_id, platform, analysis_type_enum)
+                return await _analyze_single_game(engine, game, canonical_user_id, platform, analysis_type_enum)
         
         # Process all games in parallel with concurrency limit
         tasks = [analyze_with_semaphore(game) for game in games]
@@ -564,6 +566,9 @@ async def _analyze_single_game(engine, game, user_id, platform, analysis_type_en
 async def save_basic_analysis(analysis: GameAnalysis) -> bool:
     """Save basic analysis to game_analyses table."""
     try:
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(analysis.user_id, analysis.platform)
+        
         # Convert moves analysis to dict format
         moves_analysis_dict = []
         for move in analysis.moves_analysis:
@@ -582,7 +587,7 @@ async def save_basic_analysis(analysis: GameAnalysis) -> bool:
         # Prepare data for game_analyses table
         data = {
             'game_id': analysis.game_id,
-            'user_id': analysis.user_id,
+            'user_id': canonical_user_id,
             'platform': analysis.platform,
             'total_moves': analysis.total_moves,
             'accuracy': analysis.accuracy,
@@ -601,20 +606,22 @@ async def save_basic_analysis(analysis: GameAnalysis) -> bool:
             'positional_score': analysis.positional_score,
             'aggressive_score': analysis.aggressive_score,
             'patient_score': analysis.patient_score,
-            'endgame_score': analysis.endgame_score,
-            'opening_score': analysis.opening_score,
+            'novelty_score': analysis.novelty_score,
+            'staleness_score': analysis.staleness_score,
+            'novelty_score': getattr(analysis, 'novelty_score', 0.0),
+            'staleness_score': getattr(analysis, 'staleness_score', 0.0),
             'tactical_patterns': analysis.tactical_patterns,
             'positional_patterns': analysis.positional_patterns,
             'strategic_themes': analysis.strategic_themes,
             'moves_analysis': moves_analysis_dict,
-            'analysis_type': str(analysis.analysis_type),
+            'analysis_type': analysis.analysis_type.value if hasattr(analysis.analysis_type, 'value') else str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth
         }
         
-        # Insert or update analysis in game_analyses table
-        response = supabase.table('game_analyses').upsert(
+        # Insert or update analysis in game_analyses table using service role
+        response = supabase_service.table('game_analyses').upsert(
             data,
             on_conflict='user_id,platform,game_id'
         ).execute()
@@ -633,6 +640,9 @@ async def save_basic_analysis(analysis: GameAnalysis) -> bool:
 async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
     """Save Stockfish analysis to move_analyses table."""
     try:
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(analysis.user_id, analysis.platform)
+        
         # Convert moves analysis to dict format
         moves_analysis_dict = []
         for move in analysis.moves_analysis:
@@ -651,7 +661,7 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
         # Prepare data for move_analyses table
         data = {
             'game_id': analysis.game_id,
-            'user_id': analysis.user_id,
+            'user_id': canonical_user_id,
             'platform': analysis.platform,
             'average_centipawn_loss': analysis.average_centipawn_loss,
             'worst_blunder_centipawn_loss': analysis.worst_blunder_centipawn_loss,
@@ -666,8 +676,10 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'positional_score': analysis.positional_score,
             'aggressive_score': analysis.aggressive_score,
             'patient_score': analysis.patient_score,
-            'endgame_score': analysis.endgame_score,
-            'opening_score': analysis.opening_score,
+            'novelty_score': analysis.novelty_score,
+            'staleness_score': analysis.staleness_score,
+            'novelty_score': getattr(analysis, 'novelty_score', 0.0),
+            'staleness_score': getattr(analysis, 'staleness_score', 0.0),
             'tactical_patterns': analysis.tactical_patterns,
             'positional_patterns': analysis.positional_patterns,
             'strategic_themes': analysis.strategic_themes,
@@ -698,6 +710,9 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
 async def save_game_analysis(analysis: GameAnalysis) -> bool:
     """Save game analysis to move_analyses table only."""
     try:
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(analysis.user_id, analysis.platform)
+        
         # Convert moves analysis to dict format
         moves_analysis_dict = []
         for move in analysis.moves_analysis:
@@ -716,7 +731,7 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
         # Prepare data for game_analyses table
         data = {
             'game_id': analysis.game_id,
-            'user_id': analysis.user_id,
+            'user_id': canonical_user_id,
             'platform': analysis.platform,
             'total_moves': analysis.total_moves,
             'accuracy': analysis.accuracy,
@@ -735,20 +750,22 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
             'positional_score': analysis.positional_score,
             'aggressive_score': analysis.aggressive_score,
             'patient_score': analysis.patient_score,
-            'endgame_score': analysis.endgame_score,
-            'opening_score': analysis.opening_score,
+            'novelty_score': analysis.novelty_score,
+            'staleness_score': analysis.staleness_score,
+            'novelty_score': getattr(analysis, 'novelty_score', 0.0),
+            'staleness_score': getattr(analysis, 'staleness_score', 0.0),
             'tactical_patterns': analysis.tactical_patterns,
             'positional_patterns': analysis.positional_patterns,
             'strategic_themes': analysis.strategic_themes,
             'moves_analysis': moves_analysis_dict,
-            'analysis_type': str(analysis.analysis_type),
+            'analysis_type': analysis.analysis_type.value if hasattr(analysis.analysis_type, 'value') else str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth
         }
         
-        # Insert or update analysis in game_analyses table
-        response = supabase.table('game_analyses').upsert(
+        # Insert or update analysis in game_analyses table using service role
+        response = supabase_service.table('game_analyses').upsert(
             data,
             on_conflict='user_id,platform,game_id'
         ).execute()
@@ -763,6 +780,18 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
     except Exception as e:
         print(f"Error saving game analysis: {e}")
         return False
+
+# Helper functions
+def _canonical_user_id(user_id: str, platform: str) -> str:
+    """Canonicalize user ID for database operations.
+    
+    Chess.com usernames are case-insensitive and should be stored/queried in lowercase.
+    Lichess usernames are case-sensitive and should be left unchanged.
+    """
+    if platform == "chess.com":
+        return user_id.strip().lower()
+    else:  # lichess
+        return user_id.strip()
 
 # API Endpoints
 
@@ -988,11 +1017,14 @@ async def get_analysis_results(
 ):
     """Get analysis results for a user from appropriate table based on analysis type."""
     try:
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        
         # Use unified view for consistent data access
         if analysis_type in ["stockfish", "deep"]:
             # Filter by analysis type in the unified view
             response = supabase_service.table('unified_analyses').select('*').eq(
-                'user_id', user_id
+                'user_id', canonical_user_id
             ).eq('platform', platform).eq(
                 'analysis_type', analysis_type
             ).order(
@@ -1001,7 +1033,7 @@ async def get_analysis_results(
         else:
             # Use basic analysis type
             response = supabase.table('unified_analyses').select('*').eq(
-                'user_id', user_id
+                'user_id', canonical_user_id
             ).eq('platform', platform).eq(
                 'analysis_type', 'basic'
             ).order(
@@ -1031,16 +1063,19 @@ async def get_analysis_stats(
 ):
     """Get analysis statistics for a user from appropriate table based on analysis type."""
     try:
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        
         # Use unified view for consistent data access
         if analysis_type in ["stockfish", "deep"]:
             response = supabase_service.table('unified_analyses').select('*').eq(
-                'user_id', user_id
+                'user_id', canonical_user_id
             ).eq('platform', platform).eq(
                 'analysis_type', analysis_type
             ).execute()
         else:
             response = supabase.table('unified_analyses').select('*').eq(
-                'user_id', user_id
+                'user_id', canonical_user_id
             ).eq('platform', platform).eq(
                 'analysis_type', 'basic'
             ).execute()

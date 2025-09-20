@@ -1,8 +1,27 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AnalysisService } from '../src/services/analysisService'
+import { normalizeUserId } from '../src/lib/security'
+import config from '../src/lib/config'
 
 // Mock fetch for API calls
 global.fetch = vi.fn()
+
+
+describe('configuration', () => {
+  it('exposes the analysis API base URL from validated config', () => {
+    expect(config.getApi().baseUrl).toBe('http://localhost:8002')
+  })
+})
+
+describe('normalizeUserId', () => {
+  it('trims whitespace and preserves lichess casing', () => {
+    expect(normalizeUserId('  MagnusCarlsen  ', 'lichess')).toBe('MagnusCarlsen')
+  })
+
+  it('lowercases chess.com usernames', () => {
+    expect(normalizeUserId('  Hikaru  ', 'chess.com')).toBe('hikaru')
+  })
+})
 
 describe('Services', () => {
   describe('AnalysisService', () => {

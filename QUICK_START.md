@@ -32,15 +32,15 @@ npm run setup-env
 1. **Copy environment files:**
    ```bash
    # Frontend
-   copy env.example .env
+   copy env.example .env.local
    
    # Backend
-   copy python\env.example python\.env
+   copy python\.env.example python\.env.local
    ```
 
 2. **Edit the files with your Supabase credentials:**
-   - Edit `.env` (frontend)
-   - Edit `python\.env` (backend)
+   - Edit `.env.local` (frontend)
+   - Edit `python\.env.local` (backend)
 
 ## Required Credentials
 
@@ -55,14 +55,14 @@ You need to get these from your Supabase project:
 
 ## Example Configuration
 
-### Frontend (.env)
+### Frontend (.env.local)
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
 VITE_ANALYSIS_API_URL=http://localhost:8002
 ```
 
-### Backend (python\.env)
+### Backend (python\.env.local)
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here

@@ -11,6 +11,30 @@ Object.defineProperty(import.meta, 'env', {
   writable: true,
 })
 
+
+const chainStub = {
+  select: vi.fn(() => chainStub),
+  eq: vi.fn(() => chainStub),
+  order: vi.fn(() => chainStub),
+  limit: vi.fn(() => chainStub),
+  update: vi.fn(() => chainStub),
+  insert: vi.fn(() => chainStub),
+  delete: vi.fn(() => chainStub),
+  upsert: vi.fn(() => chainStub),
+  single: vi.fn(async () => ({ data: null, error: null })),
+  maybeSingle: vi.fn(async () => ({ data: null, error: { code: 'PGRST116' } })),
+}
+
+;(globalThis as any).__supabaseClient = {
+  auth: {
+    getSession: vi.fn(async () => ({ data: { session: null } })),
+    onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+    signInWithPassword: vi.fn(async () => ({ data: null, error: null })),
+    signOut: vi.fn(async () => ({ error: null })),
+  },
+  from: vi.fn(() => chainStub),
+}
+
 // Mock console methods to avoid noise in tests
 global.console = {
   ...console,

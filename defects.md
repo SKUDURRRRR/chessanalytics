@@ -1,188 +1,66 @@
-# Defects & Risk Report
+# Defect & Risk Report
 
-## Critical Issues (Blockers)
+- [D-001] Blocker — .env:6; src/lib/env.ts:5,9 — bug/config
+  - **Evidence**: `envSchema` marks `VITE_ANALYSIS_API_URL` as `z.string().url(...)` while `.env` currently sets `http://localhost:8002!`, which fails Zod validation and throws during app bootstrap.
+  - **Root Cause**: Trailing `!` in the committed environment example (and likely developer envs) creates an invalid URL string.
+  - **FIX PLAN**: Correct the sample/env values (`http://localhost:8002`), regenerate `.env.example`, and add lint/test that `npm run validate-env`/`npm run typecheck` run as part of CI to prevent regressions.
 
-### [DEFECT-001] Missing TypeScript Configuration
-- **Severity**: Blocker
-- **Location**: package.json:6-25
-- **Category**: Type/Configuration
-- **Evidence**: `npm run typecheck` fails - script not defined
-- **Root Cause**: Missing essential npm scripts for development workflow
-- **Fix Plan**: Add typecheck, lint, format, e2e scripts to package.json
+- [D-002] Blocker — python/core/config.py:14; python/core/unified_api_server.py:55 — bug/config
+  - **Evidence**: `load_dotenv((Path(__file__).resolve().parent.parent / '.env'))` loads the frontend `.env` instead of `python/.env`, so Supabase settings resolve to empty strings. Runtime logs confirm fallback: `⚠️  Database configuration not found. Using mock clients for development.`
+  - **Root Cause**: Mis-targeted dotenv path ignores backend-specific configuration, leaving the API without DB credentials even when `python/.env` exists.
+  - **FIX PLAN**: Point `load_dotenv` to `Path(__file__).resolve().parent / '..' / '.env'` (or allow injecting a path), honour `python/.env`, and add tests that `get_config()` emits populated values when backend env vars are present.
 
-### [DEFECT-002] TypeScript Compilation Errors
-- **Severity**: Blocker  
-- **Location**: 19 files with 59 TypeScript errors
-- **Category**: Type/Bug
-- **Evidence**: `npx tsc --noEmit` shows 59 errors across multiple files
-- **Root Cause**: 
-  - Unused React imports (React 17+ JSX transform)
-  - Missing type definitions for import.meta.env
-  - Implicit any types in function parameters
-  - Type mismatches in service functions
-- **Fix Plan**: 
-  - Remove unused React imports
-  - Add proper type definitions for Vite environment
-  - Fix implicit any types
-  - Correct type mismatches
+- [D-003] Blocker — python/.env:1-32 — security
+  - **Evidence**: File checked into git with real Supabase anon & service keys plus JWT secret and Stockfish paths (lines 1-32). Service-role key is especially sensitive.
+  - **Root Cause**: Secrets committed to the repository and referenced directly instead of using secret management / ignored files.
+  - **FIX PLAN**: Remove the file from version control, rotate Supabase keys, provide `.env.example` guidance, and update `.gitignore` & docs to keep secrets local-only.
 
-### [DEFECT-003] Missing Test Infrastructure
-- **Severity**: Blocker
-- **Location**: tests/ directory missing
-- **Category**: Testing/Quality
-- **Evidence**: `npm run test` fails - no test files found
-- **Root Cause**: Test directory and files not created
-- **Fix Plan**: Create comprehensive test suite with unit, integration, and E2E tests
+- [D-004] Blocker — supabase/migrations (missing game_analyses/move_analyses/game_features) — bug/db
+  - **Evidence**: `rg "CREATE TABLE .*game_analyses" supabase/migrations` returns no results, yet migrations such as `20241220_complete_rls_policies.sql` reference those tables. Running `supabase db reset` fails because required tables are absent.
+  - **Root Cause**: Core analysis tables were never added (or were removed) from the migration set while downstream code and policies still depend on them.
+  - **FIX PLAN**: Author forward-only migrations that create `game_analyses`, `move_analyses`, and `game_features` with the documented schema, re-run policy migrations, and add regression tests (`supabase db reset` in CI) to ensure bootstrap succeeds.
 
-## Major Issues
+- [D-005] Major — supabase/migrations/20241220_consolidate_schema_final.sql:76-80 — bug/db
+  - **Evidence**: Migration recreates `user_profiles` with `user_id TEXT UNIQUE NOT NULL`, eliminating the `(user_id, platform)` composite uniqueness required for multi-platform support.
+  - **Root Cause**: Later consolidation migration diverged from the original schema, forcing a global unique index on `user_id`.
+  - **FIX PLAN**: Replace with a composite unique constraint `(user_id, platform)`, include a follow-up migration to fix existing indexes, and add regression tests in diagnostics utilities to assert per-platform duplicates are allowed.
 
-### [DEFECT-004] Security Vulnerabilities
-- **Severity**: Major
-- **Location**: src/lib/supabase.ts:4-11
-- **Category**: Security
-- **Evidence**: Hardcoded mock credentials and fallback to mock client
-- **Root Cause**: No proper environment validation or secure fallback
-- **Fix Plan**: 
-  - Add environment variable validation with zod
-  - Implement secure error handling
-  - Remove hardcoded credentials
+- [D-006] Major — supabase/migrations/20241220_create_games_pgn_table.sql:45 — security
+  - **Evidence**: The migration ends with `GRANT ALL ON games_pgn TO anon;`, allowing unauthenticated clients to insert/update/delete raw PGNs.
+  - **Root Cause**: Overly permissive grant intended for reads only.
+  - **FIX PLAN**: Restrict anon role to `SELECT` (or remove entirely), ensure write operations use authenticated/service roles, and document the security posture.
 
-### [DEFECT-005] Database Schema Inconsistencies
-- **Severity**: Major
-- **Location**: Multiple migration files
-- **Category**: Database/Data
-- **Evidence**: Multiple analysis tables with overlapping functionality
-- **Root Cause**: Evolution of schema without proper consolidation
-- **Fix Plan**: 
-  - Consolidate analysis tables
-  - Create proper migration strategy
-  - Add database constraints and indexes
+- [D-007] Major — src/services/autoImportService.ts:312-315 — bug/data
+  - **Evidence**: After import, the profile updater runs `.update({ total_games: savedGames, ... })`, overwriting cumulative totals with the size of the most recent batch.
+  - **Root Cause**: Using the number of games imported in the current run rather than persisting the actual total from Supabase.
+  - **FIX PLAN**: Fetch the current totals (or derive from Supabase counts) and increment appropriately, adding unit tests around `importLast100Games` to verify totals are cumulative.
 
-### [DEFECT-006] API Error Handling
-- **Severity**: Major
-- **Location**: python/core/api_server.py:519-548
-- **Category**: Bug/Reliability
-- **Evidence**: `self._analyze_single_game` called without `self` context
-- **Root Cause**: Incorrect method call in async function
-- **Fix Plan**: Fix method call syntax and error handling
+- [D-008] Major — src/services/autoImportService.ts:69 — bug/dx
+  - **Evidence**: Chess.com validation fetches `http://localhost:8002/proxy/chess-com/...` directly, hard-coding localhost and HTTP.
+  - **Root Cause**: Service bypasses the runtime configuration (`config.getApi().baseUrl`), so non-local deployments cannot validate Chess.com users.
+  - **FIX PLAN**: Drive all API calls through the configured analysis API base URL, reuse the central config helper, and cover with integration tests that respect environment overrides.
 
-### [DEFECT-007] Performance Issues
-- **Severity**: Major
-- **Location**: python/core/analysis_engine.py:464-498
-- **Category**: Performance
-- **Evidence**: Sequential game processing in batch analysis
-- **Root Cause**: No proper parallel processing implementation
-- **Fix Plan**: Implement proper async/await parallel processing
+- [D-009] Major — src/services/profileService.ts:35-74 — bug/data
+  - **Evidence**: `getOrCreateProfile` and related helpers query/insert using the raw `userId`, whereas Chess.com usernames should be lowercased (see `AutoImportService.normalizeUsername`).
+  - **Root Cause**: Lack of shared normalization between profile and import services causes duplicate rows and mismatched lookups for case-insensitive platforms.
+  - **FIX PLAN**: Introduce a shared `normalizeUserId` helper, apply it across profile CRUD/update methods, and add regression tests covering case-variant usernames.
 
-## Minor Issues
+- [D-010] Major — .github/workflows/ci.yml:49-53 — bug/dx
+  - **Evidence**: CI runs `npm run test:contract`, `test:fe`, `test:import`, `test:parity`, `test:rls`, none of which exist in `package.json` (verified via scripts list).
+  - **Root Cause**: Workflow copied from a different project without aligning to available npm scripts, so CI will fail immediately.
+  - **FIX PLAN**: Update the workflow to run the real commands (`npm run lint`, `npm run typecheck`, `npm run test`, `npm run e2e`, etc.), add Supabase service bootstrapping, and gate merges on passing jobs.
 
-### [DEFECT-008] Unused Imports and Variables
-- **Severity**: Minor
-- **Location**: Multiple files
-- **Category**: Code Quality
-- **Evidence**: 18 unused parameter warnings in supabase.ts
-- **Root Cause**: Mock implementation with unused parameters
-- **Fix Plan**: Remove unused parameters or add underscore prefix
+- [D-011] Major — src/services/autoImportService.ts:343-345 — type
+  - **Evidence**: Import result returns `errors: errors as unknown as string[]` while `errors` is a numeric counter, producing a runtime type mismatch and confusing API consumers/tests.
+  - **Root Cause**: Interface `ImportResult.errors` was defined as `string[]`, but implementation kept a counter and force-cast it.
+  - **FIX PLAN**: Decide on the desired type (array vs count), adjust the interface and implementation accordingly, and extend unit tests to assert the error payload shape.
 
-### [DEFECT-009] Missing Error Boundaries
-- **Severity**: Minor
-- **Location**: src/components/
-- **Category**: UX/Reliability
-- **Evidence**: ErrorBoundary component exists but not used consistently
-- **Root Cause**: Incomplete error boundary implementation
-- **Fix Plan**: Wrap all major components with error boundaries
+- [D-012] Minor — supabase/sql/health.sql:68 — bug
+  - **Evidence**: Health check flags invalid platforms using `platform NOT IN ('lichess', 'chesscom')`; the schema stores `'chess.com'`, so every Chess.com row is treated as invalid.
+  - **Root Cause**: Typo in the validation SQL.
+  - **FIX PLAN**: Update the health script to reference `'chess.com'`, add regression coverage (SQL test) to keep checks aligned with enum constraints.
 
-### [DEFECT-010] Inconsistent Type Definitions
-- **Severity**: Minor
-- **Location**: src/services/deepAnalysisService.ts:195
-- **Category**: Type
-- **Evidence**: Missing properties in return type
-- **Root Cause**: Interface mismatch between expected and actual return type
-- **Fix Plan**: Update interface definitions to match implementation
-
-## Security Risks
-
-### [RISK-001] Environment Variable Exposure
-- **Risk Level**: High
-- **Location**: All environment variable usage
-- **Issue**: No validation or sanitization of environment variables
-- **Impact**: Potential credential leakage or configuration injection
-- **Mitigation**: Implement zod-based environment validation
-
-### [RISK-002] SQL Injection Potential
-- **Risk Level**: Medium
-- **Location**: Supabase queries
-- **Issue**: Raw string interpolation in some queries
-- **Impact**: Potential data breach
-- **Mitigation**: Use parameterized queries consistently
-
-### [RISK-003] CORS Configuration
-- **Risk Level**: Medium
-- **Location**: python/core/api_server.py:87-93
-- **Issue**: CORS origins from config without validation
-- **Impact**: Potential XSS attacks
-- **Mitigation**: Validate and restrict CORS origins
-
-## Performance Bottlenecks
-
-### [PERF-001] Sequential Game Analysis
-- **Impact**: High
-- **Location**: python/core/api_server.py:464-498
-- **Issue**: Games processed one by one instead of parallel
-- **Solution**: Implement proper async parallel processing
-
-### [PERF-002] Missing Database Indexes
-- **Impact**: Medium
-- **Location**: Database queries
-- **Issue**: Some queries may be slow without proper indexes
-- **Solution**: Add performance indexes for common query patterns
-
-### [PERF-003] Large Mock Data in Frontend
-- **Impact**: Low
-- **Location**: src/lib/supabase.ts:32-69
-- **Issue**: Large mock data loaded in memory
-- **Solution**: Implement lazy loading or smaller mock datasets
-
-## Code Quality Issues
-
-### [QUALITY-001] Inconsistent Error Handling
-- **Location**: Multiple files
-- **Issue**: Some functions return null, others throw exceptions
-- **Solution**: Standardize error handling patterns
-
-### [QUALITY-002] Missing Documentation
-- **Location**: Most functions
-- **Issue**: Limited JSDoc/TypeDoc comments
-- **Solution**: Add comprehensive documentation
-
-### [QUALITY-003] Hardcoded Values
-- **Location**: Multiple files
-- **Issue**: Magic numbers and strings throughout codebase
-- **Solution**: Extract to configuration constants
-
-## Database Issues
-
-### [DB-001] Schema Evolution Problems
-- **Location**: supabase/migrations/
-- **Issue**: Multiple overlapping tables for similar data
-- **Solution**: Consolidate and create proper migration strategy
-
-### [DB-002] Missing Constraints
-- **Location**: Database schema
-- **Issue**: Some tables lack proper foreign key constraints
-- **Solution**: Add proper relationships and constraints
-
-### [DB-003] RLS Policy Gaps
-- **Location**: RLS policies
-- **Issue**: Some tables may have incomplete RLS policies
-- **Solution**: Audit and complete RLS coverage
-
-## Fix Priority Order
-
-1. **Critical (Blockers)**: DEFECT-001, DEFECT-002, DEFECT-003
-2. **Major**: DEFECT-004, DEFECT-005, DEFECT-006, DEFECT-007
-3. **Minor**: DEFECT-008, DEFECT-009, DEFECT-010
-4. **Security**: RISK-001, RISK-002, RISK-003
-5. **Performance**: PERF-001, PERF-002, PERF-003
-6. **Quality**: QUALITY-001, QUALITY-002, QUALITY-003
-7. **Database**: DB-001, DB-002, DB-003
+- [D-013] Minor — src/lib/env.ts:88-93 — security
+  - **Evidence**: Development log prints `SUPABASE_URL` and `API_URL` to the console alongside other envs, broadcasting credentials whenever the module loads.
+  - **Root Cause**: Debug logging left in production bundle path; even though anon keys are public, logging credentials is discouraged and noisy.
+  - **FIX PLAN**: Remove or behind a debug flag for sensitive env logging, and document logging expectations in CONTRIBUTING.

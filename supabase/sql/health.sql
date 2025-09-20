@@ -65,7 +65,7 @@ SELECT
   provider_game_id,
   platform
 FROM public.games
-WHERE platform NOT IN ('lichess', 'chesscom');
+WHERE platform NOT IN ('lichess', 'chess.com');
 
 -- F) Check for missing required fields
 -- This ensures data completeness

@@ -10,22 +10,22 @@ console.log('🔍 Validating Environment Variables')
 console.log('===================================')
 
 // Check if .env files exist
-const frontendEnvPath = '.env'
-const backendEnvPath = 'python/.env'
+const frontendEnvPath = fs.existsSync('.env.local') ? '.env.local' : '.env'
+const backendEnvPath = fs.existsSync('python/.env.local') ? 'python/.env.local' : 'python/.env'
 
 const frontendEnvExists = fs.existsSync(frontendEnvPath)
 const backendEnvExists = fs.existsSync(backendEnvPath)
 
-console.log(`Frontend .env: ${frontendEnvExists ? '✅ Found' : '❌ Missing'}`)
-console.log(`Backend .env: ${backendEnvExists ? '✅ Found' : '❌ Missing'}`)
+console.log(`Frontend env file (${frontendEnvPath}): ${frontendEnvExists ? '�o. Found' : '�?O Missing'}`)
+console.log(`Backend env file (${backendEnvPath}): ${backendEnvExists ? '�o. Found' : '�?O Missing'}`)
 
 if (!frontendEnvExists || !backendEnvExists) {
-  console.log('\n🚨 Missing .env files detected!')
-  console.log('Run: ./setup-env.sh (Linux/Mac) or setup-env.bat (Windows)')
+  console.log('\ndYs" Missing env files detected!')
+  console.log('Create them from env.example and python/.env.example')
   process.exit(1)
 }
 
-// Read and validate frontend .env
+// Read and validate frontend env
 console.log('\n📋 Frontend Environment Variables:')
 const frontendEnv = fs.readFileSync(frontendEnvPath, 'utf8')
 const frontendLines = frontendEnv.split('\n').filter(line => line.trim() && !line.startsWith('#'))

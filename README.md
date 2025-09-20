@@ -21,9 +21,9 @@ npm install
 ### 2. Set Up Environment
 ```bash
 # Copy the example env file
-cp env.example .env
+cp env.example .env.local
 
-# Edit .env with your Supabase credentials
+# Edit .env.local (or .env) with your Supabase credentials
 # VITE_SUPABASE_URL=https://your-project.supabase.co
 # VITE_SUPABASE_ANON_KEY=your-anon-key
 ```

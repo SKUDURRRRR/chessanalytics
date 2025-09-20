@@ -27,10 +27,10 @@ API_PORT=8002
 #### Frontend Setup
 1. Copy the example file:
    ```bash
-   cp env.example .env
+   cp env.example .env.local
    ```
 
-2. Edit `.env` with your actual values:
+2. Edit `.env.local` with your actual values:
    ```bash
    # .env
    VITE_SUPABASE_URL=https://your-project.supabase.co
@@ -41,10 +41,10 @@ API_PORT=8002
 #### Backend Setup
 1. Copy the example file:
    ```bash
-   cp python/env.example python/.env
+   cp python/.env.example python/.env.local
    ```
 
-2. Edit `python/.env` with your actual values:
+2. Edit `python/.env.local` with your actual values:
    ```bash
    # python/.env
    SUPABASE_URL=https://your-project.supabase.co

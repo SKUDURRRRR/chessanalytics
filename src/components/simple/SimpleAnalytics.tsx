@@ -26,7 +26,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
 
       const result = await AnalysisService.getAnalysisStats(
         userId,
-        (platform as 'lichess' | 'chess.com') || 'lichess'
+        (platform as 'lichess' | 'chess.com') || 'lichess',
+        'basic' // Use basic analysis type
       )
       setData(result)
     } catch (err) {
@@ -81,8 +82,34 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
     )
   }
 
+  // Check if we're showing mock data
+  const isMockData = data.total_games_analyzed === 15 && data.average_accuracy === 78.5
+
   return (
     <div className="space-y-4" data-testid="analytics-container">
+      {/* Mock Data Warning */}
+      {isMockData && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <div className="text-yellow-600 text-xl">⚠️</div>
+            <div>
+              <h3 className="text-lg font-semibold text-yellow-800 mb-2">Demo Data Shown</h3>
+              <p className="text-yellow-700 mb-3">
+                You're seeing sample analytics data because no analysis has been performed on your games yet.
+              </p>
+              <div className="bg-yellow-100 p-3 rounded border border-yellow-300">
+                <p className="text-yellow-800 font-medium mb-1">To see your real analytics:</p>
+                <ol className="text-yellow-700 text-sm space-y-1 list-decimal list-inside">
+                  <li>Click the "Analyze My Games" button above</li>
+                  <li>Wait for the analysis to complete (this may take a few minutes)</li>
+                  <li>Refresh the page to see your real analytics data</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-lg shadow">

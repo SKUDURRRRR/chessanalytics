@@ -7,6 +7,7 @@ import { MatchHistory } from '../components/simple/MatchHistory'
 import { DeepAnalysisBlock } from '../components/deep/DeepAnalysisBlock'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { AnalysisService } from '../services/analysisService'
+import DatabaseDiagnosticsComponent from '../components/debug/DatabaseDiagnostics'
 
 export default function SimpleAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -23,6 +24,7 @@ export default function SimpleAnalyticsPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [apiAvailable, setApiAvailable] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [showDebug, setShowDebug] = useState(false)
 
   useEffect(() => {
     // Check for route parameters first, then URL parameters
@@ -147,6 +149,12 @@ export default function SimpleAnalyticsPage() {
               >
                 {analyzing ? 'Analyzing...' : 'Analyze My Games'}
               </button>
+              <button
+                onClick={() => setShowDebug(!showDebug)}
+                className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium"
+              >
+                {showDebug ? 'Hide Debug' : 'Debug'}
+              </button>
               {lastRefresh && (
                 <span className="text-xs text-gray-500">
                   Updated: {lastRefresh.toLocaleTimeString()}
@@ -221,6 +229,20 @@ export default function SimpleAnalyticsPage() {
         <ErrorBoundary>
           <MatchHistory key={`match-history-${refreshKey}`} userId={userId} platform={platform} />
         </ErrorBoundary>
+      )}
+
+      {/* Debug Panel */}
+      {showDebug && userId && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold text-gray-800">Debug Information</h2>
+          <DatabaseDiagnosticsComponent
+            userId={userId}
+            platform={platform}
+            onDiagnosticsComplete={(diagnostics) => {
+              console.log('Diagnostics completed:', diagnostics)
+            }}
+          />
+        </div>
       )}
 
       {/* Analysis Error Message */}

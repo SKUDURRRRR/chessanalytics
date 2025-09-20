@@ -85,12 +85,10 @@ export const isSecureEnvironment = () => {
 
 // Log environment status
 if (isDevelopment) {
-  console.log('🔧 Environment loaded:', {
+  console.log('🔧 Environment loaded', {
     NODE_ENV: env.NODE_ENV,
-    SUPABASE_URL: env.VITE_SUPABASE_URL,
-    API_URL: env.VITE_ANALYSIS_API_URL,
-    DEBUG: env.VITE_DEBUG,
     LOG_LEVEL: env.VITE_LOG_LEVEL,
+    DEBUG: env.VITE_DEBUG,
     SECURE: isSecureEnvironment()
   })
 }

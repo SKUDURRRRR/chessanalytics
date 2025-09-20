@@ -6,6 +6,12 @@ export const userIdSchema = z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/,
 export const platformSchema = z.enum(['lichess', 'chess.com'])
 export const gameIdSchema = z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, 'Invalid game ID format')
 
+
+// Normalize user identifiers consistently across services
+export function normalizeUserId(userId: string, platform: 'lichess' | 'chess.com'): string {
+  const trimmed = userId.trim()
+  return platform === 'chess.com' ? trimmed.toLowerCase() : trimmed
+}
 // SQL injection prevention
 export function sanitizeInput(input: string): string {
   // Remove potentially dangerous characters

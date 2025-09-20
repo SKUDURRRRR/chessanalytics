@@ -98,8 +98,8 @@ class GameAnalysis:
     positional_score: float
     aggressive_score: float
     patient_score: float
-    endgame_score: float
-    opening_score: float
+    novelty_score: float
+    staleness_score: float
     
     # Patterns and themes
     tactical_patterns: List[Dict]

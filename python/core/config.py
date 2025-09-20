@@ -9,6 +9,14 @@ import json
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+# Load backend-specific environment first, then optional overrides
+load_dotenv(BASE_DIR / '.env')
+load_dotenv(BASE_DIR / '.env.local', override=True)
+# Allow project root .env to fill in defaults without clobbering backend values
+load_dotenv(BASE_DIR.parent / '.env', override=False)
 
 @dataclass
 class DatabaseConfig:
