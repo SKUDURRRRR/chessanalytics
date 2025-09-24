@@ -41,3 +41,4 @@ logs/
 python/.env
 python/.env.local
 
+\n# Local backup archives\nbackups/\nBACKUP 09 20.txt\n\n# Editor configs\n.cursorignore\n
