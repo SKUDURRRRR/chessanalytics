@@ -165,9 +165,8 @@ async function safeReadError(response: Response): Promise<string> {
   try {
     const text = await response.text()
     return text || response.statusText
-  } catch (
-    /** swallow */
-  ) {
+  } catch {
     return response.statusText
   }
 }
+
