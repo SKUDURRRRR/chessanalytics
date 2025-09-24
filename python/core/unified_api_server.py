@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Annotated, Union
+from collections import Counter
+from decimal import Decimal
 import uvicorn
 import asyncio
 import os
@@ -117,6 +119,21 @@ app.add_middleware(
 # Global analysis engine instance
 analysis_engine = None
 
+SUPPORTED_ANALYSIS_TYPES = {"stockfish", "deep"}
+
+
+def _normalize_analysis_type(requested: Optional[str], *, quiet: bool = False) -> str:
+    """Map requested analysis types to the currently supported set."""
+    normalized = (requested or "stockfish").lower()
+    if normalized == "basic":
+        if not quiet:
+            print("[info] 'basic' analysis temporarily mapped to 'stockfish' for current MVP scope.")
+        normalized = "stockfish"
+    if normalized not in SUPPORTED_ANALYSIS_TYPES:
+        raise ValidationError("Invalid analysis_type. Must be 'stockfish' or 'deep'", "analysis_type")
+    return normalized
+
+
 # In-memory storage for analysis progress
 analysis_progress = {}
 
@@ -128,7 +145,7 @@ class UnifiedAnalysisRequest(BaseModel):
     """Unified request model for all analysis types."""
     user_id: str = Field(..., description="User ID to analyze games for")
     platform: str = Field(..., description="Platform (lichess, chess.com, etc.)")
-    analysis_type: str = Field("stockfish", description="Type of analysis: basic, stockfish, or deep")
+    analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep. \"basic\" is temporarily mapped to stockfish.")
     limit: Optional[int] = Field(10, description="Maximum number of games to analyze")
     depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
     skill_level: Optional[int] = Field(8, description="Stockfish skill level (0-20)")
@@ -299,7 +316,7 @@ async def health_check():
         "service": "unified-chess-analysis-api",
         "version": "3.0.0",
         "stockfish_available": stockfish_available,
-        "analysis_types": ["basic", "stockfish", "deep"],
+        "analysis_types": ["stockfish", "deep"],
         "database_connected": True,
         "timestamp": datetime.now().isoformat()
     }
@@ -321,9 +338,12 @@ async def unified_analyze(
     - /analyze-game (single game analysis)
     """
     try:
-        # Validate analysis type
-        if request.analysis_type not in ["basic", "stockfish", "deep"]:
-            raise ValidationError("Invalid analysis_type. Must be 'basic', 'stockfish', or 'deep'", "analysis_type")
+        # Normalize and validate analysis type
+        original_type = request.analysis_type
+        normalized_type = _normalize_analysis_type(request.analysis_type)
+        if normalized_type != original_type:
+            print(f"[info] Requested analysis_type '{original_type}' mapped to '{normalized_type}' for MVP configuration.")
+        request.analysis_type = normalized_type
         
         # Validate user_id and platform
         if not request.user_id or not isinstance(request.user_id, str):
@@ -365,43 +385,32 @@ async def get_analysis_results(
     try:
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
+        print(f"[DEBUG] get_analysis_results called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
+        print(f"[DEBUG] canonical_user_id={canonical_user_id}")
         
-        # Use unified view for consistent data access
         if not supabase and not supabase_service:
             print("[warn]  Database not available. Returning empty results.")
             return []
             
-        if analysis_type in ["stockfish", "deep"]:
-            if supabase_service:
-                response = supabase_service.table('unified_analyses').select('*').eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).eq(
-                    'analysis_type', analysis_type
-                ).order(
-                    'analysis_date', desc=True
-                ).limit(limit).execute()
-            else:
-                response = type('MockResponse', (), {'data': []})()
+        # Query move_analyses table directly for Stockfish analysis
+        if supabase_service:
+            response = supabase_service.table('move_analyses').select('*').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).order(
+                'analysis_date', desc=True
+            ).limit(limit).execute()
         else:
-            if supabase_service:
-                response = supabase_service.table('unified_analyses').select('*').eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).eq(
-                    'analysis_type', 'basic'
-                ).order(
-                    'analysis_date', desc=True
-                ).limit(limit).execute()
-            else:
-                response = type('MockResponse', (), {'data': []})()
+            response = type('MockResponse', (), {'data': []})()
         
         if not response.data or len(response.data) == 0:
             # Return mock data for development when no real data is available
-            print("[stats] No data found, returning mock analysis results for development")
+            print(f"[results] No data found for user {canonical_user_id} on {platform}, returning mock analysis results for development")
+            print(f"[results] Query was: move_analyses where user_id={canonical_user_id} AND platform={platform}")
             return _get_mock_analysis_results()
         
         results = []
         for analysis in response.data:
-            results.append(_map_unified_analysis_to_response(analysis))
+            results.append(_map_move_analysis_to_response(analysis))
         
         return results
     except Exception as e:
@@ -423,37 +432,25 @@ async def get_analysis_stats(
         canonical_user_id = _canonical_user_id(user_id, platform)
         print(f"[DEBUG] canonical_user_id={canonical_user_id}")
         
-        # Use unified view for consistent data access
         if not supabase and not supabase_service:
             print("[warn]  Database not available. Returning empty stats.")
             return _get_empty_stats()
             
-        if analysis_type in ["stockfish", "deep"]:
-            if supabase_service:
-                response = supabase_service.table('unified_analyses').select('*').eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).eq(
-                    'analysis_type', analysis_type
-                ).execute()
-            else:
-                response = type('MockResponse', (), {'data': []})()
+        # Query unified_analyses table for analysis statistics
+        if supabase:
+            response = supabase.table('unified_analyses').select('*').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).execute()
         else:
-            if supabase_service:
-                response = supabase_service.table('unified_analyses').select('*').eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).eq(
-                    'analysis_type', 'basic'
-                ).execute()
-            else:
-                response = type('MockResponse', (), {'data': []})()
+            response = type('MockResponse', (), {'data': []})()
         
         if not response.data or len(response.data) == 0:
             # Return mock data for development when no real data is available
-            print(f"[stats] No data found for user {canonical_user_id} on {platform} with analysis_type {analysis_type}, returning mock stats for development")
-            print(f"[stats] Query was: unified_analyses where user_id={canonical_user_id} AND platform={platform} AND analysis_type={analysis_type}")
+            print(f"[stats] No data found for user {canonical_user_id} on {platform}, returning mock stats for development")
+            print(f"[stats] Query was: unified_analyses where user_id={canonical_user_id} AND platform={platform}")
             return _get_mock_stats()
         
-        return _calculate_unified_stats(response.data, analysis_type)
+        return _calculate_unified_analysis_stats(response.data)
     except Exception as e:
         print(f"Error fetching analysis stats: {e}")
         return _get_empty_stats()
@@ -487,6 +484,63 @@ async def get_analysis_progress(
         estimated_time_remaining=progress.get("estimated_time_remaining")
     )
 
+@app.get("/api/v1/progress-realtime/{user_id}/{platform}", response_model=AnalysisProgress)
+async def get_realtime_analysis_progress(
+    user_id: str,
+    platform: str,
+    analysis_type: str = Query("stockfish"),
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """Get real-time analysis progress by querying the database."""
+    try:
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        normalized_type = _normalize_analysis_type(analysis_type, quiet=True)
+        
+        if not supabase:
+            return AnalysisProgress(
+                analyzed_games=0,
+                total_games=0,
+                progress_percentage=0,
+                is_complete=True,
+                current_phase="error",
+                estimated_time_remaining=None
+            )
+        
+        # Get total games available for analysis
+        games_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).execute()
+        total_games = len(games_response.data) if games_response.data else 0
+        
+        # Get analyzed games count from database
+        analysis_response = supabase.table('unified_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).eq('analysis_type', normalized_type).execute()
+        analyzed_games = len(analysis_response.data) if analysis_response.data else 0
+        
+        # Calculate progress
+        progress_percentage = int((analyzed_games / total_games) * 100) if total_games > 0 else 0
+        is_complete = analyzed_games >= total_games and total_games > 0
+        current_phase = "complete" if is_complete else "analyzing"
+        
+        return AnalysisProgress(
+            analyzed_games=analyzed_games,
+            total_games=total_games,
+            progress_percentage=progress_percentage,
+            is_complete=is_complete,
+            current_phase=current_phase,
+            estimated_time_remaining=None
+        )
+        
+    except Exception as e:
+        print(f"Error getting real-time progress: {e}")
+        return AnalysisProgress(
+            analyzed_games=0,
+            total_games=0,
+            progress_percentage=0,
+            is_complete=True,
+            current_phase="error",
+            estimated_time_remaining=None
+        )
+
 @app.get("/api/v1/deep-analysis/{user_id}/{platform}", response_model=DeepAnalysisData)
 async def get_deep_analysis(
     user_id: str,
@@ -496,25 +550,366 @@ async def get_deep_analysis(
 ):
     """Get deep analysis with personality insights."""
     try:
-        # This would integrate with the existing deep analysis service
-        # For now, return a placeholder response
-        return DeepAnalysisData(
-            total_games=0,
-            average_accuracy=0.0,
-            current_rating=0,
-            personality_scores={},
-            player_level="beginner",
-            player_style={},
-            primary_strengths=[],
-            improvement_areas=[],
-            playing_style="Developing player",
-            phase_accuracies={},
-            recommendations={}
-        )
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured for deep analysis")
+
+        games_response = db_client.table('games').select(
+            'provider_game_id, result, opening, opening_family, time_control, my_rating, played_at'
+        ).eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).execute()
+        games = games_response.data or []
+
+        profile_response = db_client.table('user_profiles').select('current_rating').eq(
+            'user_id', canonical_user_id
+        ).eq('platform', platform).maybe_single().execute()
+        profile = getattr(profile_response, 'data', None) or {}
+
+        analyses_response = db_client.table('move_analyses').select('*').eq(
+            'user_id', canonical_user_id
+        ).eq('platform', platform).order('analysis_date', desc=True).execute()
+        analyses = analyses_response.data or []
+
+        if not analyses:
+            return _build_fallback_deep_analysis(canonical_user_id, games, profile)
+
+        return _build_deep_analysis_response(canonical_user_id, games, analyses, profile)
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error fetching deep analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+PERSONALITY_LABELS = {
+    'tactical': 'Tactical awareness',
+    'positional': 'Positional understanding',
+    'aggressive': 'Attacking initiative',
+    'patient': 'Defensive technique',
+    'endgame': 'Endgame technique',
+    'opening': 'Opening preparation',
+    'novelty': 'Creativity',
+    'staleness': 'Repetition risk',
+}
+
+CORE_PERSONALITY_KEYS = [
+    'tactical',
+    'positional',
+    'aggressive',
+    'patient',
+    'endgame',
+    'opening',
+    'novelty',
+]
+
+STYLE_CATEGORY_MAP = {
+    'tactical': ('tactical', 'Thrives in dynamic, calculation-heavy situations.'),
+    'aggressive': ('aggressive', 'Looks to seize the initiative and pressure the opponent.'),
+    'positional': ('positional', 'Prefers long-term advantages and structural edges.'),
+    'patient': ('balanced', 'Keeps the position under control and minimises risk.'),
+}
+
+STYLE_SUMMARIES = {
+    'tactical': 'Tactical fighter who thrives in dynamic positions.',
+    'aggressive': 'Aggressive initiative hunter looking for sharp play.',
+    'positional': 'Strategic planner who values positional advantages.',
+    'balanced': 'Balanced and patient style that values solidity.',
+}
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_average(values: List[Optional[float]], default: float = 0.0) -> float:
+    filtered = [v for v in values if v is not None]
+    if not filtered:
+        return default
+    return sum(filtered) / len(filtered)
+
+
+def _round2(value: Optional[float]) -> float:
+    if value is None:
+        return 0.0
+    return round(float(value), 2)
+
+
+def _infer_current_rating(games: List[Dict[str, Any]], profile: Dict[str, Any]) -> int:
+    rating = _coerce_float((profile or {}).get('current_rating'))
+    if rating:
+        return int(round(rating))
+    for game in games:
+        game_rating = _coerce_float(game.get('my_rating'))
+        if game_rating:
+            return int(round(game_rating))
+    return 0
+
+
+def _compute_opening_accuracy_from_moves(analyses: List[Dict[str, Any]]) -> float:
+    best = 0
+    total = 0
+    for analysis in analyses:
+        moves = analysis.get('moves_analysis') or []
+        for idx, move in enumerate(moves):
+            if idx >= 30:
+                break
+            total += 1
+            if move.get('is_best'):
+                best += 1
+    return (best / total * 100.0) if total else 0.0
+
+
+def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
+    if not games:
+        return 50.0
+    unique_openings = len({
+        (game.get('opening_family') or game.get('opening') or 'Unknown')
+        for game in games
+    })
+    time_controls = len({game.get('time_control') or 'Unknown' for game in games})
+    variety_score = unique_openings * 12.0 + time_controls * 5.0
+    return max(0.0, min(100.0, variety_score))
+
+
+def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
+    if not games:
+        return 30.0
+    total = len(games)
+    opening_counts = Counter(
+        (game.get('opening_family') or game.get('opening') or 'Unknown')
+        for game in games
+    )
+    time_counts = Counter(
+        (game.get('time_control') or 'Unknown')
+        for game in games
+    )
+    most_opening = max(opening_counts.values()) if opening_counts else 0
+    most_time = max(time_counts.values()) if time_counts else 0
+    score = (most_opening / total) * 70.0 + (most_time / total) * 30.0
+    return max(0.0, min(100.0, score))
+
+
+def _compute_personality_scores(
+    analyses: List[Dict[str, Any]],
+    games: List[Dict[str, Any]]
+) -> Dict[str, float]:
+    scores: Dict[str, float] = {}
+    field_map = {
+        'tactical': 'tactical_score',
+        'positional': 'positional_score',
+        'aggressive': 'aggressive_score',
+        'patient': 'patient_score',
+        'novelty': 'novelty_score',
+        'staleness': 'staleness_score',
+    }
+    for key, field in field_map.items():
+        values = [_coerce_float(analysis.get(field)) for analysis in analyses]
+        scores[key] = _round2(_safe_average([v for v in values if v is not None], default=50.0))
+
+    opening_values = [_coerce_float(analysis.get('opening_score')) for analysis in analyses]
+    if any(v is not None for v in opening_values):
+        scores['opening'] = _round2(_safe_average([v for v in opening_values if v is not None], default=50.0))
+    else:
+        scores['opening'] = _round2(_compute_opening_accuracy_from_moves(analyses))
+
+    endgame_values = [_coerce_float(analysis.get('endgame_score')) for analysis in analyses]
+    if any(v is not None for v in endgame_values):
+        scores['endgame'] = _round2(_safe_average([v for v in endgame_values if v is not None], default=50.0))
+    else:
+        fallback_endgame = _safe_average([
+            _coerce_float(analysis.get('endgame_accuracy')) for analysis in analyses
+        ], default=50.0)
+        scores['endgame'] = _round2(fallback_endgame)
+
+    if scores.get('novelty', 0.0) == 0.0:
+        scores['novelty'] = _round2(_estimate_novelty_from_games(games))
+    if scores.get('staleness', 0.0) == 0.0:
+        scores['staleness'] = _round2(_estimate_staleness_from_games(games))
+    if 'opening' not in scores:
+        scores['opening'] = 50.0
+    if 'endgame' not in scores:
+        scores['endgame'] = 50.0
+    return scores
+
+
+def _compute_phase_accuracies(analyses: List[Dict[str, Any]]) -> Dict[str, float]:
+    opening = _round2(_compute_opening_accuracy_from_moves(analyses))
+    middle = _round2(_safe_average([
+        _coerce_float(analysis.get('middle_game_accuracy')) for analysis in analyses
+    ], default=opening))
+    endgame = _round2(_safe_average([
+        _coerce_float(analysis.get('endgame_accuracy')) for analysis in analyses
+    ], default=opening))
+    return {
+        'opening': opening,
+        'middle': middle,
+        'endgame': endgame,
+    }
+
+
+def _determine_player_level(current_rating: int, average_accuracy: float) -> str:
+    rating = current_rating or 0
+    accuracy = average_accuracy or 0.0
+    if rating >= 2200 or accuracy >= 85.0:
+        return 'expert'
+    if rating >= 1800 or accuracy >= 72.0:
+        return 'advanced'
+    if rating >= 1400 or accuracy >= 58.0:
+        return 'intermediate'
+    return 'beginner'
+
+
+def _determine_player_style(personality_scores: Dict[str, float]):
+    ranked = sorted(
+        ((key, personality_scores.get(key, 0.0)) for key in ['aggressive', 'tactical', 'positional', 'patient']),
+        key=lambda item: item[1],
+        reverse=True
+    )
+    top_key, top_value = ranked[0]
+    second_value = ranked[1][1] if len(ranked) > 1 else top_value
+    diff = max(0.0, top_value - second_value)
+    confidence = round(min(95.0, max(35.0, diff * 1.5)), 2)
+    category, description = STYLE_CATEGORY_MAP.get(top_key, ('balanced', 'All-around style with flexible plans.'))
+    summary = STYLE_SUMMARIES.get(category, STYLE_SUMMARIES['balanced'])
+    return {
+        'category': category,
+        'description': description,
+        'confidence': confidence,
+    }, summary
+
+
+def _summarize_strengths_and_gaps(personality_scores: Dict[str, float]):
+    strengths: List[str] = []
+    improvements: List[str] = []
+    for key in CORE_PERSONALITY_KEYS:
+        score = personality_scores.get(key, 0.0)
+        label = PERSONALITY_LABELS[key]
+        if score >= 65.0:
+            strengths.append(label)
+        elif score <= 45.0:
+            improvements.append(label)
+    if personality_scores.get('staleness', 0.0) >= 60.0:
+        improvements.append('Vary your openings to reduce repetition risk')
+    strengths = list(dict.fromkeys(strengths))
+    improvements = list(dict.fromkeys(improvements))
+    return strengths, improvements
+
+
+def _build_recommendations(
+    personality_scores: Dict[str, float],
+    player_style: Dict[str, Any],
+    strengths: List[str],
+    improvements: List[str],
+    phase_accuracies: Dict[str, float]
+) -> Dict[str, str]:
+    ranked = sorted(
+        ((key, personality_scores.get(key, 0.0)) for key in CORE_PERSONALITY_KEYS),
+        key=lambda item: item[1],
+        reverse=True
+    )
+    top_key, top_value = ranked[0]
+    lowest_key, lowest_value = ranked[-1]
+    primary = f"Focus targeted training on {PERSONALITY_LABELS[lowest_key].lower()} (currently {lowest_value:.0f})."
+    if phase_accuracies.get('endgame', 0.0) < 50.0:
+        primary += ' Add dedicated endgame study sessions to stabilise long games.'
+    secondary = f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples."
+    if personality_scores.get('staleness', 0.0) >= 60.0:
+        secondary = 'Introduce more variety in your openings to reduce repetition risk.'
+    leverage = (
+        f"Lean into a {player_style['category']} approach - {player_style['description'].rstrip('.')} to steer games into favourable territory."
+    )
+    return {
+        'primary': primary,
+        'secondary': secondary,
+        'leverage': leverage,
+    }
+
+
+def _build_deep_analysis_response(
+    canonical_user_id: str,
+    games: List[Dict[str, Any]],
+    analyses: List[Dict[str, Any]],
+    profile: Dict[str, Any]
+) -> DeepAnalysisData:
+    total_games = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')}) or len(games)
+    accuracy_values = [_coerce_float(analysis.get('best_move_percentage')) for analysis in analyses]
+    average_accuracy = _round2(_safe_average([v for v in accuracy_values if v is not None]))
+    current_rating = _infer_current_rating(games, profile)
+
+    personality_scores = _compute_personality_scores(analyses, games)
+    phase_accuracies = _compute_phase_accuracies(analyses)
+    player_level = _determine_player_level(current_rating, average_accuracy)
+    player_style, playing_style = _determine_player_style(personality_scores)
+    strengths, improvements = _summarize_strengths_and_gaps(personality_scores)
+    recommendations = _build_recommendations(personality_scores, player_style, strengths, improvements, phase_accuracies)
+
+    return DeepAnalysisData(
+        total_games=total_games,
+        average_accuracy=average_accuracy,
+        current_rating=current_rating,
+        personality_scores=personality_scores,
+        player_level=player_level,
+        player_style=player_style,
+        primary_strengths=strengths,
+        improvement_areas=improvements,
+        playing_style=playing_style,
+        phase_accuracies=phase_accuracies,
+        recommendations=recommendations
+    )
+
+
+def _build_fallback_deep_analysis(
+    canonical_user_id: str,
+    games: List[Dict[str, Any]],
+    profile: Dict[str, Any]
+) -> DeepAnalysisData:
+    total_games = len(games)
+    average_accuracy = _round2(_safe_average([
+        _coerce_float(game.get('accuracy')) for game in games if _coerce_float(game.get('accuracy')) is not None
+    ]))
+    current_rating = _infer_current_rating(games, profile)
+    default_scores = {key: 50.0 for key in PERSONALITY_LABELS.keys()}
+
+    return DeepAnalysisData(
+        total_games=total_games,
+        average_accuracy=average_accuracy,
+        current_rating=current_rating,
+        personality_scores=default_scores,
+        player_level=_determine_player_level(current_rating, average_accuracy),
+        player_style={
+            'category': 'balanced',
+            'description': 'Insufficient analysed games to derive a dominant style.',
+            'confidence': 0.0
+        },
+        primary_strengths=[],
+        improvement_areas=['Run Stockfish analysis to unlock deep insights'],
+        playing_style='Data insufficient - run detailed analysis to populate deep insights.',
+        phase_accuracies={
+            'opening': 0.0,
+            'middle': 0.0,
+            'endgame': 0.0
+        },
+        recommendations={
+            'primary': 'Run Stockfish analysis on recent games to unlock deep recommendations.',
+            'secondary': 'Import more games to build a richer dataset.',
+            'leverage': 'Once analysis is complete we will suggest strengths to lean into.'
+        }
+    )
 # ============================================================================
 # PROXY ENDPOINTS (for external APIs)
 # ============================================================================
@@ -696,15 +1091,15 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
         engine = get_analysis_engine()
         
         # Configure analysis type with optimized settings
-        analysis_type_enum = AnalysisType(request.analysis_type)
+        resolved_type = _normalize_analysis_type(request.analysis_type, quiet=True)
+        if request.analysis_type != resolved_type:
+            request.analysis_type = resolved_type
+        analysis_type_enum = AnalysisType(resolved_type)
         
         # Use optimized configuration based on analysis type
-        if request.analysis_type == "basic":
-            engine.config = AnalysisConfig.for_basic_analysis()
-        elif request.analysis_type == "deep":
+        if resolved_type == "deep":
             engine.config = AnalysisConfig.for_deep_analysis()
         else:
-            # Use custom configuration for other types
             engine.config = AnalysisConfig(
                 analysis_type=analysis_type_enum,
                 depth=request.depth,
@@ -748,12 +1143,15 @@ async def _handle_position_analysis(request: UnifiedAnalysisRequest) -> UnifiedA
         engine = get_analysis_engine()
         
         # Configure analysis type
-        analysis_type_enum = AnalysisType(request.analysis_type)
-        config = AnalysisConfig(
-            analysis_type=analysis_type_enum,
-            depth=request.depth
-        )
-        engine.config = config
+        resolved_type = _normalize_analysis_type(request.analysis_type, quiet=True)
+        analysis_type_enum = AnalysisType(resolved_type)
+        if resolved_type == "deep":
+            engine.config = AnalysisConfig.for_deep_analysis()
+        else:
+            engine.config = AnalysisConfig(
+                analysis_type=analysis_type_enum,
+                depth=request.depth
+            )
         
         result = await engine.analyze_position(request.fen, analysis_type_enum)
         
@@ -773,15 +1171,13 @@ async def _handle_move_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnaly
         engine = get_analysis_engine()
         
         # Configure analysis type with optimized settings
-        analysis_type_enum = AnalysisType(request.analysis_type)
+        resolved_type = _normalize_analysis_type(request.analysis_type, quiet=True)
+        analysis_type_enum = AnalysisType(resolved_type)
         
         # Use optimized configuration based on analysis type
-        if request.analysis_type == "basic":
-            engine.config = AnalysisConfig.for_basic_analysis()
-        elif request.analysis_type == "deep":
+        if resolved_type == "deep":
             engine.config = AnalysisConfig.for_deep_analysis()
         else:
-            # Use custom configuration for other types
             engine.config = AnalysisConfig(
                 analysis_type=analysis_type_enum,
                 depth=request.depth,
@@ -841,6 +1237,10 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
     }
     
     try:
+        resolved_type = _normalize_analysis_type(analysis_type, quiet=True)
+        if resolved_type != analysis_type:
+            print(f"[info] Batch analysis requested as '{analysis_type}' mapped to '{resolved_type}'.")
+        analysis_type = resolved_type
         print(f"Starting batch analysis for {user_id} on {platform}")
         
         # Phase 1: Fetch games
@@ -870,18 +1270,27 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
         analysis_progress[key]["current_phase"] = "analyzing"
         analysis_progress[key]["progress_percentage"] = 20
         
+        # Add a progress update task that runs every 5 seconds
+        async def update_progress_periodically():
+            while not analysis_progress[key]["is_complete"]:
+                await asyncio.sleep(5)
+                if not analysis_progress[key]["is_complete"]:
+                    current_progress = analysis_progress[key]["progress_percentage"]
+                    if current_progress < 90:  # Don't go beyond 90% until complete
+                        analysis_progress[key]["progress_percentage"] = min(current_progress + 1, 90)
+        
+        # Start progress update task
+        progress_task = asyncio.create_task(update_progress_periodically())
+        
         engine = get_analysis_engine()
         
         # Configure analysis type with optimized settings
         analysis_type_enum = AnalysisType(analysis_type)
         
         # Use optimized configuration based on analysis type
-        if analysis_type == "basic":
-            engine.config = AnalysisConfig.for_basic_analysis()
-        elif analysis_type == "deep":
+        if analysis_type == "deep":
             engine.config = AnalysisConfig.for_deep_analysis()
         else:
-            # Use custom configuration for other types
             engine.config = AnalysisConfig(
                 analysis_type=analysis_type_enum,
                 depth=depth,
@@ -891,16 +1300,37 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
         processed = 0
         failed = 0
         
-        # Process games in parallel with proper concurrency control
-        max_concurrent = min(5, len(games))
+        # Process games with better progress tracking and timeout handling
+        max_concurrent = min(3, len(games))  # Reduced concurrency to prevent resource issues
         semaphore = asyncio.Semaphore(max_concurrent)
         
-        async def analyze_with_semaphore(game):
+        async def analyze_with_semaphore_and_progress(game, game_index):
             async with semaphore:
-                return await _analyze_single_game(engine, game, canonical_user_id, platform, analysis_type_enum)
+                try:
+                    # Add timeout to prevent hanging
+                    result = await asyncio.wait_for(
+                        _analyze_single_game(engine, game, canonical_user_id, platform, analysis_type_enum),
+                        timeout=300  # 5 minute timeout per game
+                    )
+                    
+                    # Update progress immediately after each game
+                    progress = int(((game_index + 1) / len(games)) * 70) + 20  # 20-90% range
+                    analysis_progress[key].update({
+                        "analyzed_games": game_index + 1,
+                        "progress_percentage": progress,
+                        "current_phase": "analyzing"
+                    })
+                    
+                    return result
+                except asyncio.TimeoutError:
+                    print(f"Timeout analyzing game {game_index + 1} - skipping")
+                    return None
+                except Exception as e:
+                    print(f"Error analyzing game {game_index + 1}: {e}")
+                    return None
         
-        # Process all games in parallel with concurrency limit
-        tasks = [analyze_with_semaphore(game) for game in games]
+        # Process games with individual progress tracking
+        tasks = [analyze_with_semaphore_and_progress(game, i) for i, game in enumerate(games)]
         batch_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Process results
@@ -914,14 +1344,6 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             else:
                 failed += 1
                 print(f"Failed to analyze game {i + 1}/{len(games)}")
-            
-            # Update progress
-            progress = int(((i + 1) / len(games)) * 70) + 20  # 20-90% range
-            analysis_progress[key].update({
-                "analyzed_games": i + 1,
-                "progress_percentage": progress,
-                "current_phase": "analyzing"
-            })
         
         # Phase 3: Complete
         analysis_progress[key].update({
@@ -929,6 +1351,9 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             "current_phase": "complete",
             "progress_percentage": 100
         })
+        
+        # Cancel the progress update task
+        progress_task.cancel()
         
         print(f"Batch analysis complete for {user_id}! Processed: {processed}, Failed: {failed}")
         
@@ -941,6 +1366,12 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             "current_phase": "error",
             "progress_percentage": 100
         })
+        
+        # Cancel the progress update task if it exists
+        try:
+            progress_task.cancel()
+        except:
+            pass
 
 async def _analyze_single_game(engine, game, user_id, platform, analysis_type_enum):
     """Helper function to analyze a single game."""
@@ -991,7 +1422,11 @@ async def _save_basic_analysis(analysis: GameAnalysis) -> bool:
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
                 'centipawn_loss': move.centipawn_loss,
-                'depth_analyzed': move.depth_analyzed
+                'depth_analyzed': move.depth_analyzed,
+                'best_move': move.best_move,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'analysis_time_ms': move.analysis_time_ms
             })
         
         # Prepare data for game_analyses table
@@ -1146,6 +1581,59 @@ def _map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
         processing_time_ms=analysis.get('processing_time_ms', 0)
     )
 
+def _map_move_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
+    """Map move_analyses table data to response format."""
+    # Calculate move counts from moves_analysis JSON
+    moves_analysis = analysis.get('moves_analysis', [])
+    blunders = 0
+    mistakes = 0
+    inaccuracies = 0
+    brilliant_moves = 0
+    best_moves = 0
+    opening_accuracy = 0
+    
+    if isinstance(moves_analysis, list):
+        for move in moves_analysis:
+            if move.get('is_blunder', False):
+                blunders += 1
+            if move.get('is_mistake', False):
+                mistakes += 1
+            if move.get('is_inaccuracy', False):
+                inaccuracies += 1
+            if move.get('is_best', False):
+                best_moves += 1
+                # Brilliant moves are best moves with very low centipawn loss
+                if move.get('centipawn_loss', 0) < 10:
+                    brilliant_moves += 1
+        
+        # Calculate opening accuracy (first 15 moves)
+        opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15]
+        if opening_moves:
+            opening_best_moves = sum(1 for move in opening_moves if move.get('is_best', False))
+            opening_accuracy = (opening_best_moves / len(opening_moves)) * 100
+    
+    return GameAnalysisSummary(
+        game_id=analysis.get('game_id', ''),
+        accuracy=analysis.get('best_move_percentage', 0),
+        blunders=blunders,
+        mistakes=mistakes,
+        inaccuracies=inaccuracies,
+        brilliant_moves=brilliant_moves,
+        best_moves=best_moves,
+        opening_accuracy=opening_accuracy,
+        middle_game_accuracy=analysis.get('middle_game_accuracy', 0),
+        endgame_accuracy=analysis.get('endgame_accuracy', 0),
+        tactical_score=analysis.get('tactical_score', 0),
+        positional_score=analysis.get('positional_score', 0),
+        aggressive_score=analysis.get('aggressive_score', 0),
+        patient_score=analysis.get('patient_score', 0),
+        novelty_score=analysis.get('novelty_score', 0),
+        staleness_score=analysis.get('staleness_score', 0),
+        analysis_type='stockfish',
+        analysis_date=analysis.get('analysis_date', ''),
+        processing_time_ms=analysis.get('processing_time_ms', 0)
+    )
+
 def _calculate_unified_stats(analyses: list, analysis_type: str) -> AnalysisStats:
     """Calculate unified statistics from analysis data."""
     if not analyses:
@@ -1198,31 +1686,96 @@ def _calculate_unified_stats(analyses: list, analysis_type: str) -> AnalysisStat
             brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
             material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
         )
-    else:
-        # Calculate from game_analyses table data
-        total_blunders = sum(a.get('blunders', 0) for a in analyses)
-        total_mistakes = sum(a.get('mistakes', 0) for a in analyses)
-        total_inaccuracies = sum(a.get('inaccuracies', 0) for a in analyses)
-        total_brilliant_moves = sum(a.get('brilliant_moves', 0) for a in analyses)
-        
-        return AnalysisStats(
-            total_games_analyzed=total_games,
-            average_accuracy=round(sum(a.get('accuracy', 0) for a in analyses) / total_games, 1),
-            total_blunders=total_blunders,
-            total_mistakes=total_mistakes,
-            total_inaccuracies=total_inaccuracies,
-            total_brilliant_moves=total_brilliant_moves,
-            total_material_sacrifices=0,
-            average_opening_accuracy=round(sum(a.get('opening_accuracy', 0) for a in analyses) / total_games, 1),
-            average_middle_game_accuracy=round(sum(a.get('middle_game_accuracy', 0) for a in analyses) / total_games, 1),
-            average_endgame_accuracy=round(sum(a.get('endgame_accuracy', 0) for a in analyses) / total_games, 1),
-            average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / total_games, 1),
-            blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
-            mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
-            inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
-            brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
-            material_sacrifices_per_game=0
-        )
+
+def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
+    """Calculate statistics from unified_analyses view data."""
+    if not analyses:
+        return _get_empty_stats()
+    
+    total_games = len(analyses)
+    
+    # Sum up all the metrics from the unified_analyses view
+    total_blunders = sum(a.get('blunders', 0) for a in analyses)
+    total_mistakes = sum(a.get('mistakes', 0) for a in analyses)
+    total_inaccuracies = sum(a.get('inaccuracies', 0) for a in analyses)
+    total_brilliant_moves = sum(a.get('brilliant_moves', 0) for a in analyses)
+    total_material_sacrifices = sum(a.get('material_sacrifices', 0) for a in analyses)
+    
+    # Calculate averages
+    average_accuracy = round(sum(a.get('accuracy', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
+    average_opening_accuracy = round(sum(a.get('opening_accuracy', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
+    average_middle_game_accuracy = round(sum(a.get('middle_game_accuracy', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
+    average_endgame_accuracy = round(sum(a.get('endgame_accuracy', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
+    average_aggressiveness_index = round(sum(a.get('aggressiveness_index', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
+    
+    return AnalysisStats(
+        total_games_analyzed=total_games,
+        average_accuracy=average_accuracy,
+        total_blunders=total_blunders,
+        total_mistakes=total_mistakes,
+        total_inaccuracies=total_inaccuracies,
+        total_brilliant_moves=total_brilliant_moves,
+        total_material_sacrifices=total_material_sacrifices,
+        average_opening_accuracy=average_opening_accuracy,
+        average_middle_game_accuracy=average_middle_game_accuracy,
+        average_endgame_accuracy=average_endgame_accuracy,
+        average_aggressiveness_index=average_aggressiveness_index,
+        blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
+        mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
+        inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
+        brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
+        material_sacrifices_per_game=round(total_material_sacrifices / total_games, 2) if total_games > 0 else 0
+    )
+
+def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
+    """Calculate statistics from move_analyses table data."""
+    if not analyses:
+        return _get_empty_stats()
+    
+    total_games = len(analyses)
+    total_blunders = 0
+    total_mistakes = 0
+    total_inaccuracies = 0
+    total_brilliant_moves = 0
+    total_opening_accuracy = 0
+    
+    for analysis in analyses:
+        moves_analysis = analysis.get('moves_analysis', [])
+        if isinstance(moves_analysis, list):
+            for move in moves_analysis:
+                if move.get('is_blunder', False):
+                    total_blunders += 1
+                if move.get('is_mistake', False):
+                    total_mistakes += 1
+                if move.get('is_inaccuracy', False):
+                    total_inaccuracies += 1
+                if move.get('is_best', False) and move.get('centipawn_loss', 0) < 10:
+                    total_brilliant_moves += 1
+            
+            # Calculate opening accuracy for this game
+            opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15]
+            if opening_moves:
+                opening_best_moves = sum(1 for move in opening_moves if move.get('is_best', False))
+                total_opening_accuracy += (opening_best_moves / len(opening_moves)) * 100
+    
+    return AnalysisStats(
+        total_games_analyzed=total_games,
+        average_accuracy=round(sum(a.get('best_move_percentage', 0) for a in analyses) / total_games, 1),
+        total_blunders=total_blunders,
+        total_mistakes=total_mistakes,
+        total_inaccuracies=total_inaccuracies,
+        total_brilliant_moves=total_brilliant_moves,
+        total_material_sacrifices=sum(a.get('material_sacrifices', 0) for a in analyses),
+        average_opening_accuracy=round(total_opening_accuracy / total_games, 1) if total_games > 0 else 0,
+        average_middle_game_accuracy=round(sum(a.get('middle_game_accuracy', 0) for a in analyses) / total_games, 1),
+        average_endgame_accuracy=round(sum(a.get('endgame_accuracy', 0) for a in analyses) / total_games, 1),
+        average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / total_games, 1),
+        blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
+        mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
+        inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
+        brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
+        material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
+    )
 
 def _get_empty_stats() -> AnalysisStats:
     """Return empty stats for when no data is available."""
@@ -1311,7 +1864,7 @@ if __name__ == "__main__":
     
     print(f"Starting Unified Chess Analysis API Server v3.0 on {args.host}:{args.port}")
     print("This server provides a single, comprehensive API for all chess analysis operations!")
-    print("Available analysis types: basic, stockfish, deep")
+    print("Available analysis types: stockfish, deep")
     print("Unified endpoints:")
     print("  - POST /api/v1/analyze (handles all analysis types)")
     print("  - GET /api/v1/results/{user_id}/{platform}")
@@ -1320,3 +1873,41 @@ if __name__ == "__main__":
     print("  - GET /api/v1/deep-analysis/{user_id}/{platform}")
     
     uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

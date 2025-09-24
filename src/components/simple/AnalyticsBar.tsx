@@ -21,7 +21,7 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
       setLoading(true)
       setError(null)
 
-      const data = await AnalysisService.getAnalysisStats(userId, platform, 'basic')
+      const data = await AnalysisService.getAnalysisStats(userId, platform, 'stockfish')
       setAnalytics(data)
     } catch (err) {
       console.error('Error fetching analytics:', err)

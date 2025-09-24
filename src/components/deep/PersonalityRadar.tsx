@@ -19,6 +19,9 @@ interface PersonalityRadarProps {
 }
 
 export function PersonalityRadar({ scores }: PersonalityRadarProps) {
+  // Debug logging to understand what data we're receiving
+  console.log('PersonalityRadar - Received scores:', scores)
+  
   const data = [
     { skill: 'Tactical', score: scores.tactical },
     { skill: 'Positional', score: scores.positional },
@@ -27,6 +30,8 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
     { skill: 'Patient', score: scores.patient },
     { skill: 'Staleness', score: scores.staleness },
   ]
+  
+  console.log('PersonalityRadar - Chart data:', data)
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">

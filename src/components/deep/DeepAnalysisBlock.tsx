@@ -87,7 +87,12 @@ export function DeepAnalysisBlock({ userId, platform }: DeepAnalysisBlockProps) 
       {/* Main Analysis Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Personality Radar */}
-        <PersonalityRadar scores={data.personalityScores} />
+        {data && data.personalityScores && (
+          <>
+            {console.log('DeepAnalysisBlock - Passing personalityScores to radar:', data.personalityScores)}
+            <PersonalityRadar scores={data.personalityScores} />
+          </>
+        )}
 
         {/* Opening Player Card */}
         <OpeningPlayerCard

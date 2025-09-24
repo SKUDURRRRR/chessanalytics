@@ -15,7 +15,7 @@
        |        Supabase Postgres (managed)                  |
        |  Tables: games, user_profiles, games_pgn, *(missing |
        |           game_analyses/move_analyses/game_features)|
-       |  Views: unified_analyses, combined_game_analysis    |
+       |  Views: unified_analyses                           |
        |  Edge Functions (Deno): analytics, parity, imports  |
        +--------------------------+--------------------------+
                                   ^
@@ -42,7 +42,7 @@
 - **Frontend**: Vite-powered React SPA (TypeScript). Router lives in `src/App.tsx`; state via hooks and a custom `AuthContext` that wraps Supabase auth.
 - **Services layer** (`src/services/*`): wraps fetch calls to the Python API (`analysisService`, `unifiedAnalysisService`) and direct Supabase queries (`profileService`, `autoImportService`, `deepAnalysisService`).
 - **Backend API**: `python/core/unified_api_server.py` (FastAPI) exposes unified analysis endpoints, coordinates Stockfish via `analysis_engine.py`, and persists results to Supabase using the service-role key when available.
-- **Data tier**: Supabase Postgres schema + Row Level Security policies, plus a `games_pgn` table for raw PGNs and `unified_analyses`/`combined_game_analysis` views for reporting.
+- **Data tier**: Supabase Postgres schema + Row Level Security policies, plus a `games_pgn` table for raw PGNs and `unified_analyses` view for reporting.
 - **Edge functions**: Deno functions under `supabase/functions` provide lightweight analytics endpoints that the frontend can call directly via Supabase.
 - **Tooling**: Vitest/Jest DOM for unit tests, Playwright config present for E2E, GitHub Actions workflow (`.github/workflows/ci.yml`), Supabase CLI scripts, Python uses Uvicorn for dev server.
 
@@ -69,7 +69,7 @@
 - **games**: Imported game metadata (`user_id`, `platform`, `provider_game_id`, results, ratings, timestamps). Unique index on `(user_id, platform, provider_game_id)`; RLS intended to scope to owner.
 - **games_pgn**: Raw PGNs (unique on user/platform/game). Currently grants full access to `anon` role.
 - **user_profiles**: Cached profile data (`display_name`, ratings, totals, last_accessed`). Conflicting definitions create uniqueness on `user_id` only in latest migration.
-- **Intended but missing in repo**: `game_analyses`, `move_analyses`, `game_features` tables referenced throughout services, migrations, and docs but no DDL present. Corresponding RLS migrations assume they exist. Views `unified_analyses` and `combined_game_analysis` union data from those tables when available.
+- **Intended but missing in repo**: `game_analyses`, `move_analyses`, `game_features` tables referenced throughout services, migrations, and docs but no DDL present. Corresponding RLS migrations assume they exist. The `unified_analyses` view unions data from those tables when available.
 - **Indexes/Policies**: Numerous policies defined in `20241220_complete_rls_policies.sql` covering CRUD per table, plus helper functions for RLS validation.
 
 ## External Integrations & Dependencies

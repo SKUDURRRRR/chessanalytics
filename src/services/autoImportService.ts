@@ -271,7 +271,7 @@ onProgress?.({
 
       onProgress?.({
         status: 'importing',
-        message: 'Starting basic analysis...',
+        message: 'Starting Stockfish analysis...',
         progress: 90,
         importedGames: savedGames,
       })
@@ -318,7 +318,7 @@ onProgress?.({
     }
   }
 
-  // Trigger basic analysis for imported games
+  // Trigger Stockfish analysis for imported games
   private static async triggerBasicAnalysis(
     username: string,
     platform: 'lichess' | 'chess.com',
@@ -336,7 +336,7 @@ onProgress?.({
           body: JSON.stringify({
             user_id: normalizedUsername,
             platform: platform,
-            analysis_type: 'basic',
+            analysis_type: 'stockfish',
             limit: gameCount,
             skill_level: 8,
           }),
@@ -350,7 +350,7 @@ onProgress?.({
       const data = await response.json()
       return data
     } catch (error) {
-      console.error('Error triggering basic analysis:', error)
+      console.error('Error triggering Stockfish analysis:', error)
       throw error
     }
   }
@@ -386,7 +386,7 @@ onProgress?.({
   > {
     try {
       const response = await fetch(
-        `https://lichess.org/api/games/user/${username}?max=${maxGames}&perfType=classical,rapid,blitz&moves=true&pgnInJson=true`
+        `https://lichess.org/api/games/user/${username}?max=${maxGames}&perfType=classical,rapid,blitz&moves=true`
       )
 
       if (!response.ok) {
@@ -396,68 +396,50 @@ onProgress?.({
       const text = await response.text()
       console.log('Raw Lichess API response (first 1000 chars):', text.substring(0, 1000))
 
-      // Try to parse as JSON first (with pgnInJson=true)
-      let games = []
-      try {
-        const jsonData = JSON.parse(text)
-        console.log('Parsed as JSON, found games:', jsonData.length)
+      // Parse PGN format response
+      const games = []
+      
+      // Split by double newlines to separate blocks
+      const gameBlocks = text.trim().split('\n\n')
+      console.log(`Split into ${gameBlocks.length} game blocks`)
 
-        for (const game of jsonData) {
-          if (game.pgn) {
-            console.log(`Found game ${game.id}, PGN length: ${game.pgn.length}`)
-            console.log('Full PGN for this game:', game.pgn)
+      // Process blocks in pairs (headers + moves)
+      for (let i = 0; i < gameBlocks.length; i += 2) {
+        const headerBlock = gameBlocks[i]?.trim()
+        const moveBlock = gameBlocks[i + 1]?.trim()
+        
+        if (headerBlock && headerBlock.includes('[Event') && headerBlock.includes('[Site')) {
+          console.log('Processing header block:', headerBlock.substring(0, 200) + '...')
+          console.log('Processing move block:', moveBlock?.substring(0, 100) + '...')
 
-            games.push({
-              id: game.id || `${username}-${Date.now()}-${Math.random()}`,
-              pgn: game.pgn,
-              date: game.createdAt || new Date().toISOString(),
-              white: { username: game.players?.white?.user?.name },
-              black: { username: game.players?.black?.user?.name },
-              winner: game.winner,
-              timeControl: game.perf || 'Unknown',
-            })
-          }
-        }
-      } catch (jsonError) {
-        console.log('Not JSON format, trying PGN format')
+          // Extract game ID from PGN headers
+          const gameIdMatch = headerBlock.match(/\[Site "https:\/\/lichess\.org\/([^"]+)"/)
+          const gameId = gameIdMatch
+            ? gameIdMatch[1]
+            : `${username}-${Date.now()}-${Math.random()}`
 
-        // Fallback to PGN format parsing
-        const gameBlocks = text.trim().split('\n\n')
-        console.log(`Split into ${gameBlocks.length} game blocks`)
+          // Extract date from PGN headers
+          const dateMatch = headerBlock.match(/\[UTCDate "([^"]+)"/)
+          const date = dateMatch ? dateMatch[1] : new Date().toISOString()
 
-        for (const gameBlock of gameBlocks) {
-          if (gameBlock.trim()) {
-            console.log('Processing game block:', gameBlock.substring(0, 200) + '...')
+          // Combine headers and moves into complete PGN
+          const completePgn = headerBlock + '\n\n' + (moveBlock || '')
+          
+          console.log(`Found game ${gameId}, PGN length: ${completePgn.length}`)
+          console.log('Complete PGN for this game:', completePgn)
 
-            // Check if this is a PGN game (contains PGN headers)
-            if (gameBlock.includes('[Event') && gameBlock.includes('[Site')) {
-              // Extract game ID from PGN
-              const gameIdMatch = gameBlock.match(/\[Site "https:\/\/lichess\.org\/([^"]+)"/)
-              const gameId = gameIdMatch
-                ? gameIdMatch[1]
-                : `${username}-${Date.now()}-${Math.random()}`
-
-              // Extract date from PGN
-              const dateMatch = gameBlock.match(/\[UTCDate "([^"]+)"/)
-              const date = dateMatch ? dateMatch[1] : new Date().toISOString()
-
-              console.log(`Found game ${gameId}, PGN length: ${gameBlock.length}`)
-              console.log('Full PGN for this game:', gameBlock)
-
-              games.push({
-                id: gameId,
-                pgn: gameBlock,
-                date: date,
-                white: { username: this.extractPlayerFromPGN(gameBlock, 'White') },
-                black: { username: this.extractPlayerFromPGN(gameBlock, 'Black') },
-                winner: this.extractResultFromPGN(gameBlock),
-                timeControl: this.extractTimeControlFromPGN(gameBlock),
-              })
-            } else {
-              // Skip unrecognized blocks
-              console.warn('Skipping unrecognized game block format')
-            }
-          }
+          games.push({
+            id: gameId,
+            pgn: completePgn,
+            date: date,
+            white: { username: this.extractPlayerFromPGN(completePgn, 'White') },
+            black: { username: this.extractPlayerFromPGN(completePgn, 'Black') },
+            winner: this.extractResultFromPGN(completePgn),
+            timeControl: this.extractTimeControlFromPGN(completePgn),
+          })
+        } else if (headerBlock) {
+          // Skip unrecognized blocks
+          console.warn('Skipping unrecognized game block format:', headerBlock.substring(0, 100))
         }
       }
 
@@ -747,3 +729,4 @@ onProgress?.({
     return timeMatch ? timeMatch[1] : 'Unknown'
   }
 }
+

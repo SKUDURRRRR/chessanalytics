@@ -45,7 +45,7 @@ export class AnalysisService {
         body: JSON.stringify({
           user_id: userId,
           platform: platform,
-          analysis_type: 'basic',
+          analysis_type: 'stockfish',
           limit: limit,
           skill_level: 8,
         }),
@@ -68,7 +68,7 @@ export class AnalysisService {
     userId: string,
     platform: Platform,
     limit: number = 10,
-    analysisType: string = 'basic'
+    analysisType: string = 'stockfish'
   ): Promise<GameAnalysisSummary[]> {
     try {
       const response = await fetch(
@@ -97,7 +97,7 @@ export class AnalysisService {
   static async getAnalysisStats(
     userId: string,
     platform: Platform,
-    analysisType: string = 'basic'
+    analysisType: string = 'stockfish'
   ): Promise<AnalysisStats | null> {
     try {
       const url = `${ANALYSIS_API_URL}/api/v1/stats/${userId}/${platform}?analysis_type=${analysisType}`
@@ -120,7 +120,7 @@ export class AnalysisService {
         console.warn('1. ✅ Games exist but no analysis has been performed yet - Click "Analyze My Games"')
         console.warn('2. The analysis data is stored under a different analysis_type')
         console.warn('3. There might be a user ID canonicalization issue')
-        console.warn('💡 To fix: Run basic analysis on your games to generate real analytics data')
+        console.warn('💡 To fix: Run Stockfish analysis on your games to generate real analytics data')
       }
       
       return data

@@ -10,8 +10,8 @@ import sys
 import asyncio
 import json
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple, Union
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass, field
 from enum import Enum
 import chess
 import chess.pgn
@@ -25,6 +25,99 @@ try:
 except ImportError:
     STOCKFISH_PACKAGE_AVAILABLE = False
     print("Warning: stockfish package not available, using chess.engine only")
+
+# Heuristic evaluation constants tuned for basic analysis
+PIECE_VALUES = {
+    'P': 100,
+    'N': 320,
+    'B': 330,
+    'R': 500,
+    'Q': 900,
+    'K': 0
+}
+
+PIECE_SQUARE_TABLES = {
+    'P': [
+         0,   0,   0,   0,   0,   0,   0,   0,
+         5,  10,  10, -20, -20,  10,  10,   5,
+         5,  -5, -10,   0,   0, -10,  -5,   5,
+         0,   0,   0,  20,  20,   0,   0,   0,
+         5,   5,  10,  25,  25,  10,   5,   5,
+        10,  10,  20,  30,  30,  20,  10,  10,
+        50,  50,  50,  55,  55,  50,  50,  50,
+         0,   0,   0,   0,   0,   0,   0,   0
+    ],
+    'N': [
+       -50, -40, -30, -30, -30, -30, -40, -50,
+       -40, -20,   0,   5,   5,   0, -20, -40,
+       -30,   5,  10,  15,  15,  10,   5, -30,
+       -30,   0,  15,  20,  20,  15,   0, -30,
+       -30,   5,  15,  20,  20,  15,   5, -30,
+       -30,   0,  10,  15,  15,  10,   0, -30,
+       -40, -20,   0,   0,   0,   0, -20, -40,
+       -50, -40, -30, -30, -30, -30, -40, -50
+    ],
+    'B': [
+       -20, -10, -10, -10, -10, -10, -10, -20,
+       -10,   5,   0,   0,   0,   0,   5, -10,
+       -10,  10,  10,  10,  10,  10,  10, -10,
+       -10,   0,  10,  10,  10,  10,   0, -10,
+       -10,   5,   5,  10,  10,   5,   5, -10,
+       -10,   0,   5,  10,  10,   5,   0, -10,
+       -10,   0,   0,   0,   0,   0,   0, -10,
+       -20, -10, -10, -10, -10, -10, -10, -20
+    ],
+    'R': [
+         0,   0,   0,   5,   5,   0,   0,   0,
+        -5,   0,   0,   0,   0,   0,   0,  -5,
+        -5,   0,   0,   0,   0,   0,   0,  -5,
+        -5,   0,   0,   0,   0,   0,   0,  -5,
+        -5,   0,   0,   0,   0,   0,   0,  -5,
+        -5,   0,   0,   0,   0,   0,   0,  -5,
+         5,  10,  10,  10,  10,  10,  10,   5,
+         0,   0,   0,   5,   5,   0,   0,   0
+    ],
+    'Q': [
+       -20, -10, -10,  -5,  -5, -10, -10, -20,
+       -10,   0,   0,   0,   0,   5,   0, -10,
+       -10,   0,   5,   5,   5,   5,   5, -10,
+        -5,   0,   5,   5,   5,   5,   0,  -5,
+         0,   0,   5,   5,   5,   5,   0,  -5,
+       -10,   5,   5,   5,   5,   5,   0, -10,
+       -10,   0,   5,   0,   0,   0,   0, -10,
+       -20, -10, -10,  -5,  -5, -10, -10, -20
+    ],
+    'K': [
+       -30, -40, -40, -50, -50, -40, -40, -30,
+       -30, -40, -40, -50, -50, -40, -40, -30,
+       -30, -40, -40, -50, -50, -40, -40, -30,
+       -30, -40, -40, -50, -50, -40, -40, -30,
+       -20, -30, -30, -40, -40, -30, -30, -20,
+       -10, -20, -20, -20, -20, -20, -20, -10,
+        20,  20,   0,   0,   0,   0,  20,  20,
+        20,  30,  10,   0,   0,  10,  30,  20
+    ]
+}
+
+MOBILITY_WEIGHT = 5
+KING_SAFETY_SHIELD_WEIGHT = 10
+KING_SAFETY_ATTACK_WEIGHT = 18
+KING_OPEN_FILE_PENALTY = 15
+KING_RING_ATTACK_PENALTY = 12
+PASSED_PAWN_BONUS = [0, 10, 20, 35, 60, 100, 160, 0]
+HANGING_PIECE_VALUE_MULTIPLIER = 0.6
+HANGING_PIECE_MIN_PENALTY = 40
+BASIC_MOVE_CANDIDATE_LIMIT = 5
+BASIC_BEST_THRESHOLD = 18
+BASIC_INACCURACY_THRESHOLD = 80
+BASIC_MISTAKE_THRESHOLD = 180
+BASIC_BLUNDER_THRESHOLD = 280
+SEE_MATERIAL_LOSS_TRIGGER = -40
+KING_SAFETY_DROP_TRIGGER = 25
+MOBILITY_DROP_TRIGGER = -2
+BASIC_ENGINE_PROBE_LIMIT = 12
+BASIC_ENGINE_PROBE_TIME = 0.08
+BASIC_ENGINE_PROBE_MULTIPV = 2
 
 class AnalysisType(Enum):
     """Types of analysis available."""
@@ -53,16 +146,16 @@ class AnalysisConfig:
     
     @classmethod
     def for_basic_analysis(cls) -> 'AnalysisConfig':
-        """Configuration optimized for basic analysis (fast, good accuracy)."""
+        """Configuration optimized for basic analysis (fast, heuristic-only)."""
         return cls(
-            analysis_type=AnalysisType.STOCKFISH,
-            depth=6,
-            skill_level=2,
-            time_limit=0.1,  # 100ms per position
-            use_opening_book=True,
-            use_endgame_tablebase=True,
-            parallel_analysis=False,
-            max_concurrent=4
+            analysis_type=AnalysisType.BASIC,  # Use heuristic analysis, not Stockfish
+            depth=0,  # No depth needed for heuristic analysis
+            skill_level=0,  # Not used for heuristic analysis
+            time_limit=0.01,  # 10ms per position (very fast)
+            use_opening_book=False,  # Not needed for heuristic
+            use_endgame_tablebase=False,  # Not needed for heuristic
+            parallel_analysis=True,  # Enable parallel processing for speed
+            max_concurrent=8  # More concurrent processes for heuristic analysis
         )
     
     @classmethod
@@ -93,6 +186,8 @@ class MoveAnalysis:
     centipawn_loss: float
     depth_analyzed: int
     analysis_time_ms: int
+    explanation: str = ""
+    heuristic_details: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class GameAnalysis:
@@ -149,6 +244,9 @@ class ChessAnalysisEngine:
         self.stockfish_path = self._find_stockfish_path(stockfish_path)
         self._engine_pool = []
         self._opening_database = self._load_opening_database()
+        self._basic_eval_cache: Dict[str, Tuple[int, Dict[str, Any]]] = {}
+        self._basic_move_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._basic_probe_cache: Dict[str, Dict[str, Any]] = {}
         
     def _find_stockfish_path(self, custom_path: Optional[str]) -> Optional[str]:
         """Find the best available Stockfish executable."""
@@ -200,11 +298,345 @@ class ChessAnalysisEngine:
                 'e6': 'Queen\'s Gambit Declined'
             },
             'Nf3': {
-                'd5': 'Réti Opening',
+                'd5': 'RÃ©ti Opening',
                 'Nf6': 'English Opening'
             }
         }
     
+
+    def _basic_cache_key(self, board: chess.Board) -> str:
+        '''Create a normalized cache key for basic evaluation.'''
+        try:
+            pieces, turn, castling, en_passant, *_ = board.fen().split()
+            return f"{pieces} {turn} {castling} {en_passant}"
+        except ValueError:
+            return board.fen()
+
+    def _count_legal_moves(self, board: chess.Board, color: chess.Color) -> int:
+        '''Count legal moves for a given color without mutating the original board.'''
+        board_copy = board.copy(stack=False)
+        board_copy.turn = color
+        return sum(1 for _ in board_copy.legal_moves)
+
+    def _pawn_shield_strength(self, board: chess.Board, color: chess.Color, king_square: chess.Square) -> float:
+        '''Measure pawn shield coverage in front of the king.'''
+        direction = 1 if color == chess.WHITE else -1
+        strength = 0.0
+        king_file = chess.square_file(king_square)
+        king_rank = chess.square_rank(king_square)
+        for file_offset in (-1, 0, 1):
+            target_file = king_file + file_offset
+            if not 0 <= target_file <= 7:
+                continue
+            for distance, weight in ((1, 1.0), (2, 0.5)):
+                target_rank = king_rank + direction * distance
+                if 0 <= target_rank <= 7:
+                    sq = chess.square(target_file, target_rank)
+                    piece = board.piece_at(sq)
+                    if piece and piece.piece_type == chess.PAWN and piece.color == color:
+                        strength += weight
+        return strength
+
+    def _king_open_file_penalty(self, board: chess.Board, color: chess.Color, king_square: chess.Square) -> int:
+        '''Count semi-open files near the king as a danger indicator.'''
+        files_to_check = {chess.square_file(king_square)}
+        for offset in (-1, 1):
+            f = chess.square_file(king_square) + offset
+            if 0 <= f <= 7:
+                files_to_check.add(f)
+        pawns = board.pieces(chess.PAWN, color)
+        penalty = 0
+        for f in files_to_check:
+            if not any(chess.square_file(square) == f for square in pawns):
+                penalty += 1
+        return penalty
+
+    def _king_ring_attackers(self, board: chess.Board, color: chess.Color, king_square: chess.Square) -> int:
+        '''Count opposing attackers in the king's immediate ring.'''
+        opponent = not color
+        attackers = 0
+        for sq in chess.SQUARES:
+            if chess.square_distance(sq, king_square) != 1:
+                continue
+            attackers += len(board.attackers(opponent, sq))
+        return attackers
+
+    def _king_safety_score(self, board: chess.Board, color: chess.Color) -> int:
+        '''Aggregate king safety heuristics for a single side.'''
+        king_square = board.king(color)
+        if king_square is None:
+            return 0
+        shield = self._pawn_shield_strength(board, color, king_square)
+        direct_attackers = len(board.attackers(not color, king_square))
+        ring_attackers = self._king_ring_attackers(board, color, king_square)
+        open_files = self._king_open_file_penalty(board, color, king_square)
+        score = int(shield * KING_SAFETY_SHIELD_WEIGHT)
+        score -= direct_attackers * KING_SAFETY_ATTACK_WEIGHT
+        score -= ring_attackers * KING_RING_ATTACK_PENALTY
+        score -= open_files * KING_OPEN_FILE_PENALTY
+        return score
+
+    def _passed_pawns(self, board: chess.Board, color: chess.Color):
+        '''Identify passed pawns and compute their bonus score.'''
+        direction = 1 if color == chess.WHITE else -1
+        opponent = not color
+        pawns = board.pieces(chess.PAWN, color)
+        passed = []
+        score = 0
+        for pawn_square in pawns:
+            file_idx = chess.square_file(pawn_square)
+            rank_idx = chess.square_rank(pawn_square)
+            is_blocked = False
+            for file_offset in (-1, 0, 1):
+                target_file = file_idx + file_offset
+                if not 0 <= target_file <= 7:
+                    continue
+                r = rank_idx + direction
+                while 0 <= r <= 7:
+                    sq = chess.square(target_file, r)
+                    piece = board.piece_at(sq)
+                    if piece and piece.piece_type == chess.PAWN and piece.color == opponent:
+                        is_blocked = True
+                        break
+                    r += direction
+                if is_blocked:
+                    break
+            if is_blocked:
+                continue
+            passed.append(pawn_square)
+            if color == chess.WHITE:
+                index = max(0, min(7, rank_idx))
+            else:
+                index = max(0, min(7, 7 - rank_idx))
+            score += PASSED_PAWN_BONUS[index]
+        return passed, score
+
+    def _identify_hanging_pieces(self, board: chess.Board, color: chess.Color):
+        '''Find friendly pieces that are insufficiently defended.'''
+        opponent = not color
+        results: List[Dict[str, Any]] = []
+        for square, piece in board.piece_map().items():
+            if piece.color != color or piece.piece_type == chess.KING:
+                continue
+            attackers = board.attackers(opponent, square)
+            if not attackers:
+                continue
+            defenders = board.attackers(color, square)
+            attacker_count = len(attackers)
+            defender_count = len(defenders)
+            min_attacker_value = min(PIECE_VALUES[board.piece_at(attacker_sq).symbol().upper()] for attacker_sq in attackers)
+            min_defender_value = min(PIECE_VALUES[board.piece_at(defender_sq).symbol().upper()] for defender_sq in defenders) if defenders else None
+            piece_value = PIECE_VALUES[piece.symbol().upper()]
+            hanging = defender_count == 0 or defender_count < attacker_count or (min_defender_value is not None and min_attacker_value < min_defender_value and min_attacker_value < piece_value)
+            if not hanging:
+                continue
+            results.append({
+                'square': chess.square_name(square),
+                'piece': piece.symbol(),
+                'value': piece_value,
+                'attackers': attacker_count,
+                'defenders': defender_count
+            })
+        return results
+
+    def _hanging_penalty(self, hanging_pieces: List[Dict[str, Any]]) -> int:
+        '''Translate hanging piece list into a score penalty.'''
+        penalty = 0
+        for entry in hanging_pieces:
+            value = entry.get('value', 100)
+            penalty += max(int(value * HANGING_PIECE_VALUE_MULTIPLIER), HANGING_PIECE_MIN_PENALTY)
+        return penalty
+
+    def _evaluate_board_basic(self, board: chess.Board):
+        '''Heuristic evaluation with feature breakdown for basic analysis.'''
+        cache_key = self._basic_cache_key(board)
+        cached = self._basic_eval_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        material_white = 0
+        material_black = 0
+        pst_white = 0
+        pst_black = 0
+        for square, piece in board.piece_map().items():
+            value = PIECE_VALUES[piece.symbol().upper()]
+            table = PIECE_SQUARE_TABLES[piece.symbol().upper()]
+            if piece.color == chess.WHITE:
+                material_white += value
+                pst_white += table[square]
+            else:
+                material_black += value
+                pst_black += table[chess.square_mirror(square)]
+
+        material_score = material_white - material_black
+        pst_score = pst_white - pst_black
+
+        mobility_white = self._count_legal_moves(board, chess.WHITE)
+        mobility_black = self._count_legal_moves(board, chess.BLACK)
+        mobility_score = MOBILITY_WEIGHT * (mobility_white - mobility_black)
+
+        king_safety_white = self._king_safety_score(board, chess.WHITE)
+        king_safety_black = self._king_safety_score(board, chess.BLACK)
+        king_safety_score = king_safety_white - king_safety_black
+
+        passed_white, passed_white_score = self._passed_pawns(board, chess.WHITE)
+        passed_black, passed_black_score = self._passed_pawns(board, chess.BLACK)
+        passed_score = passed_white_score - passed_black_score
+
+        hanging_white = self._identify_hanging_pieces(board, chess.WHITE)
+        hanging_black = self._identify_hanging_pieces(board, chess.BLACK)
+        hanging_penalty_white = self._hanging_penalty(hanging_white)
+        hanging_penalty_black = self._hanging_penalty(hanging_black)
+        threat_score = hanging_penalty_black - hanging_penalty_white
+
+        total_score = material_score + pst_score + mobility_score + king_safety_score + passed_score + threat_score
+
+        features = {
+            'components': {
+                'material': material_score,
+                'piece_square': pst_score,
+                'mobility': mobility_score,
+                'king_safety': king_safety_score,
+                'passed_pawns': passed_score,
+                'threats': threat_score
+            },
+            'material': {'white': material_white, 'black': material_black},
+            'piece_square': {'white': pst_white, 'black': pst_black},
+            'mobility': {'white': mobility_white, 'black': mobility_black},
+            'king_safety': {'white': king_safety_white, 'black': king_safety_black},
+            'passed_pawns': {
+                'white': {
+                    'count': len(passed_white),
+                    'score': passed_white_score,
+                    'squares': [chess.square_name(s) for s in passed_white]
+                },
+                'black': {
+                    'count': len(passed_black),
+                    'score': passed_black_score,
+                    'squares': [chess.square_name(s) for s in passed_black]
+                }
+            },
+            'hanging_pieces': {
+                'white': hanging_white,
+                'black': hanging_black
+            }
+        }
+
+        result = (total_score, features)
+        self._basic_eval_cache[cache_key] = result
+        if len(self._basic_eval_cache) > 5000:
+            oldest_key = next(iter(self._basic_eval_cache))
+            del self._basic_eval_cache[oldest_key]
+        return result
+
+    def _basic_move_candidates(self, board: chess.Board):
+        '''Score legal moves using the heuristic evaluator and cache the results.'''
+        cache_key = f"{self._basic_cache_key(board)}|moves"
+        cached = self._basic_move_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        candidates = []
+        color_to_move = board.turn
+        for move in board.legal_moves:
+            san = board.san(move)
+            board.push(move)
+            score, _ = self._evaluate_board_basic(board)
+            board.pop()
+            candidates.append({
+                'move': move,
+                'uci': move.uci(),
+                'san': san,
+                'score': score
+            })
+        reverse = color_to_move == chess.WHITE
+        candidates.sort(key=lambda item: item['score'], reverse=reverse)
+        self._basic_move_cache[cache_key] = candidates
+        if len(self._basic_move_cache) > 2000:
+            oldest_key = next(iter(self._basic_move_cache))
+            del self._basic_move_cache[oldest_key]
+        return candidates
+
+    async def _maybe_probe_stockfish_basic(self, board: chess.Board, move: chess.Move, color_to_move: chess.Color) -> Optional[Dict[str, Any]]:
+        """Optionally refine heuristics with a lightweight Stockfish probe."""
+        if not self.stockfish_path:
+            return None
+
+        before_key = f"{self._basic_cache_key(board)}|sf"
+        before_eval = self._basic_probe_cache.get(before_key)
+        if before_eval is None and len(self._basic_probe_cache) < BASIC_ENGINE_PROBE_LIMIT:
+            before_eval = await asyncio.to_thread(self._run_stockfish_probe, board.fen())
+            if before_eval:
+                self._basic_probe_cache[before_key] = before_eval
+                self._trim_basic_probe_cache()
+
+        board.push(move)
+        try:
+            after_key = f"{self._basic_cache_key(board)}|sf"
+            after_fen = board.fen()
+            after_eval = self._basic_probe_cache.get(after_key)
+            if after_eval is None and len(self._basic_probe_cache) < BASIC_ENGINE_PROBE_LIMIT:
+                after_eval = await asyncio.to_thread(self._run_stockfish_probe, after_fen)
+                if after_eval:
+                    self._basic_probe_cache[after_key] = after_eval
+                    self._trim_basic_probe_cache()
+        finally:
+            board.pop()
+
+        before_eval = self._basic_probe_cache.get(before_key)
+        after_eval = self._basic_probe_cache.get(after_key)
+        refined_loss = None
+        if before_eval and after_eval and before_eval.get('type') == 'cp' and after_eval.get('type') == 'cp':
+            if color_to_move == chess.WHITE:
+                refined_loss = max(0, before_eval['value'] - after_eval['value'])
+            else:
+                refined_loss = max(0, after_eval['value'] - before_eval['value'])
+
+        return {
+            'before': before_eval,
+            'after': after_eval,
+            'loss': refined_loss
+        }
+
+    def _run_stockfish_probe(self, fen: str) -> Optional[Dict[str, Any]]:
+        """Run a very short Stockfish evaluation for the given FEN."""
+        if not self.stockfish_path:
+            return None
+        try:
+            with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
+                engine.configure({
+                    'Skill Level': min(self.config.skill_level, 10),
+                    'Threads': 1,
+                    'Hash': 32,
+                    'UCI_AnalyseMode': True
+                })
+                limit = chess.engine.Limit(time=BASIC_ENGINE_PROBE_TIME)
+                info = engine.analyse(chess.Board(fen), limit, multipv=BASIC_ENGINE_PROBE_MULTIPV)
+                primary = info[0] if isinstance(info, list) else info
+                score = primary.get('score', chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
+                perspective = score.pov(chess.WHITE)
+                pv_moves = primary.get('pv', []) or []
+                pv_uci = [mv.uci() for mv in pv_moves[:3]]
+                best_move = pv_uci[0] if pv_uci else None
+                if perspective.is_mate():
+                    return {'type': 'mate', 'value': perspective.mate(), 'best_move': best_move, 'pv': pv_uci}
+                return {'type': 'cp', 'value': perspective.score(), 'best_move': best_move, 'pv': pv_uci}
+        except Exception:
+            return None
+
+    def _trim_basic_probe_cache(self) -> None:
+        """Keep the probe cache within the configured limit."""
+        while len(self._basic_probe_cache) > BASIC_ENGINE_PROBE_LIMIT:
+            oldest_key = next(iter(self._basic_probe_cache))
+            del self._basic_probe_cache[oldest_key]
+
+    def _static_exchange_evaluation(self, board: chess.Board, move: chess.Move) -> int:
+        """Compatibility wrapper around python-chess SEE helpers."""
+        if hasattr(board, 'see'):
+            return board.see(move)
+        if hasattr(board, 'static_exchange_evaluation'):
+            return board.static_exchange_evaluation(move)
+        return 0
+
     async def analyze_position(self, fen: str, analysis_type: Optional[AnalysisType] = None) -> Dict:
         """Analyze a chess position."""
         analysis_type = analysis_type or self.config.analysis_type
@@ -286,24 +718,30 @@ class ChessAnalysisEngine:
     async def _analyze_position_basic(self, fen: str) -> Dict:
         """Basic position analysis using heuristics."""
         board = chess.Board(fen)
-        
-        # Simple material count
-        material_balance = 0
-        for square in chess.SQUARES:
-            piece = board.piece_at(square)
-            if piece:
-                value = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}[piece.symbol().upper()]
-                if piece.color == chess.WHITE:
-                    material_balance += value
-                else:
-                    material_balance -= value
-        
+        score, features = self._evaluate_board_basic(board)
+        move_candidates = self._basic_move_candidates(board)
+        top_candidates = [
+            {
+                'move': item['uci'],
+                'san': item['san'],
+                'score': item['score']
+            }
+            for item in move_candidates[:BASIC_MOVE_CANDIDATE_LIMIT]
+        ]
+        best_candidate = move_candidates[0] if move_candidates else None
+
         return {
-            'evaluation': {'value': material_balance, 'type': 'cp'},
-            'best_move': 'e2e4',  # Placeholder
+            'evaluation': {'value': score, 'type': 'cp'},
+            'best_move': best_candidate['uci'] if best_candidate else None,
             'fen': fen,
-            'analysis_type': 'basic'
+            'analysis_type': 'basic',
+            'details': {
+                'best_move_san': best_candidate['san'] if best_candidate else None,
+                'top_moves': top_candidates,
+                'feature_breakdown': features
+            }
         }
+
     
     async def _analyze_position_stockfish(self, fen: str, analysis_type: AnalysisType) -> Dict:
         """Stockfish position analysis."""
@@ -357,52 +795,199 @@ class ChessAnalysisEngine:
     async def _analyze_move_basic(self, board: chess.Board, move: chess.Move) -> MoveAnalysis:
         """Basic move analysis using improved heuristics."""
         move_san = board.san(move)
-        
-        # Improved heuristics for move quality
-        is_tactical = any(char in move_san for char in ['x', '+', '#'])
-        is_developing = move_san in ['Nf3', 'Nc3', 'Bc4', 'Bf4', 'O-O', 'O-O-O', 'e4', 'd4', 'Nf6', 'Nc6']
-        is_center = any(square in [chess.E4, chess.E5, chess.D4, chess.D5] for square in [move.from_square, move.to_square])
-        is_castling = move_san in ['O-O', 'O-O-O']
-        is_pawn_push = move_san[0].islower() and len(move_san) <= 3
-        
-        # More realistic move quality estimation
-        centipawn_loss = 25  # Default to decent move
-        
-        if is_castling:
-            centipawn_loss = 5   # Castling is almost always good
-        elif is_tactical and is_center:
-            centipawn_loss = 10  # Tactical center moves are good
-        elif is_developing:
-            centipawn_loss = 15  # Development moves are good
-        elif is_center:
-            centipawn_loss = 20  # Center moves are decent
-        elif is_pawn_push:
-            centipawn_loss = 30  # Pawn pushes are okay
-        elif is_tactical:
-            centipawn_loss = 35  # Tactical moves are okay
+        color_to_move = board.turn
+        before_score, before_features = self._evaluate_board_basic(board)
+        move_candidates = self._basic_move_candidates(board)
+        top_candidates = [
+            {
+                'move': item['uci'],
+                'san': item['san'],
+                'score': item['score']
+            }
+            for item in move_candidates[:BASIC_MOVE_CANDIDATE_LIMIT]
+        ]
+        best_candidate = move_candidates[0] if move_candidates else None
+        best_move_uci = best_candidate['uci'] if best_candidate else move.uci()
+
+        see_score = self._static_exchange_evaluation(board, move)
+        is_capture = board.is_capture(move)
+        gives_check = board.gives_check(move)
+
+        board.push(move)
+        after_score, after_features = self._evaluate_board_basic(board)
+        board.pop()
+
+        color_key = 'white' if color_to_move == chess.WHITE else 'black'
+        king_safety_before = before_features['king_safety'][color_key]
+        king_safety_after = after_features['king_safety'][color_key]
+        king_safety_drop = king_safety_before - king_safety_after
+
+        mobility_before = before_features['mobility'][color_key]
+        mobility_after = after_features['mobility'][color_key]
+        mobility_change = mobility_after - mobility_before
+
+        hanging_before = {entry['square'] for entry in before_features['hanging_pieces'][color_key]}
+        hanging_after = after_features['hanging_pieces'][color_key]
+        new_hanging = [entry for entry in hanging_after if entry['square'] not in hanging_before]
+
+        if color_to_move == chess.WHITE:
+            delta = after_score - before_score
+            centipawn_loss = max(0, before_score - after_score)
         else:
-            centipawn_loss = 40  # Other moves are average
-        
-        # More realistic thresholds
-        is_best = centipawn_loss < 25      # More moves qualify as "best"
-        is_blunder = centipawn_loss > 150  # Higher threshold for blunders
-        is_mistake = 75 < centipawn_loss <= 150
-        is_inaccuracy = 40 < centipawn_loss <= 75
-        
+            delta = before_score - after_score
+            centipawn_loss = max(0, after_score - before_score)
+
+        heuristic_loss = centipawn_loss
+
+        best_alternative = None
+        for candidate in move_candidates:
+            if candidate['uci'] != move.uci():
+                best_alternative = candidate
+                break
+
+        if best_candidate:
+            if color_to_move == chess.WHITE:
+                best_gap = max(0, best_candidate['score'] - after_score)
+            else:
+                best_gap = max(0, after_score - best_candidate['score'])
+        else:
+            best_gap = 0
+
+        loss_from_best_gap = best_gap >= BASIC_INACCURACY_THRESHOLD
+        if best_gap > centipawn_loss:
+            centipawn_loss = best_gap
+
+        triggers = []
+        if is_capture:
+            triggers.append('capture')
+        if gives_check:
+            triggers.append('check')
+        if see_score <= SEE_MATERIAL_LOSS_TRIGGER:
+            triggers.append('material_loss')
+        if king_safety_drop >= KING_SAFETY_DROP_TRIGGER:
+            triggers.append('king_safety')
+        if mobility_change <= MOBILITY_DROP_TRIGGER:
+            triggers.append('mobility_drop')
+        if new_hanging:
+            triggers.append('exposes_piece')
+
+        refinement = None
+        engine_probe_used = False
+        if self.stockfish_path:
+            should_probe = (
+                centipawn_loss >= BASIC_MISTAKE_THRESHOLD
+                or 'material_loss' in triggers
+                or 'king_safety' in triggers
+                or 'exposes_piece' in triggers
+            )
+            if should_probe:
+                refinement = await self._maybe_probe_stockfish_basic(board, move, color_to_move)
+                if refinement:
+                    has_engine_data = bool(refinement.get('before') or refinement.get('after'))
+                    engine_probe_used = has_engine_data
+                    if has_engine_data:
+                        refined_loss = refinement.get('loss')
+                        if refined_loss is not None:
+                            centipawn_loss = refined_loss
+
+        is_blunder = centipawn_loss >= BASIC_BLUNDER_THRESHOLD and (
+            loss_from_best_gap or
+            see_score <= SEE_MATERIAL_LOSS_TRIGGER or
+            king_safety_drop >= KING_SAFETY_DROP_TRIGGER or
+            bool(new_hanging)
+        )
+        is_mistake = not is_blunder and centipawn_loss >= BASIC_MISTAKE_THRESHOLD
+        is_inaccuracy = not is_blunder and not is_mistake and centipawn_loss >= BASIC_INACCURACY_THRESHOLD
+        played_is_best_candidate = bool(best_candidate and best_candidate['uci'] == move.uci())
+        is_best = played_is_best_candidate or (centipawn_loss <= BASIC_BEST_THRESHOLD and delta >= -BASIC_BEST_THRESHOLD / 2)
+        if is_blunder or is_mistake or is_inaccuracy:
+            is_best = False
+
+        explanation_parts = []
+        if centipawn_loss > 0 and not is_best:
+            explanation_parts.append(f"Costs roughly {int(centipawn_loss)} cp.")
+        if see_score <= SEE_MATERIAL_LOSS_TRIGGER and is_capture:
+            explanation_parts.append(f"Capture on {chess.square_name(move.to_square)} drops material (SEE {int(see_score)} cp).")
+        if new_hanging:
+            for entry in new_hanging:
+                explanation_parts.append(f"Leaves {entry['piece']} on {entry['square']} undefended.")
+        if king_safety_drop >= KING_SAFETY_DROP_TRIGGER:
+            explanation_parts.append(f"King safety worsens by {int(king_safety_drop)} points.")
+        if mobility_change <= MOBILITY_DROP_TRIGGER:
+            explanation_parts.append(f"Reduces mobility by {abs(int(mobility_change))} moves.")
+        if gives_check and centipawn_loss == 0:
+            explanation_parts.append("Delivers check while staying safe.")
+        if best_alternative and best_alternative['uci'] != move.uci() and best_gap > BASIC_BEST_THRESHOLD:
+            explanation_parts.append(f"Better was {best_alternative['san']} ({int(best_alternative['score'])} cp).")
+        if not explanation_parts:
+            if delta > 0:
+                explanation_parts.append(f"Improves evaluation by {int(delta)} cp.")
+            else:
+                explanation_parts.append("Keeps evaluation balanced.")
+        explanation = ' '.join(explanation_parts)
+
+        heuristic_details = {
+            'before_score': before_score,
+            'after_score': after_score,
+            'delta': delta,
+            'centipawn_loss': centipawn_loss,
+            'heuristic_centipawn_loss': heuristic_loss,
+            'see': see_score,
+            'king_safety_before': king_safety_before,
+            'king_safety_after': king_safety_after,
+            'king_safety_drop': king_safety_drop,
+            'mobility_before': mobility_before,
+            'mobility_after': mobility_after,
+            'mobility_change': mobility_change,
+            'new_hanging_pieces': new_hanging,
+            'best_candidate': {
+                'move': best_candidate['uci'] if best_candidate else None,
+                'san': best_candidate['san'] if best_candidate else None,
+                'score': best_candidate['score'] if best_candidate else None
+            },
+            'best_alternative': {
+                'move': best_alternative['uci'],
+                'san': best_alternative['san'],
+                'score': best_alternative['score']
+            } if best_alternative else None,
+            'top_candidates': top_candidates,
+            'triggers': triggers,
+            'best_gap': best_gap,
+            'loss_from_best_gap': loss_from_best_gap
+        }
+
+        heuristic_details['engine_probe_used'] = engine_probe_used
+        if refinement and engine_probe_used:
+            heuristic_details['stockfish_refinement'] = refinement
+            if refinement.get('loss') is not None:
+                heuristic_details['refined_centipawn_loss'] = refinement['loss']
+        evaluation_payload = {'value': after_score, 'type': 'cp', 'source': 'heuristic'}
+        if refinement and refinement.get('after'):
+            evaluation_payload = {
+                'value': refinement['after'].get('value'),
+                'type': refinement['after'].get('type', 'cp'),
+                'source': 'stockfish',
+                'best_move': refinement['after'].get('best_move'),
+                'pv': refinement['after'].get('pv')
+            }
+        heuristic_details['evaluation_source'] = evaluation_payload['source']
+
         return MoveAnalysis(
             move=move.uci(),
             move_san=move_san,
-            evaluation={'value': 0, 'type': 'cp'},
-            best_move=move.uci(),
+            evaluation=evaluation_payload,
+            best_move=best_move_uci,
             is_best=is_best,
             is_blunder=is_blunder,
             is_mistake=is_mistake,
             is_inaccuracy=is_inaccuracy,
-            centipawn_loss=centipawn_loss,
+            centipawn_loss=float(centipawn_loss),
             depth_analyzed=0,
-            analysis_time_ms=0
+            analysis_time_ms=0,
+            explanation=explanation,
+            heuristic_details=heuristic_details
         )
-    
+
     async def _analyze_move_stockfish(self, board: chess.Board, move: chess.Move, 
                                     analysis_type: AnalysisType) -> MoveAnalysis:
         """Stockfish move analysis."""
@@ -419,12 +1004,14 @@ class ChessAnalysisEngine:
                 engine.configure({
                     'Skill Level': self.config.skill_level,
                     'UCI_LimitStrength': True,
-                    'UCI_Elo': 2000  # Lower ELO for faster analysis
+                    'UCI_Elo': 2000,  # Lower ELO for faster analysis
+                    'Threads': 1,  # Single thread to prevent resource conflicts
+                    'Hash': 32  # Smaller hash to reduce memory usage
                 })
                 
                 # Use time limit for faster analysis regardless of depth
-                # 0.2 seconds per position should be sufficient for skill level 8
-                time_limit = 0.2
+                # 0.5 seconds per position should be sufficient for skill level 8
+                time_limit = 0.5
                 
                 # Get evaluation before move
                 info_before = engine.analyse(board, chess.engine.Limit(time=time_limit))
@@ -472,7 +1059,9 @@ class ChessAnalysisEngine:
                     is_inaccuracy=is_inaccuracy,
                     centipawn_loss=centipawn_loss,
                     depth_analyzed=depth,
-                    analysis_time_ms=0
+                    analysis_time_ms=0,
+                    explanation="",
+                    heuristic_details={}
                 )
                 
         except Exception as e:
@@ -937,6 +1526,8 @@ if __name__ == "__main__":
         else:
             print("Stockfish not available, skipping Stockfish tests")
         
-        print("\n🎉 Analysis engine testing complete!")
+        print("\nðŸŽ‰ Analysis engine testing complete!")
     
     asyncio.run(test_analysis_engine())
+
+

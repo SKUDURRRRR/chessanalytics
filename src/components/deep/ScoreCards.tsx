@@ -6,6 +6,8 @@ interface ScoreCardsProps {
     patient: number
     endgame: number
     opening: number
+    novelty: number
+    staleness: number
   }
 }
 
@@ -13,13 +15,14 @@ export function ScoreCards({ scores }: ScoreCardsProps) {
   const scoreData = [
     { label: 'Tactical', score: scores.tactical, color: 'bg-blue-500' },
     { label: 'Positional', score: scores.positional, color: 'bg-green-500' },
-    { label: 'Patient', score: scores.patient, color: 'bg-purple-500' },
-    { label: 'Endgame', score: scores.endgame, color: 'bg-orange-500' },
-    { label: 'Opening', score: scores.opening, color: 'bg-cyan-500' },
+    { label: 'Aggressive', score: scores.aggressive, color: 'bg-red-500' },
+    { label: 'Novelty', score: scores.novelty, color: 'bg-purple-500' },
+    { label: 'Patient', score: scores.patient, color: 'bg-indigo-500' },
+    { label: 'Staleness', score: scores.staleness, color: 'bg-orange-500' },
   ]
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
       {scoreData.map(({ label, score, color }) => (
         <div key={label} className="bg-white rounded-lg shadow-md p-4 text-center">
           <div

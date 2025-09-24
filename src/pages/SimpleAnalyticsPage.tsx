@@ -1,5 +1,5 @@
 // Simple Analytics Page - One page, everything you need
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom'
 import { SimpleAnalytics } from '../components/simple/SimpleAnalytics'
 import { AnalyticsBar } from '../components/simple/AnalyticsBar'
@@ -25,10 +25,18 @@ export default function SimpleAnalyticsPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [apiAvailable, setApiAvailable] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [analysisProgress, setAnalysisProgress] = useState<{
+    analyzed_games: number
+    total_games: number
+    progress_percentage: number
+    is_complete: boolean
+    current_phase: string
+  } | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [showDebug, setShowDebug] = useState(false)
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     // Check for route parameters first, then URL parameters
@@ -115,18 +123,62 @@ export default function SimpleAnalyticsPage() {
     }
   }
 
+  const fetchProgress = async () => {
+    try {
+      const response = await fetch(
+        `http://localhost:8002/api/v1/progress-realtime/${userId}/${platform}?analysis_type=basic`
+      )
+      if (response.ok) {
+        const progress = await response.json()
+        setAnalysisProgress(progress)
+        
+        // If analysis is complete, clean up and refresh data
+        if (progress.is_complete) {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current)
+            progressIntervalRef.current = null
+          }
+          setAnalyzing(false)
+          handleRefresh()
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching progress:', error)
+    }
+  }
+
   const startAnalysis = async () => {
     try {
       setAnalyzing(true)
       setAnalysisError(null)
+      setAnalysisProgress(null)
 
       const result = await AnalysisService.startAnalysis(userId, platform, 100)
 
       if (result.success) {
-        // Refresh data after successful analysis
-        handleRefresh()
+        // Clear any existing interval
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current)
+        }
+        
+        // Start progress monitoring
+        progressIntervalRef.current = setInterval(fetchProgress, 2000) // Check every 2 seconds
+        
+        // Stop monitoring after 10 minutes
+        setTimeout(() => {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current)
+            progressIntervalRef.current = null
+          }
+          setAnalyzing(false)
+          handleRefresh()
+        }, 10 * 60 * 1000) // 10 minutes timeout
+        
+        // Initial progress check
+        fetchProgress()
       } else {
         setAnalysisError(result.message || 'Failed to start analysis')
+        setAnalyzing(false)
       }
     } catch (err) {
       console.error('Error starting analysis:', err)
@@ -134,10 +186,18 @@ export default function SimpleAnalyticsPage() {
       setAnalysisError(
         `Failed to start analysis: ${errorMessage}. Please ensure the Python backend server is running.`
       )
-    } finally {
       setAnalyzing(false)
     }
   }
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+      }
+    }
+  }, [])
 
   if (isLoading) {
     return (
@@ -191,6 +251,25 @@ export default function SimpleAnalyticsPage() {
               >
                 {analyzing ? 'Analyzing...' : 'Analyze My Games'}
               </button>
+              
+              {/* Progress Bar */}
+              {analyzing && analysisProgress && (
+                <div className="w-full max-w-md mx-auto mt-4">
+                  <div className="flex justify-between text-sm text-gray-600 mb-2">
+                    <span>Analyzing games...</span>
+                    <span>{analysisProgress.analyzed_games}/{analysisProgress.total_games}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${analysisProgress.progress_percentage}%` }}
+                    ></div>
+                  </div>
+                  <div className="text-center text-sm text-gray-500 mt-1">
+                    {analysisProgress.progress_percentage}% complete
+                  </div>
+                </div>
+              )}
               <button
                 onClick={() => setShowDebug(!showDebug)}
                 className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium"

@@ -27,7 +27,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
       const result = await AnalysisService.getAnalysisStats(
         userId,
         (platform as 'lichess' | 'chess.com') || 'lichess',
-        'basic' // Use basic analysis type
+        'stockfish' // Stockfish analysis is the current default
       )
       console.log('SimpleAnalytics received data:', result)
       console.log('Opening accuracy:', result?.average_opening_accuracy)
