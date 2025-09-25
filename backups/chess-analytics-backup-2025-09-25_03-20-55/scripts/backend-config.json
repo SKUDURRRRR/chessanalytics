@@ -1,0 +1,26 @@
+{
+  "defaultPort": 8002,
+  "frontendPort": 3000,
+  "backendPorts": {
+    "simple": 8003,
+    "main": 8002
+  },
+  "servers": {
+    "simple": {
+      "name": "Simple Analysis Server",
+      "description": "Mock server for testing frontend integration",
+      "file": "python/simple_analysis_server.py",
+      "requiresEnv": false
+    },
+    "main": {
+      "name": "Main Analysis Server", 
+      "description": "Full server with Stockfish integration",
+      "file": "python/main.py",
+      "requiresEnv": true,
+      "envVars": {
+        "SUPABASE_URL": "https://your-project.supabase.co",
+        "SUPABASE_ANON_KEY": "your-anon-key-here"
+      }
+    }
+  }
+}

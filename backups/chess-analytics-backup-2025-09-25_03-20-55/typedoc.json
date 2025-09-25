@@ -1,0 +1,103 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "./src/lib/errorHandling.ts",
+    "./src/lib/config.ts",
+    "./src/lib/supabase.ts",
+    "./src/lib/security.ts",
+    "./src/services/analysisService.ts",
+    "./src/services/profileService.ts",
+    "./src/services/deepAnalysisService.ts",
+    "./src/services/autoImportService.ts",
+    "./src/contexts/AuthContext.tsx",
+    "./src/types/index.ts"
+  ],
+  "out": "./docs/api",
+  "name": "Chess Analytics API",
+  "description": "Comprehensive API documentation for the Chess Analytics application",
+  "readme": "./README.md",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeExternals": true,
+  "excludeInternal": true,
+  "sort": [
+    "source-order"
+  ],
+  "kindSortOrder": [
+    "Project",
+    "Module",
+    "Namespace",
+    "Enum",
+    "Class",
+    "Interface",
+    "Type alias",
+    "Constructor",
+    "Property",
+    "Variable",
+    "Function",
+    "Accessor",
+    "Method"
+  ],
+  "navigation": {
+    "includeCategories": true,
+    "includeGroups": true
+  },
+  "categorizeByGroup": true,
+  "defaultCategory": "Other",
+  "categoryOrder": [
+    "Error Handling",
+    "Configuration",
+    "Services",
+    "Types",
+    "Utilities",
+    "Other"
+  ],
+  "searchInComments": true,
+  "searchCategoryBoosts": {
+    "functions": 1.2,
+    "classes": 1.1,
+    "interfaces": 1.1
+  },
+  "searchGroupBoosts": {
+    "Classes": 1.1,
+    "Interfaces": 1.1,
+    "Functions": 1.2
+  },
+  "theme": "default",
+  "lightHighlightTheme": "github-light",
+  "darkHighlightTheme": "github-dark",
+  "customCss": "./docs/typedoc-custom.css",
+  "footerText": "Chess Analytics API Documentation",
+  "footerTime": "2024",
+  "hideGenerator": false,
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+  "commentStyle": "jsdoc",
+  "gitRevision": "main",
+  "gitRemote": "origin",
+  "gitCommitHash": "HEAD",
+  "gitCommitDate": "HEAD",
+  "sourceLinkTemplate": "https://github.com/your-org/chess-analytics/blob/{gitRevision}/{path}#L{line}",
+  "externalPattern": [
+    "**/node_modules/**"
+  ],
+  "exclude": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/test-results/**",
+    "**/playwright-report/**",
+    "**/backups/**"
+  ],
+  "plugin": [
+    "typedoc-plugin-markdown",
+    "typedoc-plugin-merge-modules"
+  ],
+  "mergeModulesRenameDefaults": true,
+  "mergeModulesMergeMode": "module"
+}
