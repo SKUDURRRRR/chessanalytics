@@ -126,9 +126,10 @@ class ReliableAnalysisPersistence:
         """
         try:
             canonical_user_id = self._canonical_user_id(analysis.user_id, analysis.platform)
-            analysis_data = self._prepare_analysis_data(analysis, canonical_user_id)
+            analysis_type_enum = self._normalize_analysis_type(analysis.analysis_type)
+            analysis_data = self._prepare_analysis_data(analysis, canonical_user_id, analysis_type_enum)
 
-            if analysis.analysis_type in [AnalysisType.STOCKFISH, AnalysisType.DEEP]:
+            if analysis_type_enum in [AnalysisType.STOCKFISH, AnalysisType.DEEP]:
                 success, record_id = await self._save_to_both_tables(analysis_data)
             else:
                 success, record_id = await self._save_to_game_analyses(analysis_data)
@@ -137,10 +138,18 @@ class ReliableAnalysisPersistence:
                 analysis_data['game_analysis_id'] = record_id
 
             if success:
-                logger.info(f"Successfully saved {str(analysis.analysis_type)} analysis for game {analysis.game_id}")
+                logger.info(
+                    "Successfully saved %s analysis for game %s",
+                    analysis_type_enum.value,
+                    analysis.game_id
+                )
                 return True, analysis_data
 
-            logger.error(f"Failed to save {str(analysis.analysis_type)} analysis for game {analysis.game_id}")
+            logger.error(
+                "Failed to save %s analysis for game %s",
+                analysis_type_enum.value,
+                analysis.game_id
+            )
             return False, None
 
         except Exception as e:
@@ -243,16 +252,37 @@ class ReliableAnalysisPersistence:
                 'stockfish_depth': analysis_data['stockfish_depth']
             }
 
-            self.supabase_service.table('move_analyses').upsert(
+            logger.info(
+                "move_analyses upsert payload user=%s platform=%s game=%s method=%s moves=%s",
+                analysis_data['user_id'],
+                analysis_data['platform'],
+                analysis_data['game_id'],
+                analysis_data['analysis_type'],
+                len(analysis_data.get('moves_analysis') or [])
+            )
+
+            move_response = self.supabase_service.table('move_analyses').upsert(
                 move_analyses_data,
                 on_conflict='user_id,platform,game_id,analysis_method'
             ).execute()
+
+            move_data = getattr(move_response, 'data', None)
+            move_error = getattr(move_response, 'error', None)
+            move_count = len(move_data) if isinstance(move_data, list) else 0
+            logger.info(
+                "move_analyses upsert result rows=%s error=%s",
+                move_count,
+                move_error
+            )
+            if not move_data:
+                logger.debug("move_analyses raw response: %s", getattr(move_response, '__dict__', {}))
 
             return game_analysis_id is not None, game_analysis_id
 
         except Exception as e:
             logger.error(f"Error saving to both tables: {str(e)}")
             return False, None
+
     async def _save_to_game_analyses(self, analysis_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """Save analysis to game_analyses table only."""
         try:
@@ -318,7 +348,7 @@ class ReliableAnalysisPersistence:
             logger.error(f"Error saving to game_analyses: {str(e)}")
             return False, None
 
-    def _prepare_analysis_data(self, analysis: GameAnalysis, canonical_user_id: str) -> Dict[str, Any]:
+    def _prepare_analysis_data(self, analysis: GameAnalysis, canonical_user_id: str, analysis_type: AnalysisType) -> Dict[str, Any]:
         """Prepare analysis data for database storage."""
         # Convert moves analysis to dict format
         moves_analysis_dict = []
@@ -375,7 +405,7 @@ class ReliableAnalysisPersistence:
             'strategic_themes': analysis.strategic_themes,
             'moves_analysis': moves_analysis_dict,
             'average_evaluation': getattr(analysis, 'average_evaluation', 0.0),
-            'analysis_type': str(analysis.analysis_type),
+            'analysis_type': analysis_type.value,
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth,
@@ -384,6 +414,22 @@ class ReliableAnalysisPersistence:
             'game_analysis_id': None
         }
     
+    def _normalize_analysis_type(self, analysis_type: Any) -> AnalysisType:
+        """Convert analysis_type into AnalysisType enum."""
+        if isinstance(analysis_type, AnalysisType):
+            return analysis_type
+        if isinstance(analysis_type, str):
+            try:
+                return AnalysisType(analysis_type.lower())
+            except ValueError:
+                pass
+        logger.warning(
+            "Unknown analysis_type=%s; defaulting to %s",
+            analysis_type,
+            AnalysisType.STOCKFISH.value
+        )
+        return AnalysisType.STOCKFISH
+
     def _canonical_user_id(self, user_id: str, platform: str) -> str:
         """Canonicalize user ID for database operations."""
         # Remove any platform-specific prefixes or suffixes
@@ -397,16 +443,22 @@ class ReliableAnalysisPersistence:
         """Create or update analysis job tracking."""
         now = datetime.now(timezone.utc)
         
+        analysis_type_enum = self._normalize_analysis_type(analysis.analysis_type)
+
         job = AnalysisJob(
             job_id=job_id,
             user_id=analysis.user_id,
             platform=analysis.platform,
             game_id=analysis.game_id,
-            analysis_type=analysis.analysis_type,
+            analysis_type=analysis_type_enum,
             status=PersistenceStatus.IN_PROGRESS,
             created_at=now,
             updated_at=now,
-            analysis_data=self._prepare_analysis_data(analysis, self._canonical_user_id(analysis.user_id, analysis.platform))
+            analysis_data=self._prepare_analysis_data(
+                analysis,
+                self._canonical_user_id(analysis.user_id, analysis.platform),
+                analysis_type_enum
+            )
         )
         
         # Store job in database for tracking
@@ -416,7 +468,7 @@ class ReliableAnalysisPersistence:
                 'user_id': analysis.user_id,
                 'platform': analysis.platform,
                 'game_id': analysis.game_id,
-                'analysis_type': str(analysis.analysis_type),
+                'analysis_type': analysis_type_enum.value,
                 'status': job.status.value,
                 'created_at': job.created_at.isoformat(),
                 'updated_at': job.updated_at.isoformat(),
