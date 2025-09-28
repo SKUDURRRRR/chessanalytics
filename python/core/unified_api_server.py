@@ -2233,6 +2233,10 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
     """Perform batch analysis for a user's games using parallel processing."""
     # Canonicalize user ID for database operations
     canonical_user_id = _canonical_user_id(user_id, platform)
+    if os.name == 'nt':
+        print('[warn] Windows detected; falling back to sequential batch analysis')
+        return await _perform_sequential_batch_analysis(user_id, platform, analysis_type, limit, depth, skill_level)
+
     print(f"🚀 BACKGROUND TASK STARTED: PARALLEL batch analysis for {user_id} (canonical: {canonical_user_id}) on {platform}")
     key = f"{user_id}_{platform}"
     limit = limit or ANALYSIS_TEST_LIMIT
