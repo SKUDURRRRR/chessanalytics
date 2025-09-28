@@ -41,7 +41,7 @@ This documentation covers the Chess Analytics platform, a comprehensive system f
 
 ### Key Features
 - **Player Search**: Search and import games from Lichess and Chess.com
-- **Personality Analysis**: 6-dimensional chess personality scoring
+- **Personality Analysis**: 6-trait model (tactical, positional, aggressive, patient, novelty, staleness)
 - **Analytics Dashboard**: Comprehensive performance metrics and insights
 - **Match History**: Paginated game history with filtering
 - **Real-time Progress**: Live updates for long-running operations
@@ -59,7 +59,7 @@ This documentation covers the Chess Analytics platform, a comprehensive system f
 - ✅ Database schema with 4 main tables and RLS policies
 - ✅ React frontend with 15+ components
 - ✅ Python FastAPI backend with chess analysis engine
-- ✅ Personality analysis system with 6 dimensions
+- ✅ Personality analysis system with a 6-trait model (no opening/endgame scores)
 - ✅ Player search and auto-import functionality
 - ✅ Comprehensive error handling and logging
 
@@ -198,4 +198,5 @@ npm test
 **Last Updated**: 2025-09-17  
 **Version**: 1.0.0  
 **Status**: Active Development
+
 

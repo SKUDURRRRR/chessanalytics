@@ -51,8 +51,6 @@ Personality analysis results for individual games.
 | positional_score | REAL | No | 50 | Positional understanding score (0-100) | No | Yes | - |
 | aggressive_score | REAL | No | 50 | Aggressiveness score (0-100) | No | Yes | - |
 | patient_score | REAL | No | 50 | Patience score (0-100) | No | Yes | - |
-| endgame_score | REAL | No | 50 | Endgame skill score (0-100) | No | Yes | - |
-| opening_score | REAL | No | 50 | Opening knowledge score (0-100) | No | Yes | - |
 | created_at | TIMESTAMP WITH TIME ZONE | No | NOW() | Analysis creation time | No | No | - |
 | updated_at | TIMESTAMP WITH TIME ZONE | No | NOW() | Last update time | No | No | - |
 
@@ -90,8 +88,6 @@ Detailed game feature extraction for personality analysis.
 | positional_score | REAL | No | 50 | Positional understanding score (0-100) | No | Yes | - |
 | aggressive_score | REAL | No | 50 | Aggressiveness score (0-100) | No | Yes | - |
 | patient_score | REAL | No | 50 | Patience score (0-100) | No | Yes | - |
-| endgame_score | REAL | No | 50 | Endgame skill score (0-100) | No | Yes | - |
-| opening_score | REAL | No | 50 | Opening knowledge score (0-100) | No | Yes | - |
 | created_at | TIMESTAMP WITH TIME ZONE | No | NOW() | Feature creation time | No | No | - |
 | updated_at | TIMESTAMP WITH TIME ZONE | No | NOW() | Last update time | No | No | - |
 
@@ -169,7 +165,6 @@ Detailed game feature extraction for personality analysis.
 
 ### Composite Indexes
 - **game_features**: (user_id, platform) for efficient user queries
-- **game_analyses**: (tactical_score, positional_score, aggressive_score, patient_score, endgame_score, opening_score) for personality analysis queries
 
 ## Data Privacy
 

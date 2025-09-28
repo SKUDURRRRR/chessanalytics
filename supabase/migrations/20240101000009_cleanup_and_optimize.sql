@@ -91,9 +91,9 @@ SET
     aggressiveness_index = 0.5
 WHERE provider_game_id = 'testgame2';
 -- Add some sample analyzed games for skudurelis (the user in your image)
-INSERT INTO games (user_id, platform, result, color, provider_game_id, opening, opening_family, accuracy, opponent_rating, my_rating, time_control, played_at, analysis_date, blunders, mistakes, inaccuracies, brilliant_moves, opening_accuracy, middle_game_accuracy, endgame_accuracy, material_sacrifices, aggressiveness_index) VALUES
-('skudurelis', 'lichess', 'win', 'white', 'skudurelis_game_1', 'Sicilian Defense', 'Sicilian Defense', 82.3, 1850, 1900, '600+0', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day', 1, 3, 5, 2, 85.0, 80.0, 82.0, 0, 0.4),
-('skudurelis', 'lichess', 'loss', 'black', 'skudurelis_game_2', 'French Defense', 'French Defense', 71.8, 1950, 1900, '600+0', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', 3, 6, 8, 0, 75.0, 70.0, 70.0, 1, 0.6),
-('skudurelis', 'lichess', 'win', 'white', 'skudurelis_game_3', 'Queen''s Gambit', 'Queen''s Gambit', 88.5, 1800, 1900, '600+0', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days', 0, 2, 3, 3, 90.0, 87.0, 88.0, 0, 0.2),
-('skudurelis', 'lichess', 'draw', 'black', 'skudurelis_game_4', 'King''s Indian Defense', 'King''s Indian Defense', 76.2, 1920, 1900, '600+0', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', 2, 4, 6, 1, 78.0, 75.0, 76.0, 0, 0.3),
-('skudurelis', 'lichess', 'win', 'white', 'skudurelis_game_5', 'Italian Game', 'Italian Game', 84.1, 1880, 1900, '600+0', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days', 1, 3, 4, 2, 86.0, 83.0, 83.0, 0, 0.3);
+INSERT INTO games (user_id, platform, result, color, provider_game_id, opening, accuracy, opponent_rating, my_rating, time_control, played_at, analysis_date, blunders, mistakes, inaccuracies, brilliant_moves, opening_accuracy, middle_game_accuracy, endgame_accuracy, material_sacrifices, aggressiveness_index) VALUES
+('skudurelis', 'lichess', 'win', 'white', 'skudurelis_game_1', 'Sicilian Defense', 82.3, 1850, 1900, '600+0', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day', 1, 3, 5, 2, 85.0, 80.0, 82.0, 0, 0.4),
+('skudurelis', 'lichess', 'loss', 'black', 'skudurelis_game_2', 'French Defense', 71.8, 1950, 1900, '600+0', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', 3, 6, 8, 0, 75.0, 70.0, 70.0, 1, 0.6),
+('skudurelis', 'lichess', 'win', 'white', 'skudurelis_game_3', 'Queen''s Gambit', 88.5, 1800, 1900, '600+0', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days', 0, 2, 3, 3, 90.0, 87.0, 88.0, 0, 0.2),
+('skudurelis', 'lichess', 'draw', 'black', 'skudurelis_game_4', 'King''s Indian Defense', 76.2, 1920, 1900, '600+0', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', 2, 4, 6, 1, 78.0, 75.0, 76.0, 0, 0.3),
+('skudurelis', 'lichess', 'win', 'white', 'skudurelis_game_5', 'Italian Game', 84.1, 1880, 1900, '600+0', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days', 1, 3, 4, 2, 86.0, 83.0, 83.0, 0, 0.3);

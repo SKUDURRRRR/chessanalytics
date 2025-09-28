@@ -83,7 +83,7 @@ export class AnalysisService {
       
       // Check if we got mock data and log a warning
       if (data.length > 0 && data[0].game_id?.startsWith('mock_game_')) {
-        console.warn('⚠️ Received mock analysis results - no real analysis data found in database')
+        console.warn('Warning: Received mock analysis results - no real analysis data found in database')
       }
       
       return data
@@ -115,12 +115,12 @@ export class AnalysisService {
       
       // Check if we got mock data and log a warning
       if (data.total_games_analyzed === 15 && data.average_accuracy === 78.5) {
-        console.warn('⚠️ Received mock data - no real analysis data found in database')
+        console.warn('Warning: Received mock data - no real analysis data found in database')
         console.warn('This usually means:')
-        console.warn('1. ✅ Games exist but no analysis has been performed yet - Click "Analyze My Games"')
+        console.warn('1. Games exist but no analysis has been performed yet - Click "Analyze My Games"')
         console.warn('2. The analysis data is stored under a different analysis_type')
         console.warn('3. There might be a user ID canonicalization issue')
-        console.warn('💡 To fix: Run Stockfish analysis on your games to generate real analytics data')
+        console.warn('Action: Run Stockfish analysis on your games to generate real analytics data')
       }
       
       return data

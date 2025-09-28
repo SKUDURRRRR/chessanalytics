@@ -2,6 +2,8 @@
 // Leverages the same principle: data is available immediately after import!
 
 import { supabase } from '../lib/supabase'
+import { getTimeControlCategory } from './timeControlUtils'
+import { normalizeOpeningName } from './openingUtils'
 
 export interface GameAnalytics {
   // Basic Statistics
@@ -237,10 +239,11 @@ function calculateTimeControlStats(games: any[]): Array<{
   
   games.forEach(game => {
     const tc = game.time_control || 'Unknown'
-    if (!timeControlMap.has(tc)) {
-      timeControlMap.set(tc, [])
+    const tcCategory = getTimeControlCategory(tc)
+    if (!timeControlMap.has(tcCategory)) {
+      timeControlMap.set(tcCategory, [])
     }
-    timeControlMap.get(tc)!.push(game)
+    timeControlMap.get(tcCategory)!.push(game)
   })
   
   return Array.from(timeControlMap.entries()).map(([timeControl, tcGames]) => {
@@ -351,7 +354,7 @@ function calculateOpeningColorStats(games: any[]): {
     draws: number
   }>
 } {
-  // Filter out games without proper opening names
+  // Filter out games without proper opening names and normalize them
   const validGames = games.filter(game => {
     const opening = game.opening_family || game.opening
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
@@ -363,24 +366,26 @@ function calculateOpeningColorStats(games: any[]): {
   const whiteGames = validGames.filter(g => g.color === 'white')
   const blackGames = validGames.filter(g => g.color === 'black')
   
-  // Group white games by opening
+  // Group white games by opening (with normalized names)
   const whiteOpeningMap = new Map<string, any[]>()
   whiteGames.forEach(game => {
-    const opening = game.opening_family || game.opening
-    if (!whiteOpeningMap.has(opening)) {
-      whiteOpeningMap.set(opening, [])
+    const rawOpening = game.opening_family || game.opening
+    const normalizedOpening = normalizeOpeningName(rawOpening)
+    if (!whiteOpeningMap.has(normalizedOpening)) {
+      whiteOpeningMap.set(normalizedOpening, [])
     }
-    whiteOpeningMap.get(opening)!.push(game)
+    whiteOpeningMap.get(normalizedOpening)!.push(game)
   })
   
-  // Group black games by opening
+  // Group black games by opening (with normalized names)
   const blackOpeningMap = new Map<string, any[]>()
   blackGames.forEach(game => {
-    const opening = game.opening_family || game.opening
-    if (!blackOpeningMap.has(opening)) {
-      blackOpeningMap.set(opening, [])
+    const rawOpening = game.opening_family || game.opening
+    const normalizedOpening = normalizeOpeningName(rawOpening)
+    if (!blackOpeningMap.has(normalizedOpening)) {
+      blackOpeningMap.set(normalizedOpening, [])
     }
-    blackOpeningMap.get(opening)!.push(game)
+    blackOpeningMap.get(normalizedOpening)!.push(game)
   })
   
   // Calculate white opening stats
@@ -700,11 +705,12 @@ export async function getOpeningPerformance(
 
   const openingMap = new Map<string, any[]>()
   games.forEach(game => {
-    const opening = game.opening_family || game.opening || 'Unknown'
-    if (!openingMap.has(opening)) {
-      openingMap.set(opening, [])
+    const rawOpening = game.opening_family || game.opening || 'Unknown'
+    const normalizedOpening = normalizeOpeningName(rawOpening)
+    if (!openingMap.has(normalizedOpening)) {
+      openingMap.set(normalizedOpening, [])
     }
-    openingMap.get(opening)!.push(game)
+    openingMap.get(normalizedOpening)!.push(game)
   })
 
   return Array.from(openingMap.entries()).map(([opening, openingGames]) => {
@@ -760,24 +766,26 @@ export async function getOpeningColorPerformance(
   const whiteGames = validGames.filter(g => g.color === 'white')
   const blackGames = validGames.filter(g => g.color === 'black')
   
-  // Group white games by opening
+  // Group white games by opening (with normalized names)
   const whiteOpeningMap = new Map<string, any[]>()
   whiteGames.forEach(game => {
-    const opening = game.opening_family || game.opening
-    if (!whiteOpeningMap.has(opening)) {
-      whiteOpeningMap.set(opening, [])
+    const rawOpening = game.opening_family || game.opening
+    const normalizedOpening = normalizeOpeningName(rawOpening)
+    if (!whiteOpeningMap.has(normalizedOpening)) {
+      whiteOpeningMap.set(normalizedOpening, [])
     }
-    whiteOpeningMap.get(opening)!.push(game)
+    whiteOpeningMap.get(normalizedOpening)!.push(game)
   })
   
-  // Group black games by opening
+  // Group black games by opening (with normalized names)
   const blackOpeningMap = new Map<string, any[]>()
   blackGames.forEach(game => {
-    const opening = game.opening_family || game.opening
-    if (!blackOpeningMap.has(opening)) {
-      blackOpeningMap.set(opening, [])
+    const rawOpening = game.opening_family || game.opening
+    const normalizedOpening = normalizeOpeningName(rawOpening)
+    if (!blackOpeningMap.has(normalizedOpening)) {
+      blackOpeningMap.set(normalizedOpening, [])
     }
-    blackOpeningMap.get(opening)!.push(game)
+    blackOpeningMap.get(normalizedOpening)!.push(game)
   })
   
   // Calculate white opening stats

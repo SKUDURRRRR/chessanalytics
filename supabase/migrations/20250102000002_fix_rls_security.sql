@@ -1,0 +1,2 @@
+-- 20250102000002_fix_rls_security.sql superseded by 20250102000005_schema_consolidation.sql
+-- Intentionally left blank.

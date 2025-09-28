@@ -1,3 +1,18 @@
+-- Ensure user_profiles table exists for policy adjustments
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    username TEXT,
+    rating INTEGER,
+    total_games INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, platform)
+);
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+
 -- Fix RLS policy for user_profiles to allow anonymous access for development
 -- This allows the frontend to create user profiles without authentication
 

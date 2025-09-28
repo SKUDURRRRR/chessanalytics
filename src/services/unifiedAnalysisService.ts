@@ -9,14 +9,15 @@ import {
   GameAnalysisSummary,
   AnalysisStats,
   Platform,
-  AnalysisResponse
+  AnalysisResponse,
+  DeepAnalysisData
 } from '../types'
 import { config } from '../lib/config'
 
 const UNIFIED_API_URL = config.getApi().baseUrl
 
 // Re-export types for backward compatibility
-export type { GameAnalysisSummary, AnalysisStats } from '../types'
+export type { GameAnalysisSummary, AnalysisStats, DeepAnalysisData } from '../types'
 
 export interface UnifiedAnalysisRequest {
   user_id: string
@@ -45,20 +46,6 @@ export interface AnalysisProgress {
   is_complete: boolean
   current_phase?: 'fetching' | 'analyzing' | 'calculating' | 'saving' | 'complete'
   estimated_time_remaining?: number
-}
-
-export interface DeepAnalysisData {
-  total_games: number
-  average_accuracy: number
-  current_rating: number
-  personality_scores: Record<string, number>
-  player_level: string
-  player_style: Record<string, any>
-  primary_strengths: string[]
-  improvement_areas: string[]
-  playing_style: string
-  phase_accuracies: Record<string, number>
-  recommendations: Record<string, string>
 }
 
 export class UnifiedAnalysisService {
@@ -425,4 +412,6 @@ export class UnifiedAnalysisService {
 
 // Export default instance for convenience
 export default UnifiedAnalysisService
+
+
 

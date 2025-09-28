@@ -25,3 +25,8 @@ END $$;
 -- Add comments explaining the new columns
 COMMENT ON COLUMN games.color IS 'Player color: white or black';
 COMMENT ON COLUMN games.provider_game_id IS 'Original game ID from the chess platform (Lichess/Chess.com)';
+
+-- Add opening_family column to games table
+ALTER TABLE games 
+ADD COLUMN IF NOT EXISTS opening_family TEXT;
+COMMENT ON COLUMN games.opening_family IS 'Opening family as classified during import';

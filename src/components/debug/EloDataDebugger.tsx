@@ -1,6 +1,7 @@
 // ELO Data Debugger Component - Shows ELO data analysis and debugging
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { getTimeControlCategory } from '../../utils/timeControlUtils'
 
 interface EloDataDebuggerProps {
   userId: string
@@ -46,7 +47,7 @@ export function EloDataDebugger({ userId, platform }: EloDataDebuggerProps) {
           userElo: game.my_rating || 0,
           opponentElo: game.opponent_rating || 0,
           result: game.result || 'unknown',
-          timeControl: game.time_control || 'unknown',
+          timeControl: getTimeControlCategory(game.time_control || 'unknown'),
           opening: game.opening || 'unknown'
         }))
 

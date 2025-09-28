@@ -1,6 +1,7 @@
 // Match History Component - Shows recent games in a table format
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { getTimeControlCategory } from '../../utils/timeControlUtils'
 
 // Canonicalize user ID to match backend logic
 function canonicalizeUserId(userId: string, platform: string): string {
@@ -194,7 +195,7 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
                   </td>
                   <td className="py-3 px-2 text-sm text-gray-600 capitalize">{game.color}</td>
                   <td className="py-3 px-2 text-sm text-gray-900">{game.opponent}</td>
-                  <td className="py-3 px-2 text-sm text-gray-600">{game.time_control}</td>
+                  <td className="py-3 px-2 text-sm text-gray-600">{getTimeControlCategory(game.time_control)}</td>
                   <td className="py-3 px-2 text-sm text-gray-600">
                     <div className="max-w-32 truncate" title={game.opening_family}>
                       {game.opening_family || 'Unknown'}

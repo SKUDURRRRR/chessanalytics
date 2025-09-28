@@ -1,0 +1,2 @@
+-- 20250102000001_fix_data_model_consistency.sql superseded by 20250102000005_schema_consolidation.sql
+-- Intentionally left blank.

@@ -12,8 +12,13 @@ CREATE TABLE move_analyses (
     
     -- Advanced accuracy metrics from Stockfish
     average_centipawn_loss FLOAT DEFAULT 0,
+    opponent_average_centipawn_loss FLOAT DEFAULT 0,
     worst_blunder_centipawn_loss FLOAT DEFAULT 0,
+    opponent_worst_blunder_centipawn_loss FLOAT DEFAULT 0,
     best_move_percentage FLOAT CHECK (best_move_percentage >= 0 AND best_move_percentage <= 100),
+    opponent_accuracy FLOAT DEFAULT 0,
+    good_moves INTEGER DEFAULT 0,
+    acceptable_moves INTEGER DEFAULT 0,
     
     -- Detailed phase analysis from Stockfish
     middle_game_accuracy FLOAT CHECK (middle_game_accuracy >= 0 AND middle_game_accuracy <= 100),
@@ -21,6 +26,7 @@ CREATE TABLE move_analyses (
     
     -- Advanced metrics
     time_management_score FLOAT CHECK (time_management_score >= 0 AND time_management_score <= 100),
+    opponent_time_management_score FLOAT DEFAULT 0,
     material_sacrifices INTEGER DEFAULT 0,
     aggressiveness_index FLOAT DEFAULT 0,
     average_evaluation FLOAT,

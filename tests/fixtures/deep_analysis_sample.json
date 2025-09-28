@@ -1,0 +1,32 @@
+{
+  "total_games": 42,
+  "average_accuracy": 68.5,
+  "current_rating": 1850,
+  "personality_scores": {
+    "tactical": 72.1,
+    "positional": 64.3,
+    "aggressive": 58.9,
+    "patient": 70.5,
+    "novelty": 62.7,
+    "staleness": 41.2
+  },
+  "player_level": "advanced",
+  "player_style": {
+    "category": "tactical",
+    "description": "Thrives in dynamic, calculation-heavy situations.",
+    "confidence": 78.0
+  },
+  "primary_strengths": ["Tactical awareness", "Creativity"],
+  "improvement_areas": ["Repetition risk"],
+  "playing_style": "Tactical fighter who thrives in dynamic positions.",
+  "phase_accuracies": {
+    "opening": 66.0,
+    "middle": 70.0,
+    "endgame": 63.0
+  },
+  "recommendations": {
+    "primary": "Deepen calculation drills to convert complex middlegames.",
+    "secondary": "Rotate fresh openings monthly to lower repetition risk.",
+    "leverage": "Steer games into tactical skirmishes where you excel."
+  }
+}

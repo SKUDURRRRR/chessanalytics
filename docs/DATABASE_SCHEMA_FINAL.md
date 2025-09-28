@@ -91,8 +91,6 @@ games (main games table)
 | positional_score | FLOAT | CHECK (0-100) | Positional understanding score |
 | aggressive_score | FLOAT | CHECK (0-100) | Aggressiveness score |
 | patient_score | FLOAT | CHECK (0-100) | Patience score |
-| endgame_score | FLOAT | CHECK (0-100) | Endgame skill score |
-| opening_score | FLOAT | CHECK (0-100) | Opening knowledge score |
 | novelty_score | FLOAT | CHECK (0-100) | Novelty/creativity score |
 | staleness_score | FLOAT | CHECK (0-100) | Staleness/repetitiveness score |
 | tactical_patterns | JSONB | DEFAULT '[]' | Tactical patterns found |
@@ -136,8 +134,6 @@ games (main games table)
 | positional_score | FLOAT | CHECK (0-100) | Positional understanding score |
 | aggressive_score | FLOAT | CHECK (0-100) | Aggressiveness score |
 | patient_score | FLOAT | CHECK (0-100) | Patience score |
-| endgame_score | FLOAT | CHECK (0-100) | Endgame skill score |
-| opening_score | FLOAT | CHECK (0-100) | Opening knowledge score |
 | novelty_score | FLOAT | CHECK (0-100) | Novelty/creativity score |
 | staleness_score | FLOAT | CHECK (0-100) | Staleness/repetitiveness score |
 | tactical_patterns | JSONB | DEFAULT '[]' | Tactical patterns found |
@@ -180,8 +176,6 @@ games (main games table)
 | positional_score | FLOAT | CHECK (0-100) | Calculated positional score |
 | aggressive_score | FLOAT | CHECK (0-100) | Calculated aggressiveness score |
 | patient_score | FLOAT | CHECK (0-100) | Calculated patience score |
-| endgame_score | FLOAT | CHECK (0-100) | Calculated endgame score |
-| opening_score | FLOAT | CHECK (0-100) | Calculated opening score |
 | novelty_score | FLOAT | CHECK (0-100) | Calculated novelty score |
 | staleness_score | FLOAT | CHECK (0-100) | Calculated staleness score |
 | calculated_at | TIMESTAMP | DEFAULT NOW() | Feature calculation time |

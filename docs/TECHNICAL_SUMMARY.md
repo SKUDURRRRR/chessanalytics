@@ -274,60 +274,29 @@ npm run dev
 
 ## Personality Analysis System
 
-### Improved Trait Score Calculations
+The platform now treats personality analysis as a first-class feature with a clearly defined six-trait model. The canonical description of each trait, its inputs, and score semantics lives in [docs/PERSONALITY_MODEL.md](./PERSONALITY_MODEL.md).
 
-The system now uses sophisticated algorithms to calculate six personality traits that better reflect actual chess playing styles:
+### Trait Overview
 
-#### 1. Tactical Score (0-100)
-- **Formula**: `base_score + positive_bonus + pattern_bonus`
-- **Base Score**: `100 - (blunders * 15 + mistakes * 8) / total_moves`
-- **Positive Bonus**: `(brilliant_moves * 20 + best_moves * 5) / total_moves`
-- **Pattern Bonus**: `min(20, tactical_patterns_count * 2 / total_moves)`
-- **Improvements**: Considers both positive and negative indicators, includes tactical patterns
+- **Tactical** - reliability in concrete, forcing situations. Blunders and missed tactics are heavily penalised while accurate tactics and pressure streaks earn bonuses.
+- **Positional** - stability during quiet play. Sustained accuracy on non-forcing moves keeps this score high; drifting evaluations or structural errors pull it down.
+- **Aggressive** - willingness to generate pressure. Frequent forcing moves, attack streaks, and king pressure are rewarded but reckless errors reduce the trait.
+- **Patient** - discipline when consolidating or converting. Low error rates, consistent time usage, and calm endgame technique drive the score.
+- **Novelty** - creative variety. Diverse piece usage, offbeat but sound choices, and deviation from book patterns increase the value.
+- **Staleness** - repetition risk. Replaying the same openings, plans, or time controls increases staleness; varied preparation lowers it.
 
-#### 2. Positional Score (0-100)
-- **Formula**: `(base_score * centipawn_factor) + pattern_bonus`
-- **Base Score**: `100 - (inaccuracies * 3 + mistakes * 6 + blunders * 12) / total_moves`
-- **Centipawn Factor**: `max(0, 1 - (avg_centipawn_loss / 100))`
-- **Pattern Bonus**: `min(25, positional_patterns_count * 3 / total_moves)`
-- **Improvements**: Uses centipawn loss for accuracy, includes positional patterns
+### Data Pipeline
 
-#### 3. Aggressive Score (0-100)
-- **Formula**: `(base_aggression * 0.4) + (move_score * 0.4) + (sacrifice_bonus * 0.2)`
-- **Base Aggression**: `aggressiveness_index * 100`
-- **Move Score**: `(brilliant_moves * 15 + tactical_moves * 3 + king_attacks * 8) / total_moves`
-- **Sacrifice Bonus**: `min(30, material_sacrifices * 5)`
-- **Improvements**: Uses dedicated aggressiveness metrics and material sacrifices
+1. **Move Features** - the analysis engine annotates each user move with SAN metadata, phase context, engine verdicts, and derived heuristics (capture/check flags, quiet vs forcing, streak IDs).
+2. **Game-Level Scoring** - _calculate_personality_scores consumes user moves only, weighs each trait using the inputs described in the model, then clamps the result to 0-100 with 50 as neutral.
+3. **Aggregate Reporting** - the API layers weight each game by the number of contributing user moves and blend in cross-game signals (opening variety, time-control mix) for novelty/staleness.
+4. **Presentation** - the frontend expects a personality_scores object with exactly the six trait keys and uses the ranges defined in the model to highlight strengths and gaps.
 
-#### 4. Patient Score (0-100)
-- **Formula**: `base_score * time_factor + endgame_accuracy * 20`
-- **Base Score**: `100 - (blunders * 12 + mistakes * 6 + inaccuracies * 2) / total_moves`
-- **Time Factor**: `time_management_score / 100`
-- **Endgame Accuracy**: `best_moves_in_endgame / endgame_moves`
-- **Improvements**: Incorporates time management and endgame performance
+### Implementation Notes
 
-#### 5. Novelty Score (0-100)
-- **Formula**: `creative_score + unorthodox_score + diversity_score`
-- **Creative Score**: `(creative_moves / total_moves) * 60`
-- **Unorthodox Score**: `(unorthodox_moves / total_moves) * 30`
-- **Diversity Score**: `min(20, unique_move_types * 5)`
-- **Improvements**: Measures actual creativity and move diversity
-
-#### 6. Staleness Score (0-100)
-- **Formula**: `(pattern_staleness * 0.6) + (opening_staleness_score * 0.4)`
-- **Pattern Staleness**: `100 - pattern_diversity`
-- **Opening Staleness**: `opening_ratio * 40 + opening_repetition * 30`
-- **Improvements**: Analyzes pattern repetition and opening variety
-
-### Key Improvements Over Previous System
-
-1. **Multi-dimensional Analysis**: Each trait now considers multiple factors instead of single metrics
-2. **Positive Reinforcement**: Rewards good play, not just penalizes mistakes
-3. **Pattern Recognition**: Incorporates tactical and positional pattern analysis
-4. **Contextual Factors**: Uses time management, material sacrifices, and other advanced metrics
-5. **Balanced Scoring**: More sophisticated logic beyond simple linear penalties
-6. **Realistic Ranges**: Ensures scores stay within meaningful 0-100 bounds
-
+- Every trait score defaults to 50.0 when insufficient data is available; callers can rely on the presence of the key even for partial analyses.
+- Time-management, endgame accuracy, and opening metadata are optional inputs. When missing, the scorer degrades gracefully by leaning on available move quality metrics.
+- Tests must exercise edge cases: short miniatures, tactical slugfests, very positional draws, and sparse data to ensure neutral defaults hold.
 ## Conclusion
 
 The Stockfish integration provides a robust, scalable chess analysis system with professional-grade accuracy. The architecture supports multiple users, concurrent analysis, and detailed move-by-move evaluation, making it a powerful tool for chess improvement and analysis.

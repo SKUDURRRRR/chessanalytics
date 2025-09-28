@@ -154,23 +154,37 @@ class AnalysisResponse(BaseModel):
 class GameAnalysisSummary(BaseModel):
     game_id: str
     accuracy: float
+    best_move_percentage: float
+    opponent_accuracy: float
     blunders: int
     mistakes: int
     inaccuracies: int
     brilliant_moves: int
     best_moves: int
+    good_moves: int
+    acceptable_moves: int
     opening_accuracy: float
     middle_game_accuracy: float
     endgame_accuracy: float
+    average_centipawn_loss: float
+    opponent_average_centipawn_loss: float
+    worst_blunder_centipawn_loss: float
+    opponent_worst_blunder_centipawn_loss: float
+    time_management_score: float
+    opponent_time_management_score: float
+    material_sacrifices: int
+    aggressiveness_index: float
     tactical_score: float
     positional_score: float
     aggressive_score: float
     patient_score: float
     novelty_score: float
     staleness_score: float
+    average_evaluation: float
     analysis_type: str
     analysis_date: str
     processing_time_ms: int
+    stockfish_depth: int = 0
 
 class PositionAnalysisResult(BaseModel):
     evaluation: Dict[str, Any]
@@ -213,217 +227,137 @@ def get_analysis_engine() -> ChessAnalysisEngine:
 
 def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> GameAnalysisSummary:
     """Map analysis data from different database tables to unified response format."""
-    
-    # Calculate missing fields from moves_analysis if available
-    def calculate_missing_fields(analysis_data: dict) -> dict:
-        """Calculate blunders, mistakes, inaccuracies from moves_analysis JSONB."""
-        moves_analysis = analysis_data.get('moves_analysis', [])
-        if not isinstance(moves_analysis, list):
-            return {'blunders': 0, 'mistakes': 0, 'inaccuracies': 0, 'best_moves': 0, 'opening_accuracy': 0}
-        
-        blunders = sum(1 for move in moves_analysis if move.get('is_blunder', False))
-        mistakes = sum(1 for move in moves_analysis if move.get('is_mistake', False))
-        inaccuracies = sum(1 for move in moves_analysis if move.get('is_inaccuracy', False))
-        best_moves = sum(1 for move in moves_analysis if move.get('is_best', False))
-        
-        # Calculate opening accuracy from moves in first 15 moves
-        opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15]
-        opening_accuracy = 0
+
+    def compute_move_metrics(analysis_data: dict) -> dict:
+        moves = analysis_data.get('moves_analysis') or []
+        if not isinstance(moves, list):
+            return {
+                'blunders': int(analysis_data.get('blunders', 0)),
+                'mistakes': int(analysis_data.get('mistakes', 0)),
+                'inaccuracies': int(analysis_data.get('inaccuracies', 0)),
+                'brilliant_moves': int(analysis_data.get('brilliant_moves', 0)),
+                'best_moves': int(analysis_data.get('best_moves', 0)),
+                'good_moves': int(analysis_data.get('good_moves', 0)),
+                'acceptable_moves': int(analysis_data.get('acceptable_moves', 0)),
+                'opening_accuracy': float(analysis_data.get('opening_accuracy', 0)),
+                'total_moves': 0
+            }
+
+        blunders = sum(1 for move in moves if move.get('is_blunder'))
+        mistakes = sum(1 for move in moves if move.get('is_mistake'))
+        inaccuracies = sum(1 for move in moves if move.get('is_inaccuracy'))
+        best_moves = sum(1 for move in moves if move.get('is_best'))
+        brilliants = sum(1 for move in moves if move.get('is_brilliant'))
+        good_moves = sum(1 for move in moves if move.get('is_good'))
+        acceptable_moves = sum(1 for move in moves if move.get('is_acceptable'))
+
+        opening_moves = [move for move in moves if move.get('opening_ply', 0) <= 15]
         if opening_moves:
-            opening_best_moves = sum(1 for move in opening_moves if move.get('is_best', False))
+            opening_best_moves = sum(1 for move in opening_moves if move.get('is_best'))
             opening_accuracy = round((opening_best_moves / len(opening_moves)) * 100, 1)
-        
+        else:
+            opening_accuracy = float(analysis_data.get('opening_accuracy', 0))
+
         return {
             'blunders': blunders,
             'mistakes': mistakes,
             'inaccuracies': inaccuracies,
+            'brilliant_moves': brilliants,
             'best_moves': best_moves,
-            'opening_accuracy': opening_accuracy
+            'good_moves': good_moves,
+            'acceptable_moves': acceptable_moves,
+            'opening_accuracy': opening_accuracy,
+            'total_moves': len(moves)
         }
-    
-    # Get base fields that are common across all analysis types
-    base_fields = {
-        'game_id': analysis.get('game_id', ''),
-        'accuracy': analysis.get('accuracy', analysis.get('best_move_percentage', 0)),
-        'middle_game_accuracy': analysis.get('middle_game_accuracy', 0),
-        'endgame_accuracy': analysis.get('endgame_accuracy', 0),
-        'tactical_score': analysis.get('tactical_score', 0),
-        'positional_score': analysis.get('positional_score', 0),
-        'aggressive_score': analysis.get('aggressive_score', 0),
-        'patient_score': analysis.get('patient_score', 0),
-        'novelty_score': analysis.get('novelty_score', 0),
-        'staleness_score': analysis.get('staleness_score', 0),
-        'analysis_type': analysis.get('analysis_type', analysis.get('analysis_method', 'unknown')),
-        'analysis_date': analysis.get('analysis_date', ''),
-        'processing_time_ms': analysis.get('processing_time_ms', 0)
-    }
-    
-    if analysis_type in ["stockfish", "deep"]:
-        # For Stockfish analysis (move_analyses table), calculate missing fields
-        calculated_fields = calculate_missing_fields(analysis)
-        
-        return GameAnalysisSummary(
-            game_id=base_fields['game_id'],
-            accuracy=base_fields['accuracy'],
-            blunders=calculated_fields['blunders'],
-            mistakes=calculated_fields['mistakes'],
-            inaccuracies=calculated_fields['inaccuracies'],
-            brilliant_moves=analysis.get('material_sacrifices', 0),  # Map material_sacrifices to brilliant_moves
-            best_moves=calculated_fields['best_moves'],
-            opening_accuracy=calculated_fields['opening_accuracy'],
-            middle_game_accuracy=base_fields['middle_game_accuracy'],
-            endgame_accuracy=base_fields['endgame_accuracy'],
-            tactical_score=base_fields['tactical_score'],
-            positional_score=base_fields['positional_score'],
-            aggressive_score=base_fields['aggressive_score'],
-            patient_score=base_fields['patient_score'],
-            novelty_score=base_fields['novelty_score'],
-            staleness_score=base_fields['staleness_score'],
-            analysis_type=base_fields['analysis_type'],
-            analysis_date=base_fields['analysis_date'],
-            processing_time_ms=base_fields['processing_time_ms']
-        )
-    else:
-        # For basic analysis (game_analyses table), use direct field mapping
-        return GameAnalysisSummary(
-            game_id=base_fields['game_id'],
-            accuracy=base_fields['accuracy'],
-            blunders=analysis.get('blunders', 0),
-            mistakes=analysis.get('mistakes', 0),
-            inaccuracies=analysis.get('inaccuracies', 0),
-            brilliant_moves=analysis.get('brilliant_moves', 0),
-            best_moves=analysis.get('best_moves', 0),
-            opening_accuracy=analysis.get('opening_accuracy', 0),
-            middle_game_accuracy=base_fields['middle_game_accuracy'],
-            endgame_accuracy=base_fields['endgame_accuracy'],
-            tactical_score=base_fields['tactical_score'],
-            positional_score=base_fields['positional_score'],
-            aggressive_score=base_fields['aggressive_score'],
-            patient_score=base_fields['patient_score'],
-            novelty_score=base_fields['novelty_score'],
-            staleness_score=base_fields['staleness_score'],
-            analysis_type=base_fields['analysis_type'],
-            analysis_date=base_fields['analysis_date'],
-            processing_time_ms=base_fields['processing_time_ms']
-        )
 
-def calculate_unified_stats(analyses: list, analysis_type: str) -> dict:
-    """Calculate unified statistics from analysis data regardless of source table."""
-    if not analyses:
-        return {
-            "total_games_analyzed": 0,
-            "average_accuracy": 0,
-            "total_blunders": 0,
-            "total_mistakes": 0,
-            "total_inaccuracies": 0,
-            "total_brilliant_moves": 0,
-            "total_material_sacrifices": 0,
-            "average_opening_accuracy": 0,
-            "average_middle_game_accuracy": 0,
-            "average_endgame_accuracy": 0,
-            "average_aggressiveness_index": 0,
-            "blunders_per_game": 0,
-            "mistakes_per_game": 0,
-            "inaccuracies_per_game": 0,
-            "brilliant_moves_per_game": 0,
-            "material_sacrifices_per_game": 0
-        }
-    
-    total_games = len(analyses)
-    
-    if analysis_type in ["stockfish", "deep"]:
-        # Calculate from move_analyses table data
-        total_blunders = 0
-        total_mistakes = 0
-        total_inaccuracies = 0
-        total_brilliant_moves = 0
-        total_opening_accuracy = 0
-        
-        for analysis in analyses:
-            moves_analysis = analysis.get('moves_analysis', [])
-            if isinstance(moves_analysis, list):
-                for move in moves_analysis:
-                    if move.get('is_blunder', False):
-                        total_blunders += 1
-                    if move.get('is_mistake', False):
-                        total_mistakes += 1
-                    if move.get('is_inaccuracy', False):
-                        total_inaccuracies += 1
-                    if move.get('is_best', False) and move.get('centipawn_loss', 0) < 10:
-                        total_brilliant_moves += 1
-                
-                # Calculate opening accuracy for this game
-                opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15]
-                if opening_moves:
-                    opening_best_moves = sum(1 for move in opening_moves if move.get('is_best', False))
-                    total_opening_accuracy += (opening_best_moves / len(opening_moves)) * 100
-        
-        return {
-            "total_games_analyzed": total_games,
-            "average_accuracy": round(sum(a.get('best_move_percentage', a.get('accuracy', 0)) for a in analyses) / total_games, 1),
-            "total_blunders": total_blunders,
-            "total_mistakes": total_mistakes,
-            "total_inaccuracies": total_inaccuracies,
-            "total_brilliant_moves": total_brilliant_moves,
-            "total_material_sacrifices": sum(a.get('material_sacrifices', 0) for a in analyses),
-            "average_opening_accuracy": round(total_opening_accuracy / total_games, 1) if total_games > 0 else 0,
-            "average_middle_game_accuracy": round(sum(a.get('middle_game_accuracy', 0) for a in analyses) / total_games, 1),
-            "average_endgame_accuracy": round(sum(a.get('endgame_accuracy', 0) for a in analyses) / total_games, 1),
-            "average_aggressiveness_index": round(sum(a.get('aggressive_score', 0) for a in analyses) / total_games, 1),
-            "blunders_per_game": round(total_blunders / total_games, 2) if total_games > 0 else 0,
-            "mistakes_per_game": round(total_mistakes / total_games, 2) if total_games > 0 else 0,
-            "inaccuracies_per_game": round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
-            "brilliant_moves_per_game": round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
-            "material_sacrifices_per_game": round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
-        }
-    else:
-        # Calculate from game_analyses table data
-        total_blunders = sum(a.get('blunders', 0) for a in analyses)
-        total_mistakes = sum(a.get('mistakes', 0) for a in analyses)
-        total_inaccuracies = sum(a.get('inaccuracies', 0) for a in analyses)
-        total_brilliant_moves = sum(a.get('brilliant_moves', 0) for a in analyses)
-        
-        return {
-            "total_games_analyzed": total_games,
-            "average_accuracy": round(sum(a.get('accuracy', 0) for a in analyses) / total_games, 1),
-            "total_blunders": total_blunders,
-            "total_mistakes": total_mistakes,
-            "total_inaccuracies": total_inaccuracies,
-            "total_brilliant_moves": total_brilliant_moves,
-            "total_material_sacrifices": 0,  # Not available in game_analyses
-            "average_opening_accuracy": round(sum(a.get('opening_accuracy', 0) for a in analyses) / total_games, 1),
-            "average_middle_game_accuracy": round(sum(a.get('middle_game_accuracy', 0) for a in analyses) / total_games, 1),
-            "average_endgame_accuracy": round(sum(a.get('endgame_accuracy', 0) for a in analyses) / total_games, 1),
-            "average_aggressiveness_index": round(sum(a.get('aggressive_score', 0) for a in analyses) / total_games, 1),
-            "blunders_per_game": round(total_blunders / total_games, 2) if total_games > 0 else 0,
-            "mistakes_per_game": round(total_mistakes / total_games, 2) if total_games > 0 else 0,
-            "inaccuracies_per_game": round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
-            "brilliant_moves_per_game": round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
-            "material_sacrifices_per_game": 0  # Not available in game_analyses
-        }
+    move_metrics = compute_move_metrics(analysis)
+
+    accuracy_value = analysis.get('accuracy')
+    if accuracy_value is None:
+        accuracy_value = analysis.get('best_move_percentage', 0)
+
+    best_move_pct = analysis.get('best_move_percentage')
+    if best_move_pct is None:
+        total_moves = move_metrics['total_moves']
+        if total_moves:
+            best_move_pct = round((move_metrics['best_moves'] / total_moves) * 100, 2)
+        else:
+            best_move_pct = accuracy_value or 0
+
+    summary_kwargs = {
+        'game_id': analysis.get('game_id', ''),
+        'accuracy': float(accuracy_value or 0),
+        'best_move_percentage': float(best_move_pct or 0),
+        'opponent_accuracy': float(analysis.get('opponent_accuracy', 0)),
+        'blunders': int(move_metrics['blunders']),
+        'mistakes': int(move_metrics['mistakes']),
+        'inaccuracies': int(move_metrics['inaccuracies']),
+        'brilliant_moves': int(move_metrics['brilliant_moves']),
+        'best_moves': int(move_metrics['best_moves']),
+        'good_moves': int(move_metrics['good_moves']),
+        'acceptable_moves': int(move_metrics['acceptable_moves']),
+        'opening_accuracy': float(move_metrics['opening_accuracy']),
+        'middle_game_accuracy': float(analysis.get('middle_game_accuracy', 0)),
+        'endgame_accuracy': float(analysis.get('endgame_accuracy', 0)),
+        'average_centipawn_loss': float(analysis.get('average_centipawn_loss', 0)),
+        'opponent_average_centipawn_loss': float(analysis.get('opponent_average_centipawn_loss', 0)),
+        'worst_blunder_centipawn_loss': float(analysis.get('worst_blunder_centipawn_loss', 0)),
+        'opponent_worst_blunder_centipawn_loss': float(analysis.get('opponent_worst_blunder_centipawn_loss', 0)),
+        'time_management_score': float(analysis.get('time_management_score', 0)),
+        'opponent_time_management_score': float(analysis.get('opponent_time_management_score', 0)),
+        'material_sacrifices': int(analysis.get('material_sacrifices', move_metrics['brilliant_moves'])),
+        'aggressiveness_index': float(analysis.get('aggressiveness_index', analysis.get('aggressive_score', 0))),
+        'tactical_score': float(analysis.get('tactical_score', 0)),
+        'positional_score': float(analysis.get('positional_score', 0)),
+        'aggressive_score': float(analysis.get('aggressive_score', 0)),
+        'patient_score': float(analysis.get('patient_score', 0)),
+        'novelty_score': float(analysis.get('novelty_score', 0)),
+        'staleness_score': float(analysis.get('staleness_score', 0)),
+        'average_evaluation': float(analysis.get('average_evaluation', 0)),
+        'analysis_type': str(analysis.get('analysis_type', analysis.get('analysis_method', analysis_type))),
+        'analysis_date': str(analysis.get('analysis_date', '')),
+        'processing_time_ms': int(analysis.get('processing_time_ms', 0)),
+        'stockfish_depth': int(analysis.get('stockfish_depth', 0))
+    }
+
+    return GameAnalysisSummary(**summary_kwargs)
 
 def map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
     """Map unified analysis data to response format (simplified since view provides consistent fields)."""
     return GameAnalysisSummary(
         game_id=analysis.get('game_id', ''),
         accuracy=analysis.get('accuracy', 0),
+        best_move_percentage=analysis.get('best_move_percentage', analysis.get('accuracy', 0)),
+        opponent_accuracy=analysis.get('opponent_accuracy', 0),
         blunders=analysis.get('blunders', 0),
         mistakes=analysis.get('mistakes', 0),
         inaccuracies=analysis.get('inaccuracies', 0),
         brilliant_moves=analysis.get('brilliant_moves', 0),
         best_moves=analysis.get('best_moves', 0),
+        good_moves=analysis.get('good_moves', 0),
+        acceptable_moves=analysis.get('acceptable_moves', 0),
         opening_accuracy=analysis.get('opening_accuracy', 0),
         middle_game_accuracy=analysis.get('middle_game_accuracy', 0),
         endgame_accuracy=analysis.get('endgame_accuracy', 0),
+        average_centipawn_loss=analysis.get('average_centipawn_loss', 0),
+        opponent_average_centipawn_loss=analysis.get('opponent_average_centipawn_loss', 0),
+        worst_blunder_centipawn_loss=analysis.get('worst_blunder_centipawn_loss', 0),
+        opponent_worst_blunder_centipawn_loss=analysis.get('opponent_worst_blunder_centipawn_loss', 0),
+        time_management_score=analysis.get('time_management_score', 0),
+        opponent_time_management_score=analysis.get('opponent_time_management_score', 0),
+        material_sacrifices=analysis.get('material_sacrifices', 0),
+        aggressiveness_index=analysis.get('aggressiveness_index', analysis.get('aggressive_score', 0)),
         tactical_score=analysis.get('tactical_score', 0),
         positional_score=analysis.get('positional_score', 0),
         aggressive_score=analysis.get('aggressive_score', 0),
         patient_score=analysis.get('patient_score', 0),
         novelty_score=analysis.get('novelty_score', 0),
         staleness_score=analysis.get('staleness_score', 0),
+        average_evaluation=analysis.get('average_evaluation', 0),
         analysis_type=analysis.get('analysis_type', 'unknown'),
         analysis_date=analysis.get('analysis_date', ''),
-        processing_time_ms=analysis.get('processing_time_ms', 0)
+        processing_time_ms=analysis.get('processing_time_ms', 0),
+        stockfish_depth=analysis.get('stockfish_depth', 0)
     )
 
 async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str, 
@@ -586,6 +520,8 @@ async def save_basic_analysis(analysis: GameAnalysis) -> bool:
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
+                'is_good': move.is_good,
+                'is_acceptable': move.is_acceptable,
                 'centipawn_loss': move.centipawn_loss,
                 'depth_analyzed': move.depth_analyzed
             })
@@ -620,7 +556,7 @@ async def save_basic_analysis(analysis: GameAnalysis) -> bool:
             'positional_patterns': analysis.positional_patterns,
             'strategic_themes': analysis.strategic_themes,
             'moves_analysis': moves_analysis_dict,
-            'analysis_type': analysis.analysis_type.value if hasattr(analysis.analysis_type, 'value') else str(analysis.analysis_type),
+            'analysis_type': str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth
@@ -660,6 +596,8 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
+                'is_good': move.is_good,
+                'is_acceptable': move.is_acceptable,
                 'centipawn_loss': move.centipawn_loss,
                 'depth_analyzed': move.depth_analyzed
             })
@@ -690,7 +628,7 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'positional_patterns': analysis.positional_patterns,
             'strategic_themes': analysis.strategic_themes,
             'moves_analysis': moves_analysis_dict,
-            'analysis_method': analysis.analysis_type.value if hasattr(analysis.analysis_type, 'value') else str(analysis.analysis_type),
+            'analysis_method': str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth
@@ -730,6 +668,8 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
+                'is_good': move.is_good,
+                'is_acceptable': move.is_acceptable,
                 'centipawn_loss': move.centipawn_loss,
                 'depth_analyzed': move.depth_analyzed
             })
@@ -764,7 +704,7 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
             'positional_patterns': analysis.positional_patterns,
             'strategic_themes': analysis.strategic_themes,
             'moves_analysis': moves_analysis_dict,
-            'analysis_type': analysis.analysis_type.value if hasattr(analysis.analysis_type, 'value') else str(analysis.analysis_type),
+            'analysis_type': str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth

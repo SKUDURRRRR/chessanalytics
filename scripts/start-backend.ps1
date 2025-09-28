@@ -120,7 +120,7 @@ if ($ServerType -eq "simple") {
             Write-Host "Please set SUPABASE_ANON_KEY environment variable or check your .env file" -ForegroundColor Yellow
         }
         
-        Start-Process python -ArgumentList "-m", "core.api_server" -WindowStyle Normal
+        Start-Process python -ArgumentList "-m", "core.unified_api_server" -WindowStyle Normal
     }
 } elseif ($ServerType -eq "main") {
     # Start main server using the core API server
@@ -137,7 +137,7 @@ if ($ServerType -eq "simple") {
         Write-Host "Please set SUPABASE_ANON_KEY environment variable or check your .env file" -ForegroundColor Yellow
     }
     
-    Start-Process python -ArgumentList "-m", "core.api_server" -WindowStyle Normal
+    Start-Process python -ArgumentList "-m", "core.unified_api_server" -WindowStyle Normal
 } else {
     Write-Host "❌ Unknown server type: $ServerType" -ForegroundColor Red
     Write-Host "Valid options: 'simple' or 'main'" -ForegroundColor Yellow

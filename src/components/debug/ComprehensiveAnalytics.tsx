@@ -1,6 +1,7 @@
 // Comprehensive Analytics Component - Shows detailed analytics tables
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { getTimeControlCategory } from '../../utils/timeControlUtils'
 
 interface ComprehensiveAnalyticsProps {
   userId: string
@@ -77,7 +78,7 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
 
         // Find most played time control
         const timeControls = games.reduce((acc, game) => {
-          const tc = game.time_control || 'unknown'
+          const tc = getTimeControlCategory(game.time_control || 'unknown')
           acc[tc] = (acc[tc] || 0) + 1
           return acc
         }, {} as Record<string, number>)

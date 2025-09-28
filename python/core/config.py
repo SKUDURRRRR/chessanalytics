@@ -18,6 +18,8 @@ load_dotenv(BASE_DIR / '.env.local', override=True)
 # Allow project root .env to fill in defaults without clobbering backend values
 load_dotenv(BASE_DIR.parent / '.env', override=False)
 
+
+SUMMARY_PRINTED = False
 @dataclass
 class DatabaseConfig:
     """Database configuration."""
@@ -304,12 +306,21 @@ class ChessAnalysisConfig:
     
     def print_summary(self):
         """Print a summary of the current configuration."""
+        global SUMMARY_PRINTED
+        if SUMMARY_PRINTED:
+            return
+        SUMMARY_PRINTED = True
+        
         print("\n" + "="*50)
         print("CHESS ANALYSIS CONFIGURATION")
         print("="*50)
         
         print(f"\nDatabase:")
-        print(f"  URL: {self.database.url[:50]}..." if len(self.database.url) > 50 else f"  URL: {self.database.url}")
+        # Mask hosted URLs when pointing to Supabase cloud
+        if "supabase.co" in self.database.url:
+            print(f"  URL: [HOSTED SUPABASE URL]")
+        else:
+            print(f"  URL: {self.database.url[:50]}..." if len(self.database.url) > 50 else f"  URL: {self.database.url}")
         print(f"  Anon Key: {'*' * 20}...{self.database.anon_key[-4:]}" if self.database.anon_key else "  Anon Key: Not set")
         print(f"  Timeout: {self.database.timeout}s")
         

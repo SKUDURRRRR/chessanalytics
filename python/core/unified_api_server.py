@@ -22,6 +22,12 @@ from jose import jwt as jose_jwt
 # Import our unified analysis engine
 from .analysis_engine import ChessAnalysisEngine, AnalysisConfig, AnalysisType, GameAnalysis
 
+# Import reliable persistence system
+from .reliable_analysis_persistence import ReliableAnalysisPersistence, PersistenceResult
+
+# Import performance configuration
+from .performance_config import get_performance_config, print_performance_config
+
 # Import error handlers
 from .error_handlers import (
     ChessAnalyticsError, DatabaseError, AnalysisError, AuthenticationError,
@@ -35,8 +41,12 @@ from .config import get_config
 config = get_config()
 from .cors_security import get_default_cors_config, get_production_cors_config
 
+# Load performance configuration
+performance_config = get_performance_config()
+
 # Print configuration summary
 config.print_summary()
+print_performance_config(performance_config)
 
 # Initialize secure CORS configuration
 cors_origins = config.api.cors_origins or ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"]
@@ -53,11 +63,16 @@ if config.database.url and config.database.anon_key:
     else:
         supabase_service: Client = supabase
         print("Service role key not found, using anon key for move_analyses operations")
+    
+    # Initialize reliable persistence system
+    persistence = ReliableAnalysisPersistence(supabase, supabase_service)
+    print("Reliable analysis persistence system initialized")
 else:
     print("[warn]  Database configuration not found. Using mock clients for development.")
     # Create mock clients for development
     supabase = None
     supabase_service = None
+    persistence = None
 
 # Authentication setup
 security = HTTPBearer()
@@ -102,6 +117,22 @@ app = FastAPI(
     version="3.0.0",
     description="Single, comprehensive chess analysis API with all functionality consolidated"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    print("Starting Chess Analytics API Server...")
+    
+    # Initialize the analysis queue
+    from .analysis_queue import get_analysis_queue
+    queue = get_analysis_queue()
+    
+    # Start the queue processor if it's not already running
+    if queue._queue_processor_task is None or queue._queue_processor_task.done():
+        queue._queue_processor_task = asyncio.create_task(queue._process_queue())
+        print("Analysis queue processor started")
+    
+    print("Server startup complete!")
 
 # Add global exception handler
 app.add_exception_handler(Exception, global_exception_handler)
@@ -165,26 +196,40 @@ class UnifiedAnalysisResponse(BaseModel):
     progress: Optional[Dict[str, Any]] = None
 
 class GameAnalysisSummary(BaseModel):
-    """Unified game analysis summary."""
+    """Unified game analysis summary with extended metrics."""
     game_id: str
     accuracy: float
+    best_move_percentage: float
+    opponent_accuracy: float
     blunders: int
     mistakes: int
     inaccuracies: int
     brilliant_moves: int
     best_moves: int
+    good_moves: int
+    acceptable_moves: int
     opening_accuracy: float
     middle_game_accuracy: float
     endgame_accuracy: float
+    average_centipawn_loss: float
+    opponent_average_centipawn_loss: float
+    worst_blunder_centipawn_loss: float
+    opponent_worst_blunder_centipawn_loss: float
+    time_management_score: float
+    opponent_time_management_score: float
+    material_sacrifices: int
+    aggressiveness_index: float
     tactical_score: float
     positional_score: float
     aggressive_score: float
     patient_score: float
     novelty_score: float
     staleness_score: float
+    average_evaluation: float
     analysis_type: str
     analysis_date: str
     processing_time_ms: int
+    stockfish_depth: int = 0
 
 class AnalysisStats(BaseModel):
     """Unified analysis statistics."""
@@ -371,8 +416,37 @@ async def unified_analyze(
                 # Position analysis
                 return await _handle_position_analysis(request)
         else:
-            # Batch analysis
-            return await _handle_batch_analysis(request, background_tasks, use_parallel)
+            # Batch analysis - temporarily bypass queue system for debugging
+            if use_parallel:
+                # Canonicalize user ID for database operations
+                canonical_user_id = _canonical_user_id(request.user_id, request.platform)
+                
+                # Use the old parallel batch analysis directly
+                background_tasks.add_task(
+                    _perform_batch_analysis,
+                    canonical_user_id,
+                    request.platform,
+                    request.analysis_type,
+                    request.limit or 10,
+                    request.depth or 8,
+                    request.skill_level or 8
+                )
+                
+                return UnifiedAnalysisResponse(
+                    success=True,
+                    message="Analysis started in background",
+                    analysis_id="direct_analysis",
+                    data={
+                        "job_id": "direct_analysis",
+                        "user_id": canonical_user_id,
+                        "platform": request.platform,
+                        "analysis_type": request.analysis_type,
+                        "limit": request.limit or 10,
+                        "status": "running"
+                    }
+                )
+            else:
+                return await _handle_batch_analysis(request, background_tasks, use_parallel)
             
     except ValidationError as e:
         raise e
@@ -504,37 +578,28 @@ async def get_analysis_progress(
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
 ):
-    """Get analysis progress for a user from the queue system."""
+    """Get analysis progress for a user using reliable persistence system."""
     try:
-        from .analysis_queue import get_analysis_queue
-        queue = get_analysis_queue()
-        
-        # Find the most recent job for this user/platform
-        all_jobs = queue.get_all_jobs()
-        user_jobs = [
-            job for job in all_jobs.values() 
-            if job.user_id == user_id and job.platform == platform
-        ]
-        
-        if not user_jobs:
+        if not persistence:
             return AnalysisProgress(
                 analyzed_games=0,
                 total_games=10,
                 progress_percentage=0,
                 is_complete=False,
-                current_phase="not_started"
+                current_phase="error"
             )
         
-        # Get the most recent job
-        latest_job = max(user_jobs, key=lambda job: job.created_at)
+        # Get progress using reliable persistence system
+        progress = await persistence.get_analysis_progress(user_id, platform)
         
         return AnalysisProgress(
-            analyzed_games=latest_job.analyzed_games,
-            total_games=latest_job.total_games,
-            progress_percentage=latest_job.progress_percentage,
-            is_complete=latest_job.status.value in ["completed", "failed", "cancelled"],
-            current_phase=latest_job.current_phase
+            analyzed_games=progress['completed_jobs'],
+            total_games=progress['total_jobs'],
+            progress_percentage=progress['progress_percentage'],
+            is_complete=progress['is_complete'],
+            current_phase=progress['current_phase']
         )
+        
     except Exception as e:
         print(f"Error fetching analysis progress: {e}")
         return AnalysisProgress(
@@ -786,10 +851,8 @@ PERSONALITY_LABELS = {
     'positional': 'Positional understanding',
     'aggressive': 'Attacking initiative',
     'patient': 'Defensive technique',
-    'endgame': 'Endgame technique',
-    'opening': 'Opening preparation',
     'novelty': 'Creativity',
-    'staleness': 'Repetition risk',
+    'staleness': 'Staleness',
 }
 
 CORE_PERSONALITY_KEYS = [
@@ -797,9 +860,8 @@ CORE_PERSONALITY_KEYS = [
     'positional',
     'aggressive',
     'patient',
-    'endgame',
-    'opening',
     'novelty',
+    'staleness',
 ]
 
 STYLE_CATEGORY_MAP = {
@@ -851,19 +913,11 @@ def _round2(value: Optional[float]) -> float:
 def _infer_current_rating(games: List[Dict[str, Any]], profile: Dict[str, Any]) -> int:
     """Get the highest ELO rating efficiently from games data.
     
-    This function now uses the optimized approach:
-    1. First check profile for current_rating
-    2. If not available, get the highest my_rating from games
-    3. ELO data is available immediately after import - no analysis required!
+    This function prioritizes the highest game rating over profile rating
+    because profile ratings can be outdated.
     """
-    rating = _coerce_float((profile or {}).get('current_rating'))
-    if rating:
-        return int(round(rating))
-    
-    # Optimized approach: get highest ELO from games
-    # Since games are already ordered by my_rating DESC, just take the first one
+    # First, get the highest rating from games (most accurate)
     if games:
-        # Find the highest rating efficiently
         highest_rating = 0
         for game in games:
             game_rating = _coerce_float(game.get('my_rating'))
@@ -872,6 +926,11 @@ def _infer_current_rating(games: List[Dict[str, Any]], profile: Dict[str, Any]) 
         
         if highest_rating > 0:
             return int(round(highest_rating))
+    
+    # Fallback to profile rating if no game ratings available
+    rating = _coerce_float((profile or {}).get('current_rating'))
+    if rating:
+        return int(round(rating))
     
     return 0
 
@@ -922,46 +981,68 @@ def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
 
 def _compute_personality_scores(
     analyses: List[Dict[str, Any]],
-    games: List[Dict[str, Any]]
+    games: List[Dict[str, Any]],
+    skill_level: str = 'intermediate'
 ) -> Dict[str, float]:
-    scores: Dict[str, float] = {}
-    field_map = {
-        'tactical': 'tactical_score',
-        'positional': 'positional_score',
-        'aggressive': 'aggressive_score',
-        'patient': 'patient_score',
-        'novelty': 'novelty_score',
-        'staleness': 'staleness_score',
-    }
-    for key, field in field_map.items():
-        values = [_coerce_float(analysis.get(field)) for analysis in analyses]
-        scores[key] = _round2(_safe_average([v for v in values if v is not None], default=50.0))
-
-    opening_values = [_coerce_float(analysis.get('opening_score')) for analysis in analyses]
-    if any(v is not None for v in opening_values):
-        scores['opening'] = _round2(_safe_average([v for v in opening_values if v is not None], default=50.0))
-    else:
-        scores['opening'] = _round2(_compute_opening_accuracy_from_moves(analyses))
-
-    endgame_values = [_coerce_float(analysis.get('endgame_score')) for analysis in analyses]
-    if any(v is not None for v in endgame_values):
-        scores['endgame'] = _round2(_safe_average([v for v in endgame_values if v is not None], default=50.0))
-    else:
-        fallback_endgame = _safe_average([
-            _coerce_float(analysis.get('endgame_accuracy')) for analysis in analyses
-        ], default=50.0)
-        scores['endgame'] = _round2(fallback_endgame)
-
-    if scores.get('novelty', 0.0) == 0.0:
-        scores['novelty'] = _round2(_estimate_novelty_from_games(games))
-    if scores.get('staleness', 0.0) == 0.0:
-        scores['staleness'] = _round2(_estimate_staleness_from_games(games))
-    if 'opening' not in scores:
-        scores['opening'] = 50.0
-    if 'endgame' not in scores:
-        scores['endgame'] = 50.0
-    return scores
-
+    """Compute personality scores using standardized scoring system with skill level awareness."""
+    from .personality_scoring import PersonalityScorer, PersonalityScores
+    
+    if not analyses:
+        return PersonalityScores.neutral().to_dict()
+    
+    scorer = PersonalityScorer()
+    score_lists = []
+    weights = []
+    
+    # Process each analysis
+    for analysis in analyses:
+        # Extract moves data
+        moves_data = analysis.get('moves_analysis', [])
+        if not moves_data:
+            continue
+            
+        # Convert moves to the format expected by PersonalityScorer
+        moves = []
+        for move in moves_data:
+            if isinstance(move, dict):
+                moves.append({
+                    'move_san': move.get('move_san', ''),
+                    'ply_index': move.get('ply_index', 0),
+                    'centipawn_loss': move.get('centipawn_loss', 0.0),
+                    'is_best': move.get('is_best', False),
+                    'is_blunder': move.get('is_blunder', False),
+                    'is_mistake': move.get('is_mistake', False),
+                    'is_inaccuracy': move.get('is_inaccuracy', False),
+                })
+        
+        if not moves:
+            continue
+            
+        # Calculate scores for this analysis with skill level awareness
+        time_score = _coerce_float(analysis.get('time_management_score')) or 0.0
+        scores = scorer.calculate_scores(moves, time_score, skill_level)
+        score_lists.append(scores)
+        
+        # Use total moves as weight
+        weight = _coerce_float(analysis.get('total_moves'))
+        if weight is None or weight <= 0:
+            weight = float(len(moves))
+        weights.append(weight)
+    
+    if not score_lists:
+        return PersonalityScores.neutral().to_dict()
+    
+    # Aggregate scores
+    aggregated_scores = scorer.aggregate_scores(score_lists, weights)
+    
+    # Apply game-level adjustments for novelty and staleness
+    if games:
+        novelty_signal = _estimate_novelty_from_games(games)
+        staleness_signal = _estimate_staleness_from_games(games)
+        aggregated_scores.novelty = _round2(aggregated_scores.novelty * 0.7 + novelty_signal * 0.3)
+        aggregated_scores.staleness = _round2(aggregated_scores.staleness * 0.7 + staleness_signal * 0.3)
+    
+    return aggregated_scores.to_dict()
 
 def _compute_phase_accuracies(analyses: List[Dict[str, Any]]) -> Dict[str, float]:
     opening = _round2(_compute_opening_accuracy_from_moves(analyses))
@@ -981,12 +1062,23 @@ def _compute_phase_accuracies(analyses: List[Dict[str, Any]]) -> Dict[str, float
 def _determine_player_level(current_rating: int, average_accuracy: float) -> str:
     rating = current_rating or 0
     accuracy = average_accuracy or 0.0
-    if rating >= 2200 or accuracy >= 85.0:
+    
+    # Primary classification by rating (more realistic ranges)
+    if rating >= 2000:
+        return 'master'
+    if rating >= 1600:
         return 'expert'
-    if rating >= 1800 or accuracy >= 72.0:
+    if rating >= 1200:
         return 'advanced'
-    if rating >= 1400 or accuracy >= 58.0:
+    if rating >= 800:
         return 'intermediate'
+    
+    # Fallback to accuracy only if rating is very low or missing
+    if accuracy >= 85.0:
+        return 'intermediate'  # High accuracy but low rating = intermediate
+    if accuracy >= 70.0:
+        return 'intermediate'
+    
     return 'beginner'
 
 
@@ -1019,8 +1111,8 @@ def _summarize_strengths_and_gaps(personality_scores: Dict[str, float]):
             strengths.append(label)
         elif score <= 45.0:
             improvements.append(label)
-    if personality_scores.get('staleness', 0.0) >= 60.0:
-        improvements.append('Vary your openings to reduce repetition risk')
+    if personality_scores.get('staleness', 50.0) <= 40.0:
+        improvements.append('Develop more structured opening repertoire')
     strengths = list(dict.fromkeys(strengths))
     improvements = list(dict.fromkeys(improvements))
     return strengths, improvements
@@ -1044,8 +1136,8 @@ def _build_recommendations(
     if phase_accuracies.get('endgame', 0.0) < 50.0:
         primary += ' Add dedicated endgame study sessions to stabilise long games.'
     secondary = f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples."
-    if personality_scores.get('staleness', 0.0) >= 60.0:
-        secondary = 'Introduce more variety in your openings to reduce repetition risk.'
+    if personality_scores.get('staleness', 50.0) <= 40.0:
+        secondary = 'Develop a more structured opening repertoire for consistent play.'
     leverage = (
         f"Lean into a {player_style['category']} approach - {player_style['description'].rstrip('.')} to steer games into favourable territory."
     )
@@ -1063,13 +1155,13 @@ def _build_deep_analysis_response(
     profile: Dict[str, Any]
 ) -> DeepAnalysisData:
     total_games = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')}) or len(games)
-    accuracy_values = [_coerce_float(analysis.get('best_move_percentage')) for analysis in analyses]
+    accuracy_values = [_coerce_float(analysis.get('best_move_percentage', analysis.get('accuracy'))) for analysis in analyses]
     average_accuracy = _round2(_safe_average([v for v in accuracy_values if v is not None]))
     current_rating = _infer_current_rating(games, profile)
 
-    personality_scores = _compute_personality_scores(analyses, games)
-    phase_accuracies = _compute_phase_accuracies(analyses)
     player_level = _determine_player_level(current_rating, average_accuracy)
+    personality_scores = _compute_personality_scores(analyses, games, player_level)
+    phase_accuracies = _compute_phase_accuracies(analyses)
     player_style, playing_style = _determine_player_style(personality_scores)
     strengths, improvements = _summarize_strengths_and_gaps(personality_scores)
     recommendations = _build_recommendations(personality_scores, player_style, strengths, improvements, phase_accuracies)
@@ -1852,6 +1944,98 @@ async def proxy_chess_com_user(username: str):
         print(f"Error proxying Chess.com user request: {e}")
         return {"error": str(e)}
 
+@app.post("/api/v1/validate-user")
+async def validate_user(request: dict):
+    """Validate that a user exists on the specified platform."""
+    try:
+        user_id = request.get("user_id")
+        platform = request.get("platform")
+        
+        if not user_id or not platform:
+            return {
+                "exists": False,
+                "message": "Missing user_id or platform parameter"
+            }
+        
+        if platform not in ["lichess", "chess.com"]:
+            return {
+                "exists": False,
+                "message": "Platform must be 'lichess' or 'chess.com'"
+            }
+        
+        # Validate user exists on the platform
+        if platform == "lichess":
+            # Check Lichess user exists
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                url = f"https://lichess.org/api/user/{user_id}"
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        return {"exists": True, "message": "User found on Lichess"}
+                    else:
+                        return {
+                            "exists": False,
+                            "message": f"User '{user_id}' not found on Lichess"
+                        }
+        else:  # chess.com
+            # Check Chess.com user exists
+            import httpx
+            async with httpx.AsyncClient() as client:
+                canonical_username = user_id.strip().lower()
+                url = f"https://api.chess.com/pub/player/{canonical_username}"
+                response = await client.get(url, timeout=10.0)
+                
+                if response.status_code == 200:
+                    return {"exists": True, "message": "User found on Chess.com"}
+                else:
+                    return {
+                        "exists": False,
+                        "message": f"User '{user_id}' not found on Chess.com"
+                    }
+                    
+    except Exception as e:
+        print(f"Error validating user: {e}")
+        return {
+            "exists": False,
+            "message": f"Error validating user: {str(e)}"
+        }
+
+@app.post("/api/v1/check-user-exists")
+async def check_user_exists(request: dict):
+    """Check if a user already exists in our database."""
+    try:
+        user_id = request.get("user_id")
+        platform = request.get("platform")
+        
+        if not user_id or not platform:
+            return {"exists": False}
+        
+        if platform not in ["lichess", "chess.com"]:
+            return {"exists": False}
+        
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        
+        # Check if user exists in user_profiles table
+        from supabase import create_client, Client
+        import os
+        
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not supabase_key:
+            return {"exists": False}
+        
+        supabase: Client = create_client(supabase_url, supabase_key)
+        
+        result = supabase.table("user_profiles").select("user_id").eq("user_id", canonical_user_id).eq("platform", platform).execute()
+        
+        return {"exists": len(result.data) > 0}
+        
+    except Exception as e:
+        print(f"Error checking user existence: {e}")
+        return {"exists": False}
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -2109,8 +2293,8 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
         max_workers = 8
         parallel_engine = ParallelAnalysisEngine(max_workers=max_workers)
         
-        print(f"🚀 PARALLEL BATCH ANALYSIS: Using {max_workers} parallel workers for {len(games)} games")
-        print(f"🚀 Games to analyze: {[game.get('provider_game_id', 'unknown') for game in games[:5]]}...")
+        print(f"PARALLEL BATCH ANALYSIS: Using {max_workers} parallel workers for {len(games)} games")
+        print(f"Games to analyze: {[game.get('provider_game_id', 'unknown') for game in games[:5]]}...")
         
         # Create progress callback function
         def update_progress(completed: int, total: int, percentage: int):
@@ -2120,7 +2304,7 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
                 "progress_percentage": percentage,
                 "current_phase": "analyzing"
             })
-            print(f"📊 Progress: {completed}/{total} games ({percentage}%)")
+            print(f"Progress: {completed}/{total} games ({percentage}%)")
         
         # Start parallel analysis
         start_time = datetime.now()
@@ -2349,12 +2533,14 @@ async def _analyze_single_game(engine, game, user_id, platform, analysis_type_en
         return None
 
 async def _save_basic_analysis(analysis: GameAnalysis) -> bool:
-    """Save basic analysis to game_analyses table."""
+    """Persist basic analysis using reliable persistence fallback."""
     try:
-        # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(analysis.user_id, analysis.platform)
-        
-        # Convert moves analysis to dict format
+
+        if persistence:
+            result = await persistence.save_analysis_with_retry(analysis)
+            return result.success
+
         moves_analysis_dict = []
         for move in analysis.moves_analysis:
             moves_analysis_dict.append({
@@ -2365,6 +2551,8 @@ async def _save_basic_analysis(analysis: GameAnalysis) -> bool:
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
+                'is_good': move.is_good,
+                'is_acceptable': move.is_acceptable,
                 'centipawn_loss': move.centipawn_loss,
                 'depth_analyzed': move.depth_analyzed,
                 'best_move': move.best_move,
@@ -2372,25 +2560,30 @@ async def _save_basic_analysis(analysis: GameAnalysis) -> bool:
                 'heuristic_details': move.heuristic_details,
                 'analysis_time_ms': move.analysis_time_ms
             })
-        
-        # Prepare data for game_analyses table
+
         data = {
             'game_id': analysis.game_id,
             'user_id': canonical_user_id,
             'platform': analysis.platform,
             'total_moves': analysis.total_moves,
             'accuracy': analysis.accuracy,
+            'opponent_accuracy': analysis.opponent_accuracy,
             'blunders': analysis.blunders,
             'mistakes': analysis.mistakes,
             'inaccuracies': analysis.inaccuracies,
             'brilliant_moves': analysis.brilliant_moves,
             'best_moves': analysis.best_moves,
+            'good_moves': analysis.good_moves,
+            'acceptable_moves': analysis.acceptable_moves,
             'opening_accuracy': analysis.opening_accuracy,
             'middle_game_accuracy': analysis.middle_game_accuracy,
             'endgame_accuracy': analysis.endgame_accuracy,
             'average_centipawn_loss': analysis.average_centipawn_loss,
+            'opponent_average_centipawn_loss': analysis.opponent_average_centipawn_loss,
             'worst_blunder_centipawn_loss': analysis.worst_blunder_centipawn_loss,
+            'opponent_worst_blunder_centipawn_loss': analysis.opponent_worst_blunder_centipawn_loss,
             'time_management_score': analysis.time_management_score,
+            'opponent_time_management_score': analysis.opponent_time_management_score,
             'tactical_score': analysis.tactical_score,
             'positional_score': analysis.positional_score,
             'aggressive_score': analysis.aggressive_score,
@@ -2402,36 +2595,32 @@ async def _save_basic_analysis(analysis: GameAnalysis) -> bool:
             'strategic_themes': analysis.strategic_themes,
             'moves_analysis': moves_analysis_dict,
             'average_evaluation': getattr(analysis, 'average_evaluation', 0.0),
-            'analysis_type': analysis.analysis_type.value if hasattr(analysis.analysis_type, 'value') else str(analysis.analysis_type),
+            'analysis_type': str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth
         }
-        
-        # Insert or update analysis in game_analyses table using service role
+
         response = supabase_service.table('game_analyses').upsert(
             data,
-            on_conflict='user_id,platform,game_id'
+            on_conflict='user_id,platform,game_id,analysis_type'
         ).execute()
-        
-        if response.data:
-            print(f"Successfully saved basic analysis for game {analysis.game_id}")
-            return True
-        else:
-            print(f"Failed to save basic analysis for game {analysis.game_id}")
-            return False
-            
+        return bool(getattr(response, 'data', None))
+
     except Exception as e:
         print(f"Error saving basic analysis: {e}")
         return False
 
+
 async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
-    """Save Stockfish analysis to move_analyses table."""
+    """Persist Stockfish/deep analysis using reliable persistence fallback."""
     try:
-        # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(analysis.user_id, analysis.platform)
-        
-        # Convert moves analysis to dict format
+
+        if persistence:
+            result = await persistence.save_analysis_with_retry(analysis)
+            return result.success
+
         moves_analysis_dict = []
         for move in analysis.moves_analysis:
             moves_analysis_dict.append({
@@ -2442,23 +2631,30 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
+                'is_good': move.is_good,
+                'is_acceptable': move.is_acceptable,
                 'centipawn_loss': move.centipawn_loss,
                 'depth_analyzed': move.depth_analyzed
             })
-        
-        # Prepare data for move_analyses table
+
         data = {
             'game_id': analysis.game_id,
             'user_id': canonical_user_id,
             'platform': analysis.platform,
+            'accuracy': analysis.accuracy,
+            'opponent_accuracy': analysis.opponent_accuracy,
+            'good_moves': analysis.good_moves,
+            'acceptable_moves': analysis.acceptable_moves,
             'average_centipawn_loss': analysis.average_centipawn_loss,
+            'opponent_average_centipawn_loss': analysis.opponent_average_centipawn_loss,
             'worst_blunder_centipawn_loss': analysis.worst_blunder_centipawn_loss,
-            'best_move_percentage': analysis.accuracy,
+            'opponent_worst_blunder_centipawn_loss': analysis.opponent_worst_blunder_centipawn_loss,
             'middle_game_accuracy': analysis.middle_game_accuracy,
             'endgame_accuracy': analysis.endgame_accuracy,
             'time_management_score': analysis.time_management_score,
-            'material_sacrifices': analysis.brilliant_moves,
-            'aggressiveness_index': analysis.aggressive_score,
+            'opponent_time_management_score': analysis.opponent_time_management_score,
+            'material_sacrifices': getattr(analysis, 'material_sacrifices', analysis.brilliant_moves),
+            'aggressiveness_index': getattr(analysis, 'aggressiveness_index', analysis.aggressive_score),
             'average_evaluation': getattr(analysis, 'average_evaluation', 0.0),
             'tactical_score': analysis.tactical_score,
             'positional_score': analysis.positional_score,
@@ -2470,36 +2666,35 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'positional_patterns': analysis.positional_patterns,
             'strategic_themes': analysis.strategic_themes,
             'moves_analysis': moves_analysis_dict,
-            'average_evaluation': getattr(analysis, 'average_evaluation', 0.0),
-            'analysis_method': analysis.analysis_type.value if hasattr(analysis.analysis_type, 'value') else str(analysis.analysis_type),
+            'analysis_method': str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth
         }
-        
-        # Insert or update analysis in move_analyses table using service role
+
         response = supabase_service.table('move_analyses').upsert(
             data,
-            on_conflict='user_id,platform,game_id'
+            on_conflict='user_id,platform,game_id,analysis_method'
         ).execute()
-        
-        if response.data:
-            print(f"Successfully saved Stockfish analysis for game {analysis.game_id}")
-            return True
-        else:
-            print(f"Failed to save Stockfish analysis for game {analysis.game_id}")
-            return False
-            
+        return bool(getattr(response, 'data', None))
+
     except Exception as e:
         print(f"Error saving Stockfish analysis: {e}")
         return False
 
+
 async def _save_game_analysis(analysis: GameAnalysis) -> bool:
-    """Save game analysis to appropriate table based on analysis type."""
-    if analysis.analysis_type == AnalysisType.STOCKFISH or analysis.analysis_type == AnalysisType.DEEP:
-        return await _save_stockfish_analysis(analysis)
-    else:
-        return await _save_basic_analysis(analysis)
+    """Save game analysis using reliable persistence system."""
+    if persistence is None:
+        print("Warning: Persistence system not available, skipping save")
+        return False
+    
+    try:
+        result = await persistence.save_analysis_with_retry(analysis)
+        return result.success
+    except Exception as e:
+        print(f"Error in reliable persistence: {e}")
+        return False
 
 def _map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
     """Map unified analysis data to response format."""
@@ -2527,55 +2722,86 @@ def _map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
 
 def _map_move_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
     """Map move_analyses table data to response format."""
-    # Calculate move counts from moves_analysis JSON
-    moves_analysis = analysis.get('moves_analysis', [])
-    blunders = 0
-    mistakes = 0
-    inaccuracies = 0
-    brilliant_moves = 0
-    best_moves = 0
-    opening_accuracy = 0
-    
-    if isinstance(moves_analysis, list):
-        for move in moves_analysis:
-            if move.get('is_blunder', False):
-                blunders += 1
-            if move.get('is_mistake', False):
-                mistakes += 1
-            if move.get('is_inaccuracy', False):
-                inaccuracies += 1
-            if move.get('is_best', False):
-                best_moves += 1
-                # Brilliant moves using new classification
-                if move.get('is_brilliant', False):
-                    brilliant_moves += 1
-        
-        # Calculate opening accuracy (first 15 moves)
+    moves_analysis = analysis.get('moves_analysis') or []
+    blunders = analysis.get('blunders') or 0
+    mistakes = analysis.get('mistakes') or 0
+    inaccuracies = analysis.get('inaccuracies') or 0
+    brilliant_moves = analysis.get('brilliant_moves') or 0
+    best_moves = analysis.get('best_moves') or 0
+    good_moves = analysis.get('good_moves') or 0
+    acceptable_moves = analysis.get('acceptable_moves') or 0
+
+    if isinstance(moves_analysis, list) and moves_analysis:
+        count_blunders = sum(1 for move in moves_analysis if move.get('is_blunder'))
+        count_mistakes = sum(1 for move in moves_analysis if move.get('is_mistake'))
+        count_inaccuracies = sum(1 for move in moves_analysis if move.get('is_inaccuracy'))
+        count_best_moves = sum(1 for move in moves_analysis if move.get('is_best'))
+        count_brilliants = sum(1 for move in moves_analysis if move.get('is_brilliant'))
+        count_good = sum(1 for move in moves_analysis if move.get('is_good'))
+        count_acceptable = sum(1 for move in moves_analysis if move.get('is_acceptable'))
+
+        blunders = blunders or count_blunders
+        mistakes = mistakes or count_mistakes
+        inaccuracies = inaccuracies or count_inaccuracies
+        best_moves = best_moves or count_best_moves
+        brilliant_moves = brilliant_moves or count_brilliants
+        good_moves = good_moves or count_good
+        acceptable_moves = acceptable_moves or count_acceptable
+
         opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15]
         if opening_moves:
-            opening_best_moves = sum(1 for move in opening_moves if move.get('is_best', False))
+            opening_best_moves = sum(1 for move in opening_moves if move.get('is_best'))
             opening_accuracy = (opening_best_moves / len(opening_moves)) * 100
-    
+        else:
+            opening_accuracy = analysis.get('opening_accuracy', 0)
+    else:
+        opening_accuracy = analysis.get('opening_accuracy', 0)
+
+    accuracy_value = analysis.get('accuracy')
+    if accuracy_value is None:
+        accuracy_value = analysis.get('best_move_percentage', 0)
+
+    best_move_pct = analysis.get('best_move_percentage')
+    if best_move_pct is None:
+        if best_moves and isinstance(moves_analysis, list) and len(moves_analysis) > 0:
+            best_move_pct = (best_moves / len(moves_analysis)) * 100
+        else:
+            best_move_pct = accuracy_value or 0
+
     return GameAnalysisSummary(
         game_id=analysis.get('game_id', ''),
-        accuracy=analysis.get('best_move_percentage', 0),
+        accuracy=accuracy_value or 0,
+        best_move_percentage=best_move_pct,
+        opponent_accuracy=analysis.get('opponent_accuracy', 0),
         blunders=blunders,
         mistakes=mistakes,
         inaccuracies=inaccuracies,
         brilliant_moves=brilliant_moves,
         best_moves=best_moves,
+        good_moves=good_moves,
+        acceptable_moves=acceptable_moves,
         opening_accuracy=opening_accuracy,
         middle_game_accuracy=analysis.get('middle_game_accuracy', 0),
         endgame_accuracy=analysis.get('endgame_accuracy', 0),
+        average_centipawn_loss=analysis.get('average_centipawn_loss', 0),
+        opponent_average_centipawn_loss=analysis.get('opponent_average_centipawn_loss', 0),
+        worst_blunder_centipawn_loss=analysis.get('worst_blunder_centipawn_loss', 0),
+        opponent_worst_blunder_centipawn_loss=analysis.get('opponent_worst_blunder_centipawn_loss', 0),
+        time_management_score=analysis.get('time_management_score', 0),
+        opponent_time_management_score=analysis.get('opponent_time_management_score', 0),
+        material_sacrifices=analysis.get('material_sacrifices', analysis.get('brilliant_moves', 0)),
+        aggressiveness_index=analysis.get('aggressiveness_index', analysis.get('aggressive_score', 0)),
         tactical_score=analysis.get('tactical_score', 0),
         positional_score=analysis.get('positional_score', 0),
         aggressive_score=analysis.get('aggressive_score', 0),
         patient_score=analysis.get('patient_score', 0),
         novelty_score=analysis.get('novelty_score', 0),
         staleness_score=analysis.get('staleness_score', 0),
-        analysis_type='stockfish',
-        analysis_date=analysis.get('analysis_date', ''),
-        processing_time_ms=analysis.get('processing_time_ms', 0)
+        average_evaluation=analysis.get('average_evaluation', 0),
+        analysis_type=str(analysis.get('analysis_method') or analysis.get('analysis_type') or 'stockfish'),
+        analysis_date=str(analysis.get('analysis_date', '')),
+        processing_time_ms=analysis.get('processing_time_ms', 0),
+        stockfish_depth=analysis.get('stockfish_depth', 0)
     )
 
 def _calculate_unified_stats(analyses: list, analysis_type: str) -> AnalysisStats:
@@ -2704,7 +2930,7 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
     
     return AnalysisStats(
         total_games_analyzed=total_games,
-        average_accuracy=round(sum(a.get('best_move_percentage', 0) for a in analyses) / total_games, 1),
+        average_accuracy=round(sum(a.get('best_move_percentage', a.get('accuracy', 0)) for a in analyses) / total_games, 1),
         total_blunders=total_blunders,
         total_mistakes=total_mistakes,
         total_inaccuracies=total_inaccuracies,
@@ -2774,24 +3000,38 @@ def _get_mock_analysis_results() -> List[GameAnalysisSummary]:
         game_date = base_date - timedelta(days=i)
         mock_results.append(GameAnalysisSummary(
             game_id=f"mock_game_{i+1}",
-            accuracy=75.0 + (i * 2.5),  # Varying accuracy
-            blunders=max(0, 2 - i),  # Decreasing blunders
-            mistakes=3 + i,  # Varying mistakes
-            inaccuracies=5 + i,  # Varying inaccuracies
-            brilliant_moves=1 if i % 2 == 0 else 0,  # Some brilliant moves
-            best_moves=20 + (i * 3),  # Varying best moves
+            accuracy=75.0 + (i * 2.5),
+            best_move_percentage=70.0 + (i * 2.5),
+            opponent_accuracy=55.0 - (i * 1.5),
+            blunders=max(0, 2 - i),
+            mistakes=3 + i,
+            inaccuracies=5 + i,
+            brilliant_moves=1 if i % 2 == 0 else 0,
+            best_moves=20 + (i * 3),
+            good_moves=15 + (i * 2),
+            acceptable_moves=12 + i,
             opening_accuracy=80.0 + (i * 1.5),
             middle_game_accuracy=70.0 + (i * 2.0),
             endgame_accuracy=75.0 + (i * 1.0),
+            average_centipawn_loss=35.0 - (i * 1.5),
+            opponent_average_centipawn_loss=45.0 + (i * 2.0),
+            worst_blunder_centipawn_loss=120.0 - (i * 10.0),
+            opponent_worst_blunder_centipawn_loss=150.0 + (i * 5.0),
+            time_management_score=82.0 - (i * 1.2),
+            opponent_time_management_score=65.0 + (i * 1.4),
+            material_sacrifices=i % 3,
+            aggressiveness_index=60.0 + (i * 3.5),
             tactical_score=65.0 + (i * 3.0),
             positional_score=70.0 + (i * 2.5),
             aggressive_score=60.0 + (i * 4.0),
             patient_score=75.0 + (i * 1.5),
             novelty_score=68.0 + (i * 2.2),
             staleness_score=45.0 + (i * 1.5),
+            average_evaluation=0.35 + (i * 0.05),
             analysis_type="stockfish",
             analysis_date=game_date.isoformat(),
-            processing_time_ms=1500 + (i * 200)
+            processing_time_ms=1500 + (i * 200),
+            stockfish_depth=8
         ))
     
     return mock_results
@@ -2818,6 +3058,8 @@ if __name__ == "__main__":
     print("  - GET /api/v1/deep-analysis/{user_id}/{platform}")
     
     uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
+
+
 
 
 

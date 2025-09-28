@@ -172,8 +172,14 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
     )
   }
 
-  // Check if we're showing mock data
-  const isMockData = data && data.total_games_analyzed === 15 && data.average_accuracy === 78.5
+  // Check if we're showing mock data - look for actual mock patterns, not just specific values
+  const isMockData = data && (
+    data.total_games_analyzed === 15 && 
+    data.average_accuracy === 78.5 && 
+    data.total_blunders === 3 && 
+    data.total_mistakes === 8 &&
+    data.average_opening_accuracy === 82.3
+  )
 
   // Create safe data object with fallbacks
   const safeData = data || {

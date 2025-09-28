@@ -72,8 +72,6 @@ Personality analysis results for individual games.
 | positional_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Positional understanding score |
 | aggressive_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Aggressiveness score |
 | patient_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Patience score |
-| endgame_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Endgame skill score |
-| opening_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Opening knowledge score |
 | created_at | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Analysis creation time |
 | updated_at | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Last update time |
 
@@ -84,7 +82,7 @@ Personality analysis results for individual games.
 - `idx_game_analyses_user_id` ON (user_id)
 - `idx_game_analyses_platform` ON (platform)
 - `idx_game_analyses_game_id` ON (game_id)
-- `idx_game_analyses_personality_scores` ON (tactical_score, positional_score, aggressive_score, patient_score, endgame_score, opening_score)
+- `idx_game_analyses_personality_scores` ON (tactical_score, positional_score, aggressive_score, patient_score, novelty_score, staleness_score)
 
 ### game_features
 Detailed game feature extraction for personality analysis.
@@ -120,8 +118,6 @@ Detailed game feature extraction for personality analysis.
 | positional_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Positional understanding score |
 | aggressive_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Aggressiveness score |
 | patient_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Patience score |
-| endgame_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Endgame skill score |
-| opening_score | REAL | DEFAULT 50, CHECK (0 <= score <= 100) | Opening knowledge score |
 | created_at | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Feature creation time |
 | updated_at | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Last update time |
 
@@ -131,7 +127,7 @@ Detailed game feature extraction for personality analysis.
 **Indexes:**
 - `idx_game_features_user_platform` ON (user_id, platform)
 - `idx_game_features_created_at` ON (created_at)
-- `idx_game_features_scores` ON (tactical_score, positional_score, aggressive_score, patient_score, endgame_score, opening_score)
+- `idx_game_features_personality_scores` ON (tactical_score, positional_score, aggressive_score, patient_score, novelty_score, staleness_score)
 
 ## Row Level Security (RLS)
 
@@ -207,4 +203,5 @@ Initial schema includes sample data for testing:
 - 8 sample games for 'testuser' on Lichess
 - Various openings and time controls
 - Different game results and ratings
+
 

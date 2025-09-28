@@ -2,6 +2,18 @@
 // This file ensures type consistency across the entire application
 
 // Database table types (matching Supabase schema)
+export const PERSONALITY_TRAITS = ['tactical', 'positional', 'aggressive', 'patient', 'novelty', 'staleness'] as const;
+export type PersonalityTrait = typeof PERSONALITY_TRAITS[number];
+
+export interface PersonalityScores {
+  tactical: number;
+  positional: number;
+  aggressive: number;
+  patient: number;
+  novelty: number;
+  staleness: number;
+}
+
 export interface Game {
   id: string
   user_id: string
@@ -98,14 +110,44 @@ export interface UserProfile {
 // API response types
 export interface GameAnalysisSummary {
   game_id: string
+  user_id: string
+  platform: 'lichess' | 'chess.com'
+  analysis_type: string
   accuracy: number
+  opponent_accuracy: number
   blunders: number
   mistakes: number
   inaccuracies: number
   brilliant_moves: number
+  best_moves: number
+  good_moves: number
+  acceptable_moves: number
   opening_accuracy: number
   middle_game_accuracy: number
   endgame_accuracy: number
+  best_move_percentage: number
+  average_centipawn_loss: number
+  opponent_average_centipawn_loss: number
+  worst_blunder_centipawn_loss: number
+  opponent_worst_blunder_centipawn_loss: number
+  time_management_score: number
+  opponent_time_management_score: number
+  material_sacrifices: number
+  aggressiveness_index: number
+  tactical_score: number
+  positional_score: number
+  aggressive_score: number
+  patient_score: number
+  novelty_score: number
+  staleness_score: number
+  average_evaluation: number
+  moves_analysis: any[]
+  tactical_patterns: any[]
+  positional_patterns: any[]
+  strategic_themes: any[]
+  analysis_date: string
+  processing_time_ms: number
+  stockfish_depth: number
 }
 
 export interface AnalysisStats {
@@ -141,37 +183,28 @@ export interface AnalysisStats {
 }
 
 export interface DeepAnalysisData {
-  totalGames: number
-  averageAccuracy: number
-  currentRating: number
-  personalityScores: {
-    tactical: number
-    positional: number
-    aggressive: number
-    patient: number
-    endgame: number
-    opening: number
-    novelty: number
-    staleness: number
-  }
-  playerLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert'
-  playerStyle: {
-    category: 'positional' | 'tactical' | 'aggressive' | 'balanced'
-    description: string
-    confidence: number
-  }
-  primaryStrengths: string[]
-  improvementAreas: string[]
-  playingStyle: string
-  recommendations: string[]
-  analysisMetadata: {
-    hasMoveAnalyses: boolean
-    hasTacticalScore: boolean
-    hasPositionalScore: boolean
-    hasAggressiveScore: boolean
-    analysisDate: string
-    totalGamesAnalyzed: number
-  }
+  total_games: number;
+  average_accuracy: number;
+  current_rating: number;
+  personality_scores: PersonalityScores;
+  player_level: PlayerLevel;
+  player_style: {
+    category: PlayerStyle;
+    description: string;
+    confidence: number;
+  };
+  primary_strengths: string[];\n  improvement_areas: string[];
+  playing_style: string;
+  phase_accuracies: {
+    opening: number;
+    middle: number;
+    endgame: number;
+  };
+  recommendations: {
+    primary: string;
+    secondary: string;
+    leverage: string;
+  };
 }
 
 // Component prop types
@@ -309,3 +342,6 @@ export type GameResult = 'win' | 'loss' | 'draw'
 export type Color = 'white' | 'black'
 export type PlayerLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert'
 export type PlayerStyle = 'positional' | 'tactical' | 'aggressive' | 'balanced'
+
+
+

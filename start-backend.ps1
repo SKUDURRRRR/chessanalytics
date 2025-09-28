@@ -20,4 +20,4 @@ Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Yellow
 Write-Host ""
 
 # Run the core API server from the python directory
-python -m core.api_server
+python -m core.unified_api_server

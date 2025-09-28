@@ -71,7 +71,15 @@ class AnalysisQueue:
     def _start_queue_processor(self):
         """Start the background queue processor."""
         if self._queue_processor_task is None or self._queue_processor_task.done():
-            self._queue_processor_task = asyncio.create_task(self._process_queue())
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_event_loop()
+                self._queue_processor_task = loop.create_task(self._process_queue())
+                print("Queue processor started successfully")
+            except RuntimeError:
+                # No event loop running, start one
+                print("No event loop running, queue processor will start when server starts")
+                self._queue_processor_task = None
     
     async def _process_queue(self):
         """Background task that processes the analysis queue."""
@@ -101,6 +109,21 @@ class AnalysisQueue:
             job.started_at = datetime.now()
             job.current_phase = "starting"
             self.running_jobs[job.job_id] = job
+            
+            # Update in-memory progress to starting
+            try:
+                from .unified_api_server import analysis_progress
+                progress_key = f"{job.user_id}_{job.platform}"
+                analysis_progress[progress_key] = {
+                    "analyzed_games": 0,
+                    "total_games": 0,  # Will be updated when we know the total
+                    "progress_percentage": 0,
+                    "is_complete": False,
+                    "current_phase": "starting",
+                    "estimated_time_remaining": None
+                }
+            except Exception as e:
+                print(f"Warning: Could not update in-memory progress on start: {e}")
         
         try:
             # Run the analysis in a thread pool to avoid blocking
@@ -120,6 +143,21 @@ class AnalysisQueue:
                 job.result = result
                 if job.job_id in self.running_jobs:
                     del self.running_jobs[job.job_id]
+                
+                # Update in-memory progress to completed
+                try:
+                    from .unified_api_server import analysis_progress
+                    progress_key = f"{job.user_id}_{job.platform}"
+                    analysis_progress[progress_key] = {
+                        "analyzed_games": job.analyzed_games,
+                        "total_games": job.total_games,
+                        "progress_percentage": 100,
+                        "is_complete": True,
+                        "current_phase": "completed",
+                        "estimated_time_remaining": None
+                    }
+                except Exception as e:
+                    print(f"Warning: Could not update in-memory progress on completion: {e}")
                     
         except Exception as e:
             # Mark job as failed
@@ -152,6 +190,21 @@ class AnalysisQueue:
                         job.total_games = total
                         job.progress_percentage = percentage
                         job.current_phase = "analyzing"
+                        
+                        # Also update the in-memory progress for realtime endpoint
+                        try:
+                            from .unified_api_server import analysis_progress
+                            progress_key = f"{job.user_id}_{job.platform}"
+                            analysis_progress[progress_key] = {
+                                "analyzed_games": completed,
+                                "total_games": total,
+                                "progress_percentage": percentage,
+                                "is_complete": False,
+                                "current_phase": "analyzing",
+                                "estimated_time_remaining": None
+                            }
+                        except Exception as e:
+                            print(f"Warning: Could not update in-memory progress: {e}")
             
             # Run analysis (this is synchronous within the thread)
             loop = asyncio.new_event_loop()

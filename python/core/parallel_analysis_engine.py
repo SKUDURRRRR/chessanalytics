@@ -32,7 +32,7 @@ async def _save_analysis_to_database(analysis, analysis_type_enum):
             # Save basic analysis to game_analyses table
             return await _save_basic_analysis(analysis)
     except Exception as e:
-        print(f"❌ Error saving analysis to database: {e}")
+        print(f"Error saving analysis to database: {e}")
         return False
 
 def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -48,7 +48,7 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
     depth = game_data.get('depth', 8)
     skill_level = game_data.get('skill_level', 8)
     
-    print(f"🚀 [Game {game_id}] Starting parallel analysis at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
+    print(f"[Game {game_id}] Starting parallel analysis at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
     
     try:
         # Create engine in this process
@@ -105,18 +105,18 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
                 },
                 'saved_to_db': save_success
             }
-            print(f"✅ [Game {game_id}] Completed - Accuracy: {analysis.accuracy:.1f}% at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
+            print(f"[Game {game_id}] Completed - Accuracy: {analysis.accuracy:.1f}% at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
             if save_success:
-                print(f"   💾 Saved to database successfully")
+                print(f"   Saved to database successfully")
             else:
-                print(f"   ❌ Failed to save to database")
+                print(f"   Failed to save to database")
         else:
             result = {
                 'game_id': game_id,
                 'success': False,
                 'error': 'Analysis returned None'
             }
-            print(f"❌ [Game {game_id}] Failed - No analysis result")
+            print(f"[Game {game_id}] Failed - No analysis result")
         
         loop.close()
             
@@ -126,7 +126,7 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
             'success': False,
             'error': str(e)
         }
-        print(f"❌ [Game {game_id}] Error: {e}")
+        print(f"[Game {game_id}] Error: {e}")
     
     return result
 
@@ -169,7 +169,7 @@ class ParallelAnalysisEngine:
         Returns:
             Dictionary with analysis results and statistics
         """
-        print(f"🔥 PARALLEL ANALYSIS: Starting analysis for {user_id} on {platform}")
+        print(f"PARALLEL ANALYSIS: Starting analysis for {user_id} on {platform}")
         print(f"   Max workers: {self.max_workers}")
         print(f"   Analysis type: {analysis_type}")
         print(f"   Limit: {limit}")
@@ -189,7 +189,7 @@ class ParallelAnalysisEngine:
                 'total_time': 0
             }
         
-        print(f"✅ Found {len(games)} games to analyze")
+        print(f"Found {len(games)} games to analyze")
         
         # Prepare game data for parallel processing
         game_data_list = []
@@ -237,7 +237,7 @@ class ParallelAnalysisEngine:
             'results': results
         }
         
-        print(f"🎯 PARALLEL ANALYSIS COMPLETE:")
+        print(f"PARALLEL ANALYSIS COMPLETE:")
         print(f"   Total time: {total_time:.1f}s")
         print(f"   Games analyzed: {len(successful_analyses)}/{len(games)}")
         print(f"   Average accuracy: {avg_accuracy:.1f}%")
@@ -257,53 +257,80 @@ class ParallelAnalysisEngine:
             
             return games
         except Exception as e:
-            print(f"❌ Error fetching games: {e}")
+            print(f"Error fetching games: {e}")
             return []
     
     async def _analyze_games_parallel(self, game_data_list: List[Dict[str, Any]], progress_callback=None) -> List[Dict[str, Any]]:
         """Analyze games in parallel using ProcessPoolExecutor."""
         results = []
         
-        print(f"🔥 PARALLEL PROCESSING: Starting with {len(game_data_list)} games using {self.max_workers} workers")
+        print(f"PARALLEL PROCESSING: Starting with {len(game_data_list)} games using {self.max_workers} workers")
         
         # Use ProcessPoolExecutor for true parallel processing
-        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all tasks
-            print(f"📤 Submitting {len(game_data_list)} tasks to ProcessPoolExecutor...")
-            future_to_game = {
-                executor.submit(analyze_game_worker, game_data): game_data 
-                for game_data in game_data_list
-            }
-            print(f"✅ All {len(future_to_game)} tasks submitted successfully")
-            
-            # Collect results as they complete
-            print(f"⏳ Waiting for {len(future_to_game)} tasks to complete...")
-            completed_count = 0
-            for future in as_completed(future_to_game):
+        print(f"Starting ProcessPoolExecutor with {self.max_workers} workers...")
+        try:
+            with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+                # Submit all tasks
+                print(f"Submitting {len(game_data_list)} tasks to ProcessPoolExecutor...")
+                future_to_game = {
+                    executor.submit(analyze_game_worker, game_data): game_data 
+                    for game_data in game_data_list
+                }
+                print(f"All {len(future_to_game)} tasks submitted successfully")
+                
+                # Collect results as they complete
+                print(f"Waiting for {len(future_to_game)} tasks to complete...")
+                completed_count = 0
+                for future in as_completed(future_to_game):
+                    try:
+                        result = future.result()
+                        results.append(result)
+                        completed_count += 1
+                        print(f"Task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{len(future_to_game)})")
+                        
+                        # Update progress if callback provided
+                        if progress_callback:
+                            progress_percentage = 20 + int((completed_count / len(future_to_game)) * 70)  # 20-90%
+                            progress_callback(completed_count, len(future_to_game), progress_percentage)
+                            
+                    except Exception as e:
+                        game_data = future_to_game[future]
+                        completed_count += 1
+                        print(f"Error analyzing game {game_data['id']}: {e}")
+                        results.append({
+                            'game_id': game_data['id'],
+                            'success': False,
+                            'error': str(e)
+                        })
+                        
+                        # Update progress even for failed games
+                        if progress_callback:
+                            progress_percentage = 20 + int((completed_count / len(future_to_game)) * 70)  # 20-90%
+                            progress_callback(completed_count, len(future_to_game), progress_percentage)
+        except Exception as e:
+            print(f"ProcessPoolExecutor failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback to sequential processing
+            print("Falling back to sequential processing...")
+            for i, game_data in enumerate(game_data_list):
                 try:
-                    result = future.result()
+                    result = analyze_game_worker(game_data)
                     results.append(result)
-                    completed_count += 1
-                    print(f"✅ Task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{len(future_to_game)})")
+                    completed_count = i + 1
+                    print(f"Sequential task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{len(game_data_list)})")
                     
                     # Update progress if callback provided
                     if progress_callback:
-                        progress_percentage = 20 + int((completed_count / len(future_to_game)) * 70)  # 20-90%
-                        progress_callback(completed_count, len(future_to_game), progress_percentage)
+                        progress_percentage = 20 + int((completed_count / len(game_data_list)) * 70)  # 20-90%
+                        progress_callback(completed_count, len(game_data_list), progress_percentage)
                         
                 except Exception as e:
-                    game_data = future_to_game[future]
-                    completed_count += 1
-                    print(f"❌ Error analyzing game {game_data['id']}: {e}")
+                    print(f"Error in sequential analysis of game {game_data['id']}: {e}")
                     results.append({
                         'game_id': game_data['id'],
                         'success': False,
                         'error': str(e)
                     })
-                    
-                    # Update progress even for failed games
-                    if progress_callback:
-                        progress_percentage = 20 + int((completed_count / len(future_to_game)) * 70)  # 20-90%
-                        progress_callback(completed_count, len(future_to_game), progress_percentage)
         
         return results

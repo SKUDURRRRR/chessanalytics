@@ -32,14 +32,22 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
           UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish')
         ])
 
-        // Calculate realistic accuracy from raw game data using player rating
-        const playerRating = statsData?.current_rating || statsData?.highest_rating
-        const realisticAccuracy = calculateAverageAccuracy(gamesData || [], playerRating)
+        // Use backend accuracy if available, otherwise calculate from raw game data
+        let finalAccuracy = statsData?.average_accuracy || 0
         
-        // Update the stats with the new accuracy calculation
+        // Only calculate from raw data if backend accuracy is 0 or missing
+        if (finalAccuracy === 0 && gamesData && gamesData.length > 0) {
+          const playerRating = statsData?.current_rating || statsData?.highest_rating
+          const calculatedAccuracy = calculateAverageAccuracy(gamesData, playerRating)
+          if (calculatedAccuracy > 0) {
+            finalAccuracy = calculatedAccuracy
+          }
+        }
+        
+        // Update the stats with the final accuracy
         const updatedStats = {
           ...statsData,
-          average_accuracy: realisticAccuracy
+          average_accuracy: finalAccuracy
         }
         
         setAnalytics(updatedStats)
@@ -90,8 +98,14 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
     )
   }
 
-  // Check if we're showing mock data
-  const isMockData = analytics.total_games_analyzed === 15 && analytics.average_accuracy === 78.5
+  // Check if we're showing mock data - look for actual mock patterns, not just specific values
+  const isMockData = analytics && (
+    analytics.total_games_analyzed === 15 && 
+    analytics.average_accuracy === 78.5 && 
+    analytics.total_blunders === 3 && 
+    analytics.total_mistakes === 8 &&
+    analytics.average_opening_accuracy === 82.3
+  )
 
   return (
     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 mb-6">
