@@ -1422,25 +1422,26 @@ async def _fetch_chesscom_games(user_id: str, limit: int) -> List[Dict[str, Any]
     try:
         import aiohttp
         from datetime import datetime, timedelta
-        
+
         games = []
         async with aiohttp.ClientSession() as session:
             # Fetch games from last 12 months
             end_date = datetime.now()
             start_date = end_date - timedelta(days=365)
-            
-            current_date = start_date
-            while current_date <= end_date and len(games) < limit:
-                year = current_date.year
-                month = current_date.month
-                
-                url = f"https://api.chess.com/pub/player/{user_id}/games/{year}/{month:02d}"
-                
+
+            current_year = start_date.year
+            current_month = start_date.month
+            end_year = end_date.year
+            end_month = end_date.month
+
+            while (current_year < end_year or (current_year == end_year and current_month <= end_month)) and len(games) < limit:
+                url = f"https://api.chess.com/pub/player/{user_id}/games/{current_year}/{current_month:02d}"
+
                 async with session.get(url) as response:
                     if response.status == 200:
                         data = await response.json()
                         month_games = data.get('games', [])
-                        
+
                         # Parse each game to extract proper ratings
                         for game in month_games:
                             parsed_game = _parse_chesscom_game(game, user_id)
@@ -1448,18 +1449,20 @@ async def _fetch_chesscom_games(user_id: str, limit: int) -> List[Dict[str, Any]
                                 games.append(parsed_game)
                                 if len(games) >= limit:
                                     break
-                
-                # Move to next month
-                if current_date.month == 12:
-                    current_date = current_date.replace(year=current_date.year + 1, month=1)
+
+                if current_month == 12:
+                    current_month = 1
+                    current_year += 1
                 else:
-                    current_date = current_date.replace(month=current_date.month + 1)
-        
+                    current_month += 1
+
         return games[:limit]
-        
+
     except Exception as e:
         print(f"Error fetching Chess.com games: {e}")
         return []
+
+
 
 
 def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Dict[str, Any]]:
@@ -1607,7 +1610,34 @@ async def import_games_smart(request: Dict[str, Any]):
         
         # Fetch the most recent 100 games from the platform
         games_data = await _fetch_games_from_platform(user_id, platform, 100)
-        
+
+        if not games_data:
+            if existing_game_ids:
+                message = "No new games found. You already have all recent games imported."
+                return BulkGameImportResponse(
+                    success=True,
+                    imported_games=0,
+                    errors=[],
+                    error_count=0,
+                    new_games_count=0,
+                    had_existing_games=True,
+                    message=message
+                )
+
+            message = (
+                "No games were returned from the platform. Please verify the username "
+                "has recent games or try again later."
+            )
+            return BulkGameImportResponse(
+                success=False,
+                imported_games=0,
+                errors=[message],
+                error_count=1,
+                new_games_count=0,
+                had_existing_games=False,
+                message=message
+            )
+
         # Filter to get only new games (games not in our database)
         new_games = []
         for game in games_data:
@@ -1820,7 +1850,7 @@ async def import_games(payload: BulkGameImportRequest):
                 games_rows,
                 on_conflict='user_id,platform,provider_game_id'
             ).execute()
-            print('[import_games] games upsert response:', getattr(games_response, 'data', None), getattr(games_response, 'count', None))
+            print('[import_games] games upsert response: count=', getattr(games_response, 'count', None))
     except Exception as exc:
         errors.append(f"games upsert failed: {exc}")
 
@@ -1830,7 +1860,7 @@ async def import_games(payload: BulkGameImportRequest):
                 pgn_rows,
                 on_conflict='user_id,platform,provider_game_id'
             ).execute()
-            print('[import_games] pgn upsert response:', getattr(pgn_response, 'data', None), getattr(pgn_response, 'count', None))
+            print('[import_games] pgn upsert response: count=', getattr(pgn_response, 'count', None))
     except Exception as exc:
         errors.append(f"games_pgn upsert failed: {exc}")
 
@@ -2054,14 +2084,11 @@ def _normalize_played_at(value: Optional[str]) -> str:
 
 def _canonical_user_id(user_id: str, platform: str) -> str:
     """Canonicalize user ID for database operations.
-    
-    Chess.com usernames are case-insensitive and should be stored/queried in lowercase.
-    Lichess usernames are case-sensitive and should be left unchanged.
+
+    Store and query usernames in lowercase for both platforms so we hit the same rows
+    regardless of how the caller cased the name.
     """
-    if platform == "chess.com":
-        return user_id.strip().lower()
-    else:  # lichess
-        return user_id.strip()
+    return user_id.strip().lower()
 
 def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
@@ -2233,11 +2260,8 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
     """Perform batch analysis for a user's games using parallel processing."""
     # Canonicalize user ID for database operations
     canonical_user_id = _canonical_user_id(user_id, platform)
-    if os.name == 'nt':
-        print('[warn] Windows detected; falling back to sequential batch analysis')
-        return await _perform_sequential_batch_analysis(user_id, platform, analysis_type, limit, depth, skill_level)
 
-    print(f"🚀 BACKGROUND TASK STARTED: PARALLEL batch analysis for {user_id} (canonical: {canonical_user_id}) on {platform}")
+    print(f"[parallel] BACKGROUND TASK STARTED for {user_id} (canonical: {canonical_user_id}) on {platform}")
     key = f"{user_id}_{platform}"
     limit = limit or ANALYSIS_TEST_LIMIT
     if ANALYSIS_TEST_LIMIT:
@@ -2258,7 +2282,7 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
         if resolved_type != analysis_type:
             print(f"[info] Batch analysis requested as '{analysis_type}' mapped to '{resolved_type}'.")
         analysis_type = resolved_type
-        print(f"🔥 Starting PARALLEL batch analysis for {user_id} on {platform}")
+        print(f"[parallel] Starting batch analysis for {user_id} on {platform}")
         
         # Phase 1: Fetch games
         analysis_progress[key]["current_phase"] = "fetching"
@@ -2331,7 +2355,7 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             avg_accuracy = result['average_accuracy']
             speedup = result['speedup']
             
-            print(f"🎯 PARALLEL ANALYSIS COMPLETE:")
+            print("[parallel] Analysis complete")
             print(f"   Total time: {total_time:.1f}s")
             print(f"   Games analyzed: {processed}/{len(games)}")
             print(f"   Average accuracy: {avg_accuracy:.1f}%")
@@ -2393,7 +2417,7 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
         if resolved_type != analysis_type:
             print(f"[info] Sequential batch analysis requested as '{analysis_type}' mapped to '{resolved_type}'.")
         analysis_type = resolved_type
-        print(f"🔥 Starting SEQUENTIAL batch analysis for {user_id} on {platform}")
+        print(f"[sequential] Starting batch analysis for {user_id} on {platform}")
         
         # Phase 1: Fetch games
         analysis_progress[key]["current_phase"] = "fetching"
@@ -2478,7 +2502,7 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
             # For now, we'll use a placeholder
             avg_accuracy = 75.0  # Placeholder value
         
-        print(f"🎯 SEQUENTIAL ANALYSIS COMPLETE:")
+        print("[sequential] Analysis complete")
         print(f"   Total time: {total_time:.1f}s")
         print(f"   Games analyzed: {successful_analyses}/{len(games)}")
         print(f"   Average accuracy: {avg_accuracy:.1f}%")

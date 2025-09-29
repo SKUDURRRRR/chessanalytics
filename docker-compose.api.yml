@@ -1,0 +1,19 @@
+﻿version: "3.9"
+
+services:
+  analysis-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8002:8002"
+    env_file:
+      - python/.env.local
+    environment:
+      # Allows overriding host/port without editing env file
+      API_HOST: 0.0.0.0
+      API_PORT: 8002
+    volumes:
+      - ./python:/app/python:ro
+      - ./stockfish:/app/stockfish:ro
+    restart: unless-stopped
