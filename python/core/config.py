@@ -252,7 +252,7 @@ class ChessAnalysisConfig:
             errors.append(f"Stockfish executable not found at {self.stockfish.path}")
         
         # Validate analysis config
-        if self.analysis.default_type not in ["basic", "stockfish", "deep"]:
+        if self.analysis.default_type not in ["stockfish", "deep"]:
             errors.append("Invalid default analysis type")
         
         if self.analysis.batch_size <= 0:

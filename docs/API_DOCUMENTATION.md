@@ -2,13 +2,22 @@
 
 This document provides comprehensive API documentation for the Chess Analytics application.
 
+## 🚨 **IMPORTANT: API Migration Notice**
+
+**Legacy API endpoints are deprecated and will be removed in a future version.** Please migrate to the Unified API (`/api/v1/*`) as soon as possible.
+
+- 📖 **[Migration Guide](API_MIGRATION_GUIDE.md)** - Complete migration instructions
+- 🔄 **Legacy Endpoints** - Marked as deprecated with migration paths
+- ✅ **Unified API** - Recommended for all new development
+
 ## 📋 Table of Contents
 
 - [Overview](#overview)
+- [API Migration](#api-migration)
 - [Authentication](#authentication)
 - [Error Handling](#error-handling)
-- [Frontend API](#frontend-api)
-- [Backend API](#backend-api)
+- [Unified API (Recommended)](#unified-api-recommended)
+- [Legacy API (Deprecated)](#legacy-api-deprecated)
 - [Types and Interfaces](#types-and-interfaces)
 - [Configuration](#configuration)
 - [Examples](#examples)
@@ -22,6 +31,30 @@ The Chess Analytics application provides a comprehensive API for analyzing chess
 - **Backend**: Python + FastAPI
 - **Database**: Supabase (PostgreSQL)
 - **Analysis Engine**: Stockfish
+
+## 🔄 API Migration
+
+### **Current Status: Phase 2 - Deprecation Warnings**
+
+The API is currently in Phase 2 of consolidation:
+
+- ✅ **Phase 1 Complete**: Analysis service consolidation (3 → 2 analysis types)
+- 🔄 **Phase 2 Current**: Legacy API deprecation with migration warnings
+- 📅 **Phase 3 Future**: Legacy API removal
+
+### **Migration Priority**
+
+1. **High Priority**: Migrate to Unified API (`/api/v1/*`)
+2. **Medium Priority**: Update frontend services to use `UnifiedAnalysisService`
+3. **Low Priority**: Remove legacy API dependencies
+
+### **Quick Migration Checklist**
+
+- [ ] Update base URL to `/api/v1/*`
+- [ ] Replace legacy endpoints with unified equivalents
+- [ ] Update service calls to use `UnifiedAnalysisService`
+- [ ] Test all functionality
+- [ ] Remove legacy API dependencies
 
 ## 🔐 Authentication
 

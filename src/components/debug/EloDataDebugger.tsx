@@ -1,6 +1,7 @@
 // ELO Data Debugger Component - Shows ELO data analysis and debugging
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { normalizeOpeningName } from '../../utils/openingUtils'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 
 interface EloDataDebuggerProps {
@@ -48,7 +49,7 @@ export function EloDataDebugger({ userId, platform }: EloDataDebuggerProps) {
           opponentElo: game.opponent_rating || 0,
           result: game.result || 'unknown',
           timeControl: getTimeControlCategory(game.time_control || 'unknown'),
-          opening: game.opening || 'unknown'
+          opening: normalizeOpeningName(game.opening || 'unknown')
         }))
 
         setData(eloData)
@@ -176,7 +177,7 @@ export function EloDataDebugger({ userId, platform }: EloDataDebuggerProps) {
                   {game.timeControl}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 truncate max-w-xs">
-                  {game.opening}
+                  {normalizeOpeningName(game.opening)}
                 </td>
               </tr>
             ))}

@@ -15,6 +15,7 @@ Object.defineProperty(import.meta, 'env', {
 const chainStub = {
   select: vi.fn(() => chainStub),
   eq: vi.fn(() => chainStub),
+  not: vi.fn(() => chainStub),
   order: vi.fn(() => chainStub),
   limit: vi.fn(() => chainStub),
   update: vi.fn(() => chainStub),
@@ -42,3 +43,10 @@ global.console = {
   warn: vi.fn(),
   error: vi.fn(),
 }
+
+// Mock ResizeObserver for Recharts
+global.ResizeObserver = vi.fn().mockImplementation(() => ({
+  observe: vi.fn(),
+  unobserve: vi.fn(),
+  disconnect: vi.fn(),
+}))

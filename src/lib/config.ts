@@ -75,7 +75,7 @@ export interface FeatureFlags {
 // ============================================================================
 
 const DEFAULT_API_CONFIG: ApiConfig = {
-  baseUrl: env.VITE_ANALYSIS_API_URL,
+  baseUrl: env.VITE_ANALYSIS_API_URL || 'http://localhost:8002',
   timeout: 30000, // 30 seconds
   retryAttempts: 3,
   retryDelay: 1000 // 1 second

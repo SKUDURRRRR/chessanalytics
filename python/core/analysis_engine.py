@@ -2,7 +2,7 @@
 """
 Unified Chess Analysis Engine
 Provides a single, configurable interface for all chess analysis operations.
-Supports both basic heuristic analysis and Stockfish engine analysis.
+Supports Stockfish engine analysis with heuristic fallbacks.
 """
 
 import os
@@ -27,7 +27,7 @@ except ImportError:
     STOCKFISH_PACKAGE_AVAILABLE = False
     print("Warning: stockfish package not available, using chess.engine only")
 
-# Heuristic evaluation constants tuned for basic analysis
+# Heuristic evaluation constants for fallback analysis
 PIECE_VALUES = {
     'P': 100,
     'N': 320,
@@ -115,7 +115,7 @@ BASIC_GOOD_THRESHOLD = 50  # Good moves
 BASIC_ACCEPTABLE_THRESHOLD = 100  # Acceptable moves
 BASIC_INACCURACY_THRESHOLD = 200  # Inaccuracies
 BASIC_MISTAKE_THRESHOLD = 300  # Mistakes
-BASIC_BLUNDER_THRESHOLD = 300  # Blunders (same as mistakes for basic analysis)
+BASIC_BLUNDER_THRESHOLD = 300  # Blunders (same as mistakes for heuristic analysis)
 SEE_MATERIAL_LOSS_TRIGGER = -40
 KING_SAFETY_DROP_TRIGGER = 25
 MOBILITY_DROP_TRIGGER = -2
@@ -125,7 +125,6 @@ BASIC_ENGINE_PROBE_MULTIPV = 2
 
 class AnalysisType(Enum):
     """Types of analysis available."""
-    BASIC = "basic"           # Fast heuristic analysis
     STOCKFISH = "stockfish"   # Full Stockfish engine analysis
     DEEP = "deep"            # High-depth Stockfish analysis
 
@@ -148,19 +147,6 @@ class AnalysisConfig:
     parallel_analysis: bool = False
     max_concurrent: int = 4
     
-    @classmethod
-    def for_basic_analysis(cls) -> 'AnalysisConfig':
-        """Configuration optimized for basic analysis (fast, heuristic-only)."""
-        return cls(
-            analysis_type=AnalysisType.BASIC,  # Use heuristic analysis, not Stockfish
-            depth=0,  # No depth needed for heuristic analysis
-            skill_level=0,  # Not used for heuristic analysis
-            time_limit=0.01,  # 10ms per position (very fast)
-            use_opening_book=False,  # Not needed for heuristic
-            use_endgame_tablebase=False,  # Not needed for heuristic
-            parallel_analysis=True,  # Enable parallel processing for speed
-            max_concurrent=8  # More concurrent processes for heuristic analysis
-        )
     
     @classmethod
     def for_deep_analysis(cls) -> 'AnalysisConfig':
@@ -300,7 +286,7 @@ class ChessAnalysisEngine:
             return False
     
     def _load_opening_database(self) -> Dict:
-        """Load opening database for basic analysis."""
+        """Load opening database for heuristic analysis."""
         return {
             'e4': {
                 'e5': 'King\'s Pawn Game',
@@ -466,7 +452,7 @@ class ChessAnalysisEngine:
         return penalty
 
     def _evaluate_board_basic(self, board: chess.Board):
-        '''Heuristic evaluation with feature breakdown for basic analysis.'''
+        '''Heuristic evaluation with feature breakdown for fallback analysis.'''
         cache_key = self._basic_cache_key(board)
         cached = self._basic_eval_cache.get(cache_key)
         if cached is not None:
@@ -661,10 +647,7 @@ class ChessAnalysisEngine:
         start_time = datetime.now()
         
         try:
-            if analysis_type == AnalysisType.BASIC:
-                return await self._analyze_position_basic(fen)
-            else:
-                return await self._analyze_position_stockfish(fen, analysis_type)
+            return await self._analyze_position_stockfish(fen, analysis_type)
         finally:
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
             print(f"Position analysis completed in {processing_time:.1f}ms")
@@ -676,10 +659,7 @@ class ChessAnalysisEngine:
         start_time = datetime.now()
         
         try:
-            if analysis_type == AnalysisType.BASIC:
-                return await self._analyze_move_basic(board, move)
-            else:
-                return await self._analyze_move_stockfish(board, move, analysis_type)
+            return await self._analyze_move_stockfish(board, move, analysis_type)
         finally:
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
             print(f"Move analysis completed in {processing_time:.1f}ms")
@@ -765,7 +745,7 @@ class ChessAnalysisEngine:
             'evaluation': {'value': score, 'type': 'cp'},
             'best_move': best_candidate['uci'] if best_candidate else None,
             'fen': fen,
-            'analysis_type': 'basic',
+            'analysis_type': 'stockfish',
             'details': {
                 'best_move_san': best_candidate['san'] if best_candidate else None,
                 'top_moves': top_candidates,
@@ -820,7 +800,7 @@ class ChessAnalysisEngine:
                 
         except Exception as e:
             print(f"Stockfish analysis failed: {e}")
-            # Fallback to basic analysis
+            # Fallback to heuristic analysis
             return await self._analyze_position_basic(fen)
     
     async def _analyze_move_basic(self, board: chess.Board, move: chess.Move) -> MoveAnalysis:
@@ -921,7 +901,7 @@ class ChessAnalysisEngine:
                         if refined_loss is not None:
                             centipawn_loss = refined_loss
 
-        # Industry-standard move classification for basic analysis
+        # Industry-standard move classification for heuristic analysis
         is_brilliant = centipawn_loss <= BASIC_BEST_THRESHOLD
         is_best = centipawn_loss <= BASIC_BEST_THRESHOLD
         is_good = BASIC_BEST_THRESHOLD < centipawn_loss <= BASIC_GOOD_THRESHOLD
@@ -1112,7 +1092,7 @@ class ChessAnalysisEngine:
                 
         except Exception as e:
             print(f"Stockfish move analysis failed: {e}")
-            # Fallback to basic analysis
+            # Fallback to heuristic analysis
             return await self._analyze_move_basic(board, move)
     
     def _calculate_game_metrics(self, game_id: str, user_id: str, platform: str, 
@@ -1376,20 +1356,20 @@ if __name__ == "__main__":
         """Test the analysis engine with different configurations."""
         print("Testing Chess Analysis Engine...")
         
-        # Test basic analysis
-        print("\n=== Testing Basic Analysis ===")
-        basic_config = AnalysisConfig(analysis_type=AnalysisType.BASIC)
-        basic_engine = ChessAnalysisEngine(config=basic_config)
+        # Test heuristic fallback analysis
+        print("\n=== Testing Heuristic Fallback Analysis ===")
+        heuristic_config = AnalysisConfig(analysis_type=AnalysisType.STOCKFISH)
+        heuristic_engine = ChessAnalysisEngine(config=heuristic_config)
         
         starting_position = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        basic_result = await basic_engine.analyze_position(starting_position)
-        print(f"Basic analysis result: {basic_result}")
+        heuristic_result = await heuristic_engine.analyze_position(starting_position)
+        print(f"Heuristic fallback analysis result: {heuristic_result}")
         
         # Test Stockfish analysis (if available)
-        if basic_engine.stockfish_path:
+        if heuristic_engine.stockfish_path:
             print("\n=== Testing Stockfish Analysis ===")
             stockfish_config = AnalysisConfig(analysis_type=AnalysisType.STOCKFISH, depth=10)
-            stockfish_engine = ChessAnalysisEngine(config=stockfish_config, stockfish_path=basic_engine.stockfish_path)
+            stockfish_engine = ChessAnalysisEngine(config=stockfish_config, stockfish_path=heuristic_engine.stockfish_path)
             
             stockfish_result = await stockfish_engine.analyze_position(starting_position)
             print(f"Stockfish analysis result: {stockfish_result}")

@@ -193,7 +193,8 @@ export interface DeepAnalysisData {
     description: string;
     confidence: number;
   };
-  primary_strengths: string[];\n  improvement_areas: string[];
+  primary_strengths: string[];
+  improvement_areas: string[];
   playing_style: string;
   phase_accuracies: {
     opening: number;
@@ -218,10 +219,27 @@ export interface PlayerSearchProps {
   onPlayerSelect: (userId: string, platform: 'lichess' | 'chess.com') => void
 }
 
+export interface OpeningIdentifierSets {
+  openingFamilies: string[]
+  openings: string[]
+}
+
+export interface SerializableOpeningFilter {
+  openingFamilies?: string[]
+  openings?: string[]
+}
+
+export interface OpeningFilter {
+  normalized: string
+  identifiers: OpeningIdentifierSets
+}
+
 export interface MatchHistoryProps {
   userId: string
   platform: 'lichess' | 'chess.com'
   refreshKey?: number
+  openingFilter?: OpeningFilter | null
+  onClearFilter?: () => void
 }
 
 export interface AnalyticsBarProps {
@@ -262,7 +280,7 @@ export interface ImportResult {
 export interface AnalysisRequest {
   user_id: string
   platform: 'lichess' | 'chess.com'
-  analysis_type: 'basic' | 'stockfish' | 'deep'
+  analysis_type: 'stockfish' | 'deep'
   limit?: number
   depth?: number
   skill_level?: number
@@ -273,7 +291,7 @@ export interface GameAnalysisRequest {
   platform: 'lichess' | 'chess.com'
   game_id: string
   pgn: string
-  analysis_type: 'basic' | 'stockfish' | 'deep'
+  analysis_type: 'stockfish' | 'deep'
   depth?: number
   skill_level?: number
 }
@@ -337,7 +355,7 @@ export interface EnvironmentConfig {
 
 // Platform types
 export type Platform = 'lichess' | 'chess.com'
-export type AnalysisType = 'basic' | 'stockfish' | 'deep'
+export type AnalysisType = 'stockfish' | 'deep'
 export type GameResult = 'win' | 'loss' | 'draw'
 export type Color = 'white' | 'black'
 export type PlayerLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert'

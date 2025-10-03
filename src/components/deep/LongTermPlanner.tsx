@@ -1,4 +1,4 @@
-import { DeepAnalysisData } from '../../services/deepAnalysisService'
+import { DeepAnalysisData } from '../../services/unifiedAnalysisService'
 
 interface LongTermPlannerProps {
   data: DeepAnalysisData

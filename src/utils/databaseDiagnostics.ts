@@ -177,7 +177,7 @@ export async function testAnalysisTypes(userId: string, platform: string): Promi
   const canonicalUserId = canonicalizeUserId(userId, platform)
   const results: { [analysisType: string]: { exists: boolean; count: number } } = {}
   
-  const analysisTypes = ['basic', 'stockfish', 'deep']
+  const analysisTypes = ['stockfish', 'deep']
   
   for (const analysisType of analysisTypes) {
     try {
