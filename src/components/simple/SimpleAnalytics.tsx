@@ -1,24 +1,27 @@
 // Simple Analytics Component - One component, everything you need
 import { useState, useEffect } from 'react'
-import { UnifiedAnalysisService, AnalysisStats } from '../../services/unifiedAnalysisService'
+import { UnifiedAnalysisService, AnalysisStats, DeepAnalysisData } from '../../services/unifiedAnalysisService'
 import { getPlayerStats } from '../../utils/playerStats'
 import { getComprehensiveGameAnalytics, getWorstOpeningPerformance } from '../../utils/comprehensiveGameAnalytics'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
-import { fetchDeepAnalysis, DeepAnalysisData } from '../../services/deepAnalysisService'
 import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
+import { normalizeOpeningName } from '../../utils/openingUtils'
 import { PersonalityRadar } from '../deep/PersonalityRadar'
 import { LongTermPlanner } from '../deep/LongTermPlanner'
 import { OpeningPlayerCard } from '../deep/OpeningPlayerCard'
 import { ScoreCards } from '../deep/ScoreCards'
+import { EloTrendGraph } from './EloTrendGraph'
+import { OpeningFilter, OpeningIdentifierSets } from '../../types'
 
 interface SimpleAnalyticsProps {
   userId: string
   platform?: string
   fromDate?: string
   toDate?: string
+  onOpeningClick?: (filter: OpeningFilter) => void
 }
 
-export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAnalyticsProps) {
+export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningClick }: SimpleAnalyticsProps) {
   const [data, setData] = useState<AnalysisStats | null>(null)
   const [comprehensiveData, setComprehensiveData] = useState<any>(null)
   const [deepAnalysisData, setDeepAnalysisData] = useState<DeepAnalysisData | null>(null)
@@ -51,7 +54,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
         ),
         getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
         getComprehensiveGameAnalytics(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
-        fetchDeepAnalysis(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
+        UnifiedAnalysisService.fetchDeepAnalysis(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
         getWorstOpeningPerformance(userId, (platform as 'lichess' | 'chess.com') || 'lichess', 5)
       ])
       
@@ -196,6 +199,26 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
     elo_optimization_active: false,
     total_games_with_elo: comprehensiveData?.totalGames || 0,
     validation_issues: []
+  }
+
+  const buildOpeningFilter = (
+    normalizedName: string,
+    identifiers?: OpeningIdentifierSets,
+    fallback?: { openingFamily?: string | null; opening?: string | null }
+  ): OpeningFilter => {
+    const hasIdentifiers = identifiers && (identifiers.openingFamilies.length > 0 || identifiers.openings.length > 0)
+    const fallbackFamilies = fallback?.openingFamily ? [fallback.openingFamily] : []
+    const fallbackOpenings = fallback?.opening ? [fallback.opening] : []
+
+    return {
+      normalized: normalizedName,
+      identifiers: hasIdentifiers
+        ? identifiers!
+        : {
+            openingFamilies: fallbackFamilies,
+            openings: fallbackOpenings,
+          },
+    }
   }
 
   return (
@@ -465,9 +488,23 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
                 </h4>
                 <div className="space-y-3">
                   {comprehensiveData.openingStats.slice(0, 3).map((stat: any, index: number) => (
-                    <div key={index} className="bg-green-50 p-4 rounded-lg border-l-4 border-green-400">
+                    <div 
+                      key={index} 
+                      className="bg-green-50 p-4 rounded-lg border-l-4 border-green-400 cursor-pointer hover:bg-green-100 transition-colors"
+                      onClick={() =>
+                        onOpeningClick?.(
+                          buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, {
+                            openingFamily: stat.openingFamily,
+                            opening: stat.opening,
+                          })
+                        )
+                      }
+                      title="Click to view games with this opening"
+                    >
                       <div className="flex justify-between items-center mb-3">
-                        <span className="font-medium text-gray-800">{stat.opening}</span>
+                        <span className="font-medium text-gray-800">
+                          {normalizeOpeningName(stat.opening)}
+                        </span>
                         <span className="text-sm text-gray-600">{stat.games} games</span>
                       </div>
                       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -493,9 +530,23 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
                 <div className="space-y-3">
                   {worstOpenings.length > 0 ? (
                     worstOpenings.slice(0, 3).map((stat: any, index: number) => (
-                      <div key={index} className="bg-orange-50 p-4 rounded-lg border-l-4 border-orange-400">
+                      <div 
+                        key={index} 
+                        className="bg-orange-50 p-4 rounded-lg border-l-4 border-orange-400 cursor-pointer hover:bg-orange-100 transition-colors"
+                        onClick={() =>
+                          onOpeningClick?.(
+                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, {
+                              openingFamily: stat.openingFamily,
+                              opening: stat.opening,
+                            })
+                          )
+                        }
+                        title="Click to view games with this opening"
+                      >
                         <div className="flex justify-between items-center mb-3">
-                          <span className="font-medium text-gray-800">{stat.opening}</span>
+                          <span className="font-medium text-gray-800">
+                            {normalizeOpeningName(stat.opening)}
+                          </span>
                           <span className="text-sm text-gray-600">{stat.games} games</span>
                         </div>
                         <div className="grid grid-cols-2 gap-4 text-sm">
@@ -537,9 +588,20 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
                   </h4>
                   <div className="space-y-3">
                     {comprehensiveData.openingColorStats.white.slice(0, 3).map((stat: any, index: number) => (
-                      <div key={index} className="bg-gray-50 p-4 rounded-lg border">
+                      <div 
+                        key={index} 
+                        className="bg-gray-50 p-4 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() =>
+                          onOpeningClick?.(
+                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers)
+                          )
+                        }
+                        title="Click to view games with this opening"
+                      >
                         <div className="flex justify-between items-start mb-2">
-                          <span className="font-medium text-gray-800 text-sm leading-tight">{stat.opening}</span>
+                          <span className="font-medium text-gray-800 text-sm leading-tight">
+                            {normalizeOpeningName(stat.opening)}
+                          </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             stat.winRate >= 60 ? 'bg-green-100 text-green-800' :
                             stat.winRate >= 50 ? 'bg-blue-100 text-blue-800' :
@@ -572,9 +634,20 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
                   </h4>
                   <div className="space-y-3">
                     {comprehensiveData.openingColorStats.black.slice(0, 3).map((stat: any, index: number) => (
-                      <div key={index} className="bg-gray-50 p-4 rounded-lg border">
+                      <div 
+                        key={index} 
+                        className="bg-gray-50 p-4 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() =>
+                          onOpeningClick?.(
+                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers)
+                          )
+                        }
+                        title="Click to view games with this opening"
+                      >
                         <div className="flex justify-between items-start mb-2">
-                          <span className="font-medium text-gray-800 text-sm leading-tight">{stat.opening}</span>
+                          <span className="font-medium text-gray-800 text-sm leading-tight">
+                            {normalizeOpeningName(stat.opening)}
+                          </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             stat.winRate >= 60 ? 'bg-green-100 text-green-800' :
                             stat.winRate >= 50 ? 'bg-blue-100 text-blue-800' :
@@ -611,26 +684,25 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate }: SimpleAn
           {/* Recent Performance */}
           <div className="bg-white p-6 rounded-lg shadow">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 Recent Performance</h3>
-            <div className="grid grid-cols-3 gap-4 text-sm">
-              <div>
-                <span className="font-medium text-gray-600">Recent Win Rate:</span>
-                <div className="text-lg font-bold text-green-600">{comprehensiveData.performanceTrends.recentWinRate.toFixed(1)}%</div>
-              </div>
-              <div>
-                <span className="font-medium text-gray-600">Recent Avg ELO:</span>
-                <div className="text-lg font-bold text-blue-600">{comprehensiveData.performanceTrends.recentAverageElo.toFixed(0)}</div>
-              </div>
-              <div>
-                <span className="font-medium text-gray-600">ELO Trend:</span>
-                <div className="text-lg font-bold">
-                  <span className={`px-2 py-1 rounded text-sm ${
-                    comprehensiveData.performanceTrends.eloTrend === 'improving' ? 'bg-green-100 text-green-800' :
-                    comprehensiveData.performanceTrends.eloTrend === 'declining' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {comprehensiveData.performanceTrends.eloTrend}
-                  </span>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-600">Recent Win Rate:</span>
+                    <div className="text-lg font-bold text-green-600">{comprehensiveData.performanceTrends.recentWinRate.toFixed(1)}%</div>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-600">Recent Avg ELO:</span>
+                    <div className="text-lg font-bold text-blue-600">{comprehensiveData.performanceTrends.recentAverageElo.toFixed(0)}</div>
+                  </div>
                 </div>
+              </div>
+              <div className="lg:col-span-2">
+                <EloTrendGraph 
+                  userId={userId} 
+                  platform={platform as 'lichess' | 'chess.com'} 
+                  className="w-full"
+                />
               </div>
             </div>
           </div>

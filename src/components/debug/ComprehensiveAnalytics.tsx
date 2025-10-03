@@ -1,6 +1,7 @@
 // Comprehensive Analytics Component - Shows detailed analytics tables
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { normalizeOpeningName } from '../../utils/openingUtils'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 
 interface ComprehensiveAnalyticsProps {
@@ -87,7 +88,8 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
 
         // Find most played opening
         const openings = games.reduce((acc, game) => {
-          const opening = game.opening || 'unknown'
+          const rawOpening = game.opening || 'unknown'
+          const opening = normalizeOpeningName(rawOpening)
           acc[opening] = (acc[opening] || 0) + 1
           return acc
         }, {} as Record<string, number>)

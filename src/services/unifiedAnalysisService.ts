@@ -10,19 +10,107 @@ import {
   AnalysisStats,
   Platform,
   AnalysisResponse,
-  DeepAnalysisData
+  DeepAnalysisData,
+  PersonalityScores
 } from '../types'
 import { config } from '../lib/config'
 
 const UNIFIED_API_URL = config.getApi().baseUrl
+console.log('🔧 UNIFIED_API_URL configured as:', UNIFIED_API_URL)
 
 // Re-export types for backward compatibility
-export type { GameAnalysisSummary, AnalysisStats, DeepAnalysisData } from '../types'
+export type { GameAnalysisSummary, AnalysisStats, DeepAnalysisData, PersonalityScores } from '../types'
+
+// Fallback personality scores for error handling
+const FALLBACK_PERSONALITY: PersonalityScores = {
+  tactical: 50,
+  positional: 50,
+  aggressive: 50,
+  patient: 50,
+  novelty: 50,
+  staleness: 50,
+}
+
+// Input validation helpers
+function validateUserId(userId: string): boolean {
+  return typeof userId === 'string' && userId.trim().length > 0
+}
+
+function validatePlatform(platform: string): platform is 'lichess' | 'chess.com' {
+  return platform === 'lichess' || platform === 'chess.com'
+}
+
+function validatePersonalityScores(scores: any): PersonalityScores | null {
+  if (!scores || typeof scores !== 'object') {
+    return null
+  }
+
+  const requiredTraits = ['tactical', 'positional', 'aggressive', 'patient', 'novelty', 'staleness']
+  const validatedScores: Partial<PersonalityScores> = {}
+
+  for (const trait of requiredTraits) {
+    const value = scores[trait]
+    if (typeof value === 'number' && !isNaN(value) && value >= 0 && value <= 100) {
+      validatedScores[trait] = value
+    } else {
+      return null // Invalid data
+    }
+  }
+
+  return validatedScores as PersonalityScores
+}
+
+function validateDeepAnalysisData(data: any): DeepAnalysisData | null {
+  if (!data || typeof data !== 'object') {
+    return null
+  }
+
+  // Validate required fields
+  const requiredFields = ['total_games', 'average_accuracy', 'current_rating', 'personality_scores']
+  for (const field of requiredFields) {
+    if (!(field in data)) {
+      return null
+    }
+  }
+
+  // Validate personality scores
+  const personalityScores = validatePersonalityScores(data.personality_scores)
+  if (!personalityScores) {
+    return null
+  }
+
+  // Return validated data with defaults for missing fields
+  return {
+    total_games: Math.max(0, data.total_games || 0),
+    average_accuracy: Math.max(0, Math.min(100, data.average_accuracy || 0)),
+    current_rating: Math.max(0, data.current_rating || 0),
+    personality_scores: personalityScores,
+    player_level: data.player_level || 'intermediate',
+    player_style: data.player_style || {
+      category: 'balanced',
+      description: 'Analysis in progress...',
+      confidence: 0,
+    },
+    primary_strengths: Array.isArray(data.primary_strengths) ? data.primary_strengths : ['Analysis in progress...'],
+    improvement_areas: Array.isArray(data.improvement_areas) ? data.improvement_areas : ['Analysis in progress...'],
+    playing_style: data.playing_style || 'Data unavailable',
+    phase_accuracies: {
+      opening: Math.max(0, Math.min(100, data.phase_accuracies?.opening || 0)),
+      middle: Math.max(0, Math.min(100, data.phase_accuracies?.middle || 0)),
+      endgame: Math.max(0, Math.min(100, data.phase_accuracies?.endgame || 0)),
+    },
+    recommendations: {
+      primary: data.recommendations?.primary || 'Complete a Stockfish analysis to unlock deep recommendations.',
+      secondary: data.recommendations?.secondary || 'Play a fresh set of games to refresh recent patterns.',
+      leverage: data.recommendations?.leverage || 'Review your most accurate games once analysis is ready.',
+    },
+  }
+}
 
 export interface UnifiedAnalysisRequest {
   user_id: string
   platform: Platform
-  analysis_type?: 'basic' | 'stockfish' | 'deep'
+  analysis_type?: 'stockfish' | 'deep'
   limit?: number
   depth?: number
   skill_level?: number
@@ -71,6 +159,12 @@ export class UnifiedAnalysisService {
         url: `${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`,
         body: requestBody
       })
+      console.log('🌐 Request details:', {
+        user_id: requestBody.user_id,
+        platform: requestBody.platform,
+        analysis_type: requestBody.analysis_type,
+        limit: requestBody.limit
+      })
       
       const response = await fetch(`${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`, {
         method: 'POST',
@@ -104,13 +198,15 @@ export class UnifiedAnalysisService {
   static async startBatchAnalysis(
     userId: string,
     platform: Platform,
-    analysisType: 'basic' | 'stockfish' | 'deep' = 'stockfish',
+    analysisType: 'stockfish' | 'deep' = 'stockfish',
     limit: number = 10,
     depth: number = 8,
     skillLevel: number = 8,
     useParallel: boolean = true
   ): Promise<AnalysisResponse> {
     try {
+      console.log('🔧 startBatchAnalysis called with:', { userId, platform, analysisType, limit })
+      console.log('🔧 User ID type:', typeof userId, 'Value:', JSON.stringify(userId))
       const response = await this.analyze({
         user_id: userId,
         platform: platform,
@@ -139,7 +235,7 @@ export class UnifiedAnalysisService {
     pgn: string,
     userId: string,
     platform: Platform,
-    analysisType: 'basic' | 'stockfish' | 'deep' = 'stockfish',
+    analysisType: 'stockfish' | 'deep' = 'stockfish',
     depth: number = 8
   ): Promise<UnifiedAnalysisResponse> {
     try {
@@ -162,7 +258,7 @@ export class UnifiedAnalysisService {
    */
   static async analyzePosition(
     fen: string,
-    analysisType: 'basic' | 'stockfish' | 'deep' = 'stockfish',
+    analysisType: 'stockfish' | 'deep' = 'stockfish',
     depth: number = 8
   ): Promise<UnifiedAnalysisResponse> {
     try {
@@ -186,7 +282,7 @@ export class UnifiedAnalysisService {
   static async analyzeMove(
     fen: string,
     move: string,
-    analysisType: 'basic' | 'stockfish' | 'deep' = 'stockfish',
+    analysisType: 'stockfish' | 'deep' = 'stockfish',
     depth: number = 8
   ): Promise<UnifiedAnalysisResponse> {
     try {
@@ -212,7 +308,7 @@ export class UnifiedAnalysisService {
     userId: string,
     platform: Platform,
     limit: number = 10,
-    analysisType: 'basic' | 'stockfish' | 'deep' = 'stockfish'
+    analysisType: 'stockfish' | 'deep' = 'stockfish'
   ): Promise<GameAnalysisSummary[]> {
     try {
       const response = await fetch(
@@ -238,7 +334,7 @@ export class UnifiedAnalysisService {
   static async getAnalysisStats(
     userId: string,
     platform: Platform,
-    analysisType: 'basic' | 'stockfish' | 'deep' = 'stockfish'
+    analysisType: 'stockfish' | 'deep' = 'stockfish'
   ): Promise<AnalysisStats | null> {
     try {
       const url = `${UNIFIED_API_URL}/api/v1/stats/${userId}/${platform}?analysis_type=${analysisType}`
@@ -267,7 +363,7 @@ export class UnifiedAnalysisService {
   static async getGameAnalyses(
     userId: string,
     platform: Platform,
-    analysisType: 'basic' | 'stockfish' | 'deep' = 'stockfish'
+    analysisType: 'stockfish' | 'deep' = 'stockfish'
   ): Promise<any[]> {
     try {
       const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}?analysis_type=${analysisType}`
@@ -318,25 +414,82 @@ export class UnifiedAnalysisService {
 
   /**
    * Get deep analysis with personality insights.
-   * New functionality for advanced analysis
+   * Enhanced with validation and fallback handling from DeepAnalysisService
    */
   static async getDeepAnalysis(
     userId: string,
     platform: Platform
-  ): Promise<DeepAnalysisData | null> {
+  ): Promise<DeepAnalysisData> {
+    // Input validation
+    if (!validateUserId(userId)) {
+      throw new Error('Invalid userId provided')
+    }
+
+    if (!validatePlatform(platform)) {
+      throw new Error('Invalid platform provided. Must be "lichess" or "chess.com"')
+    }
+
     try {
-      const response = await fetch(`${UNIFIED_API_URL}/api/v1/deep-analysis/${userId}/${platform}`)
+      const response = await fetch(`${UNIFIED_API_URL}/api/v1/deep-analysis/${userId}/${platform}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      const data = await response.json()
-      return data
+      const rawData = await response.json()
+      const validatedData = validateDeepAnalysisData(rawData)
+      
+      if (!validatedData) {
+        throw new Error('Invalid data format received from server')
+      }
+
+      return validatedData
     } catch (error) {
       console.error('Error fetching deep analysis:', error)
-      return null
+
+      // Return fallback data with neutral personality scores
+      return {
+        total_games: 0,
+        average_accuracy: 0,
+        current_rating: 0,
+        personality_scores: FALLBACK_PERSONALITY,
+        player_level: 'intermediate',
+        player_style: {
+          category: 'balanced',
+          description: 'Fallback data - run a full analysis for personalised insights.',
+          confidence: 0,
+        },
+        primary_strengths: ['Analysis in progress...'],
+        improvement_areas: ['Analysis in progress...'],
+        playing_style: 'Data unavailable',
+        phase_accuracies: {
+          opening: 0,
+          middle: 0,
+          endgame: 0,
+        },
+        recommendations: {
+          primary: 'Complete a Stockfish analysis to unlock deep recommendations.',
+          secondary: 'Play a fresh set of games to refresh recent patterns.',
+          leverage: 'Review your most accurate games once analysis is ready.',
+        },
+      }
     }
+  }
+
+  /**
+   * Enhanced deep analysis fetch function for backward compatibility.
+   * This replaces the standalone fetchDeepAnalysis function from DeepAnalysisService.
+   */
+  static async fetchDeepAnalysis(
+    userId: string,
+    platform: 'lichess' | 'chess.com'
+  ): Promise<DeepAnalysisData> {
+    return this.getDeepAnalysis(userId, platform)
   }
 
   /**
@@ -345,7 +498,9 @@ export class UnifiedAnalysisService {
    */
   static async checkHealth(): Promise<boolean> {
     try {
+      console.log('🔍 Health check URL:', `${UNIFIED_API_URL}/health`)
       const response = await fetch(`${UNIFIED_API_URL}/health`)
+      console.log('🔍 Health check response status:', response.status)
       return response.ok
     } catch (error) {
       console.error('Analysis API not available:', error)
@@ -408,10 +563,52 @@ export class UnifiedAnalysisService {
     console.warn('getStats is deprecated. Use getAnalysisStats instead.')
     return this.getAnalysisStats(userId, platform)
   }
+
+  // ============================================================================
+  // UNIFIED CONVENIENCE METHODS
+  // ============================================================================
+
+  /**
+   * Get comprehensive analysis data for a user in one call.
+   * Combines stats, results, and deep analysis for complete insights.
+   */
+  static async getComprehensiveAnalysis(
+    userId: string,
+    platform: Platform,
+    analysisType: 'stockfish' | 'deep' = 'stockfish',
+    limit: number = 10
+  ): Promise<{
+    stats: AnalysisStats | null
+    results: GameAnalysisSummary[]
+    deepAnalysis: DeepAnalysisData
+    progress: AnalysisProgress | null
+  }> {
+    try {
+      const [stats, results, deepAnalysis, progress] = await Promise.all([
+        this.getAnalysisStats(userId, platform, analysisType),
+        this.getAnalysisResults(userId, platform, limit, analysisType),
+        this.getDeepAnalysis(userId, platform),
+        this.getAnalysisProgress(userId, platform)
+      ])
+
+      return {
+        stats,
+        results,
+        deepAnalysis,
+        progress
+      }
+    } catch (error) {
+      console.error('Error getting comprehensive analysis:', error)
+      throw new Error('Failed to get comprehensive analysis')
+    }
+  }
 }
 
 // Export default instance for convenience
 export default UnifiedAnalysisService
+
+// Export standalone function for backward compatibility
+export const fetchDeepAnalysis = UnifiedAnalysisService.fetchDeepAnalysis.bind(UnifiedAnalysisService)
 
 
 

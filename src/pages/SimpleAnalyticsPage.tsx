@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom'
 import { SimpleAnalytics } from '../components/simple/SimpleAnalytics'
 import { MatchHistory } from '../components/simple/MatchHistory'
+import { AnalysisProgressBar } from '../components/simple/AnalysisProgressBar'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { config } from '../lib/config'
 import { AutoImportService } from '../services/autoImportService'
@@ -11,8 +12,45 @@ import DatabaseDiagnosticsComponent from '../components/debug/DatabaseDiagnostic
 import { EloDataDebugger } from '../components/debug/EloDataDebugger'
 import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
 import { ComprehensiveAnalytics } from '../components/debug/ComprehensiveAnalytics'
+import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
 const ANALYSIS_TEST_LIMIT = 10
+
+const serializeOpeningIdentifiers = (identifiers: OpeningIdentifierSets): string => {
+  try {
+    return encodeURIComponent(JSON.stringify(identifiers))
+  } catch (err) {
+    console.error('Failed to serialize opening identifiers', err)
+    return ''
+  }
+}
+
+const parseOpeningIdentifiers = (serialized: string | null): OpeningIdentifierSets => {
+  if (!serialized) {
+    return { openingFamilies: [], openings: [] }
+  }
+
+  try {
+    const decoded = decodeURIComponent(serialized)
+    const parsed = JSON.parse(decoded)
+
+    const openingFamilies = Array.isArray(parsed.openingFamilies)
+      ? parsed.openingFamilies.filter((value: unknown) => typeof value === 'string')
+      : []
+
+    const openings = Array.isArray(parsed.openings)
+      ? parsed.openings.filter((value: unknown) => typeof value === 'string')
+      : []
+
+    return {
+      openingFamilies,
+      openings,
+    }
+  } catch (err) {
+    console.error('Failed to parse opening identifiers', err)
+    return { openingFamilies: [], openings: [] }
+  }
+}
 
 export default function SimpleAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -24,6 +62,7 @@ export default function SimpleAnalyticsPage() {
     'analytics'
   )
   const [refreshKey, setRefreshKey] = useState(0)
+  const [openingFilter, setOpeningFilter] = useState<OpeningFilter | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -49,6 +88,8 @@ export default function SimpleAnalyticsPage() {
     const urlUser = searchParams.get('user')
     const urlPlatform = searchParams.get('platform') as 'lichess' | 'chess.com'
     const urlTab = searchParams.get('tab') as 'analytics' | 'matchHistory'
+    const urlOpening = searchParams.get('opening')
+    const urlOpeningIdentifiers = searchParams.get('openingIdentifiers')
 
     const finalUser = routeUser || urlUser
     const finalPlatform = routePlatform || urlPlatform
@@ -58,8 +99,19 @@ export default function SimpleAnalyticsPage() {
       setActiveTab(urlTab)
     }
 
+    // Set opening filter from URL parameter
+    if (urlOpening) {
+      const parsedIdentifiers = parseOpeningIdentifiers(urlOpeningIdentifiers)
+      setOpeningFilter({
+        normalized: urlOpening,
+        identifiers: parsedIdentifiers,
+      })
+    }
+
     if (finalUser && finalPlatform) {
-      setUserId(finalUser)
+      // Trim and canonicalize user ID to prevent URL encoding issues
+      const trimmedUser = finalUser.trim()
+      setUserId(trimmedUser)
       setPlatform(finalPlatform)
       setIsLoading(false)
     } else {
@@ -73,7 +125,9 @@ export default function SimpleAnalyticsPage() {
   }, [])
 
   const checkApiHealth = async () => {
+    console.log('🔍 Checking API health...')
     const available = await UnifiedAnalysisService.checkHealth()
+    console.log('🔍 API health check result:', available)
     setApiAvailable(available)
   }
 
@@ -93,6 +147,17 @@ export default function SimpleAnalyticsPage() {
     // Update URL search params to persist tab state
     const newSearchParams = new URLSearchParams(searchParams)
     newSearchParams.set('tab', tab)
+    setSearchParams(newSearchParams, { replace: true })
+  }
+
+  const handleOpeningClick = (filter: OpeningFilter) => {
+    setOpeningFilter(filter)
+    setActiveTab('matchHistory')
+    // Update URL search params to persist tab state and filter
+    const newSearchParams = new URLSearchParams(searchParams)
+    newSearchParams.set('tab', 'matchHistory')
+    newSearchParams.set('opening', filter.normalized)
+    newSearchParams.set('openingIdentifiers', serializeOpeningIdentifiers(filter.identifiers))
     setSearchParams(newSearchParams, { replace: true })
   }
 
@@ -138,13 +203,14 @@ export default function SimpleAnalyticsPage() {
 
     try {
       const baseUrl = config.getApi().baseUrl
+      console.log('???? Fetching progress for userId:', `"${userId}"`, 'platform:', platform)
       const progressUrl = new URL(`/api/v1/progress-realtime/${userId}/${platform}`, baseUrl)
       progressUrl.searchParams.set('analysis_type', 'stockfish')
-      console.log('📈 Fetching progress from:', progressUrl.toString())
+      console.log('???? Fetching progress from:', progressUrl.toString())
       const response = await fetch(progressUrl.toString())
       if (response.ok) {
         const progress = await response.json()
-        console.log('📈 Progress response:', progress)
+        console.log('???? Progress response:', progress)
         setAnalysisProgress(progress)
 
         // If analysis is complete, clean up and refresh data
@@ -168,23 +234,29 @@ export default function SimpleAnalyticsPage() {
   const startAnalysis = async () => {
     try {
       console.log('🚀 Starting analysis for:', { userId, platform, limit: ANALYSIS_TEST_LIMIT })
+      console.log('🚀 User ID type:', typeof userId, 'Value:', JSON.stringify(userId))
+      console.log('🚀 API available:', apiAvailable)
+      console.log('🚀 Current analyzing state:', analyzing)
       setAnalyzing(true)
       setAnalysisError(null)
       setAnalysisProgress(null)
 
       const result = await UnifiedAnalysisService.startBatchAnalysis(userId, platform, 'stockfish', ANALYSIS_TEST_LIMIT)
-      console.log('📊 Analysis result:', result)
-      console.log('📊 Analysis success:', result.success)
+      console.log('???? Analysis result:', result)
+      console.log('???? Analysis success:', result.success)
 
       if (result.success) {
-        console.log('✅ Analysis started successfully, starting progress monitoring...')
+        console.log('??? Analysis started successfully, starting progress monitoring...')
         // Clear any existing interval
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current)
         }
         
+        // Ensure analyzing state is set immediately
+        setAnalyzing(true)
+        
         // Start progress monitoring
-        progressIntervalRef.current = setInterval(fetchProgress, 2000) // Check every 2 seconds
+        progressIntervalRef.current = setInterval(fetchProgress, 1000) // Check every 1 second for more responsive updates
         
         // Stop monitoring after 10 minutes
         setTimeout(() => {
@@ -199,7 +271,7 @@ export default function SimpleAnalyticsPage() {
         // Initial progress check
         await fetchProgress()
       } else {
-        console.log('❌ Analysis failed to start:', result.message)
+        console.log('??? Analysis failed to start:', result.message)
         setAnalysisError(result.message || 'Failed to start analysis')
         setAnalyzing(false)
       }
@@ -256,7 +328,7 @@ export default function SimpleAnalyticsPage() {
           <div className="text-center space-y-2">
             <div className="flex items-center justify-center space-x-2 text-lg text-gray-700">
               <span className="font-medium">{userId}</span>
-              <span className="text-gray-400">•</span>
+              <span className="text-gray-400">???</span>
               <span className="capitalize font-medium">{platform}</span>
             </div>
             <div className="flex items-center justify-center space-x-3">
@@ -268,7 +340,11 @@ export default function SimpleAnalyticsPage() {
                 {importing ? 'Importing...' : 'Import Games'}
               </button>
               <button
-                onClick={startAnalysis}
+                onClick={() => {
+                  console.log('🔘 Analyze My Games button clicked!')
+                  console.log('🔘 Button state - analyzing:', analyzing, 'apiAvailable:', apiAvailable)
+                  startAnalysis()
+                }}
                 disabled={analyzing || !apiAvailable}
                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
               >
@@ -295,23 +371,7 @@ export default function SimpleAnalyticsPage() {
       )}
 
       {/* Progress Bar */}
-      {analyzing && analysisProgress && (
-        <div className="w-full max-w-md mx-auto mt-4 mb-6">
-          <div className="flex justify-between text-sm text-gray-600 mb-2">
-            <span>Analyzing games...</span>
-            <span>{analysisProgress.analyzed_games}/{analysisProgress.total_games}</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2.5">
-            <div
-              className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
-              style={{ width: `${analysisProgress.progress_percentage}%` }}
-            ></div>
-          </div>
-          <div className="text-center text-sm text-gray-500 mt-1">
-            {analysisProgress.progress_percentage}% complete
-          </div>
-        </div>
-      )}
+      <AnalysisProgressBar analyzing={analyzing} progress={analysisProgress} />
 
       {/* Tab Navigation */}
       <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg max-w-md mx-auto">
@@ -345,13 +405,26 @@ export default function SimpleAnalyticsPage() {
             key={`simple-analytics-${refreshKey}`}
             userId={userId}
             platform={platform}
+            onOpeningClick={handleOpeningClick}
           />
         </div>
       )}
 
       {activeTab === 'matchHistory' && (
         <ErrorBoundary>
-          <MatchHistory key={`match-history-${refreshKey}`} userId={userId} platform={platform} />
+          <MatchHistory 
+            key={`match-history-${refreshKey}`} 
+            userId={userId} 
+            platform={platform} 
+            openingFilter={openingFilter}
+            onClearFilter={() => {
+              setOpeningFilter(null)
+              const newSearchParams = new URLSearchParams(searchParams)
+              newSearchParams.delete('opening')
+              newSearchParams.delete('openingIdentifiers')
+              setSearchParams(newSearchParams, { replace: true })
+            }}
+          />
         </ErrorBoundary>
       )}
 
@@ -385,7 +458,7 @@ export default function SimpleAnalyticsPage() {
       {analysisError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="flex items-center space-x-2">
-            <div className="text-red-500">❌</div>
+            <div className="text-red-500">???</div>
             <span className="text-red-700">{analysisError}</span>
           </div>
         </div>
@@ -393,3 +466,4 @@ export default function SimpleAnalyticsPage() {
     </div>
   )
 }
+

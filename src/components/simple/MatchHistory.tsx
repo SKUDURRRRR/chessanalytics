@@ -1,7 +1,9 @@
 // Match History Component - Shows recent games in a table format
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
+import { normalizeOpeningName } from '../../utils/openingUtils'
+import { MatchHistoryProps } from '../../types'
 
 // Canonicalize user ID to match backend logic
 function canonicalizeUserId(userId: string, platform: string): string {
@@ -25,48 +27,110 @@ interface Game {
   opponent_rating: number
 }
 
-interface MatchHistoryProps {
-  userId: string
-  platform: 'lichess' | 'chess.com'
-}
 
-export function MatchHistory({ userId, platform }: MatchHistoryProps) {
+export function MatchHistory({ userId, platform, openingFilter, onClearFilter }: MatchHistoryProps) {
   const [games, setGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const gamesPerPage = 20
+  const escapeFilterValue = (value: string) => {
+    const sanitized = value.replace(/"/g, '\\"')
+    return `"${sanitized}"`
+  }
+
+  const filterKey = useMemo(() => {
+    if (!openingFilter) {
+      return 'none'
+    }
+    const families = openingFilter.identifiers.openingFamilies.join('|')
+    const openings = openingFilter.identifiers.openings.join('|')
+    return `${openingFilter.normalized}::${families}::${openings}`
+  }, [openingFilter])
+
+  const previousContextRef = useRef<{ userId: string; platform: string; filterKey: string }>(
+    { userId: '', platform: '', filterKey: '' }
+  )
 
   useEffect(() => {
-    loadGames()
-  }, [userId, platform, page])
+    const previous = previousContextRef.current
+    const contextChanged = previous.userId !== userId || previous.platform !== platform || previous.filterKey !== filterKey
 
-  const loadGames = async () => {
+    if (contextChanged && page !== 1) {
+      setPage(1)
+      return
+    }
+
+    const shouldReset = contextChanged || page === 1
+    loadGames(shouldReset).finally(() => {
+      previousContextRef.current = { userId, platform, filterKey }
+    })
+  }, [userId, platform, page, filterKey])
+
+  const loadGames = async (reset: boolean = false) => {
     try {
       setLoading(true)
       setError(null)
 
+      if (reset) {
+        setGames([])
+        setHasMore(true)
+      }
+
       const canonicalUserId = canonicalizeUserId(userId, platform)
-      const { data, error: dbError } = await supabase
+      let query = supabase
         .from('games')
         .select('*')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
+
+      // Apply opening filter if provided
+      if (openingFilter) {
+        const conditions: string[] = []
+        openingFilter.identifiers.openingFamilies.forEach(family => {
+          const formatted = escapeFilterValue(family)
+          conditions.push(`opening_family.eq.${formatted}`)
+        })
+        openingFilter.identifiers.openings.forEach(opening => {
+          const formatted = escapeFilterValue(opening)
+          conditions.push(`opening.eq.${formatted}`)
+        })
+
+        if (conditions.length > 0) {
+          // Combine conditions with or() using raw strings. Supabase requires each condition to be parentheses-safe.
+          query = query.or(conditions.join(','))
+        }
+      }
+
+      const currentPage = reset ? 1 : page
+      const pageStart = (currentPage - 1) * gamesPerPage
+      const pageEnd = currentPage * gamesPerPage - 1
+      const { data, error: dbError } = await query
         .order('played_at', { ascending: false })
-        .range((page - 1) * gamesPerPage, page * gamesPerPage - 1)
+        .range(pageStart, pageEnd)
 
       if (dbError) {
         throw dbError
       }
 
       if (data) {
-        if (page === 1) {
-          setGames(data)
-        } else {
-          setGames(prev => [...prev, ...data])
+        // Additional client-side filtering for normalized opening names
+        let filteredData = data
+        if (openingFilter) {
+          filteredData = data.filter(game => {
+            const gameOpening = normalizeOpeningName(game.opening_family || game.opening || 'Unknown')
+            return gameOpening === openingFilter.normalized
+          })
         }
-        setHasMore(data.length === gamesPerPage)
+
+        const isReset = reset || page === 1
+        if (isReset) {
+          setGames(filteredData)
+        } else {
+          setGames(prev => [...prev, ...filteredData])
+        }
+        setHasMore(filteredData.length === gamesPerPage)
       }
     } catch (err) {
       console.error('Error loading games:', err)
@@ -77,7 +141,8 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
   }
 
   const loadMore = () => {
-    setPage(prev => prev + 1)
+    const nextPage = page + 1
+    setPage(nextPage)
   }
 
   const getResultColor = (result: string) => {
@@ -161,7 +226,21 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
     <div className="space-y-4">
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-800">Match History</h2>
+          <div className="flex items-center space-x-3">
+            <h2 className="text-xl font-bold text-gray-800">Match History</h2>
+            {openingFilter && (
+              <div className="flex items-center space-x-2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                <span>Filtered by: {openingFilter.normalized}</span>
+                <button
+                  onClick={onClearFilter}
+                  className="text-blue-600 hover:text-blue-800 font-medium"
+                  title="Clear filter"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
           <div className="text-sm text-gray-500">{games.length} games loaded</div>
         </div>
 
@@ -197,8 +276,8 @@ export function MatchHistory({ userId, platform }: MatchHistoryProps) {
                   <td className="py-3 px-2 text-sm text-gray-900">{game.opponent}</td>
                   <td className="py-3 px-2 text-sm text-gray-600">{getTimeControlCategory(game.time_control)}</td>
                   <td className="py-3 px-2 text-sm text-gray-600">
-                    <div className="max-w-32 truncate" title={game.opening_family}>
-                      {game.opening_family || 'Unknown'}
+                    <div className="max-w-32 truncate" title={normalizeOpeningName(game.opening_family || 'Unknown')}>
+                      {normalizeOpeningName(game.opening_family || 'Unknown')}
                     </div>
                   </td>
                   <td className="py-3 px-2 text-sm text-gray-600">{game.moves}</td>

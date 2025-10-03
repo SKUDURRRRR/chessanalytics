@@ -22,15 +22,10 @@ def get_supabase_client() -> Client:
 async def _save_analysis_to_database(analysis, analysis_type_enum):
     """Save analysis results to database."""
     try:
-        from .unified_api_server import _save_stockfish_analysis, _save_basic_analysis
+        from .unified_api_server import _save_stockfish_analysis
         
-        # Save to appropriate table based on analysis type
-        if analysis_type_enum == AnalysisType.STOCKFISH or analysis_type_enum == AnalysisType.DEEP:
-            # Save Stockfish analysis to move_analyses table
-            return await _save_stockfish_analysis(analysis)
-        else:
-            # Save basic analysis to game_analyses table
-            return await _save_basic_analysis(analysis)
+        # Save analysis to move_analyses table (all analysis types now use Stockfish)
+        return await _save_stockfish_analysis(analysis)
     except Exception as e:
         print(f"Error saving analysis to database: {e}")
         return False
@@ -161,7 +156,7 @@ class ParallelAnalysisEngine:
         Args:
             user_id: User ID to analyze games for
             platform: Platform (lichess or chess.com)
-            analysis_type: Type of analysis (basic, stockfish, deep)
+            analysis_type: Type of analysis (stockfish, deep)
             limit: Maximum number of games to analyze
             depth: Stockfish depth
             skill_level: Stockfish skill level
@@ -251,8 +246,8 @@ class ParallelAnalysisEngine:
             # Canonicalize user ID for database operations
             canonical_user_id = user_id.lower().strip()
             
-            # Get games from database (games_pgn table)
-            games_response = self.supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).limit(limit).execute()
+            # Get games from database (games_pgn table) ordered by most recent first
+            games_response = self.supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('updated_at', desc=True).limit(limit).execute()
             games = games_response.data or []
             
             return games
@@ -292,6 +287,9 @@ class ParallelAnalysisEngine:
                         if progress_callback:
                             progress_percentage = 20 + int((completed_count / len(future_to_game)) * 70)  # 20-90%
                             progress_callback(completed_count, len(future_to_game), progress_percentage)
+                            # Add a small delay to make progress more visible
+                            import time
+                            time.sleep(0.5)
                             
                     except Exception as e:
                         game_data = future_to_game[future]

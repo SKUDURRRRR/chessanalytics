@@ -2,7 +2,7 @@
 """
 Unified Chess Analysis API Server
 Provides a single, comprehensive API for all chess analysis operations.
-Supports both basic and Stockfish analysis with real-time progress tracking.
+Supports Stockfish analysis with real-time progress tracking.
 """
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Depends, Request
@@ -96,7 +96,7 @@ def get_optional_auth():
 app = FastAPI(
     title="Unified Chess Analysis API",
     version="2.0.0",
-    description="Comprehensive chess analysis API supporting basic and Stockfish analysis"
+    description="Comprehensive chess analysis API supporting Stockfish analysis"
 )
 
 # Add global exception handler
@@ -123,27 +123,27 @@ ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 class AnalysisRequest(BaseModel):
     user_id: str = Field(..., description="User ID to analyze games for")
     platform: str = Field(..., description="Platform (lichess, chess.com, etc.)")
-    analysis_type: str = Field("stockfish", description="Type of analysis: basic, stockfish, or deep")
+    analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
     limit: Optional[int] = Field(10, description="Maximum number of games to analyze")
     depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
     skill_level: Optional[int] = Field(8, description="Stockfish skill level (0-20)")
 
 class PositionAnalysisRequest(BaseModel):
     fen: str = Field(..., description="FEN string of the position to analyze")
-    analysis_type: str = Field("stockfish", description="Type of analysis: basic, stockfish, or deep")
+    analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
     depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
 
 class MoveAnalysisRequest(BaseModel):
     fen: str = Field(..., description="FEN string of the position")
     move: str = Field(..., description="Move in UCI format (e.g., e2e4)")
-    analysis_type: str = Field("stockfish", description="Type of analysis: basic, stockfish, or deep")
+    analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
     depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
 
 class GameAnalysisRequest(BaseModel):
     pgn: str = Field(..., description="PGN string of the game to analyze")
     user_id: str = Field(..., description="User ID")
     platform: str = Field(..., description="Platform")
-    analysis_type: str = Field("stockfish", description="Type of analysis: basic, stockfish, or deep")
+    analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
     depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
 
 class AnalysisResponse(BaseModel):
@@ -217,12 +217,8 @@ def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
     if analysis_engine is None:
-        # Find Stockfish path
-        stockfish_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "stockfish", "stockfish-windows-x86-64-avx2.exe")
-        if not os.path.exists(stockfish_path):
-            stockfish_path = None
-        
-        analysis_engine = ChessAnalysisEngine(stockfish_path=stockfish_path)
+        # Let ChessAnalysisEngine find the best Stockfish path automatically
+        analysis_engine = ChessAnalysisEngine()
     return analysis_engine
 
 def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> GameAnalysisSummary:
@@ -360,6 +356,60 @@ def map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
         stockfish_depth=analysis.get('stockfish_depth', 0)
     )
 
+async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str, analysis_type: str, limit: int) -> list:
+    """
+    Filter out games that are already analyzed, returning only unanalyzed games up to the limit.
+    
+    Args:
+        all_games: List of all games from games_pgn table
+        user_id: Canonical user ID
+        platform: Platform (lichess or chess.com)
+        analysis_type: Type of analysis (stockfish, deep)
+        limit: Maximum number of unanalyzed games to return
+        
+    Returns:
+        List of unanalyzed games to analyze
+    """
+    if not all_games or not supabase:
+        return all_games[:limit] if all_games else []
+    
+    # Get game IDs that are already analyzed
+    game_ids = [game.get('provider_game_id') for game in all_games if game.get('provider_game_id')]
+    
+    if not game_ids:
+        return all_games[:limit]
+    
+    # Check both move_analyses and game_analyses tables for already analyzed games
+    analyzed_game_ids = set()
+    
+    try:
+        # Check move_analyses table
+        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        if move_analyses_response.data:
+            analyzed_game_ids.update(row['game_id'] for row in move_analyses_response.data)
+        
+        # Check game_analyses table
+        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        if game_analyses_response.data:
+            analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
+            
+    except Exception as e:
+        print(f"[warn] Could not check analyzed games: {e}")
+        # If we can't check, assume no games are analyzed to be safe
+        analyzed_game_ids = set()
+    
+    # Filter out already analyzed games
+    unanalyzed_games = []
+    for game in all_games:
+        game_id = game.get('provider_game_id')
+        if game_id and game_id not in analyzed_game_ids:
+            unanalyzed_games.append(game)
+            if len(unanalyzed_games) >= limit:
+                break
+    
+    print(f"[info] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
+    return unanalyzed_games
+
 async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str, 
                                 limit: int, depth: int, skill_level: int):
     """Perform batch analysis for a user's games."""
@@ -388,12 +438,18 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
         analysis_progress[key]["progress_percentage"] = 10
         
         # Get games from database (games_pgn table)
-        games_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).limit(limit).execute()
-        games = games_response.data or []
+        # Get the most recent unanalyzed games by ordering by played_at DESC
+        # This ensures we always get the next batch of most recent unanalyzed games
+        fetch_limit = limit * 3  # Get 3x the limit to ensure we find unanalyzed games
+        games_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('updated_at', desc=True).limit(fetch_limit).execute()
+        all_games = games_response.data or []
+        
+        # Filter out already analyzed games
+        games = await _filter_unanalyzed_games(all_games, canonical_user_id, platform, analysis_type, limit)
         analysis_progress[key]["total_games"] = len(games)
 
         if not games:
-            print(f"No games found for {user_id} on {platform}")
+            print(f"No unanalyzed games found for {user_id} on {platform}")
             analysis_progress[key].update({
                 "is_complete": True,
                 "current_phase": "complete",
@@ -401,7 +457,7 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
             })
             return
         
-        print(f"Found {len(games)} games to analyze")
+        print(f"Found {len(games)} unanalyzed games to analyze")
         
         # Phase 2: Analyze games
         analysis_progress[key]["current_phase"] = "analyzing"
@@ -489,12 +545,8 @@ async def _analyze_single_game(engine, game, user_id, platform, analysis_type_en
         
         if game_analysis:
             # Save to appropriate table based on analysis type
-            if analysis_type_enum == AnalysisType.STOCKFISH or analysis_type_enum == AnalysisType.DEEP:
-                # Save Stockfish analysis to move_analyses table
-                await save_stockfish_analysis(game_analysis)
-            else:
-                # Save basic analysis to game_analyses table
-                await save_basic_analysis(game_analysis)
+            # Save analysis to move_analyses table (all analysis types now use Stockfish)
+            await save_stockfish_analysis(game_analysis)
             return game_analysis
         else:
             return None
@@ -503,81 +555,6 @@ async def _analyze_single_game(engine, game, user_id, platform, analysis_type_en
         print(f"❌ ERROR analyzing game {game.get('provider_game_id', 'unknown')}: {e}")
         return None
 
-async def save_basic_analysis(analysis: GameAnalysis) -> bool:
-    """Save basic analysis to game_analyses table."""
-    try:
-        # Canonicalize user ID for database operations
-        canonical_user_id = _canonical_user_id(analysis.user_id, analysis.platform)
-        
-        # Convert moves analysis to dict format
-        moves_analysis_dict = []
-        for move in analysis.moves_analysis:
-            moves_analysis_dict.append({
-                'move': move.move,
-                'move_san': move.move_san,
-                'evaluation': move.evaluation,
-                'is_best': move.is_best,
-                'is_blunder': move.is_blunder,
-                'is_mistake': move.is_mistake,
-                'is_inaccuracy': move.is_inaccuracy,
-                'is_good': move.is_good,
-                'is_acceptable': move.is_acceptable,
-                'centipawn_loss': move.centipawn_loss,
-                'depth_analyzed': move.depth_analyzed
-            })
-        
-        # Prepare data for game_analyses table
-        data = {
-            'game_id': analysis.game_id,
-            'user_id': canonical_user_id,
-            'platform': analysis.platform,
-            'total_moves': analysis.total_moves,
-            'accuracy': analysis.accuracy,
-            'blunders': analysis.blunders,
-            'mistakes': analysis.mistakes,
-            'inaccuracies': analysis.inaccuracies,
-            'brilliant_moves': analysis.brilliant_moves,
-            'best_moves': analysis.best_moves,
-            'opening_accuracy': analysis.opening_accuracy,
-            'middle_game_accuracy': analysis.middle_game_accuracy,
-            'endgame_accuracy': analysis.endgame_accuracy,
-            'average_centipawn_loss': analysis.average_centipawn_loss,
-            'worst_blunder_centipawn_loss': analysis.worst_blunder_centipawn_loss,
-            'time_management_score': analysis.time_management_score,
-            'tactical_score': analysis.tactical_score,
-            'positional_score': analysis.positional_score,
-            'aggressive_score': analysis.aggressive_score,
-            'patient_score': analysis.patient_score,
-            'novelty_score': analysis.novelty_score,
-            'staleness_score': analysis.staleness_score,
-            'novelty_score': getattr(analysis, 'novelty_score', 0.0),
-            'staleness_score': getattr(analysis, 'staleness_score', 0.0),
-            'tactical_patterns': analysis.tactical_patterns,
-            'positional_patterns': analysis.positional_patterns,
-            'strategic_themes': analysis.strategic_themes,
-            'moves_analysis': moves_analysis_dict,
-            'analysis_type': str(analysis.analysis_type),
-            'analysis_date': analysis.analysis_date.isoformat(),
-            'processing_time_ms': analysis.processing_time_ms,
-            'stockfish_depth': analysis.stockfish_depth
-        }
-        
-        # Insert or update analysis in game_analyses table using service role
-        response = supabase_service.table('game_analyses').upsert(
-            data,
-            on_conflict='user_id,platform,game_id'
-        ).execute()
-        
-        if response.data:
-            print(f"Successfully saved basic analysis for game {analysis.game_id}")
-            return True
-        else:
-            print(f"Failed to save basic analysis for game {analysis.game_id}")
-            return False
-            
-    except Exception as e:
-        print(f"Error saving basic analysis: {e}")
-        return False
 
 async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
     """Save Stockfish analysis to move_analyses table."""
@@ -744,9 +721,21 @@ def _canonical_user_id(user_id: str, platform: str) -> str:
 @app.get("/")
 async def root():
     return {
-        "message": "Unified Chess Analysis API is running!",
+        "message": "Legacy Chess Analysis API is running!",
         "version": "2.0.0",
-        "features": ["position_analysis", "move_analysis", "game_analysis", "batch_analysis"]
+        "status": "deprecated",
+        "warning": "⚠️ This API is deprecated. Please migrate to the Unified API at /api/v1/*",
+        "migration_url": "/api/v1/",
+        "features": ["position_analysis", "move_analysis", "game_analysis", "batch_analysis"],
+        "deprecated_endpoints": [
+            "/analyze-games → /api/v1/analyze",
+            "/analyze-position → /api/v1/analyze", 
+            "/analyze-move → /api/v1/analyze",
+            "/analyze-game → /api/v1/analyze",
+            "/analysis/{user_id}/{platform} → /api/v1/results/{user_id}/{platform}",
+            "/analysis-stats/{user_id}/{platform} → /api/v1/stats/{user_id}/{platform}",
+            "/analysis-progress/{user_id}/{platform} → /api/v1/progress/{user_id}/{platform}"
+        ]
     }
 
 @app.get("/health")
@@ -759,7 +748,7 @@ async def health_check():
         "status": "healthy",
         "service": "unified-chess-analysis-api",
         "stockfish_available": stockfish_available,
-        "analysis_types": ["basic", "stockfish", "deep"]
+        "analysis_types": ["stockfish", "deep"]
     }
 
 @app.get("/proxy/chess-com/{username}/games/{year}/{month}")
@@ -806,16 +795,27 @@ async def proxy_chess_com_user(username: str):
         print(f"Error proxying Chess.com user request: {e}")
         return {"error": str(e)}
 
-@app.post("/analyze-games", response_model=AnalysisResponse)
+@app.post("/analyze-games", response_model=AnalysisResponse, deprecated=True)
 async def analyze_games(
     request: AnalysisRequest, 
     background_tasks: BackgroundTasks
 ):
-    """Start batch analysis for a user's games."""
+    """
+    Start batch analysis for a user's games.
+    
+    ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
+    Please migrate to: POST /api/v1/analyze
+    
+    Migration guide:
+    - Replace with: POST /api/v1/analyze
+    - Add 'pgn' field for single game analysis
+    - Add 'fen' field for position analysis
+    - Add 'move' field for move analysis
+    """
     try:
         # Validate analysis type
-        if request.analysis_type not in ["basic", "stockfish", "deep"]:
-            raise ValidationError("Invalid analysis_type. Must be 'basic', 'stockfish', or 'deep'", "analysis_type")
+        if request.analysis_type not in ["stockfish", "deep"]:
+            raise ValidationError("Invalid analysis_type. Must be 'stockfish' or 'deep'", "analysis_type")
         
         # Validate user_id and platform
         if not request.user_id or not isinstance(request.user_id, str):
@@ -845,9 +845,19 @@ async def analyze_games(
     except Exception as e:
         raise AnalysisError(f"Failed to start batch analysis: {str(e)}", "batch")
 
-@app.post("/analyze-position", response_model=PositionAnalysisResult)
+@app.post("/analyze-position", response_model=PositionAnalysisResult, deprecated=True)
 async def analyze_position(request: PositionAnalysisRequest):
-    """Analyze a chess position."""
+    """
+    Analyze a chess position.
+    
+    ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
+    Please migrate to: POST /api/v1/analyze
+    
+    Migration guide:
+    - Replace with: POST /api/v1/analyze
+    - Add 'fen' field to request body
+    - All other parameters remain the same
+    """
     try:
         engine = get_analysis_engine()
         
@@ -871,9 +881,19 @@ async def analyze_position(request: PositionAnalysisRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/analyze-move", response_model=MoveAnalysisResult)
+@app.post("/analyze-move", response_model=MoveAnalysisResult, deprecated=True)
 async def analyze_move(request: MoveAnalysisRequest):
-    """Analyze a specific move in a position."""
+    """
+    Analyze a specific move in a position.
+    
+    ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
+    Please migrate to: POST /api/v1/analyze
+    
+    Migration guide:
+    - Replace with: POST /api/v1/analyze
+    - Add 'fen' and 'move' fields to request body
+    - All other parameters remain the same
+    """
     try:
         import chess
         
@@ -908,9 +928,19 @@ async def analyze_move(request: MoveAnalysisRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/analyze-game", response_model=AnalysisResponse)
+@app.post("/analyze-game", response_model=AnalysisResponse, deprecated=True)
 async def analyze_game(request: GameAnalysisRequest):
-    """Analyze a single game from PGN."""
+    """
+    Analyze a single game from PGN.
+    
+    ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
+    Please migrate to: POST /api/v1/analyze
+    
+    Migration guide:
+    - Replace with: POST /api/v1/analyze
+    - Add 'pgn' field to request body
+    - All other parameters remain the same
+    """
     try:
         engine = get_analysis_engine()
         
@@ -952,16 +982,26 @@ async def analyze_game(request: GameAnalysisRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/analysis/{user_id}/{platform}", response_model=List[GameAnalysisSummary])
+@app.get("/analysis/{user_id}/{platform}", response_model=List[GameAnalysisSummary], deprecated=True)
 async def get_analysis_results(
     user_id: str, 
     platform: str, 
     limit: int = Query(10, ge=1, le=100), 
-    analysis_type: str = Query("basic"),
+    analysis_type: str = Query("stockfish"),
     # Optional authentication - can be enabled via config
     _: Optional[bool] = Depends(verify_user_access) if config.api.auth_enabled else None
 ):
-    """Get analysis results for a user from appropriate table based on analysis type."""
+    """
+    Get analysis results for a user from appropriate table based on analysis type.
+    
+    ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
+    Please migrate to: GET /api/v1/results/{user_id}/{platform}
+    
+    Migration guide:
+    - Replace with: GET /api/v1/results/{user_id}/{platform}
+    - All parameters remain the same
+    - Response format is identical
+    """
     try:
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
@@ -977,11 +1017,11 @@ async def get_analysis_results(
                 'analysis_date', desc=True
             ).limit(limit).execute()
         else:
-            # Use basic analysis type
+            # Use stockfish analysis type as default
             response = supabase.table('unified_analyses').select('*').eq(
                 'user_id', canonical_user_id
             ).eq('platform', platform).eq(
-                'analysis_type', 'basic'
+                'analysis_type', 'stockfish'
             ).order(
                 'analysis_date', desc=True
             ).limit(limit).execute()
@@ -999,14 +1039,25 @@ async def get_analysis_results(
         print(f"Error fetching analysis results: {e}")
         return []
 
-@app.get("/analysis-stats/{user_id}/{platform}")
+@app.get("/analysis-stats/{user_id}/{platform}", deprecated=True)
 async def get_analysis_stats(
     user_id: str, 
     platform: str, 
-    analysis_type: str = Query("basic"),
+    analysis_type: str = Query("stockfish"),
     # Optional authentication - can be enabled via config
     _: Optional[bool] = Depends(verify_user_access) if config.api.auth_enabled else None
 ):
+    """
+    Get analysis statistics for a user.
+    
+    ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
+    Please migrate to: GET /api/v1/stats/{user_id}/{platform}
+    
+    Migration guide:
+    - Replace with: GET /api/v1/stats/{user_id}/{platform}
+    - All parameters remain the same
+    - Response format is identical
+    """
     """Get analysis statistics for a user from appropriate table based on analysis type."""
     try:
         # Canonicalize user ID for database operations
@@ -1023,7 +1074,7 @@ async def get_analysis_stats(
             response = supabase.table('unified_analyses').select('*').eq(
                 'user_id', canonical_user_id
             ).eq('platform', platform).eq(
-                'analysis_type', 'basic'
+                'analysis_type', 'stockfish'
             ).execute()
         
         if not response.data:
@@ -1069,14 +1120,24 @@ async def get_analysis_stats(
             "material_sacrifices_per_game": 0
         }
 
-@app.get("/analysis-progress/{user_id}/{platform}", response_model=AnalysisProgress)
+@app.get("/analysis-progress/{user_id}/{platform}", response_model=AnalysisProgress, deprecated=True)
 async def get_analysis_progress(
     user_id: str, 
     platform: str,
     # Optional authentication - can be enabled via config
     _: Optional[bool] = Depends(verify_user_access) if config.api.auth_enabled else None
 ):
-    """Get analysis progress for a user."""
+    """
+    Get analysis progress for a user.
+    
+    ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
+    Please migrate to: GET /api/v1/progress/{user_id}/{platform}
+    
+    Migration guide:
+    - Replace with: GET /api/v1/progress/{user_id}/{platform}
+    - All parameters remain the same
+    - Response format is identical
+    """
     key = f"{user_id}_{platform}"
     
     if key not in analysis_progress:
@@ -1110,6 +1171,6 @@ if __name__ == "__main__":
     
     print(f"Starting Unified Chess Analysis API Server on {args.host}:{args.port}")
     print("This server provides comprehensive chess analysis capabilities!")
-    print("Available analysis types: basic, stockfish, deep")
+    print("Available analysis types: stockfish, deep")
     
     uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)

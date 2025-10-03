@@ -154,7 +154,7 @@ export async function testUnifiedAnalysesView(userId: string, platform: string) 
   
   try {
     // Test with different analysis types
-    const analysisTypes = ['basic', 'stockfish', 'deep']
+    const analysisTypes = ['stockfish', 'deep']
     const results: { [key: string]: any } = {}
     
     for (const analysisType of analysisTypes) {

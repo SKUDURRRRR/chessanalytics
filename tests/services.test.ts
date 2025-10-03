@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { AnalysisService } from '../src/services/analysisService'
+import { UnifiedAnalysisService } from '../src/services/unifiedAnalysisService'
 import { normalizeUserId } from '../src/lib/security'
 import config from '../src/lib/config'
 
@@ -24,9 +24,17 @@ describe('normalizeUserId', () => {
 })
 
 describe('Services', () => {
-  describe('AnalysisService', () => {
+  describe('UnifiedAnalysisService', () => {
     it('should have getAnalysisStats method', () => {
-      expect(typeof AnalysisService.getAnalysisStats).toBe('function')
+      expect(typeof UnifiedAnalysisService.getAnalysisStats).toBe('function')
+    })
+
+    it('should have startBatchAnalysis method', () => {
+      expect(typeof UnifiedAnalysisService.startBatchAnalysis).toBe('function')
+    })
+
+    it('should have checkHealth method', () => {
+      expect(typeof UnifiedAnalysisService.checkHealth).toBe('function')
     })
 
     it('should handle API errors gracefully', async () => {
@@ -38,25 +46,21 @@ describe('Services', () => {
       })
 
       try {
-        await AnalysisService.getAnalysisStats('testuser', 'lichess')
+        await UnifiedAnalysisService.getAnalysisStats('testuser', 'lichess')
       } catch (error) {
         expect(error).toBeDefined()
       }
     })
 
-    it('should return mock data when API is not available', async () => {
+    it('should return null when API is not available', async () => {
       // Mock fetch to fail
       ;(fetch as any).mockRejectedValueOnce(new Error('Network error'))
 
       try {
-        const result = await AnalysisService.getAnalysisStats('testuser', 'lichess')
+        const result = await UnifiedAnalysisService.getAnalysisStats('testuser', 'lichess')
         
-        // Should return mock data as fallback
-        expect(result).toBeDefined()
-        expect(result).not.toBeNull()
-        if (result) {
-          expect(result.total_games_analyzed).toBeGreaterThan(0)
-        }
+        // Should return null as fallback
+        expect(result).toBeNull()
       } catch (error) {
         // If the service throws an error, that's also acceptable
         expect(error).toBeDefined()

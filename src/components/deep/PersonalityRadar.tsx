@@ -113,6 +113,7 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
               stroke="#3B82F6"
               fill="#3B82F6"
               fillOpacity={0.3}
+              key="personality-radar"
             />
           </RadarChart>
         </ResponsiveContainer>
