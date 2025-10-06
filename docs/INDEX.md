@@ -17,6 +17,7 @@ This documentation covers the Chess Analytics platform, a comprehensive system f
 - [API Documentation](./API.md) - REST API endpoints, schemas, and examples
 - [Database Schema](./DB/SCHEMA.md) - PostgreSQL schema with tables, indexes, and constraints
 - [Data Dictionary](./DB/DATA_DICTIONARY.md) - Detailed column definitions and relationships
+- [Single Game Analysis System](./SINGLE_GAME_ANALYSIS_SYSTEM.md) - Comprehensive guide to single game analysis with safeguards
 
 ### Quality & Testing
 - [Test Plan](./QUALITY/TEST_PLAN.md) - Comprehensive testing strategy and coverage targets

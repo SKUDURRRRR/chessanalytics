@@ -103,7 +103,7 @@ def create_error_response(
             "code": error_code,
             "message": message,
             "timestamp": datetime.utcnow().isoformat(),
-            "request_id": getattr(request, "state", {}).get("request_id", "unknown") if request else "unknown"
+            "request_id": getattr(getattr(request, "state", None), "request_id", "unknown") if request else "unknown"
         }
     }
     

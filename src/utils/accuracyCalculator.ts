@@ -23,8 +23,8 @@ export interface AccuracyStats {
 }
 
 /**
- * Calculate realistic accuracy using rating-adjusted thresholds
- * Higher-rated players have more lenient thresholds for "accurate" moves
+ * Calculate realistic accuracy using improved threshold-based scoring
+ * This matches the backend calculation and provides more realistic accuracy scores
  */
 export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?: number): AccuracyStats {
   if (!moves || moves.length === 0) {
@@ -82,9 +82,30 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
     }
   }
 
-  // Rating-adjusted accuracy calculation
-  const accurate_moves = moves.filter(move => (move.centipawn_loss || 0) <= accuracyThreshold).length
-  const accuracy = (accurate_moves / moves.length) * 100
+  // Chess.com-style accuracy calculation with more generous thresholds
+  // This matches the backend calculation for consistency
+  let total_accuracy = 0
+  for (const move of moves) {
+    const centipawn_loss = move.centipawn_loss || 0
+    
+    if (centipawn_loss <= 10) {
+      total_accuracy += 100.0  // Perfect moves
+    } else if (centipawn_loss <= 50) {
+      // Linear interpolation from 100% to 70% for 10-50 CPL
+      total_accuracy += 100.0 - (centipawn_loss - 10) * 0.75
+    } else if (centipawn_loss <= 100) {
+      // Linear interpolation from 70% to 50% for 50-100 CPL
+      total_accuracy += 70.0 - (centipawn_loss - 50) * 0.4
+    } else if (centipawn_loss <= 200) {
+      // Linear interpolation from 50% to 30% for 100-200 CPL
+      total_accuracy += 50.0 - (centipawn_loss - 100) * 0.2
+    } else {
+      // Linear interpolation from 30% to 20% for 200+ CPL
+      total_accuracy += Math.max(20.0, 30.0 - (centipawn_loss - 200) * 0.1)
+    }
+  }
+  
+  const accuracy = total_accuracy / moves.length
 
   return {
     accuracy: Math.round(accuracy * 10) / 10, // Round to 1 decimal place

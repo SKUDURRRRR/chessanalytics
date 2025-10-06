@@ -407,20 +407,11 @@ export default function GameAnalysisPage() {
         setAnalysisRecord(result.analysis)
         setPgn(result.pgn ?? null)
 
-        // If no analysis is found and we have a game record, automatically trigger analysis
-        // Only trigger once per mount
-        if (!result.analysis && result.game && !autoAnalyzing && !hasTriggeredAnalysis) {
-          hasTriggeredAnalysis = true
-          console.log('No analysis found, automatically triggering analysis...')
-          console.log('Game data:', result.game)
-          // Set loading to false before starting auto-analysis
-          setLoading(false)
-          // Pass provider_game_id directly from the fetched game
-          const cleanup = await requestGameAnalysis(result.game.provider_game_id)
-          if (cleanup && isMounted) {
-            cleanupPolling = cleanup
-          }
-          return // Exit early, don't set loading to false again
+        // Auto-analysis disabled - users should click "Analyze" button in match history
+        // This prevents automatic analysis when navigating to game details
+        // Only "Analyze My Games" button should trigger batch analysis
+        if (!result.analysis && result.game) {
+          console.log('No analysis found for this game. User can click "Analyze" in match history to analyze it.')
         }
       } catch (err) {
         console.error('Unable to load game analysis', err)

@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Depends, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any, Annotated, Union
+from typing import List, Optional, Dict, Any, Annotated, Union, Tuple
 from collections import Counter
 from decimal import Decimal
 import uvicorn
@@ -118,21 +118,21 @@ app = FastAPI(
     description="Single, comprehensive chess analysis API with all functionality consolidated"
 )
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup."""
-    print("Starting Chess Analytics API Server...")
-    
-    # Initialize the analysis queue
-    from .analysis_queue import get_analysis_queue
-    queue = get_analysis_queue()
-    
-    # Start the queue processor if it's not already running
-    if queue._queue_processor_task is None or queue._queue_processor_task.done():
-        queue._queue_processor_task = asyncio.create_task(queue._process_queue())
-        print("Analysis queue processor started")
-    
-    print("Server startup complete!")
+# @app.on_event("startup")
+# async def startup_event():
+#     """Initialize services on startup."""
+#     print("Starting Chess Analytics API Server...")
+#     
+#     # Initialize the analysis queue
+#     from .analysis_queue import get_analysis_queue
+#     queue = get_analysis_queue()
+#     
+#     # Start the queue processor if it's not already running
+#     if queue._queue_processor_task is None or queue._queue_processor_task.done():
+#         queue._queue_processor_task = asyncio.create_task(queue._process_queue())
+#         print("Analysis queue processor started")
+#     
+#     print("Server startup complete!")
 
 # Add global exception handler
 app.add_exception_handler(Exception, global_exception_handler)
@@ -182,6 +182,8 @@ class UnifiedAnalysisRequest(BaseModel):
     pgn: Optional[str] = Field(None, description="PGN string for single game analysis")
     fen: Optional[str] = Field(None, description="FEN string for position analysis")
     move: Optional[str] = Field(None, description="Move in UCI format for move analysis")
+    game_id: Optional[str] = Field(None, description="Game ID for single game analysis")
+    provider_game_id: Optional[str] = Field(None, description="Provider game ID for single game analysis")
 
 class UnifiedAnalysisResponse(BaseModel):
     """Unified response model for all analysis types."""
@@ -402,8 +404,11 @@ async def unified_analyze(
         
         # Determine analysis type based on provided parameters
         if request.pgn:
-            # Single game analysis
+            # Single game analysis with PGN
             return await _handle_single_game_analysis(request)
+        elif request.game_id or request.provider_game_id:
+            # Single game analysis by game_id - fetch PGN from database
+            return await _handle_single_game_by_id(request)
         elif request.fen:
             if request.move:
                 # Move analysis
@@ -2353,7 +2358,25 @@ def _canonical_user_id(user_id: str, platform: str) -> str:
     Store and query usernames in lowercase for both platforms so we hit the same rows
     regardless of how the caller cased the name.
     """
+    if not user_id or not platform:
+        raise ValueError("user_id and platform cannot be empty")
     return user_id.strip().lower()
+
+def _validate_single_game_analysis_request(request: UnifiedAnalysisRequest) -> Tuple[bool, str]:
+    """Validate single game analysis request parameters."""
+    if not request.user_id:
+        return False, "user_id is required"
+    
+    if not request.platform:
+        return False, "platform is required"
+    
+    if not request.game_id and not request.provider_game_id:
+        return False, "Either game_id or provider_game_id is required"
+    
+    if request.platform not in ["chess.com", "lichess"]:
+        return False, f"Unsupported platform: {request.platform}"
+    
+    return True, "Valid"
 
 def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
@@ -2363,7 +2386,7 @@ def get_analysis_engine() -> ChessAnalysisEngine:
     return analysis_engine
 
 async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:
-    """Handle single game analysis."""
+    """Handle single game analysis with PGN data."""
     try:
         engine = get_analysis_engine()
         
@@ -2413,6 +2436,230 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:
+    """Handle single game analysis by game_id - fetch PGN from database."""
+    try:
+        # Validate request parameters
+        is_valid, error_message = _validate_single_game_analysis_request(request)
+        if not is_valid:
+            print(f"[SINGLE GAME ANALYSIS] ❌ Validation failed: {error_message}")
+            return UnifiedAnalysisResponse(
+                success=False,
+                message=f"Request validation failed: {error_message}"
+            )
+        
+        # Canonicalize user ID for database operations
+        try:
+            canonical_user_id = _canonical_user_id(request.user_id, request.platform)
+        except ValueError as e:
+            print(f"[SINGLE GAME ANALYSIS] ❌ User ID canonicalization failed: {e}")
+            return UnifiedAnalysisResponse(
+                success=False,
+                message=f"User ID validation failed: {str(e)}"
+            )
+        
+        # Get the game_id to search for
+        game_id = request.game_id or request.provider_game_id
+        print(f"[SINGLE GAME ANALYSIS] Starting analysis for game_id: {game_id}, user: {canonical_user_id} (original: {request.user_id})")
+        
+        # Fetch PGN data from database
+        if not supabase:
+            return UnifiedAnalysisResponse(
+                success=False,
+                message="Database not available"
+            )
+        
+        db_client = supabase
+        
+        # Try to find the game by provider_game_id first
+        game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
+            'provider_game_id', game_id
+        ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+        
+        # If not found, try by game_id
+        if not game_response.data:
+            game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
+                'game_id', game_id
+            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+        
+        if not game_response.data:
+            return UnifiedAnalysisResponse(
+                success=False,
+                message=f"Game not found: {game_id}"
+            )
+        
+        pgn_data = game_response.data.get('pgn')
+        if not pgn_data:
+            return UnifiedAnalysisResponse(
+                success=False,
+                message=f"No PGN data found for game: {game_id}"
+            )
+        
+        # Ensure the game exists in the games table for foreign key constraint
+        # Check if game exists in games table
+        print(f"[SINGLE GAME ANALYSIS] Checking if game exists in games table: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
+        games_check = db_client.table('games').select('id').eq(
+            'provider_game_id', game_id
+        ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+        
+        print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data}")
+        if not games_check.data:
+            print(f"[SINGLE GAME ANALYSIS] Game {game_id} not found in games table, creating basic record...")
+            # Parse PGN to extract basic game info
+            import chess.pgn
+            import io
+            pgn_io = io.StringIO(pgn_data)
+            game = chess.pgn.read_game(pgn_io)
+            
+            if game and game.headers:
+                headers = game.headers
+                # Create a basic game record
+                from datetime import datetime
+                now_iso = datetime.utcnow().isoformat()
+                
+                # Extract basic info from PGN headers
+                result = headers.get('Result', '0-1')
+                white_player = headers.get('White', '')
+                black_player = headers.get('Black', '')
+                user_is_white = white_player.lower() == request.user_id.lower()
+                
+                # Determine color and result from user's perspective
+                if user_is_white:
+                    color = 'white'
+                    if result == '1-0':
+                        user_result = 'win'
+                    elif result == '0-1':
+                        user_result = 'loss'
+                    else:
+                        user_result = 'draw'
+                else:
+                    color = 'black'
+                    if result == '0-1':
+                        user_result = 'win'
+                    elif result == '1-0':
+                        user_result = 'loss'
+                    else:
+                        user_result = 'draw'
+                
+                # Count moves
+                move_count = sum(1 for _ in game.mainline_moves())
+                
+                game_record = {
+                    "user_id": canonical_user_id,
+                    "platform": request.platform,
+                    "provider_game_id": game_id,
+                    "result": user_result,
+                    "color": color,
+                    "time_control": headers.get('TimeControl', 'unknown'),
+                    "opening": headers.get('Opening', 'Unknown'),
+                    "opening_family": headers.get('Opening', 'Unknown'),
+                    "opponent_rating": None,  # Not available in basic PGN
+                    "my_rating": None,  # Not available in basic PGN
+                    "total_moves": move_count,
+                    "played_at": headers.get('Date', now_iso),
+                    "opponent_name": black_player if user_is_white else white_player,
+                    "created_at": now_iso,
+                }
+                
+                try:
+                    games_response = db_client.table('games').upsert(
+                        game_record,
+                        on_conflict='user_id,platform,provider_game_id'
+                    ).execute()
+                    print(f"[SINGLE GAME ANALYSIS] Created game record: {game_id}")
+                except Exception as e:
+                    print(f"[SINGLE GAME ANALYSIS] Failed to create game record: {e}")
+                    return UnifiedAnalysisResponse(
+                        success=False,
+                        message=f"Failed to create game record: {e}"
+                    )
+        
+        # Now analyze the game with the fetched PGN
+        engine = get_analysis_engine()
+        
+        # Configure analysis type with optimized settings
+        resolved_type = _normalize_analysis_type(request.analysis_type, quiet=True)
+        if request.analysis_type != resolved_type:
+            request.analysis_type = resolved_type
+        analysis_type_enum = AnalysisType(resolved_type)
+        
+        # Use optimized configuration based on analysis type
+        if resolved_type == "deep":
+            engine.config = AnalysisConfig.for_deep_analysis()
+        else:
+            engine.config = AnalysisConfig(
+                analysis_type=analysis_type_enum,
+                depth=request.depth,
+                skill_level=request.skill_level
+            )
+        
+        # Analyze game
+        print(f"[SINGLE GAME ANALYSIS] Starting engine analysis for game_id: {game_id}")
+        game_analysis = await engine.analyze_game(
+            pgn_data, 
+            canonical_user_id,  # Use canonicalized user ID
+            request.platform, 
+            analysis_type_enum,
+            game_id
+        )
+        
+        if game_analysis:
+            # Validate foreign key constraint before saving
+            print(f"[SINGLE GAME ANALYSIS] Validating foreign key constraint before saving...")
+            fk_validation = db_client.table('games').select('id').eq(
+                'provider_game_id', game_id
+            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            
+            if not fk_validation.data:
+                print(f"[SINGLE GAME ANALYSIS] ❌ CRITICAL: Foreign key validation failed - game not found in games table!")
+                return UnifiedAnalysisResponse(
+                    success=False,
+                    message=f"Foreign key constraint validation failed: Game {game_id} not found in games table for user {canonical_user_id}"
+                )
+            
+            print(f"[SINGLE GAME ANALYSIS] ✅ Foreign key validation passed - game exists in games table")
+            
+            # Save to database with comprehensive error handling
+            try:
+                success = await _save_game_analysis(game_analysis)
+                if success:
+                    print(f"[SINGLE GAME ANALYSIS] ✅ Analysis completed and saved for game_id: {game_id}")
+                    print(f"[SINGLE GAME ANALYSIS] This was a SINGLE game analysis - NOT starting batch analysis")
+                    return UnifiedAnalysisResponse(
+                        success=True,
+                        message="Game analysis completed and saved",
+                        analysis_id=game_analysis.game_id,
+                        data={"game_id": game_analysis.game_id}
+                    )
+                else:
+                    print(f"[SINGLE GAME ANALYSIS] ❌ Analysis completed but failed to save to database")
+                    return UnifiedAnalysisResponse(
+                        success=False,
+                        message="Game analysis completed but failed to save to database"
+                    )
+            except Exception as save_error:
+                print(f"[SINGLE GAME ANALYSIS] ❌ CRITICAL ERROR during save: {save_error}")
+                return UnifiedAnalysisResponse(
+                    success=False,
+                    message=f"Critical error during analysis save: {str(save_error)}"
+                )
+        else:
+            return UnifiedAnalysisResponse(
+                success=False,
+                message="Failed to analyze game"
+            )
+    except Exception as e:
+        print(f"[SINGLE GAME ANALYSIS] ❌ CRITICAL ERROR in _handle_single_game_by_id: {e}")
+        print(f"[SINGLE GAME ANALYSIS] Error type: {type(e).__name__}")
+        print(f"[SINGLE GAME ANALYSIS] Error details: {str(e)}")
+        
+        # Return a structured error response instead of raising HTTPException
+        return UnifiedAnalysisResponse(
+            success=False,
+            message=f"Critical error in single game analysis: {str(e)}",
+            error_type=type(e).__name__
+        )
 
 async def _handle_position_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:
     """Handle position analysis."""
@@ -2769,7 +3016,9 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             analysis_progress[key].update({
                 "is_complete": True,
                 "current_phase": "complete",
-                "progress_percentage": 100
+                "progress_percentage": 100,
+                "status_message": "All your recent games have already been analyzed! Your analytics are up to date.",
+                "all_games_analyzed": True
             })
             return
         
@@ -2965,7 +3214,9 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
             analysis_progress[key].update({
                 "is_complete": True,
                 "current_phase": "complete",
-                "progress_percentage": 100
+                "progress_percentage": 100,
+                "status_message": "All your recent games have already been analyzed! Your analytics are up to date.",
+                "all_games_analyzed": True
             })
             return
         

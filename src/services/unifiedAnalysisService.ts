@@ -134,6 +134,8 @@ export interface AnalysisProgress {
   is_complete: boolean
   current_phase?: 'fetching' | 'analyzing' | 'calculating' | 'saving' | 'complete'
   estimated_time_remaining?: number
+  status_message?: string
+  all_games_analyzed?: boolean
 }
 
 export class UnifiedAnalysisService {

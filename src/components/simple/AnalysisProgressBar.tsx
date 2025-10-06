@@ -98,7 +98,9 @@ export function AnalysisProgressBar({ analyzing, progress, statusMessage }: Anal
 
       <p className="mt-2 text-xs text-blue-800">{phaseDescription}</p>
       {statusMessage && (
-        <p className="mt-1 text-xs text-blue-700 italic">{statusMessage}</p>
+        <p className={`mt-1 text-xs ${progress?.all_games_analyzed ? 'text-green-700 font-medium' : 'text-blue-700 italic'}`}>
+          {statusMessage}
+        </p>
       )}
     </div>
   )

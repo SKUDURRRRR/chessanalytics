@@ -210,7 +210,7 @@ export default function SimpleAnalyticsPage() {
         setAnalysisProgress(progress)
         setProgressStatus(
           progress.is_complete
-            ? 'Analysis complete! Refreshing your insights...'
+            ? (progress.status_message || 'Analysis complete! Refreshing your insights...')
             : 'Crunching games with Stockfish and updating live...'
         )
 

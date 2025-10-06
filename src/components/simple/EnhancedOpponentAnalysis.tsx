@@ -125,8 +125,16 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         {/* Highest Rated Opponent Game */}
         {opponentStats.highestOpponentGame && (
-          <div className="p-4 bg-gradient-to-r from-red-50 to-orange-50 rounded-lg border border-red-200">
-            <h4 className="text-md font-semibold text-red-800 mb-3">
+          <div className={`p-4 rounded-lg border ${
+            opponentStats.highestOpponentGame.result === 'win' 
+              ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
+              : 'bg-gradient-to-r from-red-50 to-orange-50 border-red-200'
+          }`}>
+            <h4 className={`text-md font-semibold mb-3 ${
+              opponentStats.highestOpponentGame.result === 'win' 
+                ? 'text-green-800'
+                : 'text-red-800'
+            }`}>
               Highest Rated Opponent
             </h4>
             <div className="flex items-center space-x-4">
@@ -138,7 +146,11 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
               />
               <div className="flex-1">
                 <div className="flex items-center space-x-4 mb-2">
-                  <div className="text-lg font-bold text-red-600">
+                  <div className={`text-lg font-bold ${
+                    opponentStats.highestOpponentGame.result === 'win' 
+                      ? 'text-green-600'
+                      : 'text-red-600'
+                  }`}>
                     {opponentStats.highestOpponentGame.opponentName || opponentStats.highestOpponentGame.opponentRating}
                   </div>
                   <div className={`px-2 py-1 rounded text-sm font-medium ${
@@ -178,7 +190,11 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
               <div>
                 <button
                   onClick={() => handleGameClick(opponentStats.highestOpponentGame.gameId)}
-                  className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  className={`inline-flex items-center px-3 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
+                    opponentStats.highestOpponentGame.result === 'win' 
+                      ? 'bg-green-600 hover:bg-green-700'
+                      : 'bg-red-600 hover:bg-red-700'
+                  }`}
                 >
                   <span className="mr-1">Link</span>
                   View Game
