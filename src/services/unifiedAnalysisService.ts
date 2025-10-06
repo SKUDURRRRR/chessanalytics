@@ -393,8 +393,13 @@ export class UnifiedAnalysisService {
     userId: string,
     platform: Platform
   ): Promise<AnalysisProgress | null> {
+    const sanitizedUserId = encodeURIComponent(userId.trim())
+    const sanitizedPlatform = encodeURIComponent(platform.toLowerCase())
+    const url = `${UNIFIED_API_URL}/api/v1/progress/${sanitizedUserId}/${sanitizedPlatform}`
+
     try {
-      const response = await fetch(`${UNIFIED_API_URL}/api/v1/progress/${userId}/${platform}`)
+      console.log('Fetching analysis progress from:', url)
+      const response = await fetch(url)
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -410,6 +415,32 @@ export class UnifiedAnalysisService {
       console.error('Error fetching analysis progress:', error)
       return null
     }
+  }
+
+  static async getRealtimeAnalysisProgress(
+    userId: string,
+    platform: Platform,
+    analysisType: 'stockfish' | 'deep' = 'stockfish'
+  ): Promise<AnalysisProgress | null> {
+    const sanitizedUserId = encodeURIComponent(userId.trim())
+    const sanitizedPlatform = encodeURIComponent(platform.toLowerCase())
+    const progressUrl = `${UNIFIED_API_URL}/api/v1/progress-realtime/${sanitizedUserId}/${sanitizedPlatform}?analysis_type=${analysisType}`
+
+    try {
+      console.log('Fetching realtime analysis progress from:', progressUrl)
+      const response = await fetch(progressUrl)
+      if (response.ok) {
+        const realtimeData = await response.json()
+        return realtimeData
+      }
+
+      console.warn('Realtime progress request failed, status:', response.status)
+    } catch (error) {
+      console.error('Error fetching realtime analysis progress:', error)
+    }
+
+    // Fall back to the persisted progress endpoint so the UI still shows activity
+    return this.getAnalysisProgress(userId, platform)
   }
 
   /**

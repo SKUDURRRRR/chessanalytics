@@ -44,13 +44,13 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
   let accuracyThreshold: number
   if (!playerRating || playerRating < 1000) {
     // Beginner (0-999): Only brilliant moves count as accurate
-    accuracyThreshold = 10
+    accuracyThreshold = 5
   } else if (playerRating < 1400) {
     // Intermediate (1000-1399): Brilliant + good moves count as accurate
-    accuracyThreshold = 50
+    accuracyThreshold = 30
   } else if (playerRating < 1800) {
     // Advanced (1400-1799): Include some acceptable moves
-    accuracyThreshold = 100
+    accuracyThreshold = 80
   } else {
     // Expert+ (1800+): More lenient for high-rated players
     accuracyThreshold = 150
@@ -67,15 +67,15 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
     const centipawn_loss = move.centipawn_loss || 0
 
     // Industry-standard move classification (for display)
-    if (centipawn_loss <= 10) {
+    if (centipawn_loss <= 5) {
       brilliant_moves++
-    } else if (centipawn_loss <= 50) {
+    } else if (centipawn_loss <= 30) {
       good_moves++
-    } else if (centipawn_loss <= 100) {
+    } else if (centipawn_loss <= 80) {
       acceptable_moves++
-    } else if (centipawn_loss <= 200) {
+    } else if (centipawn_loss <= 150) {
       inaccuracies++
-    } else if (centipawn_loss <= 300) {
+    } else if (centipawn_loss <= 250) {
       mistakes++
     } else {
       blunders++

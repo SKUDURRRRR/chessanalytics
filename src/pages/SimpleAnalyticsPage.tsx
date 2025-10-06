@@ -1,11 +1,10 @@
 // Simple Analytics Page - One page, everything you need
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams, useParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useParams, useNavigate, useLocation } from 'react-router-dom'
 import { SimpleAnalytics } from '../components/simple/SimpleAnalytics'
 import { MatchHistory } from '../components/simple/MatchHistory'
 import { AnalysisProgressBar } from '../components/simple/AnalysisProgressBar'
 import { ErrorBoundary } from '../components/ErrorBoundary'
-import { config } from '../lib/config'
 import { AutoImportService } from '../services/autoImportService'
 import { UnifiedAnalysisService } from '../services/unifiedAnalysisService'
 import DatabaseDiagnosticsComponent from '../components/debug/DatabaseDiagnostics'
@@ -56,6 +55,7 @@ export default function SimpleAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const params = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const [userId, setUserId] = useState('')
   const [platform, setPlatform] = useState<'lichess' | 'chess.com'>('lichess')
   const [activeTab, setActiveTab] = useState<'analytics' | 'matchHistory'>(
@@ -75,6 +75,7 @@ export default function SimpleAnalyticsPage() {
     is_complete: boolean
     current_phase: string
   } | null>(null)
+  const [progressStatus, setProgressStatus] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
@@ -202,85 +203,89 @@ export default function SimpleAnalyticsPage() {
     }
 
     try {
-      const baseUrl = config.getApi().baseUrl
-      console.log('???? Fetching progress for userId:', `"${userId}"`, 'platform:', platform)
-      const progressUrl = new URL(`/api/v1/progress-realtime/${userId}/${platform}`, baseUrl)
-      progressUrl.searchParams.set('analysis_type', 'stockfish')
-      console.log('???? Fetching progress from:', progressUrl.toString())
-      const response = await fetch(progressUrl.toString())
-      if (response.ok) {
-        const progress = await response.json()
-        console.log('???? Progress response:', progress)
-        setAnalysisProgress(progress)
+      const progress = await UnifiedAnalysisService.getRealtimeAnalysisProgress(userId, platform, 'stockfish')
 
-        // If analysis is complete, clean up and refresh data
+      if (progress) {
+        setAnalysisProgress(progress)
+        setProgressStatus(
+          progress.is_complete
+            ? 'Analysis complete! Refreshing your insights...'
+            : 'Crunching games with Stockfish and updating live...'
+        )
+
         if (progress.is_complete) {
           if (progressIntervalRef.current) {
             clearInterval(progressIntervalRef.current)
             progressIntervalRef.current = null
           }
           setAnalyzing(false)
+          setTimeout(() => setProgressStatus(null), 2500)
           handleRefresh()
         } else {
-          // Keep analyzing state true if analysis is not complete
           setAnalyzing(true)
         }
+      } else {
+        setProgressStatus('Waiting for the engine to report progress...')
+        setAnalyzing(true)
       }
     } catch (error) {
       console.error('Error fetching progress:', error)
+      setProgressStatus('Still waiting for updates from the analysis engine...')
+      setAnalyzing(true)
     }
   }
 
   const startAnalysis = async () => {
     try {
-      console.log('🚀 Starting analysis for:', { userId, platform, limit: ANALYSIS_TEST_LIMIT })
-      console.log('🚀 User ID type:', typeof userId, 'Value:', JSON.stringify(userId))
-      console.log('🚀 API available:', apiAvailable)
-      console.log('🚀 Current analyzing state:', analyzing)
+      console.log('Analyze My Games button clicked! SimpleAnalyticsPage.')
+      console.log('Starting analysis for:', { userId, platform, limit: ANALYSIS_TEST_LIMIT })
+      console.log('User ID type:', typeof userId, 'Value:', JSON.stringify(userId))
+      console.log('API available:', apiAvailable)
+      console.log('Current analyzing state:', analyzing)
+
       setAnalyzing(true)
       setAnalysisError(null)
       setAnalysisProgress(null)
+      setProgressStatus('Connecting to the analysis engine...')
 
       const result = await UnifiedAnalysisService.startBatchAnalysis(userId, platform, 'stockfish', ANALYSIS_TEST_LIMIT)
-      console.log('???? Analysis result:', result)
-      console.log('???? Analysis success:', result.success)
+      console.log('Analysis result:', result)
+      console.log('Analysis success:', result.success)
 
       if (result.success) {
-        console.log('??? Analysis started successfully, starting progress monitoring...')
-        // Clear any existing interval
+        console.log('Analysis started successfully, starting progress monitoring...')
+        setProgressStatus('Waiting for the engine to report progress...')
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current)
         }
-        
-        // Ensure analyzing state is set immediately
+
         setAnalyzing(true)
-        
-        // Start progress monitoring
         progressIntervalRef.current = setInterval(fetchProgress, 1000) // Check every 1 second for more responsive updates
-        
-        // Stop monitoring after 10 minutes
+
         setTimeout(() => {
           if (progressIntervalRef.current) {
             clearInterval(progressIntervalRef.current)
             progressIntervalRef.current = null
           }
           setAnalyzing(false)
+          setProgressStatus('Timed out waiting for live updates. Refreshing your data...')
           handleRefresh()
         }, 10 * 60 * 1000) // 10 minutes timeout
-        
-        // Initial progress check
+
         await fetchProgress()
       } else {
-        console.log('??? Analysis failed to start:', result.message)
-        setAnalysisError(result.message || 'Failed to start analysis')
+        console.log('Analysis failed to start:', result.message)
+        const message = result.message || 'Failed to start analysis'
+        setAnalysisError(message)
+        setProgressStatus(message)
         setAnalyzing(false)
       }
     } catch (err) {
       console.error('Error starting analysis:', err)
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
-      setAnalysisError(
-        `Failed to start analysis: ${errorMessage}. Please ensure the Python backend server is running.`
-      )
+      const friendlyMessage = `Failed to start analysis: ${errorMessage}. Please ensure the Python backend server is running.`
+      setAnalysisError(friendlyMessage)
+      setProgressStatus(friendlyMessage)
       setAnalyzing(false)
     }
   }
@@ -371,7 +376,7 @@ export default function SimpleAnalyticsPage() {
       )}
 
       {/* Progress Bar */}
-      <AnalysisProgressBar analyzing={analyzing} progress={analysisProgress} />
+      <AnalysisProgressBar analyzing={analyzing} progress={analysisProgress} statusMessage={progressStatus} />
 
       {/* Tab Navigation */}
       <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg max-w-md mx-auto">
@@ -424,6 +429,12 @@ export default function SimpleAnalyticsPage() {
               newSearchParams.delete('openingIdentifiers')
               setSearchParams(newSearchParams, { replace: true })
             }}
+            onGameSelect={(game) => {
+              // Navigate to game analysis page
+              navigate(`/analysis/${platform}/${userId}/${game.provider_game_id}`, {
+                state: { from: { pathname: location.pathname, search: location.search }, game }
+              })
+            }}
           />
         </ErrorBoundary>
       )}
@@ -466,4 +477,3 @@ export default function SimpleAnalyticsPage() {
     </div>
   )
 }
-

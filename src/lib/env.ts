@@ -27,7 +27,7 @@ function validateEnv() {
         `${err.path.join('.')}: ${err.message}`
       ).join('\n')
       
-      console.error('❌ Environment validation failed:')
+      console.error('Environment validation failed:')
       console.error(errorMessages)
       
       return { 
@@ -70,13 +70,13 @@ export const isSecureEnvironment = () => {
     env.VITE_SUPABASE_ANON_KEY === 'your-anon-key-here'
   
   if (hasPlaceholderCredentials) {
-    console.warn('⚠️ Using placeholder credentials. Please configure your environment variables.')
+    console.warn('Warning: Using placeholder credentials. Please configure your environment variables.')
     return false
   }
   
   // Check if we're using HTTPS in production
   if (isProduction && !env.VITE_SUPABASE_URL.startsWith('https://')) {
-    console.warn('⚠️ Using HTTP in production. Consider using HTTPS for security.')
+    console.warn('Warning: Using HTTP in production. Consider using HTTPS for security.')
     return false
   }
   
@@ -85,7 +85,7 @@ export const isSecureEnvironment = () => {
 
 // Log environment status
 if (isDevelopment) {
-  console.log('🔧 Environment loaded', {
+  console.log('Environment loaded', {
     NODE_ENV: env.NODE_ENV,
     LOG_LEVEL: env.VITE_LOG_LEVEL,
     DEBUG: env.VITE_DEBUG,

@@ -13,7 +13,7 @@ import type { DotProps, TooltipProps } from 'recharts'
 
 interface TrendChartProps {
   className?: string
-  selectedTimeControl: string
+  selectedTimeControlLabel?: string
   trendDirection: 'improving' | 'declining' | 'stable'
   data: Array<{
     date: string
@@ -51,7 +51,7 @@ const buildChartData = (data: TrendChartProps['data']): ChartEntry[] =>
     }
   })
 
-export function ResponsiveTrendChart({ className = '', selectedTimeControl, trendDirection, data }: TrendChartProps) {
+export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel, trendDirection, data }: TrendChartProps) {
   const chartData = useMemo(() => buildChartData(data), [data])
 
   const { domainMin, domainMax, displayMin, displayMax } = useMemo(() => {
@@ -106,8 +106,8 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControl, tren
       <div className="flex items-center justify-between mb-3">
         <div>
           <h4 className="text-sm font-medium text-gray-700">ELO Trend</h4>
-          {selectedTimeControl && (
-            <p className="mt-1 text-xs text-gray-500">{selectedTimeControl} games only</p>
+          {selectedTimeControlLabel && (
+            <p className="mt-1 text-xs text-gray-500">{selectedTimeControlLabel} games only</p>
           )}
         </div>
         <span
@@ -203,7 +203,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControl, tren
 
       <div className="mt-3 flex justify-between text-xs text-gray-500">
         <span>
-          Range: {displayMin} – {displayMax}
+          Range: {displayMin} - {displayMax}
         </span>
         <span>{data.length} key points</span>
       </div>

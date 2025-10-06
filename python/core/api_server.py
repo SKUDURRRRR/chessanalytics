@@ -51,10 +51,10 @@ supabase: Client = create_client(str(config.database.url), config.database.anon_
 # Use service role key for move_analyses operations if available, otherwise fall back to anon key
 if config.database.service_role_key:
     supabase_service: Client = create_client(str(config.database.url), config.database.service_role_key)
-    print("✅ Using service role key for move_analyses operations")
+    print("Using service role key for move_analyses operations")
 else:
     supabase_service: Client = supabase  # Fall back to anon key
-    print("⚠️  Service role key not found, using anon key for move_analyses operations (may cause RLS issues)")
+    print("Warning: Service role key not found, using anon key for move_analyses operations (may cause RLS issues)")
 
 # Authentication setup
 security = HTTPBearer()
@@ -415,7 +415,7 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
     """Perform batch analysis for a user's games."""
     # Canonicalize user ID for database operations
     canonical_user_id = _canonical_user_id(user_id, platform)
-    print(f"🚀 BACKGROUND TASK STARTED: perform_batch_analysis for {user_id} (canonical: {canonical_user_id}) on {platform}")
+    print(f"BACKGROUND TASK STARTED: perform_batch_analysis for {user_id} (canonical: {canonical_user_id}) on {platform}")
     key = f"{user_id}_{platform}"
     limit = limit or ANALYSIS_TEST_LIMIT
     if ANALYSIS_TEST_LIMIT:
@@ -519,7 +519,7 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
         print(f"Batch analysis complete for {user_id}! Processed: {processed}, Failed: {failed}")
         
     except Exception as e:
-        print(f"❌ ERROR in batch analysis: {e}")
+        print(f"ERROR in batch analysis: {e}")
         import traceback
         traceback.print_exc()
         analysis_progress[key].update({
@@ -552,7 +552,7 @@ async def _analyze_single_game(engine, game, user_id, platform, analysis_type_en
             return None
             
     except Exception as e:
-        print(f"❌ ERROR analyzing game {game.get('provider_game_id', 'unknown')}: {e}")
+        print(f"ERROR analyzing game {game.get('provider_game_id', 'unknown')}: {e}")
         return None
 
 
@@ -570,6 +570,7 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'move_san': move.move_san,
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
+                'is_brilliant': move.is_brilliant,
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
@@ -642,6 +643,7 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'move_san': move.move_san,
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
+                'is_brilliant': move.is_brilliant,
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,

@@ -433,40 +433,41 @@ class PersonalityScorer:
         staleness = self._apply_relative_scoring(staleness, skill_level, 'staleness')
         
         return PersonalityScores(
-            tactical=self._scale_score(tactical, skill_multiplier),
-            positional=self._scale_score(positional, skill_multiplier),
-            aggressive=self._scale_score(aggressive, skill_multiplier),
-            patient=self._scale_score(patient, skill_multiplier),
-            novelty=self._scale_score(novelty, skill_multiplier),
-            staleness=self._scale_score(staleness, skill_multiplier),
+            tactical=self._scale_score(tactical, skill_multiplier, skill_level),
+            positional=self._scale_score(positional, skill_multiplier, skill_level),
+            aggressive=self._scale_score(aggressive, skill_multiplier, skill_level),
+            patient=self._scale_score(patient, skill_multiplier, skill_level),
+            novelty=self._scale_score(novelty, skill_multiplier, skill_level),
+            staleness=self._scale_score(staleness, skill_multiplier, skill_level),
         )
 
     def _get_skill_multiplier(self, skill_level: str) -> float:
         """Get skill level multiplier for score scaling."""
         multipliers = {
-            'beginner': 1.0,      # 600-800 ELO
-            'intermediate': 1.3,   # 800-1200 ELO  
-            'advanced': 1.6,       # 1200-1600 ELO
-            'expert': 1.9,         # 1600+ ELO
-            'master': 2.2,         # 2000+ ELO
+            'beginner': 1.0,
+            'intermediate': 1.03,
+            'advanced': 1.06,
+            'expert': 1.08,
+            'master': 1.1,
         }
         return multipliers.get(skill_level.lower(), 1.0)
 
-    def _scale_score(self, base_score: float, multiplier: float) -> float:
-        """Scale score based on skill level with preserved differentiation."""
-        # Compress high scores to prevent all scores from hitting 100
-        if base_score >= 70:
-            # High scores get compressed scaling to preserve differentiation
-            compressed = 70 + (base_score - 70) * 0.4  # Compress 70-100 range to 70-82
-            scaled = compressed * multiplier
-        elif base_score >= 50:
-            # Medium scores get moderate scaling
-            scaled = base_score * multiplier
-        else:
-            # Low scores get full scaling to help them improve
-            scaled = base_score * multiplier * 1.2
-        
-        return self.clamp_score(scaled, 0.0, 100.0)
+    def _get_skill_offset(self, skill_level: str) -> float:
+        """Lightweight additive adjustment based on reported skill level."""
+        offsets = {
+            'beginner': 0.0,
+            'intermediate': 3.0,
+            'advanced': 6.0,
+            'expert': 9.0,
+            'master': 12.0,
+        }
+        return offsets.get(skill_level.lower(), 0.0)
+
+    def _scale_score(self, base_score: float, multiplier: float, skill_level: str) -> float:
+        """Apply restrained scaling and mild offsets for skill awareness."""
+        scaled = base_score * multiplier
+        adjusted = scaled + self._get_skill_offset(skill_level)
+        return self.clamp_score(adjusted, 0.0, 100.0)
 
     def _apply_relative_scoring(self, base_score: float, skill_level: str, trait: str) -> float:
         """Apply relative scoring based on skill level expectations."""

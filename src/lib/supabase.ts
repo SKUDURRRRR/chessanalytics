@@ -27,10 +27,10 @@ function createSupabaseClient() {
   }
 
   if (hasValidCredentials) {
-    console.log('✅ Creating Supabase client with real credentials')
+    console.log('Creating Supabase client with real credentials')
     globalThis.__supabaseClient = createClient(supabaseUrl, supabaseAnonKey)
   } else {
-    console.error('❌ Supabase credentials not properly configured. Please check your .env file.')
+    console.error('Supabase credentials not properly configured. Please check your .env file.')
     throw new Error('Supabase credentials are required but not properly configured')
   }
 

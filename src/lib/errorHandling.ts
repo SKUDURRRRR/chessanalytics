@@ -449,7 +449,7 @@ export function createErrorBoundary(
       
       return React.createElement('div', { className: 'bg-red-50 border border-red-200 rounded-lg p-6 m-4' },
         React.createElement('div', { className: 'flex items-center space-x-2' },
-          React.createElement('div', { className: 'text-red-500 text-2xl' }, '⚠️'),
+          React.createElement('div', { className: 'text-red-500 text-2xl' }, '!'),
           React.createElement('div', {},
             React.createElement('h3', { className: 'text-lg font-semibold text-red-800' }, `Error in ${context}`),
             React.createElement('p', { className: 'text-red-700 mt-1' }, error.message),

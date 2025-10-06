@@ -33,24 +33,22 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
         ])
 
         // Use backend accuracy if available, otherwise calculate from raw game data
-        let finalAccuracy = statsData?.average_accuracy || 0
-        
+        let finalAccuracy = statsData?.average_accuracy ?? 0
+
         // Only calculate from raw data if backend accuracy is 0 or missing
         if (finalAccuracy === 0 && gamesData && gamesData.length > 0) {
-          const playerRating = statsData?.current_rating || statsData?.highest_rating
+          const playerRating = statsData?.current_rating
           const calculatedAccuracy = calculateAverageAccuracy(gamesData, playerRating)
           if (calculatedAccuracy > 0) {
             finalAccuracy = calculatedAccuracy
           }
         }
-        
-        // Update the stats with the final accuracy
-        const updatedStats = {
-          ...statsData,
-          average_accuracy: finalAccuracy
+
+        if (statsData) {
+          setAnalytics({ ...statsData, average_accuracy: finalAccuracy })
+        } else {
+          setAnalytics(null)
         }
-        
-        setAnalytics(updatedStats)
       } catch (err) {
         console.error('Error fetching analytics:', err)
         setError(err instanceof Error ? err.message : 'Failed to fetch analytics')
@@ -77,7 +75,7 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
         <div className="flex items-center space-x-2">
-          <div className="text-red-500">⚠️</div>
+          <div className="text-red-500">Warning</div>
           <span className="text-red-700">Error loading analytics: {error}</span>
         </div>
       </div>
@@ -88,7 +86,7 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
         <div className="text-center text-gray-600">
-          <div className="text-2xl mb-2">📊</div>
+          <div className="text-2xl mb-2">Stats</div>
           <p>
             No analysis data found for {userId} on {platform}
           </p>
@@ -112,7 +110,7 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
       {isMockData && (
         <div className="bg-yellow-100 border border-yellow-300 rounded p-3 mb-4">
           <div className="flex items-center space-x-2">
-            <span className="text-yellow-600">⚠️</span>
+            <span className="text-yellow-600">Warning</span>
             <span className="text-yellow-800 text-sm font-medium">Demo Data - Click "Analyze My Games" to see real analytics</span>
           </div>
         </div>
@@ -121,7 +119,7 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-800">Quick Stats</h3>
         <div className="text-sm text-gray-600">
-          {platform === 'chess.com' ? 'Chess.com' : 'Lichess'} • {userId}
+          {platform === 'chess.com' ? 'Chess.com' : 'Lichess'} - {userId}
         </div>
       </div>
 
@@ -156,7 +154,7 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
         <div className="text-center">
           <div className="text-sm text-gray-600 mb-1">Analysis Summary</div>
           <div className="text-sm text-gray-700">
-            {analytics.total_brilliant_moves} brilliant moves • {analytics.total_inaccuracies}{' '}
+            {analytics.total_brilliant_moves} brilliant moves - {analytics.total_inaccuracies}{' '}
             inaccuracies
           </div>
         </div>

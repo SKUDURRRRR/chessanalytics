@@ -25,6 +25,7 @@ export interface Game {
   opening_family?: string
   accuracy?: number
   opponent_rating?: number
+  opponent_name?: string
   my_rating?: number
   time_control?: string
   played_at: string
@@ -206,6 +207,32 @@ export interface DeepAnalysisData {
     secondary: string;
     leverage: string;
   };
+  personality_insights?: {
+    [key in keyof PersonalityScores]?: string;
+  };
+  ai_style_analysis?: {
+    style_summary: string;
+    characteristics: string;
+    strengths: string;
+    playing_patterns: string;
+    improvement_focus: string;
+  };
+  famous_players?: {
+    primary: {
+      name: string;
+      description: string;
+      era: string;
+      strengths: string[];
+      similarity?: string;
+    };
+    secondary: {
+      name: string;
+      description: string;
+      era: string;
+      strengths: string[];
+      similarity?: string;
+    };
+  };
 }
 
 // Component prop types
@@ -234,12 +261,29 @@ export interface OpeningFilter {
   identifiers: OpeningIdentifierSets
 }
 
+export interface MatchHistoryGameSummary {
+  id: string
+  provider_game_id?: string | null
+  played_at: string
+  result: 'win' | 'loss' | 'draw'
+  color: 'white' | 'black'
+  opponent: string
+  time_control: string
+  opening_family?: string | null
+  opening?: string | null
+  moves?: number | null
+  rating?: number | null
+  opponent_rating?: number | null
+}
+
 export interface MatchHistoryProps {
   userId: string
   platform: 'lichess' | 'chess.com'
   refreshKey?: number
   openingFilter?: OpeningFilter | null
+  opponentFilter?: string | null
   onClearFilter?: () => void
+  onGameSelect?: (game: MatchHistoryGameSummary) => void
 }
 
 export interface AnalyticsBarProps {

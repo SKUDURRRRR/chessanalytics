@@ -1,8 +1,12 @@
 // Simple Analytics Component - One component, everything you need
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { UnifiedAnalysisService, AnalysisStats, DeepAnalysisData } from '../../services/unifiedAnalysisService'
 import { getPlayerStats } from '../../utils/playerStats'
-import { getComprehensiveGameAnalytics, getWorstOpeningPerformance } from '../../utils/comprehensiveGameAnalytics'
+import {
+  getComprehensiveGameAnalytics,
+  getWorstOpeningPerformance,
+  type PerformanceTrendSummary
+} from '../../utils/comprehensiveGameAnalytics'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
 import { normalizeOpeningName } from '../../utils/openingUtils'
@@ -11,6 +15,7 @@ import { LongTermPlanner } from '../deep/LongTermPlanner'
 import { OpeningPlayerCard } from '../deep/OpeningPlayerCard'
 import { ScoreCards } from '../deep/ScoreCards'
 import { EloTrendGraph } from './EloTrendGraph'
+import { EnhancedOpponentAnalysis } from './EnhancedOpponentAnalysis'
 import { OpeningFilter, OpeningIdentifierSets } from '../../types'
 
 interface SimpleAnalyticsProps {
@@ -19,9 +24,10 @@ interface SimpleAnalyticsProps {
   fromDate?: string
   toDate?: string
   onOpeningClick?: (filter: OpeningFilter) => void
+  onOpponentClick?: (opponentName: string) => void
 }
 
-export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningClick }: SimpleAnalyticsProps) {
+export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningClick, onOpponentClick }: SimpleAnalyticsProps) {
   const [data, setData] = useState<AnalysisStats | null>(null)
   const [comprehensiveData, setComprehensiveData] = useState<any>(null)
   const [deepAnalysisData, setDeepAnalysisData] = useState<DeepAnalysisData | null>(null)
@@ -29,9 +35,41 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [selectedTimeControl, setSelectedTimeControl] = useState<string | null>(null)
+  const [eloGraphGamesUsed, setEloGraphGamesUsed] = useState<number>(0)
+  const isLoadingRef = useRef(false)
+  const activePerformance = useMemo(() => {
+    if (!comprehensiveData?.performanceTrends) {
+      return null
+    }
 
-  const loadData = async (forceRefresh = false) => {
+    const perTimeControl = comprehensiveData.performanceTrends.perTimeControl || {}
+    if (selectedTimeControl && perTimeControl[selectedTimeControl]) {
+      return {
+        ...perTimeControl[selectedTimeControl],
+        timeControlUsed: selectedTimeControl,
+        sampleSize: eloGraphGamesUsed || perTimeControl[selectedTimeControl].sampleSize
+      }
+    }
+
+    return {
+      recentWinRate: comprehensiveData.performanceTrends.recentWinRate,
+      recentAverageElo: comprehensiveData.performanceTrends.recentAverageElo,
+      eloTrend: comprehensiveData.performanceTrends.eloTrend,
+      sampleSize: eloGraphGamesUsed || comprehensiveData.performanceTrends.sampleSize,
+      timeControlUsed: comprehensiveData.performanceTrends.timeControlUsed
+    }
+  }, [comprehensiveData?.performanceTrends, selectedTimeControl, eloGraphGamesUsed])
+
+  const loadData = useCallback(async (forceRefresh = false) => {
+    // Prevent multiple simultaneous calls
+    if (isLoadingRef.current) {
+      console.log('Already loading data, skipping duplicate call')
+      return
+    }
+
     try {
+      isLoadingRef.current = true
       if (forceRefresh) {
         setRefreshing(true)
       } else {
@@ -63,7 +101,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       console.log('SimpleAnalytics received data:', analysisResult)
       console.log('Player stats (highest ELO & time control):', playerStats)
-      console.log('📊 Comprehensive analytics:', comprehensiveAnalytics)
+      console.log('Comprehensive analytics:', comprehensiveAnalytics)
       console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
       console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
       console.log('Endgame accuracy:', analysisResult?.average_endgame_accuracy)
@@ -75,7 +113,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       // Log comprehensive analytics benefits
       if (comprehensiveAnalytics && comprehensiveAnalytics.totalGames > 0) {
-        console.log(`📊 Comprehensive analytics: ${comprehensiveAnalytics.totalGames} games analyzed with single query`)
+        console.log(`Comprehensive analytics: ${comprehensiveAnalytics.totalGames} games analyzed with single query`)
       }
 
       // Calculate realistic accuracy from raw game data using player rating
@@ -94,7 +132,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       } : null
 
       // Debug: Compare the data sources
-      console.log('🔍 Data Comparison Debug:', {
+      console.log('Data Comparison Debug:', {
         comprehensiveAnalytics: {
           totalGames: comprehensiveAnalytics?.totalGames,
           openingStats: comprehensiveAnalytics?.openingStats?.slice(0, 3).map(o => ({
@@ -115,6 +153,27 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       setData(enhancedData)
       setComprehensiveData(comprehensiveAnalytics)
+      if (comprehensiveAnalytics?.performanceTrends) {
+        setSelectedTimeControl(prev => {
+          const perTimeControl = comprehensiveAnalytics.performanceTrends.perTimeControl || {}
+          const availableTimeControls = Object.keys(perTimeControl)
+
+          if (prev && availableTimeControls.includes(prev)) {
+            return prev
+          }
+
+          const preferred = comprehensiveAnalytics.performanceTrends.timeControlUsed
+          if (preferred && (!availableTimeControls.length || availableTimeControls.includes(preferred))) {
+            return preferred
+          }
+
+          if (availableTimeControls.length > 0) {
+            return availableTimeControls[0]
+          }
+
+          return prev ?? (preferred || null)
+        })
+      }
       setDeepAnalysisData(deepAnalysis)
       setWorstOpenings(worstOpeningsData)
     } catch (err) {
@@ -123,8 +182,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     } finally {
       setLoading(false)
       setRefreshing(false)
+      isLoadingRef.current = false
     }
-  }
+  }, [userId, platform, fromDate, toDate])
 
   useEffect(() => {
     if (!userId) {
@@ -134,7 +194,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       return
     }
     loadData()
-  }, [userId, platform, fromDate, toDate])
+  }, [userId, platform, fromDate, toDate, loadData])
 
   if (loading) {
     return (
@@ -227,7 +287,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       {safeData.elo_optimization_active && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-start space-x-3">
-            <div className="text-green-600 text-xl">🚀</div>
+            <div className="text-green-600 text-xl">*</div>
             <div>
               <h3 className="text-lg font-semibold text-green-800 mb-2">ELO Optimization Active</h3>
               <p className="text-green-700 mb-3">
@@ -237,10 +297,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <div className="bg-green-100 p-3 rounded border border-green-300">
                 <p className="text-green-800 font-medium mb-1">Optimization Benefits:</p>
                 <ul className="text-green-700 text-sm space-y-1 list-disc list-inside">
-                  <li>✅ Fast ELO calculations (single database query)</li>
-                  <li>✅ Complete coverage of all imported games</li>
-                  <li>✅ No analysis dependency - ELO data available immediately after import</li>
-                  <li>✅ Handles players with thousands of games efficiently</li>
+                  <li>* Fast ELO calculations (single database query)</li>
+                  <li>* Complete coverage of all imported games</li>
+                  <li>* No analysis dependency - ELO data available immediately after import</li>
+                  <li>* Handles players with thousands of games efficiently</li>
                 </ul>
                 {safeData.total_games_with_elo > 0 && (
                   <p className="text-green-800 text-sm mt-2">
@@ -257,7 +317,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       {isMockData && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-start space-x-3">
-            <div className="text-yellow-600 text-xl">⚠️</div>
+            <div className="text-yellow-600 text-xl">!</div>
             <div>
               <h3 className="text-lg font-semibold text-yellow-800 mb-2">Demo Data Shown</h3>
               <p className="text-yellow-700 mb-3">
@@ -280,7 +340,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       {safeData.validation_issues && safeData.validation_issues.length > 0 && (
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
           <div className="flex items-start space-x-3">
-            <div className="text-orange-600 text-xl">🔍</div>
+            <div className="text-orange-600 text-xl">!</div>
             <div>
               <h3 className="text-lg font-semibold text-orange-800 mb-2">ELO Data Quality Issues Detected</h3>
               <p className="text-orange-700 mb-3">
@@ -334,7 +394,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       {!data && comprehensiveData && comprehensiveData.totalGames > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-start space-x-3">
-            <div className="text-blue-600 text-xl">⏳</div>
+            <div className="text-blue-600 text-xl">...</div>
             <div>
               <h3 className="text-lg font-semibold text-blue-800 mb-2">Analysis in Progress</h3>
               <p className="text-blue-700">
@@ -350,7 +410,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-start space-x-3">
-              <div className="text-blue-600 text-xl">📊</div>
+              <div className="text-blue-600 text-xl">[]</div>
               <div>
                 <h3 className="text-lg font-semibold text-blue-800 mb-2">Comprehensive Game Analytics</h3>
                 <p className="text-blue-700 text-sm mb-3">
@@ -363,7 +423,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Basic Statistics */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 Basic Statistics</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Basic Statistics</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <span className="font-medium text-gray-600">Total Games:</span>
@@ -386,7 +446,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* ELO Statistics */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">🏆 ELO Statistics</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">ELO Statistics</h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div>
                 <span className="font-medium text-gray-600">Highest:</span>
@@ -413,7 +473,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Color Performance */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">⚫⚪ Color Performance</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Color Performance</h3>
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h4 className="font-medium text-gray-800 mb-2">White</h4>
@@ -454,7 +514,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Top Time Controls */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">⏱️ Time Control Performance</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Time Control Performance</h3>
             <div className="space-y-3">
               {comprehensiveData.timeControlStats.slice(0, 3).map((stat: any, index: number) => (
                 <div key={index} className="bg-gray-50 p-4 rounded-lg">
@@ -479,7 +539,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Opening Performance - Winning vs Losing */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-6">♟️ Opening Performance</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-6">Opening Performance</h3>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Winning Openings */}
               <div>
@@ -563,7 +623,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     ))
                   ) : (
                     <div className="text-center py-8 text-gray-500">
-                      <div className="text-4xl mb-2">📊</div>
+                      <div className="text-4xl mb-2">--</div>
                       <p>No losing openings data</p>
                       <p className="text-sm">Need more games to identify patterns</p>
                     </div>
@@ -575,15 +635,14 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Opening Color Performance */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">🎨 Opening Performance by Color</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Opening Performance by Color</h3>
             
             {comprehensiveData.openingColorStats && 
              (comprehensiveData.openingColorStats.white.length > 0 || comprehensiveData.openingColorStats.black.length > 0) ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Best White Openings */}
                 <div>
-                  <h4 className="text-md font-semibold text-gray-700 mb-3 flex items-center">
-                    <span className="text-lg mr-2">⚪</span>
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">
                     Best White Openings
                   </h4>
                   <div className="space-y-3">
@@ -628,8 +687,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
                 {/* Best Black Openings */}
                 <div>
-                  <h4 className="text-md font-semibold text-gray-700 mb-3 flex items-center">
-                    <span className="text-lg mr-2">⚫</span>
+                  <h4 className="text-md font-semibold text-gray-700 mb-3">
                     Best Black Openings
                   </h4>
                   <div className="space-y-3">
@@ -674,7 +732,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               </div>
             ) : (
               <div className="text-center py-8 text-gray-500">
-                <div className="text-4xl mb-2">🎨</div>
+                <div className="text-4xl mb-2">--</div>
                 <p>No opening data available</p>
                 <p className="text-sm">Games need to have opening names to show color performance</p>
               </div>
@@ -683,58 +741,54 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Recent Performance */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">📈 Recent Performance</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Recent Performance</h3>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-1">
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="font-medium text-gray-600">Recent Win Rate:</span>
-                    <div className="text-lg font-bold text-green-600">{comprehensiveData.performanceTrends.recentWinRate.toFixed(1)}%</div>
+                    <div className="text-lg font-bold text-green-600">{activePerformance ? activePerformance.recentWinRate.toFixed(1) : '--'}%</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {activePerformance
+                        ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
+                        : 'No data'}
+                    </div>
                   </div>
                   <div>
                     <span className="font-medium text-gray-600">Recent Avg ELO:</span>
-                    <div className="text-lg font-bold text-blue-600">{comprehensiveData.performanceTrends.recentAverageElo.toFixed(0)}</div>
+                    <div className="text-lg font-bold text-blue-600">{activePerformance ? activePerformance.recentAverageElo.toFixed(0) : '--'}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {activePerformance
+                        ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
+                        : 'No data'}
+                    </div>
                   </div>
                 </div>
               </div>
               <div className="lg:col-span-2">
-                <EloTrendGraph 
-                  userId={userId} 
-                  platform={platform as 'lichess' | 'chess.com'} 
+                <EloTrendGraph
+                  userId={userId}
+                  platform={platform as 'lichess' | 'chess.com'}
                   className="w-full"
+                  selectedTimeControl={selectedTimeControl}
+                  onTimeControlChange={setSelectedTimeControl}
+                  onGamesUsedChange={setEloGraphGamesUsed}
                 />
               </div>
             </div>
           </div>
 
-          {/* Opponent Analysis */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">👥 Opponent Analysis</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="font-medium text-gray-600">Avg Opponent:</span>
-                <div className="text-lg font-bold">{comprehensiveData.opponentStats.averageOpponentRating.toFixed(0)}</div>
-              </div>
-              <div>
-                <span className="font-medium text-gray-600">Highest Opponent:</span>
-                <div className="text-lg font-bold text-red-600">{comprehensiveData.opponentStats.highestOpponentRating}</div>
-              </div>
-              <div>
-                <span className="font-medium text-gray-600">Lowest Opponent:</span>
-                <div className="text-lg font-bold text-green-600">{comprehensiveData.opponentStats.lowestOpponentRating}</div>
-              </div>
-              <div>
-                <span className="font-medium text-gray-600">Rating Diff:</span>
-                <div className={`text-lg font-bold ${comprehensiveData.opponentStats.ratingDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {comprehensiveData.opponentStats.ratingDifference.toFixed(0)}
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Enhanced Opponent Analysis */}
+          <EnhancedOpponentAnalysis 
+            userId={userId}
+            opponentStats={comprehensiveData.opponentStats} 
+            platform={(platform as 'lichess' | 'chess.com') || 'lichess'}
+            onOpponentClick={onOpponentClick}
+          />
 
           {/* Game Length Analysis */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">📏 Game Length Analysis</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Game Length Analysis</h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div>
                 <span className="font-medium text-gray-600">Avg Length:</span>
@@ -761,7 +815,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Temporal Analysis */}
           <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">📅 Temporal Analysis</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Temporal Analysis</h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div>
                 <span className="font-medium text-gray-600">First Game:</span>
@@ -793,7 +847,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         <div className="space-y-6">
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
             <div className="flex items-start space-x-3">
-              <div className="text-purple-600 text-xl">🧠</div>
+              <div className="text-purple-600 text-xl">*</div>
               <div>
                 <h3 className="text-lg font-semibold text-purple-800 mb-2">Deep Analysis Insights</h3>
                 <p className="text-purple-700 text-sm mb-3">
@@ -804,7 +858,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           </div>
 
           {/* Long-term Planner */}
-          <LongTermPlanner data={deepAnalysisData} />
+          <LongTermPlanner data={deepAnalysisData} userId={userId} />
 
           {/* Main Analysis Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -815,8 +869,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
             {/* Opening Player Card */}
             <OpeningPlayerCard
-              score={deepAnalysisData.player_style?.playing_style || 'Unknown'}
+              score={deepAnalysisData.phase_accuracies?.opening || 0}
               phaseAccuracy={deepAnalysisData.phase_accuracies?.opening || 0}
+              openingStats={comprehensiveData?.openingStats || []}
+              totalGames={deepAnalysisData.total_games || 0}
             />
           </div>
 

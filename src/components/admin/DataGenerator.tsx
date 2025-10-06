@@ -95,7 +95,7 @@ export function DataGenerator({ userId, platform, onAnalysisComplete }: DataGene
             </>
           ) : (
             <>
-              <span>🔍</span>
+              <span>Search</span>
               Analyze with Stockfish
             </>
           )}

@@ -289,6 +289,7 @@ class GameImportItem(BaseModel):
     my_rating: Optional[int] = None
     played_at: Optional[str] = None
     total_moves: Optional[int] = None
+    opponent_name: Optional[str] = None
 
 
 class BulkGameImportRequest(BaseModel):
@@ -320,6 +321,7 @@ class DeepAnalysisData(BaseModel):
     playing_style: str
     phase_accuracies: Dict[str, float]
     recommendations: Dict[str, str]
+    famous_players: Optional[Dict[str, Any]] = None
 
 # ============================================================================
 # UNIFIED API ENDPOINTS
@@ -371,8 +373,6 @@ async def health_check():
 async def unified_analyze(
     request: UnifiedAnalysisRequest,
     background_tasks: BackgroundTasks,
-    # Optional authentication
-    _: Optional[bool] = get_optional_auth(),
     # Optional parallel analysis flag
     use_parallel: bool = True
 ):
@@ -518,6 +518,7 @@ async def get_analysis_stats(
             response = supabase.table('unified_analyses').select('*').eq(
                 'user_id', canonical_user_id
             ).eq('platform', platform).execute()
+            print(f"[DEBUG] Stats query response: {len(response.data) if response.data else 0} records found")
         else:
             response = type('MockResponse', (), {'data': []})()
         
@@ -527,6 +528,7 @@ async def get_analysis_stats(
             print(f"[stats] Query was: unified_analyses where user_id={canonical_user_id} AND platform={platform}")
             return _get_mock_stats()
         
+        print(f"[DEBUG] Calculating stats for {len(response.data)} analyses")
         return _calculate_unified_analysis_stats(response.data)
     except Exception as e:
         print(f"Error fetching analysis stats: {e}")
@@ -622,8 +624,9 @@ async def get_realtime_analysis_progress(
         
         # Check in-memory progress first (for ongoing analysis)
         # Use canonical user ID for consistency
-        progress_key = f"{canonical_user_id}_{platform}"
-        print(f"Checking in-memory progress for key: {progress_key}")
+        platform_key = platform.strip().lower()
+        progress_key = f"{canonical_user_id}_{platform_key}"
+        print(f"Checking in-memory progress for key: {progress_key} (platform key: {platform_key})")
         print(f"Available progress keys: {list(analysis_progress.keys())}")
         
         if progress_key in analysis_progress:
@@ -667,10 +670,10 @@ async def get_realtime_analysis_progress(
         if is_complete:
             current_phase = "complete"
             progress_percentage = 100
-            print(f"✅ Analysis complete for {user_id}: {analyzed_games}/{total_games} games analyzed")
+            print(f"[COMPLETE] Analysis complete for {user_id}: {analyzed_games}/{total_games} games analyzed")
         else:
             current_phase = "analyzing"
-            print(f"🔄 Analysis in progress for {user_id}: {analyzed_games}/{total_games} games analyzed ({progress_percentage}%)")
+            print(f"[PROGRESS] Analysis in progress for {user_id}: {analyzed_games}/{total_games} games analyzed ({progress_percentage}%)")
         
         return AnalysisProgress(
             analyzed_games=analyzed_games,
@@ -1159,6 +1162,161 @@ def _build_recommendations(
     }
 
 
+def _generate_famous_player_comparisons(
+    personality_scores: Dict[str, float],
+    player_style: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Generate famous player comparisons based on personality scores."""
+    
+    # Famous players database with personality profiles
+    famous_players = [
+        {
+            'name': 'Mikhail Tal',
+            'description': 'The "Magician from Riga" - known for his brilliant tactical combinations and sacrifices',
+            'era': '1950s-1990s',
+            'strengths': ['Tactical vision', 'Sacrificial attacks', 'Complex calculations'],
+            'profile': {'tactical': 85, 'aggressive': 90, 'positional': 55, 'patient': 45}
+        },
+        {
+            'name': 'Garry Kasparov',
+            'description': 'Aggressive tactical player who dominated with dynamic, attacking chess',
+            'era': '1980s-2000s',
+            'strengths': ['Initiative', 'Tactical precision', 'Pressure play'],
+            'profile': {'tactical': 90, 'aggressive': 85, 'positional': 75, 'patient': 60}
+        },
+        {
+            'name': 'Anatoly Karpov',
+            'description': 'Master of positional chess and endgame technique',
+            'era': '1970s-1990s',
+            'strengths': ['Positional understanding', 'Endgame mastery', 'Prophylaxis'],
+            'profile': {'tactical': 70, 'aggressive': 50, 'positional': 95, 'patient': 90}
+        },
+        {
+            'name': 'Magnus Carlsen',
+            'description': 'Universal player with exceptional endgame skills and practical play',
+            'era': '2000s-present',
+            'strengths': ['Universal style', 'Endgame mastery', 'Practical play'],
+            'profile': {'tactical': 85, 'aggressive': 70, 'positional': 90, 'patient': 80}
+        },
+        {
+            'name': 'Bobby Fischer',
+            'description': 'Legendary American champion known for his fighting spirit and deep preparation',
+            'era': '1960s-1970s',
+            'strengths': ['Competitive spirit', 'Sharp tactics', 'Deep preparation'],
+            'profile': {'tactical': 88, 'aggressive': 80, 'positional': 85, 'patient': 65}
+        },
+        {
+            'name': 'Tigran Petrosian',
+            'description': 'Master of prophylaxis and defensive play',
+            'era': '1950s-1980s',
+            'strengths': ['Defensive mastery', 'Prophylaxis', 'Safety'],
+            'profile': {'tactical': 65, 'aggressive': 40, 'positional': 90, 'patient': 95}
+        },
+        {
+            'name': 'José Raúl Capablanca',
+            'description': 'Natural talent with exceptional endgame technique',
+            'era': '1910s-1940s',
+            'strengths': ['Technical precision', 'Endgame mastery', 'Natural talent'],
+            'profile': {'tactical': 75, 'aggressive': 60, 'positional': 88, 'patient': 85}
+        },
+        {
+            'name': 'Alexander Alekhine',
+            'description': 'Attacking genius known for complex combinations',
+            'era': '1920s-1940s',
+            'strengths': ['Attacking play', 'Initiative', 'Dynamic positions'],
+            'profile': {'tactical': 90, 'aggressive': 88, 'positional': 75, 'patient': 50}
+        },
+        {
+            'name': 'Vladimir Kramnik',
+            'description': 'Solid positional player with creative understanding',
+            'era': '1990s-2010s',
+            'strengths': ['Positional understanding', 'Endgame technique', 'Creative play'],
+            'profile': {'tactical': 78, 'aggressive': 60, 'positional': 92, 'patient': 85}
+        },
+        {
+            'name': 'Hikaru Nakamura',
+            'description': 'Modern attacking player known for rapid chess and initiative',
+            'era': '2000s-present',
+            'strengths': ['Modern attacks', 'Initiative', 'Practical play'],
+            'profile': {'tactical': 88, 'aggressive': 82, 'positional': 72, 'patient': 60}
+        },
+        {
+            'name': 'Fabiano Caruana',
+            'description': 'Universal player with deep opening preparation',
+            'era': '2010s-present',
+            'strengths': ['Universal style', 'Opening preparation', 'Technical precision'],
+            'profile': {'tactical': 85, 'aggressive': 70, 'positional': 88, 'patient': 78}
+        },
+        {
+            'name': 'Paul Morphy',
+            'description': 'Tactical genius of the romantic era',
+            'era': '1850s',
+            'strengths': ['Tactical genius', 'Natural talent', 'Attacking play'],
+            'profile': {'tactical': 95, 'aggressive': 92, 'positional': 65, 'patient': 40}
+        },
+    ]
+    
+    # Calculate similarity scores
+    player_tactical = personality_scores.get('tactical', 50.0)
+    player_aggressive = personality_scores.get('aggressive', 50.0)
+    player_positional = personality_scores.get('positional', 50.0)
+    player_patient = personality_scores.get('patient', 50.0)
+    
+    scored_players = []
+    for famous in famous_players:
+        profile = famous['profile']
+        # Calculate Euclidean distance in personality space
+        diff_tactical = (player_tactical - profile['tactical']) ** 2
+        diff_aggressive = (player_aggressive - profile['aggressive']) ** 2
+        diff_positional = (player_positional - profile['positional']) ** 2
+        diff_patient = (player_patient - profile['patient']) ** 2
+        
+        distance = (diff_tactical + diff_aggressive + diff_positional + diff_patient) ** 0.5
+        
+        # Convert distance to similarity percentage (0-100)
+        # Max distance would be ~141 (sqrt(100^2 * 4)), so normalize
+        max_distance = 200  # theoretical max
+        similarity = max(0, 100 - (distance / max_distance * 100))
+        
+        scored_players.append({
+            'name': famous['name'],
+            'description': famous['description'],
+            'era': famous['era'],
+            'strengths': famous['strengths'],
+            'similarity_score': similarity
+        })
+    
+    # Sort by similarity
+    scored_players.sort(key=lambda x: x['similarity_score'], reverse=True)
+    
+    # Get top 2 matches
+    primary = scored_players[0]
+    secondary = scored_players[1] if len(scored_players) > 1 else scored_players[0]
+    
+    # Generate similarity text
+    def get_similarity_text(player_name: str, player_scores: Dict[str, float]) -> str:
+        top_trait = max(player_scores.items(), key=lambda x: x[1])[0]
+        trait_label = PERSONALITY_LABELS.get(top_trait, 'balanced play')
+        return f"Like {player_name}, you excel in {trait_label.lower()}"
+    
+    return {
+        'primary': {
+            'name': primary['name'],
+            'description': primary['description'],
+            'era': primary['era'],
+            'strengths': primary['strengths'],
+            'similarity': get_similarity_text(primary['name'], personality_scores)
+        },
+        'secondary': {
+            'name': secondary['name'],
+            'description': secondary['description'],
+            'era': secondary['era'],
+            'strengths': secondary['strengths'],
+            'similarity': get_similarity_text(secondary['name'], personality_scores)
+        }
+    }
+
+
 def _build_deep_analysis_response(
     canonical_user_id: str,
     games: List[Dict[str, Any]],
@@ -1176,6 +1334,7 @@ def _build_deep_analysis_response(
     player_style, playing_style = _determine_player_style(personality_scores)
     strengths, improvements = _summarize_strengths_and_gaps(personality_scores)
     recommendations = _build_recommendations(personality_scores, player_style, strengths, improvements, phase_accuracies)
+    famous_players = _generate_famous_player_comparisons(personality_scores, player_style)
 
     return DeepAnalysisData(
         total_games=total_games,
@@ -1188,7 +1347,8 @@ def _build_deep_analysis_response(
         improvement_areas=improvements,
         playing_style=playing_style,
         phase_accuracies=phase_accuracies,
-        recommendations=recommendations
+        recommendations=recommendations,
+        famous_players=famous_players
     )
 
 
@@ -1203,6 +1363,14 @@ def _build_fallback_deep_analysis(
     ]))
     current_rating = _infer_current_rating(games, profile)
     default_scores = {key: 50.0 for key in PERSONALITY_LABELS.keys()}
+    
+    player_style = {
+        'category': 'balanced',
+        'description': 'Insufficient analysed games to derive a dominant style.',
+        'confidence': 0.0
+    }
+    
+    famous_players = _generate_famous_player_comparisons(default_scores, player_style)
 
     return DeepAnalysisData(
         total_games=total_games,
@@ -1210,11 +1378,7 @@ def _build_fallback_deep_analysis(
         current_rating=current_rating,
         personality_scores=default_scores,
         player_level=_determine_player_level(current_rating, average_accuracy),
-        player_style={
-            'category': 'balanced',
-            'description': 'Insufficient analysed games to derive a dominant style.',
-            'confidence': 0.0
-        },
+        player_style=player_style,
         primary_strengths=[],
         improvement_areas=['Run Stockfish analysis to unlock deep insights'],
         playing_style='Data insufficient - run detailed analysis to populate deep insights.',
@@ -1227,7 +1391,8 @@ def _build_fallback_deep_analysis(
             'primary': 'Run Stockfish analysis on recent games to unlock deep recommendations.',
             'secondary': 'Import more games to build a richer dataset.',
             'leverage': 'Once analysis is complete we will suggest strengths to lean into.'
-        }
+        },
+        famous_players=famous_players
     )
 # ============================================================================
 # HELPER FUNCTIONS FOR GAME IMPORT
@@ -1265,6 +1430,34 @@ def _count_moves_in_pgn(pgn: str) -> int:
     except Exception as e:
         print(f"Error counting moves in PGN: {e}")
         return 0
+
+def _extract_opponent_name_from_pgn(pgn: str, player_color: str) -> str:
+    """Extract opponent name from PGN data based on player color"""
+    if not pgn or not isinstance(pgn, str):
+        return None
+    
+    try:
+        lines = pgn.split('\n')
+        white_player = ''
+        black_player = ''
+        
+        for line in lines:
+            if line.startswith('[White '):
+                # Extract name from [White "PlayerName"]
+                white_player = line.split('"')[1] if '"' in line else ''
+            elif line.startswith('[Black '):
+                # Extract name from [Black "PlayerName"]
+                black_player = line.split('"')[1] if '"' in line else ''
+        
+        # Return the opponent's name based on player color
+        if player_color.lower() == 'white':
+            return black_player.strip() if black_player else None
+        else:
+            return white_player.strip() if white_player else None
+            
+    except Exception as e:
+        print(f"Error extracting opponent name from PGN: {e}")
+        return None
 
 def _parse_lichess_pgn(pgn_text: str, user_id: str) -> List[Dict[str, Any]]:
     """Parse Lichess PGN text and extract game data"""
@@ -1347,6 +1540,9 @@ def _parse_lichess_pgn(pgn_text: str, user_id: str) -> List[Dict[str, Any]]:
             # Count moves
             total_moves = _count_moves_in_pgn(str(game))
             
+            # Extract opponent name
+            opponent_name = black_player if user_is_white else white_player
+            
             # Create game data
             game_data = {
                 'id': game_id,
@@ -1360,7 +1556,8 @@ def _parse_lichess_pgn(pgn_text: str, user_id: str) -> List[Dict[str, Any]]:
                 'my_rating': my_rating,
                 'played_at': played_at,
                 'pgn': str(game),
-                'total_moves': total_moves
+                'total_moves': total_moves,
+                'opponent_name': opponent_name
             }
             
             games.append(game_data)
@@ -1520,11 +1717,13 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
             color = 'white'
             my_rating = white_player.get('rating')
             opponent_rating = black_player.get('rating')
+            opponent_name = black_player.get('username', '')
             result = white_player.get('result')
         elif black_username == user_id_lower:
             color = 'black'
             my_rating = black_player.get('rating')
             opponent_rating = white_player.get('rating')
+            opponent_name = white_player.get('username', '')
             result = black_player.get('result')
         else:
             # User not found in this game
@@ -1595,7 +1794,8 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
             'opening_family': opening_family,
             'opponent_rating': opponent_rating,
             'my_rating': my_rating,
-            'played_at': played_at
+            'played_at': played_at,
+            'opponent_name': opponent_name
         }
         
     except Exception as e:
@@ -1690,6 +1890,12 @@ async def import_games_smart(request: Dict[str, Any]):
             # Count moves from PGN
             total_moves = _count_moves_in_pgn(game_data.get('pgn', ''))
             
+            # Extract opponent name from PGN
+            opponent_name = _extract_opponent_name_from_pgn(
+                game_data.get('pgn', ''), 
+                game_data.get('color', 'white')
+            )
+            
             parsed_game = {
                 'provider_game_id': game_data.get('id', ''),
                 'pgn': game_data.get('pgn', ''),
@@ -1701,7 +1907,8 @@ async def import_games_smart(request: Dict[str, Any]):
                 'opponent_rating': game_data.get('opponent_rating'),
                 'my_rating': game_data.get('my_rating'),
                 'played_at': game_data.get('played_at'),
-                'total_moves': total_moves
+                'total_moves': total_moves,
+                'opponent_name': opponent_name
             }
             parsed_games.append(parsed_game)
         
@@ -1781,6 +1988,12 @@ async def import_games_simple(request: Dict[str, Any]):
             # Count moves from PGN
             total_moves = _count_moves_in_pgn(game_data.get('pgn', ''))
             
+            # Extract opponent name from PGN
+            opponent_name = _extract_opponent_name_from_pgn(
+                game_data.get('pgn', ''), 
+                game_data.get('color', 'white')
+            )
+            
             parsed_game = {
                 'provider_game_id': game_data.get('id', ''),
                 'pgn': game_data.get('pgn', ''),
@@ -1792,7 +2005,8 @@ async def import_games_simple(request: Dict[str, Any]):
                 'opponent_rating': game_data.get('opponent_rating'),
                 'my_rating': game_data.get('my_rating'),
                 'played_at': game_data.get('played_at'),
-                'total_moves': total_moves
+                'total_moves': total_moves,
+                'opponent_name': opponent_name
             }
             parsed_games.append(parsed_game)
         
@@ -1859,6 +2073,7 @@ async def import_games(payload: BulkGameImportRequest):
             "my_rating": game.my_rating,
             "total_moves": game.total_moves,  # Include total_moves from frontend parsing
             "played_at": played_at,
+            "opponent_name": game.opponent_name,  # Include opponent_name from PGN extraction
             "created_at": now_iso,
         })
         pgn_rows.append({
@@ -2336,7 +2551,8 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
     canonical_user_id = _canonical_user_id(user_id, platform)
 
     print(f"[parallel] BACKGROUND TASK STARTED for {user_id} (canonical: {canonical_user_id}) on {platform}")
-    key = f"{canonical_user_id}_{platform}"
+    platform_key = platform.strip().lower()
+    key = f"{canonical_user_id}_{platform_key}"
     limit = limit or ANALYSIS_TEST_LIMIT
     if ANALYSIS_TEST_LIMIT:
         limit = min(limit, ANALYSIS_TEST_LIMIT)
@@ -2366,20 +2582,31 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
         print(f"Phase 1 - Fetching games: {analysis_progress[key]}")
         
         # Get games from database (games_pgn table for PGN data)
+        all_games: list = []
+
         if supabase:
-            # Get the most recent unanalyzed games by ordering by played_at DESC
-            # This ensures we always get the next batch of most recent unanalyzed games
+            # Get the most recent games by joining with games table for played_at ordering
+            # First get game IDs from games table ordered by played_at
             fetch_limit = limit * 3  # Get 3x the limit to ensure we find unanalyzed games
-            games_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('updated_at', desc=True).limit(fetch_limit).execute()
-            all_games = games_response.data or []
+            games_list_response = supabase.table('games').select('provider_game_id').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
             
-        # For testing progress bar, let's analyze some games even if they're already analyzed
-        # This will help us see the progress bar in action
-        if len(all_games) > 0:
-            # Take the first few games for testing, regardless of analysis status
-            games = all_games[:limit]
-            print(f"[TEST] Using {len(games)} games for progress testing (ignoring analysis status)")
+            if games_list_response.data:
+                # Get provider_game_ids in order
+                provider_game_ids = [g['provider_game_id'] for g in games_list_response.data]
+                
+                # Now fetch PGN data for these games
+                pgn_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+                
+                # Re-order PGN data to match the games table order
+                pgn_map = {g['provider_game_id']: g for g in (pgn_response.data or [])}
+                all_games = [pgn_map[pid] for pid in provider_game_ids if pid in pgn_map]
+            else:
+                all_games = []
+            
+            # Filter out already analyzed games
+            games = await _filter_unanalyzed_games(all_games, canonical_user_id, platform, analysis_type, limit)
         else:
+            print('[warn] Database client not available. Using mock games for progress testing.')
             games = []
             
         # If no games found, create some mock games for testing
@@ -2470,9 +2697,9 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
                 "speedup": speedup
             })
             
-            print(f"✅ Parallel batch analysis complete for {user_id}! Processed: {processed}, Failed: {failed}")
+            print(f"[COMPLETE] Parallel batch analysis complete for {user_id}! Processed: {processed}, Failed: {failed}")
         else:
-            print(f"❌ Parallel analysis failed: {result['message']}")
+            print(f"[ERROR] Parallel analysis failed: {result['message']}")
             analysis_progress[key].update({
                 "is_complete": True,
                 "current_phase": "error",
@@ -2494,8 +2721,9 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
     """Perform batch analysis for a user's games using sequential processing (fallback)."""
     # Canonicalize user ID for database operations
     canonical_user_id = _canonical_user_id(user_id, platform)
-    print(f"🚀 BACKGROUND TASK STARTED: SEQUENTIAL batch analysis for {user_id} (canonical: {canonical_user_id}) on {platform}")
-    key = f"{canonical_user_id}_{platform}"
+    print(f"[BACKGROUND] SEQUENTIAL batch analysis for {user_id} (canonical: {canonical_user_id}) on {platform}")
+    platform_key = platform.strip().lower()
+    key = f"{canonical_user_id}_{platform_key}"
     limit = limit or ANALYSIS_TEST_LIMIT
     if ANALYSIS_TEST_LIMIT:
         limit = min(limit, ANALYSIS_TEST_LIMIT)
@@ -2521,13 +2749,25 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
         analysis_progress[key]["current_phase"] = "fetching"
         analysis_progress[key]["progress_percentage"] = 10
         
-        # Get games from database (games_pgn table for PGN data)
+        # Get games from database (join games table for ordering with games_pgn for PGN data)
         if supabase:
-            # Get the most recent unanalyzed games by ordering by played_at DESC
-            # This ensures we always get the next batch of most recent unanalyzed games
+            # Get the most recent games by joining with games table for played_at ordering
+            # First get game IDs from games table ordered by played_at
             fetch_limit = limit * 3  # Get 3x the limit to ensure we find unanalyzed games
-            games_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('updated_at', desc=True).limit(fetch_limit).execute()
-            all_games = games_response.data or []
+            games_list_response = supabase.table('games').select('provider_game_id').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
+            
+            if games_list_response.data:
+                # Get provider_game_ids in order
+                provider_game_ids = [g['provider_game_id'] for g in games_list_response.data]
+                
+                # Now fetch PGN data for these games
+                pgn_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+                
+                # Re-order PGN data to match the games table order
+                pgn_map = {g['provider_game_id']: g for g in (pgn_response.data or [])}
+                all_games = [pgn_map[pid] for pid in provider_game_ids if pid in pgn_map]
+            else:
+                all_games = []
             
             # Filter out already analyzed games
             games = await _filter_unanalyzed_games(all_games, canonical_user_id, platform, analysis_type, limit)
@@ -2573,17 +2813,17 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
         
         for i, game in enumerate(games):
             try:
-                print(f"🔄 Analyzing game {i+1}/{len(games)}: {game.get('provider_game_id', 'unknown')}")
+                print(f"[ANALYZING] Game {i+1}/{len(games)}: {game.get('provider_game_id', 'unknown')}")
                 
                 # Analyze single game
                 game_analysis = await _analyze_single_game(engine, game, canonical_user_id, platform, analysis_type_enum)
                 
                 if game_analysis:
                     successful_analyses += 1
-                    print(f"✅ Game {i+1} analyzed successfully")
+                    print(f"[SUCCESS] Game {i+1} analyzed successfully")
                 else:
                     failed_analyses += 1
-                    print(f"❌ Game {i+1} analysis failed")
+                    print(f"[FAILED] Game {i+1} analysis failed")
                 
                 # Update progress
                 progress_percentage = 20 + int((i + 1) / len(games) * 70)  # 20-90%
@@ -2594,7 +2834,7 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
                 
             except Exception as e:
                 failed_analyses += 1
-                print(f"❌ Error analyzing game {i+1}: {e}")
+                print(f"[ERROR] Error analyzing game {i+1}: {e}")
         
         end_time = datetime.now()
         total_time = (end_time - start_time).total_seconds()
@@ -2621,7 +2861,7 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
             "average_accuracy": avg_accuracy
         })
         
-        print(f"✅ Sequential batch analysis complete for {user_id}! Processed: {successful_analyses}, Failed: {failed_analyses}")
+        print(f"[COMPLETE] Sequential batch analysis complete for {user_id}! Processed: {successful_analyses}, Failed: {failed_analyses}")
         
     except Exception as e:
         print(f"[error] ERROR in sequential batch analysis: {e}")
@@ -2913,19 +3153,24 @@ def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
     
     total_games = len(analyses)
     
-    # Sum up all the metrics from the unified_analyses view
-    total_blunders = sum(a.get('blunders', 0) for a in analyses)
-    total_mistakes = sum(a.get('mistakes', 0) for a in analyses)
-    total_inaccuracies = sum(a.get('inaccuracies', 0) for a in analyses)
-    total_brilliant_moves = sum(a.get('brilliant_moves', 0) for a in analyses)
-    total_material_sacrifices = sum(a.get('material_sacrifices', 0) for a in analyses)
+    # Helper function to safely get numeric values, handling None
+    def safe_get_numeric(data, key, default=0):
+        value = data.get(key)
+        return value if value is not None else default
     
-    # Calculate averages
-    average_accuracy = round(sum(a.get('accuracy', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_opening_accuracy = round(sum(a.get('opening_accuracy', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_middle_game_accuracy = round(sum(a.get('middle_game_accuracy', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_endgame_accuracy = round(sum(a.get('endgame_accuracy', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_aggressiveness_index = round(sum(a.get('aggressiveness_index', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0
+    # Sum up all the metrics from the unified_analyses view, handling None values
+    total_blunders = sum(safe_get_numeric(a, 'blunders') for a in analyses)
+    total_mistakes = sum(safe_get_numeric(a, 'mistakes') for a in analyses)
+    total_inaccuracies = sum(safe_get_numeric(a, 'inaccuracies') for a in analyses)
+    total_brilliant_moves = sum(safe_get_numeric(a, 'brilliant_moves') for a in analyses)
+    total_material_sacrifices = sum(safe_get_numeric(a, 'material_sacrifices') for a in analyses)
+    
+    # Calculate averages, handling None values
+    average_accuracy = round(sum(safe_get_numeric(a, 'accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
+    average_opening_accuracy = round(sum(safe_get_numeric(a, 'opening_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
+    average_middle_game_accuracy = round(sum(safe_get_numeric(a, 'middle_game_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
+    average_endgame_accuracy = round(sum(safe_get_numeric(a, 'endgame_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
+    average_aggressiveness_index = round(sum(safe_get_numeric(a, 'aggressiveness_index') for a in analyses) / total_games, 1) if total_games > 0 else 0
     
     return AnalysisStats(
         total_games_analyzed=total_games,

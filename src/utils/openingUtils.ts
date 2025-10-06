@@ -379,36 +379,36 @@ const ECO_CODE_MAPPING: Record<string, string> = {
   'D67': 'Queen\'s Gambit Declined',
   'D68': 'Queen\'s Gambit Declined',
   'D69': 'Queen\'s Gambit Declined',
-  'D70': 'Grünfeld Defense',
-  'D71': 'Grünfeld Defense',
-  'D72': 'Grünfeld Defense',
-  'D73': 'Grünfeld Defense',
-  'D74': 'Grünfeld Defense',
-  'D75': 'Grünfeld Defense',
-  'D76': 'Grünfeld Defense',
-  'D77': 'Grünfeld Defense',
-  'D78': 'Grünfeld Defense',
-  'D79': 'Grünfeld Defense',
-  'D80': 'Grünfeld Defense',
-  'D81': 'Grünfeld Defense',
-  'D82': 'Grünfeld Defense',
-  'D83': 'Grünfeld Defense',
-  'D84': 'Grünfeld Defense',
-  'D85': 'Grünfeld Defense',
-  'D86': 'Grünfeld Defense',
-  'D87': 'Grünfeld Defense',
-  'D88': 'Grünfeld Defense',
-  'D89': 'Grünfeld Defense',
-  'D90': 'Grünfeld Defense',
-  'D91': 'Grünfeld Defense',
-  'D92': 'Grünfeld Defense',
-  'D93': 'Grünfeld Defense',
-  'D94': 'Grünfeld Defense',
-  'D95': 'Grünfeld Defense',
-  'D96': 'Grünfeld Defense',
-  'D97': 'Grünfeld Defense',
-  'D98': 'Grünfeld Defense',
-  'D99': 'Grünfeld Defense',
+  'D70': 'Grunfeld Defense',
+  'D71': 'Grunfeld Defense',
+  'D72': 'Grunfeld Defense',
+  'D73': 'Grunfeld Defense',
+  'D74': 'Grunfeld Defense',
+  'D75': 'Grunfeld Defense',
+  'D76': 'Grunfeld Defense',
+  'D77': 'Grunfeld Defense',
+  'D78': 'Grunfeld Defense',
+  'D79': 'Grunfeld Defense',
+  'D80': 'Grunfeld Defense',
+  'D81': 'Grunfeld Defense',
+  'D82': 'Grunfeld Defense',
+  'D83': 'Grunfeld Defense',
+  'D84': 'Grunfeld Defense',
+  'D85': 'Grunfeld Defense',
+  'D86': 'Grunfeld Defense',
+  'D87': 'Grunfeld Defense',
+  'D88': 'Grunfeld Defense',
+  'D89': 'Grunfeld Defense',
+  'D90': 'Grunfeld Defense',
+  'D91': 'Grunfeld Defense',
+  'D92': 'Grunfeld Defense',
+  'D93': 'Grunfeld Defense',
+  'D94': 'Grunfeld Defense',
+  'D95': 'Grunfeld Defense',
+  'D96': 'Grunfeld Defense',
+  'D97': 'Grunfeld Defense',
+  'D98': 'Grunfeld Defense',
+  'D99': 'Grunfeld Defense',
 
   // E00-E99: Indian Defenses
   'E00': 'Queen\'s Pawn Game',
@@ -570,8 +570,8 @@ export function normalizeOpeningName(opening: string): string {
     "Queen's Indian": "Queen's Indian Defense",
     "King's Indian Defense": "King's Indian Defense",
     "King's Indian": "King's Indian Defense",
-    'Grünfeld Defense': 'Grünfeld Defense',
-    Grünfeld: 'Grünfeld Defense',
+    'Grunfeld Defense': 'Grunfeld Defense',
+    Grunfeld: 'Grunfeld Defense',
     'Benoni Defense': 'Benoni Defense',
     Benoni: 'Benoni Defense',
 
@@ -628,26 +628,26 @@ export function normalizeOpeningName(opening: string): string {
 
 export function getOpeningIcon(opening: string): string {
   if (opening === 'Unknown') {
-    return '❓'
+    return 'Unknown'
   }
 
   // Common opening patterns
   if (opening.toLowerCase().includes('sicilian')) {
-    return '♟️'
+    return 'Pawn'
   } else if (opening.toLowerCase().includes("queen's gambit")) {
-    return '👑'
+    return 'King'
   } else if (opening.toLowerCase().includes("king's indian")) {
-    return '♔'
+    return 'King'
   } else if (opening.toLowerCase().includes('french')) {
-    return '🇫🇷'
+    return 'France'
   } else if (opening.toLowerCase().includes('ruy lopez')) {
-    return '🇪🇸'
+    return 'Spain'
   } else if (opening.toLowerCase().includes('italian')) {
-    return '🇮🇹'
+    return 'Italy'
   } else if (opening.toLowerCase().includes('english')) {
-    return '🇬🇧'
+    return 'UK'
   } else {
-    return '♟️'
+    return 'Pawn'
   }
 }
 

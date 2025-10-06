@@ -21,13 +21,11 @@ export default function HomePage() {
       {/* Features Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
         <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <div className="text-4xl mb-4">🔍</div>
           <h3 className="text-xl font-semibold text-gray-800 mb-2">Search Players</h3>
           <p className="text-gray-600">Find any chess player by username on Lichess or Chess.com</p>
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <div className="text-4xl mb-4">📊</div>
           <h3 className="text-xl font-semibold text-gray-800 mb-2">Quick Stats</h3>
           <p className="text-gray-600">
             Get instant insights into win rates, ratings, and playing patterns
@@ -35,7 +33,6 @@ export default function HomePage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <div className="text-4xl mb-4">⚡</div>
           <h3 className="text-xl font-semibold text-gray-800 mb-2">Fast Analysis</h3>
           <p className="text-gray-600">
             No registration required - just search and analyze immediately

@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
 import HomePage from './pages/HomePage'
 import SimpleAnalyticsPage from './pages/SimpleAnalyticsPage'
+import GameAnalysisPage from './pages/GameAnalysisPage'
 import './index.css'
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
               <Route path="/search" element={<ComponentErrorBoundary><HomePage /></ComponentErrorBoundary>} />
               <Route path="/simple-analytics" element={<ComponentErrorBoundary><SimpleAnalyticsPage /></ComponentErrorBoundary>} />
               <Route path="/profile/:userId/:platform" element={<ComponentErrorBoundary><SimpleAnalyticsPage /></ComponentErrorBoundary>} />
+              <Route path="/analysis/:platform/:userId/:gameId" element={<ComponentErrorBoundary><GameAnalysisPage /></ComponentErrorBoundary>} />
             </Routes>
           </div>
         </Router>

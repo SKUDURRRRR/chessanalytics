@@ -1,6 +1,5 @@
-// @ts-nocheck
 // Comprehensive Analytics Component - Shows detailed analytics tables
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { normalizeOpeningName } from '../../utils/openingUtils'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
@@ -12,7 +11,6 @@ interface ComprehensiveAnalyticsProps {
 
 interface AnalyticsData {
   totalGames: number
-  fetchedGames: number
   winRate: number
   drawRate: number
   lossRate: number
@@ -40,27 +38,12 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
         setLoading(true)
         setError(null)
 
-        // First, get the total count of games
-        const { count: totalGamesCount, error: countError } = await supabase
-          .from('games')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', userId)
-          .eq('platform', platform)
-
-        if (countError) {
-          console.error('Error getting games count:', countError)
-          throw countError
-        }
-
-        console.log(`Debug: Total games in database: ${totalGamesCount}`)
-
         // Fetch comprehensive analytics from the database
         const { data: games, error: gamesError } = await supabase
           .from('games')
           .select('*')
           .eq('user_id', userId)
           .eq('platform', platform)
-          .limit(10000) // Set a high limit to get all games
 
         if (gamesError) throw gamesError
 
@@ -70,7 +53,7 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
         }
 
         // Calculate comprehensive analytics
-        const totalGames = totalGamesCount || games.length
+        const totalGames = games.length
         const wins = games.filter(g => g.result === 'win').length
         const draws = games.filter(g => g.result === 'draw').length
         const losses = games.filter(g => g.result === 'loss').length
@@ -115,7 +98,6 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
 
         setData({
           totalGames,
-          fetchedGames: games.length,
           winRate,
           drawRate,
           lossRate,
@@ -189,12 +171,6 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
               <span>Total Games:</span>
               <span className="font-medium">{data.totalGames}</span>
             </div>
-            {data.totalGames !== data.fetchedGames && (
-              <div className="flex justify-between text-xs text-gray-500">
-                <span>Fetched:</span>
-                <span>{data.fetchedGames} games</span>
-              </div>
-            )}
             <div className="flex justify-between">
               <span>Win Rate:</span>
               <span className="font-medium text-green-600">{data.winRate.toFixed(1)}%</span>

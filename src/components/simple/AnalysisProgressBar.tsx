@@ -19,8 +19,8 @@ const PHASE_DESCRIPTIONS: Record<string, string> = {
 interface AnalysisProgressBarProps {
   analyzing: boolean
   progress: AnalysisProgressData | null
+  statusMessage?: string | null
 }
-
 function formatEta(totalSeconds: number): string {
   const seconds = Math.max(0, Math.round(totalSeconds))
   if (seconds === 0) {
@@ -53,7 +53,7 @@ function formatEta(totalSeconds: number): string {
   return parts.join(' ')
 }
 
-export function AnalysisProgressBar({ analyzing, progress }: AnalysisProgressBarProps) {
+export function AnalysisProgressBar({ analyzing, progress, statusMessage }: AnalysisProgressBarProps) {
   const isComplete = progress?.is_complete ?? false
 
   if (!analyzing && (!progress || isComplete)) {
@@ -97,6 +97,9 @@ export function AnalysisProgressBar({ analyzing, progress }: AnalysisProgressBar
       </div>
 
       <p className="mt-2 text-xs text-blue-800">{phaseDescription}</p>
+      {statusMessage && (
+        <p className="mt-1 text-xs text-blue-700 italic">{statusMessage}</p>
+      )}
     </div>
   )
 }

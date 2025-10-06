@@ -126,7 +126,7 @@ class CORSSecurityConfig(BaseModel):
     
     def log_security_status(self):
         """Log CORS security configuration status."""
-        print("🔒 CORS Security Configuration:")
+        print("CORS Security Configuration:")
         print(f"  Allowed Origins: {self.allowed_origins}")
         print(f"  Allowed Methods: {self.allowed_methods}")
         print(f"  Allowed Headers: {self.allowed_headers}")
@@ -146,11 +146,11 @@ class CORSSecurityConfig(BaseModel):
             warnings.append("No allowed headers configured - requests may fail")
         
         if warnings:
-            print("⚠️  Security Warnings:")
+            print("Security Warnings:")
             for warning in warnings:
                 print(f"    - {warning}")
         else:
-            print("✅ CORS configuration looks secure")
+            print("CORS configuration looks secure")
 
 # Default secure CORS configuration
 def get_default_cors_config() -> CORSSecurityConfig:

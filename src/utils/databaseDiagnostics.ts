@@ -36,7 +36,7 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
 
   try {
     // Test basic connection
-    console.log('🔍 Running database diagnostics...')
+    console.log('Running database diagnostics...')
     
     // Check if we can connect to Supabase
     const { error: healthError } = await supabase
@@ -47,12 +47,12 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
     if (healthError) {
       diagnostics.connectionStatus = 'error'
       diagnostics.recommendations.push('Database connection failed. Check Supabase credentials.')
-      console.error('❌ Database connection error:', healthError)
+      console.error('Database connection error:', healthError)
       return diagnostics
     }
 
     diagnostics.connectionStatus = 'connected'
-    console.log('✅ Database connection successful')
+    console.log('Database connection successful')
 
     // Check available tables
     const tables = ['games', 'game_analyses', 'move_analyses', 'unified_analyses']
@@ -63,11 +63,11 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
           diagnostics.tablesAvailable.push(table)
         }
       } catch (e) {
-        console.warn(`⚠️ Table ${table} not accessible:`, e)
+        console.warn(`Table ${table} not accessible:`, e)
       }
     }
 
-    console.log('📊 Available tables:', diagnostics.tablesAvailable)
+    console.log('Available tables:', diagnostics.tablesAvailable)
 
     // Check for user data in games table
     const { data: gamesData, error: gamesError } = await supabase
@@ -78,10 +78,10 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
       .limit(1)
 
     if (gamesError) {
-      console.error('❌ Error checking games data:', gamesError)
+      console.error('Error checking games data:', gamesError)
     } else {
       diagnostics.userDataExists = gamesData && gamesData.length > 0
-      console.log(`📈 User data exists: ${diagnostics.userDataExists} (${gamesData?.length || 0} games)`)
+      console.log(`User data exists: ${diagnostics.userDataExists} (${gamesData?.length || 0} games)`)
     }
 
     // Check for analysis data in unified_analyses view
@@ -93,10 +93,10 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
       .limit(1)
 
     if (analysisError) {
-      console.error('❌ Error checking analysis data:', analysisError)
+      console.error('Error checking analysis data:', analysisError)
     } else {
       diagnostics.analysisDataExists = analysisData && analysisData.length > 0
-      console.log(`🔬 Analysis data exists: ${diagnostics.analysisDataExists} (${analysisData?.length || 0} analyses)`)
+      console.log(`Analysis data exists: ${diagnostics.analysisDataExists} (${analysisData?.length || 0} analyses)`)
     }
 
     // Check for data in individual analysis tables
@@ -120,8 +120,8 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
       const hasGameAnalyses = gameAnalysesData && gameAnalysesData.length > 0
       const hasMoveAnalyses = moveAnalysesData && moveAnalysesData.length > 0
 
-      console.log(`📊 Game analyses: ${hasGameAnalyses} (${gameAnalysesData?.length || 0})`)
-      console.log(`📊 Move analyses: ${hasMoveAnalyses} (${moveAnalysesData?.length || 0})`)
+      console.log(`Game analyses: ${hasGameAnalyses} (${gameAnalysesData?.length || 0})`)
+      console.log(`Move analyses: ${hasMoveAnalyses} (${moveAnalysesData?.length || 0})`)
 
       if (hasGameAnalyses || hasMoveAnalyses) {
         diagnostics.analysisDataExists = true
@@ -136,7 +136,7 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
 
   if (!diagnostics.analysisDataExists) {
     if (diagnostics.userDataExists) {
-      diagnostics.recommendations.push('✅ Games found but no analysis data. Click "Analyze My Games" to generate analysis data.')
+      diagnostics.recommendations.push('Games found but no analysis data. Click "Analyze My Games" to generate analysis data.')
       diagnostics.recommendations.push('This will run Stockfish analysis on your games and create the analytics you see.')
     } else {
       diagnostics.recommendations.push('No analysis data found. Run analysis on imported games.')
@@ -160,11 +160,11 @@ export async function runDatabaseDiagnostics(userId: string, platform: string): 
       }
     }
 
-    console.log('🎯 Diagnostics complete:', diagnostics)
+    console.log('Diagnostics complete:', diagnostics)
     return diagnostics
 
   } catch (error) {
-    console.error('❌ Database diagnostics failed:', error)
+    console.error('Database diagnostics failed:', error)
     diagnostics.connectionStatus = 'error'
     diagnostics.recommendations.push('Database diagnostics failed. Check console for errors.')
     return diagnostics
@@ -203,6 +203,6 @@ export async function testAnalysisTypes(userId: string, platform: string): Promi
     }
   }
   
-  console.log('🔍 Analysis type availability:', results)
+  console.log('Analysis type availability:', results)
   return results
 }

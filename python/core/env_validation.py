@@ -48,7 +48,7 @@ class APIConfig(BaseModel):
         
         # Security check: warn about wildcard origins in production
         if '*' in v:
-            logger.warning('⚠️ Wildcard CORS origins detected. This may be a security risk.')
+            logger.warning('Warning: Wildcard CORS origins detected. This may be a security risk.')
         
         return v
 
@@ -144,7 +144,7 @@ class EnvironmentConfig(BaseSettings):
             issues.append('Using HTTP in production')
         
         if issues:
-            logger.warning(f'⚠️ Security issues detected: {", ".join(issues)}')
+            logger.warning(f'Warning: Security issues detected: {", ".join(issues)}')
             return False
         
         return True
@@ -166,7 +166,7 @@ def load_and_validate_config() -> EnvironmentConfig:
         config.log_configuration()
         
         if not config.is_secure():
-            logger.warning('⚠️ Configuration loaded but security issues detected')
+            logger.warning('Warning: Configuration loaded but security issues detected')
         
         return config
         

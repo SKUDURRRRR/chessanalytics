@@ -358,6 +358,7 @@ class ReliableAnalysisPersistence:
                 'move_san': move.move_san,
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
+                'is_brilliant': move.is_brilliant,
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,

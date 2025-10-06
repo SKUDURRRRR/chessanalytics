@@ -16,7 +16,7 @@ function canonicalizeUserId(userId: string, platform: string): string {
 
 export async function checkUserDataInDatabase(userId: string, platform: string) {
   const canonicalUserId = canonicalizeUserId(userId, platform)
-  console.log(`🔍 Checking database for user: "${userId}" (canonical: "${canonicalUserId}") on platform: "${platform}"`)
+  console.log(`Checking database for user: "${userId}" (canonical: "${canonicalUserId}") on platform: "${platform}"`)
   
   // Check different variations of the user ID
   const variations = [
@@ -28,7 +28,7 @@ export async function checkUserDataInDatabase(userId: string, platform: string) 
     userId.trim().toLowerCase(), // Trimmed + lowercase
   ]
   
-  console.log('🔍 Testing user ID variations:', variations)
+  console.log('Testing user ID variations:', variations)
   
   const results: { [key: string]: any } = {}
   
@@ -73,7 +73,7 @@ export async function checkUserDataInDatabase(userId: string, platform: string) 
         unified: { data: unifiedData, error: unifiedError, count: unifiedData?.length || 0 },
       }
       
-      console.log(`📊 User ID "${variation}":`, {
+      console.log(`User ID "${variation}":`, {
         games: results[variation].games.count,
         gameAnalyses: results[variation].gameAnalyses.count,
         moveAnalyses: results[variation].moveAnalyses.count,
@@ -81,7 +81,7 @@ export async function checkUserDataInDatabase(userId: string, platform: string) 
       })
       
     } catch (error) {
-      console.error(`❌ Error checking variation "${variation}":`, error)
+      console.error(`Error checking variation "${variation}":`, error)
       results[variation] = { error: error instanceof Error ? error.message : 'Unknown error' }
     }
   }
@@ -90,7 +90,7 @@ export async function checkUserDataInDatabase(userId: string, platform: string) 
 }
 
 export async function checkAllUsersInDatabase(platform: string) {
-  console.log(`🔍 Checking all users in database for platform: ${platform}`)
+  console.log(`Checking all users in database for platform: ${platform}`)
   
   try {
     // Get all unique user IDs from games table
@@ -101,12 +101,12 @@ export async function checkAllUsersInDatabase(platform: string) {
       .limit(100)
     
     if (gamesError) {
-      console.error('❌ Error fetching users from games table:', gamesError)
+      console.error('Error fetching users from games table:', gamesError)
       return { error: gamesError.message }
     }
     
     const uniqueUsers = [...new Set((gamesData || []).map((g: { user_id: string }) => g.user_id))]
-    console.log(`📊 Found ${uniqueUsers.length} unique users in games table:`, uniqueUsers)
+    console.log(`Found ${uniqueUsers.length} unique users in games table:`, uniqueUsers)
     
     // Get all unique user IDs from game_analyses table
     const { data: gameAnalysesData, error: gameAnalysesError } = await supabase
@@ -116,10 +116,10 @@ export async function checkAllUsersInDatabase(platform: string) {
       .limit(100)
     
     if (gameAnalysesError) {
-      console.error('❌ Error fetching users from game_analyses table:', gameAnalysesError)
+      console.error('Error fetching users from game_analyses table:', gameAnalysesError)
     } else {
       const uniqueAnalysesUsers = [...new Set((gameAnalysesData || []).map((g: { user_id: string }) => g.user_id))]
-      console.log(`📊 Found ${uniqueAnalysesUsers.length} unique users in game_analyses table:`, uniqueAnalysesUsers)
+      console.log(`Found ${uniqueAnalysesUsers.length} unique users in game_analyses table:`, uniqueAnalysesUsers)
     }
     
     // Get all unique user IDs from move_analyses table
@@ -130,10 +130,10 @@ export async function checkAllUsersInDatabase(platform: string) {
       .limit(100)
     
     if (moveAnalysesError) {
-      console.error('❌ Error fetching users from move_analyses table:', moveAnalysesError)
+      console.error('Error fetching users from move_analyses table:', moveAnalysesError)
     } else {
       const uniqueMoveAnalysesUsers = [...new Set((moveAnalysesData || []).map((g: { user_id: string }) => g.user_id))]
-      console.log(`📊 Found ${uniqueMoveAnalysesUsers.length} unique users in move_analyses table:`, uniqueMoveAnalysesUsers)
+      console.log(`Found ${uniqueMoveAnalysesUsers.length} unique users in move_analyses table:`, uniqueMoveAnalysesUsers)
     }
     
     return {
@@ -143,14 +143,14 @@ export async function checkAllUsersInDatabase(platform: string) {
     }
     
   } catch (error) {
-    console.error('❌ Error checking all users:', error)
+    console.error('Error checking all users:', error)
     return { error: error instanceof Error ? error.message : 'Unknown error' }
   }
 }
 
 export async function testUnifiedAnalysesView(userId: string, platform: string) {
   const canonicalUserId = canonicalizeUserId(userId, platform)
-  console.log(`🔍 Testing unified_analyses view for user: "${userId}" (canonical: "${canonicalUserId}") on platform: "${platform}"`)
+  console.log(`Testing unified_analyses view for user: "${userId}" (canonical: "${canonicalUserId}") on platform: "${platform}"`)
   
   try {
     // Test with different analysis types
@@ -172,9 +172,9 @@ export async function testUnifiedAnalysesView(userId: string, platform: string) 
         count: data?.length || 0
       }
       
-      console.log(`📊 Analysis type "${analysisType}": ${results[analysisType].count} records`)
+      console.log(`Analysis type "${analysisType}": ${results[analysisType].count} records`)
       if (error) {
-        console.error(`❌ Error with analysis type "${analysisType}":`, error)
+        console.error(`Error with analysis type "${analysisType}":`, error)
       }
     }
     
@@ -192,15 +192,15 @@ export async function testUnifiedAnalysesView(userId: string, platform: string) 
       count: allData?.length || 0
     }
     
-    console.log(`📊 All analysis types: ${results['all'].count} records`)
+    console.log(`All analysis types: ${results['all'].count} records`)
     if (allError) {
-      console.error('❌ Error fetching all analysis types:', allError)
+      console.error('Error fetching all analysis types:', allError)
     }
     
     return results
     
   } catch (error) {
-    console.error('❌ Error testing unified_analyses view:', error)
+    console.error('Error testing unified_analyses view:', error)
     return { error: error instanceof Error ? error.message : 'Unknown error' }
   }
 }

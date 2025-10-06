@@ -28,5 +28,36 @@
     "primary": "Deepen calculation drills to convert complex middlegames.",
     "secondary": "Rotate fresh openings monthly to lower repetition risk.",
     "leverage": "Steer games into tactical skirmishes where you excel."
+  },
+  "personality_insights": {
+    "tactical": "You excel in tactical situations and complex calculations. You can spot combinations and tactical motifs that others miss.",
+    "positional": "Your positional play is solid but could be strengthened with more study of strategic concepts.",
+    "aggressive": "You have a balanced approach between aggressive and solid play.",
+    "patient": "You play with excellent discipline and can consolidate advantages without rushing.",
+    "novelty": "You have a good balance of creativity and solid play.",
+    "staleness": "Your play tends to be repetitive. Consider expanding your opening repertoire and exploring new ideas."
+  },
+  "ai_style_analysis": {
+    "style_summary": "You are an advanced player with 42 games analyzed. Your dominant strength is tactical play (score: 72), making you a tactical specialist.",
+    "characteristics": "brilliant tactical vision, creative and innovative thinking, exceptional patience and discipline",
+    "strengths": "complex calculation abilities, unconventional ideas and surprise moves, advantage consolidation",
+    "playing_patterns": "thrives in sharp, tactical positions, avoids routine, seeks original solutions, methodical, unhurried approach",
+    "improvement_focus": "Your lowest scoring area is staleness (41), which should be your primary focus for improvement."
+  },
+  "famous_players": {
+    "primary": {
+      "name": "Mikhail Tal",
+      "description": "The \"Magician from Riga\" - known for his brilliant tactical combinations and sacrifices",
+      "era": "1950s-1990s",
+      "strengths": ["Tactical vision", "Sacrificial attacks", "Complex calculations"],
+      "similarity": "Like Mikhail Tal, you excel in tactical complications and complex calculations"
+    },
+    "secondary": {
+      "name": "Garry Kasparov",
+      "description": "Aggressive tactical player who dominated with dynamic, attacking chess",
+      "era": "1980s-2000s",
+      "strengths": ["Initiative", "Tactical precision", "Pressure play"],
+      "similarity": "Similar to Garry Kasparov, you thrive in dynamic, attacking positions"
+    }
   }
 }

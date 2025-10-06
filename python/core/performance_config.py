@@ -21,10 +21,10 @@ class AnalysisPerformanceConfig:
     """Configuration for analysis performance optimization."""
     
     # Stockfish Engine Settings
-    stockfish_depth: int = 8
-    stockfish_skill_level: int = 8
-    stockfish_time_limit: float = 1.0
-    stockfish_threads: int = 1
+    stockfish_depth: int = 12  # Better default depth
+    stockfish_skill_level: int = 10  # Human-like strength
+    stockfish_time_limit: float = 2.0  # More time for accuracy
+    stockfish_threads: int = 2
     stockfish_hash_size: int = 64  # MB
     
     # Parallel Processing
@@ -77,9 +77,9 @@ class AnalysisPerformanceConfig:
         
         elif profile == PerformanceProfile.PRODUCTION:
             return cls(
-                stockfish_depth=8,
-                stockfish_skill_level=8,
-                stockfish_time_limit=1.0,
+                stockfish_depth=12,  # Deeper analysis for better accuracy
+                stockfish_skill_level=10,  # Human-like strength
+                stockfish_time_limit=2.0,  # More time for quality
                 stockfish_threads=2,
                 stockfish_hash_size=64,
                 max_concurrent_analyses=4,

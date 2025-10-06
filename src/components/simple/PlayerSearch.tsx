@@ -165,7 +165,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   }
 
   const getPlatformIcon = (platform: 'lichess' | 'chess.com') => {
-    return platform === 'chess.com' ? '♟️' : '🏁'
+    return platform === 'chess.com' ? '♟' : '♞'
   }
 
   const getPlatformColor = (platform: 'lichess' | 'chess.com') => {
@@ -200,8 +200,9 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                   ? 'bg-green-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
+              title="Lichess"
             >
-              🏁 Lichess
+              Lichess
             </button>
             <button
               type="button"
@@ -211,8 +212,9 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                   ? 'bg-blue-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
+              title="Chess.com"
             >
-              ♟️ Chess.com
+              Chess.com
             </button>
           </div>
         </div>
@@ -260,13 +262,13 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
             <div className="text-center py-8 text-gray-500">
               {isAutoImporting ? (
                 <div className="space-y-4">
-                  <div className="text-4xl mb-2">⚡</div>
+                  <div className="text-4xl mb-2">Fast</div>
                   <p className="text-lg font-medium">Importing games for "{searchQuery}"...</p>
                   <p className="text-sm">This may take a few moments</p>
                 </div>
               ) : showImportPrompt ? (
                 <div className="space-y-4">
-                  <div className="text-4xl mb-2">🔍</div>
+                  <div className="text-4xl mb-2">Search</div>
                   <p className="text-lg font-medium">No players found in database</p>
                   <p className="text-sm text-gray-600 mb-4">
                     Player "{searchQuery}" is not in our database yet.
@@ -294,7 +296,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="text-4xl mb-2">🔍</div>
+                  <div className="text-4xl mb-2">Search</div>
                   <p>No players found matching "{searchQuery}"</p>
                   <p className="text-sm">Try a different search term</p>
                 </div>
@@ -321,14 +323,14 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                         {player.display_name || player.user_id}
                       </div>
                       <div className="text-sm text-gray-500 truncate">
-                        {player.user_id} • {player.platform}
+                        {player.user_id} - {player.platform}
                       </div>
                       <div className="text-xs text-gray-400">
-                        {player.total_games} games • {player.current_rating} rating
+                        {player.total_games} games - {player.current_rating} rating
                       </div>
                       {player.platform_mismatch && (
                         <div className="text-xs text-yellow-600 font-medium mt-1">
-                          ⚠️ Found on {player.original_platform}, but you selected{' '}
+                          Warning: Found on {player.original_platform}, but you selected{' '}
                           {selectedPlatform}
                         </div>
                       )}
@@ -385,7 +387,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
           {importProgress.status === 'completed' && (
             <div className="mt-3 text-center">
-              <div className="text-2xl mb-2">✅</div>
+              <div className="text-2xl mb-2">Yes</div>
               <p className="text-green-600 font-medium">
                 {importProgress.importedGames} games imported successfully! You can now view
                 analytics.
@@ -395,7 +397,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
           {importProgress.status === 'error' && (
             <div className="mt-3 text-center">
-              <div className="text-2xl mb-2">❌</div>
+              <div className="text-2xl mb-2">No</div>
               <p className="text-red-600 font-medium">
                 Import failed. Please try again or check if the username is correct.
               </p>

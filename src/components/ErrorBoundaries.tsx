@@ -52,7 +52,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       page: {
         containerClass: 'min-h-screen flex items-center justify-center bg-gray-50',
         cardClass: 'bg-white border border-red-200 rounded-lg p-8 m-4 max-w-md w-full shadow-lg',
-        icon: '🚨',
+        icon: 'Alert',
         title: 'Application Error',
         description: 'Something went wrong with the application. Please refresh the page.',
         showDetails: true
@@ -60,7 +60,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       component: {
         containerClass: 'bg-red-50 border border-red-200 rounded-lg p-6 m-4',
         cardClass: '',
-        icon: '⚠️',
+        icon: 'Warning',
         title: 'Component Error',
         description: 'This component encountered an error and could not render.',
         showDetails: process.env.NODE_ENV === 'development'
@@ -68,7 +68,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       section: {
         containerClass: 'bg-yellow-50 border border-yellow-200 rounded-lg p-4 m-2',
         cardClass: '',
-        icon: '⚠️',
+        icon: 'Warning',
         title: 'Section Error',
         description: 'This section encountered an error.',
         showDetails: process.env.NODE_ENV === 'development'
@@ -150,7 +150,7 @@ export function AsyncErrorBoundary({
       fallback={fallback || (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 m-2">
           <div className="flex items-center space-x-2">
-            <div className="text-yellow-500 text-xl">⏳</div>
+            <div className="text-yellow-500 text-xl">Loading</div>
             <div>
               <h3 className="text-sm font-semibold text-yellow-800">Loading Error</h3>
               <p className="text-yellow-700 text-sm">Failed to load data. Please try again.</p>

@@ -261,7 +261,7 @@ class AnalysisQueue:
         # Add to queue
         await self.queue.put(job)
         
-        print(f"📋 Analysis job {job_id} submitted for {user_id} on {platform}")
+        print(f"[QUEUE] Analysis job {job_id} submitted for {user_id} on {platform}")
         return job_id
     
     def get_job_status(self, job_id: str) -> Optional[AnalysisJob]:

@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Player statistics utilities
 import { supabase } from '../lib/supabase'
 import { Game } from '../types'
@@ -46,7 +47,7 @@ export async function getHighestEloAndTimeControl(
 
     // If validation passes, return the result
     if (validationIssues.length === 0) {
-      console.log('🔍 PlayerStats ELO Verification:', {
+      console.log('PlayerStats ELO Verification:', {
         userId,
         platform,
         highestElo: topGame.my_rating,

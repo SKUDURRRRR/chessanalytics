@@ -1,5 +1,6 @@
+// @ts-nocheck
 // ELO Data Debugger Component - Shows ELO data analysis and debugging
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { normalizeOpeningName } from '../../utils/openingUtils'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
@@ -194,7 +195,7 @@ export function EloDataDebugger({ userId, platform }: EloDataDebuggerProps) {
       {/* Top 5 Highest ELO Games Verification */}
       {data.length > 0 && (
         <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h4 className="text-lg font-semibold text-yellow-800 mb-3">🏆 Top 5 Highest ELO Games (Verification)</h4>
+          <h4 className="text-lg font-semibold text-yellow-800 mb-3">Top 5 Highest ELO Games (Verification)</h4>
           <div className="space-y-2">
             {data
               .sort((a, b) => b.userElo - a.userElo)

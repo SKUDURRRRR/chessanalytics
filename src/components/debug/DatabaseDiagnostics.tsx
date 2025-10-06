@@ -32,7 +32,7 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
     setError(null)
 
     try {
-      console.log(`🔍 Running diagnostics for ${userId} on ${platform}`)
+      console.log(`Running diagnostics for ${userId} on ${platform}`)
       
       const [diagnosticsResult, analysisTypesResult, userVariationsResult, allUsersResult, unifiedViewResult] = await Promise.all([
         runDatabaseDiagnostics(userId, platform),
@@ -78,7 +78,7 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
     return (
       <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
         <div className="flex items-center space-x-2">
-          <span className="text-red-600">❌</span>
+          <span className="text-red-600">X</span>
           <span className="text-red-800">Diagnostics failed: {error}</span>
         </div>
         <button
@@ -97,10 +97,10 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'connected': return '✅'
-      case 'disconnected': return '❌'
-      case 'error': return '⚠️'
-      default: return '❓'
+      case 'connected': return 'Yes'
+      case 'disconnected': return 'No'
+      case 'error': return 'Warn'
+      default: return 'Unknown'
     }
   }
 
@@ -134,7 +134,7 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
         {/* Available Tables */}
         <div className="mb-4">
           <div className="flex items-center space-x-2 mb-2">
-            <span className="text-blue-600">📊</span>
+            <span className="text-blue-600">Data</span>
             <span className="font-medium">Available Tables</span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -153,25 +153,25 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
         {/* Data Availability */}
         <div className="mb-4">
           <div className="flex items-center space-x-2 mb-2">
-            <span className="text-purple-600">📈</span>
+            <span className="text-purple-600">Trend</span>
             <span className="font-medium">Data Availability</span>
           </div>
           <div className="space-y-1">
             <div className="flex items-center space-x-2">
               <span className={diagnostics.userDataExists ? 'text-green-600' : 'text-red-600'}>
-                {diagnostics.userDataExists ? '✅' : '❌'}
+                {diagnostics.userDataExists ? 'Yes' : 'No'}
               </span>
               <span className="text-sm">User games data</span>
             </div>
             <div className="flex items-center space-x-2">
               <span className={diagnostics.analysisDataExists ? 'text-green-600' : 'text-red-600'}>
-                {diagnostics.analysisDataExists ? '✅' : '❌'}
+                {diagnostics.analysisDataExists ? 'Yes' : 'No'}
               </span>
               <span className="text-sm">Analysis data</span>
             </div>
             {diagnostics.mockDataDetected && (
               <div className="flex items-center space-x-2">
-                <span className="text-yellow-600">⚠️</span>
+                <span className="text-yellow-600">Warn</span>
                 <span className="text-sm text-yellow-600">Mock data detected</span>
               </div>
             )}
@@ -182,7 +182,7 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
         {analysisTypes && (
           <div className="mb-4">
             <div className="flex items-center space-x-2 mb-2">
-              <span className="text-indigo-600">🔬</span>
+              <span className="text-indigo-600">Lab</span>
               <span className="font-medium">Analysis Types</span>
             </div>
             <div className="space-y-1">
@@ -191,7 +191,7 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
                   <span className="text-sm">{type}</span>
                   <div className="flex items-center space-x-2">
                     <span className={data.exists ? 'text-green-600' : 'text-red-600'}>
-                      {data.exists ? '✅' : '❌'}
+                      {data.exists ? 'Yes' : 'No'}
                     </span>
                     <span className="text-sm text-gray-600">({data.count})</span>
                   </div>
@@ -205,7 +205,7 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
         {userVariations && (
           <div className="mb-4">
             <div className="flex items-center space-x-2 mb-2">
-              <span className="text-purple-600">🔍</span>
+              <span className="text-purple-600">Inspect</span>
               <span className="font-medium">User ID Variations Test</span>
             </div>
             <div className="space-y-2">
@@ -228,7 +228,7 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
         {allUsers && (
           <div className="mb-4">
             <div className="flex items-center space-x-2 mb-2">
-              <span className="text-indigo-600">👥</span>
+              <span className="text-indigo-600">Users</span>
               <span className="font-medium">All Users in Database</span>
             </div>
             <div className="space-y-2 text-sm">
@@ -252,7 +252,7 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
         {unifiedViewTest && (
           <div className="mb-4">
             <div className="flex items-center space-x-2 mb-2">
-              <span className="text-cyan-600">🔬</span>
+              <span className="text-cyan-600">Lab</span>
               <span className="font-medium">Unified View Test</span>
             </div>
             <div className="space-y-2 text-sm">
@@ -272,13 +272,13 @@ export const DatabaseDiagnosticsComponent: React.FC<DatabaseDiagnosticsProps> = 
         {diagnostics.recommendations.length > 0 && (
           <div className="mb-4">
             <div className="flex items-center space-x-2 mb-2">
-              <span className="text-orange-600">💡</span>
+              <span className="text-orange-600">Idea</span>
               <span className="font-medium">Recommendations</span>
             </div>
             <ul className="space-y-1">
               {diagnostics.recommendations.map((rec, index) => (
                 <li key={index} className="text-sm text-gray-700 flex items-start space-x-2">
-                  <span className="text-orange-600 mt-0.5">•</span>
+                  <span className="text-orange-600 mt-0.5">-</span>
                   <span>{rec}</span>
                 </li>
               ))}

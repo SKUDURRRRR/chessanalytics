@@ -65,7 +65,7 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
                 'success': False,
                 'error': f'Invalid PGN: too short or no moves (length: {len(pgn) if pgn else 0})'
             }
-            print(f"⚠️ [Game {game_id}] Skipped - Invalid PGN")
+            print(f"Warning: [Game {game_id}] Skipped - Invalid PGN")
             return result
         
         # Run analysis (this is synchronous within the worker)

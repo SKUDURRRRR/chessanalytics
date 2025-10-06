@@ -1,16 +1,6 @@
--- Remove basic analysis support from database schema
--- This migration removes 'basic' from analysis_type constraints and updates defaults
+-- Fix unified_analyses view to include provider_game_id field
+-- This allows frontend to match analyzed games with games in the UI
 
--- Update analysis_jobs table to remove 'basic' from analysis_type constraint
-ALTER TABLE public.analysis_jobs DROP CONSTRAINT IF EXISTS analysis_jobs_analysis_type_check;
-ALTER TABLE public.analysis_jobs ADD CONSTRAINT analysis_jobs_analysis_type_check 
-    CHECK (analysis_type IN ('stockfish','deep'));
-
--- Update game_analyses table default to 'stockfish' instead of 'basic'
-ALTER TABLE public.game_analyses ALTER COLUMN analysis_type SET DEFAULT 'stockfish';
-
--- Update unified_analyses view to use 'stockfish' as default instead of 'basic'
--- Must match the column order from 20250102000005_schema_consolidation.sql
 DROP VIEW IF EXISTS public.unified_analyses;
 
 CREATE VIEW public.unified_analyses AS
@@ -60,6 +50,4 @@ GRANT SELECT ON public.unified_analyses TO service_role;
 GRANT SELECT ON public.unified_analyses TO anon;
 
 COMMENT ON VIEW public.unified_analyses IS 'Canonical analysis view from game_analyses with provider_game_id alias for frontend matching.';
--- Add comment explaining the change
-COMMENT ON COLUMN public.game_analyses.analysis_type IS 'Analysis type: stockfish or deep (basic analysis removed)';
-COMMENT ON COLUMN public.analysis_jobs.analysis_type IS 'Analysis type: stockfish or deep (basic analysis removed)';
+
