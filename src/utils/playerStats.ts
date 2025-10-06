@@ -47,14 +47,6 @@ export async function getHighestEloAndTimeControl(
 
     // If validation passes, return the result
     if (validationIssues.length === 0) {
-      console.log('PlayerStats ELO Verification:', {
-        userId,
-        platform,
-        highestElo: topGame.my_rating,
-        timeControl: topGame.time_control,
-        gameId: topGame.provider_game_id
-      })
-      
       return {
         highestElo: topGame.my_rating,
         timeControlWithHighestElo: normalizeTimeControl(topGame.time_control),

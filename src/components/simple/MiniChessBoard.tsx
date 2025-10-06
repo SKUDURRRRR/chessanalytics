@@ -43,19 +43,7 @@ export function MiniChessBoard({ gameId, result, opening, totalMoves, className 
         </div>
       </div>
       
-      {/* Game Info Overlay */}
-      <div className="absolute -bottom-1 -right-1 bg-white border border-gray-300 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold text-gray-600">
-        {totalMoves || '?'}
-      </div>
       
-      {/* Opening Info */}
-      {opening && (
-        <div className="absolute -top-8 left-0 right-0 text-center">
-          <div className="text-xs text-gray-600 bg-white px-1 rounded truncate max-w-20">
-            {opening.length > 12 ? opening.substring(0, 12) + '...' : opening}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

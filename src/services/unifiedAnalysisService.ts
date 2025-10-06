@@ -431,10 +431,13 @@ export class UnifiedAnalysisService {
       const response = await fetch(progressUrl)
       if (response.ok) {
         const realtimeData = await response.json()
+        console.log('Realtime progress response:', realtimeData)
         return realtimeData
       }
 
       console.warn('Realtime progress request failed, status:', response.status)
+      const errorText = await response.text()
+      console.warn('Error response:', errorText)
     } catch (error) {
       console.error('Error fetching realtime analysis progress:', error)
     }

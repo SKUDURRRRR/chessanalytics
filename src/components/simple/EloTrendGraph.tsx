@@ -106,40 +106,18 @@ export function EloTrendGraph({
       return
     }
 
-    // Debug: log time control categorization
-    console.log('[ELO DEBUG] Active time control:', activeTimeControl)
-    console.log('[ELO DEBUG] All games time controls:', allGames.slice(0, 10).map(g => ({
-      tc: g.time_control,
-      category: getTimeControlCategory(g.time_control || 'Unknown'),
-      rating: g.my_rating
-    })))
 
     const filteredGames = allGames
       .filter(game => {
         const category = getTimeControlCategory(game.time_control || 'Unknown')
         const matches = category === activeTimeControl
         
-        // Log ALL games that match blitz
-        if (matches) {
-          console.log('[ELO DEBUG] Game INCLUDED in filter:', {
-            tc: game.time_control,
-            category,
-            rating: game.my_rating,
-            played_at: game.played_at
-          })
-        }
         
         return matches
       })
       .sort((a, b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime())
       .slice(0, 50)
     
-    console.log('[ELO DEBUG] Filtered games count:', filteredGames.length)
-    console.log('[ELO DEBUG] Rating range in filtered:', {
-      min: Math.min(...filteredGames.map(g => g.my_rating)),
-      max: Math.max(...filteredGames.map(g => g.my_rating)),
-      games_below_1300: filteredGames.filter(g => g.my_rating < 1300).length
-    })
 
     let processedData: EloDataPoint[] = filteredGames
       .filter(game => game.my_rating && game.my_rating > 0)
@@ -151,17 +129,6 @@ export function EloTrendGraph({
       }))
       .reverse()
 
-    // Debug: log ratings distribution
-    const ratings = processedData.map(g => g.rating)
-    const minRating = Math.min(...ratings)
-    const maxRating = Math.max(...ratings)
-    console.log('[ELO DEBUG] Processed data:', {
-      count: processedData.length,
-      minRating,
-      maxRating,
-      range: maxRating - minRating,
-      sample: processedData.slice(0, 5).map(d => ({ rating: d.rating, tc: d.timeControl }))
-    })
 
     // Use all games for consistency with recent performance calculation
     // No filtering - show all games to match the sample size

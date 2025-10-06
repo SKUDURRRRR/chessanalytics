@@ -70,6 +70,35 @@ def fetch_lichess_games(username: str, max_games: int = 1):
     return games
 
 
+def extract_opponent_name_from_pgn(pgn: str, player_color: str) -> str:
+    """Extract opponent name from PGN data based on player color"""
+    if not pgn or not isinstance(pgn, str):
+        return None
+    
+    try:
+        lines = pgn.split('\n')
+        white_player = ''
+        black_player = ''
+        
+        for line in lines:
+            if line.startswith('[White '):
+                # Extract name from [White "PlayerName"]
+                white_player = line.split('"')[1] if '"' in line else ''
+            elif line.startswith('[Black '):
+                # Extract name from [Black "PlayerName"]
+                black_player = line.split('"')[1] if '"' in line else ''
+        
+        # Return the opponent's name based on player color
+        if player_color.lower() == 'white':
+            return black_player.strip() if black_player else None
+        else:
+            return white_player.strip() if white_player else None
+            
+    except Exception as e:
+        print(f"Error extracting opponent name from PGN: {e}")
+        return None
+
+
 def build_game_row(game_json: Dict[str, Any], canonical_user_id: str) -> Dict[str, Any]:
     game_id = game_json.get("id")
     opening = (game_json.get("opening") or {}).get("name")
@@ -93,6 +122,11 @@ def build_game_row(game_json: Dict[str, Any], canonical_user_id: str) -> Dict[st
             result = side_info.get("result") or result
         else:
             opponent_rating = side_info.get("rating", opponent_rating)
+    
+    # Extract opponent name from PGN
+    pgn = game_json.get("pgn", "")
+    opponent_name = extract_opponent_name_from_pgn(pgn, color)
+    
     return {
         "user_id": canonical_user_id,
         "platform": PLATFORM,
@@ -105,6 +139,7 @@ def build_game_row(game_json: Dict[str, Any], canonical_user_id: str) -> Dict[st
         "opponent_rating": opponent_rating,
         "my_rating": my_rating,
         "played_at": played_at,
+        "opponent_name": opponent_name,
     }
 
 

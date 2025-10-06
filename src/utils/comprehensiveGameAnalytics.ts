@@ -275,17 +275,6 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
   const averageElo = elos.length > 0 ? elos.reduce((a, b) => a + b, 0) / elos.length : null
   const eloRange = highestElo && lowestElo ? highestElo - lowestElo : null
   
-  // Debug logging for ELO verification
-  console.log('ELO Verification Debug:', {
-    totalGames: games.length,
-    validElos: elos.length,
-    highestElo,
-    lowestElo,
-    currentElo,
-    averageElo: averageElo?.toFixed(1),
-    eloRange,
-    top5Elos: elos.sort((a, b) => b - a).slice(0, 5)
-  })
   
   // Find the time control where highest ELO was achieved
   const highestEloGame = games.find(g => g.my_rating === highestElo)
@@ -767,7 +756,7 @@ function calculateOpponentStats(games: any[]): {
     result: highestOpponentGame.result,
     gameId: highestOpponentGame.provider_game_id,
     playedAt: highestOpponentGame.played_at,
-    opening: highestOpponentGame.opening,
+    opening: normalizeOpeningName(highestOpponentGame.opening_family || highestOpponentGame.opening || 'Unknown'),
     totalMoves: highestOpponentGame.total_moves,
     color: highestOpponentGame.color,
     accuracy: highestOpponentGame.accuracy
@@ -784,7 +773,7 @@ function calculateOpponentStats(games: any[]): {
     result: 'win' as const,
     gameId: highestOpponentWin.provider_game_id,
     playedAt: highestOpponentWin.played_at,
-    opening: highestOpponentWin.opening,
+    opening: normalizeOpeningName(highestOpponentWin.opening_family || highestOpponentWin.opening || 'Unknown'),
     totalMoves: highestOpponentWin.total_moves,
     color: highestOpponentWin.color,
     accuracy: highestOpponentWin.accuracy
@@ -835,7 +824,7 @@ function calculateOpponentStats(games: any[]): {
   let gameThreshold = 10
   
   // Try to find opponents with negative win rates, starting with 10+ games
-  while (toughestOpponents.length < 3 && gameThreshold >= 2) {
+  while (toughestOpponents.length < 3 && gameThreshold >= 1) {
     toughestOpponents = opponentStats
       .filter(stat => stat.games >= gameThreshold && stat.winRate <= 49) // Negative win rate (49% or lower)
       .sort((a, b) => b.games - a.games) // Sort by most games first, then by worst win rate
@@ -851,7 +840,7 @@ function calculateOpponentStats(games: any[]): {
   gameThreshold = 10
   
   // Try to find opponents with positive win rates, starting with 10+ games
-  while (favoriteOpponents.length < 3 && gameThreshold >= 2) {
+  while (favoriteOpponents.length < 3 && gameThreshold >= 1) {
     favoriteOpponents = opponentStats
       .filter(stat => stat.games >= gameThreshold && stat.winRate >= 51) // Positive win rate (51% or higher)
       .sort((a, b) => b.games - a.games) // Sort by most games first, then by best win rate

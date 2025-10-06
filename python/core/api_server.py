@@ -356,6 +356,85 @@ def map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
         stockfish_depth=analysis.get('stockfish_depth', 0)
     )
 
+def _validate_game_chronological_order(games: list, context: str) -> None:
+    """
+    CRITICAL VALIDATION: Ensure games are in correct chronological order (most recent first).
+    
+    This function prevents regression of the game selection bug where random games
+    were selected instead of the most recent ones.
+    
+    Args:
+        games: List of games with 'played_at' field
+        context: Context string for error messages (e.g., "legacy batch analysis")
+    
+    Raises:
+        ValueError: If games are not in chronological order
+        TypeError: If games is not a list
+    """
+    # Input validation
+    if not isinstance(games, list):
+        raise TypeError(f"Games must be a list, got {type(games)}")
+    
+    if not games or len(games) < 2:
+        print(f"[VALIDATION] Skipping validation for {context}: insufficient games ({len(games) if games else 0})")
+        return
+    
+    played_dates = []
+    for i, game in enumerate(games):
+        if not isinstance(game, dict):
+            print(f"[WARNING] Skipping non-dict game at index {i} in {context}")
+            continue
+            
+        played_at = game.get('played_at')
+        if played_at:
+            try:
+                # Handle both string and datetime objects
+                if isinstance(played_at, str):
+                    from datetime import datetime
+                    # Try to parse the string to validate it's a proper datetime
+                    datetime.fromisoformat(played_at.replace('Z', '+00:00'))
+                played_dates.append((i, played_at, game.get('provider_game_id', 'unknown')))
+            except (ValueError, TypeError) as e:
+                print(f"[WARNING] Skipping game at index {i} in {context}: invalid played_at '{played_at}' ({e})")
+                continue
+    
+    if len(played_dates) < 2:
+        print(f"[VALIDATION] Skipping validation for {context}: insufficient valid games with played_at ({len(played_dates)})")
+        return
+    
+    # Check if games are in descending order (most recent first)
+    for i in range(len(played_dates) - 1):
+        try:
+            current_date = played_dates[i][1]
+            next_date = played_dates[i + 1][1]
+            
+            # Convert to comparable format if needed
+            if isinstance(current_date, str) and isinstance(next_date, str):
+                current_parsed = current_date.replace('Z', '+00:00')
+                next_parsed = next_date.replace('Z', '+00:00')
+            else:
+                current_parsed = current_date
+                next_parsed = next_date
+            
+            if current_parsed < next_parsed:
+                error_msg = (
+                    f"CRITICAL BUG DETECTED in {context}: Games are NOT in chronological order!\n"
+                    f"Game {played_dates[i][2]} (index {played_dates[i][0]}) played at {current_date}\n"
+                    f"Game {played_dates[i+1][2]} (index {played_dates[i+1][0]}) played at {next_date}\n"
+                    f"This indicates the game selection logic has been broken. "
+                    f"Games must be ordered by played_at DESC (most recent first).\n"
+                    f"Total games checked: {len(played_dates)}"
+                )
+                print(f"[ERROR] {error_msg}")
+                raise ValueError(error_msg)
+        except Exception as e:
+            print(f"[ERROR] Failed to compare dates in {context}: {e}")
+            print(f"[ERROR] Current date: {played_dates[i][1]} (type: {type(played_dates[i][1])})")
+            print(f"[ERROR] Next date: {played_dates[i+1][1]} (type: {type(played_dates[i+1][1])})")
+            raise
+    
+    print(f"[VALIDATION] ✅ Games in {context} are correctly ordered chronologically (most recent first) - {len(played_dates)} games validated")
+
 async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str, analysis_type: str, limit: int) -> list:
     """
     Filter out games that are already analyzed, returning only unanalyzed games up to the limit.
@@ -400,14 +479,23 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     
     # Filter out already analyzed games
     unanalyzed_games = []
+    analyzed_count = 0
     for game in all_games:
         game_id = game.get('provider_game_id')
-        if game_id and game_id not in analyzed_game_ids:
-            unanalyzed_games.append(game)
-            if len(unanalyzed_games) >= limit:
-                break
+        if game_id:
+            if game_id in analyzed_game_ids:
+                analyzed_count += 1
+            else:
+                unanalyzed_games.append(game)
+                if len(unanalyzed_games) >= limit:
+                    break
     
     print(f"[info] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
+    print(f"[info] Skipped {analyzed_count} already-analyzed games from the fetched set")
+    print(f"[info] Total analyzed games in database for this user: {len(analyzed_game_ids)}")
+    if unanalyzed_games:
+        print(f"[info] First unanalyzed game ID: {unanalyzed_games[0].get('provider_game_id')}")
+        print(f"[info] Last unanalyzed game ID: {unanalyzed_games[-1].get('provider_game_id')}")
     return unanalyzed_games
 
 async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str, 
@@ -416,7 +504,8 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
     # Canonicalize user ID for database operations
     canonical_user_id = _canonical_user_id(user_id, platform)
     print(f"BACKGROUND TASK STARTED: perform_batch_analysis for {user_id} (canonical: {canonical_user_id}) on {platform}")
-    key = f"{user_id}_{platform}"
+    platform_key = platform.strip().lower()
+    key = f"{canonical_user_id}_{platform_key}"
     limit = limit or ANALYSIS_TEST_LIMIT
     if ANALYSIS_TEST_LIMIT:
         limit = min(limit, ANALYSIS_TEST_LIMIT)
@@ -437,12 +526,58 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
         analysis_progress[key]["current_phase"] = "fetching"
         analysis_progress[key]["progress_percentage"] = 10
         
-        # Get games from database (games_pgn table)
-        # Get the most recent unanalyzed games by ordering by played_at DESC
+        # ====================================================================================
+        # CRITICAL: GAME SELECTION LOGIC - DO NOT MODIFY WITHOUT UNDERSTANDING THE IMPACT
+        # ====================================================================================
+        # This code was implemented to fix a critical bug where random games were selected
+        # instead of the most recent ones. The two-step approach is REQUIRED to maintain
+        # chronological ordering. See docs/GAME_SELECTION_PROTECTION.md for details.
+        # 
+        # WARNING: Any changes to this logic MUST:
+        # 1. Maintain chronological order (most recent first)
+        # 2. Include validation calls
+        # 3. Be thoroughly tested
+        # 4. Update the protection documentation
+        # ====================================================================================
+        
+        # Get games from database by first fetching from games table, then getting PGN data
+        # Get the most recent unanalyzed games by ordering by played_at DESC from games table
         # This ensures we always get the next batch of most recent unanalyzed games
-        fetch_limit = limit * 3  # Get 3x the limit to ensure we find unanalyzed games
-        games_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('updated_at', desc=True).limit(fetch_limit).execute()
-        all_games = games_response.data or []
+        # Increased multiplier to ensure we find enough unanalyzed games even if many recent games are already analyzed
+        fetch_limit = max(limit * 10, 100)  # Get 10x the limit (minimum 100) to ensure we find unanalyzed games
+        print(f"[info] Fetching up to {fetch_limit} most recent games to find {limit} unanalyzed games")
+        
+        # First get game IDs from games table ordered by played_at (most recent first)
+        games_list_response = supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
+        
+        if games_list_response.data:
+            # Get provider_game_ids in order with their played_at dates
+            ordered_games = games_list_response.data
+            provider_game_ids = [g['provider_game_id'] for g in ordered_games]
+            print(f"[info] Found {len(provider_game_ids)} games in database (ordered by most recent)")
+            
+            # Now fetch PGN data for these games
+            pgn_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+            
+            # Re-order PGN data to match the games table order and add played_at info
+            pgn_map = {g['provider_game_id']: g for g in (pgn_response.data or [])}
+            all_games = []
+            for game_info in ordered_games:
+                provider_game_id = game_info['provider_game_id']
+                if provider_game_id in pgn_map:
+                    pgn_data = pgn_map[provider_game_id].copy()
+                    pgn_data['played_at'] = game_info['played_at']  # Add played_at to PGN data
+                    all_games.append(pgn_data)
+            
+            print(f"[info] Found {len(all_games)} games with PGN data (ordered by most recent played_at)")
+            if all_games:
+                print(f"[info] First game played_at: {all_games[0].get('played_at')}")
+                print(f"[info] Last game played_at: {all_games[-1].get('played_at')}")
+                
+                # CRITICAL: Validate chronological order to prevent regression
+                _validate_game_chronological_order(all_games, "legacy batch analysis")
+        else:
+            all_games = []
         
         # Filter out already analyzed games
         games = await _filter_unanalyzed_games(all_games, canonical_user_id, platform, analysis_type, limit)
@@ -1140,7 +1275,9 @@ async def get_analysis_progress(
     - All parameters remain the same
     - Response format is identical
     """
-    key = f"{user_id}_{platform}"
+    canonical_user_id = _canonical_user_id(user_id, platform)
+    platform_key = platform.strip().lower()
+    key = f"{canonical_user_id}_{platform_key}"
     
     if key not in analysis_progress:
         return AnalysisProgress(

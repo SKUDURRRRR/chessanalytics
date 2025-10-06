@@ -112,8 +112,12 @@ class AnalysisQueue:
             
             # Update in-memory progress to starting
             try:
-                from .unified_api_server import analysis_progress
-                progress_key = f"{job.user_id}_{job.platform}"
+                print(f"[QUEUE] Job {job.job_id} starting for user {job.user_id} on {job.platform}")
+                from .unified_api_server import analysis_progress, _canonical_user_id
+                # Use the same canonicalization logic as the realtime endpoint
+                canonical_user_id = _canonical_user_id(job.user_id, job.platform)
+                platform_key = job.platform.strip().lower()
+                progress_key = f"{canonical_user_id}_{platform_key}"
                 analysis_progress[progress_key] = {
                     "analyzed_games": 0,
                     "total_games": 0,  # Will be updated when we know the total
@@ -122,6 +126,7 @@ class AnalysisQueue:
                     "current_phase": "starting",
                     "estimated_time_remaining": None
                 }
+                print(f"[QUEUE] Initialized progress for key '{progress_key}'")
             except Exception as e:
                 print(f"Warning: Could not update in-memory progress on start: {e}")
         
@@ -144,20 +149,25 @@ class AnalysisQueue:
                 if job.job_id in self.running_jobs:
                     del self.running_jobs[job.job_id]
                 
-                # Update in-memory progress to completed
-                try:
-                    from .unified_api_server import analysis_progress
-                    progress_key = f"{job.user_id}_{job.platform}"
-                    analysis_progress[progress_key] = {
-                        "analyzed_games": job.analyzed_games,
-                        "total_games": job.total_games,
-                        "progress_percentage": 100,
-                        "is_complete": True,
-                        "current_phase": "completed",
-                        "estimated_time_remaining": None
-                    }
-                except Exception as e:
-                    print(f"Warning: Could not update in-memory progress on completion: {e}")
+            # Update in-memory progress to completed
+            try:
+                from .unified_api_server import analysis_progress, _canonical_user_id
+                # Use the same canonicalization logic as the realtime endpoint
+                canonical_user_id = _canonical_user_id(job.user_id, job.platform)
+                platform_key = job.platform.strip().lower()
+                progress_key = f"{canonical_user_id}_{platform_key}"
+                progress_snapshot = {
+                    "analyzed_games": job.analyzed_games,
+                    "total_games": job.total_games,
+                    "progress_percentage": 100,
+                    "is_complete": True,
+                    "current_phase": "completed",
+                    "estimated_time_remaining": None
+                }
+                analysis_progress[progress_key] = progress_snapshot
+                print(f"[QUEUE] Job {job.job_id} complete. Stored progress for key '{progress_key}': {progress_snapshot}")
+            except Exception as e:
+                print(f"Warning: Could not update in-memory progress on completion: {e}")
                     
         except Exception as e:
             # Mark job as failed
@@ -193,9 +203,12 @@ class AnalysisQueue:
                         
                         # Also update the in-memory progress for realtime endpoint
                         try:
-                            from .unified_api_server import analysis_progress
-                            progress_key = f"{job.user_id}_{job.platform}"
-                            analysis_progress[progress_key] = {
+                            from .unified_api_server import analysis_progress, _canonical_user_id
+                            # Use the same canonicalization logic as the realtime endpoint
+                            canonical_user_id = _canonical_user_id(job.user_id, job.platform)
+                            platform_key = job.platform.strip().lower()
+                            progress_key = f"{canonical_user_id}_{platform_key}"
+                            progress_data = {
                                 "analyzed_games": completed,
                                 "total_games": total,
                                 "progress_percentage": percentage,
@@ -203,6 +216,8 @@ class AnalysisQueue:
                                 "current_phase": "analyzing",
                                 "estimated_time_remaining": None
                             }
+                            analysis_progress[progress_key] = progress_data
+                            print(f"[QUEUE] Progress update for job {job.job_id} -> key '{progress_key}': {progress_data}")
                         except Exception as e:
                             print(f"Warning: Could not update in-memory progress: {e}")
             

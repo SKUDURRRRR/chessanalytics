@@ -100,7 +100,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       const optimizedEloStats = null
 
       console.log('SimpleAnalytics received data:', analysisResult)
-      console.log('Player stats (highest ELO & time control):', playerStats)
       console.log('Comprehensive analytics:', comprehensiveAnalytics)
       console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
       console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
@@ -408,19 +407,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       {/* Comprehensive Analytics Section */}
       {comprehensiveData && comprehensiveData.totalGames > 0 && (
         <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start space-x-3">
-              <div className="text-blue-600 text-xl">[]</div>
-              <div>
-                <h3 className="text-lg font-semibold text-blue-800 mb-2">Comprehensive Game Analytics</h3>
-                <p className="text-blue-700 text-sm mb-3">
-                  Detailed insights extracted with single queries - no analysis required! 
-                  All data available immediately after import.
-                </p>
-              </div>
-            </div>
-          </div>
-
           {/* Basic Statistics */}
           <div className="bg-white p-6 rounded-lg shadow">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Basic Statistics</h3>
@@ -845,17 +831,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       {/* Deep Analysis Section */}
       {deepAnalysisData && (
         <div className="space-y-6">
-          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-            <div className="flex items-start space-x-3">
-              <div className="text-purple-600 text-xl">*</div>
-              <div>
-                <h3 className="text-lg font-semibold text-purple-800 mb-2">Deep Analysis Insights</h3>
-                <p className="text-purple-700 text-sm mb-3">
-                  Advanced personality analysis and strategic insights based on your game patterns.
-                </p>
-              </div>
-            </div>
-          </div>
 
           {/* Long-term Planner */}
           <LongTermPlanner data={deepAnalysisData} userId={userId} />

@@ -126,8 +126,7 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
         {/* Highest Rated Opponent Game */}
         {opponentStats.highestOpponentGame && (
           <div className="p-4 bg-gradient-to-r from-red-50 to-orange-50 rounded-lg border border-red-200">
-            <h4 className="text-md font-semibold text-red-800 mb-3 flex items-center">
-              <span className="mr-2">Top</span>
+            <h4 className="text-md font-semibold text-red-800 mb-3">
               Highest Rated Opponent
             </h4>
             <div className="flex items-center space-x-4">
@@ -151,7 +150,7 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
                   </div>
                 </div>
                 <div className="text-sm text-gray-600 mb-2">
-                  {opponentStats.highestOpponentGame.opening && (
+                  {opponentStats.highestOpponentGame.opening && opponentStats.highestOpponentGame.opening !== 'Unknown' && (
                     <span className="mr-4">Opening: {opponentStats.highestOpponentGame.opening}</span>
                   )}
                   {opponentStats.highestOpponentGame.totalMoves && (
@@ -192,8 +191,7 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
         {/* Highest Rated Opponent Win */}
         {opponentStats.highestOpponentWin && (
           <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
-            <h4 className="text-md font-semibold text-green-800 mb-3 flex items-center">
-              <span className="mr-2">Focus</span>
+            <h4 className="text-md font-semibold text-green-800 mb-3">
               Highest Rated Win
             </h4>
             <div className="flex items-center space-x-4">
@@ -213,7 +211,7 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
                   </div>
                 </div>
                 <div className="text-sm text-gray-600 mb-2">
-                  {opponentStats.highestOpponentWin.opening && (
+                  {opponentStats.highestOpponentWin.opening && opponentStats.highestOpponentWin.opening !== 'Unknown' && (
                     <span className="mr-4">Opening: {opponentStats.highestOpponentWin.opening}</span>
                   )}
                   {opponentStats.highestOpponentWin.totalMoves && (

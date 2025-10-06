@@ -203,6 +203,7 @@ export default function SimpleAnalyticsPage() {
     }
 
     try {
+      console.log('[SimpleAnalytics] fetchProgress triggered', { userId, platform })
       const progress = await UnifiedAnalysisService.getRealtimeAnalysisProgress(userId, platform, 'stockfish')
 
       if (progress) {
@@ -260,6 +261,7 @@ export default function SimpleAnalyticsPage() {
         }
 
         setAnalyzing(true)
+        console.log('[SimpleAnalytics] Setting progress polling interval (1s)')
         progressIntervalRef.current = setInterval(fetchProgress, 1000) // Check every 1 second for more responsive updates
 
         setTimeout(() => {
@@ -272,6 +274,7 @@ export default function SimpleAnalyticsPage() {
           handleRefresh()
         }, 10 * 60 * 1000) // 10 minutes timeout
 
+        console.log('[SimpleAnalytics] Calling initial fetchProgress immediately')
         await fetchProgress()
       } else {
         console.log('Analysis failed to start:', result.message)
@@ -292,6 +295,7 @@ export default function SimpleAnalyticsPage() {
 
   // Cleanup interval on unmount
   useEffect(() => {
+    console.log('[SimpleAnalytics] cleanup effect registered')
     return () => {
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current)
