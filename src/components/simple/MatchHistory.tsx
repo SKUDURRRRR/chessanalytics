@@ -411,7 +411,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       case 'loss':
         return 'text-red-600'
       case 'draw':
-        return 'text-gray-600'
+        return 'text-yellow-600'
       default:
         return 'text-gray-600'
     }

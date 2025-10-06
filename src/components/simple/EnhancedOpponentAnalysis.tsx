@@ -128,12 +128,16 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
           <div className={`p-4 rounded-lg border ${
             opponentStats.highestOpponentGame.result === 'win' 
               ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
-              : 'bg-gradient-to-r from-red-50 to-orange-50 border-red-200'
+              : opponentStats.highestOpponentGame.result === 'loss'
+                ? 'bg-gradient-to-r from-red-50 to-orange-50 border-red-200'
+                : 'bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-200'
           }`}>
             <h4 className={`text-md font-semibold mb-3 ${
               opponentStats.highestOpponentGame.result === 'win' 
                 ? 'text-green-800'
-                : 'text-red-800'
+                : opponentStats.highestOpponentGame.result === 'loss'
+                  ? 'text-red-800'
+                  : 'text-yellow-800'
             }`}>
               Highest Rated Opponent
             </h4>
@@ -149,7 +153,9 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
                   <div className={`text-lg font-bold ${
                     opponentStats.highestOpponentGame.result === 'win' 
                       ? 'text-green-600'
-                      : 'text-red-600'
+                      : opponentStats.highestOpponentGame.result === 'loss'
+                        ? 'text-red-600'
+                        : 'text-yellow-600'
                   }`}>
                     {opponentStats.highestOpponentGame.opponentName || opponentStats.highestOpponentGame.opponentRating}
                   </div>
@@ -193,7 +199,9 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
                   className={`inline-flex items-center px-3 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
                     opponentStats.highestOpponentGame.result === 'win' 
                       ? 'bg-green-600 hover:bg-green-700'
-                      : 'bg-red-600 hover:bg-red-700'
+                      : opponentStats.highestOpponentGame.result === 'loss'
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-yellow-600 hover:bg-yellow-700'
                   }`}
                 >
                   <span className="mr-1">Link</span>

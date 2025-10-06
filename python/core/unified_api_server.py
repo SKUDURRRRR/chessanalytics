@@ -324,6 +324,8 @@ class DeepAnalysisData(BaseModel):
     phase_accuracies: Dict[str, float]
     recommendations: Dict[str, str]
     famous_players: Optional[Dict[str, Any]] = None
+    ai_style_analysis: Optional[Dict[str, str]] = None
+    personality_insights: Optional[Dict[str, str]] = None
 
 # ============================================================================
 # UNIFIED API ENDPOINTS
@@ -613,6 +615,15 @@ async def get_analysis_progress(
             current_phase="error"
         )
 
+@app.get("/api/v1/debug/progress")
+async def debug_progress():
+    """Debug endpoint to check current progress state."""
+    return {
+        "analysis_progress": analysis_progress,
+        "total_keys": len(analysis_progress),
+        "keys": list(analysis_progress.keys())
+    }
+
 @app.get("/api/v1/progress-realtime/{user_id}/{platform}", response_model=AnalysisProgress)
 async def get_realtime_analysis_progress(
     user_id: str,
@@ -639,8 +650,23 @@ async def get_realtime_analysis_progress(
             for key, value in analysis_progress.items():
                 print(f"[PROGRESS REQUEST]   Key '{key}': {value}")
         
-        if progress_key in analysis_progress:
-            progress_data = analysis_progress[progress_key]
+        # Try multiple key formats to find progress
+        progress_data = None
+        possible_keys = [
+            progress_key,  # canonical_user_id_platform
+            f"{user_id.lower().strip()}_{platform_key}",  # original_user_id_platform
+            f"{user_id}_{platform_key}",  # original_user_id_platform (no lower)
+        ]
+        
+        print(f"[PROGRESS REQUEST] Trying keys: {possible_keys}")
+        for key in possible_keys:
+            if key in analysis_progress:
+                progress_data = analysis_progress[key]
+                print(f"[PROGRESS REQUEST] Found progress with key: {key}")
+                print(f"[PROGRESS REQUEST] Progress data: {progress_data}")
+                break
+        
+        if progress_data:
             print(f"Realtime progress for {user_id}: {progress_data}")
             return AnalysisProgress(
                 analyzed_games=progress_data.get("analyzed_games", 0),
@@ -651,48 +677,18 @@ async def get_realtime_analysis_progress(
                 estimated_time_remaining=progress_data.get("estimated_time_remaining")
             )
         else:
-            print(f"No in-memory progress found for {progress_key}, falling back to database calculation")
-        
-        if not supabase:
+            print(f"No in-memory progress found for any of the possible keys: {possible_keys}")
+            # If no in-memory progress is found, it means analysis hasn't started yet or has completed
+            # Return is_complete=True to prevent frontend from getting stuck in loading loop
+            # The frontend will check for actual data availability separately
             return AnalysisProgress(
                 analyzed_games=0,
                 total_games=0,
                 progress_percentage=0,
                 is_complete=True,
-                current_phase="error",
+                current_phase="complete",
                 estimated_time_remaining=None
             )
-        
-        # Get total games available for analysis
-        games_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).execute()
-        total_games = len(games_response.data) if games_response.data else 0
-        
-        # Get analyzed games count from database
-        analysis_response = supabase.table('unified_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).eq('analysis_type', normalized_type).execute()
-        analyzed_games = len(analysis_response.data) if analysis_response.data else 0
-        
-        # Calculate progress (ensure minimum 1% if any games are analyzed, use ceiling for better visibility)
-        import math
-        progress_percentage = max(1, math.ceil((analyzed_games / total_games) * 100)) if total_games > 0 and analyzed_games > 0 else 0
-        is_complete = analyzed_games >= total_games and total_games > 0
-        
-        # If analysis is complete, set phase to complete and percentage to 100
-        if is_complete:
-            current_phase = "complete"
-            progress_percentage = 100
-            print(f"[COMPLETE] Analysis complete for {user_id}: {analyzed_games}/{total_games} games analyzed")
-        else:
-            current_phase = "analyzing"
-            print(f"[PROGRESS] Analysis in progress for {user_id}: {analyzed_games}/{total_games} games analyzed ({progress_percentage}%)")
-        
-        return AnalysisProgress(
-            analyzed_games=analyzed_games,
-            total_games=total_games,
-            progress_percentage=progress_percentage,
-            is_complete=is_complete,
-            current_phase=current_phase,
-            estimated_time_remaining=None
-        )
         
     except Exception as e:
         print(f"Error getting real-time progress: {e}")
@@ -1172,6 +1168,144 @@ def _build_recommendations(
     }
 
 
+def _generate_ai_style_analysis(
+    personality_scores: Dict[str, float],
+    player_style: Dict[str, Any],
+    player_level: str,
+    total_games: int,
+    average_accuracy: float,
+    phase_accuracies: Dict[str, float]
+) -> Dict[str, str]:
+    """Generate detailed AI-powered style analysis with rich insights."""
+    
+    # Get the dominant trait and its score
+    ranked_traits = sorted(
+        ((key, personality_scores.get(key, 0.0)) for key in ['tactical', 'positional', 'aggressive', 'patient', 'novelty', 'staleness']),
+        key=lambda item: item[1],
+        reverse=True
+    )
+    
+    dominant_trait, dominant_score = ranked_traits[0]
+    second_trait, second_score = ranked_traits[1] if len(ranked_traits) > 1 else (dominant_trait, dominant_score)
+    lowest_trait, lowest_score = ranked_traits[-1]
+    
+    # Generate style summary
+    style_summary = f"You are a {player_level} player with {total_games} games analyzed. "
+    style_summary += f"Your dominant strength is {dominant_trait} play (score: {dominant_score:.0f}), "
+    
+    if dominant_score >= 70:
+        style_summary += f"making you a {dominant_trait} specialist."
+    elif dominant_score >= 60:
+        style_summary += f"showing strong {dominant_trait} tendencies."
+    else:
+        style_summary += f"with a {player_style.get('category', 'balanced')} approach."
+    
+    # Generate characteristics based on personality scores
+    characteristics = []
+    if personality_scores.get('tactical', 0) >= 65:
+        characteristics.append("brilliant tactical vision")
+    if personality_scores.get('positional', 0) >= 65:
+        characteristics.append("strategic depth and planning")
+    if personality_scores.get('aggressive', 0) >= 65:
+        characteristics.append("bold and initiative-seeking")
+    if personality_scores.get('patient', 0) >= 65:
+        characteristics.append("exceptional patience and discipline")
+    if personality_scores.get('novelty', 0) >= 65:
+        characteristics.append("creative and innovative thinking")
+    if personality_scores.get('staleness', 0) >= 65:
+        characteristics.append("consistent and methodical approach")
+    
+    # Add secondary characteristics
+    if second_score >= 60 and second_trait != dominant_trait:
+        trait_descriptions = {
+            'tactical': 'sharp calculation abilities',
+            'positional': 'strategic understanding',
+            'aggressive': 'dynamic attacking style',
+            'patient': 'solid defensive foundation',
+            'novelty': 'unconventional ideas',
+            'staleness': 'reliable consistency'
+        }
+        characteristics.append(trait_descriptions.get(second_trait, f"strong {second_trait} skills"))
+    
+    characteristics_text = ", ".join(characteristics) if characteristics else "well-rounded chess understanding"
+    
+    # Generate strengths based on highest scoring areas
+    strengths = []
+    if personality_scores.get('tactical', 0) >= 60:
+        strengths.append("complex calculation abilities")
+    if personality_scores.get('positional', 0) >= 60:
+        strengths.append("long-term strategic planning")
+    if personality_scores.get('aggressive', 0) >= 60:
+        strengths.append("initiative and pressure creation")
+    if personality_scores.get('patient', 0) >= 60:
+        strengths.append("advantage consolidation")
+    if personality_scores.get('novelty', 0) >= 60:
+        strengths.append("unconventional ideas and surprise moves")
+    if personality_scores.get('staleness', 0) >= 60:
+        strengths.append("consistent, reliable play")
+    
+    # Add phase-specific strengths
+    if phase_accuracies.get('opening', 0) >= 70:
+        strengths.append("strong opening preparation")
+    if phase_accuracies.get('middle', 0) >= 70:
+        strengths.append("excellent middlegame play")
+    if phase_accuracies.get('endgame', 0) >= 70:
+        strengths.append("precise endgame technique")
+    
+    strengths_text = ", ".join(strengths) if strengths else "solid fundamental skills"
+    
+    # Generate playing patterns
+    patterns = []
+    if personality_scores.get('tactical', 0) >= 65:
+        patterns.append("thrives in sharp, tactical positions")
+    if personality_scores.get('positional', 0) >= 65:
+        patterns.append("seeks long-term structural advantages")
+    if personality_scores.get('aggressive', 0) >= 65:
+        patterns.append("looks for attacking opportunities")
+    if personality_scores.get('patient', 0) >= 65:
+        patterns.append("methodical, unhurried approach")
+    if personality_scores.get('novelty', 0) >= 65:
+        patterns.append("avoids routine, seeks original solutions")
+    if personality_scores.get('staleness', 0) >= 65:
+        patterns.append("prefers familiar patterns and structures")
+    
+    # Add accuracy-based patterns
+    if average_accuracy >= 75:
+        patterns.append("maintains high accuracy under pressure")
+    elif average_accuracy >= 65:
+        patterns.append("generally accurate with occasional lapses")
+    else:
+        patterns.append("inconsistent accuracy requiring improvement")
+    
+    patterns_text = ", ".join(patterns) if patterns else "adaptable playing approach"
+    
+    # Generate improvement focus
+    improvement_focus = f"Your lowest scoring area is {lowest_trait} ({lowest_score:.0f}), "
+    
+    if lowest_trait == 'tactical':
+        improvement_focus += "which should be your primary focus for improvement. Work on calculation exercises and tactical puzzles."
+    elif lowest_trait == 'positional':
+        improvement_focus += "which should be your primary focus for improvement. Study strategic concepts and positional play."
+    elif lowest_trait == 'aggressive':
+        improvement_focus += "which should be your primary focus for improvement. Practice creating and maintaining initiative."
+    elif lowest_trait == 'patient':
+        improvement_focus += "which should be your primary focus for improvement. Work on discipline and avoiding premature moves."
+    elif lowest_trait == 'novelty':
+        improvement_focus += "which should be your primary focus for improvement. Explore new ideas and creative solutions."
+    elif lowest_trait == 'staleness':
+        improvement_focus += "which should be your primary focus for improvement. Vary your play and avoid repetitive patterns."
+    else:
+        improvement_focus += "which should be your primary focus for improvement."
+    
+    return {
+        'style_summary': style_summary,
+        'characteristics': characteristics_text,
+        'strengths': strengths_text,
+        'playing_patterns': patterns_text,
+        'improvement_focus': improvement_focus
+    }
+
+
 def _generate_famous_player_comparisons(
     personality_scores: Dict[str, float],
     player_style: Dict[str, Any]
@@ -1345,6 +1479,7 @@ def _build_deep_analysis_response(
     strengths, improvements = _summarize_strengths_and_gaps(personality_scores)
     recommendations = _build_recommendations(personality_scores, player_style, strengths, improvements, phase_accuracies)
     famous_players = _generate_famous_player_comparisons(personality_scores, player_style)
+    ai_style_analysis = _generate_ai_style_analysis(personality_scores, player_style, player_level, total_games, average_accuracy, phase_accuracies)
 
     return DeepAnalysisData(
         total_games=total_games,
@@ -1358,7 +1493,8 @@ def _build_deep_analysis_response(
         playing_style=playing_style,
         phase_accuracies=phase_accuracies,
         recommendations=recommendations,
-        famous_players=famous_players
+        famous_players=famous_players,
+        ai_style_analysis=ai_style_analysis
     )
 
 
@@ -1402,7 +1538,9 @@ def _build_fallback_deep_analysis(
             'secondary': 'Import more games to build a richer dataset.',
             'leverage': 'Once analysis is complete we will suggest strengths to lean into.'
         },
-        famous_players=famous_players
+        famous_players=famous_players,
+        ai_style_analysis=None,
+        personality_insights=None
     )
 # ============================================================================
 # HELPER FUNCTIONS FOR GAME IMPORT
@@ -2912,7 +3050,15 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
 
     print(f"[parallel] BACKGROUND TASK STARTED for {user_id} (canonical: {canonical_user_id}) on {platform}")
     platform_key = platform.strip().lower()
+    # Use the same canonicalization as the progress endpoint
     key = f"{canonical_user_id}_{platform_key}"
+    print(f"[parallel] Using progress key: {key}")
+    
+    # Clear any existing progress for this user to ensure fresh start
+    if key in analysis_progress:
+        print(f"[parallel] Clearing existing progress for key: {key}")
+        del analysis_progress[key]
+    
     limit = limit or ANALYSIS_TEST_LIMIT
     if ANALYSIS_TEST_LIMIT:
         limit = min(limit, ANALYSIS_TEST_LIMIT)
@@ -3056,6 +3202,7 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
 
             # Also log the current progress state for debugging
             print(f"[parallel] Current stored progress: {analysis_progress[key]}")
+            print(f"[parallel] Available progress keys after update: {list(analysis_progress.keys())}")
         
         # Start parallel analysis
         start_time = datetime.now()
@@ -3096,6 +3243,18 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             })
             
             print(f"[COMPLETE] Parallel batch analysis complete for {user_id}! Processed: {processed}, Failed: {failed}")
+            
+            # Schedule cleanup of progress data after 2 minutes to prevent memory leaks
+            # This gives the frontend enough time to detect completion
+            import asyncio
+            async def cleanup_progress():
+                await asyncio.sleep(120)  # Wait 2 minutes
+                if key in analysis_progress:
+                    print(f"[CLEANUP] Removing completed progress for key: {key}")
+                    del analysis_progress[key]
+            
+            # Schedule cleanup in background
+            asyncio.create_task(cleanup_progress())
         else:
             print(f"[ERROR] Parallel analysis failed: {result['message']}")
             analysis_progress[key].update({
@@ -3103,6 +3262,17 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
                 "current_phase": "error",
                 "progress_percentage": 100
             })
+            
+            # Schedule cleanup of error progress data after 2 minutes
+            import asyncio
+            async def cleanup_progress():
+                await asyncio.sleep(120)  # Wait 2 minutes
+                if key in analysis_progress:
+                    print(f"[CLEANUP] Removing error progress for key: {key}")
+                    del analysis_progress[key]
+            
+            # Schedule cleanup in background
+            asyncio.create_task(cleanup_progress())
         
     except Exception as e:
         print(f"[error] ERROR in parallel batch analysis: {e}")
@@ -3113,6 +3283,17 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             "current_phase": "error",
             "progress_percentage": 100
         })
+        
+        # Schedule cleanup of error progress data after 2 minutes
+        import asyncio
+        async def cleanup_progress():
+            await asyncio.sleep(120)  # Wait 2 minutes
+            if key in analysis_progress:
+                print(f"[CLEANUP] Removing exception progress for key: {key}")
+                del analysis_progress[key]
+        
+        # Schedule cleanup in background
+        asyncio.create_task(cleanup_progress())
 
 async def _perform_sequential_batch_analysis(user_id: str, platform: str, analysis_type: str, 
                                            limit: int, depth: int, skill_level: int):

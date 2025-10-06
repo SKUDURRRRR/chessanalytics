@@ -764,7 +764,9 @@ export default function GameAnalysisPage() {
                     ? 'text-green-600'
                     : gameRecord?.result === 'loss'
                       ? 'text-red-600'
-                      : 'text-gray-700'
+                      : gameRecord?.result === 'draw'
+                        ? 'text-yellow-600'
+                        : 'text-gray-700'
                 }>
                   {gameRecord?.result ? gameRecord.result.toUpperCase() : 'Unknown'}
                 </span>

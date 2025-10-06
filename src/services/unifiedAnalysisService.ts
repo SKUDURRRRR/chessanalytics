@@ -104,6 +104,9 @@ function validateDeepAnalysisData(data: any): DeepAnalysisData | null {
       secondary: data.recommendations?.secondary || 'Play a fresh set of games to refresh recent patterns.',
       leverage: data.recommendations?.leverage || 'Review your most accurate games once analysis is ready.',
     },
+    famous_players: data.famous_players || null,
+    ai_style_analysis: data.ai_style_analysis || null,
+    personality_insights: data.personality_insights || null,
   }
 }
 
@@ -513,6 +516,7 @@ export class UnifiedAnalysisService {
           secondary: 'Play a fresh set of games to refresh recent patterns.',
           leverage: 'Review your most accurate games once analysis is ready.',
         },
+        famous_players: null,
       }
     }
   }

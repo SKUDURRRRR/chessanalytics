@@ -80,7 +80,14 @@ export function AnalysisProgressBar({ analyzing, progress, statusMessage }: Anal
         )}
       </div>
 
-      <div className="relative mt-3 h-2.5 w-full overflow-hidden rounded-full bg-blue-100">
+      {/* Status message above progress bar */}
+      <div className="mt-3 text-center">
+        <span className="text-xs font-medium text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
+          it might take few minutes, hold on!
+        </span>
+      </div>
+
+      <div className="relative mt-2 h-2.5 w-full overflow-hidden rounded-full bg-blue-100">
         {progress ? (
           <div
             className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-600 transition-[width] duration-300 ease-out"

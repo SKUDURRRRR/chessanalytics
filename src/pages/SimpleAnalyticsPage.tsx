@@ -207,14 +207,23 @@ export default function SimpleAnalyticsPage() {
       const progress = await UnifiedAnalysisService.getRealtimeAnalysisProgress(userId, platform, 'stockfish')
 
       if (progress) {
+        console.log('[SimpleAnalytics] Progress received:', progress)
         setAnalysisProgress(progress)
+        
+        // Check if this is a real completion or just no analysis running
+        const isRealCompletion = progress.is_complete && progress.total_games > 0
+        const isNoAnalysisRunning = progress.is_complete && progress.total_games === 0 && progress.analyzed_games === 0
+        
         setProgressStatus(
-          progress.is_complete
+          isRealCompletion
             ? (progress.status_message || 'Analysis complete! Refreshing your insights...')
+            : isNoAnalysisRunning
+            ? null
             : 'Crunching games with Stockfish and updating live...'
         )
 
-        if (progress.is_complete) {
+        if (isRealCompletion) {
+          console.log('[SimpleAnalytics] Analysis complete, stopping progress polling')
           if (progressIntervalRef.current) {
             clearInterval(progressIntervalRef.current)
             progressIntervalRef.current = null
@@ -222,12 +231,41 @@ export default function SimpleAnalyticsPage() {
           setAnalyzing(false)
           setTimeout(() => setProgressStatus(null), 2500)
           handleRefresh()
+        } else if (isNoAnalysisRunning) {
+          console.log('[SimpleAnalytics] No analysis running, stopping progress polling')
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current)
+            progressIntervalRef.current = null
+          }
+          setAnalyzing(false)
         } else {
           setAnalyzing(true)
         }
       } else {
+        console.log('[SimpleAnalytics] No progress data received')
         setProgressStatus('Waiting for the engine to report progress...')
         setAnalyzing(true)
+        
+        // Fallback: Check if analysis data is available even without progress
+        // This helps detect completion when progress tracking fails
+        try {
+          console.log('[SimpleAnalytics] Checking for analysis data as fallback...')
+          const analysisData = await UnifiedAnalysisService.getAnalysisStats(userId, platform, 'stockfish')
+          if (analysisData && analysisData.total_games > 0) {
+            console.log('[SimpleAnalytics] Found analysis data, assuming analysis complete')
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current)
+              progressIntervalRef.current = null
+            }
+            setAnalyzing(false)
+            setProgressStatus('Analysis complete! Refreshing your insights...')
+            setTimeout(() => setProgressStatus(null), 2500)
+            handleRefresh()
+            return
+          }
+        } catch (fallbackError) {
+          console.log('[SimpleAnalytics] Fallback check failed:', fallbackError)
+        }
       }
     } catch (error) {
       console.error('Error fetching progress:', error)
@@ -270,9 +308,9 @@ export default function SimpleAnalyticsPage() {
             progressIntervalRef.current = null
           }
           setAnalyzing(false)
-          setProgressStatus('Timed out waiting for live updates. Refreshing your data...')
+          setProgressStatus('Analysis is taking longer than expected. Refreshing your data...')
           handleRefresh()
-        }, 10 * 60 * 1000) // 10 minutes timeout
+        }, 3 * 60 * 1000) // 3 minutes timeout - reduced for faster recovery
 
         console.log('[SimpleAnalytics] Calling initial fetchProgress immediately')
         await fetchProgress()
@@ -337,7 +375,6 @@ export default function SimpleAnalyticsPage() {
           <div className="text-center space-y-2">
             <div className="flex items-center justify-center space-x-2 text-lg text-gray-700">
               <span className="font-medium">{userId}</span>
-              <span className="text-gray-400">???</span>
               <span className="capitalize font-medium">{platform}</span>
             </div>
             <div className="flex items-center justify-center space-x-3">
