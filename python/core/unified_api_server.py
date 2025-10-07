@@ -1877,6 +1877,70 @@ async def _fetch_chesscom_games(user_id: str, limit: int) -> List[Dict[str, Any]
         return []
 
 
+async def _fetch_single_lichess_game(game_id: str) -> Optional[str]:
+    """Fetch a single game PGN from Lichess by game ID"""
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            url = f"https://lichess.org/game/export/{game_id}"
+            params = {'pgnInJson': 'false'}
+            
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    pgn_text = await response.text()
+                    return pgn_text
+                else:
+                    print(f"Lichess API error fetching game {game_id}: {response.status}")
+                    return None
+    except Exception as e:
+        print(f"Error fetching Lichess game {game_id}: {e}")
+        return None
+
+
+async def _fetch_single_chesscom_game(user_id: str, game_id: str) -> Optional[str]:
+    """Fetch a single game PGN from Chess.com by searching recent games"""
+    try:
+        import aiohttp
+        from datetime import datetime, timedelta
+        
+        # Chess.com doesn't have a single-game endpoint, so we need to search recent archives
+        # The game_id is typically a URL like "https://www.chess.com/game/live/123456"
+        # We'll extract just the number and search through recent months
+        
+        async with aiohttp.ClientSession() as session:
+            # Search last 3 months of games
+            end_date = datetime.now()
+            
+            for months_ago in range(3):
+                search_date = end_date - timedelta(days=30 * months_ago)
+                year = search_date.year
+                month = search_date.month
+                
+                url = f"https://api.chess.com/pub/player/{user_id}/games/{year}/{month:02d}"
+                
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        games = data.get('games', [])
+                        
+                        # Search for the game by ID
+                        for game in games:
+                            game_url = game.get('url', '')
+                            # Check if this is the game we're looking for
+                            if game_id in game_url or game_url.endswith(f"/{game_id}"):
+                                pgn = game.get('pgn', '')
+                                if pgn:
+                                    return pgn
+            
+            # If not found in recent months, return None
+            print(f"Chess.com game {game_id} not found in recent archives for user {user_id}")
+            return None
+            
+    except Exception as e:
+        print(f"Error fetching Chess.com game {game_id}: {e}")
+        return None
+
+
 
 
 def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Dict[str, Any]]:
@@ -2317,12 +2381,16 @@ async def import_games(payload: BulkGameImportRequest):
 
     try:
         if pgn_rows:
+            print(f'[import_games] Upserting {len(pgn_rows)} PGN rows')
+            print(f'[import_games] Sample PGN row: {pgn_rows[0] if pgn_rows else "None"}')
             pgn_response = supabase_service.table('games_pgn').upsert(
                 pgn_rows,
                 on_conflict='user_id,platform,provider_game_id'
             ).execute()
             print('[import_games] pgn upsert response: count=', getattr(pgn_response, 'count', None))
+            print(f'[import_games] pgn upsert response data: {pgn_response.data[:2] if pgn_response.data else "None"}')
     except Exception as exc:
+        print(f'[import_games] ❌ PGN upsert error: {exc}')
         errors.append(f"games_pgn upsert failed: {exc}")
 
     total_games = 0
@@ -2665,6 +2733,17 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         
         # Try to find the game by provider_game_id first
         print(f"[SINGLE GAME ANALYSIS] Querying games_pgn by provider_game_id: {game_id}")
+        print(f"[SINGLE GAME ANALYSIS] Query params: user_id={canonical_user_id}, platform={request.platform}")
+        
+        # First, let's see what's actually in the database for this user
+        try:
+            all_games = db_client.table('games_pgn').select('provider_game_id, game_id').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', request.platform).limit(5).execute()
+            print(f"[SINGLE GAME ANALYSIS] Sample games for this user: {all_games.data if all_games else 'None'}")
+        except Exception as debug_error:
+            print(f"[SINGLE GAME ANALYSIS] Debug query failed: {debug_error}")
+        
         try:
             game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
                 'provider_game_id', game_id
@@ -2695,20 +2774,50 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                     message=f"Database query failed: {str(query_error)}"
                 )
         
+        # If still not found in database, try fetching from chess platform
         if not game_response or not hasattr(game_response, 'data') or not game_response.data:
-            print(f"[SINGLE GAME ANALYSIS] ❌ Game not found in games_pgn table: {game_id}")
-            return UnifiedAnalysisResponse(
-                success=False,
-                message=f"Game not found: {game_id}. Please ensure the game has been imported first."
-            )
-        
-        print(f"[SINGLE GAME ANALYSIS] Extracting PGN data from response")
-        pgn_data = game_response.data.get('pgn') if isinstance(game_response.data, dict) else None
-        if not pgn_data:
-            return UnifiedAnalysisResponse(
-                success=False,
-                message=f"No PGN data found for game: {game_id}"
-            )
+            print(f"[SINGLE GAME ANALYSIS] Game not found in database, attempting to fetch from {request.platform}")
+            
+            pgn_from_platform = None
+            if request.platform == 'lichess':
+                pgn_from_platform = await _fetch_single_lichess_game(game_id)
+            elif request.platform == 'chess.com':
+                pgn_from_platform = await _fetch_single_chesscom_game(request.user_id, game_id)
+            
+            if not pgn_from_platform:
+                print(f"[SINGLE GAME ANALYSIS] ❌ Game not found in database or on {request.platform}: {game_id}")
+                return UnifiedAnalysisResponse(
+                    success=False,
+                    message=f"Game not found: {game_id}. Unable to fetch from {request.platform}. Please ensure the game ID is correct and the game exists."
+                )
+            
+            print(f"[SINGLE GAME ANALYSIS] ✓ Successfully fetched PGN from {request.platform}, saving to database")
+            
+            # Save the PGN to database for future use
+            try:
+                from datetime import datetime
+                db_client.table('games_pgn').upsert({
+                    'user_id': canonical_user_id,
+                    'platform': request.platform,
+                    'provider_game_id': game_id,
+                    'pgn': pgn_from_platform,
+                    'created_at': datetime.utcnow().isoformat()
+                }, on_conflict='user_id,platform,provider_game_id').execute()
+                print(f"[SINGLE GAME ANALYSIS] ✓ Saved PGN to database")
+            except Exception as save_error:
+                print(f"[SINGLE GAME ANALYSIS] ⚠ Warning: Failed to save PGN to database: {save_error}")
+                # Continue anyway - we have the PGN in memory
+            
+            # Use the fetched PGN
+            pgn_data = pgn_from_platform
+        else:
+            print(f"[SINGLE GAME ANALYSIS] Extracting PGN data from response")
+            pgn_data = game_response.data.get('pgn') if isinstance(game_response.data, dict) else None
+            if not pgn_data:
+                return UnifiedAnalysisResponse(
+                    success=False,
+                    message=f"No PGN data found for game: {game_id}"
+                )
         
         # Ensure the game exists in the games table for foreign key constraint
         # Check if game exists in games table

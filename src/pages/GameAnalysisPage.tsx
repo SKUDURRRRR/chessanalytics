@@ -411,7 +411,24 @@ export default function GameAnalysisPage() {
 
       if (!response.ok) {
         const text = await response.text()
-        throw new Error(text || `Analysis request failed: ${response.status}`)
+        let errorMessage = `Analysis request failed: ${response.status}`
+        
+        // Try to extract error message from response
+        try {
+          const errorData = JSON.parse(text)
+          if (errorData.message) {
+            errorMessage = errorData.message
+          } else if (errorData.detail) {
+            errorMessage = errorData.detail
+          }
+        } catch {
+          // If parsing fails, use the raw text if it's not too long
+          if (text && text.length < 200) {
+            errorMessage = text
+          }
+        }
+        
+        throw new Error(errorMessage)
       }
 
       const payload = await response.json()
@@ -423,8 +440,10 @@ export default function GameAnalysisPage() {
       // Store cleanup function for later
       return cleanup
     } catch (error) {
-      console.error('Failed to request analysis:', error)
-      setAnalysisError(error instanceof Error ? error.message : 'Failed to request analysis.')
+      // Extract just the error message to avoid any circular reference issues
+      const errorMessage = error instanceof Error ? error.message : 'Failed to request analysis.'
+      console.error('Failed to request analysis:', errorMessage)
+      setAnalysisError(errorMessage)
       setAutoAnalyzing(false)
     }
   }
@@ -467,7 +486,8 @@ export default function GameAnalysisPage() {
         console.log(`No analysis yet, will retry in 10 seconds...`)
         setTimeout(poll, 10000) // Poll every 10 seconds
       } catch (error) {
-        console.error('Error polling for analysis:', error)
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error('Error polling for analysis:', errorMessage)
         if (!isCancelled) {
           setAnalysisError('Error checking analysis status.')
           setAutoAnalyzing(false)
@@ -520,7 +540,8 @@ export default function GameAnalysisPage() {
           console.log('No analysis found for this game. User can click "Analyze" in match history to analyze it.')
         }
       } catch (err) {
-        console.error('Unable to load game analysis', err)
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        console.error('Unable to load game analysis', errorMessage)
         if (isMounted) {
           setError('Unable to load analysis for this game.')
         }
