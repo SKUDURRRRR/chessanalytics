@@ -177,7 +177,7 @@ def _normalize_analysis_type(requested: Optional[str], *, quiet: bool = False) -
 
 # In-memory storage for analysis progress
 analysis_progress = {}
-ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "10"))
+ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 
 # ============================================================================
 # UNIFIED PYDANTIC MODELS
@@ -188,7 +188,7 @@ class UnifiedAnalysisRequest(BaseModel):
     user_id: str = Field(..., description="User ID to analyze games for")
     platform: str = Field(..., description="Platform (lichess, chess.com, etc.)")
     analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
-    limit: Optional[int] = Field(10, description="Maximum number of games to analyze")
+    limit: Optional[int] = Field(5, description="Maximum number of games to analyze")
     depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
     skill_level: Optional[int] = Field(8, description="Stockfish skill level (0-20)")
     
@@ -444,7 +444,7 @@ async def unified_analyze(
                     canonical_user_id,
                     request.platform,
                     request.analysis_type,
-                    request.limit or 10,
+                    request.limit or 5,
                     request.depth or 8,
                     request.skill_level or 8
                 )
@@ -458,7 +458,7 @@ async def unified_analyze(
                         "user_id": canonical_user_id,
                         "platform": request.platform,
                         "analysis_type": request.analysis_type,
-                        "limit": request.limit or 10,
+                        "limit": request.limit or 5,
                         "status": "running"
                     }
                 )
@@ -474,7 +474,7 @@ async def unified_analyze(
 async def get_analysis_results(
     user_id: str,
     platform: str,
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(5, ge=1, le=100),
     analysis_type: str = Query("stockfish"),
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
@@ -3060,7 +3060,7 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
             user_id=canonical_user_id,
             platform=request.platform,
             analysis_type=request.analysis_type,
-            limit=request.limit or 10,
+            limit=request.limit or 5,
             depth=request.depth or 8,
             skill_level=request.skill_level or 8
         )
@@ -3074,7 +3074,7 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
                 "user_id": canonical_user_id,
                 "platform": request.platform,
                 "analysis_type": request.analysis_type,
-                "limit": request.limit or 10,
+                "limit": request.limit or 5,
                 "status": "queued"
             }
         )
@@ -3178,6 +3178,7 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
         return all_games[:limit] if all_games else []
     
     # Get game IDs that are already analyzed
+    # Note: games list has 'provider_game_id', but analysis tables use 'game_id' (same value, different field name)
     game_ids = [game.get('provider_game_id') for game in all_games if game.get('provider_game_id')]
     
     if not game_ids:
@@ -3187,13 +3188,13 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     analyzed_game_ids = set()
     
     try:
-        # Check move_analyses table
-        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        # Check move_analyses table - filter by analysis_method (stockfish/deep)
+        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_method', analysis_type).in_('game_id', game_ids).execute()
         if move_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in move_analyses_response.data)
         
-        # Check game_analyses table
-        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        # Check game_analyses table - filter by analysis_type (stockfish/deep)
+        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_type', analysis_type).in_('game_id', game_ids).execute()
         if game_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
             
@@ -3221,6 +3222,11 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     if unanalyzed_games:
         print(f"[info] First unanalyzed game ID: {unanalyzed_games[0].get('provider_game_id')}")
         print(f"[info] Last unanalyzed game ID: {unanalyzed_games[-1].get('provider_game_id')}")
+        print(f"[info] First unanalyzed game played_at: {unanalyzed_games[0].get('played_at')}")
+        print(f"[info] Last unanalyzed game played_at: {unanalyzed_games[-1].get('played_at')}")
+    if analyzed_game_ids:
+        print(f"[info] Sample analyzed game IDs: {list(analyzed_game_ids)[:5]}")
+    print(f"[info] Sample game IDs from fetched games: {game_ids[:5]}")
     return unanalyzed_games
 
 async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: str, 
@@ -3761,7 +3767,7 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
 
         response = supabase_service.table('move_analyses').upsert(
             data,
-            on_conflict='user_id,platform,game_id,analysis_method'
+            on_conflict='user_id,platform,game_id'
         ).execute()
         return bool(getattr(response, 'data', None))
 
@@ -3777,10 +3783,21 @@ async def _save_game_analysis(analysis: GameAnalysis) -> bool:
         return False
     
     try:
+        print(f"[SAVE ANALYSIS] Starting save for game_id: {analysis.game_id}, user: {analysis.user_id}, platform: {analysis.platform}")
+        print(f"[SAVE ANALYSIS] Analysis type: {analysis.analysis_type}, moves count: {len(analysis.moves_analysis)}")
+        
         result = await persistence.save_analysis_with_retry(analysis)
+        
+        print(f"[SAVE ANALYSIS] Save result: success={result.success}, status={result.status}, message={result.message}")
+        if not result.success:
+            print(f"[SAVE ANALYSIS] Save failed: {result.error_details}")
+        
         return result.success
     except Exception as e:
-        print(f"Error in reliable persistence: {e}")
+        print(f"[SAVE ANALYSIS] ❌ CRITICAL ERROR in reliable persistence: {e}")
+        print(f"[SAVE ANALYSIS] Error type: {type(e).__name__}")
+        import traceback
+        print(f"[SAVE ANALYSIS] Traceback: {traceback.format_exc()}")
         return False
 
 def _map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:

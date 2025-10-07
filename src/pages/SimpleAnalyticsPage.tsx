@@ -13,7 +13,7 @@ import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
 import { ComprehensiveAnalytics } from '../components/debug/ComprehensiveAnalytics'
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
-const ANALYSIS_TEST_LIMIT = 10
+const ANALYSIS_TEST_LIMIT = 5
 
 const serializeOpeningIdentifiers = (identifiers: OpeningIdentifierSets): string => {
   try {

@@ -462,13 +462,13 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     analyzed_game_ids = set()
     
     try:
-        # Check move_analyses table
-        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        # Check move_analyses table - filter by analysis_method (stockfish/deep)
+        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_method', analysis_type).in_('game_id', game_ids).execute()
         if move_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in move_analyses_response.data)
         
-        # Check game_analyses table
-        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        # Check game_analyses table - filter by analysis_type (stockfish/deep)
+        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_type', analysis_type).in_('game_id', game_ids).execute()
         if game_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
             

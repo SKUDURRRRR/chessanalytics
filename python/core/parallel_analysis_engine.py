@@ -157,7 +157,7 @@ class ParallelAnalysisEngine:
         user_id: str,
         platform: str,
         analysis_type: str = "stockfish",
-        limit: int = 10,
+        limit: int = 5,
         depth: int = 8,
         skill_level: int = 8,
         progress_callback=None
