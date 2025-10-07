@@ -39,7 +39,7 @@ from .error_handlers import (
 # Load environment configuration
 from .config import get_config
 config = get_config()
-from .cors_security import get_default_cors_config, get_production_cors_config
+from .cors_security import get_default_cors_config, get_production_cors_config, CORSSecurityConfig
 
 # Load performance configuration
 performance_config = get_performance_config()
