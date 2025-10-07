@@ -114,7 +114,7 @@ function CriticalMomentCard({
       <div className="p-4">
         <div className="flex flex-col lg:flex-row items-start gap-4">
           {/* Left: Move Info */}
-          <div className="flex-1 w-full lg:w-auto min-w-0 order-2 lg:order-1">
+          <div className="flex-1 w-full lg:w-auto min-w-0 order-1 lg:order-1">
             <div className="flex items-center gap-3 mb-2">
               <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${getNumberBadgeClass()}`}>
                 #{index + 1}
@@ -171,11 +171,12 @@ function CriticalMomentCard({
           </div>
 
           {/* Right: Chess Board */}
-          <div className="flex-shrink-0 w-full lg:w-auto flex justify-center lg:justify-start order-1 lg:order-2">
+          <div className="flex-shrink-0 w-full lg:w-auto order-2 lg:order-2">
             <CriticalMomentBoard
               move={move}
               allMoves={allMoves}
               playerColor={playerColor}
+              className="lg:sticky lg:top-4"
             />
           </div>
         </div>

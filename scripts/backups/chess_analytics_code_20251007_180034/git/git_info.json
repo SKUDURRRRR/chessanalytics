@@ -1,0 +1,25 @@
+{
+  "current_branch": "legacy-v1.0.0",
+  "current_commit": "41be945d7b93a44b2c027e6187b80016ab73e6ea",
+  "commit_message": "feat: v1.0.5 - Design and Game Analysis Update\n\nMajor Features:\n- Enhanced UI color system with comprehensive theming\n- Advanced chess board themes and visual improvements\n- Opening identification and theory analysis system\n- Enhanced move coaching with critical moment analysis\n- Positional analysis board with interactive features\n- Brilliant moves detection and highlighting\n\nBackend Improvements:\n- Advanced chess analysis engine with coaching comments\n- Enhanced parallel analysis processing\n- Improved analysis persistence and reliability\n- Better error handling and performance optimization\n\nUI/UX Enhancements:\n- Responsive design improvements across all components\n- Enhanced analytics visualization\n- Better game analysis page layout and functionality\n- Improved debugging tools and testing components\n\nDocumentation:\n- Comprehensive color system documentation\n- Opening identification implementation guide\n- UI color quick reference\n- Phase 1 testing guide\n- Brilliant moves fix documentation\n\nTesting:\n- Added comprehensive test suites for utilities\n- Enhanced component testing coverage\n- Improved test organization and structure",
+  "commit_date": "2025-10-07 04:00:56 +0300",
+  "remote_url": "https://github.com/SKUDURRRRR/chessanalytics.git",
+  "status": "M python/core/__pycache__/analysis_engine.cpython-312.pyc\n M python/core/analysis_engine.py\n M python/core/personality_scoring.py\n M python/core/unified_api_server.py\n D src/components/debug/ChessBoardTest.tsx\n M src/components/debug/ComparativeAnalysis.tsx\n M src/components/debug/CriticalMomentBoard.tsx\n M src/components/debug/EnhancedGameInsights.tsx\n M src/components/debug/OpeningTheoryAnalysis.tsx\n M src/components/debug/PositionalAnalysis.tsx\n M src/components/debug/PositionalAnalysisBoard.tsx\n M src/components/simple/EloTrendGraph.tsx\n M src/components/simple/ResponsiveTrendChart.tsx\n M src/components/simple/SimpleAnalytics.tsx\n M src/types/index.ts\n M src/utils/chessBoardTheme.ts\n?? scripts/BACKUP_README.md\n?? scripts/backup.ps1\n?? scripts/backup_all.py\n?? scripts/backup_code.py\n?? scripts/backup_config.py\n?? scripts/backup_database.py\n?? scripts/backups/\n?? scripts/reanalyze_skudurelis_10_games.py\n?? src/components/debug/EnhancedOpeningAnalysis.tsx\n?? src/components/deep/EnhancedOpeningPlayerCard.tsx\n?? tatus",
+  "branches": [
+    "* legacy-v1.0.0",
+    "  master",
+    "  modular-import-checkpoint",
+    "  restore-from-v1",
+    "  remotes/origin/HEAD -> origin/master",
+    "  remotes/origin/legacy-v1.0.0",
+    "  remotes/origin/master"
+  ],
+  "tags": [
+    "v1.0.0",
+    "v1.0.1",
+    "v1.0.2",
+    "v1.0.3",
+    "v1.0.4",
+    "v1.0.5"
+  ]
+}

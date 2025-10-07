@@ -25,8 +25,8 @@ export const DARK_CHESS_BOARD_THEME = {
   // Notation styling to match dark theme
   customNotationStyle: {
     color: '#cbd5e1', // slate-300
-    fontSize: '12px',
-    fontWeight: '500',
+    fontSize: '8px',
+    fontWeight: '400',
   },
   
   // Drop square highlighting

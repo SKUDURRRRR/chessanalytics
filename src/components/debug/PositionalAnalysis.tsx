@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { Chess } from 'chess.js'
 import { PositionalAnalysisBoard } from './PositionalAnalysisBoard'
-import { ChessBoardTest } from './ChessBoardTest'
 import { getMoveClassificationBgColor } from '../../utils/chessColors'
 
 interface ProcessedMove {
@@ -45,13 +44,14 @@ interface StrategicTheme {
 }
 
 export function PositionalAnalysis({ moves, playerColor, currentMove }: PositionalAnalysisProps) {
-  // Force re-render with timestamp
-  const renderKey = Date.now()
   const userMoves = moves.filter(move => move.isUserMove)
   const opponentMoves = moves.filter(move => !move.isUserMove)
   
   // Track current move for each element
   const [elementMoveStates, setElementMoveStates] = useState<{[key: string]: {moveIndex: number, move: ProcessedMove | null, isElementMove: boolean}}>({})
+  
+  // Track selected key move for each element/theme
+  const [selectedKeyMoves, setSelectedKeyMoves] = useState<{[key: string]: number}>({})
 
   const getMoveExplanation = (elementName: string, move: ProcessedMove) => {
     const explanations: { [key: string]: string } = {
@@ -68,8 +68,31 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
     return explanations[elementName] || `${move.san} - ${move.explanation || 'This move contributes to the overall positional theme'}.`
   }
 
+  const handleKeyMoveClick = (elementKey: string, moveIndex: number) => {
+    // Update the selected key move for this element
+    setSelectedKeyMoves(prev => ({
+      ...prev,
+      [elementKey]: moveIndex
+    }))
+    
+    // Find the move and update the element state
+    const move = moves.find(m => m.index === moveIndex)
+    if (move) {
+      setElementMoveStates(prev => ({
+        ...prev,
+        [elementKey]: { 
+          moveIndex, 
+          move, 
+          isElementMove: true // This is a key move for the element
+        }
+      }))
+    }
+  }
+
   const positionalElements = useMemo(() => {
     const elements: PositionalElement[] = []
+    
+    // Debug logging reduced
     
     // Analyze piece activity
     const activeMoves = userMoves.filter(move => 
@@ -138,6 +161,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
       })
     }
 
+    // console.log('PositionalAnalysis - generated elements:', elements)
     return elements
   }, [userMoves])
 
@@ -222,16 +246,57 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
     const mistakes = userMoves.filter(m => m.classification === 'mistake' || m.classification === 'blunder').length
     const inaccuracies = userMoves.filter(m => m.classification === 'inaccuracy').length
     
-    // Accuracy now measures blunder avoidance (percentage of moves that are NOT blunders)
-    const accuracy = totalMoves > 0 ? Math.round(((totalMoves - blunders) / totalMoves) * 100) : 0
-    const solidity = totalMoves > 0 ? Math.round(((bestMoves + goodMoves) / totalMoves) * 100) : 0
-    const errorRate = totalMoves > 0 ? Math.round((mistakes / totalMoves) * 100) : 0
-    
-    // Calculate average centipawn loss
+    // NEW IMPROVED METRICS FOR BETTER LEARNING INSIGHTS
+
+    // 1. Positional Understanding - How well you handle quiet positional moves
+    const quietMoves = userMoves.filter(m => 
+      !m.san.includes('+') && !m.san.includes('x') && !m.san.includes('=')
+    )
+    const goodQuietMoves = quietMoves.filter(m => 
+      m.classification === 'best' || m.classification === 'good'
+    )
+    const positionalUnderstanding = quietMoves.length > 0 
+      ? Math.round((goodQuietMoves.length / quietMoves.length) * 100) 
+      : 0
+
+    // 2. Tactical Awareness - Your ability to spot and execute tactical patterns
+    const tacticalMoves = userMoves.filter(m => 
+      m.san.includes('+') || m.san.includes('x') || m.classification === 'brilliant'
+    )
+    const goodTacticalMoves = tacticalMoves.filter(m => 
+      m.classification === 'best' || m.classification === 'brilliant' || m.classification === 'good'
+    )
+    const tacticalAwareness = tacticalMoves.length > 0 
+      ? Math.round((goodTacticalMoves.length / tacticalMoves.length) * 100) 
+      : 0
+
+    // 3. Endgame Technique - Your skill in the final phase of the game
+    const endgameMoves = userMoves.slice(-Math.min(10, Math.floor(userMoves.length * 0.3))) // Last 10 moves or 30% of game
+    const goodEndgameMoves = endgameMoves.filter(m => 
+      m.classification === 'best' || m.classification === 'good'
+    )
+    const endgameTechnique = endgameMoves.length > 0 
+      ? Math.round((goodEndgameMoves.length / endgameMoves.length) * 100) 
+      : 0
+
+    // Calculate average centipawn loss (needed for learning priority)
     const movesWithLoss = userMoves.filter(m => m.centipawnLoss !== null)
     const avgCentipawnLoss = movesWithLoss.length > 0 
       ? Math.round(movesWithLoss.reduce((sum, m) => sum + (m.centipawnLoss || 0), 0) / movesWithLoss.length)
       : 0
+
+    // 4. Learning Priority - Dynamic recommendation based on weaknesses
+    const getLearningPriority = () => {
+      const weaknesses = []
+      if (positionalUnderstanding < 60) weaknesses.push('Positional Play')
+      if (tacticalAwareness < 50) weaknesses.push('Tactical Patterns')
+      if (endgameTechnique < 70) weaknesses.push('Endgame Technique')
+      if (avgCentipawnLoss > 100) weaknesses.push('Calculation')
+      if (blunders > totalMoves * 0.1) weaknesses.push('Blunder Prevention')
+      
+      return weaknesses.length > 0 ? weaknesses[0] : 'Maintain Current Level'
+    }
+    const learningPriority = getLearningPriority()
 
     // Calculate consistency (streak of good moves)
     let maxStreak = 0
@@ -246,9 +311,10 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
     }
 
     return {
-      accuracy,
-      solidity,
-      errorRate,
+      positionalUnderstanding,
+      tacticalAwareness,
+      endgameTechnique,
+      learningPriority,
       avgCentipawnLoss,
       maxStreak,
       totalMoves,
@@ -272,10 +338,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
   const scoreInfo = getPositionalScore(positionalScore)
 
   return (
-    <div key={renderKey} className="space-y-6">
-      {/* Test Chess Board */}
-      <ChessBoardTest />
-      
+    <div className="space-y-6">
       {/* Positional Score Overview */}
       <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
         <h3 className="mb-6 text-lg font-semibold text-white">Positional Assessment</h3>
@@ -301,61 +364,64 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
           </div>
         </div>
 
-        {/* Detailed Metrics Grid */}
+        {/* Improved Learning Metrics Grid */}
         <div className="mb-6">
           <div className="grid grid-cols-2 gap-4">
               <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Accuracy</span>
-                  <span className="text-sm font-semibold text-emerald-300">{detailedMetrics.accuracy}%</span>
+                  <span className="text-xs text-slate-400">Positional Understanding</span>
+                  <span className="text-sm font-semibold text-emerald-300">{detailedMetrics.positionalUnderstanding}%</span>
                 </div>
                 <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
                   <div 
                     className="h-full bg-emerald-400 transition-all duration-500"
-                    style={{ width: `${Math.min(100, detailedMetrics.accuracy)}%` }}
+                    style={{ width: `${Math.min(100, detailedMetrics.positionalUnderstanding)}%` }}
                   />
                 </div>
                 <div className="mt-2 text-xs text-slate-500">
-                  Percentage of moves that avoid blunders
+                  How well you handle quiet positional moves
                 </div>
               </div>
               
               <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Solidity</span>
-                  <span className="text-sm font-semibold text-sky-300">{detailedMetrics.solidity}%</span>
+                  <span className="text-xs text-slate-400">Tactical Awareness</span>
+                  <span className="text-sm font-semibold text-sky-300">{detailedMetrics.tacticalAwareness}%</span>
                 </div>
                 <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
                   <div 
                     className="h-full bg-sky-400 transition-all duration-500"
-                    style={{ width: `${Math.min(100, detailedMetrics.solidity)}%` }}
+                    style={{ width: `${Math.min(100, detailedMetrics.tacticalAwareness)}%` }}
                   />
                 </div>
                 <div className="mt-2 text-xs text-slate-500">
-                  Percentage of best, brilliant, and good moves played
+                  Your ability to spot and execute tactical patterns
                 </div>
               </div>
               
               <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Avg Loss</span>
-                  <span className="text-sm font-semibold text-amber-300">{detailedMetrics.avgCentipawnLoss}cp</span>
+                  <span className="text-xs text-slate-400">Endgame Technique</span>
+                  <span className="text-sm font-semibold text-amber-300">{detailedMetrics.endgameTechnique}%</span>
                 </div>
-                <div className="mt-1 text-xs text-slate-500">
-                  {detailedMetrics.avgCentipawnLoss < 20 ? 'Excellent' : 
-                   detailedMetrics.avgCentipawnLoss < 50 ? 'Good' : 
-                   detailedMetrics.avgCentipawnLoss < 100 ? 'Average' : 'Needs improvement'}
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
+                  <div 
+                    className="h-full bg-amber-400 transition-all duration-500"
+                    style={{ width: `${Math.min(100, detailedMetrics.endgameTechnique)}%` }}
+                  />
+                </div>
+                <div className="mt-2 text-xs text-slate-500">
+                  Your skill in the final phase of the game
                 </div>
               </div>
               
               <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Max Streak</span>
-                  <span className="text-sm font-semibold text-purple-300">{detailedMetrics.maxStreak}</span>
+                  <span className="text-xs text-slate-400">Learning Priority</span>
+                  <span className="text-sm font-semibold text-purple-300">{detailedMetrics.learningPriority}</span>
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {detailedMetrics.maxStreak >= 5 ? 'Very consistent' : 
-                   detailedMetrics.maxStreak >= 3 ? 'Consistent' : 'Inconsistent'}
+                  The area that needs the most improvement
                 </div>
               </div>
             </div>
@@ -364,10 +430,8 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
 
       {/* Positional Elements */}
       <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
-        <h3 className="mb-6 text-xl font-bold text-white flex items-center gap-2">
-          <span className="text-2xl">🎯</span>
+        <h3 className="mb-6 text-xl font-bold text-white">
           Positional Elements
-          <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full ml-2">UPDATED</span>
         </h3>
         {positionalElements.length > 0 ? (
           <div className="space-y-4">
@@ -381,8 +445,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                     {/* Element Info */}
                     <div className="flex-1 min-w-0 space-y-3">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <h4 className="text-lg font-semibold text-white flex items-center gap-2">
-                          <span className="text-emerald-400">✓</span>
+                        <h4 className="text-lg font-semibold text-white">
                           {element.name}
                         </h4>
                         <div className="flex items-center gap-3">
@@ -399,7 +462,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                           <span className={`text-lg font-bold ${
                             element.impact > 0 ? 'text-emerald-300' : 'text-rose-300'
                           }`}>
-                            {element.impact > 0 ? '✓' : '✗'}
+                            {element.impact > 0 ? '+' : '-'}
                           </span>
                         </div>
                       </div>
@@ -407,11 +470,22 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                       <div className="text-xs text-slate-400 bg-slate-800/50 rounded-lg px-3 py-2 max-h-20 overflow-y-auto">
                         <span className="font-medium">Key Moves:</span> 
                         <div className="mt-1 flex flex-wrap gap-1">
-                          {element.moves.map(m => (
-                            <span key={m} className="bg-slate-700/50 px-2 py-1 rounded text-xs">
-                              #{m + 1}
-                            </span>
-                          ))}
+                          {element.moves.map(m => {
+                            const isSelected = selectedKeyMoves[elementKey] === m
+                            return (
+                              <button
+                                key={m}
+                                onClick={() => handleKeyMoveClick(elementKey, m)}
+                                className={`px-2 py-1 rounded text-xs transition-all duration-200 hover:scale-105 ${
+                                  isSelected 
+                                    ? 'bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/30' 
+                                    : 'bg-slate-700/50 hover:bg-slate-600/70 hover:text-white'
+                                }`}
+                              >
+                                #{m + 1}
+                              </button>
+                            )
+                          })}
                         </div>
                       </div>
                       
@@ -419,7 +493,6 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                       {currentElementState?.isElementMove && currentElementState.move && (
                         <div className="rounded-lg border border-white/10 bg-white/5 p-3">
                           <div className="flex items-center gap-1.5 mb-2">
-                            <span className="text-blue-400">💡</span>
                             <h5 className="text-xs font-semibold text-white">Move Explanation</h5>
                           </div>
                           <p className="text-xs text-slate-200 leading-relaxed break-words">
@@ -436,6 +509,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                         allMoves={moves}
                         playerColor={playerColor}
                         className="lg:sticky lg:top-4"
+                        selectedMoveIndex={selectedKeyMoves[elementKey]}
                         onMoveChange={(moveIndex, move, isElementMove) => {
                           setElementMoveStates(prev => ({
                             ...prev,
@@ -458,10 +532,8 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
 
       {/* Strategic Themes */}
       <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
-        <h3 className="mb-6 text-xl font-bold text-white flex items-center gap-2">
-          <span className="text-2xl">⚡</span>
+        <h3 className="mb-6 text-xl font-bold text-white">
           Strategic Themes
-          <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full ml-2">UPDATED</span>
         </h3>
         {strategicThemes.length > 0 ? (
           <div className="space-y-4">
@@ -475,8 +547,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                     {/* Theme Info */}
                     <div className="flex-1 min-w-0 space-y-3">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <h4 className="text-lg font-semibold text-white flex items-center gap-2">
-                          <span className="text-emerald-400">✓</span>
+                        <h4 className="text-lg font-semibold text-white">
                           {theme.name}
                         </h4>
                         <div className="flex items-center gap-3">
@@ -492,7 +563,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                           <span className={`text-lg font-bold ${
                             theme.playerAdvantage ? 'text-emerald-300' : 'text-rose-300'
                           }`}>
-                            {theme.playerAdvantage ? '✓' : '✗'}
+                            {theme.playerAdvantage ? '+' : '-'}
                           </span>
                         </div>
                       </div>
@@ -500,11 +571,22 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                       <div className="text-xs text-slate-400 bg-slate-800/50 rounded-lg px-3 py-2 max-h-20 overflow-y-auto">
                         <span className="font-medium">Key Moves:</span> 
                         <div className="mt-1 flex flex-wrap gap-1">
-                          {theme.moves.map(m => (
-                            <span key={m} className="bg-slate-700/50 px-2 py-1 rounded text-xs">
-                              #{m + 1}
-                            </span>
-                          ))}
+                          {theme.moves.map(m => {
+                            const isSelected = selectedKeyMoves[themeKey] === m
+                            return (
+                              <button
+                                key={m}
+                                onClick={() => handleKeyMoveClick(themeKey, m)}
+                                className={`px-2 py-1 rounded text-xs transition-all duration-200 hover:scale-105 ${
+                                  isSelected 
+                                    ? 'bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/30' 
+                                    : 'bg-slate-700/50 hover:bg-slate-600/70 hover:text-white'
+                                }`}
+                              >
+                                #{m + 1}
+                              </button>
+                            )
+                          })}
                         </div>
                       </div>
                       
@@ -512,7 +594,6 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                       {currentThemeState?.isElementMove && currentThemeState.move && (
                         <div className="rounded-lg border border-white/10 bg-white/5 p-3">
                           <div className="flex items-center gap-1.5 mb-2">
-                            <span className="text-blue-400">💡</span>
                             <h5 className="text-xs font-semibold text-white">Move Explanation</h5>
                           </div>
                           <p className="text-xs text-slate-200 leading-relaxed break-words">
@@ -529,6 +610,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                         allMoves={moves}
                         playerColor={playerColor}
                         className="lg:sticky lg:top-4"
+                        selectedMoveIndex={selectedKeyMoves[themeKey]}
                         onMoveChange={(moveIndex, move, isElementMove) => {
                           setElementMoveStates(prev => ({
                             ...prev,
@@ -565,7 +647,6 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
           
           {positionalElements.some(e => e.name === 'Piece Activity' && e.strength === 'weak') && (
             <div className="flex items-start gap-3 rounded-2xl border border-sky-400/30 bg-sky-500/10 p-4">
-              <span className="text-lg">🎯</span>
               <div>
                 <p className="text-sm font-semibold text-white">Increase Piece Activity</p>
                 <p className="text-xs text-sky-100">Look for opportunities to activate your pieces and create threats</p>
@@ -575,7 +656,6 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
 
           {strategicThemes.some(t => t.name === 'Center Control') && (
             <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4">
-              <span className="text-lg">✅</span>
               <div>
                 <p className="text-sm font-semibold text-white">Good Center Control</p>
                 <p className="text-xs text-emerald-100">Continue focusing on central squares and space control</p>
@@ -585,7 +665,6 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
 
           {scoreInfo.score >= 8 && (
             <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4">
-              <span className="text-lg">🏆</span>
               <div>
                 <p className="text-sm font-semibold text-white">Excellent Positional Play</p>
                 <p className="text-xs text-emerald-100">Your positional understanding is strong - keep up the good work!</p>

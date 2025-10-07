@@ -371,37 +371,36 @@ class PersonalityScorer:
         return self.clamp_score(score)
 
     def score_staleness(self, metrics: PersonalityMetrics) -> float:
-        """Calculate staleness score - tendency toward conservative, structured play (only for accurate moves)."""
+        """Calculate staleness score - tendency toward repetitive, structured play patterns."""
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
-        # Only count accurate conservative moves
-        accurate_quiet_ratio = metrics.quiet_best / metrics.quiet_moves if metrics.quiet_moves > 0 else 0
-        accurate_safe_ratio = metrics.quiet_safe / metrics.quiet_moves if metrics.quiet_moves > 0 else 0
-        
-        # Staleness indicators (higher = more conservative/structured) - but only if accurate
+        # Staleness indicators (higher = more repetitive/structured)
         opening_consistency = 1.0 - (metrics.opening_unique_count / metrics.opening_moves_count) if metrics.opening_moves_count > 0 else 0
         pattern_consistency = 1.0 - metrics.pattern_diversity
+        move_repetition = metrics.consecutive_repeat_count / metrics.total_moves if metrics.total_moves > 0 else 0
+        
+        # Conservative play indicators (but not penalized for errors)
         quiet_move_ratio = metrics.quiet_moves / metrics.total_moves if metrics.total_moves > 0 else 0
         forcing_ratio = metrics.forcing_moves / metrics.total_moves if metrics.total_moves > 0 else 0
         
-        # Conservative play bonuses (only for accurate moves) - highly sensitive
-        opening_bonus = min(10.0, opening_consistency * 25.0)  # Few openings = more staleness
-        pattern_bonus = min(8.0, pattern_consistency * 20.0)  # Consistent patterns = more staleness
-        quiet_bonus = min(6.0, quiet_move_ratio * 15.0)  # More quiet moves = more staleness
-        safety_bonus = min(5.0, accurate_safe_ratio * 15.0)  # Accurate safer moves = more staleness
+        # Staleness bonuses - focus on repetition patterns
+        opening_bonus = min(20.0, opening_consistency * 40.0)  # Few unique opening moves = more staleness
+        pattern_bonus = min(15.0, pattern_consistency * 30.0)  # Consistent move patterns = more staleness
+        repetition_bonus = min(12.0, move_repetition * 25.0)  # Direct move repetition = more staleness
+        quiet_bonus = min(10.0, quiet_move_ratio * 20.0)  # More quiet moves = more staleness
         
         # Anti-aggression penalty (conservative players avoid forcing moves)
-        aggression_penalty = min(10.0, forcing_ratio * 25.0)  # Fewer forcing moves = more staleness
+        aggression_penalty = min(8.0, forcing_ratio * 20.0)  # Fewer forcing moves = more staleness
         
-        # Anti-creativity penalty (opposite of novelty)
-        creativity_penalty = min(10.0, (metrics.creative_moves / metrics.total_moves) * 25.0) if metrics.total_moves > 0 else 0
+        # Anti-creativity penalty (opposite of novelty) - but less harsh
+        creativity_penalty = min(6.0, (metrics.creative_moves / metrics.total_moves) * 15.0) if metrics.total_moves > 0 else 0
         
-        # Penalize inaccurate conservative moves (repetitive but bad)
-        error_penalty = (metrics.blunders + metrics.mistakes + metrics.inaccuracies) / metrics.total_moves * 25.0
+        # Reduced error penalty - staleness should measure repetition, not accuracy
+        error_penalty = (metrics.blunders + metrics.mistakes + metrics.inaccuracies) / metrics.total_moves * 10.0
         
         # Base score + bonuses - penalties
-        score = 50.0 + opening_bonus + pattern_bonus + quiet_bonus + safety_bonus - aggression_penalty - creativity_penalty - error_penalty
+        score = 50.0 + opening_bonus + pattern_bonus + repetition_bonus + quiet_bonus - aggression_penalty - creativity_penalty - error_penalty
         
         return self.clamp_score(score)
 

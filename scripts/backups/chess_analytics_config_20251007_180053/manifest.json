@@ -1,0 +1,57 @@
+{
+  "backup_name": "chess_analytics_config_20251007_180053",
+  "created_at": "2025-10-07T18:00:54.249858",
+  "project_root": "C:\\my files\\Projects\\chess-analytics\\scripts",
+  "backup_version": "1.0.0",
+  "description": "Chess Analytics Configuration Backup",
+  "include_sensitive": false,
+  "config_files": [
+    "package.json",
+    "package-lock.json",
+    "requirements.txt",
+    "tsconfig.json",
+    "tsconfig.node.json",
+    "vite.config.ts",
+    "tailwind.config.js",
+    "postcss.config.js",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "typedoc.json",
+    "vercel.json",
+    "docker-compose.api.yml",
+    "Dockerfile.api",
+    "example_config.json",
+    "env.example",
+    "tailwind.config.js",
+    "postcss.config.js",
+    "playwright.config.ts",
+    "vitest.config.ts"
+  ],
+  "env_files": [
+    "env.example",
+    ".env.example"
+  ],
+  "doc_files": [
+    "README.md",
+    "QUICK_START.md",
+    "DEPLOYMENT_SETUP.md",
+    "PRODUCTION_DEPLOYMENT_GUIDE.md",
+    "SECURITY_NOTES.md",
+    "*.md"
+  ],
+  "script_files": [
+    "start-all.ps1",
+    "start-backend.ps1",
+    "start-backend.bat",
+    "stop-all.ps1",
+    "scripts/**/*.py",
+    "scripts/**/*.ps1",
+    "scripts/**/*.bat",
+    "scripts/**/*.sh"
+  ],
+  "system_info": {
+    "python_version": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+    "platform": "nt",
+    "current_directory": "C:\\my files\\Projects\\chess-analytics\\scripts"
+  }
+}

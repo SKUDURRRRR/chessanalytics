@@ -194,18 +194,29 @@ export function EloTrendGraph({
   return (
     <div className={className}>
       {availableTimeControls.length > 0 && (
-        <div className="mb-3 flex items-center space-x-2">
-          <label className="text-xs font-medium uppercase tracking-wide text-slate-400" htmlFor="time-control-selector">
+        <div className="mb-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <label className="text-xs font-medium uppercase tracking-wide text-slate-400 flex-shrink-0" htmlFor="time-control-selector">
             Time Control
           </label>
           <select
             id="time-control-selector"
             value={activeTimeControl}
             onChange={handleTimeControlSelection}
-            className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30"
+            className="rounded-full border border-white/10 bg-slate-800/50 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30 min-w-0 flex-1 sm:flex-none"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23cbd5e1' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+              backgroundPosition: 'right 8px center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: '16px',
+              paddingRight: '32px'
+            }}
           >
             {availableTimeControls.map(option => (
-              <option key={option.value} value={option.value}>
+              <option 
+                key={option.value} 
+                value={option.value}
+                className="bg-slate-800 text-slate-100"
+              >
                 {option.value} ({option.count} games)
               </option>
             ))}

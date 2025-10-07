@@ -118,10 +118,10 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
     <div className={`overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.04] shadow-xl shadow-black/40 ${className}`}>
       <div className="p-4">
         <div className="mb-3 flex items-center justify-between">
-          <div>
+          <div className="min-w-0 flex-1">
             <h3 className="font-semibold text-white">ELO Trend</h3>
             {selectedTimeControlLabel && (
-              <p className="text-xs uppercase tracking-wide text-slate-400">{selectedTimeControlLabel} games only</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400 truncate">{selectedTimeControlLabel}</p>
             )}
           </div>
           <span
@@ -143,7 +143,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
 
         <div className="relative h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 15, right: 20, bottom: 0, left: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 15, right: 25, bottom: 25, left: 25 }}>
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={TREND_COLORS[trendDirection]} stopOpacity={0.12} />
@@ -206,21 +206,22 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-slate-400">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-xs font-semibold text-slate-200">
-            {trendDirection === 'improving' ? 'Upward trend' : trendDirection === 'declining' ? 'Downward trend' : 'Stable trend'}
-          </span>
-          <span>
-            Average rating: <span className="font-semibold text-white">{averageRating}</span>
-          </span>
+      <div className="flex flex-col gap-2 border-t border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-slate-400">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-xs font-semibold text-slate-200 whitespace-nowrap">
+              {trendDirection === 'improving' ? 'Upward trend' : trendDirection === 'declining' ? 'Downward trend' : 'Stable trend'}
+            </span>
+            <span className="whitespace-nowrap">
+              Average rating: <span className="font-semibold text-white">{averageRating}</span>
+            </span>
+          </div>
+          <div className="text-slate-300 font-semibold">{data[data.length - 1]?.rating}</div>
         </div>
-        <div className="text-slate-300">{data[data.length - 1]?.rating}</div>
-      </div>
-
-      <div className="mt-3 flex justify-between text-xs text-slate-400">
-        <span>Range: {displayMin} - {displayMax}</span>
-        <span>{data.length} key points</span>
+        <div className="flex justify-between items-center">
+          <span className="whitespace-nowrap">Range: {displayMin} - {displayMax}</span>
+          <span className="whitespace-nowrap">{data.length} key points</span>
+        </div>
       </div>
     </div>
   )

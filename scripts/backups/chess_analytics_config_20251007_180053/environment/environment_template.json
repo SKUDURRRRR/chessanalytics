@@ -1,0 +1,81 @@
+{
+  "description": "Environment variables template for Chess Analytics",
+  "created_at": "2025-10-07T18:00:53.058893",
+  "variables": {
+    "SUPABASE_URL": {
+      "value": "",
+      "required": true,
+      "description": "Supabase project URL"
+    },
+    "SUPABASE_ANON_KEY": {
+      "value": "[REDACTED]",
+      "required": true,
+      "description": "Supabase anonymous key"
+    },
+    "SUPABASE_SERVICE_ROLE_KEY": {
+      "value": "[REDACTED]",
+      "required": false,
+      "description": "Supabase service role key (admin access)"
+    },
+    "VITE_SUPABASE_URL": {
+      "value": "https://nkeaifrhtyigfmicfwch.supabase.co",
+      "required": false,
+      "description": "Frontend Supabase URL"
+    },
+    "VITE_SUPABASE_ANON_KEY": {
+      "value": "[REDACTED]",
+      "required": false,
+      "description": "Frontend Supabase anonymous key"
+    },
+    "VITE_ANALYSIS_API_URL": {
+      "value": "http://localhost:8002",
+      "required": false,
+      "description": "Analysis API URL for frontend"
+    },
+    "API_HOST": {
+      "value": "",
+      "required": false,
+      "description": "API server host"
+    },
+    "API_PORT": {
+      "value": "",
+      "required": false,
+      "description": "API server port"
+    },
+    "STOCKFISH_PATH": {
+      "value": "",
+      "required": false,
+      "description": "Path to Stockfish executable"
+    },
+    "STOCKFISH_DEPTH": {
+      "value": "",
+      "required": false,
+      "description": "Stockfish analysis depth"
+    },
+    "STOCKFISH_SKILL_LEVEL": {
+      "value": "",
+      "required": false,
+      "description": "Stockfish skill level"
+    },
+    "ANALYSIS_DEFAULT_TYPE": {
+      "value": "",
+      "required": false,
+      "description": "Default analysis type"
+    },
+    "ANALYSIS_BATCH_SIZE": {
+      "value": "",
+      "required": false,
+      "description": "Analysis batch size"
+    },
+    "LOG_LEVEL": {
+      "value": "",
+      "required": false,
+      "description": "Logging level"
+    },
+    "APP_ENV": {
+      "value": "",
+      "required": false,
+      "description": "Application environment (dev/production)"
+    }
+  }
+}

@@ -706,12 +706,32 @@ class ChessAnalysisEngine:
             headers = game.headers
             user_is_white = True
             if headers:
-                white_player = headers.get('White', '')
-                black_player = headers.get('Black', '')
-                if white_player and white_player.lower() == user_id.lower():
+                white_player = headers.get('White', '').strip()
+                black_player = headers.get('Black', '').strip()
+                
+                # More robust user color detection
+                if white_player and black_player:
+                    # Try exact match first
+                    if white_player.lower() == user_id.lower():
+                        user_is_white = True
+                    elif black_player.lower() == user_id.lower():
+                        user_is_white = False
+                    else:
+                        # Try partial match (in case of usernames with extra characters)
+                        white_match = user_id.lower() in white_player.lower() or white_player.lower() in user_id.lower()
+                        black_match = user_id.lower() in black_player.lower() or black_player.lower() in user_id.lower()
+                        
+                        if white_match and not black_match:
+                            user_is_white = True
+                        elif black_match and not white_match:
+                            user_is_white = False
+                        else:
+                            # If both match or neither match, default to white and log warning
+                            print(f"Warning: Could not determine user color for {user_id}. White: '{white_player}', Black: '{black_player}'. Defaulting to white.")
+                            user_is_white = True
+                else:
+                    print(f"Warning: Missing player names in PGN headers. Defaulting to white.")
                     user_is_white = True
-                elif black_player and black_player.lower() == user_id.lower():
-                    user_is_white = False
 
             # Collect all moves and board states first
             move_data = []

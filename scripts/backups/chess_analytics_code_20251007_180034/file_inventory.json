@@ -1,0 +1,37 @@
+[
+  {
+    "path": "manifest.json",
+    "size_bytes": 2092,
+    "modified": "2025-10-07T18:00:35.084049",
+    "extension": ".json",
+    "checksum": "d50330b44d4ca68b4c4b462911684575"
+  },
+  {
+    "path": "documentation\\BACKUP_README.md",
+    "size_bytes": 8796,
+    "modified": "2025-10-07T18:00:27.568740",
+    "extension": ".md",
+    "checksum": "4b34f88496f68449da3cfee4f0734829"
+  },
+  {
+    "path": "git\\git_info.json",
+    "size_bytes": 2847,
+    "modified": "2025-10-07T18:00:34.965714",
+    "extension": ".json",
+    "checksum": "0ff526ebdaea6b7677cd44e981a5191b"
+  },
+  {
+    "path": "git\\uncommitted_changes.patch",
+    "size_bytes": 0,
+    "modified": "2025-10-07T18:00:35.081050",
+    "extension": ".patch",
+    "checksum": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  {
+    "path": "scripts\\start-backend.ps1",
+    "size_bytes": 8091,
+    "modified": "2025-10-03T01:58:44.873640",
+    "extension": ".ps1",
+    "checksum": "89e527e6a1660f0d509d7d9f293ec830"
+  }
+]

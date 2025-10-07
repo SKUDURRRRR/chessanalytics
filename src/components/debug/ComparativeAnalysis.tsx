@@ -43,7 +43,20 @@ interface PlayerComparison {
 }
 
 export function ComparativeAnalysis({ moves, playerColor, gameRecord }: ComparativeAnalysisProps) {
-  const userMoves = moves.filter(move => move.isUserMove)
+  // Filter user moves, with fallback logic if isUserMove is not set correctly
+  let userMoves = moves.filter(move => move.isUserMove)
+  
+  // Fallback: if no moves are marked as user moves, determine based on player color
+  if (userMoves.length === 0) {
+    console.warn('No moves marked as user moves, using fallback logic based on player color')
+    userMoves = moves.filter(move => move.player === playerColor)
+  }
+  
+  // Final fallback: if still no moves, use every other move (assuming user plays one color)
+  if (userMoves.length === 0 && moves.length > 0) {
+    console.warn('Still no user moves found, using every other move as fallback')
+    userMoves = moves.filter((_, index) => index % 2 === (playerColor === 'white' ? 0 : 1))
+  }
 
   const gameComparisons = useMemo(() => {
     const comparisons: GameComparison[] = []
@@ -417,20 +430,180 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
 
 
   const getRatingEstimate = () => {
-    const accuracy = userMoves.length > 0 
-      ? (userMoves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length / userMoves.length) * 100
-      : 0
+    // First, try chess.com-style performance rating using opponent rating and game result
+    if (gameRecord?.opponent_rating && gameRecord?.result) {
+      const opponentRating = parseInt(gameRecord.opponent_rating)
+      const gameResult = gameRecord.result.toLowerCase()
+      const myRating = gameRecord.my_rating ? parseInt(gameRecord.my_rating) : 1200
+      
+      // Base chess.com performance rating formula
+      let basePerformanceRating: number
+      if (gameResult === 'win') {
+        basePerformanceRating = opponentRating + 400
+      } else if (gameResult === 'loss') {
+        basePerformanceRating = opponentRating - 400
+      } else if (gameResult === 'draw') {
+        basePerformanceRating = opponentRating
+      } else {
+        // Fallback to move-based calculation
+        return calculateMoveBasedRating()
+      }
+      
+      // Calculate move-based adjustment to fine-tune the rating
+      const moveBasedRating = calculateMoveBasedRating()
+      const moveQualityAdjustment = calculateMoveQualityAdjustment()
+      
+      // Hybrid approach: combine base performance rating with move quality adjustment
+      // This accounts for chess.com's more sophisticated calculation that considers move quality
+      const finalPerformanceRating = basePerformanceRating + moveQualityAdjustment
+      
+      console.log('Hybrid Performance Rating Calculation:', {
+        opponentRating,
+        myRating,
+        gameResult,
+        basePerformanceRating,
+        moveBasedRating,
+        moveQualityAdjustment,
+        finalPerformanceRating,
+        calculation: `${opponentRating} ${gameResult === 'win' ? '+' : gameResult === 'loss' ? '-' : ''} ${gameResult === 'win' ? '400' : gameResult === 'loss' ? '400' : '0'} + ${moveQualityAdjustment.toFixed(1)} = ${finalPerformanceRating.toFixed(1)}`,
+        gameRecord: {
+          opponent_rating: gameRecord.opponent_rating,
+          my_rating: gameRecord.my_rating,
+          result: gameRecord.result
+        }
+      })
+      
+      return Math.max(800, Math.min(2400, Math.round(finalPerformanceRating)))
+    }
     
-    const blunderRate = userMoves.length > 0 
-      ? (userMoves.filter(m => m.classification === 'blunder').length / userMoves.length) * 100
-      : 0
+    // Fallback to move-based calculation if no opponent rating data
+    console.log('No opponent rating data available, using move-based calculation')
+    return calculateMoveBasedRating()
+  }
 
-    // Simple rating estimation based on accuracy and blunder rate
-    let estimatedRating = 1200
-    estimatedRating += (accuracy - 50) * 20 // Accuracy factor
-    estimatedRating -= blunderRate * 50 // Blunder penalty
+  const calculateMoveQualityAdjustment = () => {
+    if (userMoves.length === 0) return 0
+
+    const totalMoves = userMoves.length
+    const bestMoves = userMoves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length
+    const goodMoves = userMoves.filter(m => m.classification === 'good').length
+    const blunders = userMoves.filter(m => m.classification === 'blunder').length
+    const mistakes = userMoves.filter(m => m.classification === 'mistake').length
+    const inaccuracies = userMoves.filter(m => m.classification === 'inaccuracy').length
+
+    // Calculate move quality metrics
+    const accuracy = (bestMoves / totalMoves) * 100
+    const blunderRate = (blunders / totalMoves) * 100
+    const mistakeRate = (mistakes / totalMoves) * 100
+    const inaccuracyRate = (inaccuracies / totalMoves) * 100
+    const avgCentipawnLoss = userMoves.reduce((sum, move) => sum + (move.centipawnLoss || 0), 0) / totalMoves
+
+    // Calculate adjustment based on move quality relative to expected performance
+    // This simulates chess.com's move quality analysis
+    let adjustment = 0
+
+    // Accuracy bonus/penalty (more weight than other factors)
+    if (accuracy > 80) {
+      adjustment += (accuracy - 80) * 2 // Strong bonus for high accuracy
+    } else if (accuracy < 60) {
+      adjustment -= (60 - accuracy) * 1.5 // Penalty for low accuracy
+    }
+
+    // Blunder penalty (harsh)
+    adjustment -= blunderRate * 3
+
+    // Mistake penalty (moderate)
+    adjustment -= mistakeRate * 1.5
+
+    // Inaccuracy penalty (light)
+    adjustment -= inaccuracyRate * 0.5
+
+    // Centipawn loss adjustment
+    if (avgCentipawnLoss > 50) {
+      adjustment -= Math.min(50, (avgCentipawnLoss - 50) * 0.3)
+    } else if (avgCentipawnLoss < 20) {
+      adjustment += Math.min(30, (20 - avgCentipawnLoss) * 0.5)
+    }
+
+    // Cap the adjustment to reasonable bounds
+    return Math.max(-100, Math.min(100, adjustment))
+  }
+
+  const calculateMoveBasedRating = () => {
+    if (userMoves.length === 0) {
+      console.warn('No user moves available for rating estimation')
+      return 1200 // Default rating when no data available
+    }
+
+    // Calculate move quality metrics
+    const totalMoves = userMoves.length
+    const bestMoves = userMoves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length
+    const goodMoves = userMoves.filter(m => m.classification === 'good').length
+    const acceptableMoves = userMoves.filter(m => m.classification === 'acceptable').length
+    const inaccuracies = userMoves.filter(m => m.classification === 'inaccuracy').length
+    const mistakes = userMoves.filter(m => m.classification === 'mistake').length
+    const blunders = userMoves.filter(m => m.classification === 'blunder').length
+
+    // Calculate accuracy percentage (best + brilliant moves)
+    const accuracy = (bestMoves / totalMoves) * 100
     
-    return Math.max(800, Math.min(2400, Math.round(estimatedRating)))
+    // Calculate blunder rate
+    const blunderRate = (blunders / totalMoves) * 100
+    
+    // Calculate average centipawn loss for more precise rating
+    const avgCentipawnLoss = userMoves.reduce((sum, move) => sum + (move.centipawnLoss || 0), 0) / totalMoves
+
+    // Debug logging to understand the calculation
+    console.log('Move-based Performance Rating Debug:', {
+      totalMoves,
+      bestMoves,
+      goodMoves,
+      acceptableMoves,
+      inaccuracies,
+      mistakes,
+      blunders,
+      accuracy: accuracy.toFixed(1),
+      blunderRate: blunderRate.toFixed(1),
+      avgCentipawnLoss: avgCentipawnLoss.toFixed(1),
+      moveClassifications: userMoves.map(m => ({ san: m.san, classification: m.classification, centipawnLoss: m.centipawnLoss }))
+    })
+
+    // Improved rating estimation formula
+    let estimatedRating = 1200 // Base rating
+    
+    // Accuracy factor (more realistic scaling)
+    estimatedRating += (accuracy - 60) * 15 // 60% accuracy = 1200 rating baseline
+    
+    // Blunder penalty (harsh penalty for blunders)
+    estimatedRating -= blunderRate * 40
+    
+    // Centipawn loss factor (additional precision)
+    if (avgCentipawnLoss > 0) {
+      estimatedRating -= Math.min(200, avgCentipawnLoss * 0.5) // Cap penalty at 200 points
+    }
+    
+    // Bonus for good moves
+    const goodMoveRate = (goodMoves / totalMoves) * 100
+    estimatedRating += Math.min(100, goodMoveRate * 0.5)
+    
+    // Penalty for too many inaccuracies
+    const inaccuracyRate = (inaccuracies / totalMoves) * 100
+    estimatedRating -= Math.min(100, inaccuracyRate * 0.3)
+    
+    const finalRating = Math.max(800, Math.min(2400, Math.round(estimatedRating)))
+    
+    console.log('Move-based rating calculation steps:', {
+      baseRating: 1200,
+      accuracyAdjustment: (accuracy - 60) * 15,
+      blunderPenalty: blunderRate * 40,
+      centipawnPenalty: avgCentipawnLoss > 0 ? Math.min(200, avgCentipawnLoss * 0.5) : 0,
+      goodMoveBonus: Math.min(100, goodMoveRate * 0.5),
+      inaccuracyPenalty: Math.min(100, inaccuracyRate * 0.3),
+      beforeClamp: estimatedRating,
+      finalRating
+    })
+    
+    return finalRating
   }
 
   return (

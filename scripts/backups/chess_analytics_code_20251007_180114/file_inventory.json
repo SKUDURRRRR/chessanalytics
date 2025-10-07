@@ -1,0 +1,23 @@
+[
+  {
+    "path": "manifest.json",
+    "size_bytes": 2109,
+    "modified": "2025-10-07T18:01:14.421544",
+    "extension": ".json",
+    "checksum": "15789fea899d8b5f161da5380146ea30"
+  },
+  {
+    "path": "documentation\\BACKUP_README.md",
+    "size_bytes": 8796,
+    "modified": "2025-10-07T18:00:27.568740",
+    "extension": ".md",
+    "checksum": "4b34f88496f68449da3cfee4f0734829"
+  },
+  {
+    "path": "scripts\\start-backend.ps1",
+    "size_bytes": 8091,
+    "modified": "2025-10-03T01:58:44.873640",
+    "extension": ".ps1",
+    "checksum": "89e527e6a1660f0d509d7d9f293ec830"
+  }
+]

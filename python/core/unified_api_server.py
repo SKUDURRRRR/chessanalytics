@@ -982,9 +982,15 @@ def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
 
 
 def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
+    """Estimate staleness from game-level patterns - opening repetition, time control consistency."""
     if not games:
         return 30.0
+    
     total = len(games)
+    if total < 2:
+        return 30.0  # Need at least 2 games to measure staleness
+    
+    # Count opening families and time controls
     opening_counts = Counter(
         (game.get('opening_family') or game.get('opening') or 'Unknown')
         for game in games
@@ -993,9 +999,27 @@ def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
         (game.get('time_control') or 'Unknown')
         for game in games
     )
-    most_opening = max(opening_counts.values()) if opening_counts else 0
-    most_time = max(time_counts.values()) if time_counts else 0
-    score = (most_opening / total) * 70.0 + (most_time / total) * 30.0
+    
+    # Calculate repetition ratios
+    most_common_opening_count = max(opening_counts.values()) if opening_counts else 0
+    most_common_time_count = max(time_counts.values()) if time_counts else 0
+    
+    opening_repetition = most_common_opening_count / total
+    time_repetition = most_common_time_count / total
+    
+    # Calculate diversity metrics
+    opening_diversity = len(opening_counts) / total  # More openings = less staleness
+    time_diversity = len(time_counts) / total  # More time controls = less staleness
+    
+    # Staleness score based on repetition patterns
+    # Higher repetition = higher staleness
+    opening_staleness = opening_repetition * 60.0  # 0-60 points for opening repetition
+    time_staleness = time_repetition * 20.0  # 0-20 points for time control repetition
+    
+    # Bonus for very low diversity (playing same opening/time repeatedly)
+    diversity_penalty = (opening_diversity + time_diversity) * 10.0  # 0-20 point penalty for diversity
+    
+    score = opening_staleness + time_staleness - diversity_penalty + 30.0  # Base of 30
     return max(0.0, min(100.0, score))
 
 
@@ -1059,8 +1083,23 @@ def _compute_personality_scores(
     if games:
         novelty_signal = _estimate_novelty_from_games(games)
         staleness_signal = _estimate_staleness_from_games(games)
-        aggregated_scores.novelty = _round2(aggregated_scores.novelty * 0.7 + novelty_signal * 0.3)
-        aggregated_scores.staleness = _round2(aggregated_scores.staleness * 0.7 + staleness_signal * 0.3)
+        
+        # Calculate move-level scores
+        move_novelty = aggregated_scores.novelty
+        move_staleness = aggregated_scores.staleness
+        
+        # Combine move-level and game-level signals
+        final_novelty = _round2(move_novelty * 0.6 + novelty_signal * 0.4)
+        final_staleness = _round2(move_staleness * 0.6 + staleness_signal * 0.4)
+        
+        # Ensure staleness and novelty are properly opposed
+        # Staleness should be roughly inverse of novelty, but not too extreme
+        target_staleness = 100.0 - final_novelty
+        # Use a gentler opposition - only 30% opposition, 70% calculated
+        final_staleness = _round2(final_staleness * 0.7 + target_staleness * 0.3)
+        
+        aggregated_scores.novelty = final_novelty
+        aggregated_scores.staleness = final_staleness
     
     return aggregated_scores.to_dict()
 

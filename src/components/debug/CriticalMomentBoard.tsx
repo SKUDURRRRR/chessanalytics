@@ -267,13 +267,13 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
   }
 
   return (
-    <div className={`space-y-2 ${className}`}>
+    <div className={`space-y-2 w-full max-w-[400px] ${className}`}>
       {/* Board with custom coordinate styling */}
-      <div className="relative">
+      <div className="relative bg-slate-800/20 rounded-lg p-4 pb-6">
         <style>{`
           #critical-moment-${move.index} .react-chessboard-notation {
-            font-size: 7px !important;
-            font-weight: 600 !important;
+            font-size: 5px !important;
+            font-weight: 500 !important;
           }
         `}</style>
         <div className="flex justify-center">
@@ -288,6 +288,21 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
             {...getDarkChessBoardTheme('default')}
           />
         </div>
+      </div>
+
+      {/* Move Info Header */}
+      <div className="text-center bg-slate-800/30 rounded-lg p-2">
+        <div className="text-base font-bold text-white">
+          Move {move.moveNumber} • {move.player === 'white' ? 'White' : 'Black'}
+        </div>
+        <div className="text-sm font-bold text-emerald-300 mt-0.5">
+          {move.san}
+        </div>
+        {move.bestMoveSan && (
+          <div className="text-xs text-slate-400 mt-0.5">
+            Best: <span className="text-emerald-300 font-semibold">{move.bestMoveSan}</span>
+          </div>
+        )}
       </div>
 
       {/* Compact Navigation - Minimal */}
