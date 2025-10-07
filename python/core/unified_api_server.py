@@ -2737,7 +2737,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         
         # First, let's see what's actually in the database for this user
         try:
-            all_games = db_client.table('games_pgn').select('provider_game_id, game_id').eq(
+            all_games = db_client.table('games_pgn').select('provider_game_id').eq(
                 'user_id', canonical_user_id
             ).eq('platform', request.platform).limit(5).execute()
             print(f"[SINGLE GAME ANALYSIS] Sample games for this user: {all_games.data if all_games else 'None'}")
@@ -2759,20 +2759,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 message=f"Database query failed: {str(query_error)}"
             )
         
-        # If not found, try by game_id
-        if not game_response or not hasattr(game_response, 'data') or not game_response.data:
-            print(f"[SINGLE GAME ANALYSIS] Not found by provider_game_id, trying by game_id column")
-            try:
-                game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
-                    'game_id', game_id
-                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
-                print(f"[SINGLE GAME ANALYSIS] Second query result: {game_response}")
-            except Exception as query_error:
-                print(f"[SINGLE GAME ANALYSIS] ❌ Second database query error: {query_error}")
-                return UnifiedAnalysisResponse(
-                    success=False,
-                    message=f"Database query failed: {str(query_error)}"
-                )
+        # If not found in games_pgn, we'll try to fetch from the platform
         
         # If still not found in database, try fetching from chess platform
         if not game_response or not hasattr(game_response, 'data') or not game_response.data:
