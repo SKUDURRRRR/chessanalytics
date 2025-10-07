@@ -61,38 +61,68 @@ Expected columns:
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
-### Step 3: Deploy Updated Backend
+### Step 3: Add Stockfish to Railway
+
+Railway doesn't include Stockfish by default. Add `python/nixpacks.toml`:
+
+```toml
+[phases.setup]
+nixPkgs = ["python39", "stockfish"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+```
+
+### Step 4: Deploy Updated Backend
 
 The code has been updated to:
 - ✅ Remove references to non-existent `game_id` column
 - ✅ Auto-fetch PGN from platform if missing (safety net)
 - ✅ Better error logging
+- ✅ Add Stockfish to Railway deployment
 
 After running the SQL fix:
 ```bash
-git add python/core/unified_api_server.py
-git commit -m "fix: remove game_id column reference from games_pgn queries"
+git add python/core/unified_api_server.py python/nixpacks.toml GAMES_PGN_CONSTRAINT_FIX.md
+git commit -m "fix: add database constraint fix and Stockfish to Railway"
 git push origin development
 ```
 
 ## Testing After Fix
 
-1. **Import games again:**
-   - Should see: `[import_games] pgn upsert response: count= 100`
-   - NO more 400 Bad Request errors
+1. **Verify Stockfish is installed:**
+   Check Railway logs on startup:
+   ```
+   Stockfish:
+     Path: /nix/store/.../bin/stockfish  ✅ (not "Not found")
+   ```
 
-2. **Click "Analyze" on a game:**
-   - Should find PGN in database
-   - Analysis should complete successfully
+2. **Import games again:**
+   - Should see: `[import_games] pgn upsert response data: [...]`
+   - Should see: `HTTP/2 201 Created` ✅
+   - NO more 400 Bad Request errors ✅
+
+3. **Click "Analyze" on a game:**
+   - Should find PGN in database ✅
+   - Should see: `[SINGLE GAME ANALYSIS] Starting engine analysis`
+   - Should NOT see: `Error analyzing game: Stockfish executable not found`
+   - Analysis should complete successfully ✅
 
 ## Why This Happened
 
+### Database Constraint Issue
 The `games_pgn` table constraint was likely:
 - Not created during initial migration
 - Dropped/altered accidentally
 - Not present in your Supabase project
 
 The code expects this constraint to exist for the `on_conflict` upsert strategy to work.
+
+### Stockfish Missing on Railway
+Railway's default Nixpacks build doesn't include Stockfish. It needs to be explicitly added via `nixpacks.toml` configuration.
 
 ## Verification Query
 
