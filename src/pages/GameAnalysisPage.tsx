@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { fetchGameAnalysisData } from '../services/gameAnalysisService'
 import { config } from '../lib/config'
 import { getTimeControlCategory } from '../utils/timeControlUtils'
-import { normalizeOpeningName } from '../utils/openingUtils'
+import { getOpeningNameWithFallback } from '../utils/openingIdentification'
 import { EnhancedGameInsights } from '../components/debug/EnhancedGameInsights'
+import { EnhancedMoveCoaching } from '../components/debug/EnhancedMoveCoaching'
+import { CHESS_ANALYSIS_COLORS } from '../utils/chessColors'
+import { getDarkChessBoardTheme } from '../utils/chessBoardTheme'
 import type { MatchHistoryGameSummary, Platform } from '../types'
 
 interface EvaluationInfo {
@@ -46,6 +49,20 @@ interface ProcessedMove {
   explanation: string
   fenBefore: string
   fenAfter: string
+  
+  // Enhanced coaching fields
+  coachingComment?: string
+  whatWentRight?: string
+  whatWentWrong?: string
+  howToImprove?: string
+  tacticalInsights?: string[]
+  positionalInsights?: string[]
+  risks?: string[]
+  benefits?: string[]
+  learningPoints?: string[]
+  encouragementLevel?: number
+  moveQuality?: string
+  gamePhase?: string
 }
 
 type MoveClassification =
@@ -169,15 +186,79 @@ const buildFallbackExplanation = (
   }
 }
 
+const buildEnhancedFallbackExplanation = (
+  classification: MoveClassification,
+  centipawnLoss: number | null,
+  bestMoveSan: string | null,
+  move: any,
+  isUserMove: boolean = true
+) => {
+  const loss = centipawnLoss != null ? Math.round(centipawnLoss) : null
+  
+  if (!isUserMove) {
+    // Opponent move analysis
+    switch (classification) {
+      case 'brilliant':
+        return '🌟 Your opponent played a brilliant move! This shows strong tactical vision. Study this position to understand the tactics.'
+      case 'best':
+        return '✅ Your opponent played the best move available. This is solid, accurate play that maintains their position well.'
+      case 'good':
+        return '👍 Your opponent made a good move. This maintains a solid position and shows reasonable chess understanding.'
+      case 'acceptable':
+        return '⚠️ Your opponent\'s move is acceptable, but not the strongest choice. Better options were available.'
+      case 'inaccuracy':
+        return loss != null
+          ? `❌ Your opponent made an inaccuracy. They dropped roughly ${loss} centipawns - this gives you an opportunity to improve your position.`
+          : '❌ Your opponent\'s move isn\'t optimal. Look for ways to exploit this and improve your position.'
+      case 'mistake':
+        return bestMoveSan
+          ? `❌ Your opponent made a mistake! They should have played ${bestMoveSan}. Look for tactical opportunities to take advantage.`
+          : '❌ Your opponent\'s move creates difficulties for them. Look for ways to exploit this mistake.'
+      case 'blunder':
+        return bestMoveSan
+          ? `❌ Your opponent blundered! They should have played ${bestMoveSan}. Look for immediate tactical opportunities to win material or checkmate.`
+          : '❌ Your opponent made a serious mistake. This could be game-changing - look for winning tactics.'
+      default:
+        return '📝 Opponent move recorded. Analyze the position and look for the best response.'
+    }
+  }
+  
+  // User move analysis (original logic)
+  switch (classification) {
+    case 'brilliant':
+      return '🌟 Outstanding! This move demonstrates exceptional chess understanding. You\'ve found a move that even strong players might miss. This is the kind of move that wins games!'
+    case 'best':
+      return '✅ Perfect! This is exactly what the position demands. You\'ve found the strongest move available and kept your position on track. Well done!'
+    case 'good':
+      return '👍 Good move! This maintains a solid position and shows good chess understanding. You\'re making progress in your game.'
+    case 'acceptable':
+      return '⚠️ This move is playable, but there were better options available. Consider looking for moves that improve your position more significantly.'
+    case 'inaccuracy':
+      return loss != null
+        ? `❌ This move has some issues. You dropped roughly ${loss} centipawns compared to optimal play. Look for moves that maintain your advantage better.`
+        : '❌ This move isn\'t optimal. There\'s a better way to handle this position. Take time to consider all your options.'
+    case 'mistake':
+      return bestMoveSan
+        ? `❌ This move has problems. Consider ${bestMoveSan} next time - it would have been much stronger. Learn from this to improve your play.`
+        : '❌ This move creates difficulties. The position deteriorated noticeably. Look for moves that maintain your position better.'
+    case 'blunder':
+      return bestMoveSan
+        ? `❌ This is a significant error. The engine preferred ${bestMoveSan}. Don\'t worry - we all make blunders. Learn from this mistake to avoid similar errors.`
+        : '❌ This move has serious consequences. The advantage swung heavily to your opponent. Take more time to calculate before moving.'
+    default:
+      return '📝 Move recorded. Consider the position carefully and look for the best continuation.'
+  }
+}
+
 const classificationBadgeStyles: Record<MoveClassification, string> = {
-  brilliant: 'bg-purple-100 text-purple-700',
-  best: 'bg-green-100 text-green-700',
-  good: 'bg-blue-100 text-blue-700',
-  acceptable: 'bg-slate-100 text-slate-700',
-  inaccuracy: 'bg-yellow-100 text-yellow-700',
-  mistake: 'bg-orange-100 text-orange-700',
-  blunder: 'bg-red-100 text-red-700',
-  uncategorized: 'bg-gray-100 text-gray-600',
+  brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
+  best: 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200',
+  good: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',
+  acceptable: 'border border-slate-400/40 bg-slate-500/20 text-slate-200',
+  inaccuracy: 'border border-amber-400/40 bg-amber-500/20 text-amber-200',
+  mistake: 'border border-orange-400/40 bg-orange-500/20 text-orange-200',
+  blunder: 'border border-rose-400/40 bg-rose-500/20 text-rose-200',
+  uncategorized: 'border border-slate-400/30 bg-slate-500/10 text-slate-200',
 }
 
 const classificationLabel: Record<MoveClassification, string> = {
@@ -192,7 +273,7 @@ const classificationLabel: Record<MoveClassification, string> = {
 }
 
 const MoveClassificationBadge = ({ classification }: { classification: MoveClassification }) => (
-  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${classificationBadgeStyles[classification]}`}>
+  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${classificationBadgeStyles[classification]}`}>
     {classificationLabel[classification]}
   </span>
 )
@@ -206,16 +287,19 @@ const EvaluationBar = ({
 }) => {
   const clampedScore = clamp(score, -EVAL_CAP, EVAL_CAP)
   const percent = ((clampedScore + EVAL_CAP) / (EVAL_CAP * 2)) * 100
-  const position = playerColor === 'white' ? 100 - percent : percent
+  const markerPosition = playerColor === 'white' ? 100 - percent : percent
 
   return (
-    <div className="relative h-48 w-6 rounded bg-gradient-to-b from-white to-gray-900">
+    <div className="relative h-full w-8 overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-inner">
+      <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-white" />
+      <div className="absolute top-1/2 left-0 right-0 h-1/2 bg-slate-900" />
       <div
-        className="absolute left-0 right-0 flex justify-center"
-        style={{ top: `${position}%` }}
+        className="absolute left-0 right-0 flex justify-center transition-all duration-700 ease-out"
+        style={{ top: `${clamp(markerPosition, 2, 98)}%` }}
       >
-        <span className="mt-[-8px] block h-3 w-6 rounded bg-orange-500" />
+        <span className="block h-1 w-10 rounded-full bg-orange-500 ring-2 ring-white/70 transition-all duration-500 ease-out" />
       </div>
+      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/40" />
     </div>
   )
 }
@@ -230,11 +314,33 @@ const NAVIGATION_ICONS: Record<'first' | 'prev' | 'next' | 'last', string> = {
 export default function GameAnalysisPage() {
   const { platform: platformParam, userId: userParam, gameId: gameParam } = useParams()
   const platform = canonicalizePlatform(platformParam)
+  const [boardWidth, setBoardWidth] = useState(700)
   const navigate = useNavigate()
   const location = useLocation()
   const locationState = (location.state ?? {}) as LocationState
 
   const decodedUserId = userParam ? decodeURIComponent(userParam) : ''
+
+  // Handle responsive board sizing
+  useEffect(() => {
+    const updateBoardWidth = () => {
+      if (window.innerWidth < 640) {
+        setBoardWidth(260) // Small screens
+      } else if (window.innerWidth < 768) {
+        setBoardWidth(300) // Medium screens
+      } else if (window.innerWidth < 1024) {
+        setBoardWidth(380) // Large screens
+      } else if (window.innerWidth < 1280) {
+        setBoardWidth(480) // XL screens
+      } else {
+        setBoardWidth(580) // 2XL screens and up
+      }
+    }
+    
+    updateBoardWidth()
+    window.addEventListener('resize', updateBoardWidth)
+    return () => window.removeEventListener('resize', updateBoardWidth)
+  }, [])
   const decodedGameId = gameParam ? decodeURIComponent(gameParam) : ''
 
   const [loading, setLoading] = useState(true)
@@ -494,7 +600,11 @@ export default function GameAnalysisPage() {
 
       const bestMoveSan = convertUciToSan(fenBefore, move.best_move)
       const classification = determineClassification(move)
-      const explanation = move.explanation ?? buildFallbackExplanation(classification, move.centipawn_loss ?? null, bestMoveSan)
+      
+      // Use enhanced coaching comment if available, otherwise fall back to explanation or build a better fallback
+      const explanation = move.coaching_comment || 
+                         move.explanation || 
+                         buildEnhancedFallbackExplanation(classification, move.centipawn_loss ?? null, bestMoveSan, move, isUserMove)
 
       try {
         const { from, to, promotion } = parseUciMove(move.move)
@@ -527,6 +637,20 @@ export default function GameAnalysisPage() {
         explanation,
         fenBefore,
         fenAfter,
+        
+        // Enhanced coaching fields
+        coachingComment: move.coaching_comment,
+        whatWentRight: move.what_went_right,
+        whatWentWrong: move.what_went_wrong,
+        howToImprove: move.how_to_improve,
+        tacticalInsights: move.tactical_insights,
+        positionalInsights: move.positional_insights,
+        risks: move.risks,
+        benefits: move.benefits,
+        learningPoints: move.learning_points,
+        encouragementLevel: move.encouragement_level,
+        moveQuality: move.move_quality,
+        gamePhase: move.game_phase,
       })
     })
 
@@ -578,6 +702,9 @@ export default function GameAnalysisPage() {
   }, [analysisRecord, gameRecord, processedData.moves])
 
   const currentMove = currentIndex > 0 ? processedData.moves[currentIndex - 1] : null
+
+  const evaluationContainerRef = useRef<HTMLDivElement | null>(null)
+
   const currentScore = currentMove ? currentMove.scoreForPlayer : 0
 
   const navigateToMove = (index: number) => {
@@ -594,12 +721,12 @@ export default function GameAnalysisPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-slate-950">
         <div className="mx-auto max-w-6xl px-4 py-10">
-          <div className="bg-white p-6 rounded-lg shadow">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
             <div className="flex items-center space-x-3">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500" />
-              <span className="text-gray-700">Loading analysis...</span>
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-sky-400" />
+              <span>Loading analysis...</span>
             </div>
           </div>
         </div>
@@ -609,19 +736,19 @@ export default function GameAnalysisPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-slate-950">
         <div className="mx-auto max-w-4xl px-4 py-10">
-          <div className="bg-red-50 border border-red-200 p-6 rounded-lg">
+          <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-6 text-rose-100 shadow-xl shadow-black/40">
             <div className="flex items-center space-x-3">
-              <span className="text-red-500 text-xl">!</span>
+              <span className="text-xl">!</span>
               <div>
-                <h2 className="text-lg font-semibold text-red-700">Analysis unavailable</h2>
-                <p className="text-red-600">{error}</p>
+                <h2 className="text-lg font-semibold text-white">Analysis unavailable</h2>
+                <p>{error}</p>
               </div>
             </div>
             <button
               onClick={handleBack}
-              className="mt-6 inline-flex items-center rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+              className="mt-6 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:bg-white/20"
             >
               Return
             </button>
@@ -633,40 +760,40 @@ export default function GameAnalysisPage() {
 
   if (!analysisRecord || !processedData.moves.length) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-slate-950">
         <div className="mx-auto max-w-4xl px-4 py-10">
-          <div className="bg-white border border-gray-200 p-6 rounded-lg shadow-sm">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
             {autoAnalyzing ? (
               <>
-                <h2 className="text-lg font-semibold text-gray-800">Analyzing Game</h2>
-                <p className="mt-2 text-gray-600">
+                <h2 className="text-lg font-semibold text-white">Analyzing Game</h2>
+                <p className="mt-2 text-slate-300">
                   We're automatically analyzing this game for you. This may take a few minutes...
                 </p>
                 <div className="mt-4 flex items-center space-x-3">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                  <span className="text-sm text-gray-600">Analysis in progress...</span>
+                  <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-sky-400" />
+                  <span className="text-sm text-slate-300">Analysis in progress...</span>
                 </div>
                 <button
                   onClick={handleBack}
-                  className="mt-6 inline-flex items-center rounded bg-gray-600 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+                  className="mt-6 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:bg-white/20"
                 >
                   Back to profile
                 </button>
               </>
             ) : analysisError ? (
               <>
-                <h2 className="text-lg font-semibold text-red-800">Analysis Failed</h2>
-                <p className="mt-2 text-red-600">{analysisError}</p>
+                <h2 className="text-lg font-semibold text-white">Analysis Failed</h2>
+                <p className="mt-2 text-slate-300">{analysisError}</p>
                 <div className="mt-4 space-x-3">
                   <button
                     onClick={requestGameAnalysis}
-                    className="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-400/60 hover:bg-sky-500/20"
                   >
                     Try Again
                   </button>
                   <button
                     onClick={handleBack}
-                    className="inline-flex items-center rounded bg-gray-600 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+                    className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:bg-white/20"
                   >
                     Back to profile
                   </button>
@@ -674,15 +801,15 @@ export default function GameAnalysisPage() {
               </>
             ) : (
               <>
-                <h2 className="text-lg font-semibold text-gray-800">No analysis available</h2>
-                <p className="mt-2 text-gray-600">
-                  We could not find detailed analysis for this game yet. Try running Stockfish analysis from the previous page.
+                <h2 className="text-lg font-semibold text-white">No Analysis Available</h2>
+                <p className="mt-2 text-slate-300">
+                  This game hasn't been analyzed yet. Request analysis to see insights and recommendations.
                 </p>
                 <button
-                  onClick={handleBack}
-                  className="mt-6 inline-flex items-center rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                  onClick={requestGameAnalysis}
+                  className="mt-6 inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-400/60 hover:bg-sky-500/20"
                 >
-                  Back to profile
+                  Analyze this game
                 </button>
               </>
             )}
@@ -699,41 +826,47 @@ export default function GameAnalysisPage() {
         derivedStats.accuracy != null
           ? `${Math.round((derivedStats.accuracy + Number.EPSILON) * 10) / 10}%`
           : '--',
+      color: CHESS_ANALYSIS_COLORS.accuracy,
     },
     {
       label: 'Best Moves',
       value: derivedStats.bestMoves ?? 0,
+      color: CHESS_ANALYSIS_COLORS.bestMoves,
     },
     {
       label: 'Blunders',
       value: derivedStats.blunders ?? 0,
+      color: CHESS_ANALYSIS_COLORS.blunders,
     },
     {
       label: 'Mistakes',
       value: derivedStats.mistakes ?? 0,
+      color: CHESS_ANALYSIS_COLORS.mistakes,
     },
     {
       label: 'Inaccuracies',
       value: derivedStats.inaccuracies ?? 0,
+      color: CHESS_ANALYSIS_COLORS.inaccuracies,
     },
     {
       label: 'Brilliants',
       value: derivedStats.brilliantMoves ?? 0,
+      color: CHESS_ANALYSIS_COLORS.brilliants,
     },
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="mb-4 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={handleBack}
-            className="inline-flex items-center space-x-2 rounded bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow hover:bg-gray-100"
+            className="inline-flex items-center space-x-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/20"
           >
             <span className="text-lg">&lt;</span>
             <span>Back</span>
           </button>
-          <div className="text-right text-xs text-gray-500">
+          <div className="text-right text-xs text-slate-300">
             {pgn && (
               <button
                 onClick={() => {
@@ -745,7 +878,7 @@ export default function GameAnalysisPage() {
                   link.click()
                   URL.revokeObjectURL(url)
                 }}
-                className="rounded bg-gray-200 px-3 py-1 font-medium text-gray-700 hover:bg-gray-300"
+                className="rounded-full border border-white/10 bg-white/10 px-3 py-1 font-medium text-white transition hover:border-white/30 hover:bg-white/20"
               >
                 Download PGN
               </button>
@@ -753,31 +886,31 @@ export default function GameAnalysisPage() {
           </div>
         </div>
 
-        <div className="mb-6 grid gap-4 md:grid-cols-2">
-          <div className="bg-white p-5 rounded-lg shadow">
-            <h1 className="text-xl font-semibold text-gray-900">Game Overview</h1>
-            <div className="mt-4 grid gap-3 text-sm text-gray-700 md:grid-cols-2">
+        <div className="mb-8 grid gap-4 md:grid-cols-[1.3fr,1fr]">
+          <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-5 shadow-xl shadow-black/40">
+            <h1 className="text-2xl font-semibold text-white">Game Overview</h1>
+            <div className="mt-5 grid gap-4 text-sm text-slate-200 sm:grid-cols-2">
               <div>
                 <span className="font-medium">Result: </span>
                 <span className={
                   gameRecord?.result === 'win'
-                    ? 'text-green-600'
+                    ? 'text-emerald-300'
                     : gameRecord?.result === 'loss'
-                      ? 'text-red-600'
+                      ? 'text-rose-300'
                       : gameRecord?.result === 'draw'
-                        ? 'text-yellow-600'
-                        : 'text-gray-700'
+                        ? 'text-amber-200'
+                        : 'text-slate-200'
                 }>
                   {gameRecord?.result ? gameRecord.result.toUpperCase() : 'Unknown'}
                 </span>
               </div>
               <div>
                 <span className="font-medium">Played as: </span>
-                <span className="capitalize">{playerColor}</span>
+                <span className="capitalize text-white">{playerColor}</span>
               </div>
               <div>
                 <span className="font-medium">Opponent: </span>
-                <span>{opponentName}</span>
+                <span className="text-white">{opponentName}</span>
               </div>
               <div>
                 <span className="font-medium">Time Control: </span>
@@ -785,164 +918,176 @@ export default function GameAnalysisPage() {
               </div>
               <div>
                 <span className="font-medium">Opening: </span>
-                <span>{normalizeOpeningName(gameRecord?.opening_family ?? gameRecord?.opening ?? 'N/A')}</span>
+                <span>{getOpeningNameWithFallback(gameRecord?.opening_family ?? gameRecord?.opening, gameRecord)}</span>
               </div>
               <div>
                 <span className="font-medium">Moves: </span>
-                <span>{processedData.moves.length > 0 ? processedData.moves.length : (analysisRecord?.total_moves ?? 0)}</span>
+                <span>{processedData.moves.length > 0 ? processedData.moves.length : analysisRecord?.total_moves ?? 0}</span>
               </div>
             </div>
           </div>
-          <div className="bg-white p-5 rounded-lg shadow">
-            <h2 className="text-lg font-semibold text-gray-900">Stockfish Summary</h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-5 shadow-xl shadow-black/40">
+            <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
+            <p className="mt-1 text-xs text-slate-300">Key highlights from Stockfish at a glance.</p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
               {summaryCards.map(card => (
-                <div key={card.label} className="rounded border border-gray-200 p-3 text-center">
-                  <div className="text-xs uppercase tracking-wide text-gray-500">{card.label}</div>
-                  <div className="mt-2 text-lg font-semibold text-gray-900">{card.value}</div>
+                <div key={card.label} className="rounded-xl border border-white/10 bg-white/10 p-4 text-center shadow-inner shadow-black/30">
+                  <div className="text-xs uppercase tracking-wide text-slate-300">{card.label}</div>
+                  <div className={`mt-2 text-lg font-semibold ${card.color}`}>{card.value}</div>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,380px),1fr]">
-          <div className="space-y-4">
-            <div className="bg-white p-4 rounded-lg shadow">
-              <Chessboard
-                id="analysis-board"
-                position={processedData.positions[currentIndex]}
-                arePiecesDraggable={false}
-                boardOrientation={playerColor}
-                boardWidth={360}
-              />
-              <div className="mt-4 flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => navigateToMove(0)}
-                    className="rounded bg-gray-200 px-2 py-1 text-sm hover:bg-gray-300"
-                    aria-label="First move"
-                  >
-                    {NAVIGATION_ICONS.first}
-                  </button>
-                  <button
-                    onClick={() => navigateToMove(currentIndex - 1)}
-                    className="rounded bg-gray-200 px-2 py-1 text-sm hover:bg-gray-300"
-                    aria-label="Previous move"
-                  >
-                    {NAVIGATION_ICONS.prev}
-                  </button>
-                  <button
-                    onClick={() => navigateToMove(currentIndex + 1)}
-                    className="rounded bg-gray-200 px-2 py-1 text-sm hover:bg-gray-300"
-                    aria-label="Next move"
-                  >
-                    {NAVIGATION_ICONS.next}
-                  </button>
-                  <button
-                    onClick={() => navigateToMove(processedData.positions.length - 1)}
-                    className="rounded bg-gray-200 px-2 py-1 text-sm hover:bg-gray-300"
-                    aria-label="Last move"
-                  >
-                    {NAVIGATION_ICONS.last}
-                  </button>
-                </div>
-                <div className="text-sm text-gray-600">
-                  {currentMove
-                    ? `Move ${currentMove.moveNumber} ${currentMove.player === 'white' ? '(White)' : '(Black)'}`
-                    : 'Start position'}
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-lg shadow">
-              <h3 className="text-sm font-semibold text-gray-800">Evaluation</h3>
-              <div className="mt-3 flex items-center space-x-4">
-                <EvaluationBar score={currentScore} playerColor={playerColor} />
-                <div>
-                  <div className="text-xl font-semibold text-gray-900">
-                    {currentMove ? formatEvaluation(currentMove.evaluation, playerColor) : 'N/A'}
-                  </div>
-                  {currentMove?.centipawnLoss != null && (
-                    <div className="text-sm text-gray-600">
-                      Centipawn loss: {Math.round(currentMove.centipawnLoss)}
-                    </div>
-                  )}
-                  {currentMove?.bestMoveSan && (
-                    <div className="text-sm text-gray-600">
-                      Best move: <span className="font-medium">{currentMove.bestMoveSan}</span>
-                    </div>
-                  )}
+        {/* Symmetrical 3-Column Layout */}
+        <div className="grid gap-6 lg:grid-cols-12">
+          {/* Left Column: Evaluation Bar */}
+          <div className="lg:col-span-1">
+            <div className="sticky top-6">
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
+                <div className="h-[655px] w-8">
+                  <EvaluationBar score={currentScore} playerColor={playerColor} />
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="bg-white p-4 rounded-lg shadow">
-              <h3 className="text-sm font-semibold text-gray-800">Move Insights</h3>
-              {currentMove ? (
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-base font-semibold text-gray-900">
-                      {currentMove.player === 'white' ? 'White' : 'Black'} - {currentMove.moveNumber}
-                    </div>
-                    <MoveClassificationBadge classification={currentMove.classification} />
+          {/* Center Column: Chess Board */}
+          <div className="lg:col-span-7">
+            <div className="relative rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 shadow-2xl shadow-black/50">
+              <div className="flex flex-col items-center justify-center py-4">
+                <div className="w-full flex justify-center max-w-full">
+                  <Chessboard
+                    id="analysis-board"
+                    position={processedData.positions[currentIndex]}
+                    arePiecesDraggable={false}
+                    boardOrientation={playerColor}
+                    boardWidth={boardWidth}
+                    showNotation={true}
+                    {...getDarkChessBoardTheme('default')}
+                  />
+                </div>
+                <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-sm text-slate-200">
+                  <div className="flex items-center space-x-1.5">
+                    <button
+                      onClick={() => navigateToMove(0)}
+                      className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                      aria-label="First move"
+                    >
+                      {NAVIGATION_ICONS.first}
+                    </button>
+                    <button
+                      onClick={() => navigateToMove(currentIndex - 1)}
+                      className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                      aria-label="Previous move"
+                    >
+                      {NAVIGATION_ICONS.prev}
+                    </button>
+                    <button
+                      onClick={() => navigateToMove(currentIndex + 1)}
+                      className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                      aria-label="Next move"
+                    >
+                      {NAVIGATION_ICONS.next}
+                    </button>
+                    <button
+                      onClick={() => navigateToMove(processedData.positions.length - 1)}
+                      className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                      aria-label="Last move"
+                    >
+                      {NAVIGATION_ICONS.last}
+                    </button>
                   </div>
-                  <div className="text-2xl font-bold text-gray-900">{currentMove.san}</div>
-                  <p className="text-sm text-gray-700">{currentMove.explanation}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Analysis Panels */}
+          <div className="lg:col-span-4 space-y-6">
+            {/* Current Move Analysis Block */}
+            <div className="rounded-2xl border border-white/10 bg-white/[0.08] p-6 shadow-xl shadow-black/40">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
+                  <div className="mt-2 text-3xl font-semibold text-white">
+                    {currentMove ? currentMove.san : '—'}
+                  </div>
+                </div>
+                {currentMove && <MoveClassificationBadge classification={currentMove.classification} />}
+              </div>
+              
+              {currentMove ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
+                    <span>{currentMove.player === 'white' ? 'White move' : 'Black move'}</span>
+                    <span className="h-px w-8 bg-white/20" />
+                    <span>Move {currentMove.moveNumber}</span>
+                  </div>
+                  
+                  {/* Enhanced Coaching Display */}
+                  <EnhancedMoveCoaching move={currentMove} className="text-sm" />
                 </div>
               ) : (
-                <p className="mt-3 text-sm text-gray-600">Select a move from the list to view detailed feedback.</p>
+                <p className="text-sm text-slate-300">Use the move timeline to explore Stockfish feedback for each position.</p>
               )}
             </div>
 
-            <div className="bg-white p-4 rounded-lg shadow">
-              <h3 className="text-sm font-semibold text-gray-800">Move List</h3>
-              <div className="mt-3 max-h-[480px] overflow-y-auto pr-2 text-sm">
-                <table className="w-full text-left">
-                  <thead className="sticky top-0 bg-white">
-                    <tr className="text-xs uppercase text-gray-500">
-                      <th className="py-2">Move</th>
-                      <th className="py-2">You</th>
-                      <th className="py-2">Opponent</th>
+            {/* Move Timeline Block */}
+            <div className="rounded-2xl border border-white/10 bg-white/[0.08] p-6 shadow-xl shadow-black/40">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Move Timeline</h3>
+                <span className="text-xs text-slate-400">Tap to jump</span>
+              </div>
+              <div className="max-h-[200px] overflow-y-auto pr-2 text-sm">
+                <table className="w-full table-fixed text-left">
+                  <thead className="sticky top-0 bg-slate-950/95 backdrop-blur">
+                    <tr className="text-xs uppercase text-slate-400">
+                      <th className="w-14 py-2">Move</th>
+                      <th className="w-1/2 py-2">You</th>
+                      <th className="w-1/2 py-2">Opponent</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {Array.from({ length: Math.ceil(processedData.moves.length / 2) }).map((_, row) => {
+                    {Array.from({ length: Math.min(3, Math.ceil(processedData.moves.length / 2)) }).map((_, row) => {
                       const whiteMove = processedData.moves[row * 2]
                       const blackMove = processedData.moves[row * 2 + 1]
                       return (
-                        <tr key={row} className="border-b border-gray-100">
-                          <td className="py-2 pr-2 text-xs text-gray-500">{row + 1}</td>
+                        <tr key={row} className="border-b border-white/10 last:border-b-0">
+                          <td className="py-2 pr-2 text-xs text-slate-400">{row + 1}</td>
                           <td className="py-2 pr-2">
                             {whiteMove ? (
                               <button
                                 onClick={() => navigateToMove(whiteMove.index + 1)}
-                                className={`flex w-full items-center justify-between rounded px-2 py-1 text-left ${
-                                  currentIndex === whiteMove.index + 1 ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100'
+                                className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition ${
+                                  currentIndex === whiteMove.index + 1
+                                    ? 'bg-white/25 text-white shadow-inner shadow-black/40'
+                                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
                                 }`}
                               >
                                 <span>{whiteMove.san}</span>
                                 <MoveClassificationBadge classification={whiteMove.classification} />
                               </button>
                             ) : (
-                              <span className="text-gray-300">--</span>
+                              <span className="text-slate-600">—</span>
                             )}
                           </td>
                           <td className="py-2 pr-2">
                             {blackMove ? (
                               <button
                                 onClick={() => navigateToMove(blackMove.index + 1)}
-                                className={`flex w-full items-center justify-between rounded px-2 py-1 text-left ${
-                                  currentIndex === blackMove.index + 1 ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100'
+                                className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition ${
+                                  currentIndex === blackMove.index + 1
+                                    ? 'bg-white/25 text-white shadow-inner shadow-black/40'
+                                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
                                 }`}
                               >
                                 <span>{blackMove.san}</span>
                                 <MoveClassificationBadge classification={blackMove.classification} />
                               </button>
                             ) : (
-                              <span className="text-gray-300">--</span>
+                              <span className="text-slate-600">—</span>
                             )}
                           </td>
                         </tr>
@@ -955,9 +1100,8 @@ export default function GameAnalysisPage() {
           </div>
         </div>
 
-        {/* Enhanced Insights Section */}
-        <div className="mt-6">
-          <EnhancedGameInsights 
+        <div className="mt-8">
+          <EnhancedGameInsights
             moves={processedData.moves}
             playerColor={playerColor}
             currentMove={currentMove}

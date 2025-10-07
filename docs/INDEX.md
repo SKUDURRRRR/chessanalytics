@@ -18,6 +18,8 @@ This documentation covers the Chess Analytics platform, a comprehensive system f
 - [Database Schema](./DB/SCHEMA.md) - PostgreSQL schema with tables, indexes, and constraints
 - [Data Dictionary](./DB/DATA_DICTIONARY.md) - Detailed column definitions and relationships
 - [Single Game Analysis System](./SINGLE_GAME_ANALYSIS_SYSTEM.md) - Comprehensive guide to single game analysis with safeguards
+- [UI Color System](./UI_COLOR_SYSTEM.md) - Consistent color coding for chess analysis terms across all components
+- [Color Quick Reference](./COLOR_QUICK_REFERENCE.md) - Developer quick reference for color usage
 
 ### Quality & Testing
 - [Test Plan](./QUALITY/TEST_PLAN.md) - Comprehensive testing strategy and coverage targets
@@ -70,6 +72,7 @@ This documentation covers the Chess Analytics platform, a comprehensive system f
 - **Backend**: RESTful API with background processing
 - **Security**: Row-level security policies implemented
 - **Testing**: Comprehensive test suite with 9 test categories
+- **UI/UX**: Consistent color coding system for chess analysis terms
 
 ## Getting Started
 

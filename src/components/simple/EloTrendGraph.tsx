@@ -168,24 +168,25 @@ export function EloTrendGraph({
 
   if (loading) {
     return (
-      <div className={`flex items-center justify-center h-32 ${className}`}>
-        <div className="text-gray-500">Loading ELO trend...</div>
+      <div className={`flex h-32 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] ${className}`}>
+        <div className="mr-3 h-6 w-6 animate-spin rounded-full border-b-2 border-sky-300" />
+        <div className="text-sm text-slate-300">Loading ELO trend…</div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className={`flex items-center justify-center h-32 ${className}`}>
-        <div className="text-red-500">{error}</div>
+      <div className={`flex h-32 items-center justify-center rounded-2xl border border-rose-400/40 bg-rose-500/10 text-sm text-rose-100 ${className}`}>
+        {error}
       </div>
     )
   }
 
   if (eloData.length === 0) {
     return (
-      <div className={`flex items-center justify-center h-32 ${className}`}>
-        <div className="text-gray-500">No ELO data available</div>
+      <div className={`flex h-32 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-sm text-slate-400 ${className}`}>
+        No ELO data available
       </div>
     )
   }
@@ -194,14 +195,14 @@ export function EloTrendGraph({
     <div className={className}>
       {availableTimeControls.length > 0 && (
         <div className="mb-3 flex items-center space-x-2">
-          <label className="text-xs font-medium text-gray-600" htmlFor="time-control-selector">
+          <label className="text-xs font-medium uppercase tracking-wide text-slate-400" htmlFor="time-control-selector">
             Time Control
           </label>
           <select
             id="time-control-selector"
             value={activeTimeControl}
             onChange={handleTimeControlSelection}
-            className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30"
           >
             {availableTimeControls.map(option => (
               <option key={option.value} value={option.value}>

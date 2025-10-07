@@ -173,32 +173,32 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-      <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Search Player</h2>
-        <p className="text-gray-600">Find and analyze any chess player's games</p>
+    <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
+      <div className="mb-6 text-center">
+        <h2 className="text-2xl font-semibold text-white">Search Player</h2>
+        <p className="mt-2 text-sm text-slate-300">Find and analyze any chess player's games</p>
       </div>
 
       <form onSubmit={handleSearch} className="space-y-4">
-        <div className="flex space-x-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="flex-1">
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
               placeholder="Enter player username..."
               required
             />
           </div>
-          <div className="flex space-x-2">
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setSelectedPlatform('lichess')}
-              className={`px-4 py-3 rounded-lg font-medium transition-colors ${
+              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 selectedPlatform === 'lichess'
-                  ? 'bg-green-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200 shadow-inner shadow-emerald-900/40'
+                  : 'border border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10'
               }`}
               title="Lichess"
             >
@@ -207,10 +207,10 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
             <button
               type="button"
               onClick={() => setSelectedPlatform('chess.com')}
-              className={`px-4 py-3 rounded-lg font-medium transition-colors ${
+              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 selectedPlatform === 'chess.com'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'border border-sky-400/40 bg-sky-500/20 text-sky-200 shadow-inner shadow-sky-900/40'
+                  : 'border border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10'
               }`}
               title="Chess.com"
             >
@@ -219,15 +219,15 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           </div>
         </div>
 
-        <div className="flex space-x-3">
+        <div className="flex flex-col gap-3 md:flex-row">
           <button
             type="submit"
             disabled={isSearching || isAutoImporting || !searchQuery.trim()}
-            className="flex-1 bg-blue-500 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSearching || isAutoImporting ? (
               <div className="flex items-center justify-center space-x-2">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-sky-200"></div>
                 <span>{isAutoImporting ? 'Importing...' : 'Searching...'}</span>
               </div>
             ) : (
@@ -244,7 +244,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               setImportProgress(null)
               setShowImportPrompt(false)
             }}
-            className="px-6 py-3 bg-gray-500 text-white rounded-lg font-medium hover:bg-gray-600 transition-colors"
+            className="rounded-2xl border border-white/10 bg-white/10 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20"
           >
             Clear
           </button>
@@ -254,30 +254,30 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       {/* Search Results */}
       {showResults && (
         <div className="mt-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">
+          <h3 className="mb-3 text-lg font-semibold text-white">
             Search Results ({searchResults.length})
           </h3>
 
           {searchResults.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="py-8 text-center text-slate-400">
               {isAutoImporting ? (
                 <div className="space-y-4">
-                  <div className="text-4xl mb-2">Fast</div>
-                  <p className="text-lg font-medium">Importing games for "{searchQuery}"...</p>
+                  <div className="text-4xl text-slate-600">♘</div>
+                  <p className="text-lg font-medium text-slate-200">Importing games for "{searchQuery}"...</p>
                   <p className="text-sm">This may take a few moments</p>
                 </div>
               ) : showImportPrompt ? (
                 <div className="space-y-4">
-                  <div className="text-4xl mb-2">Search</div>
-                  <p className="text-lg font-medium">No players found in database</p>
-                  <p className="text-sm text-gray-600 mb-4">
+                  <div className="text-4xl text-slate-600">Search</div>
+                  <p className="text-lg font-medium text-slate-200">No players found in database</p>
+                  <p className="mb-4 text-sm text-slate-400">
                     Player "{searchQuery}" is not in our database yet.
                   </p>
                   <div className="space-x-3">
                     <button
                       onClick={handleManualImport}
                       disabled={isAutoImporting}
-                      className="bg-blue-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Import 100 Games
                     </button>
@@ -288,7 +288,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                         setSearchResults([])
                         setShowResults(false)
                       }}
-                      className="bg-gray-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-gray-600 transition-colors"
+                      className="rounded-2xl border border-white/10 bg-white/10 px-6 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20"
                     >
                       Cancel
                     </button>
@@ -296,22 +296,22 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="text-4xl mb-2">Search</div>
+                  <div className="text-4xl text-slate-600">Search</div>
                   <p>No players found matching "{searchQuery}"</p>
                   <p className="text-sm">Try a different search term</p>
                 </div>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
               {searchResults.map(player => (
                 <div
                   key={`${player.user_id}-${player.platform}`}
                   onClick={() => handlePlayerSelect(player.user_id, player.platform)}
-                  className={`p-4 border rounded-lg cursor-pointer hover:shadow-md transition-all ${
+                  className={`cursor-pointer rounded-2xl border p-4 transition ${
                     player.platform_mismatch
-                      ? 'border-yellow-300 bg-yellow-50 hover:border-yellow-400'
-                      : 'border-gray-200 hover:border-gray-300'
+                      ? 'border-amber-300/40 bg-amber-500/10 text-amber-100 hover:border-amber-300/60'
+                      : 'border-white/10 bg-white/5 text-slate-100 hover:border-white/30 hover:bg-white/10'
                   }`}
                 >
                   <div className="flex items-center space-x-3">
@@ -319,17 +319,17 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                       {getPlatformIcon(player.platform)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-900 truncate">
+                      <div className="truncate font-semibold text-white">
                         {player.display_name || player.user_id}
                       </div>
-                      <div className="text-sm text-gray-500 truncate">
+                      <div className="truncate text-sm text-slate-300">
                         {player.user_id} - {player.platform}
                       </div>
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-slate-400">
                         {player.total_games} games - {player.current_rating} rating
                       </div>
                       {player.platform_mismatch && (
-                        <div className="text-xs text-yellow-600 font-medium mt-1">
+                        <div className="mt-1 text-xs font-medium text-amber-200">
                           Warning: Found on {player.original_platform}, but you selected{' '}
                           {selectedPlatform}
                         </div>
@@ -345,28 +345,28 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       {/* Import Progress */}
       {importProgress && (
-        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-lg font-semibold text-gray-800">
+            <h4 className="text-lg font-semibold text-white">
               {importProgress.status === 'starting' && 'Starting Import...'}
               {importProgress.status === 'importing' && 'Importing Games...'}
               {importProgress.status === 'completed' && 'Import Complete!'}
               {importProgress.status === 'error' && 'Import Failed'}
             </h4>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-slate-300">
               {importProgress.importedGames} games imported
             </div>
           </div>
 
           <div className="mb-2">
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="h-2 w-full rounded-full bg-white/10">
               <div
                 className={`h-2 rounded-full transition-all duration-300 ${
                   importProgress.status === 'error'
-                    ? 'bg-red-500'
+                    ? 'bg-rose-500'
                     : importProgress.status === 'completed'
-                      ? 'bg-green-500'
-                      : 'bg-blue-500'
+                      ? 'bg-emerald-400'
+                      : 'bg-sky-400'
                 }`}
                 style={{ width: `${importProgress.progress}%` }}
               ></div>
@@ -376,10 +376,10 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           <p
             className={`text-sm ${
               importProgress.status === 'error'
-                ? 'text-red-600'
+                ? 'text-rose-200'
                 : importProgress.status === 'completed'
-                  ? 'text-green-600'
-                  : 'text-gray-600'
+                  ? 'text-emerald-200'
+                  : 'text-slate-300'
             }`}
           >
             {importProgress.message}
@@ -387,8 +387,8 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
           {importProgress.status === 'completed' && (
             <div className="mt-3 text-center">
-              <div className="text-2xl mb-2">Yes</div>
-              <p className="text-green-600 font-medium">
+              <div className="mb-2 text-2xl text-emerald-200">✓</div>
+              <p className="font-medium text-emerald-200">
                 {importProgress.importedGames} games imported successfully! You can now view
                 analytics.
               </p>
@@ -397,8 +397,8 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
           {importProgress.status === 'error' && (
             <div className="mt-3 text-center">
-              <div className="text-2xl mb-2">No</div>
-              <p className="text-red-600 font-medium">
+              <div className="mb-2 text-2xl text-rose-200">!</div>
+              <p className="font-medium text-rose-200">
                 Import failed. Please try again or check if the username is correct.
               </p>
             </div>
@@ -407,15 +407,15 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       )}
 
       {/* Quick Access to Recent Players */}
-      <div className="mt-6 pt-6 border-t border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-800 mb-3">Quick Access</h3>
-        <p className="text-sm text-gray-600 mb-3">
+      <div className="mt-6 border-t border-white/10 pt-6">
+        <h3 className="mb-3 text-lg font-semibold text-white">Quick Access</h3>
+        <p className="mb-3 text-sm text-slate-300">
           Or search for a new player by typing their username above
         </p>
         <div className="text-center">
           <button
             onClick={() => setShowResults(!showResults)}
-            className="text-blue-500 hover:text-blue-600 font-medium"
+            className="font-medium text-sky-300 hover:text-sky-200"
           >
             {showResults ? 'Hide' : 'Show'} Recent Players
           </button>

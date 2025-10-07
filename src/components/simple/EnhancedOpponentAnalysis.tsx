@@ -86,62 +86,59 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
   }
 
   const getWinRateColor = (winRate: number) => {
-    if (winRate >= 70) return 'text-green-600'
-    if (winRate >= 55) return 'text-blue-600'
-    if (winRate >= 45) return 'text-yellow-600'
-    return 'text-red-600'
+    if (winRate >= 70) return 'text-emerald-300'
+    if (winRate >= 55) return 'text-sky-300'
+    if (winRate >= 45) return 'text-amber-300'
+    return 'text-rose-300'
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow">
-      <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
-        <span className="text-2xl mr-2">Opponents</span>
-        Opponent Analysis
+    <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
+      <h3 className="mb-6 flex items-center text-lg font-semibold text-white">
+        <span className="mr-2 text-2xl text-sky-300">Opponents</span>
+        <span className="text-slate-300">Opponent Analysis</span>
       </h3>
 
       {/* Basic Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="text-center p-4 bg-gray-50 rounded-lg">
-          <div className="text-sm text-gray-600 mb-1">Avg Opponent</div>
-          <div className="text-2xl font-bold text-gray-800">{opponentStats.averageOpponentRating}</div>
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 text-center">
+          <div className="text-xs uppercase tracking-wide text-slate-400">Avg Opponent</div>
+          <div className="mt-1 text-2xl font-semibold text-white">{opponentStats.averageOpponentRating}</div>
         </div>
-        <div className="text-center p-4 bg-red-50 rounded-lg">
-          <div className="text-sm text-gray-600 mb-1">Highest Opponent</div>
-          <div className="text-2xl font-bold text-red-600">{opponentStats.highestOpponentRating}</div>
+        <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 p-4 text-center">
+          <div className="text-xs uppercase tracking-wide text-rose-100/80">Highest Opponent</div>
+          <div className="mt-1 text-2xl font-semibold text-rose-200">{opponentStats.highestOpponentRating}</div>
         </div>
-        <div className="text-center p-4 bg-green-50 rounded-lg">
-          <div className="text-sm text-gray-600 mb-1">Lowest Opponent</div>
-          <div className="text-2xl font-bold text-green-600">{opponentStats.lowestOpponentRating}</div>
+        <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-center">
+          <div className="text-xs uppercase tracking-wide text-emerald-100/80">Lowest Opponent</div>
+          <div className="mt-1 text-2xl font-semibold text-emerald-200">{opponentStats.lowestOpponentRating}</div>
         </div>
-        <div className="text-center p-4 bg-blue-50 rounded-lg">
-          <div className="text-sm text-gray-600 mb-1">Rating Diff</div>
-          <div className={`text-2xl font-bold ${opponentStats.ratingDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {opponentStats.ratingDifference > 0 ? '+' : ''}{opponentStats.ratingDifference}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 text-center">
+          <div className="text-xs uppercase tracking-wide text-slate-400">Rating Diff</div>
+          <div className={`mt-1 text-2xl font-semibold ${opponentStats.ratingDifference >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+            {opponentStats.ratingDifference > 0 ? '+' : ''}
+            {opponentStats.ratingDifference}
           </div>
         </div>
       </div>
 
       {/* Highest Opponent Games */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Highest Rated Opponent Game */}
         {opponentStats.highestOpponentGame && (
-          <div className={`p-4 rounded-lg border ${
-            opponentStats.highestOpponentGame.result === 'win' 
-              ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
-              : opponentStats.highestOpponentGame.result === 'loss'
-                ? 'bg-gradient-to-r from-red-50 to-orange-50 border-red-200'
-                : 'bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-200'
-          }`}>
-            <h4 className={`text-md font-semibold mb-3 ${
-              opponentStats.highestOpponentGame.result === 'win' 
-                ? 'text-green-800'
+          <div
+            className={`rounded-2xl border p-4 shadow-lg ${
+              opponentStats.highestOpponentGame.result === 'win'
+                ? 'border-emerald-400/40 bg-emerald-500/10'
                 : opponentStats.highestOpponentGame.result === 'loss'
-                  ? 'text-red-800'
-                  : 'text-yellow-800'
-            }`}>
+                  ? 'border-rose-400/40 bg-rose-500/10'
+                  : 'border-amber-400/40 bg-amber-500/10'
+            }`}
+          >
+            <h4 className="mb-3 text-sm font-semibold text-white">
               Highest Rated Opponent
             </h4>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-4">
               <MiniChessBoard
                 gameId={opponentStats.highestOpponentGame.gameId}
                 result={opponentStats.highestOpponentGame.result}
@@ -149,59 +146,59 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
                 totalMoves={opponentStats.highestOpponentGame.totalMoves}
               />
               <div className="flex-1">
-                <div className="flex items-center space-x-4 mb-2">
-                  <div className={`text-lg font-bold ${
-                    opponentStats.highestOpponentGame.result === 'win' 
-                      ? 'text-green-600'
-                      : opponentStats.highestOpponentGame.result === 'loss'
-                        ? 'text-red-600'
-                        : 'text-yellow-600'
-                  }`}>
+                <div className="mb-2 flex items-center gap-4">
+                  <div className="text-lg font-semibold text-white">
                     {opponentStats.highestOpponentGame.opponentName || opponentStats.highestOpponentGame.opponentRating}
                   </div>
-                  <div className={`px-2 py-1 rounded text-sm font-medium ${
-                    opponentStats.highestOpponentGame.result === 'win' ? 'bg-green-100 text-green-800' :
-                    opponentStats.highestOpponentGame.result === 'loss' ? 'bg-red-100 text-red-800' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
+                  <div
+                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                      opponentStats.highestOpponentGame.result === 'win'
+                        ? 'bg-emerald-500/20 text-emerald-200'
+                        : opponentStats.highestOpponentGame.result === 'loss'
+                          ? 'bg-rose-500/20 text-rose-200'
+                          : 'bg-amber-500/20 text-amber-200'
+                    }`}
+                  >
                     {opponentStats.highestOpponentGame.result.toUpperCase()}
                   </div>
                 </div>
-                <div className="text-sm text-gray-600 mb-2">
+                <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-slate-200">
                   {opponentStats.highestOpponentGame.opening && opponentStats.highestOpponentGame.opening !== 'Unknown' && (
-                    <span className="mr-4">Opening: {opponentStats.highestOpponentGame.opening}</span>
+                    <span className="text-slate-300">Opening: {opponentStats.highestOpponentGame.opening}</span>
                   )}
                   {opponentStats.highestOpponentGame.totalMoves && (
-                    <span className="mr-4">{opponentStats.highestOpponentGame.totalMoves} moves</span>
+                    <span className="text-slate-300">{opponentStats.highestOpponentGame.totalMoves} moves</span>
                   )}
                   {opponentStats.highestOpponentGame.color && (
-                    <span className={`mr-4 px-2 py-1 rounded text-xs font-medium ${
-                      opponentStats.highestOpponentGame.color === 'white' 
-                        ? 'bg-gray-100 text-gray-800' 
-                        : 'bg-gray-800 text-white'
-                    }`}>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                        opponentStats.highestOpponentGame.color === 'white'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-black/40 text-slate-100'
+                      }`}
+                    >
                       {opponentStats.highestOpponentGame.color.toUpperCase()}
                     </span>
                   )}
                   {opponentStats.highestOpponentGame.accuracy && (
-                    <span className="text-blue-600 font-medium">
+                    <span className="font-semibold text-sky-200">
                       {opponentStats.highestOpponentGame.accuracy.toFixed(1)}% accuracy
                     </span>
                   )}
                 </div>
-                <div className="text-sm text-gray-500">
+                <div className="text-xs text-slate-400">
                   {formatDate(opponentStats.highestOpponentGame.playedAt)}
                 </div>
               </div>
               <div>
                 <button
                   onClick={() => handleGameClick(opponentStats.highestOpponentGame.gameId)}
-                  className={`inline-flex items-center px-3 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
-                    opponentStats.highestOpponentGame.result === 'win' 
-                      ? 'bg-green-600 hover:bg-green-700'
+                  className={`inline-flex items-center rounded-full px-4 py-2 text-xs font-semibold text-white transition ${
+                    opponentStats.highestOpponentGame.result === 'win'
+                      ? 'bg-emerald-500/70 hover:bg-emerald-500'
                       : opponentStats.highestOpponentGame.result === 'loss'
-                        ? 'bg-red-600 hover:bg-red-700'
-                        : 'bg-yellow-600 hover:bg-yellow-700'
+                        ? 'bg-rose-500/70 hover:bg-rose-500'
+                        : 'bg-amber-500/70 hover:bg-amber-500'
                   }`}
                 >
                   <span className="mr-1">Link</span>
@@ -214,11 +211,11 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
 
         {/* Highest Rated Opponent Win */}
         {opponentStats.highestOpponentWin && (
-          <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
-            <h4 className="text-md font-semibold text-green-800 mb-3">
+          <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 shadow-lg">
+            <h4 className="mb-3 text-sm font-semibold text-white">
               Highest Rated Win
             </h4>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-4">
               <MiniChessBoard
                 gameId={opponentStats.highestOpponentWin.gameId}
                 result={opponentStats.highestOpponentWin.result}
@@ -226,44 +223,46 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
                 totalMoves={opponentStats.highestOpponentWin.totalMoves}
               />
               <div className="flex-1">
-                <div className="flex items-center space-x-4 mb-2">
-                  <div className="text-lg font-bold text-green-600">
+                <div className="mb-2 flex items-center gap-4">
+                  <div className="text-lg font-semibold text-white">
                     {opponentStats.highestOpponentWin.opponentName || opponentStats.highestOpponentWin.opponentRating}
                   </div>
-                  <div className="px-2 py-1 rounded text-sm font-medium bg-green-100 text-green-800">
+                  <div className="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-200">
                     WIN
                   </div>
                 </div>
-                <div className="text-sm text-gray-600 mb-2">
+                <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-slate-200">
                   {opponentStats.highestOpponentWin.opening && opponentStats.highestOpponentWin.opening !== 'Unknown' && (
-                    <span className="mr-4">Opening: {opponentStats.highestOpponentWin.opening}</span>
+                    <span className="text-slate-300">Opening: {opponentStats.highestOpponentWin.opening}</span>
                   )}
                   {opponentStats.highestOpponentWin.totalMoves && (
-                    <span className="mr-4">{opponentStats.highestOpponentWin.totalMoves} moves</span>
+                    <span className="text-slate-300">{opponentStats.highestOpponentWin.totalMoves} moves</span>
                   )}
                   {opponentStats.highestOpponentWin.color && (
-                    <span className={`mr-4 px-2 py-1 rounded text-xs font-medium ${
-                      opponentStats.highestOpponentWin.color === 'white' 
-                        ? 'bg-gray-100 text-gray-800' 
-                        : 'bg-gray-800 text-white'
-                    }`}>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                        opponentStats.highestOpponentWin.color === 'white'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-black/40 text-slate-100'
+                      }`}
+                    >
                       {opponentStats.highestOpponentWin.color.toUpperCase()}
                     </span>
                   )}
                   {opponentStats.highestOpponentWin.accuracy && (
-                    <span className="text-blue-600 font-medium">
+                    <span className="font-semibold text-sky-200">
                       {opponentStats.highestOpponentWin.accuracy.toFixed(1)}% accuracy
                     </span>
                   )}
                 </div>
-                <div className="text-sm text-gray-500">
+                <div className="text-xs text-slate-400">
                   {formatDate(opponentStats.highestOpponentWin.playedAt)}
                 </div>
               </div>
               <div>
                 <button
                   onClick={() => handleGameClick(opponentStats.highestOpponentWin.gameId)}
-                  className="inline-flex items-center px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                  className="inline-flex items-center rounded-full bg-emerald-500/70 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-500"
                 >
                   <span className="mr-1">Link</span>
                   View Game
@@ -275,41 +274,41 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
       </div>
 
       {/* Toughest vs Favorite Opponents */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Toughest Opponents */}
         {opponentStats.toughestOpponents.length > 0 && (
           <div>
-            <h4 className="text-md font-semibold text-gray-700 mb-4 flex items-center">
-              <span className="mr-2">Tough</span>
+            <h4 className="mb-4 flex items-center text-sm font-semibold text-rose-200">
+              <span className="mr-2 text-xs uppercase tracking-wide text-rose-100">Tough</span>
               Toughest Opponents
             </h4>
             <div className="space-y-3">
               {opponentStats.toughestOpponents.map((opponent, index) => (
                 <div 
                   key={index} 
-                  className={`flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200 ${onOpponentClick && opponent.opponentName ? 'cursor-pointer hover:bg-red-100 transition-colors' : ''}`}
+                  className={`flex items-center justify-between rounded-2xl border border-rose-400/40 bg-rose-500/10 p-3 text-slate-100 ${onOpponentClick && opponent.opponentName ? 'cursor-pointer hover:border-rose-300/60 hover:bg-rose-500/20' : ''}`}
                   onClick={() => onOpponentClick && opponent.opponentName && onOpponentClick(opponent.opponentName)}
                 >
                   <div className="flex items-center space-x-3">
-                    <div className="text-sm font-medium text-gray-800">
+                    <div className="text-sm font-semibold text-white">
                       {opponent.opponentName || `~${opponent.opponentRating} rating`}
                     </div>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-rose-200/80">
                       {opponent.games} games
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
                     <div className="text-right">
-                      <div className={`text-lg font-bold ${getWinRateColor(opponent.winRate)}`}>
+                      <div className={`text-lg font-semibold ${getWinRateColor(opponent.winRate)}`}>
                         {opponent.winRate}%
                       </div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-rose-100/80">
                         {opponent.wins}W-{opponent.losses}L-{opponent.draws}D
                       </div>
                     </div>
                     <button
                       onClick={() => handleGameClick(opponent.recentGameId)}
-                      className="text-blue-600 hover:text-blue-800 text-sm"
+                      className="text-xs font-semibold text-sky-200 hover:text-sky-100"
                     >
                       Link
                     </button>
@@ -323,37 +322,37 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
         {/* Favorite Opponents */}
         {opponentStats.favoriteOpponents.length > 0 && (
           <div>
-            <h4 className="text-md font-semibold text-gray-700 mb-4 flex items-center">
-              <span className="mr-2">Familiar</span>
+            <h4 className="mb-4 flex items-center text-sm font-semibold text-emerald-200">
+              <span className="mr-2 text-xs uppercase tracking-wide text-emerald-100">Familiar</span>
               Favorite Opponents
             </h4>
             <div className="space-y-3">
               {opponentStats.favoriteOpponents.map((opponent, index) => (
                 <div 
                   key={index} 
-                  className={`flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 ${onOpponentClick && opponent.opponentName ? 'cursor-pointer hover:bg-green-100 transition-colors' : ''}`}
+                  className={`flex items-center justify-between rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-3 text-slate-100 ${onOpponentClick && opponent.opponentName ? 'cursor-pointer hover:border-emerald-300/60 hover:bg-emerald-500/20' : ''}`}
                   onClick={() => onOpponentClick && opponent.opponentName && onOpponentClick(opponent.opponentName)}
                 >
                   <div className="flex items-center space-x-3">
-                    <div className="text-sm font-medium text-gray-800">
+                    <div className="text-sm font-semibold text-white">
                       {opponent.opponentName || `~${opponent.opponentRating} rating`}
                     </div>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-emerald-200/80">
                       {opponent.games} games
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
                     <div className="text-right">
-                      <div className={`text-lg font-bold ${getWinRateColor(opponent.winRate)}`}>
+                      <div className={`text-lg font-semibold ${getWinRateColor(opponent.winRate)}`}>
                         {opponent.winRate}%
                       </div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-emerald-100/80">
                         {opponent.wins}W-{opponent.losses}L-{opponent.draws}D
                       </div>
                     </div>
                     <button
                       onClick={() => handleGameClick(opponent.recentGameId)}
-                      className="text-blue-600 hover:text-blue-800 text-sm"
+                      className="text-xs font-semibold text-sky-200 hover:text-sky-100"
                     >
                       Link
                     </button>

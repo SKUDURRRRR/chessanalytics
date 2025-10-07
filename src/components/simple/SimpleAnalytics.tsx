@@ -10,6 +10,8 @@ import {
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
 import { normalizeOpeningName } from '../../utils/openingUtils'
+import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
+import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { PersonalityRadar } from '../deep/PersonalityRadar'
 import { LongTermPlanner } from '../deep/LongTermPlanner'
 import { OpeningPlayerCard } from '../deep/OpeningPlayerCard'
@@ -198,12 +200,12 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   if (loading) {
     return (
       <div className="space-y-4">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h2 className="text-xl font-bold mb-4">Chess Analytics</h2>
+        <div className="bg-white/[0.08] border border-white/10 p-6 rounded-lg shadow-2xl shadow-black/50">
+          <h2 className="text-xl font-bold mb-4 text-slate-200">Chess Analytics</h2>
           <div className="space-y-2">
-            <div className="h-4 bg-gray-200 rounded w-32"></div>
-            <div className="h-4 bg-gray-200 rounded w-24"></div>
-            <div className="h-4 bg-gray-200 rounded w-28"></div>
+            <div className="h-4 bg-white/10 rounded w-32"></div>
+            <div className="h-4 bg-white/10 rounded w-24"></div>
+            <div className="h-4 bg-white/10 rounded w-28"></div>
           </div>
         </div>
       </div>
@@ -212,12 +214,12 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
   if (error) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h2 className="text-xl font-bold mb-4">Error</h2>
-        <p className="text-red-600 mb-4">{error}</p>
+      <div className="bg-white/[0.08] border border-white/10 p-6 rounded-lg shadow-2xl shadow-black/50">
+        <h2 className="text-xl font-bold mb-4 text-slate-200">Error</h2>
+        <p className="text-rose-400 mb-4">{error}</p>
         <button
           onClick={() => loadData(true)}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="px-4 py-2 bg-sky-500 text-white rounded hover:bg-sky-600 transition-colors"
         >
           Retry
         </button>
@@ -227,9 +229,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
   if (!data && !comprehensiveData) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h2 className="text-xl font-bold mb-4">No Data</h2>
-        <p>No games found for this user.</p>
+      <div className="bg-white/[0.08] border border-white/10 p-6 rounded-lg shadow-2xl shadow-black/50">
+        <h2 className="text-xl font-bold mb-4 text-slate-200">No Data</h2>
+        <p className="text-slate-300">No games found for this user.</p>
       </div>
     )
   }
@@ -280,30 +282,34 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     }
   }
 
+  const cardClass = 'rounded-2xl border border-white/10 bg-white/[0.05] p-6 shadow-lg shadow-black/40'
+  const subtleCardClass = 'rounded-2xl border border-white/10 bg-white/[0.03] p-6 shadow-inner shadow-black/30'
+  const pillBadgeClass = 'inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-slate-200'
+
   return (
-    <div className="space-y-4" data-testid="analytics-container">
+    <div className="space-y-6 text-slate-100" data-testid="analytics-container">
       {/* ELO Optimization Status */}
       {safeData.elo_optimization_active && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-5 shadow-lg shadow-emerald-900/30">
           <div className="flex items-start space-x-3">
-            <div className="text-green-600 text-xl">*</div>
+            <div className="text-xl text-emerald-200">*</div>
             <div>
-              <h3 className="text-lg font-semibold text-green-800 mb-2">ELO Optimization Active</h3>
-              <p className="text-green-700 mb-3">
+              <h3 className="mb-2 text-lg font-semibold text-white">ELO Optimization Active</h3>
+              <p className="mb-3 text-sm text-emerald-100">
                 Your ELO statistics are calculated using the optimized approach for maximum performance.
                 This ensures accurate results even with thousands of games!
               </p>
-              <div className="bg-green-100 p-3 rounded border border-green-300">
-                <p className="text-green-800 font-medium mb-1">Optimization Benefits:</p>
-                <ul className="text-green-700 text-sm space-y-1 list-disc list-inside">
-                  <li>* Fast ELO calculations (single database query)</li>
-                  <li>* Complete coverage of all imported games</li>
-                  <li>* No analysis dependency - ELO data available immediately after import</li>
-                  <li>* Handles players with thousands of games efficiently</li>
+              <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4">
+                <p className="mb-2 text-sm font-medium text-emerald-100">Optimization Benefits:</p>
+                <ul className="space-y-1 text-xs text-emerald-200">
+                  <li>• Fast ELO calculations (single database query)</li>
+                  <li>• Complete coverage of all imported games</li>
+                  <li>• No analysis dependency — data available immediately after import</li>
+                  <li>• Handles players with thousands of games efficiently</li>
                 </ul>
                 {safeData.total_games_with_elo > 0 && (
-                  <p className="text-green-800 text-sm mt-2">
-                    <strong>Total games processed:</strong> {safeData.total_games_with_elo}
+                  <p className="mt-3 text-xs text-emerald-100">
+                    <span className="font-semibold">Total games processed:</span> {safeData.total_games_with_elo}
                   </p>
                 )}
               </div>
@@ -314,17 +320,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       {/* Mock Data Warning */}
       {isMockData && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <div className="rounded-2xl border border-amber-300/30 bg-amber-500/10 p-5 shadow-lg shadow-amber-900/30">
           <div className="flex items-start space-x-3">
-            <div className="text-yellow-600 text-xl">!</div>
+            <div className="text-xl text-amber-200">!</div>
             <div>
-              <h3 className="text-lg font-semibold text-yellow-800 mb-2">Demo Data Shown</h3>
-              <p className="text-yellow-700 mb-3">
+              <h3 className="mb-2 text-lg font-semibold text-white">Demo Data Shown</h3>
+              <p className="mb-3 text-sm text-amber-100">
                 You're seeing sample analytics data because no analysis has been performed on your games yet.
               </p>
-              <div className="bg-yellow-100 p-3 rounded border border-yellow-300">
-                <p className="text-yellow-800 font-medium mb-1">To see your real analytics:</p>
-                <ol className="text-yellow-700 text-sm space-y-1 list-decimal list-inside">
+              <div className="rounded-xl border border-amber-300/30 bg-amber-500/15 p-4">
+                <p className="mb-2 text-sm font-medium text-amber-100">To see your real analytics:</p>
+                <ol className="list-decimal space-y-1 text-xs text-amber-100/90">
                   <li>Click the "Analyze My Games" button above</li>
                   <li>Wait for the analysis to complete (this may take a few minutes)</li>
                   <li>Refresh the page to see your real analytics data</li>
@@ -337,17 +343,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       {/* ELO Data Validation Warning */}
       {safeData.validation_issues && safeData.validation_issues.length > 0 && (
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+        <div className="rounded-2xl border border-orange-400/30 bg-orange-500/10 p-5 shadow-lg shadow-orange-900/30">
           <div className="flex items-start space-x-3">
-            <div className="text-orange-600 text-xl">!</div>
+            <div className="text-xl text-orange-200">!</div>
             <div>
-              <h3 className="text-lg font-semibold text-orange-800 mb-2">ELO Data Quality Issues Detected</h3>
-              <p className="text-orange-700 mb-3">
+              <h3 className="mb-2 text-lg font-semibold text-white">ELO Data Quality Issues Detected</h3>
+              <p className="mb-3 text-sm text-orange-100">
                 Some of your game data may have incorrect ELO ratings. This could affect the accuracy of your highest ELO calculation.
               </p>
-              <div className="bg-orange-100 p-3 rounded border border-orange-300">
-                <p className="text-orange-800 font-medium mb-2">Issues found:</p>
-                <ul className="text-orange-700 text-sm space-y-1 list-disc list-inside">
+              <div className="rounded-xl border border-orange-300/30 bg-orange-500/15 p-4">
+                <p className="mb-2 text-sm font-medium text-orange-100">Issues found:</p>
+                <ul className="list-disc space-y-1 text-xs text-orange-100/90">
                   {safeData.validation_issues.slice(0, 3).map((issue: string, index: number) => (
                     <li key={index}>{issue}</li>
                   ))}
@@ -355,8 +361,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     <li>... and {safeData.validation_issues.length - 3} more issues</li>
                   )}
                 </ul>
-                <p className="text-orange-800 text-sm mt-2">
-                  <strong>Note:</strong> The highest ELO shown may not be accurate. Consider re-importing your games to fix these issues.
+                <p className="mt-2 text-xs text-orange-100">
+                  <span className="font-semibold">Note:</span> The highest ELO shown may not be accurate. Consider re-importing your games to fix these issues.
                 </p>
               </div>
             </div>
@@ -365,25 +371,25 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Total Games Analyzed</h3>
-          <div className="text-2xl font-bold">{safeData.total_games_analyzed}</div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className={cardClass}>
+          <h3 className="text-xs uppercase tracking-wide text-slate-300">Total Games Analyzed</h3>
+          <div className="mt-3 text-2xl font-semibold text-white">{safeData.total_games_analyzed}</div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Average Accuracy</h3>
-          <div className="text-2xl font-bold text-green-600">{safeData.average_accuracy}%</div>
+        <div className={cardClass}>
+          <h3 className="text-xs uppercase tracking-wide text-slate-300">Average Accuracy</h3>
+          <div className="mt-3 text-2xl font-semibold text-emerald-300">{safeData.average_accuracy}%</div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Highest Rating</h3>
-          <div className="text-2xl font-bold text-blue-600">{comprehensiveData?.highestElo || safeData.current_rating || 'N/A'}</div>
+        <div className={cardClass}>
+          <h3 className="text-xs uppercase tracking-wide text-slate-300">Highest Rating</h3>
+          <div className="mt-3 text-2xl font-semibold text-sky-300">{comprehensiveData?.highestElo || safeData.current_rating || 'N/A'}</div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Time Control (Highest ELO)</h3>
-          <div className="text-2xl font-bold text-yellow-600">
+        <div className={cardClass}>
+          <h3 className="text-xs uppercase tracking-wide text-slate-300">Time Control (Highest ELO)</h3>
+          <div className="mt-3 text-2xl font-semibold text-amber-300">
             {safeData.most_played_time_control ? getTimeControlCategory(safeData.most_played_time_control) : 'N/A'}
           </div>
         </div>
@@ -391,12 +397,12 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       {/* Backend Analysis Status */}
       {!data && comprehensiveData && comprehensiveData.totalGames > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="rounded-2xl border border-sky-400/30 bg-sky-500/10 p-5 shadow-lg shadow-sky-900/30">
           <div className="flex items-start space-x-3">
-            <div className="text-blue-600 text-xl">...</div>
+            <div className="text-xl text-sky-200">…</div>
             <div>
-              <h3 className="text-lg font-semibold text-blue-800 mb-2">Analysis in Progress</h3>
-              <p className="text-blue-700">
+              <h3 className="mb-2 text-lg font-semibold text-white">Analysis in Progress</h3>
+              <p className="text-sm text-sky-100">
                 Your comprehensive game statistics are available below. Detailed move analysis is currently being processed by the backend.
               </p>
             </div>
@@ -408,90 +414,90 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       {comprehensiveData && comprehensiveData.totalGames > 0 && (
         <div className="space-y-4">
           {/* Basic Statistics */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Basic Statistics</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div className={cardClass}>
+            <h3 className="mb-4 text-lg font-semibold text-white">Basic Statistics</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
               <div>
-                <span className="font-medium text-gray-600">Total Games:</span>
-                <div className="text-xl font-bold text-blue-600">{comprehensiveData.totalGames}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Total Games</span>
+                <div className="text-xl font-semibold text-sky-300">{comprehensiveData.totalGames}</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Win Rate:</span>
-                <div className="text-xl font-bold text-green-600">{comprehensiveData.winRate.toFixed(1)}%</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Win Rate</span>
+                <div className="text-xl font-semibold text-emerald-300">{comprehensiveData.winRate.toFixed(1)}%</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Draw Rate:</span>
-                <div className="text-xl font-bold text-yellow-600">{comprehensiveData.drawRate.toFixed(1)}%</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Draw Rate</span>
+                <div className="text-xl font-semibold text-amber-300">{comprehensiveData.drawRate.toFixed(1)}%</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Loss Rate:</span>
-                <div className="text-xl font-bold text-red-600">{comprehensiveData.lossRate.toFixed(1)}%</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Loss Rate</span>
+                <div className="text-xl font-semibold text-rose-300">{comprehensiveData.lossRate.toFixed(1)}%</div>
               </div>
             </div>
           </div>
 
           {/* ELO Statistics */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">ELO Statistics</h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+          <div className={cardClass}>
+            <h3 className="mb-4 text-lg font-semibold text-white">ELO Statistics</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-5">
               <div>
-                <span className="font-medium text-gray-600">Highest:</span>
-                <div className="text-lg font-bold text-green-600">{comprehensiveData.highestElo || 'N/A'}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Highest</span>
+                <div className="text-lg font-semibold text-emerald-300">{comprehensiveData.highestElo || 'N/A'}</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Lowest:</span>
-                <div className="text-lg font-bold text-red-600">{comprehensiveData.lowestElo || 'N/A'}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Lowest</span>
+                <div className="text-lg font-semibold text-rose-300">{comprehensiveData.lowestElo || 'N/A'}</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Current:</span>
-                <div className="text-lg font-bold text-blue-600">{comprehensiveData.currentElo || 'N/A'}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Current</span>
+                <div className="text-lg font-semibold text-sky-300">{comprehensiveData.currentElo || 'N/A'}</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Average:</span>
-                <div className="text-lg font-bold text-purple-600">{comprehensiveData.averageElo?.toFixed(0) || 'N/A'}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Average</span>
+                <div className="text-lg font-semibold text-purple-300">{comprehensiveData.averageElo?.toFixed(0) || 'N/A'}</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Range:</span>
-                <div className="text-lg font-bold text-orange-600">{comprehensiveData.eloRange || 'N/A'}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Range</span>
+                <div className="text-lg font-semibold text-amber-300">{comprehensiveData.eloRange || 'N/A'}</div>
               </div>
             </div>
           </div>
 
           {/* Color Performance */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Color Performance</h3>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-800 mb-2">White</h4>
-                <div className="space-y-2 text-sm">
+          <div className={cardClass}>
+            <h3 className="mb-4 text-lg font-semibold text-white">Color Performance</h3>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className={subtleCardClass}>
+                <h4 className="mb-2 text-sm font-semibold text-white">White</h4>
+                <div className="space-y-2 text-sm text-slate-200">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Games:</span>
-                    <span className="font-medium">{comprehensiveData.colorStats.white.games}</span>
+                    <span className="text-slate-400">Games:</span>
+                    <span className="font-semibold text-white">{comprehensiveData.colorStats.white.games}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Win Rate:</span>
-                    <span className="font-medium text-green-600">{comprehensiveData.colorStats.white.winRate.toFixed(1)}%</span>
+                    <span className="text-slate-400">Win Rate:</span>
+                    <span className="font-semibold text-emerald-300">{comprehensiveData.colorStats.white.winRate.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Avg ELO:</span>
-                    <span className="font-medium">{comprehensiveData.colorStats.white.averageElo.toFixed(0)}</span>
+                    <span className="text-slate-400">Avg ELO:</span>
+                    <span className="font-semibold text-white">{comprehensiveData.colorStats.white.averageElo.toFixed(0)}</span>
                   </div>
                 </div>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-800 mb-2">Black</h4>
-                <div className="space-y-2 text-sm">
+              <div className={subtleCardClass}>
+                <h4 className="mb-2 text-sm font-semibold text-white">Black</h4>
+                <div className="space-y-2 text-sm text-slate-200">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Games:</span>
-                    <span className="font-medium">{comprehensiveData.colorStats.black.games}</span>
+                    <span className="text-slate-400">Games:</span>
+                    <span className="font-semibold text-white">{comprehensiveData.colorStats.black.games}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Win Rate:</span>
-                    <span className="font-medium text-green-600">{comprehensiveData.colorStats.black.winRate.toFixed(1)}%</span>
+                    <span className="text-slate-400">Win Rate:</span>
+                    <span className="font-semibold text-emerald-300">{comprehensiveData.colorStats.black.winRate.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Avg ELO:</span>
-                    <span className="font-medium">{comprehensiveData.colorStats.black.averageElo.toFixed(0)}</span>
+                    <span className="text-slate-400">Avg ELO:</span>
+                    <span className="font-semibold text-white">{comprehensiveData.colorStats.black.averageElo.toFixed(0)}</span>
                   </div>
                 </div>
               </div>
@@ -499,23 +505,23 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           </div>
 
           {/* Top Time Controls */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Time Control Performance</h3>
+          <div className={cardClass}>
+            <h3 className="mb-4 text-lg font-semibold text-white">Time Control Performance</h3>
             <div className="space-y-3">
               {comprehensiveData.timeControlStats.slice(0, 3).map((stat: any, index: number) => (
-                <div key={index} className="bg-gray-50 p-4 rounded-lg">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-medium">{stat.timeControl}</span>
-                    <span className="text-sm text-gray-600">{stat.games} games</span>
+                <div key={index} className={subtleCardClass}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="font-medium text-white">{stat.timeControl}</span>
+                    <span className="text-xs uppercase tracking-wide text-slate-400">{stat.games} games</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-2 gap-4 text-sm text-slate-200">
                     <div>
-                      <span className="text-gray-600">Win Rate:</span>
-                      <span className="ml-2 font-medium text-green-600">{stat.winRate.toFixed(1)}%</span>
+                      <span className="text-slate-400">Win Rate:</span>
+                      <span className="ml-2 font-semibold text-emerald-300">{stat.winRate.toFixed(1)}%</span>
                     </div>
                     <div>
-                      <span className="text-gray-600">Avg ELO:</span>
-                      <span className="ml-2 font-medium">{stat.averageElo.toFixed(0)}</span>
+                      <span className="text-slate-400">Avg ELO:</span>
+                      <span className="ml-2 font-semibold text-white">{stat.averageElo.toFixed(0)}</span>
                     </div>
                   </div>
                 </div>
@@ -524,19 +530,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           </div>
 
           {/* Opening Performance - Winning vs Losing */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-6">Opening Performance</h3>
+          <div className={cardClass}>
+            <h3 className="mb-6 text-lg font-semibold text-white">Opening Performance</h3>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Winning Openings */}
               <div>
-                <h4 className="text-md font-semibold text-green-700 mb-4">
-                  Winning Openings
-                </h4>
+                <h4 className="mb-4 text-sm font-semibold text-emerald-200">Winning Openings</h4>
                 <div className="space-y-3">
                   {comprehensiveData.openingStats.slice(0, 3).map((stat: any, index: number) => (
                     <div 
                       key={index} 
-                      className="bg-green-50 p-4 rounded-lg border-l-4 border-green-400 cursor-pointer hover:bg-green-100 transition-colors"
+                      className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
                       onClick={() =>
                         onOpeningClick?.(
                           buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, {
@@ -547,20 +551,20 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       }
                       title="Click to view games with this opening"
                     >
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="font-medium text-gray-800">
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="font-medium text-white">
                           {normalizeOpeningName(stat.opening)}
                         </span>
-                        <span className="text-sm text-gray-600">{stat.games} games</span>
+                        <span className="text-xs uppercase tracking-wide text-emerald-100/80">{stat.games} games</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div className="grid grid-cols-2 gap-4 text-sm text-emerald-100">
                         <div>
-                          <span className="text-gray-600">Win Rate:</span>
-                          <span className="ml-2 font-medium text-green-600">{stat.winRate.toFixed(1)}%</span>
+                          <span className="text-emerald-100/70">Win Rate:</span>
+                          <span className="ml-2 font-semibold">{stat.winRate.toFixed(1)}%</span>
                         </div>
                         <div>
-                          <span className="text-gray-600">Avg ELO:</span>
-                          <span className="ml-2 font-medium">{stat.averageElo.toFixed(0)}</span>
+                          <span className="text-emerald-100/70">Avg ELO:</span>
+                          <span className="ml-2 font-semibold">{stat.averageElo.toFixed(0)}</span>
                         </div>
                       </div>
                     </div>
@@ -570,15 +574,13 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
               {/* Losing Openings */}
               <div>
-                <h4 className="text-md font-semibold text-orange-700 mb-4">
-                  Losing Openings
-                </h4>
+                <h4 className="mb-4 text-sm font-semibold text-amber-200">Losing Openings</h4>
                 <div className="space-y-3">
                   {worstOpenings.length > 0 ? (
                     worstOpenings.slice(0, 3).map((stat: any, index: number) => (
                       <div 
                         key={index} 
-                        className="bg-orange-50 p-4 rounded-lg border-l-4 border-orange-400 cursor-pointer hover:bg-orange-100 transition-colors"
+                        className="cursor-pointer rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 transition hover:border-amber-300/60 hover:bg-amber-500/20"
                         onClick={() =>
                           onOpeningClick?.(
                             buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, {
@@ -589,29 +591,29 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         }
                         title="Click to view games with this opening"
                       >
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="font-medium text-gray-800">
+                        <div className="mb-3 flex items-center justify-between">
+                          <span className="font-medium text-white">
                             {normalizeOpeningName(stat.opening)}
                           </span>
-                          <span className="text-sm text-gray-600">{stat.games} games</span>
+                          <span className="text-xs uppercase tracking-wide text-amber-100/80">{stat.games} games</span>
                         </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="grid grid-cols-2 gap-4 text-sm text-amber-100">
                           <div>
-                            <span className="text-gray-600">Win Rate:</span>
-                            <span className="ml-2 font-medium text-orange-600">{stat.winRate.toFixed(1)}%</span>
+                            <span className="text-amber-100/70">Win Rate:</span>
+                            <span className="ml-2 font-semibold">{stat.winRate.toFixed(1)}%</span>
                           </div>
                           <div>
-                            <span className="text-gray-600">Avg ELO:</span>
-                            <span className="ml-2 font-medium">{stat.averageElo.toFixed(0)}</span>
+                            <span className="text-amber-100/70">Avg ELO:</span>
+                            <span className="ml-2 font-semibold">{stat.averageElo.toFixed(0)}</span>
                           </div>
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      <div className="text-4xl mb-2">--</div>
+                    <div className="py-8 text-center text-slate-400">
+                      <div className="mb-2 text-4xl text-slate-600">♘</div>
                       <p>No losing openings data</p>
-                      <p className="text-sm">Need more games to identify patterns</p>
+                      <p className="text-xs">Need more games to identify patterns</p>
                     </div>
                   )}
                 </div>
@@ -620,22 +622,20 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           </div>
 
           {/* Opening Color Performance */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Opening Performance by Color</h3>
+          <div className={cardClass}>
+            <h3 className="mb-4 text-lg font-semibold text-white">Opening Performance by Color</h3>
             
             {comprehensiveData.openingColorStats && 
              (comprehensiveData.openingColorStats.white.length > 0 || comprehensiveData.openingColorStats.black.length > 0) ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Best White Openings */}
                 <div>
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">
-                    Best White Openings
-                  </h4>
+                  <h4 className="mb-3 text-sm font-semibold text-emerald-200">Best White Openings</h4>
                   <div className="space-y-3">
                     {comprehensiveData.openingColorStats.white.slice(0, 3).map((stat: any, index: number) => (
                       <div 
                         key={index} 
-                        className="bg-gray-50 p-4 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                        className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
                         onClick={() =>
                           onOpeningClick?.(
                             buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers)
@@ -643,28 +643,28 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         }
                         title="Click to view games with this opening"
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="font-medium text-gray-800 text-sm leading-tight">
+                        <div className="mb-2 flex items-start justify-between">
+                          <span className="text-sm font-medium leading-tight text-white">
                             {normalizeOpeningName(stat.opening)}
                           </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            stat.winRate >= 60 ? 'bg-green-100 text-green-800' :
-                            stat.winRate >= 50 ? 'bg-blue-100 text-blue-800' :
-                            'bg-red-100 text-red-800'
+                            stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
+                            stat.winRate >= 50 ? 'bg-sky-500/20 text-sky-300' :
+                            'bg-rose-500/20 text-rose-300'
                           }`}>
                             {stat.winRate.toFixed(1)}%
                           </span>
                         </div>
-                        <div className="flex justify-between items-center text-sm text-gray-600">
+                        <div className="flex items-center justify-between text-xs text-emerald-100">
                           <span>{stat.games} games</span>
-                          <span className="font-medium">
+                          <span className="font-semibold">
                             {stat.wins}W-{stat.losses}L-{stat.draws}D
                           </span>
                         </div>
                       </div>
                     ))}
                     {comprehensiveData.openingColorStats.white.length === 0 && (
-                      <div className="text-center py-4 text-gray-500 text-sm">
+                      <div className="py-4 text-center text-xs text-slate-400">
                         No white opening data available
                       </div>
                     )}
@@ -673,14 +673,12 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
                 {/* Best Black Openings */}
                 <div>
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">
-                    Best Black Openings
-                  </h4>
+                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Best Black Openings</h4>
                   <div className="space-y-3">
                     {comprehensiveData.openingColorStats.black.slice(0, 3).map((stat: any, index: number) => (
                       <div 
                         key={index} 
-                        className="bg-gray-50 p-4 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                        className="cursor-pointer rounded-2xl border border-sky-400/40 bg-sky-500/10 p-4 transition hover:border-sky-300/60 hover:bg-sky-500/20"
                         onClick={() =>
                           onOpeningClick?.(
                             buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers)
@@ -688,28 +686,28 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         }
                         title="Click to view games with this opening"
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="font-medium text-gray-800 text-sm leading-tight">
+                        <div className="mb-2 flex items-start justify-between">
+                          <span className="text-sm font-medium leading-tight text-white">
                             {normalizeOpeningName(stat.opening)}
                           </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            stat.winRate >= 60 ? 'bg-green-100 text-green-800' :
-                            stat.winRate >= 50 ? 'bg-blue-100 text-blue-800' :
-                            'bg-red-100 text-red-800'
+                            stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
+                            stat.winRate >= 50 ? 'bg-sky-500/20 text-sky-300' :
+                            'bg-rose-500/20 text-rose-300'
                           }`}>
                             {stat.winRate.toFixed(1)}%
                           </span>
                         </div>
-                        <div className="flex justify-between items-center text-sm text-gray-600">
+                        <div className="flex items-center justify-between text-xs text-sky-100">
                           <span>{stat.games} games</span>
-                          <span className="font-medium">
+                          <span className="font-semibold">
                             {stat.wins}W-{stat.losses}L-{stat.draws}D
                           </span>
                         </div>
                       </div>
                     ))}
                     {comprehensiveData.openingColorStats.black.length === 0 && (
-                      <div className="text-center py-4 text-gray-500 text-sm">
+                      <div className="py-4 text-center text-xs text-slate-400">
                         No black opening data available
                       </div>
                     )}
@@ -717,37 +715,37 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <div className="text-4xl mb-2">--</div>
+              <div className="py-8 text-center text-slate-400">
+                <div className="mb-2 text-4xl text-slate-600">--</div>
                 <p>No opening data available</p>
-                <p className="text-sm">Games need to have opening names to show color performance</p>
+                <p className="text-xs">Games need opening names to show color performance</p>
               </div>
             )}
           </div>
 
           {/* Recent Performance */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Recent Performance</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-1">
-                <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className={cardClass}>
+            <h3 className="mb-4 text-lg font-semibold text-white">Recent Performance</h3>
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="space-y-4 lg:col-span-1">
+                <div className={subtleCardClass}>
                   <div>
-                    <span className="font-medium text-gray-600">Recent Win Rate:</span>
-                    <div className="text-lg font-bold text-green-600">{activePerformance ? activePerformance.recentWinRate.toFixed(1) : '--'}%</div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <span className="text-xs uppercase tracking-wide text-slate-400">Recent Win Rate</span>
+                    <div className="text-lg font-semibold text-emerald-300">{activePerformance ? activePerformance.recentWinRate.toFixed(1) : '--'}%</div>
+                    <div className="mt-1 text-xs text-slate-400">
                       {activePerformance
                         ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
                         : 'No data'}
                     </div>
                   </div>
-                  <div>
-                    <span className="font-medium text-gray-600">Recent Avg ELO:</span>
-                    <div className="text-lg font-bold text-blue-600">{activePerformance ? activePerformance.recentAverageElo.toFixed(0) : '--'}</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {activePerformance
-                        ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
-                        : 'No data'}
-                    </div>
+                </div>
+                <div className={subtleCardClass}>
+                  <span className="text-xs uppercase tracking-wide text-slate-400">Recent Avg ELO</span>
+                  <div className="text-lg font-semibold text-sky-300">{activePerformance ? activePerformance.recentAverageElo.toFixed(0) : '--'}</div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    {activePerformance
+                      ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
+                      : 'No data'}
                   </div>
                 </div>
               </div>
@@ -773,55 +771,55 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           />
 
           {/* Game Length Analysis */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Game Length Analysis</h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+          <div className={cardClass}>
+            <h3 className="mb-4 text-lg font-semibold text-white">Game Length Analysis</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm text-slate-200 md:grid-cols-5">
               <div>
-                <span className="font-medium text-gray-600">Avg Length:</span>
-                <div className="text-lg font-bold text-blue-600">{comprehensiveData.gameLengthStats.averageGameLength.toFixed(1)} moves</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Avg Length</span>
+                <div className="text-lg font-semibold text-sky-300">{comprehensiveData.gameLengthStats.averageGameLength.toFixed(1)} moves</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Shortest:</span>
-                <div className="text-lg font-bold text-green-600">{comprehensiveData.gameLengthStats.shortestGame} moves</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Shortest</span>
+                <div className="text-lg font-semibold text-emerald-300">{comprehensiveData.gameLengthStats.shortestGame} moves</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Longest:</span>
-                <div className="text-lg font-bold text-red-600">{comprehensiveData.gameLengthStats.longestGame} moves</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Longest</span>
+                <div className="text-lg font-semibold text-rose-300">{comprehensiveData.gameLengthStats.longestGame} moves</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Quick Victories:</span>
-                <div className="text-lg font-bold text-purple-600">{comprehensiveData.gameLengthStats.quickVictories} games</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Quick Victories</span>
+                <div className="text-lg font-semibold text-purple-300">{comprehensiveData.gameLengthStats.quickVictories} games</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Long Games:</span>
-                <div className="text-lg font-bold text-orange-600">{comprehensiveData.gameLengthStats.longGames} games</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Long Games</span>
+                <div className="text-lg font-semibold text-amber-300">{comprehensiveData.gameLengthStats.longGames} games</div>
               </div>
             </div>
           </div>
 
           {/* Temporal Analysis */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Temporal Analysis</h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+          <div className={cardClass}>
+            <h3 className="mb-4 text-lg font-semibold text-white">Temporal Analysis</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm text-slate-200 md:grid-cols-5">
               <div>
-                <span className="font-medium text-gray-600">First Game:</span>
-                <div className="text-sm font-medium">{comprehensiveData.temporalStats.firstGame ? new Date(comprehensiveData.temporalStats.firstGame).toLocaleDateString() : 'N/A'}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">First Game</span>
+                <div className="text-sm font-medium text-white">{comprehensiveData.temporalStats.firstGame ? new Date(comprehensiveData.temporalStats.firstGame).toLocaleDateString() : 'N/A'}</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Last Game:</span>
-                <div className="text-sm font-medium">{comprehensiveData.temporalStats.lastGame ? new Date(comprehensiveData.temporalStats.lastGame).toLocaleDateString() : 'N/A'}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Last Game</span>
+                <div className="text-sm font-medium text-white">{comprehensiveData.temporalStats.lastGame ? new Date(comprehensiveData.temporalStats.lastGame).toLocaleDateString() : 'N/A'}</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">This Month:</span>
-                <div className="text-lg font-bold text-blue-600">{comprehensiveData.temporalStats.gamesThisMonth} games</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">This Month</span>
+                <div className="text-lg font-semibold text-sky-300">{comprehensiveData.temporalStats.gamesThisMonth} games</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">This Week:</span>
-                <div className="text-lg font-bold text-green-600">{comprehensiveData.temporalStats.gamesThisWeek} games</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">This Week</span>
+                <div className="text-lg font-semibold text-emerald-300">{comprehensiveData.temporalStats.gamesThisWeek} games</div>
               </div>
               <div>
-                <span className="font-medium text-gray-600">Avg/Day:</span>
-                <div className="text-lg font-bold text-purple-600">{comprehensiveData.temporalStats.averageGamesPerDay.toFixed(2)}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-400">Avg / Day</span>
+                <div className="text-lg font-semibold text-purple-300">{comprehensiveData.temporalStats.averageGamesPerDay.toFixed(2)}</div>
               </div>
             </div>
           </div>
@@ -839,61 +837,65 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Personality Radar */}
             {deepAnalysisData.personality_scores && (
-              <PersonalityRadar scores={deepAnalysisData.personality_scores} />
+              <div className={cardClass}>
+                <PersonalityRadar scores={deepAnalysisData.personality_scores} />
+              </div>
             )}
 
             {/* Opening Player Card */}
-            <OpeningPlayerCard
-              score={deepAnalysisData.phase_accuracies?.opening || 0}
-              phaseAccuracy={deepAnalysisData.phase_accuracies?.opening || 0}
-              openingStats={comprehensiveData?.openingStats || []}
-              totalGames={deepAnalysisData.total_games || 0}
-            />
+            <div className={cardClass}>
+              <OpeningPlayerCard
+                score={deepAnalysisData.phase_accuracies?.opening || 0}
+                phaseAccuracy={deepAnalysisData.phase_accuracies?.opening || 0}
+                openingStats={comprehensiveData?.openingStats || []}
+                totalGames={deepAnalysisData.total_games || 0}
+              />
+            </div>
           </div>
 
         </div>
       )}
 
       {/* Analysis Stats */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">Analysis Statistics</h2>
+      <div className={cardClass}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white">Analysis Statistics</h2>
           <button
             onClick={() => loadData(true)}
             disabled={refreshing}
-            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50"
+            className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-white/30 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-600">Opening Accuracy:</span>
-              <span className="font-medium">{safeData.average_opening_accuracy || 'N/A'}%</span>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className={subtleCardClass}>
+            <div className="flex justify-between text-sm text-slate-200">
+              <span className="text-slate-400">Opening Accuracy</span>
+              <span className="font-semibold">{safeData.average_opening_accuracy || 'N/A'}%</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Middle Game Accuracy:</span>
-              <span className="font-medium">{safeData.average_middle_game_accuracy || 'N/A'}%</span>
+            <div className="mt-2 flex justify-between text-sm text-slate-200">
+              <span className="text-slate-400">Middle Game Accuracy</span>
+              <span className="font-semibold">{safeData.average_middle_game_accuracy || 'N/A'}%</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Endgame Accuracy:</span>
-              <span className="font-medium">{safeData.average_endgame_accuracy || 'N/A'}%</span>
+            <div className="mt-2 flex justify-between text-sm text-slate-200">
+              <span className="text-slate-400">Endgame Accuracy</span>
+              <span className="font-semibold">{safeData.average_endgame_accuracy || 'N/A'}%</span>
             </div>
           </div>
-          <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-600">Blunders per Game:</span>
-              <span className="font-medium">{safeData.blunders_per_game}</span>
+          <div className={subtleCardClass}>
+            <div className="flex justify-between text-sm text-slate-200">
+              <span className="text-slate-400">Blunders per Game</span>
+              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.blunders}`}>{safeData.blunders_per_game}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Inaccuracies per Game:</span>
-              <span className="font-medium">{safeData.inaccuracies_per_game}</span>
+            <div className="mt-2 flex justify-between text-sm text-slate-200">
+              <span className="text-slate-400">Inaccuracies per Game</span>
+              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.inaccuracies}`}>{safeData.inaccuracies_per_game}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Brilliant Moves per Game:</span>
-              <span className="font-medium text-green-600">{safeData.brilliant_moves_per_game}</span>
+            <div className="mt-2 flex justify-between text-sm text-slate-200">
+              <span className="text-slate-400">Brilliant Moves per Game</span>
+              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.brilliants}`}>{safeData.brilliant_moves_per_game}</span>
             </div>
           </div>
         </div>

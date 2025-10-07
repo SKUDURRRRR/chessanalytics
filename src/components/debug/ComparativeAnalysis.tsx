@@ -415,16 +415,6 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
     return comparisons
   }, [userMoves])
 
-  const getScoreColor = (score: number) => {
-    if (score >= 8) return 'text-green-600 bg-green-100'
-    if (score >= 6) return 'text-blue-600 bg-blue-100'
-    if (score >= 4) return 'text-yellow-600 bg-yellow-100'
-    return 'text-red-600 bg-red-100'
-  }
-
-  const percentileToScore = (percentile: number) => {
-    return Math.round((percentile / 100) * 10)
-  }
 
   const getRatingEstimate = () => {
     const accuracy = userMoves.length > 0 
@@ -446,50 +436,45 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
   return (
     <div className="space-y-6">
       {/* Performance Metrics */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Performance Metrics</h3>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">Performance Metrics</h3>
         <div className="space-y-4">
           {gameComparisons.map((comparison, index) => (
-            <div key={index} className="border rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="font-medium text-gray-900">{comparison.metric}</h4>
-                <div className="flex items-center space-x-2">
-                  <span className="text-lg font-semibold text-gray-900">
-                    {comparison.thisGame.toFixed(1)}{comparison.metric === 'Accuracy' || comparison.metric === 'Consistency' ? '%' : ''}
-                  </span>
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${getScoreColor(percentileToScore(comparison.percentile))}`}>
-                    {percentileToScore(comparison.percentile)}/10
-                  </span>
-                </div>
+            <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="font-medium text-white">{comparison.metric}</h4>
+                <span className="text-lg font-semibold text-white">
+                  {comparison.thisGame.toFixed(1)}{comparison.metric === 'Accuracy' || comparison.metric === 'Consistency' ? '%' : ''}
+                </span>
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-600">This Game:</span>
-                  <span className="ml-2 font-medium">{comparison.thisGame.toFixed(1)}{comparison.metric === 'Accuracy' || comparison.metric === 'Consistency' ? '%' : ''}</span>
+                  <span className="text-slate-400">This Game:</span>
+                  <span className="ml-2 font-medium text-white">{comparison.thisGame.toFixed(1)}{comparison.metric === 'Accuracy' || comparison.metric === 'Consistency' ? '%' : ''}</span>
                 </div>
                 <div>
-                  <span className="text-gray-600">Average:</span>
-                  <span className="ml-2 font-medium">{comparison.average.toFixed(1)}{comparison.metric === 'Accuracy' || comparison.metric === 'Consistency' ? '%' : ''}</span>
+                  <span className="text-slate-400">Average:</span>
+                  <span className="ml-2 font-medium text-white">{comparison.average.toFixed(1)}{comparison.metric === 'Accuracy' || comparison.metric === 'Consistency' ? '%' : ''}</span>
                 </div>
               </div>
-              <p className="text-sm text-gray-600 mt-2">{comparison.description}</p>
-              <p className="text-sm text-blue-600 mt-1 font-medium">{comparison.improvement}</p>
+              <p className="mt-2 text-sm text-slate-300">{comparison.description}</p>
+              <p className="mt-1 text-sm font-medium text-sky-300">{comparison.improvement}</p>
             </div>
           ))}
         </div>
       </div>
 
       {/* Rating Estimate */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Performance Rating</h3>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">Performance Rating</h3>
         <div className="text-center">
-          <div className="text-4xl font-bold text-blue-600 mb-2">
+          <div className="mb-2 text-4xl font-bold text-sky-300">
             {getRatingEstimate()}
           </div>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-slate-300">
             Estimated performance rating based on move quality
           </p>
-          <div className="mt-4 text-xs text-gray-500">
+          <div className="mt-4 text-xs text-slate-400">
             <p>This is an estimate based on accuracy, blunder rate, and tactical awareness.</p>
             <p>Actual rating depends on many factors including opponent strength and time control.</p>
           </div>
@@ -497,19 +482,19 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
       </div>
 
       {/* Player Comparisons */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Playing Style Comparison</h3>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">Playing Style Comparison</h3>
         {playerComparisons.length > 0 ? (
           <div className="space-y-4">
             {playerComparisons.map((player, index) => (
-              <div key={index} className="border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
+              <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="mb-3 flex items-center justify-between">
                   <div>
-                    <h4 className="text-lg font-medium text-gray-900">{player.name}</h4>
-                    <p className="text-sm text-gray-600">Peak Rating: {player.rating}</p>
+                    <h4 className="text-lg font-medium text-white">{player.name}</h4>
+                    <p className="text-sm text-slate-300">Peak Rating: {player.rating}</p>
                   </div>
                   <div className="text-right">
-                    <div className="text-lg font-semibold text-blue-600">
+                    <div className="text-lg font-semibold text-sky-300">
                       {player.similarity}% similar
                     </div>
                   </div>
@@ -517,22 +502,22 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
                 
                 <div className="grid grid-cols-2 gap-4 mb-3">
                   <div>
-                    <h5 className="text-sm font-medium text-green-700 mb-1">Strengths</h5>
-                    <ul className="text-sm text-gray-600 space-y-1">
+                    <h5 className="mb-1 text-sm font-medium text-emerald-200">Strengths</h5>
+                    <ul className="space-y-1 text-sm text-slate-200">
                       {player.strengths.map((strength, i) => (
                         <li key={i} className="flex items-center">
-                          <span className="text-green-500 mr-2">✓</span>
+                          <span className="mr-2 text-emerald-300">✓</span>
                           {strength}
                         </li>
                       ))}
                     </ul>
                   </div>
                   <div>
-                    <h5 className="text-sm font-medium text-red-700 mb-1">Areas to Improve</h5>
-                    <ul className="text-sm text-gray-600 space-y-1">
+                    <h5 className="mb-1 text-sm font-medium text-rose-200">Areas to Improve</h5>
+                    <ul className="space-y-1 text-sm text-slate-200">
                       {player.weaknesses.map((weakness, i) => (
                         <li key={i} className="flex items-center">
-                          <span className="text-red-500 mr-2">⚠</span>
+                          <span className="mr-2 text-rose-300">⚠</span>
                           {weakness}
                         </li>
                       ))}
@@ -540,54 +525,53 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
                   </div>
                 </div>
                 
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <p className="text-sm text-blue-800 font-medium">Study Recommendation:</p>
-                  <p className="text-sm text-blue-700 mt-1">{player.advice}</p>
+                <div className="rounded-2xl border border-sky-400/30 bg-sky-500/10 p-3">
+                  <p className="text-sm font-medium text-sky-200">Study Recommendation:</p>
+                  <p className="mt-1 text-sm text-slate-200">{player.advice}</p>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="text-center py-4">
-            <p className="text-gray-600">Loading playing style analysis...</p>
-            <p className="text-sm text-gray-500 mt-1">This should not appear - all games now have comparisons</p>
+          <div className="py-4 text-center text-sm text-slate-300">
+            Loading playing style analysis...
           </div>
         )}
       </div>
 
       {/* Improvement Suggestions */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Personalized Improvement Plan</h3>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">Personalized Improvement Plan</h3>
         <div className="space-y-3">
-          {gameComparisons.some(c => percentileToScore(c.percentile) < 5) && (
-            <div className="flex items-start space-x-3 p-3 bg-yellow-50 rounded-lg">
-              <span className="text-yellow-500 text-lg">📈</span>
+          {gameComparisons.some(c => c.percentile < 50) && (
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-3">
+              <span className="text-lg">📈</span>
               <div>
-                <p className="text-sm font-medium text-yellow-800">Focus Areas</p>
-                <p className="text-sm text-yellow-700">
-                  {gameComparisons.filter(c => percentileToScore(c.percentile) < 5).map(c => c.metric).join(', ')} need improvement
+                <p className="text-sm font-semibold text-white">Focus Areas</p>
+                <p className="text-xs text-amber-100">
+                  {gameComparisons.filter(c => c.percentile < 50).map(c => c.metric).join(', ')} need improvement
                 </p>
               </div>
             </div>
           )}
 
-          {gameComparisons.some(c => percentileToScore(c.percentile) >= 8) && (
-            <div className="flex items-start space-x-3 p-3 bg-green-50 rounded-lg">
-              <span className="text-green-500 text-lg">🏆</span>
+          {gameComparisons.some(c => c.percentile >= 80) && (
+            <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-3">
+              <span className="text-lg">🏆</span>
               <div>
-                <p className="text-sm font-medium text-green-800">Strengths</p>
-                <p className="text-sm text-green-700">
-                  Excellent performance in: {gameComparisons.filter(c => percentileToScore(c.percentile) >= 8).map(c => c.metric).join(', ')}
+                <p className="text-sm font-semibold text-white">Strengths</p>
+                <p className="text-xs text-emerald-100">
+                  Excellent performance in: {gameComparisons.filter(c => c.percentile >= 80).map(c => c.metric).join(', ')}
                 </p>
               </div>
             </div>
           )}
 
-          <div className="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg">
-            <span className="text-blue-500 text-lg">🎯</span>
+          <div className="flex items-start gap-3 rounded-2xl border border-sky-400/30 bg-sky-500/10 p-3">
+            <span className="text-lg">🎯</span>
             <div>
-              <p className="text-sm font-medium text-blue-800">Next Steps</p>
-              <p className="text-sm text-blue-700">
+              <p className="text-sm font-semibold text-white">Next Steps</p>
+              <p className="text-xs text-slate-200">
                 Focus on the areas with lowest scores and study games of similar players to improve your overall game
               </p>
             </div>

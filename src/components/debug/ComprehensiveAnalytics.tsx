@@ -2,7 +2,7 @@
 // Comprehensive Analytics Component - Shows detailed analytics tables
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { normalizeOpeningName } from '../../utils/openingUtils'
+import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 
 interface ComprehensiveAnalyticsProps {
@@ -106,7 +106,7 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
         // Find most played opening
         const openings = games.reduce((acc, game) => {
           const rawOpening = game.opening || 'unknown'
-          const opening = normalizeOpeningName(rawOpening)
+          const opening = getOpeningNameWithFallback(rawOpening)
           acc[opening] = (acc[opening] || 0) + 1
           return acc
         }, {} as Record<string, number>)
@@ -147,12 +147,12 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Comprehensive Analytics</h3>
-        <div className="animate-pulse">
-          <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-          <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-          <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">Comprehensive Analytics</h3>
+        <div className="animate-pulse space-y-2">
+          <div className="h-4 w-3/4 rounded bg-white/10"></div>
+          <div className="h-4 w-1/2 rounded bg-white/10"></div>
+          <div className="h-4 w-2/3 rounded bg-white/10"></div>
         </div>
       </div>
     )
@@ -160,86 +160,86 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
 
   if (error) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Comprehensive Analytics</h3>
-        <div className="text-red-600">{error}</div>
+      <div className="rounded-3xl border border-rose-400/40 bg-rose-500/10 p-6 text-rose-100 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">Comprehensive Analytics</h3>
+        <div>{error}</div>
       </div>
     )
   }
 
   if (!data) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Comprehensive Analytics</h3>
-        <div className="text-gray-500">No data available</div>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">Comprehensive Analytics</h3>
+        <div className="text-slate-400">No data available</div>
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">Comprehensive Analytics</h3>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <h3 className="mb-4 text-lg font-semibold text-white">Comprehensive Analytics</h3>
+
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Basic Statistics */}
         <div className="space-y-3">
-          <h4 className="font-medium text-gray-700">Basic Statistics</h4>
+          <h4 className="font-medium text-slate-300">Basic Statistics</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span>Total Games:</span>
-              <span className="font-medium">{data.totalGames}</span>
+              <span className="font-semibold text-white">{data.totalGames}</span>
             </div>
             {data.totalGames !== data.fetchedGames && (
-              <div className="flex justify-between text-xs text-gray-500">
+              <div className="flex justify-between text-xs text-slate-400">
                 <span>Fetched:</span>
                 <span>{data.fetchedGames} games</span>
               </div>
             )}
             <div className="flex justify-between">
               <span>Win Rate:</span>
-              <span className="font-medium text-green-600">{data.winRate.toFixed(1)}%</span>
+              <span className="font-semibold text-emerald-300">{data.winRate.toFixed(1)}%</span>
             </div>
             <div className="flex justify-between">
               <span>Draw Rate:</span>
-              <span className="font-medium text-yellow-600">{data.drawRate.toFixed(1)}%</span>
+              <span className="font-semibold text-amber-300">{data.drawRate.toFixed(1)}%</span>
             </div>
             <div className="flex justify-between">
               <span>Loss Rate:</span>
-              <span className="font-medium text-red-600">{data.lossRate.toFixed(1)}%</span>
+              <span className="font-semibold text-rose-300">{data.lossRate.toFixed(1)}%</span>
             </div>
           </div>
         </div>
 
         {/* ELO Statistics */}
         <div className="space-y-3">
-          <h4 className="font-medium text-gray-700">ELO Statistics</h4>
+          <h4 className="font-medium text-slate-300">ELO Statistics</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span>Highest:</span>
-              <span className="font-medium text-green-600">{data.highestElo}</span>
+              <span className="font-semibold text-emerald-300">{data.highestElo}</span>
             </div>
             <div className="flex justify-between">
               <span>Lowest:</span>
-              <span className="font-medium text-red-600">{data.lowestElo}</span>
+              <span className="font-semibold text-rose-300">{data.lowestElo}</span>
             </div>
             <div className="flex justify-between">
               <span>Current:</span>
-              <span className="font-medium text-blue-600">{data.currentElo}</span>
+              <span className="font-semibold text-sky-300">{data.currentElo}</span>
             </div>
             <div className="flex justify-between">
               <span>Average:</span>
-              <span className="font-medium text-purple-600">{data.averageElo.toFixed(0)}</span>
+              <span className="font-semibold text-purple-300">{data.averageElo.toFixed(0)}</span>
             </div>
             <div className="flex justify-between">
               <span>Range:</span>
-              <span className="font-medium text-orange-600">{data.eloRange}</span>
+              <span className="font-semibold text-amber-300">{data.eloRange}</span>
             </div>
           </div>
         </div>
 
         {/* Color Performance */}
         <div className="space-y-3">
-          <h4 className="font-medium text-gray-700">Color Performance</h4>
+          <h4 className="font-medium text-slate-300">Color Performance</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span>White Games:</span>
@@ -262,7 +262,7 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
 
         {/* Preferences */}
         <div className="space-y-3">
-          <h4 className="font-medium text-gray-700">Preferences</h4>
+          <h4 className="font-medium text-slate-300">Preferences</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span>Most Played TC:</span>

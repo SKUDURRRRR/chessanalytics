@@ -6,63 +6,106 @@ interface LongTermPlannerProps {
 }
 
 export function LongTermPlanner({ data, userId }: LongTermPlannerProps) {
-  // Debug: Log the data to see what we're receiving
-  console.log('LongTermPlanner data:', data)
-  console.log('Famous players data:', data?.famous_players)
-  
   // Handle case where data might be null or properties might be undefined
   if (!data) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">{userId}'s Game Style</h2>
-        <p className="text-gray-600">Loading analysis data...</p>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <h2 className="mb-4 text-2xl font-semibold text-white">{userId}'s Game Style</h2>
+        <p className="text-sm text-slate-300">Loading analysis data...</p>
       </div>
     )
   }
 
+  const primaryPlayer = data.famous_players?.primary
+  const aiStyle = data.ai_style_analysis
+  const personalityEntries = data.personality_insights ? Object.entries(data.personality_insights).slice(0, 2) : []
+
+  const toSentenceFragment = (value?: string | null) => {
+    if (!value) return ''
+    if (value.length === 0) return ''
+    return value.charAt(0).toLowerCase() + value.slice(1)
+  }
+
+  const primaryStrengthDescriptor = primaryPlayer?.strengths?.join(', ')
+  const fallbackStrengthDescriptor = primaryStrengthDescriptor || 'strategic depth'
+
+  const similarityInsights: string[] = []
+
+  if (primaryPlayer) {
+    if (aiStyle?.characteristics) {
+      similarityInsights.push(
+        `Your games show ${aiStyle.characteristics}, echoing ${primaryPlayer.name}'s ${toSentenceFragment(fallbackStrengthDescriptor)}.`,
+      )
+    }
+
+    if (aiStyle?.playing_patterns) {
+      const descriptiveFocus = toSentenceFragment(primaryPlayer.description) || 'disciplined game plans'
+      similarityInsights.push(
+        `We consistently detect "${aiStyle.playing_patterns}", a pattern that mirrors ${primaryPlayer.name}'s ${descriptiveFocus}.`,
+      )
+    }
+
+    if (aiStyle?.strengths) {
+      similarityInsights.push(
+        `Your recent games highlight ${aiStyle.strengths} as signature strengths, lining up with ${primaryPlayer.name}'s reputation for ${toSentenceFragment(fallbackStrengthDescriptor)}.`,
+      )
+    }
+
+    if (personalityEntries.length) {
+      const traitsSummary = personalityEntries.map(([trait]) => trait).join(' and ')
+      similarityInsights.push(
+        `Personality cues around ${traitsSummary} match the mindset ${primaryPlayer.name} leverages in elite play.`,
+      )
+    }
+  }
+
+  const insightLines = primaryPlayer
+    ? [primaryPlayer.similarity, ...similarityInsights].filter((line): line is string => Boolean(line))
+    : []
+
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4">{userId}'s Game Style</h2>
+    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <h2 className="mb-4 text-2xl font-semibold text-white">{userId}'s Game Style</h2>
 
       <div className="space-y-6">
         {/* AI-Powered Style Analysis */}
         {data.ai_style_analysis ? (
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-900 mb-3">Style Analysis</h3>
+          <div className="rounded-2xl border border-sky-400/30 bg-gradient-to-br from-sky-500/10 via-indigo-500/5 to-transparent p-5">
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-sky-200">Style Analysis</h3>
             <div className="space-y-3">
-              <p className="text-gray-700 leading-relaxed">
+              <p className="text-sm text-slate-200">
                 {data.ai_style_analysis.style_summary}
               </p>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="bg-white rounded p-3 border border-blue-200">
-                  <h4 className="font-medium text-blue-800 mb-1">Key Characteristics</h4>
-                  <p className="text-sm text-blue-700">{data.ai_style_analysis.characteristics}</p>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+                  <h4 className="mb-1 text-sm font-semibold text-white">Key Characteristics</h4>
+                  <p className="text-xs text-slate-200">{data.ai_style_analysis.characteristics}</p>
                 </div>
                 
-                <div className="bg-white rounded p-3 border border-blue-200">
-                  <h4 className="font-medium text-blue-800 mb-1">Main Strengths</h4>
-                  <p className="text-sm text-blue-700">{data.ai_style_analysis.strengths}</p>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+                  <h4 className="mb-1 text-sm font-semibold text-white">Main Strengths</h4>
+                  <p className="text-xs text-slate-200">{data.ai_style_analysis.strengths}</p>
                 </div>
                 
-                <div className="bg-white rounded p-3 border border-blue-200">
-                  <h4 className="font-medium text-blue-800 mb-1">Playing Patterns</h4>
-                  <p className="text-sm text-blue-700">{data.ai_style_analysis.playing_patterns}</p>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+                  <h4 className="mb-1 text-sm font-semibold text-white">Playing Patterns</h4>
+                  <p className="text-xs text-slate-200">{data.ai_style_analysis.playing_patterns}</p>
                 </div>
                 
-                <div className="bg-white rounded p-3 border border-blue-200">
-                  <h4 className="font-medium text-blue-800 mb-1">Improvement Focus</h4>
-                  <p className="text-sm text-blue-700">{data.ai_style_analysis.improvement_focus}</p>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+                  <h4 className="mb-1 text-sm font-semibold text-white">Improvement Focus</h4>
+                  <p className="text-xs text-slate-200">{data.ai_style_analysis.improvement_focus}</p>
                 </div>
               </div>
             </div>
           </div>
         ) : (
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4">
-            <p className="text-gray-700 leading-relaxed">
-              You are a <span className="font-semibold text-blue-800">{data.player_level || 'Unknown'}</span> player across <span className="font-semibold text-blue-800">{data.total_games || 0}</span> games.
+          <div className="rounded-2xl border border-sky-400/30 bg-gradient-to-br from-sky-500/10 via-indigo-500/5 to-transparent p-5">
+            <p className="text-sm text-slate-200">
+              You are a <span className="font-semibold text-white">{data.player_level || 'Unknown'}</span> player across <span className="font-semibold text-white">{data.total_games || 0}</span> games.
               {data.playing_style && (
-                <span className="block mt-2 text-gray-600 italic">
+                <span className="mt-2 block italic text-slate-300">
                   "{data.playing_style}"
                 </span>
               )}
@@ -72,13 +115,13 @@ export function LongTermPlanner({ data, userId }: LongTermPlannerProps) {
 
         {/* Personality Insights */}
         {data.personality_insights && (
-          <div className="bg-green-50 rounded-lg p-4">
-            <h3 className="font-semibold text-green-900 mb-3">Your Chess Personality Insights</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-5">
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-200">Your Chess Personality Insights</h3>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {Object.entries(data.personality_insights).map(([trait, insight]) => (
-                <div key={trait} className="bg-white rounded p-3 border border-green-200">
-                  <h4 className="font-medium text-green-800 capitalize mb-1">{trait}</h4>
-                  <p className="text-sm text-green-700">{insight}</p>
+                <div key={trait} className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+                  <h4 className="mb-1 text-sm font-semibold capitalize text-white">{trait}</h4>
+                  <p className="text-xs text-emerald-100">{insight}</p>
                 </div>
               ))}
             </div>
@@ -86,86 +129,68 @@ export function LongTermPlanner({ data, userId }: LongTermPlannerProps) {
         )}
 
         {/* Famous Player Comparisons */}
-        {data.famous_players ? (
-          <div className="bg-purple-50 rounded-lg p-4">
-            <h3 className="font-semibold text-purple-900 mb-3">Players with Similar Style</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Primary Comparison */}
-              <div className="bg-white rounded-lg p-4 border border-purple-200">
-                <div className="flex items-center mb-2">
-                  <div className="w-3 h-3 bg-purple-500 rounded-full mr-2"></div>
-                  <h4 className="font-semibold text-purple-800">{data.famous_players.primary.name}</h4>
-                </div>
-                <p className="text-sm text-purple-700 mb-2">{data.famous_players.primary.description}</p>
-                <p className="text-xs text-purple-600 mb-2">Era: {data.famous_players.primary.era}</p>
-                {data.famous_players.primary.similarity && (
-                  <p className="text-sm text-purple-600 mb-2 italic bg-purple-50 p-2 rounded">
-                    {data.famous_players.primary.similarity}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-1">
-                  {data.famous_players.primary.strengths.map((strength, index) => (
-                    <span key={index} className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded">
-                      {strength}
-                    </span>
-                  ))}
-                </div>
+        {primaryPlayer ? (
+          <div className="rounded-2xl border border-purple-400/30 bg-purple-500/10 p-5">
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-purple-200">Player with Similar Style</h3>
+            <div className="rounded-2xl border border-purple-300/40 bg-white/[0.06] p-4">
+              <div className="mb-2 flex items-center">
+                <div className="mr-2 h-3 w-3 rounded-full bg-purple-400" />
+                <h4 className="text-sm font-semibold text-white">{primaryPlayer.name}</h4>
               </div>
-
-              {/* Secondary Comparison */}
-              <div className="bg-white rounded-lg p-4 border border-purple-200">
-                <div className="flex items-center mb-2">
-                  <div className="w-3 h-3 bg-purple-400 rounded-full mr-2"></div>
-                  <h4 className="font-semibold text-purple-800">{data.famous_players.secondary.name}</h4>
+              <p className="mb-2 text-xs text-purple-100">{primaryPlayer.description}</p>
+              <p className="mb-2 text-[11px] uppercase tracking-wide text-purple-200/80">Era: {primaryPlayer.era}</p>
+              {insightLines.length > 0 && (
+                <div className="mb-3 space-y-2 rounded-2xl border border-purple-300/30 bg-purple-500/15 p-4">
+                  <h5 className="text-[11px] font-semibold uppercase tracking-wide text-purple-100">Why this match resonates</h5>
+                  <ul className="space-y-2 text-xs text-purple-100">
+                    {insightLines.map((line, index) => (
+                      <li key={index} className="flex gap-2">
+                        <div className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-200" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <p className="text-sm text-purple-700 mb-2">{data.famous_players.secondary.description}</p>
-                <p className="text-xs text-purple-600 mb-2">Era: {data.famous_players.secondary.era}</p>
-                {data.famous_players.secondary.similarity && (
-                  <p className="text-sm text-purple-600 mb-2 italic bg-purple-50 p-2 rounded">
-                    {data.famous_players.secondary.similarity}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-1">
-                  {data.famous_players.secondary.strengths.map((strength, index) => (
-                    <span key={index} className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded">
-                      {strength}
-                    </span>
-                  ))}
-                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {primaryPlayer.strengths?.map((strength, index) => (
+                  <span key={index} className="rounded-full bg-purple-400/20 px-3 py-1 text-[11px] font-medium text-purple-100">
+                    {strength}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
         ) : (
-          <div className="bg-yellow-50 rounded-lg p-4">
-            <h3 className="font-semibold text-yellow-900 mb-3">Players with Similar Style</h3>
-            <p className="text-yellow-700 text-sm">Famous player comparisons will appear here once analysis is complete.</p>
-            <p className="text-yellow-600 text-xs mt-2">Debug: famous_players data is {data.famous_players ? 'present' : 'missing'}</p>
+          <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-5 text-xs text-amber-100">
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-200">Player with Similar Style</h3>
+            <p className="text-xs">Famous player comparison will appear here once analysis is complete.</p>
           </div>
         )}
 
         {/* Improvement Roadmap */}
-        <div className="bg-blue-50 rounded-lg p-4">
-          <h3 className="font-semibold text-blue-900 mb-3">Improvement Roadmap</h3>
-          <ul className="space-y-3">
-            <li className="flex items-start">
-              <div className="w-2 h-2 bg-red-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+        <div className="rounded-2xl border border-sky-400/30 bg-sky-500/10 p-5">
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-sky-200">Improvement Roadmap</h3>
+          <ul className="space-y-3 text-sm text-slate-200">
+            <li className="flex items-start gap-3">
+              <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-rose-400" />
               <div>
-                <span className="font-medium text-blue-800">Primary Focus:</span>
-                <p className="text-blue-700 text-sm mt-1">{data.recommendations?.primary || 'Complete game analysis to get detailed insights'}</p>
+                <span className="font-semibold text-white">Primary Focus:</span>
+                <p className="mt-1 text-xs text-slate-200">{data.recommendations?.primary || 'Complete game analysis to get detailed insights'}</p>
               </div>
             </li>
-            <li className="flex items-start">
-              <div className="w-2 h-2 bg-yellow-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+            <li className="flex items-start gap-3">
+              <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-amber-400" />
               <div>
-                <span className="font-medium text-blue-800">Secondary Focus:</span>
-                <p className="text-blue-700 text-sm mt-1">{data.recommendations?.secondary || 'Focus on tactical patterns'}</p>
+                <span className="font-semibold text-white">Secondary Focus:</span>
+                <p className="mt-1 text-xs text-slate-200">{data.recommendations?.secondary || 'Focus on tactical patterns'}</p>
               </div>
             </li>
-            <li className="flex items-start">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+            <li className="flex items-start gap-3">
+              <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-emerald-400" />
               <div>
-                <span className="font-medium text-blue-800">Leverage Strength:</span>
-                <p className="text-blue-700 text-sm mt-1">{data.recommendations?.leverage || 'Build on your current strengths'}</p>
+                <span className="font-semibold text-white">Leverage Strength:</span>
+                <p className="mt-1 text-xs text-slate-200">{data.recommendations?.leverage || 'Build on your current strengths'}</p>
               </div>
             </li>
           </ul>

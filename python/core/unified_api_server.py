@@ -3181,12 +3181,11 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
         # Import and use the new parallel analysis engine
         from .parallel_analysis_engine import ParallelAnalysisEngine
         
-        # Create parallel analysis engine with safe worker count
-        # Always use 8 workers for optimal performance, regardless of game count
-        max_workers = 8
-        parallel_engine = ParallelAnalysisEngine(max_workers=max_workers)
+        # Create parallel analysis engine with dynamic worker count
+        # This prevents CPU saturation while maintaining good performance
+        parallel_engine = ParallelAnalysisEngine()  # Uses auto-calculated worker count
         
-        print(f"PARALLEL BATCH ANALYSIS: Using {max_workers} parallel workers for {len(games)} games")
+        print(f"PARALLEL BATCH ANALYSIS: Using {parallel_engine.max_workers} parallel workers for {len(games)} games")
         print(f"Games to analyze: {[game.get('provider_game_id', 'unknown') for game in games[:5]]}...")
         
         # Create progress callback function
@@ -3538,7 +3537,10 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'is_good': move.is_good,
                 'is_acceptable': move.is_acceptable,
                 'centipawn_loss': move.centipawn_loss,
-                'depth_analyzed': move.depth_analyzed
+                'depth_analyzed': move.depth_analyzed,
+                'is_user_move': move.is_user_move,
+                'player_color': move.player_color,
+                'ply_index': move.ply_index
             })
 
         data = {
@@ -3727,17 +3729,19 @@ def _calculate_unified_stats(analyses: list, analysis_type: str) -> AnalysisStat
             moves_analysis = analysis.get('moves_analysis', [])
             if isinstance(moves_analysis, list):
                 for move in moves_analysis:
-                    if move.get('is_blunder', False):
-                        total_blunders += 1
-                    if move.get('is_mistake', False):
-                        total_mistakes += 1
-                    if move.get('is_inaccuracy', False):
-                        total_inaccuracies += 1
-                    if move.get('is_brilliant', False):
-                        total_brilliant_moves += 1
+                    # Only count user moves, not opponent moves
+                    if move.get('is_user_move', False):
+                        if move.get('is_blunder', False):
+                            total_blunders += 1
+                        if move.get('is_mistake', False):
+                            total_mistakes += 1
+                        if move.get('is_inaccuracy', False):
+                            total_inaccuracies += 1
+                        if move.get('is_brilliant', False):
+                            total_brilliant_moves += 1
                 
-                # Calculate opening accuracy for this game
-                opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15]
+                # Calculate opening accuracy for this game (user moves only)
+                opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15 and move.get('is_user_move', False)]
                 if opening_moves:
                     opening_best_moves = sum(1 for move in opening_moves if move.get('is_best', False))
                     total_opening_accuracy += (opening_best_moves / len(opening_moves)) * 100
@@ -3822,17 +3826,19 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
         moves_analysis = analysis.get('moves_analysis', [])
         if isinstance(moves_analysis, list):
             for move in moves_analysis:
-                if move.get('is_blunder', False):
-                    total_blunders += 1
-                if move.get('is_mistake', False):
-                    total_mistakes += 1
-                if move.get('is_inaccuracy', False):
-                    total_inaccuracies += 1
-                if move.get('is_brilliant', False):
-                    total_brilliant_moves += 1
+                # Only count user moves, not opponent moves
+                if move.get('is_user_move', False):
+                    if move.get('is_blunder', False):
+                        total_blunders += 1
+                    if move.get('is_mistake', False):
+                        total_mistakes += 1
+                    if move.get('is_inaccuracy', False):
+                        total_inaccuracies += 1
+                    if move.get('is_brilliant', False):
+                        total_brilliant_moves += 1
             
-            # Calculate opening accuracy for this game
-            opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15]
+            # Calculate opening accuracy for this game (user moves only)
+            opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15 and move.get('is_user_move', False)]
             if opening_moves:
                 opening_best_moves = sum(1 for move in opening_moves if move.get('is_best', False))
                 total_opening_accuracy += (opening_best_moves / len(opening_moves)) * 100

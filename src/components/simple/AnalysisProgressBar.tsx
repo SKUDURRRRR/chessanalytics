@@ -72,40 +72,40 @@ export function AnalysisProgressBar({ analyzing, progress, statusMessage }: Anal
   const etaText = typeof eta === 'number' && eta > 0 ? formatEta(eta) : null
 
   return (
-    <div className="w-full max-w-md mx-auto mt-4 mb-6 rounded-lg border border-blue-100 bg-blue-50/70 p-4 shadow-sm">
-      <div className="flex items-center justify-between text-sm text-blue-900">
+    <div className="w-full max-w-md mx-auto mt-4 mb-6 rounded-lg border border-white/10 bg-white/[0.08] p-4 shadow-2xl shadow-black/50">
+      <div className="flex items-center justify-between text-sm text-slate-200">
         <span className="font-medium">{phaseLabel}</span>
         {hasTotals && (
-          <span className="text-xs text-blue-700">{analyzedGames}/{totalGames} games</span>
+          <span className="text-xs text-slate-300">{analyzedGames}/{totalGames} games</span>
         )}
       </div>
 
       {/* Status message above progress bar */}
       <div className="mt-3 text-center">
-        <span className="text-xs font-medium text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
+        <span className="text-xs font-medium text-slate-300 bg-white/10 px-3 py-1 rounded-full">
           it might take few minutes, hold on!
         </span>
       </div>
 
-      <div className="relative mt-2 h-2.5 w-full overflow-hidden rounded-full bg-blue-100">
+      <div className="relative mt-2 h-2.5 w-full overflow-hidden rounded-full bg-white/10">
         {progress ? (
           <div
-            className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-600 transition-[width] duration-300 ease-out"
+            className="h-full rounded-full bg-gradient-to-r from-sky-400 to-sky-500 transition-[width] duration-300 ease-out"
             style={{ width: `${percentage}%` }}
           ></div>
         ) : (
-          <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-blue-200 via-blue-100 to-blue-200"></div>
+          <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-sky-300/50 via-sky-200/30 to-sky-300/50"></div>
         )}
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-xs text-blue-700">
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-300">
         <span>{progress ? `${percentage}% complete` : 'Getting everything ready...'}</span>
         {etaText && <span>~{etaText} remaining</span>}
       </div>
 
-      <p className="mt-2 text-xs text-blue-800">{phaseDescription}</p>
+      <p className="mt-2 text-xs text-slate-300">{phaseDescription}</p>
       {statusMessage && (
-        <p className={`mt-1 text-xs ${progress?.all_games_analyzed ? 'text-green-700 font-medium' : 'text-blue-700 italic'}`}>
+        <p className={`mt-1 text-xs ${progress?.all_games_analyzed ? 'text-green-400 font-medium' : 'text-slate-300 italic'}`}>
           {statusMessage}
         </p>
       )}

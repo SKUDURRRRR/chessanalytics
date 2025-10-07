@@ -4,7 +4,7 @@
 
 import { supabase } from '../lib/supabase'
 import { getTimeControlCategory } from './timeControlUtils'
-import { normalizeOpeningName } from './openingUtils'
+import { getOpeningNameWithFallback } from './openingIdentification'
 import { OpeningIdentifierSets } from '../types'
 
 export interface GameAnalytics {
@@ -417,7 +417,7 @@ function calculateOpeningStats(games: any[]): Array<{
   
   validGames.forEach(game => {
     const rawOpening = game.opening_family || game.opening
-    const opening = normalizeOpeningName(rawOpening)
+    const opening = getOpeningNameWithFallback(rawOpening)
     if (!openingMap.has(opening)) {
       openingMap.set(opening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -541,7 +541,7 @@ function calculateOpeningColorStats(games: any[]): {
   const whiteOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   whiteGames.forEach(game => {
     const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = normalizeOpeningName(rawOpening)
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
     if (!whiteOpeningMap.has(normalizedOpening)) {
       whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -558,7 +558,7 @@ function calculateOpeningColorStats(games: any[]): {
   const blackOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   blackGames.forEach(game => {
     const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = normalizeOpeningName(rawOpening)
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
     if (!blackOpeningMap.has(normalizedOpening)) {
       blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -756,7 +756,7 @@ function calculateOpponentStats(games: any[]): {
     result: highestOpponentGame.result,
     gameId: highestOpponentGame.provider_game_id,
     playedAt: highestOpponentGame.played_at,
-    opening: normalizeOpeningName(highestOpponentGame.opening_family || highestOpponentGame.opening || 'Unknown'),
+    opening: getOpeningNameWithFallback(highestOpponentGame.opening_family || highestOpponentGame.opening || 'Unknown'),
     totalMoves: highestOpponentGame.total_moves,
     color: highestOpponentGame.color,
     accuracy: highestOpponentGame.accuracy
@@ -773,7 +773,7 @@ function calculateOpponentStats(games: any[]): {
     result: 'win' as const,
     gameId: highestOpponentWin.provider_game_id,
     playedAt: highestOpponentWin.played_at,
-    opening: normalizeOpeningName(highestOpponentWin.opening_family || highestOpponentWin.opening || 'Unknown'),
+    opening: getOpeningNameWithFallback(highestOpponentWin.opening_family || highestOpponentWin.opening || 'Unknown'),
     totalMoves: highestOpponentWin.total_moves,
     color: highestOpponentWin.color,
     accuracy: highestOpponentWin.accuracy
@@ -1217,7 +1217,7 @@ export async function getOpeningPerformance(
   const openingMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   validGames.forEach(game => {
     const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = normalizeOpeningName(rawOpening)
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
     if (!openingMap.has(normalizedOpening)) {
       openingMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1311,7 +1311,7 @@ export async function getOpeningColorPerformance(
   const whiteOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   whiteGames.forEach(game => {
     const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = normalizeOpeningName(rawOpening)
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
     if (!whiteOpeningMap.has(normalizedOpening)) {
       whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1329,7 +1329,7 @@ export async function getOpeningColorPerformance(
   const blackOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   blackGames.forEach(game => {
     const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = normalizeOpeningName(rawOpening)
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
     if (!blackOpeningMap.has(normalizedOpening)) {
       blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1437,7 +1437,7 @@ export async function getWorstOpeningPerformance(
   const openingMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   validGames.forEach(game => {
     const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = normalizeOpeningName(rawOpening)
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
     if (!openingMap.has(normalizedOpening)) {
       openingMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }

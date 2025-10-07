@@ -54,18 +54,31 @@ const buildChartData = (data: TrendChartProps['data']): ChartEntry[] =>
 export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel, trendDirection, data }: TrendChartProps) {
   const chartData = useMemo(() => buildChartData(data), [data])
 
-  const { domainMin, domainMax, displayMin, displayMax } = useMemo(() => {
+  const { domainMin, domainMax, displayMin, displayMax, averageRating } = useMemo(() => {
+    if (!data.length) {
+      return {
+        domainMin: 0,
+        domainMax: 0,
+        displayMin: 0,
+        displayMax: 0,
+        averageRating: 0,
+      }
+    }
+
     const ratings = data.map(point => point.rating)
     const rawMin = Math.min(...ratings)
     const rawMax = Math.max(...ratings)
     const range = rawMax - rawMin
     const padding = Math.max(20, range * 0.05)
+    const sum = ratings.reduce((total, value) => total + value, 0)
+    const average = Math.round(sum / ratings.length)
 
     return {
       domainMin: Math.floor(Math.max(0, rawMin - padding)),
       domainMax: Math.ceil(rawMax + padding),
       displayMin: Math.round(rawMin),
-      displayMax: Math.round(rawMax)
+      displayMax: Math.round(rawMax),
+      averageRating: average,
     }
   }, [data])
 
@@ -102,109 +115,111 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
   }
 
   return (
-    <div className={`${className}`}>
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h4 className="text-sm font-medium text-gray-700">ELO Trend</h4>
-          {selectedTimeControlLabel && (
-            <p className="mt-1 text-xs text-gray-500">{selectedTimeControlLabel} games only</p>
-          )}
-        </div>
-        <span
-          className={`text-xs px-2 py-1 rounded font-medium ${
-            trendDirection === 'improving'
-              ? 'bg-green-100 text-green-800'
+    <div className={`overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.04] shadow-xl shadow-black/40 ${className}`}>
+      <div className="p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-white">ELO Trend</h3>
+            {selectedTimeControlLabel && (
+              <p className="text-xs uppercase tracking-wide text-slate-400">{selectedTimeControlLabel} games only</p>
+            )}
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white ${
+              trendDirection === 'improving'
+                ? 'bg-emerald-500'
+                : trendDirection === 'declining'
+                  ? 'bg-rose-500'
+                  : 'bg-slate-600'
+            }`}
+          >
+            {trendDirection === 'improving'
+              ? 'Improving'
               : trendDirection === 'declining'
-              ? 'bg-red-100 text-red-800'
-              : 'bg-gray-100 text-gray-800'
-          }`}
-        >
-          {trendDirection}
-        </span>
-      </div>
+                ? 'Declining'
+                : 'Stable'}
+          </span>
+        </div>
 
-      <div className="relative rounded-lg border border-gray-200 bg-white p-4">
-        <ResponsiveContainer width="100%" height={220}>
-          <ComposedChart data={chartData} margin={{ top: 12, right: 16, bottom: 8, left: 0 }}>
-            <defs>
-              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={TREND_COLORS[trendDirection]} stopOpacity={0.12} />
-                <stop offset="100%" stopColor={TREND_COLORS[trendDirection]} stopOpacity={0.04} />
-              </linearGradient>
-            </defs>
+        <div className="relative h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={chartData} margin={{ top: 15, right: 20, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={TREND_COLORS[trendDirection]} stopOpacity={0.12} />
+                  <stop offset="100%" stopColor={TREND_COLORS[trendDirection]} stopOpacity={0.04} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+              <XAxis dataKey="index" tickFormatter={(_, index) => `#${index + 1}`} stroke="rgba(226,232,240,0.5)" fontSize={12} />
+              <YAxis tickFormatter={formatYAxis} stroke="rgba(226,232,240,0.5)" fontSize={12} domain={[displayMin, displayMax]} />
+              <Tooltip
+                cursor={{ stroke: '#CBD5F5', strokeWidth: 1, strokeDasharray: '6 3' }}
+                content={(tooltipProps: TooltipProps<number, string>) => {
+                  const payload = tooltipProps.payload?.[0]?.payload as ChartEntry | undefined
+                  if (!payload) {
+                    return null
+                  }
 
-            <CartesianGrid stroke="#f0f2f5" vertical={false} />
-            <XAxis
-              dataKey="index"
-              tickFormatter={(value: number) => `#${value + 1}`}
-              tick={{ fontSize: 11, fill: '#6b7280' }}
-              axisLine={{ stroke: '#e5e7eb' }}
-              tickLine={false}
-              interval={chartData.length > 12 ? Math.ceil(chartData.length / 12) : 0}
-              padding={{ left: 6, right: 6 }}
-            />
-            <YAxis
-              domain={[domainMin, domainMax]}
-              tickFormatter={formatYAxis}
-              tick={{ fontSize: 11, fill: '#6b7280' }}
-              axisLine={{ stroke: '#e5e7eb' }}
-              tickLine={false}
-              allowDecimals={false}
-              width={36}
-            />
-            <Tooltip
-              cursor={{ stroke: '#cbd5f5', strokeDasharray: '4 2' }}
-              content={(tooltipProps: TooltipProps<number, string>) => {
-                const payload = tooltipProps.payload?.[0]?.payload as ChartEntry | undefined
-                if (!payload) {
-                  return null
-                }
+                  return (
+                    <div className="rounded-lg bg-gray-900/95 px-3 py-2 text-xs text-white shadow-lg">
+                      <div className="font-semibold">Game {payload.index + 1}</div>
+                      <div className="text-gray-300">Rating: {payload.rating}</div>
+                      {payload.index > 0 && (
+                        <div
+                          className={`font-medium ${
+                            payload.change > 0
+                              ? 'text-green-400'
+                              : payload.change < 0
+                              ? 'text-red-400'
+                              : 'text-gray-400'
+                          }`}
+                        >
+                          {payload.displayChange}
+                        </div>
+                      )}
+                    </div>
+                  )
+                }}
+              />
 
-                return (
-                  <div className="rounded-lg bg-gray-900/95 px-3 py-2 text-xs text-white shadow-lg">
-                    <div className="font-semibold">Game {payload.index + 1}</div>
-                    <div className="text-gray-300">Rating: {payload.rating}</div>
-                    {payload.index > 0 && (
-                      <div
-                        className={`font-medium ${
-                          payload.change > 0
-                            ? 'text-green-400'
-                            : payload.change < 0
-                            ? 'text-red-400'
-                            : 'text-gray-400'
-                        }`}
-                      >
-                        {payload.displayChange}
-                      </div>
-                    )}
-                  </div>
-                )
-              }}
-            />
-
-            <Area type="monotone" dataKey="rating" stroke="none" fill={`url(#${gradientId})`} key="elo-trend-area" />
-            <Line
-              type="monotone"
-              dataKey="rating"
-              stroke={TREND_COLORS[trendDirection]}
-              strokeWidth={2.4}
-              dot={dotRenderer}
-              activeDot={activeDotRenderer}
-              connectNulls
-              key="elo-trend-line"
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-
-        <div className="absolute top-2 right-2 rounded border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-800 shadow-sm">
-          {data[data.length - 1]?.rating}
+              <Area
+                type="monotone"
+                dataKey="rating"
+                stroke="none"
+                fill={`url(#${gradientId})`}
+                key="elo-trend-area"
+              />
+              <Line
+                type="monotone"
+                dataKey="rating"
+                stroke={TREND_COLORS[trendDirection]}
+                strokeWidth={2.4}
+                dot={dotRenderer}
+                activeDot={activeDotRenderer}
+                connectNulls
+                key="elo-trend-line"
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 rounded-lg border border-white/10 pointer-events-none" />
         </div>
       </div>
 
-      <div className="mt-3 flex justify-between text-xs text-gray-500">
-        <span>
-          Range: {displayMin} - {displayMax}
-        </span>
+      <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-slate-400">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-xs font-semibold text-slate-200">
+            {trendDirection === 'improving' ? 'Upward trend' : trendDirection === 'declining' ? 'Downward trend' : 'Stable trend'}
+          </span>
+          <span>
+            Average rating: <span className="font-semibold text-white">{averageRating}</span>
+          </span>
+        </div>
+        <div className="text-slate-300">{data[data.length - 1]?.rating}</div>
+      </div>
+
+      <div className="mt-3 flex justify-between text-xs text-slate-400">
+        <span>Range: {displayMin} - {displayMax}</span>
         <span>{data.length} key points</span>
       </div>
     </div>

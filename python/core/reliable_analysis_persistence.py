@@ -369,7 +369,10 @@ class ReliableAnalysisPersistence:
                 'best_move': move.best_move,
                 'explanation': move.explanation,
                 'heuristic_details': move.heuristic_details,
-                'analysis_time_ms': move.analysis_time_ms
+                'analysis_time_ms': move.analysis_time_ms,
+                'is_user_move': move.is_user_move,
+                'player_color': move.player_color,
+                'ply_index': move.ply_index
             })
         
         return {

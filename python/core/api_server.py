@@ -712,7 +712,10 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'is_good': move.is_good,
                 'is_acceptable': move.is_acceptable,
                 'centipawn_loss': move.centipawn_loss,
-                'depth_analyzed': move.depth_analyzed
+                'depth_analyzed': move.depth_analyzed,
+                'is_user_move': move.is_user_move,
+                'player_color': move.player_color,
+                'ply_index': move.ply_index
             })
         
         # Prepare data for move_analyses table
@@ -785,7 +788,10 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'is_good': move.is_good,
                 'is_acceptable': move.is_acceptable,
                 'centipawn_loss': move.centipawn_loss,
-                'depth_analyzed': move.depth_analyzed
+                'depth_analyzed': move.depth_analyzed,
+                'is_user_move': move.is_user_move,
+                'player_color': move.player_color,
+                'ply_index': move.ply_index
             })
         
         # Prepare data for game_analyses table

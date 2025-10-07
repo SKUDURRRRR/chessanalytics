@@ -103,12 +103,12 @@ export function EloStatsOptimizer({ userId, platform }: EloStatsOptimizerProps) 
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">ELO Stats Optimizer</h3>
-        <div className="animate-pulse">
-          <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-          <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-          <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">ELO Stats Optimizer</h3>
+        <div className="animate-pulse space-y-2">
+          <div className="h-4 w-3/4 rounded bg-white/10"></div>
+          <div className="h-4 w-1/2 rounded bg-white/10"></div>
+          <div className="h-4 w-2/3 rounded bg-white/10"></div>
         </div>
       </div>
     )
@@ -116,109 +116,119 @@ export function EloStatsOptimizer({ userId, platform }: EloStatsOptimizerProps) 
 
   if (error) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">ELO Stats Optimizer</h3>
-        <div className="text-red-600">{error}</div>
+      <div className="rounded-3xl border border-rose-400/40 bg-rose-500/10 p-6 text-rose-100 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">ELO Stats Optimizer</h3>
+        <div>{error}</div>
       </div>
     )
   }
 
   if (!stats) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">ELO Stats Optimizer</h3>
-        <div className="text-gray-500">No ELO data available</div>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <h3 className="mb-4 text-lg font-semibold text-white">ELO Stats Optimizer</h3>
+        <div className="text-slate-400">No ELO data available</div>
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">ELO Stats Optimizer</h3>
+    <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <h3 className="mb-4 text-lg font-semibold text-white">ELO Stats Optimizer</h3>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Current Status */}
         <div className="space-y-3">
-          <h4 className="font-medium text-gray-700">Current Status</h4>
+          <h4 className="font-medium text-slate-300">Current Status</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span>Current Rating:</span>
-              <span className="font-medium text-blue-600">{stats.currentRating}</span>
+              <span className="font-semibold text-sky-300">{stats.currentRating}</span>
             </div>
             <div className="flex justify-between">
               <span>Total Games:</span>
-              <span className="font-medium">{stats.totalGames}</span>
+              <span className="font-semibold text-white">{stats.totalGames}</span>
             </div>
             <div className="flex justify-between">
               <span>Recent Games:</span>
-              <span className="font-medium">{stats.recentGames}</span>
+              <span className="font-semibold text-white">{stats.recentGames}</span>
             </div>
           </div>
         </div>
 
         {/* Rating Range */}
         <div className="space-y-3">
-          <h4 className="font-medium text-gray-700">Rating Range</h4>
+          <h4 className="font-medium text-slate-300">Rating Range</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span>Highest:</span>
-              <span className="font-medium text-green-600">{stats.highestRating}</span>
+              <span className="font-semibold text-emerald-300">{stats.highestRating}</span>
             </div>
             <div className="flex justify-between">
               <span>Lowest:</span>
-              <span className="font-medium text-red-600">{stats.lowestRating}</span>
+              <span className="font-semibold text-rose-300">{stats.lowestRating}</span>
             </div>
             <div className="flex justify-between">
               <span>Range:</span>
-              <span className="font-medium text-orange-600">{stats.ratingRange}</span>
+              <span className="font-semibold text-amber-300">{stats.ratingRange}</span>
             </div>
           </div>
         </div>
 
         {/* Performance Metrics */}
         <div className="space-y-3">
-          <h4 className="font-medium text-gray-700">Performance Metrics</h4>
+          <h4 className="font-medium text-slate-300">Performance Metrics</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span>Average Rating:</span>
-              <span className="font-medium text-purple-600">{stats.averageRating.toFixed(0)}</span>
+              <span className="font-semibold text-purple-300">{stats.averageRating.toFixed(0)}</span>
             </div>
             <div className="flex justify-between">
               <span>Recent Average:</span>
-              <span className="font-medium text-indigo-600">{stats.recentAverage.toFixed(0)}</span>
+              <span className="font-semibold text-indigo-300">{stats.recentAverage.toFixed(0)}</span>
             </div>
             <div className="flex justify-between">
               <span>Improvement:</span>
-              <span className={`font-medium ${stats.improvement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <span className={`font-semibold ${stats.improvement >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                 {stats.improvement >= 0 ? '+' : ''}{stats.improvement.toFixed(0)}
               </span>
             </div>
             <div className="flex justify-between">
               <span>Volatility:</span>
-              <span className="font-medium text-gray-600">{stats.volatility.toFixed(0)}</span>
+              <span className="font-semibold text-slate-300">{stats.volatility.toFixed(0)}</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Insights */}
-      <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-        <h4 className="font-medium text-gray-700 mb-2">Insights</h4>
-        <div className="text-sm text-gray-600 space-y-1">
+      <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.05] p-4">
+        <h4 className="mb-2 font-medium text-slate-200">Insights</h4>
+        <div className="space-y-2 text-sm">
           {stats.improvement > 0 && (
-            <div className="text-green-600">Improving: Recent performance is {stats.improvement.toFixed(0)} points above average.</div>
+            <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-2 text-emerald-100">
+              Improving: Recent performance is {stats.improvement.toFixed(0)} points above average.
+            </div>
           )}
           {stats.improvement < 0 && (
-            <div className="text-red-600">Warning: Recent performance is {Math.abs(stats.improvement).toFixed(0)} points below average.</div>
+            <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-2 text-rose-100">
+              Warning: Recent performance is {Math.abs(stats.improvement).toFixed(0)} points below average.
+            </div>
           )}
           {stats.volatility > 100 && (
-            <div className="text-orange-600">Warning: High rating volatility ({stats.volatility.toFixed(0)}) suggests inconsistent performance.</div>
+            <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-2 text-amber-100">
+              Warning: High rating volatility ({stats.volatility.toFixed(0)}) suggests inconsistent performance.
+            </div>
           )}
           {stats.volatility < 50 && (
-            <div className="text-green-600">Steady: Low rating volatility ({stats.volatility.toFixed(0)}) indicates consistent performance.</div>
+            <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-2 text-emerald-100">
+              Steady: Low rating volatility ({stats.volatility.toFixed(0)}) indicates consistent performance.
+            </div>
           )}
           {stats.ratingRange > 200 && (
-            <div className="text-blue-600">Trend: Large rating range ({stats.ratingRange}) shows significant improvement potential.</div>
+            <div className="rounded-xl border border-sky-400/30 bg-sky-500/10 p-2 text-sky-100">
+              Trend: Large rating range ({stats.ratingRange}) shows significant improvement potential.
+            </div>
           )}
         </div>
       </div>

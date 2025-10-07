@@ -343,11 +343,12 @@ export default function SimpleAnalyticsPage() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="flex items-center justify-center min-h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading your chess analytics...</p>
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.08] px-8 py-10 text-center shadow-2xl shadow-black/50">
+            <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+            <p className="text-base text-slate-200">Loading your chess analytics...</p>
+            <p className="mt-2 text-xs uppercase tracking-wide text-slate-400">Fetching player profile</p>
           </div>
         </div>
       </div>
@@ -355,135 +356,128 @@ export default function SimpleAnalyticsPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      {userId && (
-        <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+        {userId && (
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-6 py-6 shadow-2xl shadow-black/60 sm:px-8 sm:py-8">
+            <div className="absolute inset-x-10 top-0 h-40 rounded-full bg-sky-400/10 blur-3xl" />
+            <div className="relative flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => navigate('/')}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-200 transition hover:border-white/30 hover:bg-white/20"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 19L3 12m0 0l7-7m-7 7h18" />
+                  </svg>
+                  Back to search
+                </button>
+              </div>
+
+              <div className="text-center">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-1 text-xs uppercase tracking-wide text-slate-300">
+                  {platform}
+                </div>
+                <h1 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">{userId}</h1>
+                <p className="mt-2 text-sm text-slate-300">
+                  Import games, trigger fresh Stockfish evaluations, and explore openings without leaving this dashboard.
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center gap-3 text-sm">
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    onClick={importGames}
+                    disabled={importing}
+                    className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {importing ? 'Importing…' : 'Import Games'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      console.log('🔘 Analyze My Games button clicked!')
+                      console.log('🔘 Button state - analyzing:', analyzing, 'apiAvailable:', apiAvailable)
+                      startAnalysis()
+                    }}
+                    disabled={analyzing || !apiAvailable}
+                    className="inline-flex items-center gap-2 rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 font-medium text-sky-200 transition hover:border-sky-300/60 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {analyzing ? 'Analyzing…' : 'Analyze My Games'}
+                  </button>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-400">
+                  <span className={apiAvailable ? 'text-emerald-300' : 'text-rose-300'}>
+                    Engine {apiAvailable ? 'online' : 'offline'}
+                  </span>
+                  {lastRefresh && <span>Updated · {lastRefresh.toLocaleTimeString()}</span>}
+                </div>
+                {importStatus && <div className="text-xs text-sky-300">{importStatus}</div>}
+              </div>
+            </div>
+          </section>
+        )}
+
+        <AnalysisProgressBar analyzing={analyzing} progress={analysisProgress} statusMessage={progressStatus} />
+
+        <div className="mx-auto flex max-w-md items-center justify-between rounded-full border border-white/10 bg-white/[0.08] p-1 shadow-lg shadow-black/40">
           <button
-            onClick={() => navigate('/')}
-            className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+            onClick={() => handleTabChange('analytics')}
+            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+              activeTab === 'analytics'
+                ? 'bg-white text-slate-900 shadow-inner'
+                : 'text-slate-300 hover:text-white'
+            }`}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10 19l-7-7m0 0l7-7m-7 7h18"
-              />
-            </svg>
-            <span>Back to Search</span>
+            Analytics
           </button>
-          <div className="text-center space-y-2">
-            <div className="flex items-center justify-center space-x-2 text-lg text-gray-700">
-              <span className="font-medium">{userId}</span>
-              <span className="capitalize font-medium">{platform}</span>
-            </div>
-            <div className="flex items-center justify-center space-x-3">
-              <button
-                onClick={importGames}
-                disabled={importing}
-                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-              >
-                {importing ? 'Importing...' : 'Import Games'}
-              </button>
-              <button
-                onClick={() => {
-                  console.log('🔘 Analyze My Games button clicked!')
-                  console.log('🔘 Button state - analyzing:', analyzing, 'apiAvailable:', apiAvailable)
-                  startAnalysis()
-                }}
-                disabled={analyzing || !apiAvailable}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-              >
-                {analyzing ? 'Analyzing...' : 'Analyze My Games'}
-              </button>
-              <button
-                onClick={() => setShowDebug(!showDebug)}
-                className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium"
-              >
-                {showDebug ? 'Hide Debug' : 'Debug'}
-              </button>
-              {lastRefresh && (
-                <span className="text-xs text-gray-500">
-                  Updated: {lastRefresh.toLocaleTimeString()}
-                </span>
-              )}
-            </div>
-            {importStatus && (
-              <div className="text-xs text-blue-600 pt-2">{importStatus}</div>
-            )}
-          </div>
-          <div className="w-32"></div> {/* Spacer for centering */}
+          <button
+            onClick={() => handleTabChange('matchHistory')}
+            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+              activeTab === 'matchHistory'
+                ? 'bg-white text-slate-900 shadow-inner'
+                : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            Match History
+          </button>
         </div>
-      )}
 
-      {/* Progress Bar */}
-      <AnalysisProgressBar analyzing={analyzing} progress={analysisProgress} statusMessage={progressStatus} />
-
-      {/* Tab Navigation */}
-      <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg max-w-md mx-auto">
-        <button
-          onClick={() => handleTabChange('analytics')}
-          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium ${
-            activeTab === 'analytics'
-              ? 'bg-white text-gray-900 shadow'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Analytics
-        </button>
-        <button
-          onClick={() => handleTabChange('matchHistory')}
-          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium ${
-            activeTab === 'matchHistory'
-              ? 'bg-white text-gray-900 shadow'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Match History
-        </button>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === 'analytics' && (
-        <div className="space-y-4">
-          {/* Analytics Display */}
+        {activeTab === 'analytics' && (
           <SimpleAnalytics
             key={`simple-analytics-${refreshKey}`}
             userId={userId}
             platform={platform}
             onOpeningClick={handleOpeningClick}
           />
-        </div>
-      )}
+        )}
 
-      {activeTab === 'matchHistory' && (
-        <ErrorBoundary>
-          <MatchHistory 
-            key={`match-history-${refreshKey}`} 
-            userId={userId} 
-            platform={platform} 
-            openingFilter={openingFilter}
-            onClearFilter={() => {
-              setOpeningFilter(null)
-              const newSearchParams = new URLSearchParams(searchParams)
-              newSearchParams.delete('opening')
-              newSearchParams.delete('openingIdentifiers')
-              setSearchParams(newSearchParams, { replace: true })
-            }}
-            onGameSelect={(game) => {
-              // Navigate to game analysis page
-              navigate(`/analysis/${platform}/${userId}/${game.provider_game_id}`, {
-                state: { from: { pathname: location.pathname, search: location.search }, game }
-              })
-            }}
-          />
-        </ErrorBoundary>
-      )}
+        {activeTab === 'matchHistory' && (
+          <ErrorBoundary>
+            <MatchHistory
+              key={`match-history-${refreshKey}`}
+              userId={userId}
+              platform={platform}
+              openingFilter={openingFilter}
+              onClearFilter={() => {
+                setOpeningFilter(null)
+                const newSearchParams = new URLSearchParams(searchParams)
+                newSearchParams.delete('opening')
+                newSearchParams.delete('openingIdentifiers')
+                setSearchParams(newSearchParams, { replace: true })
+              }}
+              onGameSelect={game => {
+                navigate(`/analysis/${platform}/${userId}/${game.provider_game_id}`, {
+                  state: { from: { pathname: location.pathname, search: location.search }, game },
+                })
+              }}
+            />
+          </ErrorBoundary>
+        )}
 
         {/* Debug Panel */}
         {showDebug && userId && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-gray-800">Debug Information</h2>
+          <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-inner shadow-black/50">
+            <h2 className="text-lg font-semibold text-white">Debug Information</h2>
             <ComprehensiveAnalytics userId={userId} platform={platform} />
             <EloStatsOptimizer userId={userId} platform={platform} />
             <EloDataDebugger userId={userId} platform={platform} />
@@ -497,24 +491,17 @@ export default function SimpleAnalyticsPage() {
           </div>
         )}
 
-      {/* Import Error Message */}
-      {importError && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2">
-            <div className="text-yellow-600">!</div>
-            <span className="text-yellow-800">{importError}</span>
+        {importError && (
+          <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">
+            <span className="font-semibold">Import warning:</span> {importError}
           </div>
-        </div>
-      )}
-      {/* Analysis Error Message */}
-      {analysisError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2">
-            <div className="text-red-500">???</div>
-            <span className="text-red-700">{analysisError}</span>
+        )}
+        {analysisError && (
+          <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 p-4 text-sm text-rose-200">
+            <span className="font-semibold">Analysis error:</span> {analysisError}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

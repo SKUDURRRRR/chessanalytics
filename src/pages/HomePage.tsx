@@ -8,36 +8,53 @@ export default function HomePage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold text-gray-800">Chess Analytics</h1>
-        <p className="text-xl text-gray-600">Analyze any chess player's games and performance</p>
-        <p className="text-gray-500">Search for players on Lichess or Chess.com to get started</p>
-      </div>
+    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_45%),radial-gradient(circle_at_bottom,_rgba(14,116,144,0.2),_transparent_40%)]" />
+      <div className="relative mx-auto flex w-full max-w-5xl flex-col gap-12 px-5 py-16 sm:py-20 lg:py-24">
+        <header className="text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-wide text-slate-300 shadow-md shadow-cyan-500/10">
+            Precision Chess Insights
+          </div>
+          <h1 className="mt-6 text-4xl font-semibold leading-tight text-white sm:text-5xl lg:text-[3.4rem]">
+            Understand every move with <span className="text-sky-300">Chess Analytics</span>
+          </h1>
+          <p className="mt-4 text-base text-slate-300 sm:text-lg">
+            Explore match histories, uncover openings that win for you, and run deep Stockfish reviews in a single, streamlined workspace.
+          </p>
+        </header>
 
-      {/* Player Search */}
-      <PlayerSearch onPlayerSelect={handlePlayerSelect} />
-
-      {/* Features Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-        <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">Search Players</h3>
-          <p className="text-gray-600">Find any chess player by username on Lichess or Chess.com</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">Quick Stats</h3>
-          <p className="text-gray-600">
-            Get instant insights into win rates, ratings, and playing patterns
+        <div className="mx-auto w-full max-w-5xl rounded-[32px] border border-white/10 bg-white/[0.06] p-8 shadow-2xl shadow-black/60 backdrop-blur">
+          <PlayerSearch onPlayerSelect={handlePlayerSelect} />
+          <p className="mt-3 text-xs text-slate-400">
+            Works for players on Lichess and Chess.com. No account required.
           </p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">Fast Analysis</h3>
-          <p className="text-gray-600">
-            No registration required - just search and analyze immediately
-          </p>
-        </div>
+        <section className="grid gap-5 md:grid-cols-3">
+          {[{
+            title: 'Instant Profiles',
+            description: 'Jump directly into head-to-head stats, win streaks, and rating momentum.'
+          }, {
+            title: 'Engine-Guided Review',
+            description: 'Queue Stockfish analysis for any game and see accuracy, blunders, and centipawn swings.'
+          }, {
+            title: 'Opening Radar',
+            description: 'Spot the openings you score best with and filter recent games to focus your study.'
+          }].map((card) => (
+            <article
+              key={card.title}
+              className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.08] p-6 shadow-xl shadow-black/40 transition duration-300 hover:border-white/20 hover:bg-white/[0.12]"
+            >
+              <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-sky-400/20 blur-2xl transition duration-300 group-hover:bg-sky-400/30" />
+              <h3 className="text-xl font-semibold text-white">{card.title}</h3>
+              <p className="mt-3 text-sm text-slate-300">{card.description}</p>
+              <span className="mt-6 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-sky-300">
+                Explore
+                <span aria-hidden className="h-px w-6 bg-sky-400/70" />
+              </span>
+            </article>
+          ))}
+        </section>
       </div>
     </div>
   )

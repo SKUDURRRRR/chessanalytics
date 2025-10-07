@@ -39,6 +39,15 @@ class StockfishConfig:
     use_opening_book: bool = True
     use_endgame_tablebase: bool = True
     max_concurrent: int = 4
+    
+    def __post_init__(self):
+        """Adjust settings based on environment for better performance."""
+        app_env = os.getenv('APP_ENV', 'production').lower()
+        if app_env == 'dev':
+            # Reduce depth and skill for development to improve performance
+            self.depth = 6
+            self.skill_level = 6
+            print(f"[CONFIG] Development mode: Using depth={self.depth}, skill={self.skill_level}")
 
 @dataclass
 class AnalysisConfig:

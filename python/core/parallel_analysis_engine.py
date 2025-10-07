@@ -49,12 +49,18 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
         # Create engine in this process
         engine = ChessAnalysisEngine()
         
-        # Configure analysis
+        # Configure analysis with environment-aware settings
         analysis_type_enum = AnalysisType(analysis_type)
+        
+        # Use environment-aware depth and skill level
+        app_env = os.getenv('APP_ENV', 'production').lower()
+        effective_depth = 6 if app_env == 'dev' else (depth or 8)
+        effective_skill = 6 if app_env == 'dev' else (skill_level or 8)
+        
         config = AnalysisConfig(
             analysis_type=analysis_type_enum,
-            depth=depth,
-            skill_level=skill_level
+            depth=effective_depth,
+            skill_level=effective_skill
         )
         engine.config = config
         
@@ -130,14 +136,20 @@ class ParallelAnalysisEngine:
     Parallel analysis engine that uses multiprocessing for true parallel game analysis.
     """
     
-    def __init__(self, max_workers: int = 8):
+    def __init__(self, max_workers: int = None):
         """
         Initialize parallel analysis engine.
         
         Args:
-            max_workers: Maximum number of parallel processes (default: 8, safe for most systems)
+            max_workers: Maximum number of parallel processes. If None, auto-calculates based on CPU count.
         """
-        self.max_workers = max_workers  # Use the requested number of workers
+        if max_workers is None:
+            # Dynamic worker count: max(1, min(3, cpu_count // 2))
+            # This prevents CPU saturation while maintaining good performance
+            cpu_count = os.cpu_count() or 4
+            self.max_workers = max(1, min(3, cpu_count // 2))
+        else:
+            self.max_workers = max_workers
         self.supabase = get_supabase_client()
         
     async def analyze_games_parallel(

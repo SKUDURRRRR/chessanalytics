@@ -18,6 +18,7 @@ import chess
 import chess.pgn
 import chess.engine
 import io
+from .coaching_comment_generator import ChessCoachingGenerator, GamePhase
 
 # Try to import stockfish package, fall back to engine if not available
 try:
@@ -186,6 +187,20 @@ class MoveAnalysis:
     ply_index: int = 0
     fullmove_number: int = 0
     accuracy_score: float = 0.0
+    
+    # Enhanced coaching fields
+    coaching_comment: str = ""
+    what_went_right: str = ""
+    what_went_wrong: str = ""
+    how_to_improve: str = ""
+    tactical_insights: List[str] = field(default_factory=list)
+    positional_insights: List[str] = field(default_factory=list)
+    risks: List[str] = field(default_factory=list)
+    benefits: List[str] = field(default_factory=list)
+    learning_points: List[str] = field(default_factory=list)
+    encouragement_level: int = 3
+    move_quality: str = "acceptable"
+    game_phase: str = "middlegame"
 
 @dataclass
 class GameAnalysis:
@@ -251,6 +266,7 @@ class ChessAnalysisEngine:
         self._basic_eval_cache: Dict[str, Tuple[int, Dict[str, Any]]] = {}
         self._basic_move_cache: Dict[str, List[Dict[str, Any]]] = {}
         self._basic_probe_cache: Dict[str, Dict[str, Any]] = {}
+        self.coaching_generator = ChessCoachingGenerator()
         
     def _find_stockfish_path(self, custom_path: Optional[str]) -> Optional[str]:
         """Find the best available Stockfish executable."""
@@ -1049,7 +1065,8 @@ class ChessAnalysisEngine:
 
         accuracy_score = 100.0 if is_best else 100.0 - min(100.0, centipawn_loss)
 
-        return MoveAnalysis(
+        # Create basic move analysis
+        move_analysis = MoveAnalysis(
             move=move.uci(),
             move_san=move_san,
             evaluation=evaluation_payload,
@@ -1068,6 +1085,11 @@ class ChessAnalysisEngine:
             heuristic_details=heuristic_details,
             accuracy_score=accuracy_score
         )
+        
+        # Enhance with coaching comments
+        move_number = (board.fullmove_number - 1) * 2 + (0 if board.turn == chess.WHITE else 1)
+        # For now, assume all moves are user moves - this will be determined by the frontend
+        return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=True)
 
     def _summarize_move_classifications(self, moves_analysis: List[MoveAnalysis]) -> Dict[str, int]:
         summary = {
@@ -1095,6 +1117,62 @@ class ChessAnalysisEngine:
             elif move.is_blunder:
                 summary['blunder'] += 1
         return summary
+
+    def _determine_game_phase(self, board: chess.Board, move_number: int) -> GamePhase:
+        """Determine the current game phase based on position and move number."""
+        # Count pieces on the board
+        piece_count = len(board.piece_map())
+        
+        # Opening: first 15 moves and many pieces on board
+        if move_number <= 15 and piece_count >= 20:
+            return GamePhase.OPENING
+        
+        # Endgame: few pieces remaining
+        if piece_count <= 12:
+            return GamePhase.ENDGAME
+        
+        # Middlegame: everything else
+        return GamePhase.MIDDLEGAME
+
+    def _enhance_move_analysis_with_coaching(self, move_analysis: MoveAnalysis, board: chess.Board, 
+                                           move: chess.Move, move_number: int, 
+                                           player_skill_level: str = "intermediate",
+                                           is_user_move: bool = True) -> MoveAnalysis:
+        """Enhance move analysis with comprehensive coaching comments."""
+        try:
+            # Determine game phase
+            game_phase = self._determine_game_phase(board, move_number)
+            
+            # Generate coaching comment
+            coaching_comment = self.coaching_generator.generate_coaching_comment(
+                move_analysis.__dict__,
+                board,
+                move,
+                game_phase,
+                player_skill_level,
+                is_user_move
+            )
+            
+            # Update move analysis with coaching data
+            move_analysis.coaching_comment = coaching_comment.main_comment
+            move_analysis.what_went_right = coaching_comment.what_went_right or ""
+            move_analysis.what_went_wrong = coaching_comment.what_went_wrong or ""
+            move_analysis.how_to_improve = coaching_comment.how_to_improve or ""
+            move_analysis.tactical_insights = coaching_comment.tactical_insights
+            move_analysis.positional_insights = coaching_comment.positional_insights
+            move_analysis.risks = coaching_comment.risks
+            move_analysis.benefits = coaching_comment.benefits
+            move_analysis.learning_points = coaching_comment.learning_points
+            move_analysis.encouragement_level = coaching_comment.encouragement_level
+            move_analysis.move_quality = coaching_comment.move_quality.value
+            move_analysis.game_phase = coaching_comment.game_phase.value
+            
+            return move_analysis
+            
+        except Exception as e:
+            print(f"Error generating coaching comment: {e}")
+            # Return original analysis if coaching fails
+            return move_analysis
 
     async def _analyze_move_stockfish(self, board: chess.Board, move: chess.Move, 
                                     analysis_type: AnalysisType) -> MoveAnalysis:
@@ -1172,32 +1250,43 @@ class ChessAnalysisEngine:
                     is_mistake = 100 < centipawn_loss <= 200  # Mistakes
                     is_blunder = centipawn_loss > 200  # Blunders (200+ cp loss)
 
-                    # Brilliant moves: extremely rare, only for sacrifices or forcing mates
-                    # Must be a capture that sacrifices material AND significantly improves position
-                    piece_values = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}
-                    captured_piece = board.piece_at(move.to_square)
-                    moving_piece = board.piece_at(move.from_square)
+                    # Brilliant moves: extremely rare, only for spectacular sacrifices or finding forced mates
+                    # Chess.com/Lichess standards: ~0-1 per game for average players
+                    is_brilliant = False
                     
-                    # Initialize values
-                    captured_value = 0
-                    moving_value = 0
-                    sacrifice_trigger = False
-                    
-                    if board.is_capture(move) and captured_piece and moving_piece:
-                        captured_value = piece_values.get(captured_piece.symbol().upper(), 0)
-                        moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
-                        # Only brilliant if we sacrifice more valuable piece AND improve evaluation significantly
-                        sacrifice_trigger = (moving_value > captured_value + 2) and (actual_cp > best_cp + 100)
-                
-                    # Only brilliant if forcing mate when there wasn't one before
-                    forcing_mate_trigger = (
-                        eval_after.pov(player_color).is_mate() and 
-                        not eval_before.pov(player_color).is_mate() and
-                        is_best
-                    )
-                    
-                    # Brilliant only if BOTH: best move AND (sacrifice OR forcing mate)
-                    is_brilliant = is_best and (sacrifice_trigger or forcing_mate_trigger)
+                    if is_best:  # Only best moves can be brilliant
+                        # Check for forced mate found when there wasn't one before
+                        forcing_mate_trigger = (
+                            eval_after.pov(player_color).is_mate() and 
+                            not eval_before.pov(player_color).is_mate()
+                        )
+                        
+                        # Check for material sacrifice that maintains/improves position
+                        piece_values = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}
+                        sacrifice_trigger = False
+                        
+                        # Look at the position BEFORE the move was made (need to undo it temporarily)
+                        board.pop()  # Undo move to check original position
+                        
+                        if board.is_capture(move):
+                            captured_piece = board.piece_at(move.to_square)
+                            moving_piece = board.piece_at(move.from_square)
+                            
+                            if captured_piece and moving_piece:
+                                captured_value = piece_values.get(captured_piece.symbol().upper(), 0)
+                                moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
+                                
+                                # Sacrifice: giving up more valuable piece (e.g., Queen for Rook)
+                                # AND position is still winning (actual_cp > 0) or at least equal (actual_cp >= -50)
+                                material_sacrificed = moving_value > captured_value + 2
+                                position_still_good = actual_cp >= -50  # Not losing after sacrifice
+                                sacrifice_trigger = material_sacrificed and position_still_good
+                        
+                        # Restore the board state
+                        board.push(move)
+                        
+                        # Brilliant only for forced mates or spectacular sacrifices
+                        is_brilliant = forcing_mate_trigger or sacrifice_trigger
                     
                     # Convert evaluation to dict
                     evaluation = {
@@ -1205,7 +1294,8 @@ class ChessAnalysisEngine:
                         "type": "cp" if not eval_after.pov(chess.WHITE).is_mate() else "mate"
                     }
                     
-                    return MoveAnalysis(
+                    # Create basic move analysis
+                    move_analysis = MoveAnalysis(
                         move=move.uci(),
                         move_san=move_san,
                         evaluation=evaluation,
@@ -1224,6 +1314,11 @@ class ChessAnalysisEngine:
                         heuristic_details=None,
                         accuracy_score=100.0 if is_best else max(0.0, 100.0 - centipawn_loss)
                     )
+                    
+                    # Enhance with coaching comments
+                    move_number = (board.fullmove_number - 1) * 2 + (0 if board.turn == chess.WHITE else 1)
+                    # For now, assume all moves are user moves - this will be determined by the frontend
+                    return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=True)
             except Exception as e:
                 print(f"Stockfish move analysis failed: {e}")
                 # Fallback to heuristic analysis - run in thread pool since this is not async
