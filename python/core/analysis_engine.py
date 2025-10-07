@@ -1429,22 +1429,23 @@ class ChessAnalysisEngine:
         # centipawn loss impacts actual game outcomes
         def calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
             """
-            Calculate accuracy using Chess.com-style formula for more realistic and generous scoring.
+            Calculate accuracy using Chess.com-style formula for realistic scoring.
             
-            Based on Chess.com's CAPS2 algorithm research, uses more generous thresholds:
-            - 0-10 CPL: 100% accuracy (perfect moves)
-            - 11-50 CPL: 70-89% accuracy (good moves) 
-            - 51-100 CPL: 50-69% accuracy (inaccuracies)
-            - 101-200 CPL: 30-49% accuracy (mistakes)
-            - 200+ CPL: 0-29% accuracy (blunders)
+            Based on Chess.com's CAPS2 algorithm research, uses conservative thresholds:
+            - 0-5 CPL: 100% accuracy (perfect moves)
+            - 6-20 CPL: 85-100% accuracy (excellent moves) 
+            - 21-40 CPL: 70-85% accuracy (good moves)
+            - 41-80 CPL: 50-70% accuracy (inaccuracies)
+            - 81-150 CPL: 30-50% accuracy (mistakes)
+            - 150+ CPL: 15-30% accuracy (blunders)
             
-            This gives more realistic results matching Chess.com standards:
+            This gives realistic results matching Chess.com standards:
             - 0 cpl avg = 100% accuracy (perfect play)
-            - 25 cpl avg = 85% accuracy (excellent, 2200+ ELO)
-            - 50 cpl avg = 70% accuracy (strong, 1800-2000 ELO)
-            - 75 cpl avg = 60% accuracy (good, 1600-1800 ELO)
-            - 100 cpl avg = 50% accuracy (intermediate, 1400-1600 ELO)
-            - 150 cpl avg = 35% accuracy (developing, 1000-1200 ELO)
+            - 20 cpl avg = 87% accuracy (excellent, 2200+ ELO)
+            - 40 cpl avg = 70% accuracy (strong, 1800-2000 ELO)
+            - 60 cpl avg = 60% accuracy (good, 1600-1800 ELO)
+            - 80 cpl avg = 50% accuracy (intermediate, 1400-1600 ELO)
+            - 120 cpl avg = 35% accuracy (developing, 1000-1200 ELO)
             - 200+ cpl avg = 20% accuracy (beginner, <1000 ELO)
             """
             if not centipawn_losses:
@@ -1455,21 +1456,24 @@ class ChessAnalysisEngine:
                 # Cap centipawn loss at 1000 to avoid math errors
                 cpl = min(cpl, 1000)
                 
-                # Chess.com-style accuracy calculation with more generous thresholds
-                if cpl <= 10:
-                    move_accuracy = 100.0  # Perfect moves
-                elif cpl <= 50:
-                    # Linear interpolation from 100% to 70% for 10-50 CPL
-                    move_accuracy = 100.0 - (cpl - 10) * 0.75  # 100% to 70%
-                elif cpl <= 100:
-                    # Linear interpolation from 70% to 50% for 50-100 CPL
-                    move_accuracy = 70.0 - (cpl - 50) * 0.4  # 70% to 50%
-                elif cpl <= 200:
-                    # Linear interpolation from 50% to 30% for 100-200 CPL
-                    move_accuracy = 50.0 - (cpl - 100) * 0.2  # 50% to 30%
+                # Chess.com-style accuracy calculation with conservative thresholds
+                if cpl <= 5:
+                    move_accuracy = 100.0  # Only truly perfect moves
+                elif cpl <= 20:
+                    # Linear interpolation from 100% to 85% for 5-20 CPL
+                    move_accuracy = 100.0 - (cpl - 5) * 1.0  # 100% to 85%
+                elif cpl <= 40:
+                    # Linear interpolation from 85% to 70% for 20-40 CPL
+                    move_accuracy = 85.0 - (cpl - 20) * 0.75  # 85% to 70%
+                elif cpl <= 80:
+                    # Linear interpolation from 70% to 50% for 40-80 CPL
+                    move_accuracy = 70.0 - (cpl - 40) * 0.5  # 70% to 50%
+                elif cpl <= 150:
+                    # Linear interpolation from 50% to 30% for 80-150 CPL
+                    move_accuracy = 50.0 - (cpl - 80) * 0.286  # 50% to 30%
                 else:
-                    # Linear interpolation from 30% to 20% for 200+ CPL
-                    move_accuracy = max(20.0, 30.0 - (cpl - 200) * 0.1)  # 30% to 20%
+                    # Linear interpolation from 30% to 15% for 150+ CPL
+                    move_accuracy = max(15.0, 30.0 - (cpl - 150) * 0.1)  # 30% to 15%
                 
                 total_accuracy += move_accuracy
             
