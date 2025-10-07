@@ -296,7 +296,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       const canonicalUserId = canonicalizeUserId(userId, platform)
       let query = supabase
         .from('games')
-        .select('*')
+        .select('id, user_id, platform, result, color, opening, opening_family, accuracy, opponent_rating, my_rating, time_control, played_at, created_at, provider_game_id, total_moves, opponent_name')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
 
