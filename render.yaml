@@ -1,11 +1,13 @@
 services:
   - type: web
-    name: chessanalytics
+    name: chess-analytics-api
     env: python
-    buildCommand: |
-      pip install -r requirements.txt
-      # Skip Stockfish system installation - use Python package only
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd python && uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHONPATH
         value: /opt/render/project/src/python
+      - key: PYTHON_VERSION
+        value: 3.11.0
