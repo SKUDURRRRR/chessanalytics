@@ -626,7 +626,7 @@ class ChessAnalysisEngine:
                 engine.configure({
                     'Skill Level': min(self.config.skill_level, 10),
                     'Threads': 1,
-                    'Hash': 32,
+                    'Hash': 8,  # Reduced from 32 MB to 8 MB for Railway free tier
                     'UCI_AnalyseMode': True
                 })
                 limit = chess.engine.Limit(time=BASIC_ENGINE_PROBE_TIME)
@@ -689,10 +689,13 @@ class ChessAnalysisEngine:
         
         try:
             # Parse PGN
+            print(f"[GAME ANALYSIS] Parsing PGN for game_id: {game_id}, user: {user_id}, platform: {platform}")
+            print(f"[GAME ANALYSIS] PGN preview (first 200 chars): {pgn[:200] if pgn else 'None'}...")
             pgn_io = io.StringIO(pgn)
             game = chess.pgn.read_game(pgn_io)
             
             if not game:
+                print(f"[GAME ANALYSIS] ❌ Failed to parse PGN - chess.pgn.read_game() returned None")
                 return None
             
             # Use provided game_id or extract from PGN headers
@@ -736,6 +739,12 @@ class ChessAnalysisEngine:
             # Collect all moves and board states first
             move_data = []
             for ply_index, move in enumerate(game.mainline_moves(), start=1):
+                # Validate move is legal before adding to move_data
+                if not board.is_legal(move):
+                    print(f"⚠️  WARNING: Illegal move detected during PGN parsing: {move.uci()} at ply {ply_index} in position {board.fen()}")
+                    print(f"   This indicates a corrupted or invalid PGN. Skipping this move.")
+                    continue
+                
                 player_color = 'white' if board.turn == chess.WHITE else 'black'
                 is_user_move = (board.turn == (chess.WHITE if user_is_white else chess.BLACK))
                 fullmove_number = board.fullmove_number
@@ -750,6 +759,12 @@ class ChessAnalysisEngine:
                 })
                 board.push(move)
             
+            print(f"[GAME ANALYSIS] Successfully parsed {len(move_data)} moves from PGN")
+            
+            if not move_data:
+                print(f"[GAME ANALYSIS] ❌ No valid moves found in PGN")
+                return None
+            
             # Analyze moves in parallel for better performance
             async def analyze_single_move(data):
                 move_analysis = await self.analyze_move(data['board'], data['move'], analysis_type)
@@ -759,8 +774,10 @@ class ChessAnalysisEngine:
                 move_analysis.fullmove_number = data['fullmove_number']
                 return move_analysis
             
-            # Process moves in parallel with concurrency limit to avoid overwhelming the system
-            max_concurrent = min(8, len(move_data))  # Analyze up to 8 moves concurrently
+            # Process moves in parallel with strict concurrency limit for Railway free tier
+            # Railway free tier has ~512 MB RAM, so we need to be very conservative
+            # to prevent OOM kills (exit code -9)
+            max_concurrent = 1  # Only 1 concurrent Stockfish instance to prevent memory exhaustion
             semaphore = asyncio.Semaphore(max_concurrent)
             
             async def analyze_with_semaphore(data):
@@ -1211,13 +1228,14 @@ class ChessAnalysisEngine:
         def run_stockfish_analysis():
             try:
                 with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
-                    # Configure engine for fast analysis (keep original speed)
+                    # Configure engine for minimal memory usage (Railway free tier compatibility)
+                    # Free tier has ~512 MB total RAM, so we need to be conservative
                     engine.configure({
                         'Skill Level': 8,  # Keep original fast settings
                         'UCI_LimitStrength': True,  # Keep original settings
                         'UCI_Elo': 2000,  # Keep original settings
-                        'Threads': 1,  # Keep original settings
-                        'Hash': 32  # Keep original settings
+                        'Threads': 1,  # Single thread for memory efficiency
+                        'Hash': 8  # Reduced to 8 MB to prevent OOM kills on Railway
                     })
                     
                     # Use original fast time limit
@@ -1340,7 +1358,13 @@ class ChessAnalysisEngine:
                     # For now, assume all moves are user moves - this will be determined by the frontend
                     return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=True)
             except Exception as e:
-                print(f"Stockfish move analysis failed: {e}")
+                error_msg = str(e)
+                if "exit code: -9" in error_msg or "died unexpectedly" in error_msg:
+                    print(f"⚠️  Stockfish move analysis failed (likely OOM): {e}")
+                    print(f"   This is usually caused by memory constraints on Railway free tier.")
+                    print(f"   Falling back to basic heuristic analysis...")
+                else:
+                    print(f"Stockfish move analysis failed: {e}")
                 # Fallback to heuristic analysis - run in thread pool since this is not async
                 import asyncio
                 loop = asyncio.new_event_loop()
@@ -1357,7 +1381,12 @@ class ChessAnalysisEngine:
                 result = await loop.run_in_executor(executor, run_stockfish_analysis)
                 return result
         except Exception as e:
-            print(f"Thread pool execution failed: {e}")
+            error_msg = str(e)
+            if "exit code: -9" in error_msg or "died unexpectedly" in error_msg:
+                print(f"⚠️  Thread pool execution failed (likely OOM): {e}")
+                print(f"   Stockfish process was killed by system. Falling back to basic analysis...")
+            else:
+                print(f"Thread pool execution failed: {e}")
             # Fallback to heuristic analysis
             return await self._analyze_move_basic(board, move)
     
