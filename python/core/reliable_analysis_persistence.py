@@ -155,6 +155,9 @@ class ReliableAnalysisPersistence:
         except Exception as e:
             logger.error(f"Error in atomic save: {str(e)}")
             logger.error(traceback.format_exc())
+            print(f"[PERSISTENCE] ❌ ATOMIC SAVE ERROR: {str(e)}")
+            print(f"[PERSISTENCE] Error type: {type(e).__name__}")
+            print(f"[PERSISTENCE] Traceback: {traceback.format_exc()}")
             return False, None
     
     async def _save_to_both_tables(self, analysis_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -200,15 +203,20 @@ class ReliableAnalysisPersistence:
                 'stockfish_depth': analysis_data['stockfish_depth']
             }
 
+            print(f"[PERSISTENCE] Saving to game_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, type={analysis_data['analysis_type']}")
+            
             game_response = self.supabase_service.table('game_analyses').upsert(
                 game_analyses_data,
-                on_conflict='user_id,platform,game_id,analysis_type'
+                on_conflict='user_id,platform,game_id'
             ).execute()
+
+            print(f"[PERSISTENCE] game_analyses response: data={getattr(game_response, 'data', None)}, error={getattr(game_response, 'error', None)}")
 
             game_analysis_id = None
             response_data = getattr(game_response, 'data', None)
             if response_data:
                 game_analysis_id = response_data[0].get('id')
+                print(f"[PERSISTENCE] game_analyses record ID: {game_analysis_id}")
 
             if game_analysis_id is None:
                 fetch_response = self.supabase_service.table('game_analyses').select('id').eq('user_id', analysis_data['user_id']).eq('platform', analysis_data['platform']).eq('game_id', analysis_data['game_id']).eq('analysis_type', analysis_data['analysis_type']).limit(1).execute()
@@ -261,14 +269,19 @@ class ReliableAnalysisPersistence:
                 len(analysis_data.get('moves_analysis') or [])
             )
 
+            print(f"[PERSISTENCE] Saving to move_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, method={analysis_data['analysis_type']}")
+            
             move_response = self.supabase_service.table('move_analyses').upsert(
                 move_analyses_data,
-                on_conflict='user_id,platform,game_id,analysis_method'
+                on_conflict='user_id,platform,game_id'
             ).execute()
 
             move_data = getattr(move_response, 'data', None)
             move_error = getattr(move_response, 'error', None)
             move_count = len(move_data) if isinstance(move_data, list) else 0
+            
+            print(f"[PERSISTENCE] move_analyses response: rows={move_count}, error={move_error}")
+            
             logger.info(
                 "move_analyses upsert result rows=%s error=%s",
                 move_count,
@@ -276,11 +289,15 @@ class ReliableAnalysisPersistence:
             )
             if not move_data:
                 logger.debug("move_analyses raw response: %s", getattr(move_response, '__dict__', {}))
+                print(f"[PERSISTENCE] move_analyses raw response: {getattr(move_response, '__dict__', {})}")
 
             return game_analysis_id is not None, game_analysis_id
 
         except Exception as e:
             logger.error(f"Error saving to both tables: {str(e)}")
+            print(f"[PERSISTENCE] ❌ ERROR SAVING TO BOTH TABLES: {str(e)}")
+            print(f"[PERSISTENCE] Error type: {type(e).__name__}")
+            print(f"[PERSISTENCE] Traceback: {traceback.format_exc()}")
             return False, None
 
     async def _save_to_game_analyses(self, analysis_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -328,7 +345,7 @@ class ReliableAnalysisPersistence:
 
             response = self.supabase_service.table('game_analyses').upsert(
                 game_analyses_data,
-                on_conflict='user_id,platform,game_id,analysis_type'
+                on_conflict='user_id,platform,game_id'
             ).execute()
 
             record_id = None
