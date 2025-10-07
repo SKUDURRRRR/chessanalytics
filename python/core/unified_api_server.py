@@ -50,6 +50,8 @@ print_performance_config(performance_config)
 
 # Initialize secure CORS configuration
 cors_origins = config.api.cors_origins or ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"]
+print(f"🔒 CORS Origins configured: {cors_origins}")
+
 # Use production CORS config if we have custom origins, otherwise use default
 if config.api.cors_origins:
     cors_config = CORSSecurityConfig(
@@ -59,8 +61,10 @@ if config.api.cors_origins:
         allow_credentials=True,
         max_age=3600
     )
+    print(f"✅ Using production CORS configuration")
 else:
     cors_config = get_default_cors_config()
+    print(f"⚠️  Using default localhost CORS configuration")
 
 # Initialize Supabase clients with fallback for missing config
 if config.database.url and config.database.anon_key:
