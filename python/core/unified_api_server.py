@@ -2664,23 +2664,46 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         db_client = supabase
         
         # Try to find the game by provider_game_id first
-        game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
-            'provider_game_id', game_id
-        ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
-        
-        # If not found, try by game_id
-        if not game_response.data:
+        print(f"[SINGLE GAME ANALYSIS] Querying games_pgn by provider_game_id: {game_id}")
+        try:
             game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
-                'game_id', game_id
+                'provider_game_id', game_id
             ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
-        
-        if not game_response.data:
+            print(f"[SINGLE GAME ANALYSIS] Query result: {game_response}")
+            print(f"[SINGLE GAME ANALYSIS] Has data: {game_response is not None and hasattr(game_response, 'data')}")
+            if game_response and hasattr(game_response, 'data'):
+                print(f"[SINGLE GAME ANALYSIS] Data value: {game_response.data}")
+        except Exception as query_error:
+            print(f"[SINGLE GAME ANALYSIS] ❌ Database query error: {query_error}")
             return UnifiedAnalysisResponse(
                 success=False,
-                message=f"Game not found: {game_id}"
+                message=f"Database query failed: {str(query_error)}"
             )
         
-        pgn_data = game_response.data.get('pgn')
+        # If not found, try by game_id
+        if not game_response or not hasattr(game_response, 'data') or not game_response.data:
+            print(f"[SINGLE GAME ANALYSIS] Not found by provider_game_id, trying by game_id column")
+            try:
+                game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
+                    'game_id', game_id
+                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                print(f"[SINGLE GAME ANALYSIS] Second query result: {game_response}")
+            except Exception as query_error:
+                print(f"[SINGLE GAME ANALYSIS] ❌ Second database query error: {query_error}")
+                return UnifiedAnalysisResponse(
+                    success=False,
+                    message=f"Database query failed: {str(query_error)}"
+                )
+        
+        if not game_response or not hasattr(game_response, 'data') or not game_response.data:
+            print(f"[SINGLE GAME ANALYSIS] ❌ Game not found in games_pgn table: {game_id}")
+            return UnifiedAnalysisResponse(
+                success=False,
+                message=f"Game not found: {game_id}. Please ensure the game has been imported first."
+            )
+        
+        print(f"[SINGLE GAME ANALYSIS] Extracting PGN data from response")
+        pgn_data = game_response.data.get('pgn') if isinstance(game_response.data, dict) else None
         if not pgn_data:
             return UnifiedAnalysisResponse(
                 success=False,
@@ -2690,12 +2713,17 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         # Ensure the game exists in the games table for foreign key constraint
         # Check if game exists in games table
         print(f"[SINGLE GAME ANALYSIS] Checking if game exists in games table: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
-        games_check = db_client.table('games').select('id').eq(
-            'provider_game_id', game_id
-        ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+        games_check = None
+        try:
+            games_check = db_client.table('games').select('id').eq(
+                'provider_game_id', game_id
+            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data if (games_check and hasattr(games_check, 'data')) else 'None'}")
+        except Exception as check_error:
+            print(f"[SINGLE GAME ANALYSIS] ❌ Error checking games table: {check_error}")
+            games_check = None
         
-        print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data}")
-        if not games_check.data:
+        if not games_check or not hasattr(games_check, 'data') or not games_check.data:
             print(f"[SINGLE GAME ANALYSIS] Game {game_id} not found in games table, creating basic record...")
             # Parse PGN to extract basic game info
             import chess.pgn
@@ -2798,11 +2826,15 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         if game_analysis:
             # Validate foreign key constraint before saving
             print(f"[SINGLE GAME ANALYSIS] Validating foreign key constraint before saving...")
-            fk_validation = db_client.table('games').select('id').eq(
-                'provider_game_id', game_id
-            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            try:
+                fk_validation = db_client.table('games').select('id').eq(
+                    'provider_game_id', game_id
+                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            except Exception as fk_error:
+                print(f"[SINGLE GAME ANALYSIS] ❌ Error during FK validation: {fk_error}")
+                fk_validation = None
             
-            if not fk_validation.data:
+            if not fk_validation or not hasattr(fk_validation, 'data') or not fk_validation.data:
                 print(f"[SINGLE GAME ANALYSIS] ❌ CRITICAL: Foreign key validation failed - game not found in games table!")
                 return UnifiedAnalysisResponse(
                     success=False,
