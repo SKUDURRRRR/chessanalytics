@@ -207,7 +207,7 @@ class ReliableAnalysisPersistence:
             
             game_response = self.supabase_service.table('game_analyses').upsert(
                 game_analyses_data,
-                on_conflict='user_id,platform,game_id'
+                on_conflict='user_id,platform,game_id,analysis_type'
             ).execute()
 
             print(f"[PERSISTENCE] game_analyses response: data={getattr(game_response, 'data', None)}, error={getattr(game_response, 'error', None)}")
@@ -273,7 +273,7 @@ class ReliableAnalysisPersistence:
             
             move_response = self.supabase_service.table('move_analyses').upsert(
                 move_analyses_data,
-                on_conflict='user_id,platform,game_id'
+                on_conflict='user_id,platform,game_id,analysis_method'
             ).execute()
 
             move_data = getattr(move_response, 'data', None)
@@ -345,7 +345,7 @@ class ReliableAnalysisPersistence:
 
             response = self.supabase_service.table('game_analyses').upsert(
                 game_analyses_data,
-                on_conflict='user_id,platform,game_id'
+                on_conflict='user_id,platform,game_id,analysis_type'
             ).execute()
 
             record_id = None

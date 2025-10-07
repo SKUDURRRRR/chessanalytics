@@ -3767,7 +3767,7 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
 
         response = supabase_service.table('move_analyses').upsert(
             data,
-            on_conflict='user_id,platform,game_id'
+            on_conflict='user_id,platform,game_id,analysis_method'
         ).execute()
         return bool(getattr(response, 'data', None))
 
