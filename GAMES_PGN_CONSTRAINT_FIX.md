@@ -63,18 +63,20 @@ Expected columns:
 
 ### Step 3: Add Stockfish to Railway
 
-Railway doesn't include Stockfish by default. Add `python/nixpacks.toml`:
+Railway doesn't include Stockfish by default. The `python/nixpacks.toml` file has been created to add Stockfish while preserving Nixpacks' automatic Python setup:
 
 ```toml
 [phases.setup]
-nixPkgs = ["python39", "stockfish"]
-
-[phases.install]
-cmds = ["pip install -r requirements.txt"]
+nixPkgs = ["...", "stockfish"]
 
 [start]
 cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
 ```
+
+**Why `"..."`?**
+- The `"..."` tells Nixpacks to include its auto-detected packages (Python, pip, etc.)
+- Then we add `"stockfish"` on top
+- This prevents the "pip: command not found" error that happens when manually specifying Python packages
 
 ### Step 4: Deploy Updated Backend
 
