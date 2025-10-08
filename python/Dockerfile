@@ -6,6 +6,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Find where Stockfish is actually installed
+RUN which stockfish && stockfish --version
+
 # Set working directory
 WORKDIR /app
 
@@ -16,15 +19,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Find the actual Stockfish path and set it
+RUN STOCKFISH_PATH=$(which stockfish) && echo "Found Stockfish at: $STOCKFISH_PATH" && echo "STOCKFISH_PATH=$STOCKFISH_PATH" >> /etc/environment
+
 # Set environment variables
-ENV STOCKFISH_PATH=/usr/bin/stockfish
 ENV PYTHONPATH=/app
-
-# Ensure Stockfish path is correct (override any .env file)
-RUN echo "STOCKFISH_PATH=/usr/bin/stockfish" >> /etc/environment
-
-# Test that Stockfish is actually working
-RUN /usr/bin/stockfish --version
 
 # Expose port
 EXPOSE 8000
