@@ -276,11 +276,11 @@ const MoveClassificationBadge = ({ classification }: { classification: MoveClass
   // Use more padding for longer text classifications
   const getPaddingClass = (classification: MoveClassification) => {
     const longTextClassifications = ['mistake', 'blunder', 'inaccuracy', 'uncategorized']
-    return longTextClassifications.includes(classification) ? 'px-3' : 'px-2.5'
+    return longTextClassifications.includes(classification) ? 'px-3 py-1' : 'px-3 py-1'
   }
   
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full ${getPaddingClass(classification)} py-1 text-xs font-medium ${classificationBadgeStyles[classification]}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full ${getPaddingClass(classification)} text-[10px] font-semibold whitespace-nowrap ${classificationBadgeStyles[classification]}`}>
       {classificationLabel[classification]}
     </span>
   )
@@ -1232,13 +1232,13 @@ export default function GameAnalysisPage() {
                                     navigateToMove(whiteMove.index + 1)
                                   }
                                 }}
-                                className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition ${
+                                className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
                                   currentIndex === whiteMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
                                     : 'bg-white/10 text-slate-200 hover:bg-white/20'
                                 }`}
                               >
-                                <span>{whiteMove.san}</span>
+                                <span className="text-xs font-medium truncate">{whiteMove.san}</span>
                                 <MoveClassificationBadge classification={whiteMove.classification} />
                               </button>
                             ) : (
@@ -1255,13 +1255,13 @@ export default function GameAnalysisPage() {
                                     navigateToMove(blackMove.index + 1)
                                   }
                                 }}
-                                className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition ${
+                                className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
                                   currentIndex === blackMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
                                     : 'bg-white/10 text-slate-200 hover:bg-white/20'
                                 }`}
                               >
-                                <span>{blackMove.san}</span>
+                                <span className="text-xs font-medium truncate">{blackMove.san}</span>
                                 <MoveClassificationBadge classification={blackMove.classification} />
                               </button>
                             ) : (
