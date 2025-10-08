@@ -7,7 +7,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Find where Stockfish is actually installed
-RUN which stockfish && stockfish --version
+RUN ls -la /usr/games/stockfish /usr/bin/stockfish /usr/local/bin/stockfish 2>/dev/null || true
+RUN /usr/games/stockfish --version || /usr/bin/stockfish --version || /usr/local/bin/stockfish --version || echo "Stockfish not found in common locations"
 
 # Set working directory
 WORKDIR /app
@@ -20,7 +21,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Find the actual Stockfish path and set it
-RUN STOCKFISH_PATH=$(which stockfish) && echo "Found Stockfish at: $STOCKFISH_PATH" && echo "STOCKFISH_PATH=$STOCKFISH_PATH" >> /etc/environment
+RUN if [ -f /usr/games/stockfish ]; then \
+        echo "STOCKFISH_PATH=/usr/games/stockfish" >> /etc/environment; \
+        echo "Found Stockfish at: /usr/games/stockfish"; \
+    elif [ -f /usr/bin/stockfish ]; then \
+        echo "STOCKFISH_PATH=/usr/bin/stockfish" >> /etc/environment; \
+        echo "Found Stockfish at: /usr/bin/stockfish"; \
+    elif [ -f /usr/local/bin/stockfish ]; then \
+        echo "STOCKFISH_PATH=/usr/local/bin/stockfish" >> /etc/environment; \
+        echo "Found Stockfish at: /usr/local/bin/stockfish"; \
+    else \
+        echo "STOCKFISH_PATH=stockfish" >> /etc/environment; \
+        echo "Using stockfish from PATH"; \
+    fi
 
 # Set environment variables
 ENV PYTHONPATH=/app
