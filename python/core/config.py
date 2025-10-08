@@ -164,19 +164,26 @@ class ChessAnalysisConfig:
         """Find the best available Stockfish executable."""
         # Check environment variable first
         env_path = os.getenv("STOCKFISH_PATH")
-        if env_path and os.path.exists(env_path):
-            return env_path
+        if env_path:
+            # If it's just "stockfish", check if it exists in PATH
+            if env_path == "stockfish" and self._check_command_exists(env_path):
+                return env_path
+            # If it's a full path, check if file exists
+            elif os.path.exists(env_path):
+                return env_path
         
         # Try common paths
         possible_paths = [
-            # Windows winget installation
+            # Linux/Unix paths (Railway production)
+            "/usr/bin/stockfish",
+            "/usr/local/bin/stockfish",
+            "stockfish",
+            # Windows paths (local development)
             os.path.expanduser("~\\AppData\\Local\\Microsoft\\WinGet\\Packages\\"
                              "Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe\\"
                              "stockfish\\stockfish-windows-x86-64-avx2.exe"),
             # Local stockfish directory
             os.path.join(os.path.dirname(os.path.dirname(__file__)), "stockfish", "stockfish-windows-x86-64-avx2.exe"),
-            # System PATH
-            "stockfish",
             "stockfish.exe"
         ]
         
