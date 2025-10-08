@@ -693,22 +693,33 @@ export default function GameAnalysisPage() {
       const moveRow = Math.floor(currentMoveIndex / 2)
       const totalRows = Math.ceil(processedData.moves.length / 2)
       
+      console.log('Auto-scroll debug:', {
+        currentIndex,
+        currentMoveIndex,
+        moveRow,
+        totalRows,
+        currentTimelineOffset: timelineScrollOffset
+      })
+      
       // Calculate the optimal scroll offset to show the current move
       let newOffset = timelineScrollOffset
       
       if (moveRow < timelineScrollOffset) {
         // Current move is above visible area, scroll up
         newOffset = Math.max(0, moveRow)
+        console.log('Scrolling up to:', newOffset)
       } else if (moveRow >= timelineScrollOffset + 3) {
         // Current move is below visible area, scroll down
         newOffset = Math.min(totalRows - 3, moveRow - 2)
+        console.log('Scrolling down to:', newOffset)
       }
       
       if (newOffset !== timelineScrollOffset) {
+        console.log('Updating timeline offset from', timelineScrollOffset, 'to', newOffset)
         setTimelineScrollOffset(newOffset)
       }
     }
-  }, [currentIndex, processedData.moves.length])
+  }, [currentIndex, processedData.moves.length, timelineScrollOffset])
 
   // Keyboard navigation for chessboard
   useEffect(() => {
@@ -718,28 +729,38 @@ export default function GameAnalysisPage() {
         return
       }
 
+      console.log('Keyboard event:', event.key, 'currentIndex:', currentIndex)
+
       switch (event.key) {
         case 'ArrowLeft':
           event.preventDefault()
+          console.log('Arrow left - navigating to:', currentIndex - 1)
           navigateToMove(currentIndex - 1)
           break
         case 'ArrowRight':
           event.preventDefault()
+          console.log('Arrow right - navigating to:', currentIndex + 1)
           navigateToMove(currentIndex + 1)
           break
         case 'Home':
           event.preventDefault()
+          console.log('Home - navigating to: 0')
           navigateToMove(0)
           break
         case 'End':
           event.preventDefault()
+          console.log('End - navigating to:', processedData.positions.length - 1)
           navigateToMove(processedData.positions.length - 1)
           break
       }
     }
 
+    console.log('Adding keyboard event listener')
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      console.log('Removing keyboard event listener')
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   }, [currentIndex, processedData.positions.length])
 
   const derivedStats = useMemo(() => {
@@ -788,7 +809,9 @@ export default function GameAnalysisPage() {
   const currentScore = currentMove ? currentMove.scoreForPlayer : 0
 
   const navigateToMove = (index: number) => {
-    setCurrentIndex(clamp(index, 0, processedData.positions.length - 1))
+    const clampedIndex = clamp(index, 0, processedData.positions.length - 1)
+    console.log('navigateToMove called:', { index, clampedIndex, currentIndex, totalPositions: processedData.positions.length })
+    setCurrentIndex(clampedIndex)
   }
 
   const handleBack = () => {
