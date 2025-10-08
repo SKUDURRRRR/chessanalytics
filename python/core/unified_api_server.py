@@ -587,22 +587,36 @@ async def get_game_analyses(
             return []
         
         # Clean and serialize the data to avoid circular reference issues
+        # Convert to JSON and back to ensure all objects are serializable
+        import json
         cleaned_data = []
         for record in response.data:
-            # Create a clean copy without problematic fields
+            # Create a clean copy with only simple types
             clean_record = {}
             for key, value in record.items():
-                # Skip fields that might cause serialization issues
-                if key in ['moves_analysis', 'tactical_patterns', 'positional_patterns', 'strategic_themes']:
-                    # Convert complex fields to simple representations
-                    if value and isinstance(value, (dict, list)):
-                        clean_record[key] = f"[Complex data: {len(str(value))} chars]"
-                    else:
+                try:
+                    # Try to serialize the value
+                    if value is None:
+                        clean_record[key] = None
+                    elif isinstance(value, (str, int, float, bool)):
                         clean_record[key] = value
-                else:
-                    clean_record[key] = value
+                    elif isinstance(value, (dict, list)):
+                        # For complex types, try to serialize and deserialize to ensure they're clean
+                        try:
+                            json_str = json.dumps(value)
+                            clean_record[key] = json.loads(json_str)
+                        except (TypeError, ValueError):
+                            # If serialization fails, skip this field or use a placeholder
+                            clean_record[key] = None
+                    else:
+                        # For any other type, convert to string
+                        clean_record[key] = str(value)
+                except Exception as e:
+                    print(f"[DEBUG] Error serializing field {key}: {e}")
+                    clean_record[key] = None
             cleaned_data.append(clean_record)
         
+        print(f"[DEBUG] Cleaned {len(cleaned_data)} records for serialization")
         return cleaned_data
         
     except Exception as e:
