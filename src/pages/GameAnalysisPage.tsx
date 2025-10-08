@@ -272,11 +272,19 @@ const classificationLabel: Record<MoveClassification, string> = {
   uncategorized: 'Move',
 }
 
-const MoveClassificationBadge = ({ classification }: { classification: MoveClassification }) => (
-  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${classificationBadgeStyles[classification]}`}>
-    {classificationLabel[classification]}
-  </span>
-)
+const MoveClassificationBadge = ({ classification }: { classification: MoveClassification }) => {
+  // Use more padding for longer text classifications
+  const getPaddingClass = (classification: MoveClassification) => {
+    const longTextClassifications = ['mistake', 'blunder', 'inaccuracy', 'uncategorized']
+    return longTextClassifications.includes(classification) ? 'px-3' : 'px-2.5'
+  }
+  
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full ${getPaddingClass(classification)} py-1 text-xs font-medium ${classificationBadgeStyles[classification]}`}>
+      {classificationLabel[classification]}
+    </span>
+  )
+}
 
 const EvaluationBar = ({
   score,
