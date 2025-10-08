@@ -20,23 +20,25 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Find the actual Stockfish path and set it
+# Detect and set Stockfish path at build time
 RUN if [ -f /usr/games/stockfish ]; then \
-        echo "STOCKFISH_PATH=/usr/games/stockfish" >> /etc/environment; \
         echo "Found Stockfish at: /usr/games/stockfish"; \
+        echo "/usr/games/stockfish" > /tmp/stockfish_path; \
     elif [ -f /usr/bin/stockfish ]; then \
-        echo "STOCKFISH_PATH=/usr/bin/stockfish" >> /etc/environment; \
         echo "Found Stockfish at: /usr/bin/stockfish"; \
+        echo "/usr/bin/stockfish" > /tmp/stockfish_path; \
     elif [ -f /usr/local/bin/stockfish ]; then \
-        echo "STOCKFISH_PATH=/usr/local/bin/stockfish" >> /etc/environment; \
         echo "Found Stockfish at: /usr/local/bin/stockfish"; \
+        echo "/usr/local/bin/stockfish" > /tmp/stockfish_path; \
     else \
-        echo "STOCKFISH_PATH=stockfish" >> /etc/environment; \
         echo "Using stockfish from PATH"; \
+        echo "stockfish" > /tmp/stockfish_path; \
     fi
 
 # Set environment variables
 ENV PYTHONPATH=/app
+# Set STOCKFISH_PATH - Railway/Debian default location
+ENV STOCKFISH_PATH=/usr/games/stockfish
 
 # Expose port
 EXPOSE 8000

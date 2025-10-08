@@ -46,8 +46,10 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
     print(f"[Game {game_id}] Starting parallel analysis at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
     
     try:
-        # Create engine in this process
-        engine = ChessAnalysisEngine()
+        # Create engine in this process with config stockfish path
+        from .config import get_config
+        config = get_config()
+        engine = ChessAnalysisEngine(stockfish_path=config.stockfish.path)
         
         # Configure analysis with environment-aware settings
         analysis_type_enum = AnalysisType(analysis_type)

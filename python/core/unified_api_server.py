@@ -2673,8 +2673,13 @@ def _validate_single_game_analysis_request(request: UnifiedAnalysisRequest) -> T
 def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
-    # Always create a new engine to ensure we get the latest Stockfish detection
-    analysis_engine = ChessAnalysisEngine()
+    # Pass stockfish path from config to ensure production paths are checked
+    stockfish_path = config.stockfish.path
+    if stockfish_path:
+        print(f"[ENGINE] Using Stockfish from config: {stockfish_path}")
+    else:
+        print(f"[ENGINE] Warning: No Stockfish path found in config")
+    analysis_engine = ChessAnalysisEngine(stockfish_path=stockfish_path)
     return analysis_engine
 
 async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:

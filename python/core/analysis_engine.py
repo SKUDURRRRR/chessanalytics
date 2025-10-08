@@ -271,25 +271,54 @@ class ChessAnalysisEngine:
     def _find_stockfish_path(self, custom_path: Optional[str]) -> Optional[str]:
         """Find the best available Stockfish executable."""
         if custom_path and os.path.exists(custom_path):
+            print(f"[ENGINE] Using custom Stockfish path: {custom_path}")
             return custom_path
-            
-        # Try common paths
-        possible_paths = [
-            # Windows winget installation
-            os.path.expanduser("~\\AppData\\Local\\Microsoft\\WinGet\\Packages\\"
-                             "Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe\\"
-                             "stockfish\\stockfish-windows-x86-64-avx2.exe"),
-            # Local stockfish directory
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "stockfish", "stockfish-windows-x86-64-avx2.exe"),
-            # System PATH
-            "stockfish",
-            "stockfish.exe"
-        ]
         
+        # Check environment variable
+        env_path = os.getenv("STOCKFISH_PATH")
+        if env_path:
+            if os.path.exists(env_path):
+                print(f"[ENGINE] Using Stockfish from STOCKFISH_PATH env: {env_path}")
+                return env_path
+            elif env_path in ["stockfish", "stockfish.exe"] and self._check_command_exists(env_path):
+                print(f"[ENGINE] Using Stockfish from PATH via env: {env_path}")
+                return env_path
+        
+        # Determine OS-specific paths
+        import platform
+        is_windows = platform.system() == "Windows"
+        
+        if is_windows:
+            # Windows paths for local development
+            possible_paths = [
+                # Local stockfish directory
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), "stockfish", "stockfish-windows-x86-64-avx2.exe"),
+                # Windows winget installation
+                os.path.expanduser("~\\AppData\\Local\\Microsoft\\WinGet\\Packages\\"
+                                 "Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe\\"
+                                 "stockfish\\stockfish-windows-x86-64-avx2.exe"),
+                "stockfish.exe",
+                "stockfish"
+            ]
+        else:
+            # Linux/Unix paths for production (Railway, etc.)
+            possible_paths = [
+                "/usr/games/stockfish",      # Common Debian/Ubuntu location (Railway default)
+                "/usr/bin/stockfish",        # Alternative Linux location
+                "/usr/local/bin/stockfish",  # Custom installation location
+                "stockfish"                   # Try PATH as fallback
+            ]
+        
+        print(f"[ENGINE] Checking Stockfish paths: {possible_paths}")
         for path in possible_paths:
-            if os.path.exists(path) or (path in ["stockfish", "stockfish.exe"] and self._check_command_exists(path)):
+            if os.path.exists(path):
+                print(f"[ENGINE] Found Stockfish at: {path}")
                 return path
-                
+            elif path in ["stockfish", "stockfish.exe"] and self._check_command_exists(path):
+                print(f"[ENGINE] Found Stockfish in PATH: {path}")
+                return path
+        
+        print(f"[ENGINE] No Stockfish executable found")
         return None
     
     def _check_command_exists(self, command: str) -> bool:

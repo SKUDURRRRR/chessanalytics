@@ -217,8 +217,15 @@ def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
     if analysis_engine is None:
-        # Let ChessAnalysisEngine find the best Stockfish path automatically
-        analysis_engine = ChessAnalysisEngine()
+        # Pass stockfish path from config to ensure production paths are checked
+        from .config import get_config
+        config = get_config()
+        stockfish_path = config.stockfish.path
+        if stockfish_path:
+            print(f"[ENGINE] Using Stockfish from config: {stockfish_path}")
+        else:
+            print(f"[ENGINE] Warning: No Stockfish path found in config")
+        analysis_engine = ChessAnalysisEngine(stockfish_path=stockfish_path)
     return analysis_engine
 
 def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> GameAnalysisSummary:
