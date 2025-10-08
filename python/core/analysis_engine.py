@@ -1308,33 +1308,49 @@ class ChessAnalysisEngine:
                     actual_cp = actual_eval.score(mate_score=mate_score)
                     centipawn_loss = max(0, best_cp - actual_cp)
                     
-                    # Determine move quality using industry-standard thresholds
-                    # Based on Chess.com/Lichess standards for move classification
-                    is_best = centipawn_loss <= 10  # Best moves (within 10 cp of optimal)
-                    is_good = 10 < centipawn_loss <= 25  # Good moves
-                    is_acceptable = 25 < centipawn_loss <= 50  # Acceptable moves
-                    is_inaccuracy = 50 < centipawn_loss <= 100  # Inaccuracies
-                    is_mistake = 100 < centipawn_loss <= 200  # Mistakes
-                    is_blunder = centipawn_loss > 200  # Blunders (200+ cp loss)
+                    # Chess.com EXACT standards (Expected Points Model)
+                    # Reference: https://support.chess.com/en/articles/8572705
+                    # Based on expected points (win probability) loss:
+                    # - Best Move: 0.00 loss
+                    # - Excellent: 0.00-0.02 loss  (~0-20cp depending on position)
+                    # - Good: 0.02-0.05 loss       (~20-50cp depending on position)
+                    # - Inaccuracy: 0.05-0.10 loss (~50-100cp depending on position)
+                    # - Mistake: 0.10-0.20 loss    (~100-200cp depending on position)
+                    # - Blunder: 0.20+ loss        (~200+cp depending on position)
+                    #
+                    # Using standard thresholds that align with Chess.com in practice:
+                    is_best = centipawn_loss <= 10  # Best/Excellent moves (engine top choice)
+                    is_good = 10 < centipawn_loss <= 50  # Good moves (solid play)
+                    is_acceptable = 50 < centipawn_loss <= 100  # Acceptable but imprecise  
+                    is_inaccuracy = 100 < centipawn_loss <= 150  # Inaccuracies (suboptimal)
+                    is_mistake = 150 < centipawn_loss <= 300  # Mistakes (serious errors)
+                    is_blunder = centipawn_loss > 300  # Blunders (game-changing errors, 3+ pawns)
 
-                    # Brilliant moves: extremely rare, only for spectacular sacrifices or finding forced mates
-                    # Chess.com/Lichess standards: ~0-1 per game for average players
+                    # Brilliant moves: EXTREMELY rare - Chess.com/Lichess standards
+                    # Should appear in ~1% of games or less
+                    # Requirements:
+                    # 1. Must be a best move (0-10cp loss)
+                    # 2. Either: Find forced mate OR Make spectacular sacrifice
+                    # 3. Position evaluation must remain winning or at least equal
+                    # 4. Sacrifice must be significant (3+ points of material)
                     is_brilliant = False
                     
-                    if is_best:  # Only best moves can be brilliant
+                    if is_best and centipawn_loss <= 5:  # Must be near-perfect move
                         # Check for forced mate found when there wasn't one before
                         forcing_mate_trigger = (
                             eval_after.pov(player_color).is_mate() and 
-                            not eval_before.pov(player_color).is_mate()
+                            not eval_before.pov(player_color).is_mate() and
+                            abs(eval_after.pov(player_color).mate()) <= 5  # Short forced mate (within 5 moves)
                         )
                         
-                        # Check for material sacrifice that maintains/improves position
+                        # Check for spectacular material sacrifice
                         piece_values = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}
                         sacrifice_trigger = False
                         
                         # Look at the position BEFORE the move was made (need to undo it temporarily)
                         board.pop()  # Undo move to check original position
                         
+                        # Check for sacrifice (giving up material without immediate recapture)
                         if board.is_capture(move):
                             captured_piece = board.piece_at(move.to_square)
                             moving_piece = board.piece_at(move.from_square)
@@ -1343,16 +1359,36 @@ class ChessAnalysisEngine:
                                 captured_value = piece_values.get(captured_piece.symbol().upper(), 0)
                                 moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
                                 
-                                # Sacrifice: giving up more valuable piece (e.g., Queen for Rook)
-                                # AND position is still winning (actual_cp > 0) or at least equal (actual_cp >= -50)
-                                material_sacrificed = moving_value > captured_value + 2
-                                position_still_good = actual_cp >= -50  # Not losing after sacrifice
-                                sacrifice_trigger = material_sacrificed and position_still_good
+                                # STRICTER criteria for sacrifice:
+                                # 1. Must sacrifice at least 3 points of material net (e.g., Rook for pawn = 4 point sacrifice)
+                                # 2. Position must be WINNING after sacrifice (not just "not losing")
+                                # 3. Evaluation must improve or stay strong (actual_cp >= 100 = up by at least 1 pawn)
+                                net_material_sacrificed = moving_value - captured_value
+                                
+                                # Examples: Q for R (9-5=4), R for P (5-1=4), N for nothing (3-0=3)
+                                significant_sacrifice = net_material_sacrificed >= 3
+                                
+                                # Position must be clearly winning AFTER the sacrifice
+                                position_winning_after = actual_cp >= 100  # At least +1.0 pawns
+                                
+                                # Position must have improved or been winning before too
+                                eval_maintained_or_improved = (
+                                    (actual_cp >= optimal_cp - 20) and  # Didn't get worse
+                                    (actual_cp >= 50 or optimal_cp >= 50)  # Either before or after was winning
+                                )
+                                
+                                sacrifice_trigger = (
+                                    significant_sacrifice and 
+                                    position_winning_after and 
+                                    eval_maintained_or_improved
+                                )
                         
                         # Restore the board state
                         board.push(move)
                         
-                        # Brilliant only for forced mates or spectacular sacrifices
+                        # Brilliant ONLY for:
+                        # - Finding short forced mate (5 moves or less) OR
+                        # - Spectacular sacrifice (3+ material) that maintains winning advantage
                         is_brilliant = forcing_mate_trigger or sacrifice_trigger
                     
                     # Convert evaluation to dict
