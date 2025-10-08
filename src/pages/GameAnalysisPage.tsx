@@ -708,7 +708,39 @@ export default function GameAnalysisPage() {
         setTimelineScrollOffset(newOffset)
       }
     }
-  }, [currentIndex, processedData.moves.length, timelineScrollOffset])
+  }, [currentIndex, processedData.moves.length])
+
+  // Keyboard navigation for chessboard
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only handle keyboard navigation when not typing in input fields
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return
+      }
+
+      switch (event.key) {
+        case 'ArrowLeft':
+          event.preventDefault()
+          navigateToMove(currentIndex - 1)
+          break
+        case 'ArrowRight':
+          event.preventDefault()
+          navigateToMove(currentIndex + 1)
+          break
+        case 'Home':
+          event.preventDefault()
+          navigateToMove(0)
+          break
+        case 'End':
+          event.preventDefault()
+          navigateToMove(processedData.positions.length - 1)
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [currentIndex, processedData.positions.length])
 
   const derivedStats = useMemo(() => {
     const userMoves = processedData.moves.filter(move => move.isUserMove)
@@ -1016,10 +1048,18 @@ export default function GameAnalysisPage() {
                     {...getDarkChessBoardTheme('default')}
                   />
                 </div>
-                <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-sm text-slate-200">
+                <div className="mt-8 flex flex-col items-center justify-center gap-2 text-sm text-slate-200">
+                  <div className="text-xs text-slate-500">Use ← → arrow keys or click buttons to navigate</div>
+                  <div className="flex flex-wrap items-center justify-center gap-4">
                   <div className="flex items-center space-x-1.5">
                     <button
                       onClick={() => navigateToMove(0)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          navigateToMove(0)
+                        }
+                      }}
                       className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
                       aria-label="First move"
                     >
@@ -1027,6 +1067,12 @@ export default function GameAnalysisPage() {
                     </button>
                     <button
                       onClick={() => navigateToMove(currentIndex - 1)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          navigateToMove(currentIndex - 1)
+                        }
+                      }}
                       className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
                       aria-label="Previous move"
                     >
@@ -1034,6 +1080,12 @@ export default function GameAnalysisPage() {
                     </button>
                     <button
                       onClick={() => navigateToMove(currentIndex + 1)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          navigateToMove(currentIndex + 1)
+                        }
+                      }}
                       className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
                       aria-label="Next move"
                     >
@@ -1041,11 +1093,18 @@ export default function GameAnalysisPage() {
                     </button>
                     <button
                       onClick={() => navigateToMove(processedData.positions.length - 1)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          navigateToMove(processedData.positions.length - 1)
+                        }
+                      }}
                       className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
                       aria-label="Last move"
                     >
                       {NAVIGATION_ICONS.last}
                     </button>
+                  </div>
                   </div>
                 </div>
               </div>
@@ -1085,7 +1144,10 @@ export default function GameAnalysisPage() {
             {/* Move Timeline Block */}
             <div className="rounded-2xl border border-white/10 bg-white/[0.08] p-6 shadow-xl shadow-black/40">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Move Timeline</h3>
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Move Timeline</h3>
+                  <div className="text-xs text-slate-500 mt-1">← → to navigate moves</div>
+                </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setTimelineScrollOffset(Math.max(0, timelineScrollOffset - 1))}
