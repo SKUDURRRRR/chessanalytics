@@ -349,6 +349,7 @@ export default function GameAnalysisPage() {
   const [analysisRecord, setAnalysisRecord] = useState<any | null>(null)
   const [pgn, setPgn] = useState<string | null>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [timelineScrollOffset, setTimelineScrollOffset] = useState(0)
   const [autoAnalyzing, setAutoAnalyzing] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
 
@@ -681,8 +682,33 @@ export default function GameAnalysisPage() {
   useEffect(() => {
     if (processedData.positions.length > 0) {
       setCurrentIndex(processedData.positions.length - 1)
+      setTimelineScrollOffset(0) // Reset timeline scroll when game changes
     }
   }, [processedData.positions.length])
+
+  // Auto-scroll timeline to current move
+  useEffect(() => {
+    if (currentIndex > 0) {
+      const currentMoveIndex = currentIndex - 1
+      const moveRow = Math.floor(currentMoveIndex / 2)
+      const totalRows = Math.ceil(processedData.moves.length / 2)
+      
+      // Calculate the optimal scroll offset to show the current move
+      let newOffset = timelineScrollOffset
+      
+      if (moveRow < timelineScrollOffset) {
+        // Current move is above visible area, scroll up
+        newOffset = Math.max(0, moveRow)
+      } else if (moveRow >= timelineScrollOffset + 3) {
+        // Current move is below visible area, scroll down
+        newOffset = Math.min(totalRows - 3, moveRow - 2)
+      }
+      
+      if (newOffset !== timelineScrollOffset) {
+        setTimelineScrollOffset(newOffset)
+      }
+    }
+  }, [currentIndex, processedData.moves.length, timelineScrollOffset])
 
   const derivedStats = useMemo(() => {
     const userMoves = processedData.moves.filter(move => move.isUserMove)
@@ -725,6 +751,7 @@ export default function GameAnalysisPage() {
   const currentMove = currentIndex > 0 ? processedData.moves[currentIndex - 1] : null
 
   const evaluationContainerRef = useRef<HTMLDivElement | null>(null)
+  const timelineContainerRef = useRef<HTMLDivElement | null>(null)
 
   const currentScore = currentMove ? currentMove.scoreForPlayer : 0
 
@@ -1059,9 +1086,29 @@ export default function GameAnalysisPage() {
             <div className="rounded-2xl border border-white/10 bg-white/[0.08] p-6 shadow-xl shadow-black/40">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Move Timeline</h3>
-                <span className="text-xs text-slate-400">Tap to jump</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setTimelineScrollOffset(Math.max(0, timelineScrollOffset - 1))}
+                    disabled={timelineScrollOffset === 0}
+                    className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-xs transition hover:border-white/30 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Previous moves"
+                  >
+                    ↑
+                  </button>
+                  <span className="text-xs text-slate-400">
+                    {timelineScrollOffset + 1}-{Math.min(timelineScrollOffset + 3, Math.ceil(processedData.moves.length / 2))}
+                  </span>
+                  <button
+                    onClick={() => setTimelineScrollOffset(Math.min(Math.ceil(processedData.moves.length / 2) - 3, timelineScrollOffset + 1))}
+                    disabled={timelineScrollOffset >= Math.ceil(processedData.moves.length / 2) - 3}
+                    className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-xs transition hover:border-white/30 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Next moves"
+                  >
+                    ↓
+                  </button>
+                </div>
               </div>
-              <div className="max-h-[200px] overflow-y-auto pr-2 text-sm">
+              <div className="max-h-[200px] overflow-y-auto pr-2 text-sm" ref={timelineContainerRef}>
                 <table className="w-full table-fixed text-left">
                   <thead className="sticky top-0 bg-slate-950/95 backdrop-blur">
                     <tr className="text-xs uppercase text-slate-400">
@@ -1072,15 +1119,22 @@ export default function GameAnalysisPage() {
                   </thead>
                   <tbody>
                     {Array.from({ length: Math.min(3, Math.ceil(processedData.moves.length / 2)) }).map((_, row) => {
-                      const whiteMove = processedData.moves[row * 2]
-                      const blackMove = processedData.moves[row * 2 + 1]
+                      const actualRow = row + timelineScrollOffset
+                      const whiteMove = processedData.moves[actualRow * 2]
+                      const blackMove = processedData.moves[actualRow * 2 + 1]
                       return (
-                        <tr key={row} className="border-b border-white/10 last:border-b-0">
-                          <td className="py-2 pr-2 text-xs text-slate-400">{row + 1}</td>
+                        <tr key={actualRow} className="border-b border-white/10 last:border-b-0">
+                          <td className="py-2 pr-2 text-xs text-slate-400">{actualRow + 1}</td>
                           <td className="py-2 pr-2">
                             {whiteMove ? (
                               <button
                                 onClick={() => navigateToMove(whiteMove.index + 1)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    navigateToMove(whiteMove.index + 1)
+                                  }
+                                }}
                                 className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition ${
                                   currentIndex === whiteMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
@@ -1098,6 +1152,12 @@ export default function GameAnalysisPage() {
                             {blackMove ? (
                               <button
                                 onClick={() => navigateToMove(blackMove.index + 1)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    navigateToMove(blackMove.index + 1)
+                                  }
+                                }}
                                 className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition ${
                                   currentIndex === blackMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
