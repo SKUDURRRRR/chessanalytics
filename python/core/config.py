@@ -195,6 +195,7 @@ class ChessAnalysisConfig:
         else:
             # Linux/Unix paths first for production
             possible_paths = [
+                "/usr/games/stockfish",  # Common Debian/Ubuntu location
                 "/usr/bin/stockfish",
                 "/usr/local/bin/stockfish", 
                 "stockfish"
