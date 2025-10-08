@@ -195,11 +195,16 @@ class ChessAnalysisConfig:
         else:
             # Linux/Unix paths first for production
             possible_paths = [
-                "/usr/games/stockfish",  # Common Debian/Ubuntu location
+                "/usr/games/stockfish",  # Common Debian/Ubuntu location (Railway)
                 "/usr/bin/stockfish",
                 "/usr/local/bin/stockfish", 
                 "stockfish"
             ]
+            
+            # Force check the Railway path first
+            if os.path.exists("/usr/games/stockfish"):
+                print(f"[STOCKFISH] Found Stockfish at /usr/games/stockfish (Railway path)")
+                return "/usr/games/stockfish"
         
         print(f"[STOCKFISH] Checking possible paths: {possible_paths}")
         
