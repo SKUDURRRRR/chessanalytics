@@ -312,6 +312,7 @@ const NAVIGATION_ICONS: Record<'first' | 'prev' | 'next' | 'last', string> = {
 }
 
 export default function GameAnalysisPage() {
+  console.log('🚀 GameAnalysisPage component loaded - debugging version active!')
   const { platform: platformParam, userId: userParam, gameId: gameParam } = useParams()
   const platform = canonicalizePlatform(platformParam)
   const [boardWidth, setBoardWidth] = useState(700)
@@ -693,13 +694,14 @@ export default function GameAnalysisPage() {
       const moveRow = Math.floor(currentMoveIndex / 2)
       const totalRows = Math.ceil(processedData.moves.length / 2)
       
-      console.log('Auto-scroll debug:', {
+      console.log('📜 TIMELINE AUTO-SCROLL DEBUG:', {
         currentIndex,
         currentMoveIndex,
         moveRow,
         totalRows,
         currentTimelineOffset: timelineScrollOffset
       })
+      console.log('📜 TIMELINE: Should scroll to show move', currentMoveIndex + 1)
       
       // Calculate the optimal scroll offset to show the current move
       let newOffset = timelineScrollOffset
@@ -729,7 +731,8 @@ export default function GameAnalysisPage() {
         return
       }
 
-      console.log('Keyboard event:', event.key, 'currentIndex:', currentIndex)
+      console.log('🎹 KEYBOARD EVENT:', event.key, 'currentIndex:', currentIndex)
+      console.log('🎹 KEYBOARD DEBUG: Arrow keys should work now!')
 
       switch (event.key) {
         case 'ArrowLeft':
@@ -811,6 +814,7 @@ export default function GameAnalysisPage() {
   const navigateToMove = (index: number) => {
     const clampedIndex = clamp(index, 0, processedData.positions.length - 1)
     console.log('navigateToMove called:', { index, clampedIndex, currentIndex, totalPositions: processedData.positions.length })
+    console.log('🔥 NAVIGATION DEBUG: Moving from', currentIndex, 'to', clampedIndex)
     setCurrentIndex(clampedIndex)
   }
 
