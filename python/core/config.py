@@ -209,10 +209,13 @@ class ChessAnalysisConfig:
         """Check if a command exists in the system PATH."""
         try:
             import subprocess
+            print(f"[STOCKFISH] Checking if command '{command}' exists in PATH")
             result = subprocess.run([command, "--version"], 
                                  capture_output=True, timeout=5, check=False)
+            print(f"[STOCKFISH] Command '{command}' result: returncode={result.returncode}, stdout={result.stdout.decode()[:100] if result.stdout else 'None'}")
             return result.returncode == 0
-        except:
+        except Exception as e:
+            print(f"[STOCKFISH] Exception checking command '{command}': {e}")
             return False
     
     def save_to_file(self, file_path: Optional[str] = None) -> bool:

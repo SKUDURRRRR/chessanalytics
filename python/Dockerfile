@@ -23,6 +23,9 @@ ENV PYTHONPATH=/app
 # Ensure Stockfish path is correct (override any .env file)
 RUN echo "STOCKFISH_PATH=/usr/bin/stockfish" >> /etc/environment
 
+# Test that Stockfish is actually working
+RUN /usr/bin/stockfish --version
+
 # Expose port
 EXPOSE 8000
 
