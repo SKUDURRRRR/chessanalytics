@@ -102,8 +102,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       // Set default values for removed services
       const optimizedEloStats = null
 
-      console.log('SimpleAnalytics received data:', analysisResult)
-      console.log('Comprehensive analytics:', comprehensiveAnalytics)
+      console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
+      console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.totalGames)
       console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
       console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
       console.log('Endgame accuracy:', analysisResult?.average_endgame_accuracy)
