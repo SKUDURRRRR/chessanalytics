@@ -164,12 +164,16 @@ class ChessAnalysisConfig:
         """Find the best available Stockfish executable."""
         # Check environment variable first
         env_path = os.getenv("STOCKFISH_PATH")
+        print(f"[STOCKFISH] Environment STOCKFISH_PATH: {env_path}")
+        
         if env_path:
             # If it's just "stockfish", check if it exists in PATH
             if env_path == "stockfish" and self._check_command_exists(env_path):
+                print(f"[STOCKFISH] Found stockfish in PATH via env var")
                 return env_path
             # If it's a full path, check if file exists
             elif os.path.exists(env_path):
+                print(f"[STOCKFISH] Found stockfish at env path: {env_path}")
                 return env_path
         
         # Try common paths
@@ -187,10 +191,18 @@ class ChessAnalysisConfig:
             "stockfish.exe"
         ]
         
+        print(f"[STOCKFISH] Checking possible paths: {possible_paths}")
+        
         for path in possible_paths:
-            if os.path.exists(path) or (path in ["stockfish", "stockfish.exe"] and self._check_command_exists(path)):
+            exists = os.path.exists(path)
+            in_path = path in ["stockfish", "stockfish.exe"] and self._check_command_exists(path)
+            print(f"[STOCKFISH] Path {path}: exists={exists}, in_path={in_path}")
+            
+            if exists or in_path:
+                print(f"[STOCKFISH] Found stockfish at: {path}")
                 return path
         
+        print(f"[STOCKFISH] No stockfish executable found")
         return None
     
     def _check_command_exists(self, command: str) -> bool:
