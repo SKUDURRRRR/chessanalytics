@@ -578,13 +578,32 @@ async def get_game_analyses(
         response = supabase.table("unified_analyses").select("*").eq("user_id", canonical_user_id).eq("platform", platform).execute()
         
         print(f"[DEBUG] Query response: {len(response.data) if response.data else 0} records found")
+        if response.data:
+            print(f"[DEBUG] First record keys: {list(response.data[0].keys()) if response.data[0] else 'No keys'}")
+            print(f"[DEBUG] Sample record: {str(response.data[0])[:200]}..." if response.data[0] else "No sample")
         
         if not response.data or len(response.data) == 0:
             print(f"[analyses] No data found for user {canonical_user_id} on {platform}")
             return []
         
-        # Return the raw game data with moves_analysis
-        return response.data
+        # Clean and serialize the data to avoid circular reference issues
+        cleaned_data = []
+        for record in response.data:
+            # Create a clean copy without problematic fields
+            clean_record = {}
+            for key, value in record.items():
+                # Skip fields that might cause serialization issues
+                if key in ['moves_analysis', 'tactical_patterns', 'positional_patterns', 'strategic_themes']:
+                    # Convert complex fields to simple representations
+                    if value and isinstance(value, (dict, list)):
+                        clean_record[key] = f"[Complex data: {len(str(value))} chars]"
+                    else:
+                        clean_record[key] = value
+                else:
+                    clean_record[key] = value
+            cleaned_data.append(clean_record)
+        
+        return cleaned_data
         
     except Exception as e:
         print(f"Error fetching game analyses: {e}")
@@ -3334,26 +3353,55 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             # Filter out already analyzed games
             games = await _filter_unanalyzed_games(all_games, canonical_user_id, platform, analysis_type, limit)
         else:
-            print('[warn] Database client not available. Using mock games for progress testing.')
-            games = []
+            print('[ERROR] Database client not available. Cannot fetch games for analysis.')
+            analysis_progress[key].update({
+                "is_complete": True,
+                "current_phase": "error",
+                "progress_percentage": 100,
+                "analyzed_games": 0,
+                "total_games": 0,
+                "status_message": "Database connection error. Please try again later.",
+                "error": "Database client not available"
+            })
+            return
             
-        # If no games found, create some mock games for testing
+        # If no games found, don't create mock games - this indicates a real issue
         if not games:
-            print("[TEST] No games found, creating mock games for progress testing")
-            games = [{"id": f"mock_game_{i}", "pgn": "1. e4 e5 2. Nf3 Nc6", "provider_game_id": f"mock_{i}"} for i in range(limit)]
+            print(f"[ERROR] No unanalyzed games found for {user_id} on {platform}")
+            print(f"[ERROR] This could mean:")
+            print(f"[ERROR]   1. All games are already analyzed")
+            print(f"[ERROR]   2. No games exist in database for this user")
+            print(f"[ERROR]   3. Database connection issue")
             
-        analysis_progress[key]["total_games"] = len(games)
-
-        if not games:
-            print(f"No unanalyzed games found for {user_id} on {platform}")
+            # Add debugging information
+            try:
+                if supabase:
+                    # Check if any games exist at all for this user
+                    total_games_check = supabase.table('games').select('provider_game_id').eq('user_id', canonical_user_id).eq('platform', platform).limit(1).execute()
+                    print(f"[DEBUG] Total games in database for {canonical_user_id}: {len(total_games_check.data) if total_games_check.data else 0}")
+                    
+                    # Check if any PGN data exists
+                    pgn_check = supabase.table('games_pgn').select('provider_game_id').eq('user_id', canonical_user_id).eq('platform', platform).limit(1).execute()
+                    print(f"[DEBUG] Total PGN records for {canonical_user_id}: {len(pgn_check.data) if pgn_check.data else 0}")
+                    
+                    # Check analyzed games
+                    analyzed_check = supabase.table('move_analyses').select('game_id').eq('user_id', canonical_user_id).eq('platform', platform).eq('analysis_method', analysis_type).limit(1).execute()
+                    print(f"[DEBUG] Total analyzed games for {canonical_user_id}: {len(analyzed_check.data) if analyzed_check.data else 0}")
+            except Exception as debug_e:
+                print(f"[DEBUG] Error during debugging: {debug_e}")
+            
             analysis_progress[key].update({
                 "is_complete": True,
                 "current_phase": "complete",
                 "progress_percentage": 100,
-                "status_message": "All your recent games have already been analyzed! Your analytics are up to date.",
+                "analyzed_games": 0,
+                "total_games": 0,
+                "status_message": "No unanalyzed games found. All your recent games may already be analyzed, or there may be a database issue.",
                 "all_games_analyzed": True
             })
             return
+            
+        analysis_progress[key]["total_games"] = len(games)
         
         print(f"Found {len(games)} unanalyzed games to analyze")
         
