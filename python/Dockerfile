@@ -20,8 +20,11 @@ COPY . .
 ENV STOCKFISH_PATH=/usr/bin/stockfish
 ENV PYTHONPATH=/app
 
+# Ensure Stockfish path is correct (override any .env file)
+RUN echo "STOCKFISH_PATH=/usr/bin/stockfish" >> /etc/environment
+
 # Expose port
 EXPOSE 8000
 
 # Start the application
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "echo 'STOCKFISH_PATH='$STOCKFISH_PATH && echo 'PORT='$PORT && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
