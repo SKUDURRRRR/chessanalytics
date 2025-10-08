@@ -176,20 +176,29 @@ class ChessAnalysisConfig:
                 print(f"[STOCKFISH] Found stockfish at env path: {env_path}")
                 return env_path
         
-        # Try common paths
-        possible_paths = [
-            # Linux/Unix paths (Railway production)
-            "/usr/bin/stockfish",
-            "/usr/local/bin/stockfish",
-            "stockfish",
-            # Windows paths (local development)
-            os.path.expanduser("~\\AppData\\Local\\Microsoft\\WinGet\\Packages\\"
-                             "Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe\\"
-                             "stockfish\\stockfish-windows-x86-64-avx2.exe"),
-            # Local stockfish directory
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "stockfish", "stockfish-windows-x86-64-avx2.exe"),
-            "stockfish.exe"
-        ]
+        # Try common paths - prioritize based on environment
+        import platform
+        is_windows = platform.system() == "Windows"
+        
+        if is_windows:
+            # Windows paths first for local development
+            possible_paths = [
+                # Local stockfish directory (most likely for development)
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), "stockfish", "stockfish-windows-x86-64-avx2.exe"),
+                # Windows winget installation
+                os.path.expanduser("~\\AppData\\Local\\Microsoft\\WinGet\\Packages\\"
+                                 "Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe\\"
+                                 "stockfish\\stockfish-windows-x86-64-avx2.exe"),
+                "stockfish.exe",
+                "stockfish"
+            ]
+        else:
+            # Linux/Unix paths first for production
+            possible_paths = [
+                "/usr/bin/stockfish",
+                "/usr/local/bin/stockfish", 
+                "stockfish"
+            ]
         
         print(f"[STOCKFISH] Checking possible paths: {possible_paths}")
         
