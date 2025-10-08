@@ -18,7 +18,7 @@
       "description": "Supabase service role key (admin access)"
     },
     "VITE_SUPABASE_URL": {
-      "value": "https://nkeaifrhtyigfmicfwch.supabase.co",
+      "value": "https://your-project-id.supabase.co",
       "required": false,
       "description": "Frontend Supabase URL"
     },

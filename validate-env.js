@@ -3,8 +3,8 @@
 // Environment Variables Validation Script
 // This script validates that all required environment variables are set
 
-const fs = require('fs')
-const path = require('path')
+import fs from 'fs'
+import path from 'path'
 
 console.log('🔍 Validating Environment Variables')
 console.log('===================================')

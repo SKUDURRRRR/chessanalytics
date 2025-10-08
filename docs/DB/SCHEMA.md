@@ -4,7 +4,7 @@
 The Chess Analytics database uses PostgreSQL with Supabase, implementing a comprehensive schema for storing chess game data, user profiles, and personality analysis results.
 
 ## Database Connection
-- **Host**: `nkeaifrhtyigfmicfwch.supabase.co`
+- **Host**: `your-project-id.supabase.co`
 - **Database**: PostgreSQL 15+
 - **Authentication**: Supabase service role key
 
