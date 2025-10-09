@@ -189,21 +189,21 @@ export function UnifiedChessAnalysis({
               position={currentPosition}
               arePiecesDraggable={false}
               boardOrientation={playerColor}
-              boardWidth={Math.min(boardWidth, 350)}
+              boardWidth={Math.min(boardWidth, 400)}
               showBoardNotation={true}
               {...getDarkChessBoardTheme('default')}
             />
             <ModernChessArrows
               arrows={currentMoveArrows}
-              boardWidth={Math.min(boardWidth, 350)}
+              boardWidth={Math.min(boardWidth, 400)}
               boardOrientation={playerColor}
             />
           </div>
           
           {/* Mobile Navigation Controls */}
-          <div className="mt-4 flex flex-col items-center justify-center gap-2 text-sm text-slate-200">
-            <div className="text-xs text-slate-500">Use ← → arrow keys or click buttons to navigate</div>
-            <div className="flex items-center space-x-1.5">
+          <div className="mt-4 flex flex-col items-center justify-center gap-3 text-sm text-slate-200">
+            <div className="text-xs text-slate-500">Use ← → arrow keys or tap buttons to navigate</div>
+            <div className="flex items-center space-x-2">
               <button
                 onClick={() => onMoveNavigation(0)}
                 onKeyDown={(e) => {
@@ -212,7 +212,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(0)
                   }
                 }}
-                className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                className="btn-touch-sm rounded-full border border-white/10 bg-white/10 transition hover:border-white/30 hover:bg-white/20"
                 aria-label="First move"
               >
                 {NAVIGATION_ICONS.first}
@@ -225,7 +225,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(currentIndex - 1)
                   }
                 }}
-                className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                className="btn-touch-sm rounded-full border border-white/10 bg-white/10 transition hover:border-white/30 hover:bg-white/20"
                 aria-label="Previous move"
               >
                 {NAVIGATION_ICONS.prev}
@@ -238,7 +238,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(currentIndex + 1)
                   }
                 }}
-                className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                className="btn-touch-sm rounded-full border border-white/10 bg-white/10 transition hover:border-white/30 hover:bg-white/20"
                 aria-label="Next move"
               >
                 {NAVIGATION_ICONS.next}
@@ -251,7 +251,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(allMoves.length - 1)
                   }
                 }}
-                className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                className="btn-touch-sm rounded-full border border-white/10 bg-white/10 transition hover:border-white/30 hover:bg-white/20"
                 aria-label="Last move"
               >
                 {NAVIGATION_ICONS.last}
@@ -267,8 +267,13 @@ export function UnifiedChessAnalysis({
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
-                <div className="mt-2 text-2xl font-semibold text-white">
-                  {currentMove ? currentMove.san : '—'}
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="text-2xl font-semibold text-white">
+                    {currentMove ? currentMove.san : '—'}
+                  </div>
+                  {currentMove && (
+                    <MoveClassificationBadge classification={currentMove.classification} />
+                  )}
                 </div>
               </div>
             </div>
@@ -298,7 +303,7 @@ export function UnifiedChessAnalysis({
               <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Move Timeline</h3>
               <div className="text-xs text-slate-500 mt-1">← → to navigate moves • Scroll to see all moves</div>
             </div>
-            <div ref={timelineRef} className="max-h-[100px] overflow-y-auto pr-2 text-sm scrollbar-hide">
+            <div ref={timelineRef} className="max-h-[180px] overflow-y-auto pr-2 text-sm scrollbar-hide">
               <table className="w-full table-fixed text-left">
                 <thead className="sticky top-0 bg-slate-950/95 backdrop-blur">
                   <tr className="text-xs uppercase text-slate-400">

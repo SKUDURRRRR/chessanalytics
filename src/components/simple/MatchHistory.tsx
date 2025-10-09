@@ -523,8 +523,9 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
               </div>
             )}
           </div>
-          <div className="text-xs uppercase tracking-wider text-slate-400">{games.length} games loaded</div>
         </div>
+        
+        <div className="py-4 text-xs uppercase tracking-wider text-slate-400">{games.length} games loaded</div>
 
         {analysisNotification && (
           <div className={`mb-4 flex items-start justify-between rounded-2xl border px-3 py-3 text-sm ${analysisNotification.type === 'success' ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100' : 'border-rose-400/40 bg-rose-500/10 text-rose-100'}`}>
@@ -542,7 +543,115 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        {/* Mobile: Card Layout */}
+        <div className="block lg:hidden space-y-3">
+          {games.map(game => {
+            const analyzed = isGameAnalyzed(game)
+            const pending = isAnalysisLoading(game)
+            const queued = isQueuedForAnalysis(game)
+            const accuracy = getGameAccuracy(game)
+
+            return (
+              <div
+                key={game.id}
+                onClick={onGameSelect ? () => handleGameSelectInternal(game) : undefined}
+                className={`card-responsive cursor-pointer transition hover:bg-white/[0.08] ${
+                  onGameSelect ? 'hover:scale-[1.02]' : ''
+                }`}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-sm font-semibold ${getResultColor(game.result)}`}>
+                        {game.result.toUpperCase()}
+                      </span>
+                      <span className="text-xs text-slate-400 capitalize">{game.color}</span>
+                      {queued && !analyzed && (
+                        <span className="inline-flex items-center rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
+                          In queue
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm font-medium text-white truncate">{game.opponent}</div>
+                    <div className="text-xs text-slate-400">
+                      {formatDate(game.played_at)} • {formatTime(game.played_at)}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-medium text-white">{game.rating ?? '--'}</div>
+                    <div className="text-xs text-slate-400">vs {game.opponent_rating ?? '--'}</div>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-400">Time Control:</span>
+                    <div className="font-medium text-slate-200">{getTimeControlCategory(game.time_control)}</div>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Moves:</span>
+                    <div className="font-medium text-slate-200">{game.moves}</div>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Opening:</span>
+                    <div className="font-medium text-slate-200 truncate" title={getOpeningNameWithFallback(game.opening_family, game)}>
+                      {getOpeningNameWithFallback(game.opening_family, game)}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Accuracy:</span>
+                    <div className="font-medium">
+                      {accuracy !== null ? (
+                        <span className={
+                          accuracy >= 90 ? CHESS_ANALYSIS_COLORS.accuracy :
+                          accuracy >= 80 ? 'text-blue-600' :
+                          accuracy >= 70 ? CHESS_ANALYSIS_COLORS.inaccuracies :
+                          CHESS_ANALYSIS_COLORS.blunders
+                        }>
+                          {accuracy.toFixed(1)}%
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">?%</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {onGameSelect && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={event => {
+                        event.stopPropagation()
+                        requestAnalysis(event, game)
+                      }}
+                      disabled={pending || analyzed}
+                      className={`btn-touch-sm rounded-full text-xs font-medium transition ${
+                        analyzed
+                          ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
+                          : pending
+                            ? 'cursor-wait border border-white/10 bg-white/5 text-slate-400'
+                            : 'border border-sky-400/40 bg-sky-500/10 text-sky-200 hover:border-sky-300/60 hover:bg-sky-500/20'
+                      }`}
+                    >
+                      {pending ? (
+                        <span className="inline-flex items-center gap-1">
+                          <span className="inline-flex h-3 w-3 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+                          Analyzing...
+                        </span>
+                      ) : (
+                        <span>{analyzed ? 'Analyzed' : 'Analyze'}</span>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Desktop: Table Layout */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full table-auto">
             <thead>
               <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-400">

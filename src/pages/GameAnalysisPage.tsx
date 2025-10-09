@@ -10,6 +10,8 @@ import { getOpeningNameWithFallback } from '../utils/openingIdentification'
 import { EnhancedGameInsights } from '../components/debug/EnhancedGameInsights'
 import { EnhancedMoveCoaching } from '../components/debug/EnhancedMoveCoaching'
 import { UnifiedChessAnalysis } from '../components/debug/UnifiedChessAnalysis'
+import { ActionMenu } from '../components/ui/ActionMenu'
+import { useMobileOptimizations } from '../hooks/useResponsive'
 import { CHESS_ANALYSIS_COLORS } from '../utils/chessColors'
 import { getDarkChessBoardTheme } from '../utils/chessBoardTheme'
 import { generateMoveArrows, generateModernMoveArrows, Arrow } from '../utils/chessArrows'
@@ -326,29 +328,31 @@ export default function GameAnalysisPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const locationState = (location.state ?? {}) as LocationState
+  const mobileOpts = useMobileOptimizations()
 
   const decodedUserId = userParam ? decodeURIComponent(userParam) : ''
 
-  // Handle responsive board sizing
+  // Handle responsive board sizing with mobile optimizations
   useEffect(() => {
     const updateBoardWidth = () => {
-      if (window.innerWidth < 640) {
-        setBoardWidth(260) // Small screens
-      } else if (window.innerWidth < 768) {
-        setBoardWidth(300) // Medium screens
-      } else if (window.innerWidth < 1024) {
-        setBoardWidth(380) // Large screens
-      } else if (window.innerWidth < 1280) {
-        setBoardWidth(480) // XL screens
+      const containerWidth = window.innerWidth
+      const padding = 32 // Account for container padding
+      const availableWidth = containerWidth - padding
+      
+      // Use mobile optimizations for better performance
+      if (mobileOpts.boardSize === 'small') {
+        setBoardWidth(Math.min(availableWidth * 0.9, 320))
+      } else if (mobileOpts.boardSize === 'medium') {
+        setBoardWidth(Math.min(availableWidth * 0.8, 400))
       } else {
-        setBoardWidth(580) // 2XL screens and up
+        setBoardWidth(Math.min(availableWidth * 0.6, 600))
       }
     }
     
     updateBoardWidth()
     window.addEventListener('resize', updateBoardWidth)
     return () => window.removeEventListener('resize', updateBoardWidth)
-  }, [])
+  }, [mobileOpts.boardSize])
   const decodedGameId = gameParam ? decodeURIComponent(gameParam) : ''
 
   const [loading, setLoading] = useState(true)
@@ -1044,7 +1048,7 @@ export default function GameAnalysisPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="container-responsive py-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={handleBack}
@@ -1054,7 +1058,45 @@ export default function GameAnalysisPage() {
             <span>Back</span>
           </button>
           <div className="text-right text-xs text-slate-300">
-            <div className="flex gap-2">
+            {/* Mobile: Action Menu */}
+            <div className="block lg:hidden">
+              <ActionMenu
+                trigger={
+                  <button className="btn-touch-sm rounded-full border border-white/10 bg-white/10 text-slate-300 hover:text-white hover:bg-white/20 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                  </button>
+                }
+                actions={[
+                  {
+                    id: 'reanalyze',
+                    label: isReanalyzing ? 'Re-analyzing...' : reanalyzeSuccess ? 'Updated!' : 'Re-analyze',
+                    icon: isReanalyzing ? '⏳' : reanalyzeSuccess ? '✅' : '🔄',
+                    onClick: handleReanalyze,
+                    disabled: isReanalyzing || !pgn
+                  },
+                  ...(pgn ? [{
+                    id: 'download',
+                    label: 'Download PGN',
+                    icon: '📥',
+                    onClick: () => {
+                      const blob = new Blob([pgn], { type: 'application/x-chess-pgn' })
+                      const url = URL.createObjectURL(blob)
+                      const link = document.createElement('a')
+                      link.href = url
+                      link.download = `${decodedUserId}_${decodedGameId}.pgn`
+                      link.click()
+                      URL.revokeObjectURL(url)
+                    }
+                  }] : [])
+                ]}
+                title="Game Actions"
+              />
+            </div>
+
+            {/* Desktop: Individual Buttons */}
+            <div className="hidden lg:flex gap-2">
               {/* Re-analyze Button */}
               <button
                 onClick={handleReanalyze}
@@ -1129,10 +1171,10 @@ export default function GameAnalysisPage() {
           </div>
         )}
 
-        <div className="mb-8 grid gap-4 md:grid-cols-[1.3fr,1fr]">
+        <div className="mb-8 grid-responsive lg:grid-cols-[1.3fr,1fr]">
           <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-5 shadow-xl shadow-black/40">
             <h1 className="text-2xl font-semibold text-white">Game Overview</h1>
-            <div className="mt-5 grid gap-4 text-sm text-slate-200 sm:grid-cols-2">
+            <div className="mt-5 grid-responsive text-sm text-slate-200">
               <div>
                 <span className="font-medium">Result: </span>
                 <span className={
@@ -1172,11 +1214,11 @@ export default function GameAnalysisPage() {
           <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-5 shadow-xl shadow-black/40">
             <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
             <p className="mt-1 text-xs text-slate-300">Key highlights from Stockfish at a glance.</p>
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+            <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4">
               {summaryCards.map(card => (
-                <div key={card.label} className="rounded-xl border border-white/10 bg-white/10 p-4 text-center shadow-inner shadow-black/30">
-                  <div className="text-xs uppercase tracking-wide text-slate-300">{card.label}</div>
-                  <div className={`mt-2 text-lg font-semibold ${card.color}`}>{card.value}</div>
+                <div key={card.label} className="flex-1 rounded-xl border border-white/10 bg-white/10 p-2 sm:p-3 md:p-4 text-center shadow-inner shadow-black/30">
+                  <div className="text-xs sm:text-xs uppercase tracking-wide text-slate-300">{card.label}</div>
+                  <div className={`mt-1 sm:mt-2 text-sm sm:text-base md:text-lg font-semibold ${card.color}`}>{card.value}</div>
                 </div>
               ))}
             </div>

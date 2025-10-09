@@ -161,11 +161,11 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
         </ResponsiveContainer>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {traitBadges.map(({ trait, label, score, color }) => (
           <div 
             key={label} 
-            className="group flex cursor-pointer flex-col items-center rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-5 text-center transition hover:border-white/30 hover:bg-white/[0.08]"
+            className="group flex cursor-pointer flex-col items-center rounded-xl sm:rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-3 sm:px-4 sm:py-5 text-center transition hover:border-white/30 hover:bg-white/[0.08]"
             onMouseEnter={event => {
               const rect = event.currentTarget.getBoundingClientRect()
               setActiveTrait({
@@ -178,15 +178,15 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
             onMouseLeave={() => setActiveTrait(null)}
           >
             <div
-              className={`mb-3 flex h-14 w-14 items-center justify-center rounded-full font-semibold text-white transition-transform group-hover:scale-105 ${color.replace('bg-', 'bg-opacity-30 bg-')}`}
+              className={`mb-2 sm:mb-3 flex h-10 w-10 sm:h-14 sm:w-14 items-center justify-center rounded-full font-semibold text-white transition-transform group-hover:scale-105 ${color.replace('bg-', 'bg-opacity-30 bg-')}`}
             >
-              <span className="text-sm">{score}</span>
+              <span className="text-xs sm:text-sm">{score}</span>
             </div>
-            <p className="text-sm font-semibold text-white leading-tight">{label}</p>
-            <div className="mt-2 w-full">
-              <div className="h-1 w-full rounded-full bg-white/10">
+            <p className="text-xs sm:text-sm font-semibold text-white leading-tight">{label}</p>
+            <div className="mt-1.5 sm:mt-2 w-full">
+              <div className="h-0.5 sm:h-1 w-full rounded-full bg-white/10">
                 <div
-                  className={`h-1 rounded-full transition-all duration-300 ${
+                  className={`h-0.5 sm:h-1 rounded-full transition-all duration-300 ${
                     score >= 70 ? 'bg-emerald-400' :
                     score >= 50 ? 'bg-amber-300' :
                     'bg-rose-400'

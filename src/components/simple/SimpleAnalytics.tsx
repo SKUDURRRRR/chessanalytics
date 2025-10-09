@@ -372,7 +372,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="grid-responsive">
         <div className={cardClass}>
           <h3 className="text-xs uppercase tracking-wide text-slate-300">Total Games Analyzed</h3>
           <div className="mt-3 text-2xl font-semibold text-white">{safeData.total_games_analyzed}</div>
@@ -417,7 +417,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           {/* Basic Statistics */}
           <div className={cardClass}>
             <h3 className="mb-4 text-lg font-semibold text-white">Basic Statistics</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+            <div className="grid-responsive text-sm">
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Total Games</span>
                 <div className="text-xl font-semibold text-sky-300">{comprehensiveData.totalGames}</div>
@@ -440,7 +440,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           {/* ELO Statistics */}
           <div className={cardClass}>
             <h3 className="mb-4 text-lg font-semibold text-white">ELO Statistics</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-5">
+            <div className="grid-responsive text-sm">
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Highest</span>
                 <div className="text-lg font-semibold text-emerald-300">{comprehensiveData.highestElo || 'N/A'}</div>
@@ -467,7 +467,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           {/* Color Performance */}
           <div className={cardClass}>
             <h3 className="mb-4 text-lg font-semibold text-white">Color Performance</h3>
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div className={subtleCardClass}>
                 <h4 className="mb-2 text-sm font-semibold text-white">White</h4>
                 <div className="space-y-2 text-sm text-slate-200">
@@ -506,7 +506,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           </div>
 
           {/* Top Time Controls */}
-          <div className={cardClass}>
+          <div className={`${cardClass} hidden`}>
             <h3 className="mb-4 text-lg font-semibold text-white">Time Control Performance</h3>
             <div className="space-y-3">
               {comprehensiveData.timeControlStats.slice(0, 3).map((stat: any, index: number) => (
@@ -533,7 +533,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           {/* Opening Performance - Winning vs Losing */}
           <div className={cardClass}>
             <h3 className="mb-6 text-lg font-semibold text-white">Opening Performance</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Winning Openings */}
               <div>
                 <h4 className="mb-4 text-sm font-semibold text-emerald-200">Winning Openings</h4>
@@ -774,7 +774,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           {/* Game Length Analysis */}
           <div className={cardClass}>
             <h3 className="mb-4 text-lg font-semibold text-white">Game Length Analysis</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm text-slate-200 md:grid-cols-5">
+            <div className="grid-responsive text-sm text-slate-200">
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Avg Length</span>
                 <div className="text-lg font-semibold text-sky-300">{comprehensiveData.gameLengthStats.averageGameLength.toFixed(1)} moves</div>
@@ -801,7 +801,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           {/* Temporal Analysis */}
           <div className={cardClass}>
             <h3 className="mb-4 text-lg font-semibold text-white">Temporal Analysis</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm text-slate-200 md:grid-cols-5">
+            <div className="grid-responsive text-sm text-slate-200">
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">First Game</span>
                 <div className="text-sm font-medium text-white">{comprehensiveData.temporalStats.firstGame ? new Date(comprehensiveData.temporalStats.firstGame).toLocaleDateString() : 'N/A'}</div>
@@ -870,7 +870,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div className={subtleCardClass}>
             <div className="flex justify-between text-sm text-slate-200">
               <span className="text-slate-400">Opening Accuracy</span>

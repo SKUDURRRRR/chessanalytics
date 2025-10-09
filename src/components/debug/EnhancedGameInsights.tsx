@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react'
 import { Chess } from 'chess.js'
 import { PositionalAnalysis } from './PositionalAnalysis'
 import { OpeningTheoryAnalysis } from './OpeningTheoryAnalysis'
-import { ComparativeAnalysis } from './ComparativeAnalysis'
 import { CriticalMomentBoard } from './CriticalMomentBoard'
 import { getMoveClassificationBgColor } from '../../utils/chessColors'
 
@@ -293,6 +292,10 @@ function LearningPoint({ icon, text, color }: { icon: string; text: string; colo
 export function EnhancedGameInsights({ moves, playerColor, currentMove, gameRecord }: EnhancedGameInsightsProps) {
   const userMoves = moves.filter(move => move.isUserMove)
   const opponentMoves = moves.filter(move => !move.isUserMove)
+  
+  // Track whether to show all critical moments or just the first one
+  const [showAllCriticalMoments, setShowAllCriticalMoments] = useState(false)
+  
 
   const tacticalPatterns = useMemo(() => {
     const patterns: TacticalPattern[] = []
@@ -542,7 +545,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
                         ? 'bg-amber-500/20 text-amber-200'
                         : 'bg-rose-500/20 text-rose-200'
                   }`}>
-                    {phase.accuracy.toFixed(1)}% accuracy
+                    {phase.accuracy.toFixed(1)}%
                   </span>
                 </div>
               </div>
@@ -604,7 +607,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
         </div>
         {criticalMoments.length > 0 ? (
           <div className="space-y-4">
-            {criticalMoments.slice(0, 5).map((move, index) => {
+            {(showAllCriticalMoments ? criticalMoments : criticalMoments.slice(0, 1)).map((move, index) => {
               const isBlunder = move.classification === 'blunder'
               const isBrilliant = move.classification === 'brilliant'
               const isMistake = move.classification === 'mistake'
@@ -624,6 +627,18 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
                 />
               )
             })}
+            
+            {/* See All / See Less Button for Critical Moments */}
+            {criticalMoments.length > 1 && (
+              <div className="flex justify-center pt-4">
+                <button
+                  onClick={() => setShowAllCriticalMoments(!showAllCriticalMoments)}
+                  className="px-6 py-2.5 bg-slate-700/50 hover:bg-slate-600/70 text-white rounded-lg border border-white/10 hover:border-white/20 transition-all duration-200 hover:scale-105 font-medium text-sm"
+                >
+                  {showAllCriticalMoments ? 'See Less' : `See All (${criticalMoments.length - 1} more)`}
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-8">
@@ -651,12 +666,6 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
         )}
       </div>
 
-      {/* Comparative Analysis */}
-      <ComparativeAnalysis 
-        moves={moves}
-        playerColor={playerColor}
-        gameRecord={gameRecord}
-      />
     </div>
   )
 }
