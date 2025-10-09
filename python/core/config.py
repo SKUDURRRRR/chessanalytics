@@ -116,9 +116,9 @@ class ChessAnalysisConfig:
         
         return StockfishConfig(
             path=stockfish_path,
-            depth=int(os.getenv("STOCKFISH_DEPTH", "12")),  # Better default depth
-            skill_level=int(os.getenv("STOCKFISH_SKILL_LEVEL", "10")),  # Human-like strength
-            time_limit=float(os.getenv("STOCKFISH_TIME_LIMIT", "2.0")),  # More time for accuracy
+            depth=int(os.getenv("STOCKFISH_DEPTH", "14")),  # Phase 1: Better default depth
+            skill_level=int(os.getenv("STOCKFISH_SKILL_LEVEL", "20")),  # Phase 1: Maximum strength
+            time_limit=float(os.getenv("STOCKFISH_TIME_LIMIT", "0.8")),  # Phase 1: Faster analysis
             use_opening_book=os.getenv("STOCKFISH_USE_OPENING_BOOK", "true").lower() == "true",
             use_endgame_tablebase=os.getenv("STOCKFISH_USE_ENDGAME_TB", "true").lower() == "true",
             max_concurrent=int(os.getenv("STOCKFISH_MAX_CONCURRENT", "4"))

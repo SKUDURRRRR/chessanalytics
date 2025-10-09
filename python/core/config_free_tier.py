@@ -76,14 +76,15 @@ STARTER_TIER_CONFIG = TierConfig(
 
 
 # Railway Hobby Tier Configuration (8 GB RAM, 8 vCPU)
+# Phase 1: Speed + Accuracy optimizations
 RAILWAY_HOBBY_CONFIG = TierConfig(
     # Analysis settings - optimized for Railway Hobby tier
-    analysis_depth=12,          # Deeper analysis
-    skill_level=10,             # Higher skill level
-    time_limit=1.0,             # More time per position
-    threads=4,                  # 4 threads per engine
-    hash_size=128,              # 128 MB hash for better evaluation
-    max_concurrent_analyses=6,  # 6 games in parallel
+    analysis_depth=14,          # Increased from 12 (better accuracy)
+    skill_level=20,             # Maximum strength (not 10!)
+    time_limit=0.8,             # Faster than 1.0s
+    threads=1,                  # Deterministic (not 4!)
+    hash_size=96,               # Better balance (not 128)
+    max_concurrent_analyses=4,  # Conservative for vCPU (not 6)
     enable_deep_mode=True,      # Enable deep analysis
     max_batch_size=10,          # Larger batches
     
