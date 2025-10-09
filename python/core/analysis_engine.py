@@ -110,13 +110,17 @@ PASSED_PAWN_BONUS = [0, 10, 20, 35, 60, 100, 160, 0]
 HANGING_PIECE_VALUE_MULTIPLIER = 0.6
 HANGING_PIECE_MIN_PENALTY = 40
 BASIC_MOVE_CANDIDATE_LIMIT = 5
-# Industry-standard move classification thresholds
-BASIC_BEST_THRESHOLD = 5  # Brilliant/Best moves (more strict)
-BASIC_GOOD_THRESHOLD = 30  # Good moves
-BASIC_ACCEPTABLE_THRESHOLD = 80  # Acceptable moves
-BASIC_INACCURACY_THRESHOLD = 150  # Inaccuracies
-BASIC_MISTAKE_THRESHOLD = 250  # Mistakes
-BASIC_BLUNDER_THRESHOLD = 300  # Blunders
+# Chess.com-aligned move classification thresholds
+# For Stockfish analysis: best(0-5), great(5-15), excellent(15-25), good(25-50), acceptable(25-50), inaccuracy(50-100), mistake(100-200), blunder(200+)
+# For basic analysis: combines categories for simpler classification
+BASIC_BEST_THRESHOLD = 5  # Best moves (0-5cp loss)
+BASIC_GREAT_THRESHOLD = 15  # Great moves (5-15cp loss) - for Stockfish analysis
+BASIC_EXCELLENT_THRESHOLD = 25  # Excellent moves (15-25cp loss) - for Stockfish analysis
+BASIC_GOOD_THRESHOLD = 25  # Good moves threshold for basic analysis (5-25cp loss)
+BASIC_ACCEPTABLE_THRESHOLD = 50  # Acceptable moves (25-50cp loss)
+BASIC_INACCURACY_THRESHOLD = 100  # Inaccuracies (50-100cp loss) - Chess.com standard
+BASIC_MISTAKE_THRESHOLD = 200  # Mistakes (100-200cp loss) - Chess.com standard
+BASIC_BLUNDER_THRESHOLD = 200  # Blunders (200+cp loss) - Chess.com standard
 SEE_MATERIAL_LOSS_TRIGGER = -40
 KING_SAFETY_DROP_TRIGGER = 25
 MOBILITY_DROP_TRIGGER = -2
@@ -178,6 +182,8 @@ class MoveAnalysis:
     depth_analyzed: int
     analysis_time_ms: int
     is_brilliant: bool = False
+    is_great: bool = False  # NEW: Very strong moves (5-15cp loss)
+    is_excellent: bool = False  # NEW: Nearly optimal moves (15-25cp loss)
     is_good: bool = False
     is_acceptable: bool = False
     explanation: str = ""
@@ -730,7 +736,30 @@ class ChessAnalysisEngine:
             # Use provided game_id or extract from PGN headers
             if not game_id:
                 headers = game.headers
-                game_id = headers.get('Site', '').split('/')[-1] if headers.get('Site') else f"game_{datetime.now().timestamp()}"
+                site = headers.get('Site', '')
+                # Extract game ID from Site URL (e.g., "https://www.chess.com/game/live/123456" -> "123456")
+                # or from Link header if Site is not a full URL
+                
+                # List of parts to exclude (domain names, path segments)
+                excluded_parts = {'chess.com', 'lichess.org', 'www.chess.com', 'www.lichess.org', 'game', 'live', ''}
+                
+                if site:
+                    parts = site.split('/')
+                    # Get the last non-empty part that's not a domain/path segment
+                    # Use case-insensitive comparison
+                    game_id = next((part for part in reversed(parts) if part.lower() not in excluded_parts), None)
+                
+                # If we couldn't extract from Site, try Link header
+                if not game_id:
+                    link = headers.get('Link', '')
+                    if link:
+                        parts = link.split('/')
+                        game_id = next((part for part in reversed(parts) if part.lower() not in excluded_parts), None)
+                
+                # Last resort: generate a unique game ID
+                if not game_id:
+                    game_id = f"game_{int(datetime.now().timestamp() * 1000)}"
+                    print(f"[GAME ANALYSIS] ⚠️  Warning: Could not extract game_id from PGN headers. Site: '{site}'. Generated ID: {game_id}")
             
             # Analyze each move
             moves_analysis = []
@@ -934,7 +963,7 @@ class ChessAnalysisEngine:
                 depth_analyzed=0,
                 analysis_time_ms=0,
                 explanation="Illegal move",
-                heuristic_details=None,
+                heuristic_details={},
                 accuracy_score=0.0
             )
         
@@ -956,6 +985,9 @@ class ChessAnalysisEngine:
         see_score = self._static_exchange_evaluation(board, move)
         is_capture = board.is_capture(move)
         gives_check = board.gives_check(move)
+
+        # Calculate move number before making the move
+        move_number = (board.fullmove_number - 1) * 2 + (0 if board.turn == chess.WHITE else 1)
 
         board.push(move)
         after_score, after_features = self._evaluate_board_basic(board)
@@ -1061,26 +1093,80 @@ class ChessAnalysisEngine:
         )
 
         explanation_parts = []
-        if centipawn_loss > 0 and not is_best:
-            explanation_parts.append(f"Costs roughly {int(centipawn_loss)} cp.")
-        if see_score <= SEE_MATERIAL_LOSS_TRIGGER and is_capture:
-            explanation_parts.append(f"Capture on {chess.square_name(move.to_square)} drops material (SEE {int(see_score)} cp).")
-        if new_hanging:
-            for entry in new_hanging:
-                explanation_parts.append(f"Leaves {entry['piece']} on {entry['square']} undefended.")
-        if king_safety_drop >= KING_SAFETY_DROP_TRIGGER:
-            explanation_parts.append(f"King safety worsens by {int(king_safety_drop)} points.")
-        if mobility_change <= MOBILITY_DROP_TRIGGER:
-            explanation_parts.append(f"Reduces mobility by {abs(int(mobility_change))} moves.")
-        if gives_check and centipawn_loss == 0:
-            explanation_parts.append("Delivers check while staying safe.")
-        if best_alternative and best_alternative['uci'] != move.uci() and best_gap > BASIC_BEST_THRESHOLD:
-            explanation_parts.append(f"Better was {best_alternative['san']} ({int(best_alternative['score'])} cp).")
-        if not explanation_parts:
-            if delta > 0:
-                explanation_parts.append(f"Improves evaluation by {int(delta)} cp.")
-            else:
-                explanation_parts.append("Keeps evaluation balanced.")
+        
+        # Enhanced explanations for brilliant moves
+        if is_brilliant:
+            if centipawn_loss > 0:
+                explanation_parts.append(f"Brilliant sacrifice of {int(centipawn_loss)} cp of material")
+            if see_score < -100:
+                explanation_parts.append("in a calculated tactical sacrifice")
+            elif see_score < 0:
+                explanation_parts.append("in a tactical sacrifice")
+            if gives_check:
+                explanation_parts.append("while delivering a powerful check")
+            if king_safety_drop < -30:
+                explanation_parts.append("and dramatically improving king safety")
+            if mobility_change > 15:
+                explanation_parts.append("while significantly increasing piece mobility")
+            if delta > 100:
+                explanation_parts.append("resulting in a massive positional advantage")
+            elif delta > 0:
+                explanation_parts.append("creating a significant advantage")
+            
+            # Always provide a brilliant explanation, even if no specific criteria are met
+            if not explanation_parts:
+                if gives_check:
+                    explanation_parts.append("Brilliant tactical resource that delivers a powerful check")
+                else:
+                    explanation_parts.append("Brilliant tactical resource that creates devastating threats")
+            
+            # Add context about why it's brilliant
+            if len(explanation_parts) == 1 and "Brilliant" in explanation_parts[0]:
+                explanation_parts.append("and demonstrates exceptional chess understanding")
+        
+        # Enhanced explanations for blunders
+        elif is_blunder:
+            if centipawn_loss > 200:
+                explanation_parts.append(f"Catastrophic blunder losing {int(centipawn_loss)} cp")
+            elif centipawn_loss > 100:
+                explanation_parts.append(f"Serious blunder losing {int(centipawn_loss)} cp")
+            if see_score < -200:
+                explanation_parts.append("in a terrible material exchange")
+            if new_hanging:
+                for entry in new_hanging:
+                    explanation_parts.append(f"and hangs {entry['piece']} on {entry['square']}")
+            if king_safety_drop > 50:
+                explanation_parts.append("while severely compromising king safety")
+            if mobility_change < -15:
+                explanation_parts.append("and dramatically reducing piece mobility")
+            if delta < -200:
+                explanation_parts.append("causing a devastating evaluation swing")
+            if not explanation_parts:
+                explanation_parts.append("Serious tactical error with major consequences")
+        
+        # Standard explanations for other moves
+        else:
+            if centipawn_loss > 0 and not is_best:
+                explanation_parts.append(f"Costs roughly {int(centipawn_loss)} cp.")
+            if see_score <= SEE_MATERIAL_LOSS_TRIGGER and is_capture:
+                explanation_parts.append(f"Capture on {chess.square_name(move.to_square)} drops material (SEE {int(see_score)} cp).")
+            if new_hanging:
+                for entry in new_hanging:
+                    explanation_parts.append(f"Leaves {entry['piece']} on {entry['square']} undefended.")
+            if king_safety_drop >= KING_SAFETY_DROP_TRIGGER:
+                explanation_parts.append(f"King safety worsens by {int(king_safety_drop)} points.")
+            if mobility_change <= MOBILITY_DROP_TRIGGER:
+                explanation_parts.append(f"Reduces mobility by {abs(int(mobility_change))} moves.")
+            if gives_check and centipawn_loss == 0:
+                explanation_parts.append("Delivers check while staying safe.")
+            if best_alternative and best_alternative['uci'] != move.uci() and best_gap > BASIC_BEST_THRESHOLD:
+                explanation_parts.append(f"Better was {best_alternative['san']} ({int(best_alternative['score'])} cp).")
+            if not explanation_parts:
+                if delta > 0:
+                    explanation_parts.append(f"Improves evaluation by {int(delta)} cp.")
+                else:
+                    explanation_parts.append("Keeps evaluation balanced.")
+        
         explanation = ' '.join(explanation_parts)
 
         heuristic_details = {
@@ -1153,7 +1239,7 @@ class ChessAnalysisEngine:
         )
         
         # Enhance with coaching comments
-        move_number = (board.fullmove_number - 1) * 2 + (0 if board.turn == chess.WHITE else 1)
+        # Move number was already calculated before the move was made
         # For now, assume all moves are user moves - this will be determined by the frontend
         return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=True)
 
@@ -1209,9 +1295,23 @@ class ChessAnalysisEngine:
             # Determine game phase
             game_phase = self._determine_game_phase(board, move_number)
             
+            # Prepare enhanced move analysis data with board positions
+            enhanced_move_data = move_analysis.__dict__.copy()
+            enhanced_move_data['board_before'] = board.copy()
+            enhanced_move_data['board_after'] = board.copy()
+            enhanced_move_data['move'] = move
+            enhanced_move_data['move_san'] = move_analysis.move_san
+            
+            # Safely access heuristic_details with null checks
+            heuristic_details = move_analysis.heuristic_details or {}
+            enhanced_move_data['evaluation_before'] = heuristic_details.get('before_score', 0)
+            enhanced_move_data['evaluation_after'] = heuristic_details.get('after_score', 0)
+            enhanced_move_data['game_phase'] = game_phase.value
+            enhanced_move_data['fullmove_number'] = move_number
+            
             # Generate coaching comment
             coaching_comment = self.coaching_generator.generate_coaching_comment(
-                move_analysis.__dict__,
+                enhanced_move_data,
                 board,
                 move,
                 game_phase,
@@ -1237,6 +1337,10 @@ class ChessAnalysisEngine:
             
         except Exception as e:
             print(f"Error generating coaching comment: {e}")
+            print(f"Move analysis details: move={move_analysis.move_san}, heuristic_details={type(move_analysis.heuristic_details)}")
+            print(f"Board state: {board.fen()}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             # Return original analysis if coaching fails
             return move_analysis
 
@@ -1318,24 +1422,29 @@ class ChessAnalysisEngine:
                     # - Mistake: 0.10-0.20 loss    (~100-200cp depending on position)
                     # - Blunder: 0.20+ loss        (~200+cp depending on position)
                     #
-                    # Using standard thresholds that align with Chess.com in practice:
-                    is_best = centipawn_loss <= 10  # Best/Excellent moves (engine top choice)
-                    is_good = 10 < centipawn_loss <= 50  # Good moves (solid play)
-                    is_acceptable = 50 < centipawn_loss <= 100  # Acceptable but imprecise  
-                    is_inaccuracy = 100 < centipawn_loss <= 150  # Inaccuracies (suboptimal)
-                    is_mistake = 150 < centipawn_loss <= 300  # Mistakes (serious errors)
-                    is_blunder = centipawn_loss > 300  # Blunders (game-changing errors, 3+ pawns)
+                    # Chess.com-aligned thresholds:
+                    is_best = centipawn_loss <= 5      # Best moves (engine top choice, 0-5cp)
+                    is_great = 5 < centipawn_loss <= 15      # Great moves (very strong, 5-15cp)
+                    is_excellent = 15 < centipawn_loss <= 25  # Excellent moves (nearly optimal, 15-25cp)
+                    is_good = 25 < centipawn_loss <= 50      # Good/Acceptable moves (solid play, 25-50cp)
+                    is_acceptable = 25 < centipawn_loss <= 50  # Same as good (conventional moves)
+                    is_inaccuracy = 50 < centipawn_loss <= 100  # Inaccuracies (50-100cp) - Chess.com standard
+                    is_mistake = 100 < centipawn_loss <= 200  # Mistakes (100-200cp) - Chess.com standard
+                    is_blunder = centipawn_loss > 200  # Blunders (200+cp) - Chess.com standard
 
                     # Brilliant moves: EXTREMELY rare - Chess.com/Lichess standards
                     # Should appear in ~1% of games or less
                     # Requirements:
-                    # 1. Must be a best move (0-10cp loss)
-                    # 2. Either: Find forced mate OR Make spectacular sacrifice
+                    # 1. Must be a best move (0-5cp loss)
+                    # 2. Either: Find forced mate OR Make spectacular sacrifice OR Only winning move
                     # 3. Position evaluation must remain winning or at least equal
-                    # 4. Sacrifice must be significant (3+ points of material)
+                    # 4. Move must have tactical brilliance (not just a simple capture)
                     is_brilliant = False
                     
-                    if is_best and centipawn_loss <= 5:  # Must be near-perfect move
+                    if is_best:  # Must be a best move (0-5cp loss)
+                        # Define optimal_cp (the evaluation if best move was played)
+                        optimal_cp = best_cp
+                        
                         # Check for forced mate found when there wasn't one before
                         forcing_mate_trigger = (
                             eval_after.pov(player_color).is_mate() and 
@@ -1350,7 +1459,7 @@ class ChessAnalysisEngine:
                         # Look at the position BEFORE the move was made (need to undo it temporarily)
                         board.pop()  # Undo move to check original position
                         
-                        # Check for sacrifice (giving up material without immediate recapture)
+                        # Check for sacrifice (giving up material for tactical gain)
                         if board.is_capture(move):
                             captured_piece = board.piece_at(move.to_square)
                             moving_piece = board.piece_at(move.from_square)
@@ -1359,28 +1468,35 @@ class ChessAnalysisEngine:
                                 captured_value = piece_values.get(captured_piece.symbol().upper(), 0)
                                 moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
                                 
-                                # STRICTER criteria for sacrifice:
-                                # 1. Must sacrifice at least 3 points of material net (e.g., Rook for pawn = 4 point sacrifice)
-                                # 2. Position must be WINNING after sacrifice (not just "not losing")
-                                # 3. Evaluation must improve or stay strong (actual_cp >= 100 = up by at least 1 pawn)
+                                # Calculate net material sacrificed
+                                # Positive = sacrificing material (e.g., Queen for Rook = 9-5 = 4)
+                                # Negative = winning material (e.g., Rook for Pawn = 5-1 = 4... wait, that's also positive)
+                                # Actually: moving_value - captured_value
+                                # If we give up Queen (9) for Rook (5): 9-5 = 4 (sacrificed 4 points)
+                                # If we give up Rook (5) for Pawn (1): 5-1 = 4 (sacrificed 4 points)
+                                # If we capture Queen (9) with Knight (3): 3-9 = -6 (won 6 points)
                                 net_material_sacrificed = moving_value - captured_value
                                 
-                                # Examples: Q for R (9-5=4), R for P (5-1=4), N for nothing (3-0=3)
-                                significant_sacrifice = net_material_sacrificed >= 3
+                                # Sacrifice criteria (aligned with Chess.com):
+                                # 1. Must sacrifice at least 2 points net (e.g., Rook for Bishop, Queen for Rook)
+                                # 2. Position must remain at least equal (not losing badly)
+                                # 3. Move must be engine's top choice
+                                significant_sacrifice = net_material_sacrificed >= 2
                                 
-                                # Position must be clearly winning AFTER the sacrifice
-                                position_winning_after = actual_cp >= 100  # At least +1.0 pawns
+                                # Position must remain at least equal AFTER the sacrifice
+                                # This prevents labeling blunders as brilliant
+                                position_not_losing = actual_cp >= -50  # Not losing by more than 0.5 pawns
                                 
-                                # Position must have improved or been winning before too
-                                eval_maintained_or_improved = (
-                                    (actual_cp >= optimal_cp - 20) and  # Didn't get worse
-                                    (actual_cp >= 50 or optimal_cp >= 50)  # Either before or after was winning
+                                # Prefer positions that are winning or improved
+                                position_winning_or_improved = (
+                                    actual_cp >= 50 or  # Winning by at least 0.5 pawns
+                                    actual_cp >= optimal_cp - 20  # Didn't get worse by more than 0.2 pawns
                                 )
                                 
                                 sacrifice_trigger = (
                                     significant_sacrifice and 
-                                    position_winning_after and 
-                                    eval_maintained_or_improved
+                                    position_not_losing and 
+                                    position_winning_or_improved
                                 )
                         
                         # Restore the board state
@@ -1388,7 +1504,7 @@ class ChessAnalysisEngine:
                         
                         # Brilliant ONLY for:
                         # - Finding short forced mate (5 moves or less) OR
-                        # - Spectacular sacrifice (3+ material) that maintains winning advantage
+                        # - Spectacular sacrifice (2+ material) that maintains/improves position
                         is_brilliant = forcing_mate_trigger or sacrifice_trigger
                     
                     # Convert evaluation to dict
@@ -1405,6 +1521,8 @@ class ChessAnalysisEngine:
                         best_move=best_move_before.uci() if best_move_before else None,
                         is_best=is_best,
                         is_brilliant=is_brilliant,
+                        is_great=is_great,
+                        is_excellent=is_excellent,
                         is_good=is_good,
                         is_acceptable=is_acceptable,
                         is_blunder=is_blunder,
@@ -1414,12 +1532,16 @@ class ChessAnalysisEngine:
                         depth_analyzed=depth,
                         analysis_time_ms=int(time_limit * 1000),
                         explanation=None,
-                        heuristic_details=None,
+                        heuristic_details={},
                         accuracy_score=100.0 if is_best else max(0.0, 100.0 - centipawn_loss)
                     )
                     
                     # Enhance with coaching comments
+                    # Calculate move number BEFORE the move was made
+                    # We need to undo the move temporarily to get the correct move number
+                    board.pop()  # Undo the move to get the original position
                     move_number = (board.fullmove_number - 1) * 2 + (0 if board.turn == chess.WHITE else 1)
+                    board.push(move)  # Restore the move for coaching analysis
                     # For now, assume all moves are user moves - this will be determined by the frontend
                     return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=True)
             except Exception as e:

@@ -66,19 +66,19 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
   for (const move of moves) {
     const centipawn_loss = move.centipawn_loss || 0
 
-    // Industry-standard move classification (for display)
+    // Chess.com-aligned move classification (CORRECTED 2025-10-08)
+    // Best: 0-5cp, Great: 5-15cp, Excellent: 15-25cp, Good: 25-50cp
+    // Inaccuracy: 50-100cp, Mistake: 100-200cp, Blunder: 200+cp
     if (centipawn_loss <= 5) {
-      brilliant_moves++
-    } else if (centipawn_loss <= 30) {
-      good_moves++
-    } else if (centipawn_loss <= 80) {
-      acceptable_moves++
-    } else if (centipawn_loss <= 150) {
-      inaccuracies++
-    } else if (centipawn_loss <= 250) {
-      mistakes++
+      brilliant_moves++  // Best moves (Note: not all are brilliant, just using this counter)
+    } else if (centipawn_loss <= 50) {
+      good_moves++  // Includes Great, Excellent, and Good (5-50cp)
+    } else if (centipawn_loss <= 100) {
+      inaccuracies++  // Inaccuracies (50-100cp) - Chess.com standard
+    } else if (centipawn_loss <= 200) {
+      mistakes++  // Mistakes (100-200cp) - Chess.com standard
     } else {
-      blunders++
+      blunders++  // Blunders (200+cp) - Chess.com standard
     }
   }
 

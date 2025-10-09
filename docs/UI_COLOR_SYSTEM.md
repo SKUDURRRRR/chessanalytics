@@ -4,6 +4,8 @@
 
 The Chess Analytics platform implements a comprehensive, consistent color coding system for chess analysis terms across all components. This system ensures visual consistency and provides immediate visual feedback about chess performance metrics.
 
+**Note**: Move classification names follow chess.com standards for user familiarity. See [Move Classification Standards](MOVE_CLASSIFICATION_STANDARDS.md) for detailed information.
+
 ## Color Philosophy
 
 The color scheme is designed around chess analysis conventions and user experience principles:
