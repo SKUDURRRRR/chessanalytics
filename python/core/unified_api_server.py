@@ -2647,12 +2647,16 @@ def _normalize_played_at(value: Optional[str]) -> str:
 def _canonical_user_id(user_id: str, platform: str) -> str:
     """Canonicalize user ID for database operations.
 
-    Store and query usernames in lowercase for both platforms so we hit the same rows
-    regardless of how the caller cased the name.
+    Chess.com usernames are case-insensitive and should be stored/queried in lowercase.
+    Lichess usernames are case-sensitive and should be left unchanged.
     """
     if not user_id or not platform:
         raise ValueError("user_id and platform cannot be empty")
-    return user_id.strip().lower()
+    
+    if platform == "chess.com":
+        return user_id.strip().lower()
+    else:  # lichess
+        return user_id.strip()
 
 def _validate_single_game_analysis_request(request: UnifiedAnalysisRequest) -> Tuple[bool, str]:
     """Validate single game analysis request parameters."""

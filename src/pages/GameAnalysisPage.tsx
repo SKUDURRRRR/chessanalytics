@@ -329,21 +329,45 @@ export default function GameAnalysisPage() {
   const location = useLocation()
   const locationState = (location.state ?? {}) as LocationState
   const mobileOpts = useMobileOptimizations()
+  const layoutContainerRef = useRef<HTMLDivElement | null>(null)
 
   const decodedUserId = userParam ? decodeURIComponent(userParam) : ''
 
   // Handle responsive board sizing with mobile optimizations
   useEffect(() => {
     const updateBoardWidth = () => {
-      const containerWidth = window.innerWidth
-      const padding = 32 // Account for container padding
-      const availableWidth = containerWidth - padding
-      
-      // Use mobile optimizations for better performance
-      if (mobileOpts.boardSize === 'small') {
-        setBoardWidth(Math.min(availableWidth * 0.9, 320))
-      } else if (mobileOpts.boardSize === 'medium') {
-        setBoardWidth(Math.min(availableWidth * 0.8, 400))
+      const containerElement = layoutContainerRef.current
+      const measuredWidth = containerElement?.clientWidth ?? window.innerWidth
+
+      let containerHorizontalPadding = 32
+      if (containerElement) {
+        const styles = window.getComputedStyle(containerElement)
+        const paddingLeft = parseFloat(styles.paddingLeft || '0')
+        const paddingRight = parseFloat(styles.paddingRight || '0')
+        containerHorizontalPadding = paddingLeft + paddingRight || containerHorizontalPadding
+      }
+
+      const availableWidth = Math.max(measuredWidth - containerHorizontalPadding, 0)
+
+      if (mobileOpts.boardSize === 'small' || mobileOpts.boardSize === 'medium') {
+        const cardHorizontalPadding = 32 // Card uses p-4 on mobile (16px on each side)
+        const boardCap = mobileOpts.boardSize === 'small' ? 320 : 400
+        const evaluationBarWidth = Math.max(10, Math.round(boardCap * 0.04))
+        const symmetrySpacerWidth = evaluationBarWidth
+        const evaluationBarGap = 20 // gap-5 between elements in the flex container
+        const totalGaps = evaluationBarGap * 2
+
+        const boardSpace = Math.max(
+          availableWidth - (cardHorizontalPadding + evaluationBarWidth + symmetrySpacerWidth + totalGaps),
+          0
+        )
+        const computedWidth = Math.min(boardSpace, boardCap)
+
+        if (computedWidth > 0) {
+          setBoardWidth(computedWidth)
+        } else {
+          setBoardWidth(Math.min(boardCap, availableWidth))
+        }
       } else {
         setBoardWidth(Math.min(availableWidth * 0.6, 600))
       }
@@ -1048,7 +1072,7 @@ export default function GameAnalysisPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="container-responsive py-6">
+      <div ref={layoutContainerRef} className="container-responsive py-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={handleBack}

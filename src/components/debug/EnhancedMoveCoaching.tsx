@@ -94,6 +94,7 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
           <p className="text-slate-200 leading-relaxed flex-1 overflow-hidden">{move.explanation}</p>
         </div>
       )}
+
     </div>
   )
 }

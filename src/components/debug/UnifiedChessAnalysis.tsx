@@ -75,23 +75,32 @@ const MoveClassificationBadge = ({ classification }: { classification: string })
 const EvaluationBar = ({
   score,
   playerColor,
-  className = ''
+  className = '',
+  width = 24,
+  height,
+  offsetTop = 0
 }: {
   score: number
   playerColor: 'white' | 'black'
   className?: string
+  width?: number
+  height?: number
+  offsetTop?: number
 }) => {
   const clampedScore = clamp(score, -EVAL_CAP, EVAL_CAP)
   const percent = ((clampedScore + EVAL_CAP) / (EVAL_CAP * 2)) * 100
   const markerPosition = playerColor === 'white' ? 100 - percent : percent
 
   return (
-    <div className={`relative h-full w-8 overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-inner ${className}`}>
+    <div
+      className={`relative h-full overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-inner ${className}`}
+      style={{ width, height, marginTop: offsetTop }}
+    >
       <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-white" />
       <div className="absolute top-1/2 left-0 right-0 h-1/2 bg-slate-900" />
       <div
         className="absolute left-0 right-0 flex justify-center transition-all duration-700 ease-out"
-        style={{ top: `${clamp(markerPosition, 2, 98)}%` }}
+        style={{ top: `${clamp(markerPosition, 6, 94)}%` }}
       >
         <span className="block h-1 w-10 rounded-full bg-orange-500 ring-2 ring-white/70 transition-all duration-500 ease-out" />
       </div>
@@ -124,6 +133,14 @@ export function UnifiedChessAnalysis({
       ? (currentMove.evaluation.value > 0 ? 1000 : -1000)
       : currentMove.evaluation.value
   }, [currentMove])
+
+  const mobileBoardSize = Math.min(boardWidth, 400)
+  const mobileEvaluationBarWidth = Math.max(12, Math.round(mobileBoardSize * 0.04))
+  const desktopEvaluationBarWidth = Math.max(18, Math.round(boardWidth * 0.04))
+  const mobileEvaluationBarHeight = mobileBoardSize * 0.92
+  const desktopEvaluationBarHeight = boardWidth * 0.92
+  const mobileEvaluationBarOffset = (mobileBoardSize - mobileEvaluationBarHeight) / 2 + mobileBoardSize * 0.02
+  const desktopEvaluationBarOffset = (boardWidth - desktopEvaluationBarHeight) / 2 + boardWidth * 0.02
 
   // Auto-scroll to current move in timeline
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -178,27 +195,58 @@ export function UnifiedChessAnalysis({
   }, [currentMove, currentIndex, allMoves.length])
 
   return (
-    <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 lg:p-6 shadow-2xl shadow-black/50 ${className}`}>
-      {/* Mobile Layout: Stacked */}
-      <div className="flex flex-col gap-4 lg:hidden">
-        {/* Mobile: Chess Board */}
-        <div className="flex flex-col items-center justify-center">
-          <div className="w-full flex justify-center max-w-full relative">
-            <Chessboard
-              id="unified-analysis-board-mobile"
-              position={currentPosition}
-              arePiecesDraggable={false}
-              boardOrientation={playerColor}
-              boardWidth={Math.min(boardWidth, 400)}
-              showBoardNotation={true}
-              {...getDarkChessBoardTheme('default')}
-            />
-            <ModernChessArrows
-              arrows={currentMoveArrows}
-              boardWidth={Math.min(boardWidth, 400)}
-              boardOrientation={playerColor}
+    <>
+      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 lg:p-6 shadow-2xl shadow-black/50 ${className}`}>
+        {/* Mobile Layout: Stacked */}
+        <div className="flex flex-col gap-4 lg:hidden">
+        {/* Mobile: Evaluation Bar + Chess Board */}
+        <div className="flex justify-center gap-5">
+          {/* Mobile: Evaluation Bar */}
+          <div
+            className="flex-shrink-0 flex items-center"
+            style={{ height: `${mobileBoardSize}px` }}
+          >
+            <EvaluationBar
+              score={currentScore}
+              playerColor={playerColor}
+              width={mobileEvaluationBarWidth}
+              className="relative"
+              height={mobileEvaluationBarHeight}
+              offsetTop={mobileEvaluationBarOffset}
             />
           </div>
+          
+          {/* Mobile: Chess Board */}
+          <div className="flex-shrink-0">
+            <div className="relative" style={{ width: `${mobileBoardSize}px`, height: `${mobileBoardSize}px` }}>
+              <Chessboard
+                id="unified-analysis-board-mobile"
+                position={currentPosition}
+                arePiecesDraggable={false}
+                boardOrientation={playerColor}
+                boardWidth={mobileBoardSize}
+                showBoardNotation={true}
+                {...getDarkChessBoardTheme('default')}
+              />
+              <ModernChessArrows
+                arrows={currentMoveArrows}
+                boardWidth={mobileBoardSize}
+                boardOrientation={playerColor}
+              />
+            </div>
+          </div>
+
+          {/* Mobile: Symmetry spacer to balance evaluation bar width */}
+          <div
+            className="flex-shrink-0"
+            style={{
+              height: `${mobileBoardSize}px`,
+              width: `${mobileEvaluationBarWidth}px`,
+              marginTop: `${mobileEvaluationBarOffset}px`
+            }}
+            aria-hidden="true"
+          />
+        </div>
           
           {/* Mobile Navigation Controls */}
           <div className="mt-4 flex flex-col items-center justify-center gap-3 text-sm text-slate-200">
@@ -260,133 +308,23 @@ export function UnifiedChessAnalysis({
           </div>
         </div>
 
-        {/* Mobile: Move Analysis */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
-          {/* Current Move Analysis Section */}
-          <div className="mb-4">
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
-                <div className="mt-2 flex items-center gap-3">
-                  <div className="text-2xl font-semibold text-white">
-                    {currentMove ? currentMove.san : '—'}
-                  </div>
-                  {currentMove && (
-                    <MoveClassificationBadge classification={currentMove.classification} />
-                  )}
-                </div>
-              </div>
-            </div>
-            
-            {currentMove ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
-                  <span>{currentMove.player === 'white' ? 'White move' : 'Black move'}</span>
-                  <span className="h-px w-8 bg-white/20" />
-                  <span>Move {currentMove.moveNumber}</span>
-                </div>
-                
-                {/* Enhanced Coaching Display */}
-                <EnhancedMoveCoaching move={currentMove} className="text-sm" />
-              </div>
-            ) : (
-              <p className="text-sm text-slate-300">Use the move timeline to explore Stockfish feedback for each position.</p>
-            )}
-          </div>
-
-          {/* Divider */}
-          <div className="my-6 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
-
-          {/* Move Timeline Section */}
-          <div>
-            <div className="mb-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Move Timeline</h3>
-              <div className="text-xs text-slate-500 mt-1">← → to navigate moves • Scroll to see all moves</div>
-            </div>
-            <div ref={timelineRef} className="max-h-[180px] overflow-y-auto pr-2 text-sm scrollbar-hide">
-              <table className="w-full table-fixed text-left">
-                <thead className="sticky top-0 bg-slate-950/95 backdrop-blur">
-                  <tr className="text-xs uppercase text-slate-400">
-                    <th className="w-12 py-2">Move</th>
-                    <th className="w-1/2 py-2">You</th>
-                    <th className="w-1/2 py-2">Opponent</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: Math.ceil(allMoves.length / 2) }).map((_, row) => {
-                    const whiteMove = allMoves[row * 2]
-                    const blackMove = allMoves[row * 2 + 1]
-                    return (
-                      <tr key={row} className="border-b border-white/10 last:border-b-0">
-                        <td className="py-2 pr-2 text-xs text-slate-400">{row + 1}</td>
-                        <td className="py-2 pr-2">
-                          {whiteMove ? (
-                            <button
-                              onClick={() => onMoveNavigation(whiteMove.index + 1)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  onMoveNavigation(whiteMove.index + 1)
-                                }
-                              }}
-                              className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
-                                currentIndex === whiteMove.index + 1
-                                  ? 'bg-white/25 text-white shadow-inner shadow-black/40'
-                                  : 'bg-white/10 text-slate-200 hover:bg-white/20'
-                              }`}
-                            >
-                              <span className="text-xs font-medium truncate">{whiteMove.san}</span>
-                              <MoveClassificationBadge classification={whiteMove.classification} />
-                            </button>
-                          ) : (
-                            <span className="text-slate-600">—</span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-2">
-                          {blackMove ? (
-                            <button
-                              onClick={() => onMoveNavigation(blackMove.index + 1)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  onMoveNavigation(blackMove.index + 1)
-                                }
-                              }}
-                              className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
-                                currentIndex === blackMove.index + 1
-                                  ? 'bg-white/25 text-white shadow-inner shadow-black/40'
-                                  : 'bg-white/10 text-slate-200 hover:bg-white/20'
-                              }`}
-                            >
-                              <span className="text-xs font-medium truncate">{blackMove.san}</span>
-                              <MoveClassificationBadge classification={blackMove.classification} />
-                            </button>
-                          ) : (
-                            <span className="text-slate-600">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Desktop Layout: Side by Side */}
-      <div className="hidden lg:flex gap-6">
+        {/* Desktop Layout: Side by Side */}
+        <div className="hidden lg:flex gap-8">
         {/* Left: Evaluation Bar */}
-        <div className="flex flex-col items-center justify-center">
-          <div className="h-[400px] w-8">
-            <EvaluationBar score={currentScore} playerColor={playerColor} />
-          </div>
+        <div className="flex-shrink-0 flex items-center" style={{ height: `${boardWidth}px` }}>
+          <EvaluationBar
+            score={currentScore}
+            playerColor={playerColor}
+            width={desktopEvaluationBarWidth}
+            className="relative"
+            height={desktopEvaluationBarHeight}
+            offsetTop={desktopEvaluationBarOffset}
+          />
         </div>
 
         {/* Center: Chess Board */}
-        <div className="flex flex-col items-center justify-center">
-          <div className="w-full flex justify-center max-w-full relative">
+        <div className="flex-shrink-0">
+          <div className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
             <Chessboard
               id="unified-analysis-board"
               position={currentPosition}
@@ -573,7 +511,8 @@ export function UnifiedChessAnalysis({
             </div>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
