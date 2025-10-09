@@ -8,4 +8,29 @@ export default defineConfig({
     port: 3000,
     host: true,
   },
+  build: {
+    target: 'es2015',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+      },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          router: ['react-router-dom'],
+          chess: ['chess.js', 'react-chessboard'],
+          charts: ['recharts'],
+          utils: ['zod'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom', 'chess.js', 'react-chessboard', 'recharts', 'zod'],
+  },
 })

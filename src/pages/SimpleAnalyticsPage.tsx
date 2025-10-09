@@ -11,6 +11,7 @@ import { UnifiedAnalysisService } from '../services/unifiedAnalysisService'
 import { EloDataDebugger } from '../components/debug/EloDataDebugger'
 import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
 import { ComprehensiveAnalytics } from '../components/debug/ComprehensiveAnalytics'
+import { MobileTestingPanel } from '../components/debug/MobileTestingPanel'
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
 const ANALYSIS_TEST_LIMIT = 5
@@ -357,7 +358,7 @@ export default function SimpleAnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="container-responsive space-responsive py-8">
         {userId && (
           <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-6 py-6 shadow-2xl shadow-black/60 sm:px-8 sm:py-8">
             <div className="absolute inset-x-10 top-0 h-40 rounded-full bg-sky-400/10 blur-3xl" />
@@ -474,16 +475,17 @@ export default function SimpleAnalyticsPage() {
           </ErrorBoundary>
         )}
 
-        {/* Debug Panel */}
-        {showDebug && userId && (
-          <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-inner shadow-black/50">
-            <h2 className="text-lg font-semibold text-white">Debug Information</h2>
-            <ComprehensiveAnalytics userId={userId} platform={platform} />
-            <EloStatsOptimizer userId={userId} platform={platform} />
-            <EloDataDebugger userId={userId} platform={platform} />
-            {/* DatabaseDiagnosticsComponent removed for production builds */}
-          </div>
-        )}
+            {/* Debug Panel */}
+            {showDebug && userId && (
+              <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-inner shadow-black/50">
+                <h2 className="text-lg font-semibold text-white">Debug Information</h2>
+                <MobileTestingPanel />
+                <ComprehensiveAnalytics userId={userId} platform={platform} />
+                <EloStatsOptimizer userId={userId} platform={platform} />
+                <EloDataDebugger userId={userId} platform={platform} />
+                {/* DatabaseDiagnosticsComponent removed for production builds */}
+              </div>
+            )}
 
         {importError && (
           <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">

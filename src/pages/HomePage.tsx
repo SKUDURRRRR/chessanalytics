@@ -10,27 +10,27 @@ export default function HomePage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_45%),radial-gradient(circle_at_bottom,_rgba(14,116,144,0.2),_transparent_40%)]" />
-      <div className="relative mx-auto flex w-full max-w-5xl flex-col gap-12 px-5 py-16 sm:py-20 lg:py-24">
+      <div className="relative container-responsive space-responsive">
         <header className="text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-wide text-slate-300 shadow-md shadow-cyan-500/10">
             Precision Chess Insights
           </div>
-          <h1 className="mt-6 text-4xl font-semibold leading-tight text-white sm:text-5xl lg:text-[3.4rem]">
+          <h1 className="mt-6 text-fluid-4xl font-semibold leading-tight text-white">
             Understand every move with <span className="text-sky-300">Chess Analytics</span>
           </h1>
-          <p className="mt-4 text-base text-slate-300 sm:text-lg">
+          <p className="mt-4 text-fluid-base text-slate-300">
             Explore match histories, uncover openings that win for you, and run deep Stockfish reviews in a single, streamlined workspace.
           </p>
         </header>
 
-        <div className="mx-auto w-full max-w-5xl rounded-[32px] border border-white/10 bg-white/[0.06] p-8 shadow-2xl shadow-black/60 backdrop-blur">
+        <div className="card-responsive">
           <PlayerSearch onPlayerSelect={handlePlayerSelect} />
           <p className="mt-3 text-xs text-slate-400">
             Works for players on Lichess and Chess.com. No account required.
           </p>
         </div>
 
-        <section className="grid gap-5 md:grid-cols-3">
+        <section className="grid-responsive">
           {[{
             title: 'Instant Profiles',
             description: 'Jump directly into head-to-head stats, win streaks, and rating momentum.'
@@ -43,7 +43,7 @@ export default function HomePage() {
           }].map((card) => (
             <article
               key={card.title}
-              className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.08] p-6 shadow-xl shadow-black/40 transition duration-300 hover:border-white/20 hover:bg-white/[0.12]"
+              className="group relative overflow-hidden card-responsive transition duration-300 hover:border-white/20 hover:bg-white/[0.12]"
             >
               <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-sky-400/20 blur-2xl transition duration-300 group-hover:bg-sky-400/30" />
               <h3 className="text-xl font-semibold text-white">{card.title}</h3>

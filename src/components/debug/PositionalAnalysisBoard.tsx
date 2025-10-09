@@ -5,6 +5,39 @@ import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
 import { generateMoveArrows, generateModernMoveArrows } from '../../utils/chessArrows'
 import { ModernChessArrows } from '../chess/ModernChessArrows'
 
+const MoveClassificationBadge = ({ classification }: { classification: string }) => {
+  const classificationColors = {
+    brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
+    best: 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200',
+    great: 'border border-teal-400/40 bg-teal-500/20 text-teal-200',
+    excellent: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',
+    good: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',
+    acceptable: 'border border-slate-400/40 bg-slate-500/20 text-slate-200',
+    inaccuracy: 'border border-amber-400/40 bg-amber-500/20 text-amber-200',
+    mistake: 'border border-orange-400/40 bg-orange-500/20 text-orange-200',
+    blunder: 'border border-rose-400/40 bg-rose-500/20 text-rose-200',
+    uncategorized: 'border border-slate-400/30 bg-slate-500/10 text-slate-200'
+  }
+
+  const classificationLabels = {
+    brilliant: 'Great',      // Chess.com: A move that altered the course of the game
+    best: 'Best',            // Chess.com: The chess engine's top choice
+    great: 'Great',          // Chess.com: A move that altered the course of the game
+    excellent: 'Excellent',  // Chess.com: Almost as good as the best move
+    good: 'Good',            // Chess.com: A decent move, but not the best
+    acceptable: 'Book',      // Chess.com: A conventional opening move
+    inaccuracy: 'Inaccuracy', // Chess.com: A weak move
+    mistake: 'Mistake',      // Chess.com: A bad move that immediately worsens your position
+    blunder: 'Blunder',      // Chess.com: A very bad move that loses material or the game
+    uncategorized: 'Move'    // Fallback for uncategorized moves
+  }
+
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${classificationColors[classification as keyof typeof classificationColors]}`}>
+      {classificationLabels[classification as keyof typeof classificationLabels]}
+    </span>
+  )
+}
 
 interface ProcessedMove {
   index: number
@@ -317,8 +350,13 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
         <div className="text-base font-bold text-white">
           Move {Math.floor(currentMoveIndex / 2) + 1} • {currentMove?.player === 'white' ? 'White' : 'Black'}
         </div>
-        <div className="text-sm font-bold text-emerald-300 mt-0.5">
-          {currentMove?.san}
+        <div className="flex items-center justify-center gap-2 mt-0.5">
+          <div className="text-sm font-bold text-emerald-300">
+            {currentMove?.san}
+          </div>
+          {currentMove && (
+            <MoveClassificationBadge classification={currentMove.classification} />
+          )}
         </div>
         {isElementMove && (
           <div className={`text-xs font-semibold ${getElementTypeColor()} mt-0.5`}>

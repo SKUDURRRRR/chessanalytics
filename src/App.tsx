@@ -11,7 +11,7 @@ function App() {
     <PageErrorBoundary>
       <AuthProvider>
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <div className="min-h-screen bg-gray-50">
+          <div className="min-h-screen bg-slate-950">
             <Routes>
               <Route path="/" element={<ComponentErrorBoundary><HomePage /></ComponentErrorBoundary>} />
               <Route path="/search" element={<ComponentErrorBoundary><HomePage /></ComponentErrorBoundary>} />

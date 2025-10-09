@@ -52,6 +52,12 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
   
   // Track selected key move for each element/theme
   const [selectedKeyMoves, setSelectedKeyMoves] = useState<{[key: string]: number}>({})
+  
+  // Track whether to show all positional elements or just the first one
+  const [showAllPositionalElements, setShowAllPositionalElements] = useState(false)
+  
+  // Track whether to show all strategic themes or just the first one
+  const [showAllStrategicThemes, setShowAllStrategicThemes] = useState(false)
 
   const getMoveExplanation = (elementName: string, move: ProcessedMove) => {
     const explanations: { [key: string]: string } = {
@@ -435,7 +441,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
         </h3>
         {positionalElements.length > 0 ? (
           <div className="space-y-4">
-            {positionalElements.map((element, index) => {
+            {(showAllPositionalElements ? positionalElements : positionalElements.slice(0, 1)).map((element, index) => {
               const elementKey = `element-${index}`
               const currentElementState = elementMoveStates[elementKey]
               
@@ -522,6 +528,18 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                 </div>
               )
             })}
+            
+            {/* See All / See Less Button */}
+            {positionalElements.length > 1 && (
+              <div className="flex justify-center pt-4">
+                <button
+                  onClick={() => setShowAllPositionalElements(!showAllPositionalElements)}
+                  className="px-6 py-2.5 bg-slate-700/50 hover:bg-slate-600/70 text-white rounded-lg border border-white/10 hover:border-white/20 transition-all duration-200 hover:scale-105 font-medium text-sm"
+                >
+                  {showAllPositionalElements ? 'See Less' : `See All (${positionalElements.length - 1} more)`}
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-8">
@@ -537,7 +555,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
         </h3>
         {strategicThemes.length > 0 ? (
           <div className="space-y-4">
-            {strategicThemes.map((theme, index) => {
+            {(showAllStrategicThemes ? strategicThemes : strategicThemes.slice(0, 1)).map((theme, index) => {
               const themeKey = `theme-${index}`
               const currentThemeState = elementMoveStates[themeKey]
               
@@ -623,6 +641,18 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                 </div>
               )
             })}
+            
+            {/* See All / See Less Button for Strategic Themes */}
+            {strategicThemes.length > 1 && (
+              <div className="flex justify-center pt-4">
+                <button
+                  onClick={() => setShowAllStrategicThemes(!showAllStrategicThemes)}
+                  className="px-6 py-2.5 bg-slate-700/50 hover:bg-slate-600/70 text-white rounded-lg border border-white/10 hover:border-white/20 transition-all duration-200 hover:scale-105 font-medium text-sm"
+                >
+                  {showAllStrategicThemes ? 'See Less' : `See All (${strategicThemes.length - 1} more)`}
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-8">
@@ -637,7 +667,6 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
         <div className="space-y-3">
           {scoreInfo.score < 6 && (
             <div className="flex items-start gap-3 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4">
-              <span className="text-lg">⚠️</span>
               <div>
                 <p className="text-sm font-semibold text-white">Improve Positional Understanding</p>
                 <p className="text-xs text-amber-100">Focus on piece coordination, pawn structure, and strategic planning</p>

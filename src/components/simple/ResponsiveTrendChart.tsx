@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -52,7 +52,41 @@ const buildChartData = (data: TrendChartProps['data']): ChartEntry[] =>
   })
 
 export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel, trendDirection, data }: TrendChartProps) {
+  const [isMobile, setIsMobile] = useState(false)
+  const [chartHeight, setChartHeight] = useState(256)
+  
   const chartData = useMemo(() => buildChartData(data), [data])
+
+  // Mobile detection and responsive height calculation
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768
+      setIsMobile(mobile)
+      
+      // Calculate responsive height based on screen size
+      if (mobile) {
+        const screenHeight = window.innerHeight
+        const screenWidth = window.innerWidth
+        
+        // More aggressive height calculation for very small screens
+        if (screenWidth < 480) {
+          const availableHeight = screenHeight - 150 // Less padding for very small screens
+          const calculatedHeight = Math.max(180, Math.min(250, availableHeight * 0.35))
+          setChartHeight(calculatedHeight)
+        } else {
+          const availableHeight = screenHeight - 200 // Account for header, padding, etc.
+          const calculatedHeight = Math.max(200, Math.min(300, availableHeight * 0.4))
+          setChartHeight(calculatedHeight)
+        }
+      } else {
+        setChartHeight(256)
+      }
+    }
+
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   const { domainMin, domainMax, displayMin, displayMax, averageRating } = useMemo(() => {
     if (!data.length) {
@@ -91,10 +125,15 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
     const { cx, cy, index } = props
     if (cx == null || cy == null) return null
 
+    // Adjust dot size for mobile
+    const dotRadius = isMobile ? 4 : 5
+    const innerRadius = isMobile ? 2 : 2.5
+    const strokeWidth = isMobile ? 2 : 2.5
+
     return (
       <g key={`dot-${index}-${payload.index}`}>
-        <circle cx={cx} cy={cy} r={5} fill="#fff" stroke={payload.trendColor} strokeWidth={2.5} />
-        <circle cx={cx} cy={cy} r={2.5} fill={payload.trendColor} />
+        <circle cx={cx} cy={cy} r={dotRadius} fill="#fff" stroke={payload.trendColor} strokeWidth={strokeWidth} />
+        <circle cx={cx} cy={cy} r={innerRadius} fill={payload.trendColor} />
       </g>
     )
   }
@@ -106,22 +145,27 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
     const { cx, cy, index } = props
     if (cx == null || cy == null) return null
 
+    // Adjust active dot size for mobile
+    const activeRadius = isMobile ? 5.5 : 6.5
+    const activeInnerRadius = isMobile ? 3 : 3.5
+    const activeStrokeWidth = isMobile ? 2.2 : 2.6
+
     return (
       <g key={`active-dot-${index}-${payload.index}`}>
-        <circle cx={cx} cy={cy} r={6.5} fill="#fff" stroke={payload.trendColor} strokeWidth={2.6} />
-        <circle cx={cx} cy={cy} r={3.5} fill={payload.trendColor} />
+        <circle cx={cx} cy={cy} r={activeRadius} fill="#fff" stroke={payload.trendColor} strokeWidth={activeStrokeWidth} />
+        <circle cx={cx} cy={cy} r={activeInnerRadius} fill={payload.trendColor} />
       </g>
     )
   }
 
   return (
-    <div className={`overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.04] shadow-xl shadow-black/40 ${className}`}>
-      <div className="p-4">
-        <div className="mb-3 flex items-center justify-between">
+    <div className={`overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.04] shadow-xl shadow-black/40 ${className} ${isMobile ? 'touch-manipulation' : ''}`}>
+      <div className={`p-4 ${isMobile ? 'px-2 py-2' : 'px-2 py-2'}`}>
+        <div className={`mb-3 flex items-center justify-between ${isMobile ? 'flex-col gap-2 sm:flex-row sm:gap-0' : ''}`}>
           <div className="min-w-0 flex-1">
-            <h3 className="font-semibold text-white">ELO Trend</h3>
+            <h3 className={`font-semibold text-white ${isMobile ? 'text-base' : 'text-lg'}`}>ELO Trend</h3>
             {selectedTimeControlLabel && (
-              <p className="text-xs uppercase tracking-wide text-slate-400 truncate">{selectedTimeControlLabel}</p>
+              <p className={`uppercase tracking-wide text-slate-400 truncate ${isMobile ? 'text-xs' : 'text-xs'}`}>{selectedTimeControlLabel}</p>
             )}
           </div>
           <span
@@ -131,7 +175,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                 : trendDirection === 'declining'
                   ? 'bg-rose-500'
                   : 'bg-slate-600'
-            }`}
+            } ${isMobile ? 'self-start' : ''}`}
           >
             {trendDirection === 'improving'
               ? 'Improving'
@@ -141,9 +185,24 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
           </span>
         </div>
 
-        <div className="relative h-64">
+        <div 
+          className={`relative ${isMobile ? 'select-none' : ''}`}
+          style={{ 
+            height: `${chartHeight}px`,
+            touchAction: isMobile ? 'manipulation' : 'auto',
+            WebkitTouchCallout: isMobile ? 'none' : 'auto',
+            WebkitUserSelect: isMobile ? 'none' : 'auto',
+            marginLeft: isMobile ? '-12px' : '-12px',
+            marginBottom: isMobile ? '-12px' : '-12px',
+            transform: 'translate(-2px, 2px)'
+          }}
+        >
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 15, right: 25, bottom: 25, left: 25 }}>
+            <ComposedChart 
+              data={chartData} 
+              margin={isMobile ? { top: 10, right: 15, bottom: 0, left: 0 } : { top: 15, right: 25, bottom: 0, left: 0 }}
+              style={{ userSelect: isMobile ? 'none' : 'auto' }}
+            >
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={TREND_COLORS[trendDirection]} stopOpacity={0.12} />
@@ -151,8 +210,24 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-              <XAxis dataKey="index" tickFormatter={(_, index) => `#${index + 1}`} stroke="rgba(226,232,240,0.5)" fontSize={12} />
-              <YAxis tickFormatter={formatYAxis} stroke="rgba(226,232,240,0.5)" fontSize={12} domain={[displayMin, displayMax]} />
+              <XAxis 
+                dataKey="index" 
+                tickFormatter={(_, index) => `#${index + 1}`} 
+                stroke="rgba(226,232,240,0.5)" 
+                fontSize={isMobile ? 10 : 12}
+                tick={{ fontSize: isMobile ? 10 : 12 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis 
+                tickFormatter={formatYAxis} 
+                stroke="rgba(226,232,240,0.5)" 
+                fontSize={isMobile ? 10 : 12}
+                tick={{ fontSize: isMobile ? 10 : 12 }}
+                domain={[displayMin, displayMax]}
+                axisLine={false}
+                tickLine={false}
+              />
               <Tooltip
                 cursor={{ stroke: '#CBD5F5', strokeWidth: 1, strokeDasharray: '6 3' }}
                 content={(tooltipProps: TooltipProps<number, string>) => {
@@ -162,7 +237,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                   }
 
                   return (
-                    <div className="rounded-lg bg-gray-900/95 px-3 py-2 text-xs text-white shadow-lg">
+                    <div className={`rounded-lg bg-gray-900/95 px-3 py-2 text-white shadow-lg ${isMobile ? 'text-xs max-w-[200px]' : 'text-xs'}`}>
                       <div className="font-semibold">Game {payload.index + 1}</div>
                       <div className="text-gray-300">Rating: {payload.rating}</div>
                       {payload.index > 0 && (
@@ -181,6 +256,14 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                     </div>
                   )
                 }}
+                position={isMobile ? { x: 0, y: 0 } : undefined}
+                allowEscapeViewBox={{ x: false, y: false }}
+                wrapperStyle={isMobile ? { 
+                  position: 'absolute',
+                  top: '10px',
+                  left: '10px',
+                  zIndex: 1000
+                } : undefined}
               />
 
               <Area
@@ -194,7 +277,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                 type="monotone"
                 dataKey="rating"
                 stroke={TREND_COLORS[trendDirection]}
-                strokeWidth={2.4}
+                strokeWidth={isMobile ? 2 : 2.4}
                 dot={dotRenderer}
                 activeDot={activeDotRenderer}
                 connectNulls
@@ -202,13 +285,12 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
               />
             </ComposedChart>
           </ResponsiveContainer>
-          <div className="absolute inset-0 rounded-lg border border-white/10 pointer-events-none" />
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 border-t border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-slate-400">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
+      <div className={`flex flex-col gap-2 border-t border-white/10 bg-white/[0.03] text-slate-400 ${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-3 text-xs'}`}>
+        <div className={`flex items-center justify-between ${isMobile ? 'flex-col gap-2 sm:flex-row sm:gap-0' : ''}`}>
+          <div className={`flex items-center gap-2 min-w-0 ${isMobile ? 'flex-col sm:flex-row' : ''}`}>
             <span className="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-xs font-semibold text-slate-200 whitespace-nowrap">
               {trendDirection === 'improving' ? 'Upward trend' : trendDirection === 'declining' ? 'Downward trend' : 'Stable trend'}
             </span>
@@ -218,7 +300,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
           </div>
           <div className="text-slate-300 font-semibold">{data[data.length - 1]?.rating}</div>
         </div>
-        <div className="flex justify-between items-center">
+        <div className={`flex justify-between items-center ${isMobile ? 'flex-col gap-1 sm:flex-row sm:gap-0' : ''}`}>
           <span className="whitespace-nowrap">Range: {displayMin} - {displayMax}</span>
           <span className="whitespace-nowrap">{data.length} key points</span>
         </div>

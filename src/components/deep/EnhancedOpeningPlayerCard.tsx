@@ -112,31 +112,31 @@ export function EnhancedOpeningPlayerCard({
 
   return (
     <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-3 sm:space-y-0">
         <div className="flex items-center">
           <div className="mr-3 h-3 w-3 animate-pulse rounded-full bg-sky-300" />
           <h3 className="text-lg font-semibold text-white">Enhanced Opening Analysis</h3>
         </div>
-        <div className="text-right">
+        <div className="text-left sm:text-right">
           <div className="text-2xl font-bold text-white">{Math.round(score)}%</div>
           <div className="text-xs text-slate-300">Overall Accuracy</div>
         </div>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex space-x-1 mb-6 bg-slate-800/50 rounded-xl p-1">
+      <div className="flex sm:flex sm:space-x-1 grid grid-cols-2 gap-2 sm:gap-0 mb-6 bg-slate-800/50 rounded-xl p-1 sm:p-1 overflow-x-auto sm:overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setSelectedTab(tab.id as any)}
-            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex-1 sm:flex-1 min-w-0 flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
               selectedTab === tab.id
                 ? 'bg-sky-500 text-white shadow-lg'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
             }`}
           >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
+            <span className="text-sm sm:text-base">{tab.icon}</span>
+            <span className="hidden xs:inline sm:inline">{tab.label}</span>
           </button>
         ))}
       </div>
@@ -149,7 +149,7 @@ export function EnhancedOpeningPlayerCard({
           </p>
 
           {/* Key Metrics Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className={`${bgColor} rounded-xl p-4`}>
               <div className="text-lg font-bold text-white">{Math.round(score)}%</div>
               <div className="text-xs text-slate-300">Opening Accuracy</div>
@@ -179,15 +179,15 @@ export function EnhancedOpeningPlayerCard({
           {insights.totalOpeningGames > 0 && (
             <div className="bg-slate-800/30 rounded-xl p-4">
               <h5 className="font-semibold text-white mb-3">Your Opening Performance</h5>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {insights.bestOpening && (
-                  <div className="flex items-center justify-between text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm space-y-1 sm:space-y-0">
                     <span className="text-slate-200">Best: {insights.bestOpening.opening}</span>
                     <span className="font-semibold text-emerald-300">{insights.bestOpening.winRate.toFixed(0)}% ({insights.bestOpening.games} games)</span>
                   </div>
                 )}
                 {insights.worstOpening && insights.worstOpening.games >= 3 && (
-                  <div className="flex items-center justify-between text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm space-y-1 sm:space-y-0">
                     <span className="text-slate-200">Needs work: {insights.worstOpening.opening}</span>
                     <span className="font-semibold text-rose-300">{insights.worstOpening.winRate.toFixed(0)}% ({insights.worstOpening.games} games)</span>
                   </div>

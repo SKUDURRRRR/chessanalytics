@@ -24,6 +24,29 @@ export default defineConfig({
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
     },
+    /* Test against mobile viewports. */
+    {
+      name: 'Mobile Chrome',
+      use: { ...devices['Pixel 5'] },
+    },
+    {
+      name: 'Mobile Safari',
+      use: { ...devices['iPhone 12'] },
+    },
+    {
+      name: 'Mobile Chrome Small',
+      use: { 
+        ...devices['Pixel 5'],
+        viewport: { width: 360, height: 640 },
+      },
+    },
+    {
+      name: 'Mobile Safari Small',
+      use: { 
+        ...devices['iPhone 12'],
+        viewport: { width: 375, height: 667 },
+      },
+    },
   ],
   webServer: process.env.CI
     ? undefined
