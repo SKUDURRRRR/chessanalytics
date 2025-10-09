@@ -144,9 +144,9 @@ class AnalysisMode(Enum):
 class AnalysisConfig:
     """Configuration for analysis operations."""
     analysis_type: AnalysisType = AnalysisType.STOCKFISH
-    depth: int = 12  # Better depth for accuracy
-    skill_level: int = 10  # Human-like strength
-    time_limit: float = 2.0  # More time for quality
+    depth: int = 14  # Phase 1: Better depth for accuracy
+    skill_level: int = 20  # Phase 1: Maximum strength
+    time_limit: float = 0.8  # Phase 1: Faster analysis
     use_opening_book: bool = True
     use_endgame_tablebase: bool = True
     parallel_analysis: bool = False
@@ -659,9 +659,9 @@ class ChessAnalysisEngine:
         try:
             with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
                 engine.configure({
-                    'Skill Level': min(self.config.skill_level, 10),
+                    'Skill Level': 20,  # Maximum strength
                     'Threads': 1,
-                    'Hash': 8,  # Reduced from 32 MB to 8 MB for Railway free tier
+                    'Hash': 96,  # Better balance for Railway Hobby tier
                     'UCI_AnalyseMode': True
                 })
                 limit = chess.engine.Limit(time=BASIC_ENGINE_PROBE_TIME)
@@ -910,9 +910,8 @@ class ChessAnalysisEngine:
                     'UCI_Elo': 2000  # Keep original settings
                 })
                 
-                # Use original fast time limit
-                # 0.2 seconds per position - keep original speed
-                info = engine.analyse(chess.Board(fen), chess.engine.Limit(time=0.2))
+                # Use configured time limit from environment variables
+                info = engine.analyse(chess.Board(fen), chess.engine.Limit(time=self.config.time_limit))
                 score = info.get("score", chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
                 best_move = info.get("pv", [None])[0]
                 
@@ -1362,18 +1361,17 @@ class ChessAnalysisEngine:
             try:
                 with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
                     # Configure engine for Railway Hobby tier optimization
-                    # Hobby tier has 8 GB RAM, so we can use more resources for better performance
+                    # Phase 1: Speed + Accuracy optimizations
                     engine.configure({
-                        'Skill Level': 10,  # Higher skill level for better analysis
-                        'UCI_LimitStrength': True,  # Keep original settings
+                        'Skill Level': 20,  # Maximum strength for better analysis
+                        'UCI_LimitStrength': False,  # Use full strength
                         'UCI_Elo': 2000,  # Keep original settings
-                        'Threads': 4,  # 4 threads for parallel analysis
-                        'Hash': 128  # 128 MB hash for better position evaluation
+                        'Threads': 1,  # Deterministic analysis
+                        'Hash': 96  # Better balance for concurrency
                     })
                     
-                    # Use optimized time limit for Railway Hobby tier
-                    # 1.0 seconds per position for better analysis quality
-                    time_limit = 1.0
+                    # Use configured time limit from environment variables
+                    time_limit = self.config.time_limit
                     
                     # Get evaluation before move
                     info_before = engine.analyse(board, chess.engine.Limit(time=time_limit))

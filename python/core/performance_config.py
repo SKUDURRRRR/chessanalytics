@@ -126,17 +126,17 @@ class AnalysisPerformanceConfig:
         
         elif profile == PerformanceProfile.RAILWAY_HOBBY:
             # OPTIMIZED FOR RAILWAY HOBBY TIER (8 GB RAM, 8 vCPU)
-            # Enables both game-level and move-level parallelism
+            # Phase 1: Speed + Accuracy optimizations
             return cls(
-                stockfish_depth=12,              # Deeper analysis
-                stockfish_skill_level=10,        # Higher skill level
-                stockfish_time_limit=1.0,        # More time per position
-                stockfish_threads=4,             # 4 threads per engine
-                stockfish_hash_size=128,         # 128 MB hash for better evaluation
-                max_concurrent_analyses=6,       # 6 games in parallel
+                stockfish_depth=14,              # Increased from 12 (better accuracy)
+                stockfish_skill_level=20,        # Maximum strength (not 10!)
+                stockfish_time_limit=0.8,        # Faster than 1.0s
+                stockfish_threads=1,             # Deterministic (not 4!)
+                stockfish_hash_size=96,          # Better balance (not 128)
+                max_concurrent_analyses=4,       # Conservative for vCPU (not 6)
                 batch_size=10,                   # Larger batches
                 parallel_analysis=True,          # Enable parallel processing
-                max_memory_usage_mb=6144,        # 6 GB max (within 8 GB limit)
+                max_memory_usage_mb=3072,        # 3GB max (conservative)
                 cleanup_interval_minutes=30,     # Regular cleanup
                 batch_insert_size=100,           # Efficient database operations
                 connection_pool_size=15,         # More connections
