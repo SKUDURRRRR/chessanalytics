@@ -15,6 +15,7 @@ class PerformanceProfile(Enum):
     PRODUCTION = "production"        # Balanced performance/cost
     HIGH_PERFORMANCE = "high_performance"  # Maximum performance
     COST_OPTIMIZED = "cost_optimized"      # Minimum cost
+    RAILWAY_HOBBY = "railway_hobby"        # Railway Hobby tier optimization
 
 @dataclass
 class AnalysisPerformanceConfig:
@@ -121,6 +122,31 @@ class AnalysisPerformanceConfig:
                 max_games_per_request=100,
                 max_analysis_time_per_game=600,
                 max_total_analysis_time=7200
+            )
+        
+        elif profile == PerformanceProfile.RAILWAY_HOBBY:
+            # OPTIMIZED FOR RAILWAY HOBBY TIER (8 GB RAM, 8 vCPU)
+            # Enables both game-level and move-level parallelism
+            return cls(
+                stockfish_depth=12,              # Deeper analysis
+                stockfish_skill_level=10,        # Higher skill level
+                stockfish_time_limit=1.0,        # More time per position
+                stockfish_threads=4,             # 4 threads per engine
+                stockfish_hash_size=128,         # 128 MB hash for better evaluation
+                max_concurrent_analyses=6,       # 6 games in parallel
+                batch_size=10,                   # Larger batches
+                parallel_analysis=True,          # Enable parallel processing
+                max_memory_usage_mb=6144,        # 6 GB max (within 8 GB limit)
+                cleanup_interval_minutes=30,     # Regular cleanup
+                batch_insert_size=100,           # Efficient database operations
+                connection_pool_size=15,         # More connections
+                query_timeout_seconds=45,        # Longer timeouts
+                enable_analysis_cache=True,      # Enable caching
+                cache_ttl_hours=24,              # 24 hour cache
+                max_cache_size_mb=256,           # 256 MB cache
+                max_games_per_request=50,        # More games per request
+                max_analysis_time_per_game=300,  # 5 minutes per game
+                max_total_analysis_time=3600     # 1 hour total
             )
         
         elif profile == PerformanceProfile.COST_OPTIMIZED:

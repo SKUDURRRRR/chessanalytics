@@ -832,10 +832,10 @@ class ChessAnalysisEngine:
                 move_analysis.fullmove_number = data['fullmove_number']
                 return move_analysis
             
-            # Process moves in parallel with strict concurrency limit for Railway free tier
-            # Railway free tier has ~512 MB RAM, so we need to be very conservative
-            # to prevent OOM kills (exit code -9)
-            max_concurrent = 1  # Only 1 concurrent Stockfish instance to prevent memory exhaustion
+            # Process moves in parallel with Railway Hobby tier optimization
+            # Railway Hobby tier has 8 GB RAM, so we can enable parallel move analysis
+            # for significant performance improvements
+            max_concurrent = 4  # 4 concurrent moves per game for Railway Hobby tier
             semaphore = asyncio.Semaphore(max_concurrent)
             
             async def analyze_with_semaphore(data):
@@ -1361,19 +1361,19 @@ class ChessAnalysisEngine:
         def run_stockfish_analysis():
             try:
                 with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
-                    # Configure engine for minimal memory usage (Railway free tier compatibility)
-                    # Free tier has ~512 MB total RAM, so we need to be conservative
+                    # Configure engine for Railway Hobby tier optimization
+                    # Hobby tier has 8 GB RAM, so we can use more resources for better performance
                     engine.configure({
-                        'Skill Level': 8,  # Keep original fast settings
+                        'Skill Level': 10,  # Higher skill level for better analysis
                         'UCI_LimitStrength': True,  # Keep original settings
                         'UCI_Elo': 2000,  # Keep original settings
-                        'Threads': 1,  # Single thread for memory efficiency
-                        'Hash': 8  # Reduced to 8 MB to prevent OOM kills on Railway
+                        'Threads': 4,  # 4 threads for parallel analysis
+                        'Hash': 128  # 128 MB hash for better position evaluation
                     })
                     
-                    # Use original fast time limit
-                    # 0.5 seconds per position - keep original speed
-                    time_limit = 0.5
+                    # Use optimized time limit for Railway Hobby tier
+                    # 1.0 seconds per position for better analysis quality
+                    time_limit = 1.0
                     
                     # Get evaluation before move
                     info_before = engine.analyse(board, chess.engine.Limit(time=time_limit))

@@ -14,6 +14,14 @@ export interface CommentContext {
   isOpeningMove: boolean;
 }
 
+// Optional richer context used by buildHumanComment
+export interface HumanReasonContext extends CommentContext {
+  tacticalInsights?: string[];
+  positionalInsights?: string[];
+  risks?: string[];
+  benefits?: string[];
+}
+
 export const commentTemplates = {
   brilliant: {
     user: [
@@ -182,38 +190,70 @@ export function getRandomComment(classification: string, isUserMove: boolean): s
   return availableTemplates[Math.floor(Math.random() * availableTemplates.length)];
 }
 
-export function buildEnhancedComment(context: CommentContext): string {
-  const { classification, centipawnLoss, bestMoveSan, moveNumber, isUserMove, isOpeningMove } = context;
-  
-  // Handle opening moves
+export function buildEnhancedComment(context: CommentContext): string {\n  // Delegate to the human-friendly builder to avoid centipawn jargon\n  return buildHumanComment({ ...(context as any) })\n}\n
+
+// New: Human-friendly comment builder that avoids centipawns and adds reasons
+export function buildHumanComment(context: HumanReasonContext): string {
+  const {
+    classification,
+    bestMoveSan,
+    isUserMove,
+    isOpeningMove,
+    tacticalInsights = [],
+    positionalInsights = [],
+    risks = [],
+    benefits = [],
+  } = context
+
   if (isOpeningMove) {
-    return '📖 Book move.';
+    return 'Book move.'
   }
-  
-  // Get base template
-  let baseComment = getRandomComment(classification, isUserMove);
-  
-  // Add specific details based on centipawn loss
-  if (centipawnLoss !== null && centipawnLoss > 0) {
-    if (centipawnLoss < 20) {
-      baseComment += ` This loses only ${centipawnLoss} centipawns compared to the best move.`;
-    } else if (centipawnLoss < 50) {
-      baseComment += ` This loses about ${centipawnLoss} centipawns compared to optimal play.`;
-    } else if (centipawnLoss < 100) {
-      baseComment += ` This loses ${centipawnLoss} centipawns - a significant disadvantage.`;
-    } else {
-      baseComment += ` This loses ${centipawnLoss} centipawns - a major material loss.`;
+
+  let baseComment = getRandomComment(classification, isUserMove)
+
+  const positives: string[] = []
+  const negatives: string[] = []
+  if (tacticalInsights.length) positives.push(tacticalInsights[0])
+  if (positionalInsights.length && positives.length < 2) positives.push(positionalInsights[0])
+  if (benefits.length && positives.length < 2) positives.push(benefits[0])
+  if (risks.length) negatives.push(risks[0])
+
+  const fmt = (items: string[]) => {
+    const cleaned = items
+      .map(s => (s || '').trim())
+      .filter(Boolean)
+      .map(s => (/[.!?]$/.test(s) ? s.slice(0, -1) : s))
+    if (!cleaned.length) return ''
+    if (cleaned.length === 1) return cleaned[0] + '.'
+    return cleaned.slice(0, 2).join('; ') + '.'
+  }
+
+  switch (classification) {
+    case 'brilliant':
+    case 'best':
+    case 'great':
+    case 'excellent':
+    case 'good':
+    case 'acceptable': {
+      const why = fmt(positives)
+      if (why) baseComment += ' ' + why
+      break
     }
+    case 'inaccuracy':
+    case 'mistake':
+    case 'blunder': {
+      const why = fmt(negatives.length ? negatives : risks.concat(tacticalInsights).slice(0, 2))
+      if (why) baseComment += ' ' + why
+      break
+    }
+    default:
+      break
   }
-  
-  // Add best move suggestion for mistakes and blunders
+
   if (bestMoveSan && (classification === 'mistake' || classification === 'blunder')) {
-    if (isUserMove) {
-      baseComment += ` Consider ${bestMoveSan} instead, which is the engine's top choice.`;
-    } else {
-      baseComment += ` They should have played ${bestMoveSan} instead.`;
-    }
+    if (isUserMove) baseComment += ` Better was ${bestMoveSan}.`
+    else baseComment += ` They could have tried ${bestMoveSan} instead.`
   }
-  
-  return baseComment;
+
+  return baseComment
 }

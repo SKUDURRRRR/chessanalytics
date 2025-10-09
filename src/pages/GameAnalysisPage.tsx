@@ -14,7 +14,7 @@ import { CHESS_ANALYSIS_COLORS } from '../utils/chessColors'
 import { getDarkChessBoardTheme } from '../utils/chessBoardTheme'
 import { generateMoveArrows, generateModernMoveArrows, Arrow } from '../utils/chessArrows'
 import { ModernChessArrows } from '../components/chess/ModernChessArrows'
-import { buildEnhancedComment, CommentContext } from '../utils/commentTemplates'
+import { buildHumanComment, CommentContext, HumanReasonContext } from '../utils/commentTemplates'
 import type { MatchHistoryGameSummary, Platform } from '../types'
 
 interface EvaluationInfo {
@@ -646,15 +646,19 @@ export default function GameAnalysisPage() {
         explanation = move.coaching_comment
       } else {
         // Use enhanced comment templates for variety and insight
-        const commentContext: CommentContext = {
+        const commentContext: HumanReasonContext = {
           classification,
           centipawnLoss: move.centipawn_loss ?? null,
           bestMoveSan,
           moveNumber: moveNumber,
           isUserMove,
-          isOpeningMove: moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good')
+          isOpeningMove: moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good'),
+          tacticalInsights: move.tactical_insights,
+          positionalInsights: move.positional_insights,
+          risks: move.risks,
+          benefits: move.benefits,
         }
-        explanation = buildEnhancedComment(commentContext)
+        explanation = buildHumanComment(commentContext)
       }
 
       try {
