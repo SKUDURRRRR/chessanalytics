@@ -75,6 +75,27 @@ STARTER_TIER_CONFIG = TierConfig(
 )
 
 
+# Railway Hobby Tier Configuration (8 GB RAM, 8 vCPU)
+RAILWAY_HOBBY_CONFIG = TierConfig(
+    # Analysis settings - optimized for Railway Hobby tier
+    analysis_depth=12,          # Deeper analysis
+    skill_level=10,             # Higher skill level
+    time_limit=1.0,             # More time per position
+    threads=4,                  # 4 threads per engine
+    hash_size=128,              # 128 MB hash for better evaluation
+    max_concurrent_analyses=6,  # 6 games in parallel
+    enable_deep_mode=True,      # Enable deep analysis
+    max_batch_size=10,          # Larger batches
+    
+    # API settings
+    timeout_seconds=300,        # 5 minutes
+    rate_limit_per_hour=200,    # Higher rate limit
+    
+    # Feature flags
+    enable_caching=True,
+    enable_progress_updates=True,
+)
+
 # Production Tier Configuration (Render Standard: 1+ CPU, 1+ GB RAM)
 PRODUCTION_TIER_CONFIG = TierConfig(
     # Analysis settings - full performance
@@ -102,12 +123,16 @@ def get_deployment_tier() -> str:
     Determine the deployment tier from environment variables.
     
     Returns:
-        str: 'free', 'starter', or 'production'
+        str: 'free', 'starter', 'production', or 'railway_hobby'
     """
     # Check explicit tier setting
     tier = os.getenv("DEPLOYMENT_TIER", "").lower()
-    if tier in ["free", "starter", "production"]:
+    if tier in ["free", "starter", "production", "railway_hobby"]:
         return tier
+    
+    # Check for Railway Hobby tier
+    if os.getenv("RAILWAY_ENVIRONMENT") and os.getenv("RAILWAY_TIER", "").lower() == "hobby":
+        return "railway_hobby"
     
     # Auto-detect based on Render environment
     if os.getenv("RENDER_FREE_TIER", "false").lower() == "true":
@@ -135,6 +160,7 @@ def get_config() -> TierConfig:
         "free": FREE_TIER_CONFIG,
         "starter": STARTER_TIER_CONFIG,
         "production": PRODUCTION_TIER_CONFIG,
+        "railway_hobby": RAILWAY_HOBBY_CONFIG,
     }
     
     selected_config = config_map.get(tier, PRODUCTION_TIER_CONFIG)

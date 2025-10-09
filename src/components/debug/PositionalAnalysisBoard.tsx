@@ -421,7 +421,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
             currentMove.centipawnLoss > 50 ? 'bg-yellow-500' : 'bg-green-500'
           }`}></div>
           <span className="text-slate-200 font-medium">
-            {currentMove.centipawnLoss > 0 ? 'Lost' : 'Gained'} {Math.round(Math.abs(currentMove.centipawnLoss))} cp
+            {currentMove.centipawnLoss > 0 ? 'Lost' : 'Gained'} {Math.round(Math.abs(currentMove.centipawnLoss))} points
           </span>
         </div>
       )}

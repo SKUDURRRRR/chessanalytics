@@ -832,10 +832,10 @@ class ChessAnalysisEngine:
                 move_analysis.fullmove_number = data['fullmove_number']
                 return move_analysis
             
-            # Process moves in parallel with strict concurrency limit for Railway free tier
-            # Railway free tier has ~512 MB RAM, so we need to be very conservative
-            # to prevent OOM kills (exit code -9)
-            max_concurrent = 1  # Only 1 concurrent Stockfish instance to prevent memory exhaustion
+            # Process moves in parallel with Railway Hobby tier optimization
+            # Railway Hobby tier has 8 GB RAM, so we can enable parallel move analysis
+            # for significant performance improvements
+            max_concurrent = 4  # 4 concurrent moves per game for Railway Hobby tier
             semaphore = asyncio.Semaphore(max_concurrent)
             
             async def analyze_with_semaphore(data):
@@ -1097,7 +1097,7 @@ class ChessAnalysisEngine:
         # Enhanced explanations for brilliant moves
         if is_brilliant:
             if centipawn_loss > 0:
-                explanation_parts.append(f"Brilliant sacrifice of {int(centipawn_loss)} cp of material")
+                explanation_parts.append("Brilliant sacrifice of material")
             if see_score < -100:
                 explanation_parts.append("in a calculated tactical sacrifice")
             elif see_score < 0:
@@ -1127,9 +1127,9 @@ class ChessAnalysisEngine:
         # Enhanced explanations for blunders
         elif is_blunder:
             if centipawn_loss > 200:
-                explanation_parts.append(f"Catastrophic blunder losing {int(centipawn_loss)} cp")
+                explanation_parts.append("Catastrophic blunder losing significant material")
             elif centipawn_loss > 100:
-                explanation_parts.append(f"Serious blunder losing {int(centipawn_loss)} cp")
+                explanation_parts.append("Serious blunder losing material")
             if see_score < -200:
                 explanation_parts.append("in a terrible material exchange")
             if new_hanging:
@@ -1147,9 +1147,9 @@ class ChessAnalysisEngine:
         # Standard explanations for other moves
         else:
             if centipawn_loss > 0 and not is_best:
-                explanation_parts.append(f"Costs roughly {int(centipawn_loss)} cp.")
+                explanation_parts.append("This move weakens your position.")
             if see_score <= SEE_MATERIAL_LOSS_TRIGGER and is_capture:
-                explanation_parts.append(f"Capture on {chess.square_name(move.to_square)} drops material (SEE {int(see_score)} cp).")
+                explanation_parts.append(f"Capture on {chess.square_name(move.to_square)} drops material.")
             if new_hanging:
                 for entry in new_hanging:
                     explanation_parts.append(f"Leaves {entry['piece']} on {entry['square']} undefended.")
@@ -1160,12 +1160,12 @@ class ChessAnalysisEngine:
             if gives_check and centipawn_loss == 0:
                 explanation_parts.append("Delivers check while staying safe.")
             if best_alternative and best_alternative['uci'] != move.uci() and best_gap > BASIC_BEST_THRESHOLD:
-                explanation_parts.append(f"Better was {best_alternative['san']} ({int(best_alternative['score'])} cp).")
+                explanation_parts.append(f"Better was {best_alternative['san']}.")
             if not explanation_parts:
                 if delta > 0:
-                    explanation_parts.append(f"Improves evaluation by {int(delta)} cp.")
+                    explanation_parts.append("Improves your position.")
                 else:
-                    explanation_parts.append("Keeps evaluation balanced.")
+                    explanation_parts.append("Keeps the position balanced.")
         
         explanation = ' '.join(explanation_parts)
 
@@ -1361,19 +1361,19 @@ class ChessAnalysisEngine:
         def run_stockfish_analysis():
             try:
                 with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
-                    # Configure engine for minimal memory usage (Railway free tier compatibility)
-                    # Free tier has ~512 MB total RAM, so we need to be conservative
+                    # Configure engine for Railway Hobby tier optimization
+                    # Hobby tier has 8 GB RAM, so we can use more resources for better performance
                     engine.configure({
-                        'Skill Level': 8,  # Keep original fast settings
+                        'Skill Level': 10,  # Higher skill level for better analysis
                         'UCI_LimitStrength': True,  # Keep original settings
                         'UCI_Elo': 2000,  # Keep original settings
-                        'Threads': 1,  # Single thread for memory efficiency
-                        'Hash': 8  # Reduced to 8 MB to prevent OOM kills on Railway
+                        'Threads': 4,  # 4 threads for parallel analysis
+                        'Hash': 128  # 128 MB hash for better position evaluation
                     })
                     
-                    # Use original fast time limit
-                    # 0.5 seconds per position - keep original speed
-                    time_limit = 0.5
+                    # Use optimized time limit for Railway Hobby tier
+                    # 1.0 seconds per position for better analysis quality
+                    time_limit = 1.0
                     
                     # Get evaluation before move
                     info_before = engine.analyse(board, chess.engine.Limit(time=time_limit))

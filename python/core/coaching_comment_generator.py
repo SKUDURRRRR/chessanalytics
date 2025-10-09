@@ -395,8 +395,9 @@ class ChessCoachingGenerator:
         explanations = []
         
         # Check for material sacrifice
+        # Avoid centipawn jargon in explanations; describe conceptually
         if centipawn_loss > 0:
-            explanations.append(f"This move sacrifices {int(centipawn_loss)} centipawns of material")
+            explanations.append("This move is a calculated material sacrifice")
         
         # Check for tactical patterns
         heuristic_details = move_analysis.get('heuristic_details', {})
@@ -478,14 +479,14 @@ class ChessCoachingGenerator:
         """Generate detailed explanation for blunders."""
         problems = []
         
-        # Check centipawn loss
+        # Avoid centipawn numbers; describe the impact plainly
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         if centipawn_loss > 500:
-            problems.append(f"loses {int(centipawn_loss)} centipawns - a catastrophic material loss")
+            problems.append("drops a piece or more without compensation")
         elif centipawn_loss > 200:
-            problems.append(f"loses {int(centipawn_loss)} centipawns - a significant material disadvantage")
+            problems.append("loses significant material")
         elif centipawn_loss > 100:
-            problems.append(f"loses {int(centipawn_loss)} centipawns - a serious material loss")
+            problems.append("loses material")
         
         # Check for specific tactical problems
         heuristic_details = move_analysis.get('heuristic_details', {})
@@ -616,11 +617,11 @@ class ChessCoachingGenerator:
             # For opponent moves, focus on what they did wrong and opportunities for you
             centipawn_loss = move_analysis.get('centipawn_loss', 0)
             if centipawn_loss > 100:
-                problems.append(f"Your opponent's move loses {int(centipawn_loss)} centipawns compared to the best move - this gives you an advantage.")
+                problems.append("Your opponent's move loses material or creates serious weaknesses — seize the chance.")
             elif centipawn_loss > 50:
-                problems.append(f"Your opponent's move loses {int(centipawn_loss)} centipawns, which is significant.")
+                problems.append("Your opponent's move weakens their position noticeably.")
             elif centipawn_loss > 10:
-                problems.append(f"Your opponent's move loses {int(centipawn_loss)} centipawns compared to optimal play.")
+                problems.append("Your opponent missed a stronger option; look to improve your position.")
             
             if self._hangs_piece(move, board):
                 problems.append("Your opponent's move hangs a piece - look for tactics to win material.")
@@ -641,14 +642,14 @@ class ChessCoachingGenerator:
                 return " ".join(problems)
             return None
         
-        # Check centipawn loss
+        # Avoid centipawn loss phrasing; speak plainly
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         if centipawn_loss > 100:
-            problems.append(f"This move loses {int(centipawn_loss)} centipawns compared to the best move.")
+            problems.append("This move loses material compared to a better line.")
         elif centipawn_loss > 50:
-            problems.append(f"This move loses {int(centipawn_loss)} centipawns, which is significant.")
+            problems.append("This move weakens your position and hands the initiative to your opponent.")
         elif centipawn_loss > 10:
-            problems.append(f"This move loses {int(centipawn_loss)} centipawns compared to optimal play.")
+            problems.append("This move lets your opponent equalize or improve easily.")
         
         # Check for specific tactical problems
         if self._hangs_piece(move, board):
@@ -1132,48 +1133,48 @@ class ChessCoachingGenerator:
         if move_quality == MoveQuality.BEST:
             if is_opening:
                 return "Book move."
-            elif abs(evaluation_change) < 10:  # Minimal evaluation change
-                return "This is the best move available and maintains the current position. You're playing accurately and keeping the position balanced."
+            elif abs(evaluation_change) < 10:
+                return "Best move. Keeps the position balanced and safe."
             else:
-                return f"This is the strongest move available. {'It improves your position' if evaluation_change > 0 else 'It maintains your position well'} with optimal play."
+                return "Best move. Improves your position and follows sound principles."
         
         elif move_quality == MoveQuality.GREAT:
             if is_opening:
                 return "Book move."
-            elif abs(evaluation_change) < 10:  # Minimal evaluation change
-                return "This is a very strong move that maintains the current position well. You're playing accurately and keeping things balanced."
+            elif abs(evaluation_change) < 10:
+                return "Great move. Maintains control and keeps things balanced."
             elif evaluation_change > 0:
-                return f"This is a great move that improves your position by about {abs(evaluation_change)} centipawns. You're showing strong chess understanding."
+                return "Great move that clearly improves your position."
             else:
-                return "This is a great move that maintains your position well. You're playing accurately and keeping the position balanced."
+                return "Great move that keeps your position solid."
         
         elif move_quality == MoveQuality.EXCELLENT:
             if is_opening:
                 return "Book move."
             elif abs(evaluation_change) < 10:
-                return "This is an excellent move that maintains the current position. You're playing solidly and keeping things balanced."
+                return "Excellent move. Solid and reliable, keeps everything under control."
             elif evaluation_change > 0:
-                return f"This is an excellent move that slightly improves your position. You're showing good chess fundamentals."
+                return "Excellent move that strengthens your position."
             else:
-                return "This is an excellent move that maintains your position well. You're playing solidly and keeping the position balanced."
+                return "Excellent move that holds the balance."
         
         elif move_quality == MoveQuality.GOOD:
             if is_opening:
                 return "Book move."
             elif abs(evaluation_change) < 10:
-                return "This is a good move that maintains the current position. You're playing solidly and keeping things balanced."
+                return "Good move. Keeps a playable position."
             elif evaluation_change > 0:
-                return f"This is a good move that slightly improves your position. You're making sound decisions."
+                return "Good move that improves your position."
             else:
-                return "This is a good move that maintains your position well. You're playing solidly and keeping the position balanced."
+                return "Good move that keeps the position safe."
         
         elif move_quality == MoveQuality.ACCEPTABLE:
             if is_opening:
                 return "Book move."
             elif centipawn_loss > 0:
-                return f"This move is acceptable but loses about {int(centipawn_loss)} centipawns compared to the best move. There were stronger options available."
+                return "Playable, but a stronger option was available."
             else:
-                return "This move is acceptable but not the most accurate. There were stronger options available that could have improved your position."
+                return "Acceptable move, though not the most accurate."
         
         else:
             # Fall back to original templates for other qualities
@@ -1181,24 +1182,8 @@ class ChessCoachingGenerator:
             return random.choice(templates)
 
     def _generate_opening_explanation(self, move_analysis: Dict[str, Any], is_user_move: bool = True) -> str:
-        """Generate educational explanation for opening moves instead of hype."""
-        move_san = move_analysis.get('move_san', '')
-        move_number = move_analysis.get('fullmove_number', 0)
-        
-        # Get opening information if available
-        opening_name = self._get_opening_name_from_context(move_analysis)
-        
-        if opening_name:
-            if is_user_move:
-                return f"This is a standard move in the {opening_name}. {self._get_opening_educational_context(opening_name, move_san, move_number)}"
-            else:
-                return f"Your opponent played a standard move in the {opening_name}. {self._get_opening_educational_context(opening_name, move_san, move_number)}"
-        else:
-            # Generic opening explanation
-            if is_user_move:
-                return f"This is a solid opening move. {self._get_generic_opening_principle(move_san, move_number)}"
-            else:
-                return f"Your opponent played a solid opening move. {self._get_generic_opening_principle(move_san, move_number)}"
+        """Opening moves should be concise and neutral."""
+        return "Book move."
 
     def _get_opening_name_from_context(self, move_analysis: Dict[str, Any]) -> str:
         """Try to identify the opening name from the move context."""

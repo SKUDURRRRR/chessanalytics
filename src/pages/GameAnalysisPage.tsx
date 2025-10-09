@@ -14,7 +14,7 @@ import { CHESS_ANALYSIS_COLORS } from '../utils/chessColors'
 import { getDarkChessBoardTheme } from '../utils/chessBoardTheme'
 import { generateMoveArrows, generateModernMoveArrows, Arrow } from '../utils/chessArrows'
 import { ModernChessArrows } from '../components/chess/ModernChessArrows'
-import { buildEnhancedComment, CommentContext } from '../utils/commentTemplates'
+import { buildHumanComment, CommentContext, HumanReasonContext } from '../utils/commentTemplates'
 import type { MatchHistoryGameSummary, Platform } from '../types'
 
 interface EvaluationInfo {
@@ -181,9 +181,7 @@ const buildFallbackExplanation = (
     case 'acceptable':
       return '👍 Solid move that maintained a playable position. This shows reasonable chess understanding and keeps your position healthy.'
     case 'inaccuracy':
-      return loss != null
-        ? `⚠️ Inaccuracy. You dropped roughly ${loss} centipawns compared to optimal play, which weakens your position. Look for stronger moves that maintain your advantage better.`
-        : '⚠️ Inaccuracy. Better play was available that would have improved your position more significantly.'
+      return '⚠️ Inaccuracy. This move weakens your position and allows your opponent to improve. Look for stronger moves that maintain your advantage better.'
     case 'mistake':
       return bestMoveSan
         ? `❌ Mistake. Consider ${bestMoveSan} next time - it would have been much stronger and maintained your advantage. This move creates difficulties for your position.`
@@ -241,9 +239,7 @@ const buildEnhancedFallbackExplanation = (
       case 'acceptable':
         return '⚠️ Your opponent\'s move is acceptable, but not the strongest choice. Better options were available that could have improved their position more significantly. This gives you a small opportunity to gain an edge.'
       case 'inaccuracy':
-        return loss != null
-          ? `❌ Your opponent made an inaccuracy, dropping roughly ${loss} centipawns compared to optimal play. This gives you an opportunity to improve your position and potentially gain an advantage. Look for ways to exploit this weakness.`
-          : '❌ Your opponent\'s move isn\'t optimal. Look for ways to exploit this weakness and improve your position while they\'re not playing at their best. This creates tactical opportunities for you.'
+        return '❌ Your opponent made an inaccuracy. This gives you an opportunity to improve your position and potentially gain an advantage. Look for ways to exploit this weakness.'
       case 'mistake':
         return bestMoveSan
           ? `❌ Your opponent made a mistake! They should have played ${bestMoveSan} instead. This creates tactical opportunities for you - look for ways to take advantage of their error and gain a significant advantage.`
@@ -282,9 +278,7 @@ const buildEnhancedFallbackExplanation = (
     case 'acceptable':
       return '⚠️ This move is playable, but there were better options available that could have improved your position more significantly. Consider looking for moves that create more threats, improve piece coordination, or strengthen your position. Every move counts in chess!'
     case 'inaccuracy':
-      return loss != null
-        ? `❌ This move has some issues. You dropped roughly ${loss} centipawns compared to optimal play, which weakens your position. Look for moves that maintain your advantage better and avoid giving your opponent unnecessary opportunities. Take more time to calculate and consider all your options.`
-        : '❌ This move isn\'t optimal. There\'s a better way to handle this position that would maintain your advantage. Take time to consider all your options and look for stronger continuations that improve your position.'
+      return '❌ This move has some issues. It weakens your position and allows your opponent to improve. Look for moves that maintain your advantage better and avoid giving your opponent unnecessary opportunities. Take more time to calculate and consider all your options.'
     case 'mistake':
       return bestMoveSan
         ? `❌ This move has problems that weaken your position. Consider ${bestMoveSan} next time - it would have been much stronger and maintained your advantage. Learn from this to improve your tactical awareness and calculation. Always check for better moves before committing.`
@@ -638,23 +632,29 @@ export default function GameAnalysisPage() {
       const bestMoveSan = convertUciToSan(fenBefore, move.best_move)
       const classification = determineClassification(move)
       
-      // Use enhanced coaching comment if available, otherwise use enhanced templates
-      // This ensures all moves get detailed, educational explanations
+      // Use enhanced coaching comment if available and doesn't contain centipawn references,
+      // otherwise use enhanced templates for consistent human-friendly explanations
       let explanation
-      if (move.coaching_comment && move.coaching_comment.trim()) {
-        // Use coaching comment if available and not empty
+      if (move.coaching_comment && move.coaching_comment.trim() && 
+          !move.coaching_comment.toLowerCase().includes('centipawn') && 
+          !move.coaching_comment.toLowerCase().includes('cp')) {
+        // Use coaching comment if available, not empty, and doesn't contain centipawn references
         explanation = move.coaching_comment
       } else {
         // Use enhanced comment templates for variety and insight
-        const commentContext: CommentContext = {
+        const commentContext: HumanReasonContext = {
           classification,
           centipawnLoss: move.centipawn_loss ?? null,
           bestMoveSan,
           moveNumber: moveNumber,
           isUserMove,
-          isOpeningMove: moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good')
+          isOpeningMove: moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good'),
+          tacticalInsights: move.tactical_insights,
+          positionalInsights: move.positional_insights,
+          risks: move.risks,
+          benefits: move.benefits,
         }
-        explanation = buildEnhancedComment(commentContext)
+        explanation = buildHumanComment(commentContext)
       }
 
       try {

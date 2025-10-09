@@ -146,10 +146,10 @@ class ParallelAnalysisEngine:
             max_workers: Maximum number of parallel processes. If None, auto-calculates based on CPU count.
         """
         if max_workers is None:
-            # Dynamic worker count: max(1, min(3, cpu_count // 2))
-            # This prevents CPU saturation while maintaining good performance
+            # Dynamic worker count optimized for Railway Hobby tier
+            # Hobby tier has 8 vCPU, so we can use more workers for better performance
             cpu_count = os.cpu_count() or 4
-            self.max_workers = max(1, min(3, cpu_count // 2))
+            self.max_workers = max(1, min(6, cpu_count))  # Up to 6 workers for Railway Hobby tier
         else:
             self.max_workers = max_workers
         self.supabase = get_supabase_client()
