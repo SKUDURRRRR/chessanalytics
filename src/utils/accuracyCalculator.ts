@@ -66,42 +66,45 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
   for (const move of moves) {
     const centipawn_loss = move.centipawn_loss || 0
 
-    // Industry-standard move classification (for display)
+    // Chess.com-aligned move classification (CORRECTED 2025-10-08)
+    // Best: 0-5cp, Great: 5-15cp, Excellent: 15-25cp, Good: 25-50cp
+    // Inaccuracy: 50-100cp, Mistake: 100-200cp, Blunder: 200+cp
     if (centipawn_loss <= 5) {
-      brilliant_moves++
-    } else if (centipawn_loss <= 30) {
-      good_moves++
-    } else if (centipawn_loss <= 80) {
-      acceptable_moves++
-    } else if (centipawn_loss <= 150) {
-      inaccuracies++
-    } else if (centipawn_loss <= 250) {
-      mistakes++
+      brilliant_moves++  // Best moves (Note: not all are brilliant, just using this counter)
+    } else if (centipawn_loss <= 50) {
+      good_moves++  // Includes Great, Excellent, and Good (5-50cp)
+    } else if (centipawn_loss <= 100) {
+      inaccuracies++  // Inaccuracies (50-100cp) - Chess.com standard
+    } else if (centipawn_loss <= 200) {
+      mistakes++  // Mistakes (100-200cp) - Chess.com standard
     } else {
-      blunders++
+      blunders++  // Blunders (200+cp) - Chess.com standard
     }
   }
 
-  // Chess.com-style accuracy calculation with more generous thresholds
+  // Chess.com-style accuracy calculation with conservative thresholds
   // This matches the backend calculation for consistency
   let total_accuracy = 0
   for (const move of moves) {
     const centipawn_loss = move.centipawn_loss || 0
     
-    if (centipawn_loss <= 10) {
-      total_accuracy += 100.0  // Perfect moves
-    } else if (centipawn_loss <= 50) {
-      // Linear interpolation from 100% to 70% for 10-50 CPL
-      total_accuracy += 100.0 - (centipawn_loss - 10) * 0.75
-    } else if (centipawn_loss <= 100) {
-      // Linear interpolation from 70% to 50% for 50-100 CPL
-      total_accuracy += 70.0 - (centipawn_loss - 50) * 0.4
-    } else if (centipawn_loss <= 200) {
-      // Linear interpolation from 50% to 30% for 100-200 CPL
-      total_accuracy += 50.0 - (centipawn_loss - 100) * 0.2
+    if (centipawn_loss <= 5) {
+      total_accuracy += 100.0  // Only truly perfect moves
+    } else if (centipawn_loss <= 20) {
+      // Linear interpolation from 100% to 85% for 5-20 CPL
+      total_accuracy += 100.0 - (centipawn_loss - 5) * 1.0
+    } else if (centipawn_loss <= 40) {
+      // Linear interpolation from 85% to 70% for 20-40 CPL
+      total_accuracy += 85.0 - (centipawn_loss - 20) * 0.75
+    } else if (centipawn_loss <= 80) {
+      // Linear interpolation from 70% to 50% for 40-80 CPL
+      total_accuracy += 70.0 - (centipawn_loss - 40) * 0.5
+    } else if (centipawn_loss <= 150) {
+      // Linear interpolation from 50% to 30% for 80-150 CPL
+      total_accuracy += 50.0 - (centipawn_loss - 80) * 0.286
     } else {
-      // Linear interpolation from 30% to 20% for 200+ CPL
-      total_accuracy += Math.max(20.0, 30.0 - (centipawn_loss - 200) * 0.1)
+      // Linear interpolation from 30% to 15% for 150+ CPL
+      total_accuracy += Math.max(15.0, 30.0 - (centipawn_loss - 150) * 0.1)
     }
   }
   

@@ -69,7 +69,7 @@ The app should now connect to your Supabase project and be available at `http://
 
 ```bash
 # Set database URL (replace with your actual password)
-export DATABASE_URL="postgresql://postgres:[YOUR_PASSWORD]@db.nkeaifrhtyigfmicfwch.supabase.co:5432/postgres"
+export DATABASE_URL="postgresql://postgres:[YOUR_PASSWORD]@db.your-project-id.supabase.co:5432/postgres"
 
 # Run health checks
 npm run health-check

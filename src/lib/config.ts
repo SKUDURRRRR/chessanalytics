@@ -75,7 +75,7 @@ export interface FeatureFlags {
 // ============================================================================
 
 const DEFAULT_API_CONFIG: ApiConfig = {
-  baseUrl: env.VITE_ANALYSIS_API_URL || 'http://localhost:8002',
+  baseUrl: (env.VITE_ANALYSIS_API_URL || 'http://localhost:8002').replace(/\/$/, ''), // Remove trailing slash
   timeout: 30000, // 30 seconds
   retryAttempts: 3,
   retryDelay: 1000 // 1 second
@@ -95,7 +95,7 @@ const DEFAULT_ANALYSIS_CONFIG: AnalysisConfig = {
   defaultSkillLevel: 20,
   maxSkillLevel: 20,
   timeout: 60000, // 60 seconds
-  batchSize: 10
+  batchSize: 5
 }
 
 const DEFAULT_UI_CONFIG: UIConfig = {
@@ -401,7 +401,7 @@ export const CONSTANTS = {
     DEFAULT_SKILL_LEVEL: 20,
     MIN_BATCH_SIZE: 1,
     MAX_BATCH_SIZE: 100,
-    DEFAULT_BATCH_SIZE: 10
+    DEFAULT_BATCH_SIZE: 5
   },
 
   // UI Constants

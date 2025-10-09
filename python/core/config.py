@@ -164,36 +164,73 @@ class ChessAnalysisConfig:
         """Find the best available Stockfish executable."""
         # Check environment variable first
         env_path = os.getenv("STOCKFISH_PATH")
-        if env_path and os.path.exists(env_path):
-            return env_path
+        print(f"[STOCKFISH] Environment STOCKFISH_PATH: {env_path}")
         
-        # Try common paths
-        possible_paths = [
-            # Windows winget installation
-            os.path.expanduser("~\\AppData\\Local\\Microsoft\\WinGet\\Packages\\"
-                             "Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe\\"
-                             "stockfish\\stockfish-windows-x86-64-avx2.exe"),
-            # Local stockfish directory
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "stockfish", "stockfish-windows-x86-64-avx2.exe"),
-            # System PATH
-            "stockfish",
-            "stockfish.exe"
-        ]
+        if env_path:
+            # If it's just "stockfish", check if it exists in PATH
+            if env_path == "stockfish" and self._check_command_exists(env_path):
+                print(f"[STOCKFISH] Found stockfish in PATH via env var")
+                return env_path
+            # If it's a full path, check if file exists
+            elif os.path.exists(env_path):
+                print(f"[STOCKFISH] Found stockfish at env path: {env_path}")
+                return env_path
+        
+        # Try common paths - prioritize based on environment
+        import platform
+        is_windows = platform.system() == "Windows"
+        
+        if is_windows:
+            # Windows paths first for local development
+            possible_paths = [
+                # Local stockfish directory (most likely for development)
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), "stockfish", "stockfish-windows-x86-64-avx2.exe"),
+                # Windows winget installation
+                os.path.expanduser("~\\AppData\\Local\\Microsoft\\WinGet\\Packages\\"
+                                 "Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe\\"
+                                 "stockfish\\stockfish-windows-x86-64-avx2.exe"),
+                "stockfish.exe",
+                "stockfish"
+            ]
+        else:
+            # Linux/Unix paths first for production
+            possible_paths = [
+                "/usr/games/stockfish",  # Common Debian/Ubuntu location (Railway)
+                "/usr/bin/stockfish",
+                "/usr/local/bin/stockfish", 
+                "stockfish"
+            ]
+            
+            # Force check the Railway path first
+            if os.path.exists("/usr/games/stockfish"):
+                print(f"[STOCKFISH] Found Stockfish at /usr/games/stockfish (Railway path)")
+                return "/usr/games/stockfish"
+        
+        print(f"[STOCKFISH] Checking possible paths: {possible_paths}")
         
         for path in possible_paths:
-            if os.path.exists(path) or (path in ["stockfish", "stockfish.exe"] and self._check_command_exists(path)):
+            exists = os.path.exists(path)
+            in_path = path in ["stockfish", "stockfish.exe"] and self._check_command_exists(path)
+            print(f"[STOCKFISH] Path {path}: exists={exists}, in_path={in_path}")
+            
+            if exists or in_path:
+                print(f"[STOCKFISH] Found stockfish at: {path}")
                 return path
         
+        print(f"[STOCKFISH] No stockfish executable found")
         return None
     
     def _check_command_exists(self, command: str) -> bool:
         """Check if a command exists in the system PATH."""
         try:
             import subprocess
+            print(f"[STOCKFISH] Checking if command '{command}' exists in PATH")
             result = subprocess.run([command, "--version"], 
                                  capture_output=True, timeout=5, check=False)
+            print(f"[STOCKFISH] Command '{command}' result: returncode={result.returncode}, stdout={result.stdout.decode()[:100] if result.stdout else 'None'}")
             return result.returncode == 0
-        except:
+        except Exception as e:
+            print(f"[STOCKFISH] Exception checking command '{command}': {e}")
             return False
     
     def save_to_file(self, file_path: Optional[str] = None) -> bool:

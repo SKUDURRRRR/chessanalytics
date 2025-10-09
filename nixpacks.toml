@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["python311", "stockfish"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[phases.build]
+cmds = ["mkdir -p /app && cp -r python /app/python"]
+
+[start]
+cmd = "cd /app/python && uvicorn main:app --host 0.0.0.0 --port $PORT"

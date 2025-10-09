@@ -76,14 +76,16 @@ class AnalysisPerformanceConfig:
             )
         
         elif profile == PerformanceProfile.PRODUCTION:
+            # OPTIMIZED FOR RAILWAY FREE TIER (~512 MB RAM)
+            # These conservative settings prevent OOM kills (exit code -9)
             return cls(
-                stockfish_depth=12,  # Deeper analysis for better accuracy
-                stockfish_skill_level=10,  # Human-like strength
-                stockfish_time_limit=2.0,  # More time for quality
-                stockfish_threads=2,
-                stockfish_hash_size=64,
-                max_concurrent_analyses=4,
-                batch_size=10,
+                stockfish_depth=8,  # Reduced from 12 to save memory
+                stockfish_skill_level=8,  # Reduced from 10 for speed
+                stockfish_time_limit=0.5,  # Reduced from 2.0 for faster analysis
+                stockfish_threads=1,  # CRITICAL: Only 1 thread to prevent OOM
+                stockfish_hash_size=8,  # CRITICAL: Reduced from 64 MB to 8 MB for Railway free tier
+                max_concurrent_analyses=1,  # CRITICAL: Only 1 concurrent analysis to prevent memory exhaustion
+                batch_size=5,  # Reduced from 10
                 parallel_analysis=True,
                 max_memory_usage_mb=512,
                 cleanup_interval_minutes=30,
@@ -92,8 +94,8 @@ class AnalysisPerformanceConfig:
                 query_timeout_seconds=30,
                 enable_analysis_cache=True,
                 cache_ttl_hours=24,
-                max_cache_size_mb=256,
-                max_games_per_request=50,
+                max_cache_size_mb=128,  # Reduced from 256 to save memory
+                max_games_per_request=20,  # Reduced from 50
                 max_analysis_time_per_game=300,
                 max_total_analysis_time=3600
             )

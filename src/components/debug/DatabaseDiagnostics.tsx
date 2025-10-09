@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { runDatabaseDiagnostics, testAnalysisTypes, DatabaseDiagnostics } from '../../utils/databaseDiagnostics'
 import { checkUserDataInDatabase, checkAllUsersInDatabase, testUnifiedAnalysesView } from '../../utils/databaseQuery'
 // Development-only diagnostics component. Import manually during local debugging.
-if (import.meta.env.PROD) {
-  throw new Error('DatabaseDiagnosticsComponent is development-only. Remove this import for production builds.')
-}
+// Removed production check - component simply won't be imported in production builds
 
 interface DatabaseDiagnosticsProps {
   userId: string

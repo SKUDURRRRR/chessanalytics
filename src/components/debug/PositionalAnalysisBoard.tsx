@@ -1,7 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
+import { generateMoveArrows, generateModernMoveArrows } from '../../utils/chessArrows'
+import { ModernChessArrows } from '../chess/ModernChessArrows'
 
 
 interface ProcessedMove {
@@ -43,18 +45,13 @@ interface PositionalAnalysisBoardProps {
   allMoves: ProcessedMove[]
   playerColor: 'white' | 'black'
   className?: string
+  selectedMoveIndex?: number
   onMoveChange?: (moveIndex: number, move: ProcessedMove | null, isElementMove: boolean) => void
 }
 
-export function PositionalAnalysisBoard({ element, allMoves, playerColor, className = '', onMoveChange }: PositionalAnalysisBoardProps) {
+export function PositionalAnalysisBoard({ element, allMoves, playerColor, className = '', selectedMoveIndex, onMoveChange }: PositionalAnalysisBoardProps) {
   const [boardWidth, setBoardWidth] = useState(200)
-
-  // Debug logging
-  console.log('PositionalAnalysisBoard - element:', element)
-  console.log('PositionalAnalysisBoard - allMoves length:', allMoves.length)
-  console.log('PositionalAnalysisBoard - playerColor:', playerColor)
-  console.log('PositionalAnalysisBoard - element.moves:', element.moves)
-  console.log('PositionalAnalysisBoard - first few allMoves:', allMoves.slice(0, 3))
+  const lastNotifiedIndex = useRef<number | null>(null)
 
   // Get the moves for this element/theme
   const elementMoves = useMemo(() => {
@@ -64,18 +61,26 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
   }, [element.moves, allMoves])
 
   // Initialize currentMoveIndex to the first element move
-  const [currentMoveIndex, setCurrentMoveIndex] = useState(() => {
+  const [internalMoveIndex, setInternalMoveIndex] = useState(() => {
     return element.moves.length > 0 ? element.moves[0] : 0
   })
 
-  // Notify parent when move changes
+  // Use selectedMoveIndex if provided, otherwise use internal state
+  const currentMoveIndex = selectedMoveIndex !== undefined ? selectedMoveIndex : internalMoveIndex
+
+  // Notify parent when move changes (with deduplication)
   useEffect(() => {
+    if (lastNotifiedIndex.current === currentMoveIndex) {
+      return // Skip if we already notified for this index
+    }
+    
     const currentMove = allMoves[currentMoveIndex]
     const isElementMove = currentMove && element.moves.includes(currentMove.index)
     if (onMoveChange && currentMove) {
+      lastNotifiedIndex.current = currentMoveIndex
       onMoveChange(currentMoveIndex, currentMove, isElementMove)
     }
-  }, [currentMoveIndex, allMoves, element.moves]) // Removed onMoveChange from dependencies to prevent infinite loop
+  }, [currentMoveIndex, allMoves, element.moves, onMoveChange])
 
   useEffect(() => {
     const updateBoardWidth = () => {
@@ -98,58 +103,23 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
   }, [])
 
   const chess = useMemo(() => {
-    console.log('PositionalAnalysisBoard - constructing chess game, currentMoveIndex:', currentMoveIndex)
     const game = new Chess()
-    // Replay moves up to the current move index
+    // Replay moves up to and including the current move index
     for (let i = 0; i <= currentMoveIndex; i++) {
       if (allMoves[i]) {
-        console.log(`PositionalAnalysisBoard - applying move ${i}:`, allMoves[i].san)
         try {
-          // Try SAN first (most common format)
+          // Use SAN notation directly (which is what we store)
           game.move(allMoves[i].san)
         } catch (err) {
-          console.warn('PositionalAnalysisBoard - SAN failed, trying UCI:', allMoves[i].san, err)
-          // If SAN fails, try UCI parsing
-          try {
-            const moveData = allMoves[i]
-            const { from, to, promotion } = parseUciMove(moveData.san)
-            game.move({ from, to, promotion })
-          } catch (uciErr) {
-            console.warn('Failed to apply move:', allMoves[i].san, uciErr)
-          }
+          console.warn('Failed to apply move:', allMoves[i].san, err)
         }
       }
     }
-    console.log('PositionalAnalysisBoard - final FEN:', game.fen())
     return game
   }, [currentMoveIndex, allMoves])
 
-  const parseUciMove = (move: string) => {
-    if (move.length === 4) {
-      return {
-        from: move.substring(0, 2) as any,
-        to: move.substring(2, 4) as any,
-        promotion: undefined
-      }
-    } else if (move.length === 5) {
-      return {
-        from: move.substring(0, 2) as any,
-        to: move.substring(2, 4) as any,
-        promotion: move.substring(4, 5) as any
-      }
-    }
-    throw new Error('Invalid UCI move format')
-  }
-
   const getCurrentFen = () => {
-    try {
-      const fen = chess.fen()
-      console.log('PositionalAnalysisBoard - getCurrentFen:', fen, 'currentMoveIndex:', currentMoveIndex)
-      return fen
-    } catch (error) {
-      console.error('PositionalAnalysisBoard - getCurrentFen error:', error)
-      return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' // Starting position
-    }
+    return chess.fen()
   }
 
   const getMoveHighlight = () => {
@@ -160,22 +130,18 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
       if (!currentMove) return {}
       
       const game = new Chess()
-      // Replay moves up to the current move
+      // Replay moves up to (but not including) the current move
       for (let i = 0; i < currentMoveIndex; i++) {
         if (allMoves[i]) {
           try {
             game.move(allMoves[i].san)
           } catch (err) {
-            try {
-              const { from, to, promotion } = parseUciMove(allMoves[i].san)
-              game.move({ from, to, promotion })
-            } catch (uciErr) {
-              console.warn('Failed to apply move:', allMoves[i].san, uciErr)
-            }
+            console.warn('Failed to apply move:', allMoves[i].san, err)
           }
         }
       }
       
+      // Now apply the current move to get highlight squares
       const moveObj = game.move(currentMove.san)
       if (moveObj) {
         return {
@@ -195,22 +161,18 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
     
     try {
       const game = new Chess()
-      // Replay moves up to the current move
+      // Replay moves up to (but not including) the current move
       for (let i = 0; i < currentMoveIndex; i++) {
         if (allMoves[i]) {
           try {
             game.move(allMoves[i].san)
           } catch (err) {
-            try {
-              const { from, to, promotion } = parseUciMove(allMoves[i].san)
-              game.move({ from, to, promotion })
-            } catch (uciErr) {
-              console.warn('Failed to apply move:', allMoves[i].san, uciErr)
-            }
+            console.warn('Failed to apply move:', allMoves[i].san, err)
           }
         }
       }
       
+      // Now apply the current move to get highlight squares
       const moveObj = game.move(currentMove.san)
       if (moveObj) {
         return {
@@ -226,31 +188,71 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
 
   // Note: Square highlighting removed for simplicity with custom board
 
+  // Generate arrows for the current move
+  const currentMoveArrows = useMemo(() => {
+    if (currentMoveIndex < 0 || currentMoveIndex >= allMoves.length) {
+      return []
+    }
+
+    const currentMove = allMoves[currentMoveIndex]
+    if (!currentMove) {
+      return []
+    }
+
+    // Create a chess instance to replay moves up to (but not including) the current move
+    const chess = new Chess()
+    
+    // Replay all moves up to (but not including) the current move
+    // This sets up the position BEFORE the current move is made
+    for (let i = 0; i < currentMoveIndex; i++) {
+      const moveData = allMoves[i]
+      if (moveData) {
+        try {
+          // Try SAN notation first (which is what we store)
+          chess.move(moveData.san)
+        } catch (err) {
+          console.warn('Failed to apply move for arrow generation:', moveData.san, err)
+        }
+      }
+    }
+
+    // Generate modern arrows for the current move
+    return generateModernMoveArrows({
+      san: currentMove.san,
+      bestMoveSan: currentMove.bestMoveSan,
+      classification: currentMove.classification,
+      isUserMove: currentMove.isUserMove
+    }, chess)
+  }, [currentMoveIndex, allMoves])
+
   const currentMove = allMoves[currentMoveIndex]
   const isElementMove = currentMove && element.moves.includes(currentMove.index)
   const canGoBack = currentMoveIndex > 0
   const canGoForward = currentMoveIndex < allMoves.length - 1
 
   const navigateToMove = (direction: 'prev' | 'next' | 'first' | 'last' | 'element') => {
+    // Only allow navigation if we're not using an external selectedMoveIndex
+    if (selectedMoveIndex !== undefined) return
+    
     switch (direction) {
       case 'prev':
-        if (canGoBack) setCurrentMoveIndex(currentMoveIndex - 1)
+        if (canGoBack) setInternalMoveIndex(currentMoveIndex - 1)
         break
       case 'next':
-        if (canGoForward) setCurrentMoveIndex(currentMoveIndex + 1)
+        if (canGoForward) setInternalMoveIndex(currentMoveIndex + 1)
         break
       case 'first':
-        setCurrentMoveIndex(0)
+        setInternalMoveIndex(0)
         break
       case 'last':
-        setCurrentMoveIndex(allMoves.length - 1)
+        setInternalMoveIndex(allMoves.length - 1)
         break
       case 'element':
         // Go to the first move of this element
         const firstElementMove = element.moves[0]
         const elementMoveIndex = allMoves.findIndex(m => m.index === firstElementMove)
         if (elementMoveIndex !== -1) {
-          setCurrentMoveIndex(elementMoveIndex)
+          setInternalMoveIndex(elementMoveIndex)
         }
         break
     }
@@ -280,20 +282,33 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
     <div className={`space-y-2 w-full max-w-[400px] ${className}`}>
       {/* Board */}
       <div className="relative bg-slate-800/20 rounded-lg p-4 pb-6">
+        <style>{`
+          #positional-analysis-${element.name.replace(/\s+/g, '-').toLowerCase()} .react-chessboard-notation {
+            font-size: 5px !important;
+            font-weight: 500 !important;
+          }
+        `}</style>
         <div className="flex justify-center">
-          <Chessboard
-            id={`positional-analysis-${element.name.replace(/\s+/g, '-').toLowerCase()}`}
-            position={getCurrentFen()}
-            arePiecesDraggable={false}
-            boardOrientation={playerColor}
-            boardWidth={boardWidth}
-            showNotation={true}
-            customSquareStyles={{
-              ...getMoveHighlight(),
-              ...getElementMoveHighlight()
-            }}
-            {...getDarkChessBoardTheme('default')}
-          />
+          <div style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }} className="relative">
+            <Chessboard
+              id={`positional-analysis-${element.name.replace(/\s+/g, '-').toLowerCase()}`}
+              position={getCurrentFen()}
+              arePiecesDraggable={false}
+              boardOrientation={playerColor}
+              boardWidth={boardWidth}
+              showNotation={true}
+              customSquareStyles={{
+                ...getMoveHighlight(),
+                ...getElementMoveHighlight()
+              }}
+              {...getDarkChessBoardTheme('default')}
+            />
+            <ModernChessArrows
+              arrows={currentMoveArrows}
+              boardWidth={boardWidth}
+              boardOrientation={playerColor}
+            />
+          </div>
         </div>
       </div>
 

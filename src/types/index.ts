@@ -405,5 +405,83 @@ export type Color = 'white' | 'black'
 export type PlayerLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert'
 export type PlayerStyle = 'positional' | 'tactical' | 'aggressive' | 'balanced'
 
+// Enhanced Opening Analysis Types
+export interface OpeningMistake {
+  move: number
+  moveNotation: string
+  mistake: string
+  correctMove: string
+  explanation: string
+  severity: 'critical' | 'major' | 'minor'
+  centipawnLoss: number
+  classification: 'blunder' | 'mistake' | 'inaccuracy'
+}
 
+export interface StudyRecommendation {
+  type: 'video' | 'article' | 'practice' | 'game' | 'course'
+  title: string
+  description: string
+  url?: string
+  difficulty: 'beginner' | 'intermediate' | 'advanced'
+  estimatedTime: string
+  priority: 'high' | 'medium' | 'low'
+}
+
+export interface PeerComparison {
+  averageAccuracy: number
+  percentile: number
+  trend: 'improving' | 'stable' | 'declining'
+  gamesPlayed: number
+  ratingRange: string
+}
+
+export interface RepertoireAnalysis {
+  diversity: number
+  colorPerformance: { white: number; black: number }
+  familyStrengths: string[]
+  familyWeaknesses: string[]
+  mostPlayed: string
+  leastPlayed: string
+  recommendation: string
+}
+
+export interface EnhancedOpeningAnalysis {
+  // Basic info
+  openingName: string
+  openingFamily: string
+  accuracy: number
+  theoryKnowledge: number
+  gamesPlayed: number
+  
+  // Detailed insights
+  specificMistakes: OpeningMistake[]
+  commonPatterns: string[]
+  strengths: string[]
+  weaknesses: string[]
+  
+  // Learning resources
+  studyRecommendations: StudyRecommendation[]
+  practicePositions: Array<{
+    position: string
+    description: string
+    difficulty: 'beginner' | 'intermediate' | 'advanced'
+  }>
+  
+  // Comparative analysis
+  peerComparison: PeerComparison
+  
+  // Repertoire insights
+  repertoireAnalysis: RepertoireAnalysis
+  
+  // Improvement tracking
+  improvementTrend: Array<{
+    date: string
+    accuracy: number
+    games: number
+  }>
+  
+  // Next steps
+  nextGoals: string[]
+  focusAreas: string[]
+}
 

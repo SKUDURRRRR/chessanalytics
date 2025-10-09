@@ -7,13 +7,13 @@ import { AnalysisProgressBar } from '../components/simple/AnalysisProgressBar'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { AutoImportService } from '../services/autoImportService'
 import { UnifiedAnalysisService } from '../services/unifiedAnalysisService'
-import DatabaseDiagnosticsComponent from '../components/debug/DatabaseDiagnostics'
+// DatabaseDiagnosticsComponent is development-only, imported conditionally below
 import { EloDataDebugger } from '../components/debug/EloDataDebugger'
 import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
 import { ComprehensiveAnalytics } from '../components/debug/ComprehensiveAnalytics'
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
-const ANALYSIS_TEST_LIMIT = 10
+const ANALYSIS_TEST_LIMIT = 5
 
 const serializeOpeningIdentifiers = (identifiers: OpeningIdentifierSets): string => {
   try {
@@ -481,13 +481,7 @@ export default function SimpleAnalyticsPage() {
             <ComprehensiveAnalytics userId={userId} platform={platform} />
             <EloStatsOptimizer userId={userId} platform={platform} />
             <EloDataDebugger userId={userId} platform={platform} />
-            <DatabaseDiagnosticsComponent
-              userId={userId}
-              platform={platform}
-              onDiagnosticsComplete={(diagnostics) => {
-                console.log('Diagnostics completed:', diagnostics)
-              }}
-            />
+            {/* DatabaseDiagnosticsComponent removed for production builds */}
           </div>
         )}
 

@@ -220,7 +220,24 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
       if (!response.ok) {
         const text = await response.text()
-        throw new Error(text || `Analysis request failed: ${response.status}`)
+        let errorMessage = `Analysis request failed: ${response.status}`
+        
+        // Try to extract error message from response
+        try {
+          const errorData = JSON.parse(text)
+          if (errorData.message) {
+            errorMessage = errorData.message
+          } else if (errorData.detail) {
+            errorMessage = errorData.detail
+          }
+        } catch {
+          // If parsing fails, use the raw text if it's not too long
+          if (text && text.length < 200) {
+            errorMessage = text
+          }
+        }
+        
+        throw new Error(errorMessage)
       }
 
       const payload = await response.json()
@@ -254,14 +271,18 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
               accuracyMap.forEach((accuracy, id) => next.set(id, accuracy))
               return next
             })
-          } catch (error) {
-            console.error('Error refreshing analysis data:', error)
+          } catch (refreshError) {
+            // Extract just the error message to avoid circular references
+            const refreshErrorMsg = refreshError instanceof Error ? refreshError.message : String(refreshError)
+            console.error('Error refreshing analysis data:', refreshErrorMsg)
           }
         }, 2000)
       }
     } catch (error) {
-      console.error('Failed to request analysis:', error)
-      triggerNotification('error', error instanceof Error ? error.message : 'Failed to request analysis.')
+      // Extract just the error message to avoid any circular reference issues
+      const errorMessage = error instanceof Error ? error.message : String(error) || 'Failed to request analysis.'
+      console.error('Failed to request analysis:', errorMessage)
+      triggerNotification('error', errorMessage)
       clearGameQueued(gameIdentifier)
     } finally {
       clearGamePending(gameIdentifier)
@@ -296,7 +317,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       const canonicalUserId = canonicalizeUserId(userId, platform)
       let query = supabase
         .from('games')
-        .select('*')
+        .select('id, user_id, platform, result, color, opening, opening_family, accuracy, opponent_rating, my_rating, time_control, played_at, created_at, provider_game_id, total_moves, opponent_name')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
 
@@ -385,7 +406,8 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
               setAnalyzedGameIds(analyzedIds)
               setGameAnalyses(accuracyMap)
             } catch (analysisError) {
-              console.error('Error fetching analysis states:', analysisError)
+              const errorMsg = analysisError instanceof Error ? analysisError.message : String(analysisError)
+              console.error('Error fetching analysis states:', errorMsg)
             }
           } else {
             setAnalyzedGameIds(new Set())
@@ -394,7 +416,8 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         }
       }
     } catch (err) {
-      console.error('Error loading games:', err)
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      console.error('Error loading games:', errorMessage)
       setError('Failed to load match history')
     } finally {
       setLoading(false)

@@ -15,6 +15,7 @@ import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { PersonalityRadar } from '../deep/PersonalityRadar'
 import { LongTermPlanner } from '../deep/LongTermPlanner'
 import { OpeningPlayerCard } from '../deep/OpeningPlayerCard'
+import { EnhancedOpeningPlayerCard } from '../deep/EnhancedOpeningPlayerCard'
 import { ScoreCards } from '../deep/ScoreCards'
 import { EloTrendGraph } from './EloTrendGraph'
 import { EnhancedOpponentAnalysis } from './EnhancedOpponentAnalysis'
@@ -101,8 +102,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       // Set default values for removed services
       const optimizedEloStats = null
 
-      console.log('SimpleAnalytics received data:', analysisResult)
-      console.log('Comprehensive analytics:', comprehensiveAnalytics)
+      console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
+      console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.totalGames)
       console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
       console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
       console.log('Endgame accuracy:', analysisResult?.average_endgame_accuracy)
@@ -749,7 +750,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   </div>
                 </div>
               </div>
-              <div className="lg:col-span-2">
+              <div className="lg:col-span-2 min-w-0">
                 <EloTrendGraph
                   userId={userId}
                   platform={platform as 'lichess' | 'chess.com'}
@@ -842,9 +843,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               </div>
             )}
 
-            {/* Opening Player Card */}
+            {/* Enhanced Opening Player Card */}
             <div className={cardClass}>
-              <OpeningPlayerCard
+              <EnhancedOpeningPlayerCard
                 score={deepAnalysisData.phase_accuracies?.opening || 0}
                 phaseAccuracy={deepAnalysisData.phase_accuracies?.opening || 0}
                 openingStats={comprehensiveData?.openingStats || []}

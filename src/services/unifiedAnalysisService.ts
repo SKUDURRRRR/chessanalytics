@@ -382,7 +382,7 @@ export class UnifiedAnalysisService {
       }
 
       const data = await response.json()
-      console.log(`Game analyses response for ${userId}:`, data)
+      console.log(`Game analyses response for ${userId}: ${Array.isArray(data) ? data.length : 0} records`)
       return Array.isArray(data) ? data : []
     } catch (error) {
       console.error('Error fetching game analyses:', error)

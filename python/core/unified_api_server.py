@@ -39,7 +39,7 @@ from .error_handlers import (
 # Load environment configuration
 from .config import get_config
 config = get_config()
-from .cors_security import get_default_cors_config, get_production_cors_config
+from .cors_security import get_default_cors_config, get_production_cors_config, CORSSecurityConfig
 
 # Load performance configuration
 performance_config = get_performance_config()
@@ -50,7 +50,21 @@ print_performance_config(performance_config)
 
 # Initialize secure CORS configuration
 cors_origins = config.api.cors_origins or ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"]
-cors_config = get_default_cors_config()
+print(f"🔒 CORS Origins configured: {cors_origins}")
+
+# Use production CORS config if we have custom origins, otherwise use default
+if config.api.cors_origins:
+    cors_config = CORSSecurityConfig(
+        allowed_origins=cors_origins,
+        allowed_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowed_headers=['Authorization', 'Content-Type', 'Accept', 'X-Requested-With'],
+        allow_credentials=True,
+        max_age=3600
+    )
+    print(f"✅ Using production CORS configuration")
+else:
+    cors_config = get_default_cors_config()
+    print(f"⚠️  Using default localhost CORS configuration")
 
 # Initialize Supabase clients with fallback for missing config
 if config.database.url and config.database.anon_key:
@@ -163,7 +177,7 @@ def _normalize_analysis_type(requested: Optional[str], *, quiet: bool = False) -
 
 # In-memory storage for analysis progress
 analysis_progress = {}
-ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "10"))
+ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 
 # ============================================================================
 # UNIFIED PYDANTIC MODELS
@@ -174,7 +188,7 @@ class UnifiedAnalysisRequest(BaseModel):
     user_id: str = Field(..., description="User ID to analyze games for")
     platform: str = Field(..., description="Platform (lichess, chess.com, etc.)")
     analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
-    limit: Optional[int] = Field(10, description="Maximum number of games to analyze")
+    limit: Optional[int] = Field(5, description="Maximum number of games to analyze")
     depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
     skill_level: Optional[int] = Field(8, description="Stockfish skill level (0-20)")
     
@@ -430,7 +444,7 @@ async def unified_analyze(
                     canonical_user_id,
                     request.platform,
                     request.analysis_type,
-                    request.limit or 10,
+                    request.limit or 5,
                     request.depth or 8,
                     request.skill_level or 8
                 )
@@ -444,7 +458,7 @@ async def unified_analyze(
                         "user_id": canonical_user_id,
                         "platform": request.platform,
                         "analysis_type": request.analysis_type,
-                        "limit": request.limit or 10,
+                        "limit": request.limit or 5,
                         "status": "running"
                     }
                 )
@@ -460,7 +474,7 @@ async def unified_analyze(
 async def get_analysis_results(
     user_id: str,
     platform: str,
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(5, ge=1, le=100),
     analysis_type: str = Query("stockfish"),
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
@@ -564,13 +578,46 @@ async def get_game_analyses(
         response = supabase.table("unified_analyses").select("*").eq("user_id", canonical_user_id).eq("platform", platform).execute()
         
         print(f"[DEBUG] Query response: {len(response.data) if response.data else 0} records found")
+        if response.data:
+            print(f"[DEBUG] First record keys: {list(response.data[0].keys()) if response.data[0] else 'No keys'}")
+            print(f"[DEBUG] Sample record: {str(response.data[0])[:200]}..." if response.data[0] else "No sample")
         
         if not response.data or len(response.data) == 0:
             print(f"[analyses] No data found for user {canonical_user_id} on {platform}")
             return []
         
-        # Return the raw game data with moves_analysis
-        return response.data
+        # Clean and serialize the data to avoid circular reference issues
+        # Convert to JSON and back to ensure all objects are serializable
+        import json
+        cleaned_data = []
+        for record in response.data:
+            # Create a clean copy with only simple types
+            clean_record = {}
+            for key, value in record.items():
+                try:
+                    # Try to serialize the value
+                    if value is None:
+                        clean_record[key] = None
+                    elif isinstance(value, (str, int, float, bool)):
+                        clean_record[key] = value
+                    elif isinstance(value, (dict, list)):
+                        # For complex types, try to serialize and deserialize to ensure they're clean
+                        try:
+                            json_str = json.dumps(value)
+                            clean_record[key] = json.loads(json_str)
+                        except (TypeError, ValueError):
+                            # If serialization fails, skip this field or use a placeholder
+                            clean_record[key] = None
+                    else:
+                        # For any other type, convert to string
+                        clean_record[key] = str(value)
+                except Exception as e:
+                    print(f"[DEBUG] Error serializing field {key}: {e}")
+                    clean_record[key] = None
+            cleaned_data.append(clean_record)
+        
+        print(f"[DEBUG] Cleaned {len(cleaned_data)} records for serialization")
+        return cleaned_data
         
     except Exception as e:
         print(f"Error fetching game analyses: {e}")
@@ -982,9 +1029,15 @@ def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
 
 
 def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
+    """Estimate staleness from game-level patterns - opening repetition, time control consistency."""
     if not games:
         return 30.0
+    
     total = len(games)
+    if total < 2:
+        return 30.0  # Need at least 2 games to measure staleness
+    
+    # Count opening families and time controls
     opening_counts = Counter(
         (game.get('opening_family') or game.get('opening') or 'Unknown')
         for game in games
@@ -993,9 +1046,27 @@ def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
         (game.get('time_control') or 'Unknown')
         for game in games
     )
-    most_opening = max(opening_counts.values()) if opening_counts else 0
-    most_time = max(time_counts.values()) if time_counts else 0
-    score = (most_opening / total) * 70.0 + (most_time / total) * 30.0
+    
+    # Calculate repetition ratios
+    most_common_opening_count = max(opening_counts.values()) if opening_counts else 0
+    most_common_time_count = max(time_counts.values()) if time_counts else 0
+    
+    opening_repetition = most_common_opening_count / total
+    time_repetition = most_common_time_count / total
+    
+    # Calculate diversity metrics
+    opening_diversity = len(opening_counts) / total  # More openings = less staleness
+    time_diversity = len(time_counts) / total  # More time controls = less staleness
+    
+    # Staleness score based on repetition patterns
+    # Higher repetition = higher staleness
+    opening_staleness = opening_repetition * 60.0  # 0-60 points for opening repetition
+    time_staleness = time_repetition * 20.0  # 0-20 points for time control repetition
+    
+    # Bonus for very low diversity (playing same opening/time repeatedly)
+    diversity_penalty = (opening_diversity + time_diversity) * 10.0  # 0-20 point penalty for diversity
+    
+    score = opening_staleness + time_staleness - diversity_penalty + 30.0  # Base of 30
     return max(0.0, min(100.0, score))
 
 
@@ -1059,8 +1130,23 @@ def _compute_personality_scores(
     if games:
         novelty_signal = _estimate_novelty_from_games(games)
         staleness_signal = _estimate_staleness_from_games(games)
-        aggregated_scores.novelty = _round2(aggregated_scores.novelty * 0.7 + novelty_signal * 0.3)
-        aggregated_scores.staleness = _round2(aggregated_scores.staleness * 0.7 + staleness_signal * 0.3)
+        
+        # Calculate move-level scores
+        move_novelty = aggregated_scores.novelty
+        move_staleness = aggregated_scores.staleness
+        
+        # Combine move-level and game-level signals
+        final_novelty = _round2(move_novelty * 0.6 + novelty_signal * 0.4)
+        final_staleness = _round2(move_staleness * 0.6 + staleness_signal * 0.4)
+        
+        # Ensure staleness and novelty are properly opposed
+        # Staleness should be roughly inverse of novelty, but not too extreme
+        target_staleness = 100.0 - final_novelty
+        # Use a gentler opposition - only 30% opposition, 70% calculated
+        final_staleness = _round2(final_staleness * 0.7 + target_staleness * 0.3)
+        
+        aggregated_scores.novelty = final_novelty
+        aggregated_scores.staleness = final_staleness
     
     return aggregated_scores.to_dict()
 
@@ -1824,6 +1910,70 @@ async def _fetch_chesscom_games(user_id: str, limit: int) -> List[Dict[str, Any]
         return []
 
 
+async def _fetch_single_lichess_game(game_id: str) -> Optional[str]:
+    """Fetch a single game PGN from Lichess by game ID"""
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            url = f"https://lichess.org/game/export/{game_id}"
+            params = {'pgnInJson': 'false'}
+            
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    pgn_text = await response.text()
+                    return pgn_text
+                else:
+                    print(f"Lichess API error fetching game {game_id}: {response.status}")
+                    return None
+    except Exception as e:
+        print(f"Error fetching Lichess game {game_id}: {e}")
+        return None
+
+
+async def _fetch_single_chesscom_game(user_id: str, game_id: str) -> Optional[str]:
+    """Fetch a single game PGN from Chess.com by searching recent games"""
+    try:
+        import aiohttp
+        from datetime import datetime, timedelta
+        
+        # Chess.com doesn't have a single-game endpoint, so we need to search recent archives
+        # The game_id is typically a URL like "https://www.chess.com/game/live/123456"
+        # We'll extract just the number and search through recent months
+        
+        async with aiohttp.ClientSession() as session:
+            # Search last 3 months of games
+            end_date = datetime.now()
+            
+            for months_ago in range(3):
+                search_date = end_date - timedelta(days=30 * months_ago)
+                year = search_date.year
+                month = search_date.month
+                
+                url = f"https://api.chess.com/pub/player/{user_id}/games/{year}/{month:02d}"
+                
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        games = data.get('games', [])
+                        
+                        # Search for the game by ID
+                        for game in games:
+                            game_url = game.get('url', '')
+                            # Check if this is the game we're looking for
+                            if game_id in game_url or game_url.endswith(f"/{game_id}"):
+                                pgn = game.get('pgn', '')
+                                if pgn:
+                                    return pgn
+            
+            # If not found in recent months, return None
+            print(f"Chess.com game {game_id} not found in recent archives for user {user_id}")
+            return None
+            
+    except Exception as e:
+        print(f"Error fetching Chess.com game {game_id}: {e}")
+        return None
+
+
 
 
 def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Dict[str, Any]]:
@@ -2264,12 +2414,16 @@ async def import_games(payload: BulkGameImportRequest):
 
     try:
         if pgn_rows:
+            print(f'[import_games] Upserting {len(pgn_rows)} PGN rows')
+            print(f'[import_games] Sample PGN row: {pgn_rows[0] if pgn_rows else "None"}')
             pgn_response = supabase_service.table('games_pgn').upsert(
                 pgn_rows,
                 on_conflict='user_id,platform,provider_game_id'
             ).execute()
             print('[import_games] pgn upsert response: count=', getattr(pgn_response, 'count', None))
+            print(f'[import_games] pgn upsert response data: {pgn_response.data[:2] if pgn_response.data else "None"}')
     except Exception as exc:
+        print(f'[import_games] ❌ PGN upsert error: {exc}')
         errors.append(f"games_pgn upsert failed: {exc}")
 
     total_games = 0
@@ -2519,8 +2673,13 @@ def _validate_single_game_analysis_request(request: UnifiedAnalysisRequest) -> T
 def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
-    # Always create a new engine to ensure we get the latest Stockfish detection
-    analysis_engine = ChessAnalysisEngine()
+    # Pass stockfish path from config to ensure production paths are checked
+    stockfish_path = config.stockfish.path
+    if stockfish_path:
+        print(f"[ENGINE] Using Stockfish from config: {stockfish_path}")
+    else:
+        print(f"[ENGINE] Warning: No Stockfish path found in config")
+    analysis_engine = ChessAnalysisEngine(stockfish_path=stockfish_path)
     return analysis_engine
 
 async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:
@@ -2544,12 +2703,14 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
                 skill_level=request.skill_level
             )
         
-        # Analyze game
+        # Analyze game - pass game_id if provided in request
+        game_id = request.game_id or request.provider_game_id
         game_analysis = await engine.analyze_game(
             request.pgn, 
             request.user_id, 
             request.platform, 
-            analysis_type_enum
+            analysis_type_enum,
+            game_id
         )
         
         if game_analysis:
@@ -2611,38 +2772,94 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         db_client = supabase
         
         # Try to find the game by provider_game_id first
-        game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
-            'provider_game_id', game_id
-        ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+        print(f"[SINGLE GAME ANALYSIS] Querying games_pgn by provider_game_id: {game_id}")
+        print(f"[SINGLE GAME ANALYSIS] Query params: user_id={canonical_user_id}, platform={request.platform}")
         
-        # If not found, try by game_id
-        if not game_response.data:
+        # First, let's see what's actually in the database for this user
+        try:
+            all_games = db_client.table('games_pgn').select('provider_game_id').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', request.platform).limit(5).execute()
+            print(f"[SINGLE GAME ANALYSIS] Sample games for this user: {all_games.data if all_games else 'None'}")
+        except Exception as debug_error:
+            print(f"[SINGLE GAME ANALYSIS] Debug query failed: {debug_error}")
+        
+        try:
             game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
-                'game_id', game_id
+                'provider_game_id', game_id
             ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
-        
-        if not game_response.data:
+            print(f"[SINGLE GAME ANALYSIS] Query result: {game_response}")
+            print(f"[SINGLE GAME ANALYSIS] Has data: {game_response is not None and hasattr(game_response, 'data')}")
+            if game_response and hasattr(game_response, 'data'):
+                print(f"[SINGLE GAME ANALYSIS] Data value: {game_response.data}")
+        except Exception as query_error:
+            print(f"[SINGLE GAME ANALYSIS] ❌ Database query error: {query_error}")
             return UnifiedAnalysisResponse(
                 success=False,
-                message=f"Game not found: {game_id}"
+                message=f"Database query failed: {str(query_error)}"
             )
         
-        pgn_data = game_response.data.get('pgn')
-        if not pgn_data:
-            return UnifiedAnalysisResponse(
-                success=False,
-                message=f"No PGN data found for game: {game_id}"
-            )
+        # If not found in games_pgn, we'll try to fetch from the platform
+        
+        # If still not found in database, try fetching from chess platform
+        if not game_response or not hasattr(game_response, 'data') or not game_response.data:
+            print(f"[SINGLE GAME ANALYSIS] Game not found in database, attempting to fetch from {request.platform}")
+            
+            pgn_from_platform = None
+            if request.platform == 'lichess':
+                pgn_from_platform = await _fetch_single_lichess_game(game_id)
+            elif request.platform == 'chess.com':
+                pgn_from_platform = await _fetch_single_chesscom_game(request.user_id, game_id)
+            
+            if not pgn_from_platform:
+                print(f"[SINGLE GAME ANALYSIS] ❌ Game not found in database or on {request.platform}: {game_id}")
+                return UnifiedAnalysisResponse(
+                    success=False,
+                    message=f"Game not found: {game_id}. Unable to fetch from {request.platform}. Please ensure the game ID is correct and the game exists."
+                )
+            
+            print(f"[SINGLE GAME ANALYSIS] ✓ Successfully fetched PGN from {request.platform}, saving to database")
+            
+            # Save the PGN to database for future use
+            try:
+                from datetime import datetime
+                db_client.table('games_pgn').upsert({
+                    'user_id': canonical_user_id,
+                    'platform': request.platform,
+                    'provider_game_id': game_id,
+                    'pgn': pgn_from_platform,
+                    'created_at': datetime.utcnow().isoformat()
+                }, on_conflict='user_id,platform,provider_game_id').execute()
+                print(f"[SINGLE GAME ANALYSIS] ✓ Saved PGN to database")
+            except Exception as save_error:
+                print(f"[SINGLE GAME ANALYSIS] ⚠ Warning: Failed to save PGN to database: {save_error}")
+                # Continue anyway - we have the PGN in memory
+            
+            # Use the fetched PGN
+            pgn_data = pgn_from_platform
+        else:
+            print(f"[SINGLE GAME ANALYSIS] Extracting PGN data from response")
+            pgn_data = game_response.data.get('pgn') if isinstance(game_response.data, dict) else None
+            if not pgn_data:
+                return UnifiedAnalysisResponse(
+                    success=False,
+                    message=f"No PGN data found for game: {game_id}"
+                )
         
         # Ensure the game exists in the games table for foreign key constraint
         # Check if game exists in games table
         print(f"[SINGLE GAME ANALYSIS] Checking if game exists in games table: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
-        games_check = db_client.table('games').select('id').eq(
-            'provider_game_id', game_id
-        ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+        games_check = None
+        try:
+            games_check = db_client.table('games').select('id').eq(
+                'provider_game_id', game_id
+            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data if (games_check and hasattr(games_check, 'data')) else 'None'}")
+        except Exception as check_error:
+            print(f"[SINGLE GAME ANALYSIS] ❌ Error checking games table: {check_error}")
+            games_check = None
         
-        print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data}")
-        if not games_check.data:
+        if not games_check or not hasattr(games_check, 'data') or not games_check.data:
             print(f"[SINGLE GAME ANALYSIS] Game {game_id} not found in games table, creating basic record...")
             # Parse PGN to extract basic game info
             import chess.pgn
@@ -2745,18 +2962,118 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         if game_analysis:
             # Validate foreign key constraint before saving
             print(f"[SINGLE GAME ANALYSIS] Validating foreign key constraint before saving...")
-            fk_validation = db_client.table('games').select('id').eq(
-                'provider_game_id', game_id
-            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            try:
+                fk_validation = db_client.table('games').select('id').eq(
+                    'provider_game_id', game_id
+                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            except Exception as fk_error:
+                print(f"[SINGLE GAME ANALYSIS] ❌ Error during FK validation: {fk_error}")
+                fk_validation = None
             
-            if not fk_validation.data:
+            if not fk_validation or not hasattr(fk_validation, 'data') or not fk_validation.data:
                 print(f"[SINGLE GAME ANALYSIS] ❌ CRITICAL: Foreign key validation failed - game not found in games table!")
-                return UnifiedAnalysisResponse(
-                    success=False,
-                    message=f"Foreign key constraint validation failed: Game {game_id} not found in games table for user {canonical_user_id}"
-                )
-            
-            print(f"[SINGLE GAME ANALYSIS] ✅ Foreign key validation passed - game exists in games table")
+                print(f"[SINGLE GAME ANALYSIS] Attempting to create missing game record...")
+                
+                # Try to create the game record again with more robust error handling
+                try:
+                    # Parse PGN to extract basic game info
+                    import chess.pgn
+                    import io
+                    pgn_io = io.StringIO(pgn_data)
+                    game = chess.pgn.read_game(pgn_io)
+                    
+                    if game and game.headers:
+                        headers = game.headers
+                        from datetime import datetime
+                        now_iso = datetime.utcnow().isoformat()
+                        
+                        # Extract basic info from PGN headers
+                        result = headers.get('Result', '0-1')
+                        white_player = headers.get('White', '')
+                        black_player = headers.get('Black', '')
+                        user_is_white = white_player.lower() == request.user_id.lower()
+                        
+                        # Determine color and result from user's perspective
+                        if user_is_white:
+                            color = 'white'
+                            if result == '1-0':
+                                user_result = 'win'
+                            elif result == '0-1':
+                                user_result = 'loss'
+                            else:
+                                user_result = 'draw'
+                        else:
+                            color = 'black'
+                            if result == '0-1':
+                                user_result = 'win'
+                            elif result == '1-0':
+                                user_result = 'loss'
+                            else:
+                                user_result = 'draw'
+                        
+                        # Count moves
+                        move_count = sum(1 for _ in game.mainline_moves())
+                        
+                        game_record = {
+                            "user_id": canonical_user_id,
+                            "platform": request.platform,
+                            "provider_game_id": game_id,
+                            "result": user_result,
+                            "color": color,
+                            "time_control": headers.get('TimeControl', 'unknown'),
+                            "opening": headers.get('Opening', 'Unknown'),
+                            "opening_family": headers.get('Opening', 'Unknown'),
+                            "opponent_rating": None,
+                            "my_rating": None,
+                            "total_moves": move_count,
+                            "played_at": headers.get('Date', now_iso),
+                            "opponent_name": black_player if user_is_white else white_player,
+                            "created_at": now_iso,
+                        }
+                        
+                        # Force insert the game record
+                        games_response = db_client.table('games').upsert(
+                            game_record,
+                            on_conflict='user_id,platform,provider_game_id'
+                        ).execute()
+                        
+                        if games_response.data:
+                            print(f"[SINGLE GAME ANALYSIS] ✅ Successfully created/updated game record: {game_id}")
+                            
+                            # Re-validate foreign key constraint
+                            fk_validation = db_client.table('games').select('id').eq(
+                                'provider_game_id', game_id
+                            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                            
+                            if fk_validation and hasattr(fk_validation, 'data') and fk_validation.data:
+                                print(f"[SINGLE GAME ANALYSIS] ✅ Foreign key validation passed after creating game record")
+                            else:
+                                print(f"[SINGLE GAME ANALYSIS] ❌ Foreign key validation still failed after creating game record")
+                                return UnifiedAnalysisResponse(
+                                    success=False,
+                                    message=f"Failed to create valid game record for analysis save"
+                                )
+                        else:
+                            print(f"[SINGLE GAME ANALYSIS] ❌ Failed to create game record - no data returned")
+                            return UnifiedAnalysisResponse(
+                                success=False,
+                                message=f"Failed to create game record for analysis save"
+                            )
+                    else:
+                        print(f"[SINGLE GAME ANALYSIS] ❌ Failed to parse PGN for game record creation")
+                        return UnifiedAnalysisResponse(
+                            success=False,
+                            message=f"Failed to parse PGN for game record creation"
+                        )
+                        
+                except Exception as create_error:
+                    print(f"[SINGLE GAME ANALYSIS] ❌ Failed to create game record: {create_error}")
+                    return UnifiedAnalysisResponse(
+                        success=False,
+                        message=f"Failed to create game record: {str(create_error)}"
+                    )
+            else:
+                print(f"[SINGLE GAME ANALYSIS] ✅ Foreign key validation passed - game exists in games table")
             
             # Save to database with comprehensive error handling
             try:
@@ -2879,7 +3196,7 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
             user_id=canonical_user_id,
             platform=request.platform,
             analysis_type=request.analysis_type,
-            limit=request.limit or 10,
+            limit=request.limit or 5,
             depth=request.depth or 8,
             skill_level=request.skill_level or 8
         )
@@ -2893,7 +3210,7 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
                 "user_id": canonical_user_id,
                 "platform": request.platform,
                 "analysis_type": request.analysis_type,
-                "limit": request.limit or 10,
+                "limit": request.limit or 5,
                 "status": "queued"
             }
         )
@@ -2997,6 +3314,7 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
         return all_games[:limit] if all_games else []
     
     # Get game IDs that are already analyzed
+    # Note: games list has 'provider_game_id', but analysis tables use 'game_id' (same value, different field name)
     game_ids = [game.get('provider_game_id') for game in all_games if game.get('provider_game_id')]
     
     if not game_ids:
@@ -3006,13 +3324,13 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     analyzed_game_ids = set()
     
     try:
-        # Check move_analyses table
-        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        # Check move_analyses table - filter by analysis_method (stockfish/deep)
+        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_method', analysis_type).in_('game_id', game_ids).execute()
         if move_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in move_analyses_response.data)
         
-        # Check game_analyses table
-        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        # Check game_analyses table - filter by analysis_type (stockfish/deep)
+        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_type', analysis_type).in_('game_id', game_ids).execute()
         if game_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
             
@@ -3040,6 +3358,11 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     if unanalyzed_games:
         print(f"[info] First unanalyzed game ID: {unanalyzed_games[0].get('provider_game_id')}")
         print(f"[info] Last unanalyzed game ID: {unanalyzed_games[-1].get('provider_game_id')}")
+        print(f"[info] First unanalyzed game played_at: {unanalyzed_games[0].get('played_at')}")
+        print(f"[info] Last unanalyzed game played_at: {unanalyzed_games[-1].get('played_at')}")
+    if analyzed_game_ids:
+        print(f"[info] Sample analyzed game IDs: {list(analyzed_game_ids)[:5]}")
+    print(f"[info] Sample game IDs from fetched games: {game_ids[:5]}")
     return unanalyzed_games
 
 async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: str, 
@@ -3147,26 +3470,55 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             # Filter out already analyzed games
             games = await _filter_unanalyzed_games(all_games, canonical_user_id, platform, analysis_type, limit)
         else:
-            print('[warn] Database client not available. Using mock games for progress testing.')
-            games = []
+            print('[ERROR] Database client not available. Cannot fetch games for analysis.')
+            analysis_progress[key].update({
+                "is_complete": True,
+                "current_phase": "error",
+                "progress_percentage": 100,
+                "analyzed_games": 0,
+                "total_games": 0,
+                "status_message": "Database connection error. Please try again later.",
+                "error": "Database client not available"
+            })
+            return
             
-        # If no games found, create some mock games for testing
+        # If no games found, don't create mock games - this indicates a real issue
         if not games:
-            print("[TEST] No games found, creating mock games for progress testing")
-            games = [{"id": f"mock_game_{i}", "pgn": "1. e4 e5 2. Nf3 Nc6", "provider_game_id": f"mock_{i}"} for i in range(limit)]
+            print(f"[ERROR] No unanalyzed games found for {user_id} on {platform}")
+            print(f"[ERROR] This could mean:")
+            print(f"[ERROR]   1. All games are already analyzed")
+            print(f"[ERROR]   2. No games exist in database for this user")
+            print(f"[ERROR]   3. Database connection issue")
             
-        analysis_progress[key]["total_games"] = len(games)
-
-        if not games:
-            print(f"No unanalyzed games found for {user_id} on {platform}")
+            # Add debugging information
+            try:
+                if supabase:
+                    # Check if any games exist at all for this user
+                    total_games_check = supabase.table('games').select('provider_game_id').eq('user_id', canonical_user_id).eq('platform', platform).limit(1).execute()
+                    print(f"[DEBUG] Total games in database for {canonical_user_id}: {len(total_games_check.data) if total_games_check.data else 0}")
+                    
+                    # Check if any PGN data exists
+                    pgn_check = supabase.table('games_pgn').select('provider_game_id').eq('user_id', canonical_user_id).eq('platform', platform).limit(1).execute()
+                    print(f"[DEBUG] Total PGN records for {canonical_user_id}: {len(pgn_check.data) if pgn_check.data else 0}")
+                    
+                    # Check analyzed games
+                    analyzed_check = supabase.table('move_analyses').select('game_id').eq('user_id', canonical_user_id).eq('platform', platform).eq('analysis_method', analysis_type).limit(1).execute()
+                    print(f"[DEBUG] Total analyzed games for {canonical_user_id}: {len(analyzed_check.data) if analyzed_check.data else 0}")
+            except Exception as debug_e:
+                print(f"[DEBUG] Error during debugging: {debug_e}")
+            
             analysis_progress[key].update({
                 "is_complete": True,
                 "current_phase": "complete",
                 "progress_percentage": 100,
-                "status_message": "All your recent games have already been analyzed! Your analytics are up to date.",
+                "analyzed_games": 0,
+                "total_games": 0,
+                "status_message": "No unanalyzed games found. All your recent games may already be analyzed, or there may be a database issue.",
                 "all_games_analyzed": True
             })
             return
+            
+        analysis_progress[key]["total_games"] = len(games)
         
         print(f"Found {len(games)} unanalyzed games to analyze")
         
@@ -3531,6 +3883,9 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'move_san': move.move_san,
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
+                'is_brilliant': move.is_brilliant,
+                'is_great': move.is_great,
+                'is_excellent': move.is_excellent,
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
@@ -3540,7 +3895,21 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'depth_analyzed': move.depth_analyzed,
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
-                'ply_index': move.ply_index
+                'ply_index': move.ply_index,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase
             })
 
         data = {
@@ -3596,10 +3965,21 @@ async def _save_game_analysis(analysis: GameAnalysis) -> bool:
         return False
     
     try:
+        print(f"[SAVE ANALYSIS] Starting save for game_id: {analysis.game_id}, user: {analysis.user_id}, platform: {analysis.platform}")
+        print(f"[SAVE ANALYSIS] Analysis type: {analysis.analysis_type}, moves count: {len(analysis.moves_analysis)}")
+        
         result = await persistence.save_analysis_with_retry(analysis)
+        
+        print(f"[SAVE ANALYSIS] Save result: success={result.success}, status={result.status}, message={result.message}")
+        if not result.success:
+            print(f"[SAVE ANALYSIS] Save failed: {result.error_details}")
+        
         return result.success
     except Exception as e:
-        print(f"Error in reliable persistence: {e}")
+        print(f"[SAVE ANALYSIS] ❌ CRITICAL ERROR in reliable persistence: {e}")
+        print(f"[SAVE ANALYSIS] Error type: {type(e).__name__}")
+        import traceback
+        print(f"[SAVE ANALYSIS] Traceback: {traceback.format_exc()}")
         return False
 
 def _map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:

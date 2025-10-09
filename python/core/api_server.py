@@ -217,8 +217,15 @@ def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
     if analysis_engine is None:
-        # Let ChessAnalysisEngine find the best Stockfish path automatically
-        analysis_engine = ChessAnalysisEngine()
+        # Pass stockfish path from config to ensure production paths are checked
+        from .config import get_config
+        config = get_config()
+        stockfish_path = config.stockfish.path
+        if stockfish_path:
+            print(f"[ENGINE] Using Stockfish from config: {stockfish_path}")
+        else:
+            print(f"[ENGINE] Warning: No Stockfish path found in config")
+        analysis_engine = ChessAnalysisEngine(stockfish_path=stockfish_path)
     return analysis_engine
 
 def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> GameAnalysisSummary:
@@ -462,13 +469,13 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     analyzed_game_ids = set()
     
     try:
-        # Check move_analyses table
-        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        # Check move_analyses table - filter by analysis_method (stockfish/deep)
+        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_method', analysis_type).in_('game_id', game_ids).execute()
         if move_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in move_analyses_response.data)
         
-        # Check game_analyses table
-        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).in_('game_id', game_ids).execute()
+        # Check game_analyses table - filter by analysis_type (stockfish/deep)
+        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_type', analysis_type).in_('game_id', game_ids).execute()
         if game_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
             
@@ -706,6 +713,8 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
+                'is_great': move.is_great,
+                'is_excellent': move.is_excellent,
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
@@ -715,7 +724,21 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'depth_analyzed': move.depth_analyzed,
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
-                'ply_index': move.ply_index
+                'ply_index': move.ply_index,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase
             })
         
         # Prepare data for move_analyses table
@@ -782,6 +805,8 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
+                'is_great': move.is_great,
+                'is_excellent': move.is_excellent,
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
@@ -791,7 +816,21 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'depth_analyzed': move.depth_analyzed,
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
-                'ply_index': move.ply_index
+                'ply_index': move.ply_index,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase
             })
         
         # Prepare data for game_analyses table

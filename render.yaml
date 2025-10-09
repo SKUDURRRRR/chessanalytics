@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: chess-analytics-api
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd python && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src/python
+      - key: PYTHON_VERSION
+        value: 3.11.0
