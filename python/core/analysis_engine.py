@@ -1097,7 +1097,7 @@ class ChessAnalysisEngine:
         # Enhanced explanations for brilliant moves
         if is_brilliant:
             if centipawn_loss > 0:
-                explanation_parts.append(f"Brilliant sacrifice of {int(centipawn_loss)} cp of material")
+                explanation_parts.append("Brilliant sacrifice of material")
             if see_score < -100:
                 explanation_parts.append("in a calculated tactical sacrifice")
             elif see_score < 0:
@@ -1127,9 +1127,9 @@ class ChessAnalysisEngine:
         # Enhanced explanations for blunders
         elif is_blunder:
             if centipawn_loss > 200:
-                explanation_parts.append(f"Catastrophic blunder losing {int(centipawn_loss)} cp")
+                explanation_parts.append("Catastrophic blunder losing significant material")
             elif centipawn_loss > 100:
-                explanation_parts.append(f"Serious blunder losing {int(centipawn_loss)} cp")
+                explanation_parts.append("Serious blunder losing material")
             if see_score < -200:
                 explanation_parts.append("in a terrible material exchange")
             if new_hanging:
@@ -1147,9 +1147,9 @@ class ChessAnalysisEngine:
         # Standard explanations for other moves
         else:
             if centipawn_loss > 0 and not is_best:
-                explanation_parts.append(f"Costs roughly {int(centipawn_loss)} cp.")
+                explanation_parts.append("This move weakens your position.")
             if see_score <= SEE_MATERIAL_LOSS_TRIGGER and is_capture:
-                explanation_parts.append(f"Capture on {chess.square_name(move.to_square)} drops material (SEE {int(see_score)} cp).")
+                explanation_parts.append(f"Capture on {chess.square_name(move.to_square)} drops material.")
             if new_hanging:
                 for entry in new_hanging:
                     explanation_parts.append(f"Leaves {entry['piece']} on {entry['square']} undefended.")
@@ -1160,12 +1160,12 @@ class ChessAnalysisEngine:
             if gives_check and centipawn_loss == 0:
                 explanation_parts.append("Delivers check while staying safe.")
             if best_alternative and best_alternative['uci'] != move.uci() and best_gap > BASIC_BEST_THRESHOLD:
-                explanation_parts.append(f"Better was {best_alternative['san']} ({int(best_alternative['score'])} cp).")
+                explanation_parts.append(f"Better was {best_alternative['san']}.")
             if not explanation_parts:
                 if delta > 0:
-                    explanation_parts.append(f"Improves evaluation by {int(delta)} cp.")
+                    explanation_parts.append("Improves your position.")
                 else:
-                    explanation_parts.append("Keeps evaluation balanced.")
+                    explanation_parts.append("Keeps the position balanced.")
         
         explanation = ' '.join(explanation_parts)
 

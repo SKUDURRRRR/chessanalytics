@@ -123,7 +123,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
     }
     
     const score = evaluation.value
-    const maxScore = 1000 // Cap at 1000 centipawns for bar display
+    const maxScore = 1000 // Cap at 1000 points for bar display
     const clampedScore = Math.max(-maxScore, Math.min(maxScore, score))
     const percentage = 50 + (clampedScore / maxScore) * 50
     

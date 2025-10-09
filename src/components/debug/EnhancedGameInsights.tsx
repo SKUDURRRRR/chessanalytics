@@ -135,7 +135,7 @@ function CriticalMomentCard({
                       'bg-yellow-500'
                     }`}></div>
                     <span className="text-sm text-slate-300">
-                      {move.centipawnLoss > 0 ? 'Lost' : 'Gained'} {Math.round(Math.abs(move.centipawnLoss))} cp
+                      {move.centipawnLoss > 0 ? 'Lost' : 'Gained'} {Math.round(Math.abs(move.centipawnLoss))} points
                     </span>
                     {impactSeverity && (
                       <span className={`text-xs px-2 py-0.5 rounded-full ${getImpactBadgeClass()}`}>

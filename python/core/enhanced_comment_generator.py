@@ -357,9 +357,9 @@ class EnhancedCommentGenerator:
         # Specific impact details
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         if centipawn_loss > 0:
-            details['specific_detail'] = f"loses only {int(centipawn_loss)} centipawns compared to the best move"
+            details['specific_detail'] = "loses only a small amount compared to the best move"
         elif context.evaluation_change > 0:
-            details['specific_detail'] = f"improves the position by {context.evaluation_change} centipawns"
+            details['specific_detail'] = "improves the position significantly"
         else:
             details['specific_detail'] = "maintains the position well"
         
@@ -493,7 +493,7 @@ class EnhancedCommentGenerator:
         
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         if centipawn_loss > 100:
-            problems.append(f"loses {int(centipawn_loss)} centipawns")
+            problems.append("loses material")
         
         if context.weaknesses_created:
             problems.append(f"creates weaknesses: {', '.join(context.weaknesses_created[:2])}")
@@ -523,10 +523,10 @@ class EnhancedCommentGenerator:
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         
         if centipawn_loss > 200:
-            return f"loses {int(centipawn_loss)} centipawns - a significant material disadvantage"
+            return "loses significant material - a major disadvantage"
         elif centipawn_loss > 100:
-            return f"loses {int(centipawn_loss)} centipawns - a serious material loss"
+            return "loses material - a serious loss"
         elif centipawn_loss > 50:
-            return f"loses {int(centipawn_loss)} centipawns compared to the best move"
+            return "loses material compared to the best move"
         else:
             return "isn't the most accurate choice in this position"

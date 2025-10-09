@@ -190,7 +190,10 @@ export function getRandomComment(classification: string, isUserMove: boolean): s
   return availableTemplates[Math.floor(Math.random() * availableTemplates.length)];
 }
 
-export function buildEnhancedComment(context: CommentContext): string {\n  // Delegate to the human-friendly builder to avoid centipawn jargon\n  return buildHumanComment({ ...(context as any) })\n}\n
+export function buildEnhancedComment(context: CommentContext): string {
+  // Delegate to the human-friendly builder to avoid centipawn jargon
+  return buildHumanComment({ ...(context as any) })
+}
 
 // New: Human-friendly comment builder that avoids centipawns and adds reasons
 export function buildHumanComment(context: HumanReasonContext): string {

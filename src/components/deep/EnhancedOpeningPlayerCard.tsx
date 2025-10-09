@@ -225,7 +225,7 @@ export function EnhancedOpeningPlayerCard({
                         </div>
                         <div className="text-sm text-slate-300">
                           {mistake.classification.charAt(0).toUpperCase() + mistake.classification.slice(1)} • 
-                          {mistake.centipawnLoss} centipawn loss
+                          {mistake.centipawnLoss} point loss
                         </div>
                       </div>
                       <div className="text-right">
