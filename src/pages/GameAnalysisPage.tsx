@@ -3,13 +3,18 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { fetchGameAnalysisData } from '../services/gameAnalysisService'
+import UnifiedAnalysisService from '../services/unifiedAnalysisService'
 import { config } from '../lib/config'
 import { getTimeControlCategory } from '../utils/timeControlUtils'
 import { getOpeningNameWithFallback } from '../utils/openingIdentification'
 import { EnhancedGameInsights } from '../components/debug/EnhancedGameInsights'
 import { EnhancedMoveCoaching } from '../components/debug/EnhancedMoveCoaching'
+import { UnifiedChessAnalysis } from '../components/debug/UnifiedChessAnalysis'
 import { CHESS_ANALYSIS_COLORS } from '../utils/chessColors'
 import { getDarkChessBoardTheme } from '../utils/chessBoardTheme'
+import { generateMoveArrows, generateModernMoveArrows, Arrow } from '../utils/chessArrows'
+import { ModernChessArrows } from '../components/chess/ModernChessArrows'
+import { buildEnhancedComment, CommentContext } from '../utils/commentTemplates'
 import type { MatchHistoryGameSummary, Platform } from '../types'
 
 interface EvaluationInfo {
@@ -26,6 +31,8 @@ interface AnalysisMoveRecord {
   centipawn_loss?: number
   is_best?: boolean
   is_brilliant?: boolean
+  is_great?: boolean  // NEW: Very strong moves (5-15cp loss)
+  is_excellent?: boolean  // NEW: Nearly optimal moves (15-25cp loss)
   is_blunder?: boolean
   is_mistake?: boolean
   is_inaccuracy?: boolean
@@ -68,6 +75,8 @@ interface ProcessedMove {
 type MoveClassification =
   | 'brilliant'
   | 'best'
+  | 'great'  // NEW: Very strong moves (5-15cp loss)
+  | 'excellent'  // NEW: Nearly optimal moves (15-25cp loss)
   | 'good'
   | 'acceptable'
   | 'inaccuracy'
@@ -119,6 +128,8 @@ const convertUciToSan = (fen: string, uci?: string | null): string | null => {
 const determineClassification = (move: AnalysisMoveRecord): MoveClassification => {
   if (move.is_brilliant) return 'brilliant'
   if (move.is_best) return 'best'
+  if (move.is_great) return 'great'  // NEW category
+  if (move.is_excellent) return 'excellent'  // NEW category
   if (move.is_blunder) return 'blunder'
   if (move.is_mistake) return 'mistake'
   if (move.is_inaccuracy) return 'inaccuracy'
@@ -163,26 +174,26 @@ const buildFallbackExplanation = (
   const loss = centipawnLoss != null ? Math.round(centipawnLoss) : null
   switch (classification) {
     case 'brilliant':
-      return 'Brilliant resource that maximized your advantage.'
+      return '🌟 Brilliant tactical resource that demonstrates exceptional chess understanding. This move likely involves a calculated sacrifice, devastating combination, or sophisticated positional maneuver that maximizes your advantage.'
     case 'best':
-      return 'Strong move that kept the engine evaluation on track.'
+      return '✅ Strong move that kept the engine evaluation on track. This is optimal play that maintains your position and shows excellent chess understanding.'
     case 'good':
     case 'acceptable':
-      return 'Solid move that maintained a playable position.'
+      return '👍 Solid move that maintained a playable position. This shows reasonable chess understanding and keeps your position healthy.'
     case 'inaccuracy':
       return loss != null
-        ? `Inaccuracy. You dropped roughly ${loss} centipawns.`
-        : 'Inaccuracy. Better play was available.'
+        ? `⚠️ Inaccuracy. You dropped roughly ${loss} centipawns compared to optimal play, which weakens your position. Look for stronger moves that maintain your advantage better.`
+        : '⚠️ Inaccuracy. Better play was available that would have improved your position more significantly.'
     case 'mistake':
       return bestMoveSan
-        ? `Mistake. Consider ${bestMoveSan} next time.`
-        : 'Mistake. Position deteriorated noticeably.'
+        ? `❌ Mistake. Consider ${bestMoveSan} next time - it would have been much stronger and maintained your advantage. This move creates difficulties for your position.`
+        : '❌ Mistake. Position deteriorated noticeably and allows your opponent to improve their position. Look for moves that maintain your position better.'
     case 'blunder':
       return bestMoveSan
-        ? `Blunder. Engine preferred ${bestMoveSan}.`
-        : 'Blunder. Advantage swung heavily.'
+        ? `❌ Blunder. Engine preferred ${bestMoveSan}, which would have maintained your position much better. This is a significant error that could be game-changing.`
+        : '❌ Blunder. Advantage swung heavily to your opponent. This move likely involves hanging material, weakening your king, or missing critical tactical threats.'
     default:
-      return 'Played move recorded.'
+      return '📝 Played move recorded. Consider the position carefully and look for the best continuation.'
   }
 }
 
@@ -195,64 +206,103 @@ const buildEnhancedFallbackExplanation = (
 ) => {
   const loss = centipawnLoss != null ? Math.round(centipawnLoss) : null
   
+  // Check if this is an opening move that should get educational treatment
+  const moveNumber = move?.moveNumber || 0
+  const isOpeningMove = moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good')
+  
+  if (isOpeningMove) {
+    // Simple book move comment for opening moves
+    return 'Book move.'
+  }
+  
   if (!isUserMove) {
     // Opponent move analysis
     switch (classification) {
       case 'brilliant':
-        return '🌟 Your opponent played a brilliant move! This shows strong tactical vision. Study this position to understand the tactics.'
+        return '🌟 Your opponent played a brilliant move! This shows exceptional tactical vision and demonstrates advanced chess understanding. Study this position carefully to understand the sophisticated tactics involved - this could involve a calculated sacrifice, devastating tactical combination, or sophisticated positional maneuver. This is the kind of move that wins games and shows real chess mastery.'
       case 'best':
-        return '✅ Your opponent played the best move available. This is solid, accurate play that maintains their position well.'
+        return '✅ Your opponent played the best move available. This is solid, accurate play that maintains their position well and shows strong chess fundamentals. They found the optimal continuation that keeps their position on track.'
+      case 'great':
+        // Check if this is an opening move or if evaluation shows minimal change
+        const isOpponentOpeningMove = moveNumber <= 15
+        const hasOpponentMinimalEvalChange = loss != null && loss < 20
+        
+        if (isOpponentOpeningMove) {
+          return 'Book move.'
+        } else if (hasOpponentMinimalEvalChange) {
+          return '🎯 Your opponent played a great move! This is very strong play that shows excellent chess understanding. They\'re playing accurately and keeping the position well-balanced.'
+        } else {
+          return '🎯 Your opponent played a great move! This is very strong play that shows excellent chess understanding. They found a move that improves their position and demonstrates advanced tactical awareness.'
+        }
+      case 'excellent':
+        return '⭐ Your opponent played an excellent move! This is nearly optimal play that shows strong chess fundamentals. They found a move that maintains their position well and demonstrates good tactical awareness.'
       case 'good':
-        return '👍 Your opponent made a good move. This maintains a solid position and shows reasonable chess understanding.'
+        return '👍 Your opponent made a good move. This maintains a solid position and shows reasonable chess understanding with sound positional play. They\'re making solid decisions that keep their position balanced.'
       case 'acceptable':
-        return '⚠️ Your opponent\'s move is acceptable, but not the strongest choice. Better options were available.'
+        return '⚠️ Your opponent\'s move is acceptable, but not the strongest choice. Better options were available that could have improved their position more significantly. This gives you a small opportunity to gain an edge.'
       case 'inaccuracy':
         return loss != null
-          ? `❌ Your opponent made an inaccuracy. They dropped roughly ${loss} centipawns - this gives you an opportunity to improve your position.`
-          : '❌ Your opponent\'s move isn\'t optimal. Look for ways to exploit this and improve your position.'
+          ? `❌ Your opponent made an inaccuracy, dropping roughly ${loss} centipawns compared to optimal play. This gives you an opportunity to improve your position and potentially gain an advantage. Look for ways to exploit this weakness.`
+          : '❌ Your opponent\'s move isn\'t optimal. Look for ways to exploit this weakness and improve your position while they\'re not playing at their best. This creates tactical opportunities for you.'
       case 'mistake':
         return bestMoveSan
-          ? `❌ Your opponent made a mistake! They should have played ${bestMoveSan}. Look for tactical opportunities to take advantage.`
-          : '❌ Your opponent\'s move creates difficulties for them. Look for ways to exploit this mistake.'
+          ? `❌ Your opponent made a mistake! They should have played ${bestMoveSan} instead. This creates tactical opportunities for you - look for ways to take advantage of their error and gain a significant advantage.`
+          : '❌ Your opponent\'s move creates significant difficulties for them. Look for tactical opportunities to exploit this mistake and gain a substantial advantage. This could be a turning point in the game.'
       case 'blunder':
         return bestMoveSan
-          ? `❌ Your opponent blundered! They should have played ${bestMoveSan}. Look for immediate tactical opportunities to win material or checkmate.`
-          : '❌ Your opponent made a serious mistake. This could be game-changing - look for winning tactics.'
+          ? `❌ Your opponent blundered! They should have played ${bestMoveSan}. This is a major tactical error - look for immediate opportunities to win material or deliver checkmate. This could be game-changing!`
+          : '❌ Your opponent made a serious mistake that could be game-changing. This creates a major tactical opportunity - look for winning combinations and decisive tactics that could end the game.'
       default:
-        return '📝 Opponent move recorded. Analyze the position and look for the best response.'
+        return '📝 Opponent move recorded. Analyze the position carefully and look for the best response to maintain or improve your position.'
     }
   }
   
-  // User move analysis (original logic)
+  // User move analysis with enhanced explanations
   switch (classification) {
     case 'brilliant':
-      return '🌟 Outstanding! This move demonstrates exceptional chess understanding. You\'ve found a move that even strong players might miss. This is the kind of move that wins games!'
+      return '🌟 Outstanding! This move demonstrates exceptional chess understanding and tactical mastery. You\'ve found a brilliant resource that even strong players might miss - this could involve a calculated sacrifice, devastating tactical combination, or sophisticated positional maneuver. This is the kind of move that wins games and shows real chess mastery!'
     case 'best':
-      return '✅ Perfect! This is exactly what the position demands. You\'ve found the strongest move available and kept your position on track. Well done!'
+      return '✅ Perfect! This is exactly what the position demands. You\'ve found the strongest move available and kept your position on track with optimal play. This shows excellent chess understanding and tactical awareness. You\'re playing at a very high level!'
+    case 'great':
+      // Check if this is an opening move or if evaluation shows minimal change
+      const isOpeningMove = moveNumber <= 15
+      const hasMinimalEvalChange = loss != null && loss < 20
+      
+      if (isOpeningMove) {
+        return 'Book move.'
+      } else if (hasMinimalEvalChange) {
+        return '🎯 Excellent work! This is a great move that shows strong chess understanding and tactical awareness. You\'re playing accurately and keeping the position well-balanced. This kind of play will help you win more games!'
+      } else {
+        return '🎯 Excellent work! This is a great move that shows strong chess understanding and tactical awareness. You\'ve found a move that improves your position and demonstrates advanced chess skills. This kind of play will help you win more games!'
+      }
+    case 'excellent':
+      return '⭐ Very well played! This is an excellent move that shows good chess fundamentals and tactical awareness. You\'ve found a move that maintains your position well and demonstrates solid chess understanding. Keep up the good work!'
     case 'good':
-      return '👍 Good move! This maintains a solid position and shows good chess understanding. You\'re making progress in your game.'
+      return '👍 Good move! This maintains a solid position and shows good chess understanding. You\'re making sound positional decisions and keeping your pieces well-coordinated. This is solid, reliable play that builds a strong foundation.'
     case 'acceptable':
-      return '⚠️ This move is playable, but there were better options available. Consider looking for moves that improve your position more significantly.'
+      return '⚠️ This move is playable, but there were better options available that could have improved your position more significantly. Consider looking for moves that create more threats, improve piece coordination, or strengthen your position. Every move counts in chess!'
     case 'inaccuracy':
       return loss != null
-        ? `❌ This move has some issues. You dropped roughly ${loss} centipawns compared to optimal play. Look for moves that maintain your advantage better.`
-        : '❌ This move isn\'t optimal. There\'s a better way to handle this position. Take time to consider all your options.'
+        ? `❌ This move has some issues. You dropped roughly ${loss} centipawns compared to optimal play, which weakens your position. Look for moves that maintain your advantage better and avoid giving your opponent unnecessary opportunities. Take more time to calculate and consider all your options.`
+        : '❌ This move isn\'t optimal. There\'s a better way to handle this position that would maintain your advantage. Take time to consider all your options and look for stronger continuations that improve your position.'
     case 'mistake':
       return bestMoveSan
-        ? `❌ This move has problems. Consider ${bestMoveSan} next time - it would have been much stronger. Learn from this to improve your play.`
-        : '❌ This move creates difficulties. The position deteriorated noticeably. Look for moves that maintain your position better.'
+        ? `❌ This move has problems that weaken your position. Consider ${bestMoveSan} next time - it would have been much stronger and maintained your advantage. Learn from this to improve your tactical awareness and calculation. Always check for better moves before committing.`
+        : '❌ This move creates difficulties and allows your opponent to improve their position. The position deteriorated noticeably - look for moves that maintain your position better and avoid tactical weaknesses. This is a learning opportunity to improve your game.'
     case 'blunder':
       return bestMoveSan
-        ? `❌ This is a significant error. The engine preferred ${bestMoveSan}. Don\'t worry - we all make blunders. Learn from this mistake to avoid similar errors.`
-        : '❌ This move has serious consequences. The advantage swung heavily to your opponent. Take more time to calculate before moving.'
+        ? `❌ This is a significant error that could be game-changing. The engine preferred ${bestMoveSan}, which would have maintained your position much better. This move likely involves hanging material, weakening your king, or missing a tactical threat. Don\'t worry - we all make blunders, but learn from this to avoid similar errors in the future.`
+        : '❌ This move has serious consequences that could swing the advantage heavily to your opponent. This might involve hanging pieces, weakening your king\'s safety, or missing critical tactical threats. Take more time to calculate before moving and always check for hanging pieces and tactical threats.'
     default:
-      return '📝 Move recorded. Consider the position carefully and look for the best continuation.'
+      return '📝 Move recorded. Consider the position carefully and look for the best continuation that improves your position or creates threats.'
   }
 }
 
 const classificationBadgeStyles: Record<MoveClassification, string> = {
   brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
   best: 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200',
+  great: 'border border-teal-400/40 bg-teal-500/20 text-teal-200',  // NEW
+  excellent: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',  // NEW
   good: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',
   acceptable: 'border border-slate-400/40 bg-slate-500/20 text-slate-200',
   inaccuracy: 'border border-amber-400/40 bg-amber-500/20 text-amber-200',
@@ -262,65 +312,20 @@ const classificationBadgeStyles: Record<MoveClassification, string> = {
 }
 
 const classificationLabel: Record<MoveClassification, string> = {
-  brilliant: 'Brilliant',
-  best: 'Best',
-  good: 'Good',
-  acceptable: 'Ok',
-  inaccuracy: 'Inaccuracy',
-  mistake: 'Mistake',
-  blunder: 'Blunder',
-  uncategorized: 'Move',
+  brilliant: 'Great',      // Chess.com: A move that altered the course of the game
+  best: 'Best',            // Chess.com: The chess engine's top choice
+  great: 'Great',          // Chess.com: A move that altered the course of the game
+  excellent: 'Excellent',  // Chess.com: Almost as good as the best move
+  good: 'Good',            // Chess.com: A decent move, but not the best
+  acceptable: 'Book',      // Chess.com: A conventional opening move
+  inaccuracy: 'Inaccuracy', // Chess.com: A weak move
+  mistake: 'Mistake',      // Chess.com: A bad move that immediately worsens your position
+  blunder: 'Blunder',      // Chess.com: A very bad move that loses material or the game
+  uncategorized: 'Move',   // Fallback for uncategorized moves
 }
 
-const MoveClassificationBadge = ({ classification }: { classification: MoveClassification }) => {
-  // Use more padding for longer text classifications
-  const getPaddingClass = (classification: MoveClassification) => {
-    const longTextClassifications = ['mistake', 'blunder', 'inaccuracy', 'uncategorized']
-    return longTextClassifications.includes(classification) ? 'px-3 py-1' : 'px-3 py-1'
-  }
-  
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full ${getPaddingClass(classification)} text-[10px] font-semibold whitespace-nowrap ${classificationBadgeStyles[classification]}`}>
-      {classificationLabel[classification]}
-    </span>
-  )
-}
-
-const EvaluationBar = ({
-  score,
-  playerColor,
-}: {
-  score: number
-  playerColor: 'white' | 'black'
-}) => {
-  const clampedScore = clamp(score, -EVAL_CAP, EVAL_CAP)
-  const percent = ((clampedScore + EVAL_CAP) / (EVAL_CAP * 2)) * 100
-  const markerPosition = playerColor === 'white' ? 100 - percent : percent
-
-  return (
-    <div className="relative h-full w-8 overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-inner">
-      <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-white" />
-      <div className="absolute top-1/2 left-0 right-0 h-1/2 bg-slate-900" />
-      <div
-        className="absolute left-0 right-0 flex justify-center transition-all duration-700 ease-out"
-        style={{ top: `${clamp(markerPosition, 2, 98)}%` }}
-      >
-        <span className="block h-1 w-10 rounded-full bg-orange-500 ring-2 ring-white/70 transition-all duration-500 ease-out" />
-      </div>
-      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/40" />
-    </div>
-  )
-}
-
-const NAVIGATION_ICONS: Record<'first' | 'prev' | 'next' | 'last', string> = {
-  first: '<<',
-  prev: '<',
-  next: '>',
-  last: '>>',
-}
 
 export default function GameAnalysisPage() {
-  console.log('🚀 GameAnalysisPage component loaded - debugging version active!')
   const { platform: platformParam, userId: userParam, gameId: gameParam } = useParams()
   const platform = canonicalizePlatform(platformParam)
   const [boardWidth, setBoardWidth] = useState(700)
@@ -358,9 +363,10 @@ export default function GameAnalysisPage() {
   const [analysisRecord, setAnalysisRecord] = useState<any | null>(null)
   const [pgn, setPgn] = useState<string | null>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [timelineScrollOffset, setTimelineScrollOffset] = useState(0)
   const [autoAnalyzing, setAutoAnalyzing] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [isReanalyzing, setIsReanalyzing] = useState(false)
+  const [reanalyzeSuccess, setReanalyzeSuccess] = useState(false)
 
   const parseNumericValue = (value: unknown): number | null => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -632,10 +638,24 @@ export default function GameAnalysisPage() {
       const bestMoveSan = convertUciToSan(fenBefore, move.best_move)
       const classification = determineClassification(move)
       
-      // Use enhanced coaching comment if available, otherwise fall back to explanation or build a better fallback
-      const explanation = move.coaching_comment || 
-                         move.explanation || 
-                         buildEnhancedFallbackExplanation(classification, move.centipawn_loss ?? null, bestMoveSan, move, isUserMove)
+      // Use enhanced coaching comment if available, otherwise use enhanced templates
+      // This ensures all moves get detailed, educational explanations
+      let explanation
+      if (move.coaching_comment && move.coaching_comment.trim()) {
+        // Use coaching comment if available and not empty
+        explanation = move.coaching_comment
+      } else {
+        // Use enhanced comment templates for variety and insight
+        const commentContext: CommentContext = {
+          classification,
+          centipawnLoss: move.centipawn_loss ?? null,
+          bestMoveSan,
+          moveNumber: moveNumber,
+          isUserMove,
+          isOpeningMove: moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good')
+        }
+        explanation = buildEnhancedComment(commentContext)
+      }
 
       try {
         const { from, to, promotion } = parseUciMove(move.move)
@@ -690,46 +710,58 @@ export default function GameAnalysisPage() {
 
   useEffect(() => {
     if (processedData.positions.length > 0) {
-      setCurrentIndex(processedData.positions.length - 1)
-      setTimelineScrollOffset(0) // Reset timeline scroll when game changes
+      // Set to the last position index (after all moves)
+      const lastPositionIndex = processedData.positions.length - 1
+      setCurrentIndex(lastPositionIndex)
     }
-  }, [processedData.positions.length])
+  }, [processedData.positions.length, processedData.moves.length])
 
-  // Auto-scroll timeline to current move
-  useEffect(() => {
-    if (currentIndex > 0) {
-      const currentMoveIndex = currentIndex - 1
-      const moveRow = Math.floor(currentMoveIndex / 2)
-      const totalRows = Math.ceil(processedData.moves.length / 2)
-      
-      console.log('📜 TIMELINE AUTO-SCROLL DEBUG:', {
-        currentIndex,
-        currentMoveIndex,
-        moveRow,
-        totalRows,
-        currentTimelineOffset: timelineScrollOffset
-      })
-      console.log('📜 TIMELINE: Should scroll to show move', currentMoveIndex + 1)
-      
-      // Calculate the optimal scroll offset to show the current move
-      let newOffset = timelineScrollOffset
-      
-      if (moveRow < timelineScrollOffset) {
-        // Current move is above visible area, scroll up
-        newOffset = Math.max(0, moveRow)
-        console.log('Scrolling up to:', newOffset)
-      } else if (moveRow >= timelineScrollOffset + 3) {
-        // Current move is below visible area, scroll down
-        newOffset = Math.min(totalRows - 3, moveRow - 2)
-        console.log('Scrolling down to:', newOffset)
-      }
-      
-      if (newOffset !== timelineScrollOffset) {
-        console.log('Updating timeline offset from', timelineScrollOffset, 'to', newOffset)
-        setTimelineScrollOffset(newOffset)
+  // Generate modern arrows for the current move
+  const currentMoveArrows = useMemo(() => {
+    // Check if we have moves and if currentIndex is valid
+    if (!processedData.moves || processedData.moves.length === 0) {
+      return []
+    }
+    
+    if (currentIndex < 0 || currentIndex >= processedData.moves.length) {
+      return []
+    }
+
+    const currentMove = processedData.moves[currentIndex]
+    if (!currentMove) {
+      return []
+    }
+
+    // Create a chess instance to replay moves up to the current position
+    const chess = new Chess()
+    
+    // Replay all moves up to (but not including) the current move
+    for (let i = 0; i < currentIndex; i++) {
+      const move = processedData.moves[i]
+      if (move) {
+        try {
+          const { from, to, promotion } = parseUciMove(move.san)
+          chess.move({ from, to, promotion })
+        } catch (err) {
+          try {
+            chess.move(move.san)
+          } catch (fallbackError) {
+            console.warn('Failed to apply move for arrow generation:', move.san, fallbackError)
+          }
+        }
       }
     }
-  }, [currentIndex, processedData.moves.length, timelineScrollOffset])
+
+    // Generate modern arrows for the current move
+    return generateModernMoveArrows({
+      san: currentMove.san,
+      bestMoveSan: currentMove.bestMoveSan,
+      classification: currentMove.classification,
+      isUserMove: currentMove.isUserMove
+    }, chess)
+  }, [currentIndex, processedData.moves])
+
+  // Auto-scroll is now handled by UnifiedChessAnalysis component
 
   // Keyboard navigation for chessboard
   useEffect(() => {
@@ -739,40 +771,81 @@ export default function GameAnalysisPage() {
         return
       }
 
-      console.log('🎹 KEYBOARD EVENT:', event.key, 'currentIndex:', currentIndex)
-      console.log('🎹 KEYBOARD DEBUG: Arrow keys should work now!')
 
       switch (event.key) {
         case 'ArrowLeft':
           event.preventDefault()
-          console.log('Arrow left - navigating to:', currentIndex - 1)
           navigateToMove(currentIndex - 1)
           break
         case 'ArrowRight':
           event.preventDefault()
-          console.log('Arrow right - navigating to:', currentIndex + 1)
           navigateToMove(currentIndex + 1)
           break
         case 'Home':
           event.preventDefault()
-          console.log('Home - navigating to: 0')
           navigateToMove(0)
           break
         case 'End':
           event.preventDefault()
-          console.log('End - navigating to:', processedData.positions.length - 1)
           navigateToMove(processedData.positions.length - 1)
           break
       }
     }
 
-    console.log('Adding keyboard event listener')
     window.addEventListener('keydown', handleKeyDown)
     return () => {
-      console.log('Removing keyboard event listener')
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [currentIndex, processedData.positions.length])
+
+  // Re-analyze handler
+  const handleReanalyze = async () => {
+    if (!pgn || !platform || !decodedUserId) {
+      console.error('Missing required data for re-analysis')
+      return
+    }
+
+    setIsReanalyzing(true)
+    setReanalyzeSuccess(false)
+    setAnalysisError(null)
+
+    try {
+      console.log('🔄 Starting re-analysis...', {
+        user: decodedUserId,
+        platform,
+        gameId: decodedGameId
+      })
+
+      // Call the analyzeGame API with DEEP analysis for better results
+      const response = await UnifiedAnalysisService.analyzeGame(
+        pgn,
+        decodedUserId,
+        platform,
+        'deep'  // Use DEEP analysis for re-analysis
+      )
+
+      if (response.success) {
+        console.log('✅ Re-analysis successful!')
+        setReanalyzeSuccess(true)
+        
+        // Wait a moment for the backend to save, then reload the data
+        setTimeout(async () => {
+          const result = await fetchGameAnalysisData(decodedUserId, platform, decodedGameId)
+          setGameRecord(prev => prev ?? result.game)
+          setAnalysisRecord(result.analysis)
+          setPgn(result.pgn)
+          setReanalyzeSuccess(false)
+        }, 2000)
+      } else {
+        throw new Error('Re-analysis failed')
+      }
+    } catch (error) {
+      console.error('❌ Re-analysis error:', error)
+      setAnalysisError('Failed to re-analyze game. Please try again.')
+    } finally {
+      setIsReanalyzing(false)
+    }
+  }
 
   const derivedStats = useMemo(() => {
     const userMoves = processedData.moves.filter(move => move.isUserMove)
@@ -815,7 +888,6 @@ export default function GameAnalysisPage() {
   const currentMove = currentIndex > 0 ? processedData.moves[currentIndex - 1] : null
 
   const evaluationContainerRef = useRef<HTMLDivElement | null>(null)
-  const timelineContainerRef = useRef<HTMLDivElement | null>(null)
 
   const currentScore = currentMove ? currentMove.scoreForPlayer : 0
 
@@ -982,24 +1054,80 @@ export default function GameAnalysisPage() {
             <span>Back</span>
           </button>
           <div className="text-right text-xs text-slate-300">
-            {pgn && (
+            <div className="flex gap-2">
+              {/* Re-analyze Button */}
               <button
-                onClick={() => {
-                  const blob = new Blob([pgn], { type: 'application/x-chess-pgn' })
-                  const url = URL.createObjectURL(blob)
-                  const link = document.createElement('a')
-                  link.href = url
-                  link.download = `${decodedUserId}_${decodedGameId}.pgn`
-                  link.click()
-                  URL.revokeObjectURL(url)
-                }}
-                className="rounded-full border border-white/10 bg-white/10 px-3 py-1 font-medium text-white transition hover:border-white/30 hover:bg-white/20"
+                onClick={handleReanalyze}
+                disabled={isReanalyzing || !pgn}
+                className={`
+                  rounded-full border px-4 py-1.5 font-medium transition
+                  ${isReanalyzing 
+                    ? 'border-purple-400/30 bg-purple-500/10 text-purple-300 cursor-wait' 
+                    : reanalyzeSuccess
+                    ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
+                    : 'border-purple-400/30 bg-purple-500/10 text-purple-300 hover:border-purple-400/50 hover:bg-purple-500/20'
+                  }
+                  ${!pgn ? 'opacity-50 cursor-not-allowed' : ''}
+                `}
+                title="Re-analyze this game with the latest move evaluation logic"
               >
-                Download PGN
+                {isReanalyzing ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Re-analyzing...
+                  </span>
+                ) : reanalyzeSuccess ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Updated!
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Re-analyze
+                  </span>
+                )}
               </button>
-            )}
+
+              {/* Download PGN Button */}
+              {pgn && (
+                <button
+                  onClick={() => {
+                    const blob = new Blob([pgn], { type: 'application/x-chess-pgn' })
+                    const url = URL.createObjectURL(blob)
+                    const link = document.createElement('a')
+                    link.href = url
+                    link.download = `${decodedUserId}_${decodedGameId}.pgn`
+                    link.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                  className="rounded-full border border-white/10 bg-white/10 px-3 py-1 font-medium text-white transition hover:border-white/30 hover:bg-white/20"
+                >
+                  Download PGN
+                </button>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Re-analysis Status Banner */}
+        {analysisError && (
+          <div className="mb-4 rounded-lg border border-rose-400/30 bg-rose-500/10 p-4 text-rose-300">
+            <div className="flex items-center gap-2">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="font-medium">{analysisError}</span>
+            </div>
+          </div>
+        )}
 
         <div className="mb-8 grid gap-4 md:grid-cols-[1.3fr,1fr]">
           <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-5 shadow-xl shadow-black/40">
@@ -1055,228 +1183,17 @@ export default function GameAnalysisPage() {
           </div>
         </div>
 
-        {/* Symmetrical 3-Column Layout */}
-        <div className="grid gap-6 lg:grid-cols-12">
-          {/* Left Column: Evaluation Bar */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-6">
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
-                <div className="h-[655px] w-8">
-                  <EvaluationBar score={currentScore} playerColor={playerColor} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Center Column: Chess Board */}
-          <div className="lg:col-span-7">
-            <div className="relative rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 shadow-2xl shadow-black/50">
-              <div className="flex flex-col items-center justify-center py-4">
-                <div className="w-full flex justify-center max-w-full">
-                  <Chessboard
-                    id="analysis-board"
-                    position={processedData.positions[currentIndex]}
-                    arePiecesDraggable={false}
-                    boardOrientation={playerColor}
-                    boardWidth={boardWidth}
-                    showNotation={true}
-                    {...getDarkChessBoardTheme('default')}
-                  />
-                </div>
-                <div className="mt-8 flex flex-col items-center justify-center gap-2 text-sm text-slate-200">
-                  <div className="text-xs text-slate-500">Use ← → arrow keys or click buttons to navigate</div>
-                  <div className="flex flex-wrap items-center justify-center gap-4">
-                  <div className="flex items-center space-x-1.5">
-                    <button
-                      onClick={() => navigateToMove(0)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          navigateToMove(0)
-                        }
-                      }}
-                      className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
-                      aria-label="First move"
-                    >
-                      {NAVIGATION_ICONS.first}
-                    </button>
-                    <button
-                      onClick={() => navigateToMove(currentIndex - 1)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          navigateToMove(currentIndex - 1)
-                        }
-                      }}
-                      className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
-                      aria-label="Previous move"
-                    >
-                      {NAVIGATION_ICONS.prev}
-                    </button>
-                    <button
-                      onClick={() => navigateToMove(currentIndex + 1)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          navigateToMove(currentIndex + 1)
-                        }
-                      }}
-                      className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
-                      aria-label="Next move"
-                    >
-                      {NAVIGATION_ICONS.next}
-                    </button>
-                    <button
-                      onClick={() => navigateToMove(processedData.positions.length - 1)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          navigateToMove(processedData.positions.length - 1)
-                        }
-                      }}
-                      className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
-                      aria-label="Last move"
-                    >
-                      {NAVIGATION_ICONS.last}
-                    </button>
-                  </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Analysis Panels */}
-          <div className="lg:col-span-4 space-y-6">
-            {/* Current Move Analysis Block */}
-            <div className="rounded-2xl border border-white/10 bg-white/[0.08] p-6 shadow-xl shadow-black/40">
-              <div className="flex items-start justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
-                  <div className="mt-2 text-3xl font-semibold text-white">
-                    {currentMove ? currentMove.san : '—'}
-                  </div>
-                </div>
-                {currentMove && <MoveClassificationBadge classification={currentMove.classification} />}
-              </div>
-              
-              {currentMove ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
-                    <span>{currentMove.player === 'white' ? 'White move' : 'Black move'}</span>
-                    <span className="h-px w-8 bg-white/20" />
-                    <span>Move {currentMove.moveNumber}</span>
-                  </div>
-                  
-                  {/* Enhanced Coaching Display */}
-                  <EnhancedMoveCoaching move={currentMove} className="text-sm" />
-                </div>
-              ) : (
-                <p className="text-sm text-slate-300">Use the move timeline to explore Stockfish feedback for each position.</p>
-              )}
-            </div>
-
-            {/* Move Timeline Block */}
-            <div className="rounded-2xl border border-white/10 bg-white/[0.08] p-6 shadow-xl shadow-black/40">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Move Timeline</h3>
-                  <div className="text-xs text-slate-500 mt-1">← → to navigate moves</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setTimelineScrollOffset(Math.max(0, timelineScrollOffset - 1))}
-                    disabled={timelineScrollOffset === 0}
-                    className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-xs transition hover:border-white/30 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed"
-                    aria-label="Previous moves"
-                  >
-                    ↑
-                  </button>
-                  <span className="text-xs text-slate-400">
-                    {timelineScrollOffset + 1}-{Math.min(timelineScrollOffset + 3, Math.ceil(processedData.moves.length / 2))}
-                  </span>
-                  <button
-                    onClick={() => setTimelineScrollOffset(Math.min(Math.ceil(processedData.moves.length / 2) - 3, timelineScrollOffset + 1))}
-                    disabled={timelineScrollOffset >= Math.ceil(processedData.moves.length / 2) - 3}
-                    className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-xs transition hover:border-white/30 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed"
-                    aria-label="Next moves"
-                  >
-                    ↓
-                  </button>
-                </div>
-              </div>
-              <div className="max-h-[200px] overflow-y-auto pr-2 text-sm" ref={timelineContainerRef}>
-                <table className="w-full table-fixed text-left">
-                  <thead className="sticky top-0 bg-slate-950/95 backdrop-blur">
-                    <tr className="text-xs uppercase text-slate-400">
-                      <th className="w-14 py-2">Move</th>
-                      <th className="w-1/2 py-2">You</th>
-                      <th className="w-1/2 py-2">Opponent</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from({ length: Math.min(3, Math.ceil(processedData.moves.length / 2)) }).map((_, row) => {
-                      const actualRow = row + timelineScrollOffset
-                      const whiteMove = processedData.moves[actualRow * 2]
-                      const blackMove = processedData.moves[actualRow * 2 + 1]
-                      return (
-                        <tr key={actualRow} className="border-b border-white/10 last:border-b-0">
-                          <td className="py-2 pr-2 text-xs text-slate-400">{actualRow + 1}</td>
-                          <td className="py-2 pr-2">
-                            {whiteMove ? (
-                              <button
-                                onClick={() => navigateToMove(whiteMove.index + 1)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault()
-                                    navigateToMove(whiteMove.index + 1)
-                                  }
-                                }}
-                                className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
-                                  currentIndex === whiteMove.index + 1
-                                    ? 'bg-white/25 text-white shadow-inner shadow-black/40'
-                                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
-                                }`}
-                              >
-                                <span className="text-xs font-medium truncate">{whiteMove.san}</span>
-                                <MoveClassificationBadge classification={whiteMove.classification} />
-                              </button>
-                            ) : (
-                              <span className="text-slate-600">—</span>
-                            )}
-                          </td>
-                          <td className="py-2 pr-2">
-                            {blackMove ? (
-                              <button
-                                onClick={() => navigateToMove(blackMove.index + 1)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault()
-                                    navigateToMove(blackMove.index + 1)
-                                  }
-                                }}
-                                className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
-                                  currentIndex === blackMove.index + 1
-                                    ? 'bg-white/25 text-white shadow-inner shadow-black/40'
-                                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
-                                }`}
-                              >
-                                <span className="text-xs font-medium truncate">{blackMove.san}</span>
-                                <MoveClassificationBadge classification={blackMove.classification} />
-                              </button>
-                            ) : (
-                              <span className="text-slate-600">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Unified Chess Analysis Component */}
+        <UnifiedChessAnalysis
+          currentPosition={processedData.positions[currentIndex]}
+          currentMove={currentMove}
+          allMoves={processedData.moves}
+          playerColor={playerColor}
+          currentIndex={currentIndex}
+          boardWidth={boardWidth}
+          currentMoveArrows={currentMoveArrows}
+          onMoveNavigation={navigateToMove}
+        />
 
         <div className="mt-8">
           <EnhancedGameInsights

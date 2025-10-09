@@ -713,6 +713,8 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
+                'is_great': move.is_great,
+                'is_excellent': move.is_excellent,
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
@@ -722,7 +724,21 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'depth_analyzed': move.depth_analyzed,
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
-                'ply_index': move.ply_index
+                'ply_index': move.ply_index,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase
             })
         
         # Prepare data for move_analyses table
@@ -789,6 +805,8 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
+                'is_great': move.is_great,
+                'is_excellent': move.is_excellent,
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
@@ -798,7 +816,21 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'depth_analyzed': move.depth_analyzed,
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
-                'ply_index': move.ply_index
+                'ply_index': move.ply_index,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase
             })
         
         # Prepare data for game_analyses table

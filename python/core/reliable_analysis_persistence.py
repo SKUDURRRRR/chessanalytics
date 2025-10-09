@@ -163,6 +163,25 @@ class ReliableAnalysisPersistence:
     async def _save_to_both_tables(self, analysis_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """Save analysis to both game_analyses and move_analyses tables."""
         try:
+            # First verify that the game exists in the games table
+            try:
+                game_check = self.supabase_service.table('games').select('id').eq(
+                    'user_id', analysis_data['user_id']
+                ).eq('platform', analysis_data['platform']).eq(
+                    'provider_game_id', analysis_data['game_id']
+                ).limit(1).execute()
+                
+                if not game_check.data:
+                    print(f"[PERSISTENCE] ❌ Game not found in games table:")
+                    print(f"[PERSISTENCE]    user_id: {analysis_data['user_id']}")
+                    print(f"[PERSISTENCE]    platform: {analysis_data['platform']}")
+                    print(f"[PERSISTENCE]    game_id: {analysis_data['game_id']}")
+                    print(f"[PERSISTENCE] This game must be imported first before analysis can be saved.")
+                    return False, None
+            except Exception as check_error:
+                print(f"[PERSISTENCE] ⚠️  Warning: Could not verify game existence: {check_error}")
+                # Continue anyway - let the database constraint catch it
+            
             game_analyses_data = {
                 'game_id': analysis_data['game_id'],
                 'user_id': analysis_data['user_id'],
@@ -205,12 +224,31 @@ class ReliableAnalysisPersistence:
 
             print(f"[PERSISTENCE] Saving to game_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, type={analysis_data['analysis_type']}")
             
-            game_response = self.supabase_service.table('game_analyses').upsert(
-                game_analyses_data,
-                on_conflict='user_id,platform,game_id,analysis_type'
-            ).execute()
+            try:
+                game_response = self.supabase_service.table('game_analyses').upsert(
+                    game_analyses_data,
+                    on_conflict='user_id,platform,game_id,analysis_type'
+                ).execute()
 
-            print(f"[PERSISTENCE] game_analyses response: data={getattr(game_response, 'data', None)}, error={getattr(game_response, 'error', None)}")
+                print(f"[PERSISTENCE] game_analyses response: data={getattr(game_response, 'data', None)}, error={getattr(game_response, 'error', None)}")
+                
+                # Check for foreign key constraint violations
+                if hasattr(game_response, 'error') and game_response.error:
+                    error_msg = str(game_response.error)
+                    if 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
+                        print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
+                        print(f"[PERSISTENCE] This means the game record doesn't exist in the games table")
+                        print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
+                        return False, None
+                        
+            except Exception as db_error:
+                error_msg = str(db_error)
+                print(f"[PERSISTENCE] ❌ DATABASE ERROR during game_analyses save: {error_msg}")
+                if 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
+                    print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
+                    print(f"[PERSISTENCE] This means the game record doesn't exist in the games table")
+                    print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
+                return False, None
 
             game_analysis_id = None
             response_data = getattr(game_response, 'data', None)
@@ -303,6 +341,25 @@ class ReliableAnalysisPersistence:
     async def _save_to_game_analyses(self, analysis_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """Save analysis to game_analyses table only."""
         try:
+            # First verify that the game exists in the games table
+            try:
+                game_check = self.supabase_service.table('games').select('id').eq(
+                    'user_id', analysis_data['user_id']
+                ).eq('platform', analysis_data['platform']).eq(
+                    'provider_game_id', analysis_data['game_id']
+                ).limit(1).execute()
+                
+                if not game_check.data:
+                    print(f"[PERSISTENCE] ❌ Game not found in games table:")
+                    print(f"[PERSISTENCE]    user_id: {analysis_data['user_id']}")
+                    print(f"[PERSISTENCE]    platform: {analysis_data['platform']}")
+                    print(f"[PERSISTENCE]    game_id: {analysis_data['game_id']}")
+                    print(f"[PERSISTENCE] This game must be imported first before analysis can be saved.")
+                    return False, None
+            except Exception as check_error:
+                print(f"[PERSISTENCE] ⚠️  Warning: Could not verify game existence: {check_error}")
+                # Continue anyway - let the database constraint catch it
+            
             game_analyses_data = {
                 'game_id': analysis_data['game_id'],
                 'user_id': analysis_data['user_id'],
@@ -376,6 +433,8 @@ class ReliableAnalysisPersistence:
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
+                'is_great': getattr(move, 'is_great', False),  # NEW field
+                'is_excellent': getattr(move, 'is_excellent', False),  # NEW field
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
@@ -386,6 +445,18 @@ class ReliableAnalysisPersistence:
                 'best_move': move.best_move,
                 'explanation': move.explanation,
                 'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase,
                 'analysis_time_ms': move.analysis_time_ms,
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,

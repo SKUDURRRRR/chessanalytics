@@ -45,10 +45,10 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
     <div className={`space-y-3 ${className}`}>
       {/* Main Coaching Comment */}
       {move.coachingComment && (
-        <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400">
+        <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400 h-48 flex flex-col">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-lg font-semibold text-white">
-              {move.isUserMove ? 'Move Analysis' : 'Opponent Move Analysis'}
+              Move Analysis
             </span>
             {move.encouragementLevel && (
               <span className={`text-sm font-medium ${getEncouragementColor(move.encouragementLevel)}`}>
@@ -58,7 +58,7 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
               </span>
             )}
           </div>
-          <p className="text-slate-200 leading-relaxed">{move.coachingComment}</p>
+          <p className="text-slate-200 leading-relaxed flex-1 overflow-hidden">{move.coachingComment}</p>
         </div>
       )}
 
@@ -76,130 +76,12 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
         )}
       </div>
 
-      {/* What Went Right */}
-      {move.whatWentRight && (
-        <div className="bg-emerald-500/10 p-4 rounded-lg border-l-4 border-emerald-400">
-          <h4 className="font-semibold text-emerald-300 mb-2">
-            What Went Right
-          </h4>
-          <p className="text-slate-200">{move.whatWentRight}</p>
-        </div>
-      )}
-
-      {/* What Went Wrong */}
-      {move.whatWentWrong && (
-        <div className="bg-rose-500/10 p-4 rounded-lg border-l-4 border-rose-400">
-          <h4 className="font-semibold text-rose-300 mb-2">
-            What Went Wrong
-          </h4>
-          <p className="text-slate-200">{move.whatWentWrong}</p>
-        </div>
-      )}
-
-      {/* How to Improve */}
-      {move.howToImprove && (
-        <div className="bg-amber-500/10 p-4 rounded-lg border-l-4 border-amber-400">
-          <h4 className="font-semibold text-amber-300 mb-2">
-            How to Improve
-          </h4>
-          <p className="text-slate-200">{move.howToImprove}</p>
-        </div>
-      )}
-
-      {/* Tactical Insights */}
-      {move.tacticalInsights && move.tacticalInsights.length > 0 && (
-        <div className="bg-purple-500/10 p-4 rounded-lg border-l-4 border-purple-400">
-          <h4 className="font-semibold text-purple-300 mb-3">
-            Tactical Insights
-          </h4>
-          <ul className="space-y-2">
-            {move.tacticalInsights.map((insight, index) => (
-              <li key={index} className="text-slate-200 flex items-start gap-2">
-                <span className="text-purple-400 mt-1">•</span>
-                <span>{insight}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Positional Insights */}
-      {move.positionalInsights && move.positionalInsights.length > 0 && (
-        <div className="bg-indigo-500/10 p-4 rounded-lg border-l-4 border-indigo-400">
-          <h4 className="font-semibold text-indigo-300 mb-3">
-            Positional Insights
-          </h4>
-          <ul className="space-y-2">
-            {move.positionalInsights.map((insight, index) => (
-              <li key={index} className="text-slate-200 flex items-start gap-2">
-                <span className="text-indigo-400 mt-1">•</span>
-                <span>{insight}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Risks and Benefits */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Risks */}
-        {move.risks && move.risks.length > 0 && (
-          <div className="bg-rose-500/10 p-4 rounded-lg border-l-4 border-rose-400">
-            <h4 className="font-semibold text-rose-300 mb-3">
-              Risks
-            </h4>
-            <ul className="space-y-2">
-              {move.risks.map((risk, index) => (
-                <li key={index} className="text-slate-200 flex items-start gap-2">
-                  <span className="text-rose-400 mt-1">•</span>
-                  <span>{risk}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Benefits */}
-        {move.benefits && move.benefits.length > 0 && (
-          <div className="bg-emerald-500/10 p-4 rounded-lg border-l-4 border-emerald-400">
-            <h4 className="font-semibold text-emerald-300 mb-3">
-              Benefits
-            </h4>
-            <ul className="space-y-2">
-              {move.benefits.map((benefit, index) => (
-                <li key={index} className="text-slate-200 flex items-start gap-2">
-                  <span className="text-emerald-400 mt-1">•</span>
-                  <span>{benefit}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      {/* Learning Points */}
-      {move.learningPoints && move.learningPoints.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 p-4 rounded-lg border-l-4 border-amber-400">
-          <h4 className="font-semibold text-amber-300 mb-3">
-            Learning Points
-          </h4>
-          <ul className="space-y-2">
-            {move.learningPoints.map((point, index) => (
-              <li key={index} className="text-slate-200 flex items-start gap-2">
-                <span className="text-amber-400 mt-1">•</span>
-                <span>{point}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {/* Enhanced Fallback for moves without coaching data */}
-      {!move.coachingComment && !move.whatWentRight && !move.whatWentWrong && move.explanation && (
-        <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400">
+      {!move.coachingComment && move.explanation && (
+        <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400 h-48 flex flex-col">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-lg font-semibold text-white">
-              {move.isUserMove ? 'Move Analysis' : 'Opponent Move Analysis'}
+              Move Analysis
             </span>
             {move.encouragementLevel && (
               <span className={`text-sm font-medium ${getEncouragementColor(move.encouragementLevel)}`}>
@@ -209,7 +91,7 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
               </span>
             )}
           </div>
-          <p className="text-slate-200 leading-relaxed">{move.explanation}</p>
+          <p className="text-slate-200 leading-relaxed flex-1 overflow-hidden">{move.explanation}</p>
         </div>
       )}
     </div>

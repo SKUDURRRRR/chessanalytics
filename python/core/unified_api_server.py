@@ -2703,12 +2703,14 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
                 skill_level=request.skill_level
             )
         
-        # Analyze game
+        # Analyze game - pass game_id if provided in request
+        game_id = request.game_id or request.provider_game_id
         game_analysis = await engine.analyze_game(
             request.pgn, 
             request.user_id, 
             request.platform, 
-            analysis_type_enum
+            analysis_type_enum,
+            game_id
         )
         
         if game_analysis:
@@ -2970,12 +2972,108 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             
             if not fk_validation or not hasattr(fk_validation, 'data') or not fk_validation.data:
                 print(f"[SINGLE GAME ANALYSIS] ❌ CRITICAL: Foreign key validation failed - game not found in games table!")
-                return UnifiedAnalysisResponse(
-                    success=False,
-                    message=f"Foreign key constraint validation failed: Game {game_id} not found in games table for user {canonical_user_id}"
-                )
-            
-            print(f"[SINGLE GAME ANALYSIS] ✅ Foreign key validation passed - game exists in games table")
+                print(f"[SINGLE GAME ANALYSIS] Attempting to create missing game record...")
+                
+                # Try to create the game record again with more robust error handling
+                try:
+                    # Parse PGN to extract basic game info
+                    import chess.pgn
+                    import io
+                    pgn_io = io.StringIO(pgn_data)
+                    game = chess.pgn.read_game(pgn_io)
+                    
+                    if game and game.headers:
+                        headers = game.headers
+                        from datetime import datetime
+                        now_iso = datetime.utcnow().isoformat()
+                        
+                        # Extract basic info from PGN headers
+                        result = headers.get('Result', '0-1')
+                        white_player = headers.get('White', '')
+                        black_player = headers.get('Black', '')
+                        user_is_white = white_player.lower() == request.user_id.lower()
+                        
+                        # Determine color and result from user's perspective
+                        if user_is_white:
+                            color = 'white'
+                            if result == '1-0':
+                                user_result = 'win'
+                            elif result == '0-1':
+                                user_result = 'loss'
+                            else:
+                                user_result = 'draw'
+                        else:
+                            color = 'black'
+                            if result == '0-1':
+                                user_result = 'win'
+                            elif result == '1-0':
+                                user_result = 'loss'
+                            else:
+                                user_result = 'draw'
+                        
+                        # Count moves
+                        move_count = sum(1 for _ in game.mainline_moves())
+                        
+                        game_record = {
+                            "user_id": canonical_user_id,
+                            "platform": request.platform,
+                            "provider_game_id": game_id,
+                            "result": user_result,
+                            "color": color,
+                            "time_control": headers.get('TimeControl', 'unknown'),
+                            "opening": headers.get('Opening', 'Unknown'),
+                            "opening_family": headers.get('Opening', 'Unknown'),
+                            "opponent_rating": None,
+                            "my_rating": None,
+                            "total_moves": move_count,
+                            "played_at": headers.get('Date', now_iso),
+                            "opponent_name": black_player if user_is_white else white_player,
+                            "created_at": now_iso,
+                        }
+                        
+                        # Force insert the game record
+                        games_response = db_client.table('games').upsert(
+                            game_record,
+                            on_conflict='user_id,platform,provider_game_id'
+                        ).execute()
+                        
+                        if games_response.data:
+                            print(f"[SINGLE GAME ANALYSIS] ✅ Successfully created/updated game record: {game_id}")
+                            
+                            # Re-validate foreign key constraint
+                            fk_validation = db_client.table('games').select('id').eq(
+                                'provider_game_id', game_id
+                            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                            
+                            if fk_validation and hasattr(fk_validation, 'data') and fk_validation.data:
+                                print(f"[SINGLE GAME ANALYSIS] ✅ Foreign key validation passed after creating game record")
+                            else:
+                                print(f"[SINGLE GAME ANALYSIS] ❌ Foreign key validation still failed after creating game record")
+                                return UnifiedAnalysisResponse(
+                                    success=False,
+                                    message=f"Failed to create valid game record for analysis save"
+                                )
+                        else:
+                            print(f"[SINGLE GAME ANALYSIS] ❌ Failed to create game record - no data returned")
+                            return UnifiedAnalysisResponse(
+                                success=False,
+                                message=f"Failed to create game record for analysis save"
+                            )
+                    else:
+                        print(f"[SINGLE GAME ANALYSIS] ❌ Failed to parse PGN for game record creation")
+                        return UnifiedAnalysisResponse(
+                            success=False,
+                            message=f"Failed to parse PGN for game record creation"
+                        )
+                        
+                except Exception as create_error:
+                    print(f"[SINGLE GAME ANALYSIS] ❌ Failed to create game record: {create_error}")
+                    return UnifiedAnalysisResponse(
+                        success=False,
+                        message=f"Failed to create game record: {str(create_error)}"
+                    )
+            else:
+                print(f"[SINGLE GAME ANALYSIS] ✅ Foreign key validation passed - game exists in games table")
             
             # Save to database with comprehensive error handling
             try:
@@ -3785,6 +3883,9 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'move_san': move.move_san,
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
+                'is_brilliant': move.is_brilliant,
+                'is_great': move.is_great,
+                'is_excellent': move.is_excellent,
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
@@ -3794,7 +3895,21 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'depth_analyzed': move.depth_analyzed,
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
-                'ply_index': move.ply_index
+                'ply_index': move.ply_index,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase
             })
 
         data = {

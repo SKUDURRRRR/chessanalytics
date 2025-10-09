@@ -2,6 +2,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
+import { generateMoveArrows, generateModernMoveArrows } from '../../utils/chessArrows'
+import { ModernChessArrows } from '../chess/ModernChessArrows'
 
 
 interface ProcessedMove {
@@ -102,42 +104,19 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
 
   const chess = useMemo(() => {
     const game = new Chess()
-    // Replay moves up to the current move index
+    // Replay moves up to and including the current move index
     for (let i = 0; i <= currentMoveIndex; i++) {
       if (allMoves[i]) {
         try {
-          const moveData = allMoves[i]
-          const { from, to, promotion } = parseUciMove(moveData.san)
-          game.move({ from, to, promotion })
+          // Use SAN notation directly (which is what we store)
+          game.move(allMoves[i].san)
         } catch (err) {
-          // If UCI parsing fails, try SAN
-          try {
-            game.move(allMoves[i].san)
-          } catch (sanErr) {
-            console.warn('Failed to apply move:', allMoves[i].san, sanErr)
-          }
+          console.warn('Failed to apply move:', allMoves[i].san, err)
         }
       }
     }
     return game
   }, [currentMoveIndex, allMoves])
-
-  const parseUciMove = (move: string) => {
-    if (move.length === 4) {
-      return {
-        from: move.substring(0, 2) as any,
-        to: move.substring(2, 4) as any,
-        promotion: undefined
-      }
-    } else if (move.length === 5) {
-      return {
-        from: move.substring(0, 2) as any,
-        to: move.substring(2, 4) as any,
-        promotion: move.substring(4, 5) as any
-      }
-    }
-    throw new Error('Invalid UCI move format')
-  }
 
   const getCurrentFen = () => {
     return chess.fen()
@@ -151,22 +130,18 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
       if (!currentMove) return {}
       
       const game = new Chess()
-      // Replay moves up to the current move
+      // Replay moves up to (but not including) the current move
       for (let i = 0; i < currentMoveIndex; i++) {
         if (allMoves[i]) {
           try {
             game.move(allMoves[i].san)
           } catch (err) {
-            try {
-              const { from, to, promotion } = parseUciMove(allMoves[i].san)
-              game.move({ from, to, promotion })
-            } catch (uciErr) {
-              console.warn('Failed to apply move:', allMoves[i].san, uciErr)
-            }
+            console.warn('Failed to apply move:', allMoves[i].san, err)
           }
         }
       }
       
+      // Now apply the current move to get highlight squares
       const moveObj = game.move(currentMove.san)
       if (moveObj) {
         return {
@@ -186,22 +161,18 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
     
     try {
       const game = new Chess()
-      // Replay moves up to the current move
+      // Replay moves up to (but not including) the current move
       for (let i = 0; i < currentMoveIndex; i++) {
         if (allMoves[i]) {
           try {
             game.move(allMoves[i].san)
           } catch (err) {
-            try {
-              const { from, to, promotion } = parseUciMove(allMoves[i].san)
-              game.move({ from, to, promotion })
-            } catch (uciErr) {
-              console.warn('Failed to apply move:', allMoves[i].san, uciErr)
-            }
+            console.warn('Failed to apply move:', allMoves[i].san, err)
           }
         }
       }
       
+      // Now apply the current move to get highlight squares
       const moveObj = game.move(currentMove.san)
       if (moveObj) {
         return {
@@ -216,6 +187,43 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
   }
 
   // Note: Square highlighting removed for simplicity with custom board
+
+  // Generate arrows for the current move
+  const currentMoveArrows = useMemo(() => {
+    if (currentMoveIndex < 0 || currentMoveIndex >= allMoves.length) {
+      return []
+    }
+
+    const currentMove = allMoves[currentMoveIndex]
+    if (!currentMove) {
+      return []
+    }
+
+    // Create a chess instance to replay moves up to (but not including) the current move
+    const chess = new Chess()
+    
+    // Replay all moves up to (but not including) the current move
+    // This sets up the position BEFORE the current move is made
+    for (let i = 0; i < currentMoveIndex; i++) {
+      const moveData = allMoves[i]
+      if (moveData) {
+        try {
+          // Try SAN notation first (which is what we store)
+          chess.move(moveData.san)
+        } catch (err) {
+          console.warn('Failed to apply move for arrow generation:', moveData.san, err)
+        }
+      }
+    }
+
+    // Generate modern arrows for the current move
+    return generateModernMoveArrows({
+      san: currentMove.san,
+      bestMoveSan: currentMove.bestMoveSan,
+      classification: currentMove.classification,
+      isUserMove: currentMove.isUserMove
+    }, chess)
+  }, [currentMoveIndex, allMoves])
 
   const currentMove = allMoves[currentMoveIndex]
   const isElementMove = currentMove && element.moves.includes(currentMove.index)
@@ -281,7 +289,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
           }
         `}</style>
         <div className="flex justify-center">
-          <div style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
+          <div style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }} className="relative">
             <Chessboard
               id={`positional-analysis-${element.name.replace(/\s+/g, '-').toLowerCase()}`}
               position={getCurrentFen()}
@@ -294,6 +302,11 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
                 ...getElementMoveHighlight()
               }}
               {...getDarkChessBoardTheme('default')}
+            />
+            <ModernChessArrows
+              arrows={currentMoveArrows}
+              boardWidth={boardWidth}
+              boardOrientation={playerColor}
             />
           </div>
         </div>

@@ -49,6 +49,43 @@ export function EnhancedOpeningAnalysis({
   const openingMoves = userMoves.slice(0, 15) // First 15 moves typically cover opening
 
   const enhancedAnalysis = useMemo((): EnhancedOpeningAnalysis => {
+    console.log('EnhancedOpeningAnalysis - openingMoves:', openingMoves.length, openingMoves)
+    console.log('EnhancedOpeningAnalysis - gameRecord:', gameRecord)
+    console.log('EnhancedOpeningAnalysis - playerColor:', playerColor)
+    
+    // If no opening moves are available, return a default analysis
+    if (openingMoves.length === 0) {
+      return {
+        openingName: 'Unknown Opening',
+        openingFamily: 'Unknown',
+        accuracy: 0,
+        theoryKnowledge: 0,
+        gamesPlayed: totalGames,
+        specificMistakes: [],
+        commonPatterns: ['General opening principles'],
+        strengths: [],
+        weaknesses: ['Game analysis required to identify strengths and areas for improvement'],
+        studyRecommendations: [],
+        practicePositions: [],
+        peerComparison: {
+          percentile: 0,
+          ratingRange: 'Unknown'
+        },
+        repertoireAnalysis: {
+          diversity: 0,
+          colorPerformance: { white: 0, black: 0 },
+          familyStrengths: [],
+          familyWeaknesses: [],
+          mostPlayed: 'None',
+          leastPlayed: 'None',
+          recommendation: 'Analyze games to build your repertoire'
+        },
+        improvementTrend: [],
+        nextGoals: ['Analyze this game to get personalized recommendations'],
+        focusAreas: ['Game analysis required']
+      }
+    }
+    
     const identifiedVariation = identifyOpening(gameRecord, openingMoves.map(m => m.san), playerColor)
     
     // Calculate basic metrics
@@ -327,12 +364,18 @@ export function EnhancedOpeningAnalysis({
             Strengths
           </h3>
           <div className="space-y-2">
-            {enhancedAnalysis.strengths.map((strength, index) => (
-              <div key={index} className="flex items-center text-sm">
-                <span className="mr-2 text-green-400">•</span>
-                <span>{strength}</span>
+            {enhancedAnalysis.strengths.length > 0 ? (
+              enhancedAnalysis.strengths.map((strength, index) => (
+                <div key={index} className="flex items-center text-sm">
+                  <span className="mr-2 text-green-400">•</span>
+                  <span>{strength}</span>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-slate-400 italic">
+                No analysis data available
               </div>
-            ))}
+            )}
           </div>
         </div>
 
@@ -342,12 +385,18 @@ export function EnhancedOpeningAnalysis({
             Areas to Improve
           </h3>
           <div className="space-y-2">
-            {enhancedAnalysis.weaknesses.map((weakness, index) => (
-              <div key={index} className="flex items-center text-sm">
-                <span className="mr-2 text-red-400">•</span>
-                <span>{weakness}</span>
+            {enhancedAnalysis.weaknesses.length > 0 ? (
+              enhancedAnalysis.weaknesses.map((weakness, index) => (
+                <div key={index} className="flex items-center text-sm">
+                  <span className="mr-2 text-red-400">•</span>
+                  <span>{weakness}</span>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-slate-400 italic">
+                No analysis data available
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
@@ -416,16 +465,34 @@ function identifyStrengthsAndWeaknesses(moves: ProcessedMove[], mistakes: Openin
   const strengths: string[] = []
   const weaknesses: string[] = []
   
+  console.log('identifyStrengthsAndWeaknesses - moves:', moves.length, 'mistakes:', mistakes.length)
+  console.log('Move classifications:', moves.map(m => ({ san: m.san, classification: m.classification })))
+  
   // Analyze move quality distribution
   const bestMoves = moves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length
   const goodMoves = moves.filter(m => m.classification === 'good').length
   const totalMoves = moves.length
   
-  if (bestMoves / totalMoves > 0.3) {
-    strengths.push('Strong theoretical knowledge')
-  }
-  if (goodMoves / totalMoves > 0.4) {
-    strengths.push('Good practical understanding')
+  console.log('Move quality analysis:', { bestMoves, goodMoves, totalMoves })
+  
+  if (totalMoves > 0) {
+    if (bestMoves / totalMoves > 0.3) {
+      strengths.push('Strong theoretical knowledge')
+    }
+    if (goodMoves / totalMoves > 0.4) {
+      strengths.push('Good practical understanding')
+    }
+    
+    // Add some default strengths if no specific ones are found
+    if (strengths.length === 0 && totalMoves > 0) {
+      if (bestMoves > 0) {
+        strengths.push('Strong theoretical knowledge')
+      } else if (goodMoves > 0) {
+        strengths.push('Good practical understanding')
+      } else {
+        // Don't add contradictory strengths - let weaknesses handle this case
+      }
+    }
   }
   
   // Analyze mistake patterns
@@ -449,6 +516,28 @@ function identifyStrengthsAndWeaknesses(moves: ProcessedMove[], mistakes: Openin
   if (centerMistakes > 0) {
     weaknesses.push('Center control principles')
   }
+  
+  // Add some default weaknesses if no specific ones are found
+  if (weaknesses.length === 0 && totalMoves > 0) {
+    const inaccuracyMoves = moves.filter(m => m.classification === 'inaccuracy').length
+    const mistakeMoves = moves.filter(m => m.classification === 'mistake').length
+    const blunderMoves = moves.filter(m => m.classification === 'blunder').length
+    
+    if (blunderMoves > 0) {
+      weaknesses.push('Avoiding tactical blunders')
+    } else if (mistakeMoves > 0) {
+      weaknesses.push('Reducing tactical mistakes')
+    } else if (inaccuracyMoves > 0) {
+      weaknesses.push('Improving move accuracy')
+    } else {
+      // Only add a weakness if we have a corresponding strength
+      if (strengths.length === 0) {
+        weaknesses.push('Building opening theory knowledge')
+      }
+    }
+  }
+  
+  console.log('Final strengths and weaknesses:', { strengths, weaknesses })
   
   return { strengths, weaknesses }
 }

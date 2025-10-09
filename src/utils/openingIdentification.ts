@@ -106,6 +106,34 @@ const OPENING_VARIATIONS: Record<string, Array<{
       evaluation: 'equal'
     },
     {
+      name: 'King\'s Indian Defense',
+      moves: ['e3', 'd6', 'Nc3', 'Nf6', 'b3', 'g6'],
+      description: 'King\'s Indian setup against unusual White opening',
+      popularity: 'uncommon',
+      evaluation: 'equal'
+    },
+    {
+      name: 'King\'s Indian Defense',
+      moves: ['e3', 'd6', 'Nc3', 'Nf6', 'b3', 'g6', 'Bb2', 'Bg7'],
+      description: 'King\'s Indian setup with fianchetto development',
+      popularity: 'uncommon',
+      evaluation: 'equal'
+    },
+    {
+      name: 'King\'s Indian Defense',
+      moves: ['d4', 'Nf6', 'Nf3', 'g6', 'c4', 'Bg7'],
+      description: 'King\'s Indian Defense - Classical Variation',
+      popularity: 'common',
+      evaluation: 'equal'
+    },
+    {
+      name: 'King\'s Indian Defense',
+      moves: ['d4', 'Nf6', 'Nf3', 'g6', 'g3', 'Bg7', 'Bg2', 'O-O'],
+      description: 'King\'s Indian Defense - Fianchetto Variation',
+      popularity: 'common',
+      evaluation: 'equal'
+    },
+    {
       name: 'Nimzo-Indian Defense',
       moves: ['d4', 'Nf6', 'c4', 'e6', 'Nc3', 'Bb4'],
       description: 'Classical Indian defense',
@@ -257,6 +285,33 @@ export function identifyOpening(
             description: variation.description,
             popularity: variation.popularity,
             evaluation: variation.evaluation,
+            source: 'move_matching',
+            confidence: 'medium'
+          }
+        }
+      }
+    }
+
+    // Special case: King's Indian Defense recognition by Black's setup
+    // Look for characteristic KID moves: d6, Nf6, g6, Bg7 pattern
+    if (firstMoves.length >= 4) {
+      const blackMoves = firstMoves.filter((_, index) => index % 2 === 1) // Black moves (odd indices)
+      const whiteMoves = firstMoves.filter((_, index) => index % 2 === 0) // White moves (even indices)
+      
+      // Check if Black is setting up King's Indian structure
+      if (blackMoves.length >= 2) {
+        const hasD6 = blackMoves.includes('d6')
+        const hasNf6 = blackMoves.includes('Nf6')
+        const hasG6 = blackMoves.includes('g6')
+        const hasBg7 = blackMoves.includes('Bg7')
+        
+        // If Black has the characteristic KID setup moves
+        if ((hasD6 && hasNf6 && hasG6) || (hasNf6 && hasG6 && hasBg7)) {
+          return {
+            name: 'King\'s Indian Defense',
+            description: 'King\'s Indian setup by Black against unusual White opening',
+            popularity: 'uncommon',
+            evaluation: 'equal',
             source: 'move_matching',
             confidence: 'medium'
           }
