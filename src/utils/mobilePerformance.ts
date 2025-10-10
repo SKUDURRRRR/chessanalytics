@@ -264,16 +264,25 @@ export const mobileOptimizations = {
       return
     }
 
-    const criticalResources = [
-      '/src/index.css',
-      '/src/main.tsx'
+    // Only preload actual static assets that exist and are likely to be used
+    // Vite handles module preloading automatically for bundled assets
+    const staticAssets = [
+      { href: '/vite.svg', as: 'image' },
+      // Add other static assets as needed, but avoid source files
     ]
 
-    criticalResources.forEach((resource) => {
+    staticAssets.forEach(({ href, as }) => {
+      // Check if the resource is already preloaded to avoid duplicates
+      const existingPreload = document.querySelector(`link[rel="preload"][href="${href}"]`)
+      if (existingPreload) {
+        return
+      }
+
       const link = document.createElement('link')
       link.rel = 'preload'
-      link.href = resource
-      link.as = resource.endsWith('.css') ? 'style' : 'script'
+      link.href = href
+      link.as = as
+      link.crossOrigin = 'anonymous'
       document.head.appendChild(link)
     })
   },
@@ -314,3 +323,5 @@ export const initializeMobileOptimizations = (): void => {
 
 // Export performance monitor instance
 export const mobilePerformanceMonitor = new MobilePerformanceMonitor()
+
+
