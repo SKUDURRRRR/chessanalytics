@@ -43,7 +43,7 @@
 - Use `git clean -nd` to preview
 - Use `git stash` to temporarily save changes
 - Manually remove specific files if needed
-- Use `git reset --hard` only after confirming it's safe
+- Use `git restore --staged .` and `git restore .` to selectively restore files
 
 ### Instead of destructive file operations:
 - Use copy operations first
