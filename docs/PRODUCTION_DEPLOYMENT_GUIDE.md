@@ -95,12 +95,6 @@ API_HOST=0.0.0.0
 API_PORT=8000
 CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
-# Performance Configuration
-ANALYSIS_PERFORMANCE_PROFILE=production
-STOCKFISH_DEPTH=8
-STOCKFISH_SKILL_LEVEL=8
-MAX_CONCURRENT_ANALYSES=4
-BATCH_SIZE=10
 
 # Security
 AUDIT_ENABLED=true
@@ -203,32 +197,6 @@ SELECT * FROM validate_rls_security();
 SELECT * FROM pg_stat_activity WHERE state = 'active';
 ```
 
-## Performance Tuning
-
-### 1. Production Profile (Default)
-- Stockfish depth: 8
-- Skill level: 8
-- Time limit: 1.0s
-- Max concurrent: 4
-- Batch size: 10
-
-### 2. High Performance Profile
-```env
-ANALYSIS_PERFORMANCE_PROFILE=high_performance
-STOCKFISH_DEPTH=12
-STOCKFISH_SKILL_LEVEL=15
-MAX_CONCURRENT_ANALYSES=8
-BATCH_SIZE=20
-```
-
-### 3. Cost Optimized Profile
-```env
-ANALYSIS_PERFORMANCE_PROFILE=cost_optimized
-STOCKFISH_DEPTH=6
-STOCKFISH_SKILL_LEVEL=6
-MAX_CONCURRENT_ANALYSES=2
-BATCH_SIZE=5
-```
 
 ## Security Checklist
 
