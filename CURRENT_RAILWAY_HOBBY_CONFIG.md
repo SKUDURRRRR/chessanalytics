@@ -65,8 +65,19 @@ class AnalysisConfig:
 ### 4. `python/core/unified_api_server.py`
 ```python
 class UnifiedAnalysisRequest(BaseModel):
-    depth: Optional[int] = Field(14, ...)  # Railway Hobby default
-    skill_level: Optional[int] = Field(20, ...)  # Railway Hobby default
+    """Unified request model for all analysis types."""
+    user_id: str = Field(..., description="User ID to analyze games for")
+    platform: str = Field(..., description="Platform (lichess, chess.com, etc.)")
+    analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
+    limit: Optional[int] = Field(5, description="Maximum number of games to analyze")
+    depth: Optional[int] = Field(14, description="Analysis depth for Stockfish")
+    skill_level: Optional[int] = Field(20, description="Stockfish skill level (0-20)")
+    
+    # Optional parameters for different analysis types
+    pgn: Optional[str] = Field(None, description="PGN string for single game analysis")
+    fen: Optional[str] = Field(None, description="FEN string for position analysis")
+    move: Optional[str] = Field(None, description="Move in UCI format for move analysis")
+    game_id: Optional[str] = Field(None, description="Game ID for single game analysis")
 ```
 
 ---
@@ -102,6 +113,27 @@ python -c "from core.analysis_engine import AnalysisConfig; config = AnalysisCon
 **Expected Output:**
 ```
 depth=14, skill=20, time=0.8, concurrent=4
+```
+
+### Check UnifiedAnalysisRequest Model
+```bash
+cd python
+python -c "from core.unified_api_server import UnifiedAnalysisRequest; from pydantic import BaseModel; print('UnifiedAnalysisRequest fields:'); [print(f'  {field}: {info.annotation.__name__ if hasattr(info.annotation, \"__name__\") else info.annotation} = {info.default}') for field, info in UnifiedAnalysisRequest.model_fields.items()]"
+```
+
+**Expected Output:**
+```
+UnifiedAnalysisRequest fields:
+  user_id: str = Ellipsis
+  platform: str = Ellipsis
+  analysis_type: str = stockfish
+  limit: int = 5
+  depth: int = 14
+  skill_level: int = 20
+  pgn: str = None
+  fen: str = None
+  move: str = None
+  game_id: str = None
 ```
 
 ### Check Backend Health

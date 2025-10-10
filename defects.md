@@ -109,7 +109,7 @@ supabase db reset
 supabase migration up
 ```
 
-The migration `20250103000002_fix_critical_defects.sql` will:
+The migration `20250102000005_schema_consolidation.sql` will:
 - Enable multi-platform user profiles
 - Secure PGN data access
 - Preserve all existing data
