@@ -111,11 +111,17 @@ class ChessAnalysisConfig:
         stockfish_path = self._find_stockfish_executable()
         
         # Railway Hobby Tier - High Performance Settings
+        depth = int(os.getenv("STOCKFISH_DEPTH", "14"))
+        skill_level = int(os.getenv("STOCKFISH_SKILL_LEVEL", "20"))
+        time_limit = float(os.getenv("STOCKFISH_TIME_LIMIT", "0.8"))
+        
+        print(f"[DEBUG] _load_stockfish_config: depth={depth}, skill={skill_level}, time={time_limit}")
+        
         return StockfishConfig(
             path=stockfish_path,
-            depth=int(os.getenv("STOCKFISH_DEPTH", "14")),  # Railway Hobby: Better depth
-            skill_level=int(os.getenv("STOCKFISH_SKILL_LEVEL", "20")),  # Railway Hobby: Maximum strength
-            time_limit=float(os.getenv("STOCKFISH_TIME_LIMIT", "0.8")),  # Railway Hobby: Fast analysis
+            depth=depth,  # Railway Hobby: Better depth
+            skill_level=skill_level,  # Railway Hobby: Maximum strength
+            time_limit=time_limit,  # Railway Hobby: Fast analysis
             use_opening_book=os.getenv("STOCKFISH_USE_OPENING_BOOK", "true").lower() == "true",
             use_endgame_tablebase=os.getenv("STOCKFISH_USE_ENDGAME_TB", "true").lower() == "true",
             max_concurrent=int(os.getenv("STOCKFISH_MAX_CONCURRENT", "4"))  # Railway Hobby: Parallel
