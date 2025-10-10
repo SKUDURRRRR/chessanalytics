@@ -40,8 +40,8 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
     platform = game_data['platform']
     pgn = game_data['pgn']
     analysis_type = game_data.get('analysis_type', 'stockfish')
-    depth = game_data.get('depth', 8)
-    skill_level = game_data.get('skill_level', 8)
+    depth = game_data.get('depth', 14)
+    skill_level = game_data.get('skill_level', 20)
     
     print(f"[Game {game_id}] Starting parallel analysis at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
     
@@ -56,8 +56,8 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
         
         # Use environment-aware depth and skill level
         app_env = os.getenv('APP_ENV', 'production').lower()
-        effective_depth = 6 if app_env == 'dev' else (depth or 8)
-        effective_skill = 6 if app_env == 'dev' else (skill_level or 8)
+        effective_depth = 6 if app_env == 'dev' else (depth or 14)
+        effective_skill = 6 if app_env == 'dev' else (skill_level or 20)
         
         config = AnalysisConfig(
             analysis_type=analysis_type_enum,
@@ -160,8 +160,8 @@ class ParallelAnalysisEngine:
         platform: str,
         analysis_type: str = "stockfish",
         limit: int = 5,
-        depth: int = 8,
-        skill_level: int = 8,
+        depth: int = 14,
+        skill_level: int = 20,
         progress_callback=None
     ) -> Dict[str, Any]:
         """

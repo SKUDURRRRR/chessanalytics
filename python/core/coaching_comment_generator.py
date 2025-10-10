@@ -709,7 +709,7 @@ class ChessCoachingGenerator:
             try:
                 best_move_obj = chess.Move.from_uci(best_move)
                 best_move_san = board.san(best_move_obj)
-                suggestions.append(f"Consider {best_move_san} instead, which is the engine's top choice.")
+                suggestions.append(f"Consider {best_move_san} instead.")
             except:
                 pass
         
@@ -1090,14 +1090,16 @@ class ChessCoachingGenerator:
         # Check if it's a standard opening move (best move with low centipawn loss)
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         is_best = move_analysis.get('is_best', False)
+        is_great = move_analysis.get('is_great', False)
+        is_excellent = move_analysis.get('is_excellent', False)
+        is_good = move_analysis.get('is_good', False)
         
         # If it's the best move with minimal loss, it's likely a book move
         if is_best and centipawn_loss <= 10:
             return True
         
-        # Also consider good moves in opening as potential book moves
-        is_good = move_analysis.get('is_good', False)
-        if is_good and centipawn_loss <= 25:
+        # Also consider great/excellent/good moves in opening as potential book moves
+        if (is_great or is_excellent or is_good) and centipawn_loss <= 25:
             return True
         
         return False
@@ -1132,7 +1134,7 @@ class ChessCoachingGenerator:
         
         if move_quality == MoveQuality.BEST:
             if is_opening:
-                return "Book move."
+                return self._generate_opening_explanation(move_analysis, is_user_move)
             elif abs(evaluation_change) < 10:
                 return "Best move. Keeps the position balanced and safe."
             else:
@@ -1140,7 +1142,7 @@ class ChessCoachingGenerator:
         
         elif move_quality == MoveQuality.GREAT:
             if is_opening:
-                return "Book move."
+                return self._generate_opening_explanation(move_analysis, is_user_move)
             elif abs(evaluation_change) < 10:
                 return "Great move. Maintains control and keeps things balanced."
             elif evaluation_change > 0:
@@ -1150,7 +1152,7 @@ class ChessCoachingGenerator:
         
         elif move_quality == MoveQuality.EXCELLENT:
             if is_opening:
-                return "Book move."
+                return self._generate_opening_explanation(move_analysis, is_user_move)
             elif abs(evaluation_change) < 10:
                 return "Excellent move. Solid and reliable, keeps everything under control."
             elif evaluation_change > 0:
@@ -1160,7 +1162,7 @@ class ChessCoachingGenerator:
         
         elif move_quality == MoveQuality.GOOD:
             if is_opening:
-                return "Book move."
+                return self._generate_opening_explanation(move_analysis, is_user_move)
             elif abs(evaluation_change) < 10:
                 return "Good move. Keeps a playable position."
             elif evaluation_change > 0:
@@ -1170,7 +1172,7 @@ class ChessCoachingGenerator:
         
         elif move_quality == MoveQuality.ACCEPTABLE:
             if is_opening:
-                return "Book move."
+                return self._generate_opening_explanation(move_analysis, is_user_move)
             elif centipawn_loss > 0:
                 return "Playable, but a stronger option was available."
             else:
@@ -1182,8 +1184,18 @@ class ChessCoachingGenerator:
             return random.choice(templates)
 
     def _generate_opening_explanation(self, move_analysis: Dict[str, Any], is_user_move: bool = True) -> str:
-        """Opening moves should be concise and neutral."""
-        return "Book move."
+        """Generate educational opening move explanations."""
+        move_number = move_analysis.get('fullmove_number', 0)
+        move_san = move_analysis.get('move_san', '')
+        
+        if move_number <= 3:
+            return f"Book move. {move_san} is a fundamental opening move that helps control the center and develop your position."
+        elif move_number <= 6:
+            return f"Book move. {move_san} follows established opening theory and helps develop your pieces effectively."
+        elif move_number <= 10:
+            return f"Book move. {move_san} is a well-known opening continuation that maintains good piece coordination."
+        else:
+            return f"Book move. {move_san} is a standard opening move that follows sound chess principles."
 
     def _get_opening_name_from_context(self, move_analysis: Dict[str, Any]) -> str:
         """Try to identify the opening name from the move context."""

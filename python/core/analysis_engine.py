@@ -1069,17 +1069,16 @@ class ChessAnalysisEngine:
         is_best = centipawn_loss <= BASIC_BEST_THRESHOLD
 
         triggers = triggers or []
+        # Heuristic brilliant move detection - much stricter to match Chess.com standards
+        # Only mark as brilliant if it's a best move AND has very specific tactical brilliance
         sacrifice_trigger = ('capture' in triggers and delta > 0) or 'exposes_piece' in triggers
         forcing_mate_trigger = bool(refinement and refinement.get('after') and refinement['after'].get('type') == 'mate')
         evaluation_swing_trigger = delta >= 200
         checking_move_trigger = ('check' in triggers and delta > 0)
 
-        is_brilliant = is_best and (
-            sacrifice_trigger or
-            forcing_mate_trigger or
-            evaluation_swing_trigger or
-            checking_move_trigger
-        )
+        # Much stricter brilliant criteria for heuristic analysis
+        # Only allow if it's a best move AND has forced mate (heuristic can't detect sacrifices well)
+        is_brilliant = is_best and forcing_mate_trigger
         is_good = BASIC_BEST_THRESHOLD < centipawn_loss <= BASIC_GOOD_THRESHOLD
         is_acceptable = BASIC_GOOD_THRESHOLD < centipawn_loss <= BASIC_ACCEPTABLE_THRESHOLD
         is_inaccuracy = BASIC_ACCEPTABLE_THRESHOLD < centipawn_loss <= BASIC_INACCURACY_THRESHOLD
@@ -1431,15 +1430,16 @@ class ChessAnalysisEngine:
                     is_blunder = centipawn_loss > 200  # Blunders (200+cp) - Chess.com standard
 
                     # Brilliant moves: EXTREMELY rare - Chess.com/Lichess standards
-                    # Should appear in ~1% of games or less
-                    # Requirements:
-                    # 1. Must be a best move (0-5cp loss)
-                    # 2. Either: Find forced mate OR Make spectacular sacrifice OR Only winning move
-                    # 3. Position evaluation must remain winning or at least equal
-                    # 4. Move must have tactical brilliance (not just a simple capture)
+                    # Should appear in ~0-1 per 100+ games (not per game!)
+                    # Requirements based on Chess.com official criteria:
+                    # 1. Must be best or nearly best move (0-5cp loss maximum)
+                    # 2. Must involve non-obvious piece sacrifice (3+ points net) OR find short forced mate
+                    # 3. Position must remain winning after sacrifice (not just equal)
+                    # 4. Player must not already be completely winning (not just converting)
+                    # 5. Move must be difficult to find (tactical brilliance)
                     is_brilliant = False
                     
-                    if is_best:  # Must be a best move (0-5cp loss)
+                    if is_best and centipawn_loss <= 5:  # Must be near-perfect move (0-5cp loss)
                         # Define optimal_cp (the evaluation if best move was played)
                         optimal_cp = best_cp
                         
@@ -1447,7 +1447,7 @@ class ChessAnalysisEngine:
                         forcing_mate_trigger = (
                             eval_after.pov(player_color).is_mate() and 
                             not eval_before.pov(player_color).is_mate() and
-                            abs(eval_after.pov(player_color).mate()) <= 5  # Short forced mate (within 5 moves)
+                            abs(eval_after.pov(player_color).mate()) <= 3  # Very short forced mate (within 3 moves)
                         )
                         
                         # Check for spectacular material sacrifice
@@ -1475,34 +1475,37 @@ class ChessAnalysisEngine:
                                 # If we capture Queen (9) with Knight (3): 3-9 = -6 (won 6 points)
                                 net_material_sacrificed = moving_value - captured_value
                                 
-                                # Sacrifice criteria (aligned with Chess.com):
-                                # 1. Must sacrifice at least 2 points net (e.g., Rook for Bishop, Queen for Rook)
-                                # 2. Position must remain at least equal (not losing badly)
-                                # 3. Move must be engine's top choice
-                                significant_sacrifice = net_material_sacrificed >= 2
+                                # STRICTER sacrifice criteria (aligned with Chess.com):
+                                # 1. Must sacrifice at least 3 points net (e.g., Queen for Knight, Rook for Bishop)
+                                # 2. Position must be WINNING after sacrifice (not just equal)
+                                # 3. Player must not already be completely winning (not just converting)
+                                # 4. Move must be engine's top choice
+                                significant_sacrifice = net_material_sacrificed >= 3  # Stricter: 3+ points, not 2+
                                 
-                                # Position must remain at least equal AFTER the sacrifice
-                                # This prevents labeling blunders as brilliant
-                                position_not_losing = actual_cp >= -50  # Not losing by more than 0.5 pawns
+                                # Position must be WINNING after sacrifice (not just equal)
+                                # This prevents labeling equal trades as brilliant
+                                position_winning_after = actual_cp >= 100  # Winning by at least 1.0 pawns
                                 
-                                # Prefer positions that are winning or improved
-                                position_winning_or_improved = (
-                                    actual_cp >= 50 or  # Winning by at least 0.5 pawns
-                                    actual_cp >= optimal_cp - 20  # Didn't get worse by more than 0.2 pawns
-                                )
+                                # Player must not already be completely winning (not just converting)
+                                # This prevents labeling obvious winning moves as brilliant
+                                not_already_completely_winning = optimal_cp < 300  # Not already +3 pawns ahead
+                                
+                                # Position must be maintained or improved (not deteriorated)
+                                position_maintained = actual_cp >= optimal_cp - 30  # Didn't get worse by more than 0.3 pawns
                                 
                                 sacrifice_trigger = (
                                     significant_sacrifice and 
-                                    position_not_losing and 
-                                    position_winning_or_improved
+                                    position_winning_after and 
+                                    not_already_completely_winning and
+                                    position_maintained
                                 )
                         
                         # Restore the board state
                         board.push(move)
                         
                         # Brilliant ONLY for:
-                        # - Finding short forced mate (5 moves or less) OR
-                        # - Spectacular sacrifice (2+ material) that maintains/improves position
+                        # - Finding very short forced mate (3 moves or less) OR
+                        # - Spectacular sacrifice (3+ material) that maintains winning position
                         is_brilliant = forcing_mate_trigger or sacrifice_trigger
                     
                     # Convert evaluation to dict
@@ -1561,8 +1564,9 @@ class ChessAnalysisEngine:
                     loop.close()
         
         # Run the blocking Stockfish call in a thread pool executor
+        # Use Railway Hobby tier concurrency for better performance
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                 result = await loop.run_in_executor(executor, run_stockfish_analysis)
                 return result
         except Exception as e:
@@ -1610,70 +1614,19 @@ class ChessAnalysisEngine:
         opponent_move_count = len(opponent_moves)
 
         # Calculate accuracy using Chess.com-style formula based on win percentage
-        # This uses an exponential decay function that more accurately reflects how
+        # This uses a graduated accuracy system that more accurately reflects how
         # centipawn loss impacts actual game outcomes
-        def calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
-            """
-            Calculate accuracy using Chess.com-style formula for realistic scoring.
-            
-            Based on Chess.com's CAPS2 algorithm research, uses conservative thresholds:
-            - 0-5 CPL: 100% accuracy (perfect moves)
-            - 6-20 CPL: 85-100% accuracy (excellent moves) 
-            - 21-40 CPL: 70-85% accuracy (good moves)
-            - 41-80 CPL: 50-70% accuracy (inaccuracies)
-            - 81-150 CPL: 30-50% accuracy (mistakes)
-            - 150+ CPL: 15-30% accuracy (blunders)
-            
-            This gives realistic results matching Chess.com standards:
-            - 0 cpl avg = 100% accuracy (perfect play)
-            - 20 cpl avg = 87% accuracy (excellent, 2200+ ELO)
-            - 40 cpl avg = 70% accuracy (strong, 1800-2000 ELO)
-            - 60 cpl avg = 60% accuracy (good, 1600-1800 ELO)
-            - 80 cpl avg = 50% accuracy (intermediate, 1400-1600 ELO)
-            - 120 cpl avg = 35% accuracy (developing, 1000-1200 ELO)
-            - 200+ cpl avg = 20% accuracy (beginner, <1000 ELO)
-            """
-            if not centipawn_losses:
-                return 0.0
-            
-            total_accuracy = 0.0
-            for cpl in centipawn_losses:
-                # Cap centipawn loss at 1000 to avoid math errors
-                cpl = min(cpl, 1000)
-                
-                # Chess.com-style accuracy calculation with conservative thresholds
-                if cpl <= 5:
-                    move_accuracy = 100.0  # Only truly perfect moves
-                elif cpl <= 20:
-                    # Linear interpolation from 100% to 85% for 5-20 CPL
-                    move_accuracy = 100.0 - (cpl - 5) * 1.0  # 100% to 85%
-                elif cpl <= 40:
-                    # Linear interpolation from 85% to 70% for 20-40 CPL
-                    move_accuracy = 85.0 - (cpl - 20) * 0.75  # 85% to 70%
-                elif cpl <= 80:
-                    # Linear interpolation from 70% to 50% for 40-80 CPL
-                    move_accuracy = 70.0 - (cpl - 40) * 0.5  # 70% to 50%
-                elif cpl <= 150:
-                    # Linear interpolation from 50% to 30% for 80-150 CPL
-                    move_accuracy = 50.0 - (cpl - 80) * 0.286  # 50% to 30%
-                else:
-                    # Linear interpolation from 30% to 15% for 150+ CPL
-                    move_accuracy = max(15.0, 30.0 - (cpl - 150) * 0.1)  # 30% to 15%
-                
-                total_accuracy += move_accuracy
-            
-            return total_accuracy / len(centipawn_losses)
         
         if user_move_count > 0:
             centipawn_losses = [m.centipawn_loss for m in user_moves]
-            accuracy = calculate_accuracy_from_cpl(centipawn_losses)
+            accuracy = self._calculate_accuracy_from_cpl(centipawn_losses)
         else:
             accuracy = 0
         
         # Calculate opponent accuracy similarly
         if opponent_move_count > 0:
             opponent_centipawn_losses = [m.centipawn_loss for m in opponent_moves]
-            opponent_accuracy = calculate_accuracy_from_cpl(opponent_centipawn_losses)
+            opponent_accuracy = self._calculate_accuracy_from_cpl(opponent_centipawn_losses)
         else:
             opponent_accuracy = 0
         
@@ -1750,18 +1703,56 @@ class ChessAnalysisEngine:
         )
     
     def _calculate_phase_accuracy(self, moves: List[MoveAnalysis]) -> float:
-        """Calculate accuracy for a game phase using the same formula as overall accuracy."""
+        """Calculate accuracy for a game phase using Chess.com-style graduated accuracy."""
         if not moves:
             return 0.0
         
+        # Use the same graduated accuracy calculation as overall accuracy
+        centipawn_losses = [move.centipawn_loss for move in moves]
+        return self._calculate_accuracy_from_cpl(centipawn_losses)
+    
+    def _calculate_accuracy_from_cpl(self, centipawn_losses: List[float]) -> float:
+        """
+        Calculate accuracy using Chess.com-style formula for realistic scoring.
+        
+        Based on Chess.com's CAPS2 algorithm research, uses conservative thresholds:
+        - 0-5 CPL: 100% accuracy (perfect moves)
+        - 6-20 CPL: 85-100% accuracy (excellent moves) 
+        - 21-40 CPL: 70-85% accuracy (good moves)
+        - 41-80 CPL: 50-70% accuracy (inaccuracies)
+        - 81-150 CPL: 30-50% accuracy (mistakes)
+        - 150+ CPL: 15-30% accuracy (blunders)
+        """
+        if not centipawn_losses:
+            return 0.0
+        
         total_accuracy = 0.0
-        for move in moves:
-            cpl = min(move.centipawn_loss, 1000)  # Cap at 1000 to avoid math errors
-            # Use the same formula as overall accuracy calculation
-            move_accuracy = 100 / (1 + (cpl/100)**2)
+        for cpl in centipawn_losses:
+            # Cap centipawn loss at 1000 to avoid math errors
+            cpl = min(cpl, 1000)
+            
+            # Chess.com-style accuracy calculation with conservative thresholds
+            if cpl <= 5:
+                move_accuracy = 100.0  # Only truly perfect moves
+            elif cpl <= 20:
+                # Linear interpolation from 100% to 85% for 5-20 CPL
+                move_accuracy = 100.0 - (cpl - 5) * 1.0  # 100% to 85%
+            elif cpl <= 40:
+                # Linear interpolation from 85% to 70% for 20-40 CPL
+                move_accuracy = 85.0 - (cpl - 20) * 0.75  # 85% to 70%
+            elif cpl <= 80:
+                # Linear interpolation from 70% to 50% for 40-80 CPL
+                move_accuracy = 70.0 - (cpl - 40) * 0.5  # 70% to 50%
+            elif cpl <= 150:
+                # Linear interpolation from 50% to 30% for 80-150 CPL
+                move_accuracy = 50.0 - (cpl - 80) * 0.286  # 50% to 30%
+            else:
+                # Linear interpolation from 30% to 15% for 150+ CPL
+                move_accuracy = max(15.0, 30.0 - (cpl - 150) * 0.1)  # 30% to 15%
+            
             total_accuracy += move_accuracy
         
-        return total_accuracy / len(moves)
+        return total_accuracy / len(centipawn_losses)
     
     def _calculate_time_management_score(self, moves: List[MoveAnalysis]) -> float:
         """Calculate time management score based on move timing patterns."""

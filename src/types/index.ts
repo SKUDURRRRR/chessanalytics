@@ -284,6 +284,7 @@ export interface MatchHistoryProps {
   opponentFilter?: string | null
   onClearFilter?: () => void
   onGameSelect?: (game: MatchHistoryGameSummary) => void
+  onAnalyzedGamesChange?: (analyzedGameIds: Set<string>) => void
 }
 
 export interface AnalyticsBarProps {

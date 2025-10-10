@@ -125,26 +125,26 @@ class AnalysisRequest(BaseModel):
     platform: str = Field(..., description="Platform (lichess, chess.com, etc.)")
     analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
     limit: Optional[int] = Field(10, description="Maximum number of games to analyze")
-    depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
-    skill_level: Optional[int] = Field(8, description="Stockfish skill level (0-20)")
+    depth: Optional[int] = Field(14, description="Analysis depth for Stockfish")
+    skill_level: Optional[int] = Field(20, description="Stockfish skill level (0-20)")
 
 class PositionAnalysisRequest(BaseModel):
     fen: str = Field(..., description="FEN string of the position to analyze")
     analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
-    depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
+    depth: Optional[int] = Field(14, description="Analysis depth for Stockfish")
 
 class MoveAnalysisRequest(BaseModel):
     fen: str = Field(..., description="FEN string of the position")
     move: str = Field(..., description="Move in UCI format (e.g., e2e4)")
     analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
-    depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
+    depth: Optional[int] = Field(14, description="Analysis depth for Stockfish")
 
 class GameAnalysisRequest(BaseModel):
     pgn: str = Field(..., description="PGN string of the game to analyze")
     user_id: str = Field(..., description="User ID")
     platform: str = Field(..., description="Platform")
     analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
-    depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
+    depth: Optional[int] = Field(14, description="Analysis depth for Stockfish")
 
 class AnalysisResponse(BaseModel):
     success: bool
@@ -213,6 +213,50 @@ class AnalysisProgress(BaseModel):
     current_phase: str
     estimated_time_remaining: Optional[int] = None
 
+def _calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
+    """
+    Calculate accuracy using Chess.com-style formula for realistic scoring.
+    
+    Based on Chess.com's CAPS2 algorithm research, uses conservative thresholds:
+    - 0-5 CPL: 100% accuracy (perfect moves)
+    - 6-20 CPL: 85-100% accuracy (excellent moves) 
+    - 21-40 CPL: 70-85% accuracy (good moves)
+    - 41-80 CPL: 50-70% accuracy (inaccuracies)
+    - 81-150 CPL: 30-50% accuracy (mistakes)
+    - 150+ CPL: 15-30% accuracy (blunders)
+    """
+    if not centipawn_losses:
+        return 0.0
+    
+    total_accuracy = 0.0
+    for cpl in centipawn_losses:
+        # Cap centipawn loss at 1000 to avoid math errors
+        cpl = min(cpl, 1000)
+        
+        # Chess.com-style accuracy calculation with conservative thresholds
+        if cpl <= 5:
+            move_accuracy = 100.0  # Only truly perfect moves
+        elif cpl <= 20:
+            # Linear interpolation from 100% to 85% for 5-20 CPL
+            move_accuracy = 100.0 - (cpl - 5) * 1.0  # 100% to 85%
+        elif cpl <= 40:
+            # Linear interpolation from 85% to 70% for 20-40 CPL
+            move_accuracy = 85.0 - (cpl - 20) * 0.75  # 85% to 70%
+        elif cpl <= 80:
+            # Linear interpolation from 70% to 50% for 40-80 CPL
+            move_accuracy = 70.0 - (cpl - 40) * 0.5  # 70% to 50%
+        elif cpl <= 150:
+            # Linear interpolation from 50% to 30% for 80-150 CPL
+            move_accuracy = 50.0 - (cpl - 80) * 0.286  # 50% to 30%
+        else:
+            # Linear interpolation from 30% to 15% for 150+ CPL
+            move_accuracy = max(15.0, 30.0 - (cpl - 150) * 0.1)  # 30% to 15%
+        
+        total_accuracy += move_accuracy
+    
+    return total_accuracy / len(centipawn_losses)
+
+
 def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
@@ -256,8 +300,9 @@ def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> Game
 
         opening_moves = [move for move in moves if move.get('opening_ply', 0) <= 15]
         if opening_moves:
-            opening_best_moves = sum(1 for move in opening_moves if move.get('is_best'))
-            opening_accuracy = round((opening_best_moves / len(opening_moves)) * 100, 1)
+            # Use graduated accuracy calculation instead of binary best/not-best
+            opening_centipawn_losses = [move.get('centipawn_loss', 0) for move in opening_moves]
+            opening_accuracy = _calculate_accuracy_from_cpl(opening_centipawn_losses)
         else:
             opening_accuracy = float(analysis_data.get('opening_accuracy', 0))
 
@@ -725,6 +770,7 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
                 'ply_index': move.ply_index,
+                'opening_ply': move.ply_index,  # Add opening_ply field for opening accuracy calculation
                 'explanation': move.explanation,
                 'heuristic_details': move.heuristic_details,
                 'coaching_comment': move.coaching_comment,
@@ -817,6 +863,7 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
                 'ply_index': move.ply_index,
+                'opening_ply': move.ply_index,  # Add opening_ply field for opening accuracy calculation
                 'explanation': move.explanation,
                 'heuristic_details': move.heuristic_details,
                 'coaching_comment': move.coaching_comment,

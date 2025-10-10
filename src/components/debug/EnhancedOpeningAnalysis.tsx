@@ -213,8 +213,8 @@ export function EnhancedOpeningAnalysis({
         </div>
       </div>
 
-      {/* Specific Mistakes Analysis */}
-      {enhancedAnalysis.specificMistakes.length > 0 && (
+      {/* Specific Mistakes Analysis - HIDDEN */}
+      {false && enhancedAnalysis.specificMistakes.length > 0 && (
         <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
             <span className="mr-2">🎯</span>

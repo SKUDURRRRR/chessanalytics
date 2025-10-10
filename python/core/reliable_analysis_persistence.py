@@ -460,7 +460,8 @@ class ReliableAnalysisPersistence:
                 'analysis_time_ms': move.analysis_time_ms,
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
-                'ply_index': move.ply_index
+                'ply_index': move.ply_index,
+                'opening_ply': move.ply_index  # Add opening_ply field for opening accuracy calculation
             })
         
         return {

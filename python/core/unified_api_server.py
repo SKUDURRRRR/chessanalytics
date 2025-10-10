@@ -50,7 +50,7 @@ print_performance_config(performance_config)
 
 # Initialize secure CORS configuration
 cors_origins = config.api.cors_origins or ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"]
-print(f"🔒 CORS Origins configured: {cors_origins}")
+print(f"CORS Origins configured: {cors_origins}")
 
 # Use production CORS config if we have custom origins, otherwise use default
 if config.api.cors_origins:
@@ -61,10 +61,10 @@ if config.api.cors_origins:
         allow_credentials=True,
         max_age=3600
     )
-    print(f"✅ Using production CORS configuration")
+    print(f"Using production CORS configuration")
 else:
     cors_config = get_default_cors_config()
-    print(f"⚠️  Using default localhost CORS configuration")
+    print(f"Using default localhost CORS configuration")
 
 # Initialize Supabase clients with fallback for missing config
 if config.database.url and config.database.anon_key:
@@ -189,8 +189,8 @@ class UnifiedAnalysisRequest(BaseModel):
     platform: str = Field(..., description="Platform (lichess, chess.com, etc.)")
     analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
     limit: Optional[int] = Field(5, description="Maximum number of games to analyze")
-    depth: Optional[int] = Field(8, description="Analysis depth for Stockfish")
-    skill_level: Optional[int] = Field(8, description="Stockfish skill level (0-20)")
+    depth: Optional[int] = Field(14, description="Analysis depth for Stockfish")
+    skill_level: Optional[int] = Field(20, description="Stockfish skill level (0-20)")
     
     # Optional parameters for different analysis types
     pgn: Optional[str] = Field(None, description="PGN string for single game analysis")
@@ -1014,6 +1014,50 @@ def _compute_opening_accuracy_from_moves(analyses: List[Dict[str, Any]]) -> floa
             if move.get('is_best'):
                 best += 1
     return (best / total * 100.0) if total else 0.0
+
+
+def _calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
+    """
+    Calculate accuracy using Chess.com-style formula for realistic scoring.
+    
+    Based on Chess.com's CAPS2 algorithm research, uses conservative thresholds:
+    - 0-5 CPL: 100% accuracy (perfect moves)
+    - 6-20 CPL: 85-100% accuracy (excellent moves) 
+    - 21-40 CPL: 70-85% accuracy (good moves)
+    - 41-80 CPL: 50-70% accuracy (inaccuracies)
+    - 81-150 CPL: 30-50% accuracy (mistakes)
+    - 150+ CPL: 15-30% accuracy (blunders)
+    """
+    if not centipawn_losses:
+        return 0.0
+    
+    total_accuracy = 0.0
+    for cpl in centipawn_losses:
+        # Cap centipawn loss at 1000 to avoid math errors
+        cpl = min(cpl, 1000)
+        
+        # Chess.com-style accuracy calculation with conservative thresholds
+        if cpl <= 5:
+            move_accuracy = 100.0  # Only truly perfect moves
+        elif cpl <= 20:
+            # Linear interpolation from 100% to 85% for 5-20 CPL
+            move_accuracy = 100.0 - (cpl - 5) * 1.0  # 100% to 85%
+        elif cpl <= 40:
+            # Linear interpolation from 85% to 70% for 20-40 CPL
+            move_accuracy = 85.0 - (cpl - 20) * 0.75  # 85% to 70%
+        elif cpl <= 80:
+            # Linear interpolation from 70% to 50% for 40-80 CPL
+            move_accuracy = 70.0 - (cpl - 40) * 0.5  # 70% to 50%
+        elif cpl <= 150:
+            # Linear interpolation from 50% to 30% for 80-150 CPL
+            move_accuracy = 50.0 - (cpl - 80) * 0.286  # 50% to 30%
+        else:
+            # Linear interpolation from 30% to 15% for 150+ CPL
+            move_accuracy = max(15.0, 30.0 - (cpl - 150) * 0.1)  # 30% to 15%
+        
+        total_accuracy += move_accuracy
+    
+    return total_accuracy / len(centipawn_losses)
 
 
 def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
@@ -2423,7 +2467,7 @@ async def import_games(payload: BulkGameImportRequest):
             print('[import_games] pgn upsert response: count=', getattr(pgn_response, 'count', None))
             print(f'[import_games] pgn upsert response data: {pgn_response.data[:2] if pgn_response.data else "None"}')
     except Exception as exc:
-        print(f'[import_games] ❌ PGN upsert error: {exc}')
+        print(f'[import_games] ERROR PGN upsert error: {exc}')
         errors.append(f"games_pgn upsert failed: {exc}")
 
     total_games = 0
@@ -2708,13 +2752,14 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
             )
         
         # Analyze game - pass game_id if provided in request
-        game_id = request.game_id or request.provider_game_id
+        # Ensure we use the provider_game_id for analysis to match foreign key constraint
+        analysis_game_id = request.game_id or request.provider_game_id
         game_analysis = await engine.analyze_game(
             request.pgn, 
             request.user_id, 
             request.platform, 
             analysis_type_enum,
-            game_id
+            analysis_game_id
         )
         
         if game_analysis:
@@ -2746,7 +2791,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         # Validate request parameters
         is_valid, error_message = _validate_single_game_analysis_request(request)
         if not is_valid:
-            print(f"[SINGLE GAME ANALYSIS] ❌ Validation failed: {error_message}")
+            print(f"[SINGLE GAME ANALYSIS] ERROR Validation failed: {error_message}")
             return UnifiedAnalysisResponse(
                 success=False,
                 message=f"Request validation failed: {error_message}"
@@ -2756,7 +2801,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         try:
             canonical_user_id = _canonical_user_id(request.user_id, request.platform)
         except ValueError as e:
-            print(f"[SINGLE GAME ANALYSIS] ❌ User ID canonicalization failed: {e}")
+            print(f"[SINGLE GAME ANALYSIS] ERROR User ID canonicalization failed: {e}")
             return UnifiedAnalysisResponse(
                 success=False,
                 message=f"User ID validation failed: {str(e)}"
@@ -2797,7 +2842,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             if game_response and hasattr(game_response, 'data'):
                 print(f"[SINGLE GAME ANALYSIS] Data value: {game_response.data}")
         except Exception as query_error:
-            print(f"[SINGLE GAME ANALYSIS] ❌ Database query error: {query_error}")
+            print(f"[SINGLE GAME ANALYSIS] ERROR Database query error: {query_error}")
             return UnifiedAnalysisResponse(
                 success=False,
                 message=f"Database query failed: {str(query_error)}"
@@ -2816,13 +2861,13 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 pgn_from_platform = await _fetch_single_chesscom_game(request.user_id, game_id)
             
             if not pgn_from_platform:
-                print(f"[SINGLE GAME ANALYSIS] ❌ Game not found in database or on {request.platform}: {game_id}")
+                print(f"[SINGLE GAME ANALYSIS] ERROR Game not found in database or on {request.platform}: {game_id}")
                 return UnifiedAnalysisResponse(
                     success=False,
                     message=f"Game not found: {game_id}. Unable to fetch from {request.platform}. Please ensure the game ID is correct and the game exists."
                 )
             
-            print(f"[SINGLE GAME ANALYSIS] ✓ Successfully fetched PGN from {request.platform}, saving to database")
+            print(f"[SINGLE GAME ANALYSIS] OK Successfully fetched PGN from {request.platform}, saving to database")
             
             # Save the PGN to database for future use
             try:
@@ -2834,9 +2879,9 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                     'pgn': pgn_from_platform,
                     'created_at': datetime.utcnow().isoformat()
                 }, on_conflict='user_id,platform,provider_game_id').execute()
-                print(f"[SINGLE GAME ANALYSIS] ✓ Saved PGN to database")
+                print(f"[SINGLE GAME ANALYSIS] OK Saved PGN to database")
             except Exception as save_error:
-                print(f"[SINGLE GAME ANALYSIS] ⚠ Warning: Failed to save PGN to database: {save_error}")
+                print(f"[SINGLE GAME ANALYSIS] WARNING Warning: Failed to save PGN to database: {save_error}")
                 # Continue anyway - we have the PGN in memory
             
             # Use the fetched PGN
@@ -2860,7 +2905,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
             print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data if (games_check and hasattr(games_check, 'data')) else 'None'}")
         except Exception as check_error:
-            print(f"[SINGLE GAME ANALYSIS] ❌ Error checking games table: {check_error}")
+            print(f"[SINGLE GAME ANALYSIS] ERROR Error checking games table: {check_error}")
             games_check = None
         
         if not games_check or not hasattr(games_check, 'data') or not games_check.data:
@@ -2953,14 +2998,18 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 skill_level=request.skill_level
             )
         
+        # Ensure we use the provider_game_id for analysis to match foreign key constraint
+        # The game_id in game_analyses must match provider_game_id in games table
+        analysis_game_id = game_id  # This should be the provider_game_id
+        
         # Analyze game
-        print(f"[SINGLE GAME ANALYSIS] Starting engine analysis for game_id: {game_id}")
+        print(f"[SINGLE GAME ANALYSIS] Starting engine analysis for game_id: {analysis_game_id}")
         game_analysis = await engine.analyze_game(
             pgn_data, 
             canonical_user_id,  # Use canonicalized user ID
             request.platform, 
             analysis_type_enum,
-            game_id
+            analysis_game_id
         )
         
         if game_analysis:
@@ -2968,14 +3017,14 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             print(f"[SINGLE GAME ANALYSIS] Validating foreign key constraint before saving...")
             try:
                 fk_validation = db_client.table('games').select('id').eq(
-                    'provider_game_id', game_id
+                    'provider_game_id', analysis_game_id
                 ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
             except Exception as fk_error:
-                print(f"[SINGLE GAME ANALYSIS] ❌ Error during FK validation: {fk_error}")
+                print(f"[SINGLE GAME ANALYSIS] ERROR Error during FK validation: {fk_error}")
                 fk_validation = None
             
             if not fk_validation or not hasattr(fk_validation, 'data') or not fk_validation.data:
-                print(f"[SINGLE GAME ANALYSIS] ❌ CRITICAL: Foreign key validation failed - game not found in games table!")
+                print(f"[SINGLE GAME ANALYSIS] ERROR CRITICAL: Foreign key validation failed - game not found in games table!")
                 print(f"[SINGLE GAME ANALYSIS] Attempting to create missing game record...")
                 
                 # Try to create the game record again with more robust error handling
@@ -3021,7 +3070,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         game_record = {
                             "user_id": canonical_user_id,
                             "platform": request.platform,
-                            "provider_game_id": game_id,
+                            "provider_game_id": analysis_game_id,
                             "result": user_result,
                             "color": color,
                             "time_control": headers.get('TimeControl', 'unknown'),
@@ -3042,48 +3091,48 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         ).execute()
                         
                         if games_response.data:
-                            print(f"[SINGLE GAME ANALYSIS] ✅ Successfully created/updated game record: {game_id}")
+                            print(f"[SINGLE GAME ANALYSIS] SUCCESS Successfully created/updated game record: {analysis_game_id}")
                             
                             # Re-validate foreign key constraint
                             fk_validation = db_client.table('games').select('id').eq(
-                                'provider_game_id', game_id
+                                'provider_game_id', analysis_game_id
                             ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
                             
                             if fk_validation and hasattr(fk_validation, 'data') and fk_validation.data:
-                                print(f"[SINGLE GAME ANALYSIS] ✅ Foreign key validation passed after creating game record")
+                                print(f"[SINGLE GAME ANALYSIS] SUCCESS Foreign key validation passed after creating game record")
                             else:
-                                print(f"[SINGLE GAME ANALYSIS] ❌ Foreign key validation still failed after creating game record")
+                                print(f"[SINGLE GAME ANALYSIS] ERROR Foreign key validation still failed after creating game record")
                                 return UnifiedAnalysisResponse(
                                     success=False,
                                     message=f"Failed to create valid game record for analysis save"
                                 )
                         else:
-                            print(f"[SINGLE GAME ANALYSIS] ❌ Failed to create game record - no data returned")
+                            print(f"[SINGLE GAME ANALYSIS] ERROR Failed to create game record - no data returned")
                             return UnifiedAnalysisResponse(
                                 success=False,
                                 message=f"Failed to create game record for analysis save"
                             )
                     else:
-                        print(f"[SINGLE GAME ANALYSIS] ❌ Failed to parse PGN for game record creation")
+                        print(f"[SINGLE GAME ANALYSIS] ERROR Failed to parse PGN for game record creation")
                         return UnifiedAnalysisResponse(
                             success=False,
                             message=f"Failed to parse PGN for game record creation"
                         )
                         
                 except Exception as create_error:
-                    print(f"[SINGLE GAME ANALYSIS] ❌ Failed to create game record: {create_error}")
+                    print(f"[SINGLE GAME ANALYSIS] ERROR Failed to create game record: {create_error}")
                     return UnifiedAnalysisResponse(
                         success=False,
                         message=f"Failed to create game record: {str(create_error)}"
                     )
             else:
-                print(f"[SINGLE GAME ANALYSIS] ✅ Foreign key validation passed - game exists in games table")
+                print(f"[SINGLE GAME ANALYSIS] SUCCESS Foreign key validation passed - game exists in games table")
             
             # Save to database with comprehensive error handling
             try:
                 success = await _save_game_analysis(game_analysis)
                 if success:
-                    print(f"[SINGLE GAME ANALYSIS] ✅ Analysis completed and saved for game_id: {game_id}")
+                    print(f"[SINGLE GAME ANALYSIS] SUCCESS Analysis completed and saved for game_id: {analysis_game_id}")
                     print(f"[SINGLE GAME ANALYSIS] This was a SINGLE game analysis - NOT starting batch analysis")
                     return UnifiedAnalysisResponse(
                         success=True,
@@ -3092,13 +3141,13 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         data={"game_id": game_analysis.game_id}
                     )
                 else:
-                    print(f"[SINGLE GAME ANALYSIS] ❌ Analysis completed but failed to save to database")
+                    print(f"[SINGLE GAME ANALYSIS] ERROR Analysis completed but failed to save to database")
                     return UnifiedAnalysisResponse(
                         success=False,
                         message="Game analysis completed but failed to save to database"
                     )
             except Exception as save_error:
-                print(f"[SINGLE GAME ANALYSIS] ❌ CRITICAL ERROR during save: {save_error}")
+                print(f"[SINGLE GAME ANALYSIS] ERROR CRITICAL ERROR during save: {save_error}")
                 return UnifiedAnalysisResponse(
                     success=False,
                     message=f"Critical error during analysis save: {str(save_error)}"
@@ -3109,7 +3158,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 message="Failed to analyze game"
             )
     except Exception as e:
-        print(f"[SINGLE GAME ANALYSIS] ❌ CRITICAL ERROR in _handle_single_game_by_id: {e}")
+        print(f"[SINGLE GAME ANALYSIS] ERROR CRITICAL ERROR in _handle_single_game_by_id: {e}")
         print(f"[SINGLE GAME ANALYSIS] Error type: {type(e).__name__}")
         print(f"[SINGLE GAME ANALYSIS] Error details: {str(e)}")
         
@@ -3201,8 +3250,8 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
             platform=request.platform,
             analysis_type=request.analysis_type,
             limit=request.limit or 5,
-            depth=request.depth or 8,
-            skill_level=request.skill_level or 8
+            depth=request.depth or 14,
+            skill_level=request.skill_level or 20
         )
         
         return UnifiedAnalysisResponse(
@@ -3298,7 +3347,7 @@ def _validate_game_chronological_order(games: list, context: str) -> None:
             print(f"[ERROR] Next date: {played_dates[i+1][1]} (type: {type(played_dates[i+1][1])})")
             raise
     
-    print(f"[VALIDATION] ✅ Games in {context} are correctly ordered chronologically (most recent first) - {len(played_dates)} games validated")
+    print(f"[VALIDATION] SUCCESS Games in {context} are correctly ordered chronologically (most recent first) - {len(played_dates)} games validated")
 
 async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str, analysis_type: str, limit: int) -> list:
     """
@@ -3980,7 +4029,7 @@ async def _save_game_analysis(analysis: GameAnalysis) -> bool:
         
         return result.success
     except Exception as e:
-        print(f"[SAVE ANALYSIS] ❌ CRITICAL ERROR in reliable persistence: {e}")
+        print(f"[SAVE ANALYSIS] ERROR CRITICAL ERROR in reliable persistence: {e}")
         print(f"[SAVE ANALYSIS] Error type: {type(e).__name__}")
         import traceback
         print(f"[SAVE ANALYSIS] Traceback: {traceback.format_exc()}")
@@ -4127,8 +4176,10 @@ def _calculate_unified_stats(analyses: list, analysis_type: str) -> AnalysisStat
                 # Calculate opening accuracy for this game (user moves only)
                 opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15 and move.get('is_user_move', False)]
                 if opening_moves:
-                    opening_best_moves = sum(1 for move in opening_moves if move.get('is_best', False))
-                    total_opening_accuracy += (opening_best_moves / len(opening_moves)) * 100
+                    # Use graduated accuracy calculation instead of binary best/not-best
+                    opening_centipawn_losses = [move.get('centipawn_loss', 0) for move in opening_moves]
+                    opening_accuracy = _calculate_accuracy_from_cpl(opening_centipawn_losses)
+                    total_opening_accuracy += opening_accuracy
         
         return AnalysisStats(
             total_games_analyzed=total_games,
@@ -4224,8 +4275,10 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
             # Calculate opening accuracy for this game (user moves only)
             opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 15 and move.get('is_user_move', False)]
             if opening_moves:
-                opening_best_moves = sum(1 for move in opening_moves if move.get('is_best', False))
-                total_opening_accuracy += (opening_best_moves / len(opening_moves)) * 100
+                # Use graduated accuracy calculation instead of binary best/not-best
+                opening_centipawn_losses = [move.get('centipawn_loss', 0) for move in opening_moves]
+                opening_accuracy = _calculate_accuracy_from_cpl(opening_centipawn_losses)
+                total_opening_accuracy += opening_accuracy
     
     return AnalysisStats(
         total_games_analyzed=total_games,
@@ -4330,7 +4383,7 @@ def _get_mock_analysis_results() -> List[GameAnalysisSummary]:
             analysis_type="stockfish",
             analysis_date=game_date.isoformat(),
             processing_time_ms=1500 + (i * 200),
-            stockfish_depth=8
+            stockfish_depth=14
         ))
     
     return mock_results

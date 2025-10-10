@@ -55,7 +55,7 @@ const mapGameRow = (raw: any): Game => {
   }
 }
 
-export function MatchHistory({ userId, platform, openingFilter, opponentFilter, onClearFilter, onGameSelect }: MatchHistoryProps) {
+export function MatchHistory({ userId, platform, openingFilter, opponentFilter, onClearFilter, onGameSelect, onAnalyzedGamesChange }: MatchHistoryProps) {
   const [games, setGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -81,6 +81,13 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
   const previousContextRef = useRef<{ userId: string; platform: string; filterKey: string }>(
     { userId: '', platform: '', filterKey: '' }
   )
+
+  // Notify parent component when analyzed games change
+  useEffect(() => {
+    if (onAnalyzedGamesChange) {
+      onAnalyzedGamesChange(analyzedGameIds)
+    }
+  }, [analyzedGameIds, onAnalyzedGamesChange])
 
   const markGameAsAnalyzed = (gameId: string, accuracy?: number) => {
     setAnalyzedGameIds(prev => {
@@ -166,7 +173,18 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
     if (!onGameSelect) {
       return
     }
-    onGameSelect(buildGameSummary(game))
+    
+    // Check if game is already analyzed
+    const isAnalyzed = isGameAnalyzed(game)
+    
+    if (isAnalyzed) {
+      // If analyzed, navigate to analysis page
+      onGameSelect(buildGameSummary(game))
+    } else {
+      // If not analyzed, trigger analysis directly
+      console.log('Game not analyzed, triggering analysis directly:', game.provider_game_id || game.id)
+      requestAnalysis(new Event('click'), game)
+    }
   }
 
   const isGameAnalyzed = (game: Game) => {
@@ -557,7 +575,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                 onClick={onGameSelect ? () => handleGameSelectInternal(game) : undefined}
                 className={`card-responsive cursor-pointer transition hover:bg-white/[0.08] ${
                   onGameSelect ? 'hover:scale-[1.02]' : ''
+                } ${
+                  !analyzed && onGameSelect ? 'border-l-4 border-l-sky-400/60' : ''
                 }`}
+                title={onGameSelect ? (analyzed ? 'View analysis' : 'Click to analyze this game') : undefined}
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1 min-w-0">
@@ -618,31 +639,38 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                 </div>
 
                 {onGameSelect && (
-                  <div className="mt-3 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={event => {
-                        event.stopPropagation()
-                        requestAnalysis(event, game)
-                      }}
-                      disabled={pending || analyzed}
-                      className={`btn-touch-sm rounded-full text-xs font-medium transition ${
-                        analyzed
-                          ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
-                          : pending
-                            ? 'cursor-wait border border-white/10 bg-white/5 text-slate-400'
-                            : 'border border-sky-400/40 bg-sky-500/10 text-sky-200 hover:border-sky-300/60 hover:bg-sky-500/20'
-                      }`}
-                    >
-                      {pending ? (
-                        <span className="inline-flex items-center gap-1">
-                          <span className="inline-flex h-3 w-3 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-                          Analyzing...
-                        </span>
-                      ) : (
-                        <span>{analyzed ? 'Analyzed' : 'Analyze'}</span>
-                      )}
-                    </button>
+                  <div className="mt-3 flex items-center justify-between">
+                    {!analyzed && !pending && (
+                      <div className="text-xs text-sky-300/80">
+                        Click to analyze
+                      </div>
+                    )}
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={event => {
+                          event.stopPropagation()
+                          requestAnalysis(event, game)
+                        }}
+                        disabled={pending || analyzed}
+                        className={`btn-touch-sm rounded-full text-xs font-medium transition ${
+                          analyzed
+                            ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
+                            : pending
+                              ? 'cursor-wait border border-white/10 bg-white/5 text-slate-400'
+                              : 'border border-sky-400/40 bg-sky-500/10 text-sky-200 hover:border-sky-300/60 hover:bg-sky-500/20'
+                        }`}
+                      >
+                        {pending ? (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="inline-flex h-3 w-3 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+                            Analyzing...
+                          </span>
+                        ) : (
+                          <span>{analyzed ? 'Analyzed' : 'Analyze'}</span>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -669,9 +697,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
             <tbody>
               {games.map(game => {
                 const isClickable = Boolean(onGameSelect)
+                const analyzed = isGameAnalyzed(game)
                 const baseRowClasses = 'border-b border-white/5 transition'
                 const interactiveExtras = 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 hover:bg-white/[0.07]'
-                const rowClasses = isClickable ? `${baseRowClasses} ${interactiveExtras}` : baseRowClasses
+                const unanalyzedIndicator = !analyzed && isClickable ? 'border-l-4 border-l-sky-400/60' : ''
+                const rowClasses = isClickable ? `${baseRowClasses} ${interactiveExtras} ${unanalyzedIndicator}` : baseRowClasses
                 const handleKeyDown = (event: ReactKeyboardEvent<HTMLTableRowElement>) => {
                   if (!isClickable) {
                     return
@@ -682,7 +712,6 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                   }
                 }
 
-                const analyzed = isGameAnalyzed(game)
                 const pending = isAnalysisLoading(game)
                 const queued = isQueuedForAnalysis(game)
 
@@ -694,6 +723,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                     onKeyDown={handleKeyDown}
                     tabIndex={isClickable ? 0 : undefined}
                     role={isClickable ? 'button' : undefined}
+                    title={isClickable ? (analyzed ? 'View analysis' : 'Click to analyze this game') : undefined}
                   >
                     <td className="py-3 px-2 text-sm text-slate-300">
                       <div className="flex items-center gap-2">

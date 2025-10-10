@@ -566,3 +566,178 @@ class PositionAnalyzer:
                 return False
         
         return True
+    
+    def detect_hanging_pieces(self, board: chess.Board, color: chess.Color) -> List[Tuple[chess.Square, chess.Piece, int]]:
+        """
+        Detect hanging (undefended or insufficiently defended) pieces.
+        Returns list of (square, piece, value) tuples.
+        """
+        hanging_pieces = []
+        
+        for square in chess.SQUARES:
+            piece = board.piece_at(square)
+            if piece and piece.color == color:
+                # Check if piece is attacked by opponent
+                if board.is_attacked_by(not color, square):
+                    # Count attackers and defenders
+                    attackers = self._count_attackers(board, square, not color)
+                    defenders = self._count_attackers(board, square, color)
+                    
+                    # Piece is hanging if more attackers than defenders
+                    if attackers > defenders:
+                        hanging_pieces.append((square, piece, self.piece_values[piece.piece_type]))
+        
+        return hanging_pieces
+    
+    def _count_attackers(self, board: chess.Board, square: chess.Square, color: chess.Color) -> int:
+        """Count number of pieces of given color attacking a square."""
+        count = 0
+        for attacker_square in chess.SQUARES:
+            piece = board.piece_at(attacker_square)
+            if piece and piece.color == color:
+                if board.is_attacked_by(color, square):
+                    # Check if this specific piece attacks the square
+                    temp_board = board.copy()
+                    temp_board.remove_piece_at(attacker_square)
+                    if not temp_board.is_attacked_by(color, square):
+                        count += 1
+        return count
+    
+    def detect_lost_material(self, board_before: chess.Board, board_after: chess.Board, move: chess.Move) -> Optional[Tuple[str, int]]:
+        """
+        Detect if material was lost due to the move (not through capture).
+        Returns (description, value) tuple or None.
+        """
+        # Get hanging pieces after the move
+        hanging_after = self.detect_hanging_pieces(board_after, board_after.turn)
+        
+        if hanging_after:
+            # Find the most valuable hanging piece
+            most_valuable = max(hanging_after, key=lambda x: x[2])
+            square, piece, value = most_valuable
+            piece_name = chess.piece_name(piece.piece_type)
+            square_name = chess.square_name(square)
+            
+            return (f"your {piece_name} on {square_name} is now hanging", value)
+        
+        return None
+    
+    def detect_specific_threats(self, board: chess.Board, move: chess.Move) -> List[str]:
+        """
+        Detect specific tactical threats created by the move.
+        Returns list of specific threat descriptions.
+        """
+        threats = []
+        moved_piece = board.piece_at(move.to_square)
+        if not moved_piece:
+            return threats
+        
+        # Check for attacked pieces
+        for square in chess.SQUARES:
+            target_piece = board.piece_at(square)
+            if target_piece and target_piece.color != moved_piece.color:
+                if board.is_attacked_by(moved_piece.color, square):
+                    # Check if piece is defended
+                    defenders = self._count_attackers(board, square, target_piece.color)
+                    attackers = self._count_attackers(board, square, moved_piece.color)
+                    
+                    if attackers > defenders:
+                        piece_name = chess.piece_name(target_piece.piece_type)
+                        square_name = chess.square_name(square)
+                        threats.append(f"your {piece_name} on {square_name} is now under attack and insufficiently defended")
+        
+        return threats
+    
+    def generate_specific_blunder_explanation(self, board_before: chess.Board, board_after: chess.Board, 
+                                            move: chess.Move, best_move_san: str, centipawn_loss: int) -> str:
+        """
+        Generate a specific, position-based explanation for a blunder.
+        """
+        explanations = []
+        
+        # Check for hung pieces
+        lost_material = self.detect_lost_material(board_before, board_after, move)
+        if lost_material:
+            description, value = lost_material
+            explanations.append(description)
+        
+        # Check for specific threats created
+        threats = self.detect_specific_threats(board_after, move)
+        if threats:
+            explanations.extend(threats[:2])  # Limit to 2 threats
+        
+        # Check if the move allowed a fork/pin/skewer
+        tactical_patterns = self._detect_tactical_patterns(board_after, move)
+        for pattern in tactical_patterns[:1]:  # Limit to 1 pattern
+            if pattern.pattern in [TacticalPattern.FORK, TacticalPattern.PIN, TacticalPattern.SKEWER]:
+                explanations.append(pattern.description)
+        
+        # Check if king safety was compromised
+        if board_after.is_check():
+            explanations.append("this move puts your king in check")
+        
+        # Build the final explanation
+        if explanations:
+            specific_details = "; ".join(explanations[:2])  # Limit to 2 details
+            if centipawn_loss > 300:
+                return f"This is a catastrophic blunder - {specific_details}. {best_move_san} would be much better and avoid this disaster."
+            elif centipawn_loss > 200:
+                return f"This is a major blunder - {specific_details}. {best_move_san} would maintain your position and keep your pieces safe."
+            else:
+                return f"This creates major problems - {specific_details}. {best_move_san} would avoid these issues."
+        else:
+            # Generic explanation if we can't detect specifics
+            if centipawn_loss > 300:
+                return f"This is a catastrophic blunder that loses significant material. {best_move_san} would be much better."
+            elif centipawn_loss > 200:
+                return f"This is a major blunder that severely damages your position. {best_move_san} would be safer."
+            else:
+                return f"This creates serious problems for your position. {best_move_san} would be better."
+    
+    def generate_specific_brilliant_explanation(self, board_before: chess.Board, board_after: chess.Board, 
+                                               move: chess.Move, centipawn_gain: int) -> str:
+        """
+        Generate a specific, position-based explanation for a brilliant move.
+        """
+        moved_piece = board_after.piece_at(move.to_square)
+        if not moved_piece:
+            return "Brilliant move!"
+        
+        explanations = []
+        piece_name = chess.piece_name(moved_piece.piece_type)
+        move_square = chess.square_name(move.to_square)
+        
+        # Check if it was a sacrifice
+        captured_piece = board_before.piece_at(move.to_square)
+        if captured_piece or self.piece_values[moved_piece.piece_type] > 100:
+            # Check if the piece is now hanging (sacrifice)
+            hanging = self.detect_hanging_pieces(board_after, moved_piece.color)
+            for square, piece, value in hanging:
+                if square == move.to_square:
+                    explanations.append(f"you sacrificed your {piece_name} on {move_square}")
+        
+        # Check for mate threats
+        if board_after.is_check():
+            king_square = chess.square_name(board_after.king(not moved_piece.color))
+            explanations.append(f"this creates a devastating check against the king on {king_square}")
+            
+            # Check if it's mate in a few moves
+            if self._is_mate_threat(board_after):
+                explanations.append("this leads to forced mate")
+        
+        # Check for tactical patterns
+        tactical_patterns = self._detect_tactical_patterns(board_after, move)
+        for pattern in tactical_patterns[:1]:
+            if pattern.pattern == TacticalPattern.FORK:
+                explanations.append(f"this creates a powerful fork attacking multiple pieces")
+            elif pattern.pattern == TacticalPattern.PIN:
+                explanations.append(f"this creates a devastating pin")
+            elif pattern.pattern == TacticalPattern.DISCOVERED_ATTACK:
+                explanations.append(f"this creates a discovered attack")
+        
+        # Build the final explanation
+        if explanations:
+            specific_details = ", ".join(explanations[:2])
+            return f"Brilliant! {specific_details.capitalize()} - this shows exceptional tactical vision and creates winning chances."
+        else:
+            return f"Brilliant! {piece_name.capitalize()} to {move_square} is an exceptional move that creates winning chances."

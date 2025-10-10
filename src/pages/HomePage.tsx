@@ -30,31 +30,34 @@ export default function HomePage() {
           </p>
         </div>
 
-        <section className="grid-responsive">
-          {[{
-            title: 'Instant Profiles',
-            description: 'Jump directly into head-to-head stats, win streaks, and rating momentum.'
-          }, {
-            title: 'Engine-Guided Review',
-            description: 'Queue Stockfish analysis for any game and see accuracy, blunders, and centipawn swings.'
-          }, {
-            title: 'Opening Radar',
-            description: 'Spot the openings you score best with and filter recent games to focus your study.'
-          }].map((card) => (
-            <article
-              key={card.title}
-              className="group relative overflow-hidden card-responsive transition duration-300 hover:border-white/20 hover:bg-white/[0.12]"
-            >
-              <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-sky-400/20 blur-2xl transition duration-300 group-hover:bg-sky-400/30" />
-              <h3 className="text-xl font-semibold text-white">{card.title}</h3>
-              <p className="mt-3 text-sm text-slate-300">{card.description}</p>
-              <span className="mt-6 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-sky-300">
-                Explore
-                <span aria-hidden className="h-px w-6 bg-sky-400/70" />
-              </span>
-            </article>
-          ))}
-        </section>
+        {/* Feature blocks centered horizontally */}
+        <div className="mt-24 mb-16 flex justify-center">
+          <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 max-w-6xl">
+            {[{
+              title: 'Instant Profiles',
+              description: 'Jump directly into head-to-head stats, win streaks, and rating momentum.'
+            }, {
+              title: 'Engine-Guided Review',
+              description: 'Queue Stockfish analysis for any game and see accuracy, blunders, and centipawn swings.'
+            }, {
+              title: 'Opening Radar',
+              description: 'Spot the openings you score best with and filter recent games to focus your study.'
+            }].map((card) => (
+              <article
+                key={card.title}
+                className="group relative overflow-hidden card-responsive transition duration-300 hover:border-white/20 hover:bg-white/[0.12]"
+              >
+                <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-sky-400/20 blur-2xl transition duration-300 group-hover:bg-sky-400/30" />
+                <h3 className="text-xl font-semibold text-white">{card.title}</h3>
+                <p className="mt-3 text-sm text-slate-300">{card.description}</p>
+                <span className="mt-6 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-sky-300">
+                  Explore
+                  <span aria-hidden className="h-px w-6 bg-sky-400/70" />
+                </span>
+              </article>
+            ))}
+          </section>
+        </div>
       </div>
     </div>
   )

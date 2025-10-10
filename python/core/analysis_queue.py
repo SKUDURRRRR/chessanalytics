@@ -250,8 +250,8 @@ class AnalysisQueue:
         platform: str,
         analysis_type: str = "stockfish",
         limit: int = 5,
-        depth: int = 8,
-        skill_level: int = 8
+        depth: int = 14,
+        skill_level: int = 20
     ) -> str:
         """
         Submit a new analysis job to the queue.

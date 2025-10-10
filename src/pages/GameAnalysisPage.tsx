@@ -17,6 +17,7 @@ import { getDarkChessBoardTheme } from '../utils/chessBoardTheme'
 import { generateMoveArrows, generateModernMoveArrows, Arrow } from '../utils/chessArrows'
 import { ModernChessArrows } from '../components/chess/ModernChessArrows'
 import { buildHumanComment, CommentContext, HumanReasonContext } from '../utils/commentTemplates'
+import { calculatePerformanceRating, MoveForRating } from '../utils/performanceRatingCalculator'
 import type { MatchHistoryGameSummary, Platform } from '../types'
 
 interface EvaluationInfo {
@@ -308,9 +309,9 @@ const classificationBadgeStyles: Record<MoveClassification, string> = {
 }
 
 const classificationLabel: Record<MoveClassification, string> = {
-  brilliant: 'Great',      // Chess.com: A move that altered the course of the game
+  brilliant: 'Brilliant',  // Spectacular tactical move with sacrifice or forced mate
   best: 'Best',            // Chess.com: The chess engine's top choice
-  great: 'Great',          // Chess.com: A move that altered the course of the game
+  great: 'Great',          // Very strong move, nearly optimal
   excellent: 'Excellent',  // Chess.com: Almost as good as the best move
   good: 'Good',            // Chess.com: A decent move, but not the best
   acceptable: 'Book',      // Chess.com: A conventional opening move
@@ -657,7 +658,7 @@ export default function GameAnalysisPage() {
         ? evaluationToScoreForPlayer(evaluation, playerColor)
         : evaluationToScoreForPlayer(evaluation, player === 'white' ? 'black' : 'white')
 
-      const bestMoveSan = convertUciToSan(fenBefore, move.best_move)
+      const bestMoveSan = convertUciToSan(fenBefore, move.best_move) || move.best_move || 'the best move'
       const classification = determineClassification(move)
       
       // Use enhanced coaching comment if available and doesn't contain centipawn references,
@@ -673,14 +674,16 @@ export default function GameAnalysisPage() {
         const commentContext: HumanReasonContext = {
           classification,
           centipawnLoss: move.centipawn_loss ?? null,
-          bestMoveSan,
+          bestMoveSan: bestMoveSan,
           moveNumber: moveNumber,
           isUserMove,
-          isOpeningMove: moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good'),
+          isOpeningMove: moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good' || classification === 'great'),
           tacticalInsights: move.tactical_insights,
           positionalInsights: move.positional_insights,
           risks: move.risks,
           benefits: move.benefits,
+          fenBefore: fenBefore,
+          move: move.move_san,
         }
         explanation = buildHumanComment(commentContext)
       }
@@ -933,6 +936,30 @@ export default function GameAnalysisPage() {
       navigate(-1)
     }
   }
+
+  // Calculate performance rating - MOVED BEFORE EARLY RETURNS
+  const performanceRating = useMemo(() => {
+    if (!processedData.moves || processedData.moves.length === 0) {
+      return null
+    }
+
+    // Convert processed moves to MoveForRating format for the calculator
+    const movesForRating: MoveForRating[] = processedData.moves
+      .filter(move => move.isUserMove)
+      .map(move => ({
+        classification: move.classification || 'acceptable',
+        centipawn_loss: move.centipawnLoss || 0,
+        san: move.san || '',
+        move: move.san || '' // Use SAN as the move string
+      }))
+
+    return calculatePerformanceRating({
+      opponentRating: gameRecord?.opponent_rating ? parseInt(gameRecord.opponent_rating) : undefined,
+      myRating: gameRecord?.my_rating ? parseInt(gameRecord.my_rating) : undefined,
+      result: gameRecord?.result,
+      moves: movesForRating
+    })
+  }, [processedData.moves, gameRecord?.opponent_rating, gameRecord?.my_rating, gameRecord?.result])
 
   if (loading) {
     return (
@@ -1233,6 +1260,14 @@ export default function GameAnalysisPage() {
                 <span className="font-medium">Moves: </span>
                 <span>{processedData.moves.length > 0 ? processedData.moves.length : analysisRecord?.total_moves ?? 0}</span>
               </div>
+               {performanceRating && (
+                 <div>
+                   <span className="font-medium">Performance Rating: </span>
+                   <span className="text-yellow-300 font-semibold">
+                     {performanceRating.rating}
+                   </span>
+                 </div>
+               )}
             </div>
           </div>
           <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-5 shadow-xl shadow-black/40">

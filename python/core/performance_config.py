@@ -10,170 +10,69 @@ from enum import Enum
 from typing import Dict, Any
 
 class PerformanceProfile(Enum):
-    """Performance profiles for different use cases."""
-    DEVELOPMENT = "development"      # Fast, minimal resources
-    PRODUCTION = "production"        # Balanced performance/cost
-    HIGH_PERFORMANCE = "high_performance"  # Maximum performance
-    COST_OPTIMIZED = "cost_optimized"      # Minimum cost
-    RAILWAY_HOBBY = "railway_hobby"        # Railway Hobby tier optimization
+    """Performance profiles - Railway Hobby Tier only."""
+    RAILWAY_HOBBY = "railway_hobby"        # Railway Hobby tier optimization (default)
 
 @dataclass
 class AnalysisPerformanceConfig:
-    """Configuration for analysis performance optimization."""
+    """Configuration for analysis performance optimization - Railway Hobby Tier (8 GB RAM, 8 vCPU)."""
     
-    # Stockfish Engine Settings
-    stockfish_depth: int = 12  # Better default depth
-    stockfish_skill_level: int = 10  # Human-like strength
-    stockfish_time_limit: float = 2.0  # More time for accuracy
-    stockfish_threads: int = 2
-    stockfish_hash_size: int = 64  # MB
+    # Stockfish Engine Settings - Railway Hobby
+    stockfish_depth: int = 14              # Better depth for accuracy
+    stockfish_skill_level: int = 20        # Maximum strength
+    stockfish_time_limit: float = 0.8      # Fast analysis
+    stockfish_threads: int = 1             # Deterministic
+    stockfish_hash_size: int = 96          # MB - Better balance
     
-    # Parallel Processing
-    max_concurrent_analyses: int = 4
-    batch_size: int = 10
-    parallel_analysis: bool = True
+    # Parallel Processing - Railway Hobby
+    max_concurrent_analyses: int = 4       # Parallel move processing
+    batch_size: int = 10                   # Larger batches
+    parallel_analysis: bool = True         # Enable parallel
     
-    # Memory Management
-    max_memory_usage_mb: int = 512
-    cleanup_interval_minutes: int = 30
+    # Memory Management - Railway Hobby
+    max_memory_usage_mb: int = 3072        # 3GB max (conservative)
+    cleanup_interval_minutes: int = 30     # Regular cleanup
     
-    # Database Optimization
-    batch_insert_size: int = 100
-    connection_pool_size: int = 10
-    query_timeout_seconds: int = 30
+    # Database Optimization - Railway Hobby
+    batch_insert_size: int = 100           # Efficient operations
+    connection_pool_size: int = 15         # More connections
+    query_timeout_seconds: int = 45        # Longer timeouts
     
-    # Caching
-    enable_analysis_cache: bool = True
-    cache_ttl_hours: int = 24
-    max_cache_size_mb: int = 256
+    # Caching - Railway Hobby
+    enable_analysis_cache: bool = True     # Enable caching
+    cache_ttl_hours: int = 24              # 24 hour cache
+    max_cache_size_mb: int = 256           # 256 MB cache
     
-    # Resource Limits
-    max_games_per_request: int = 50
-    max_analysis_time_per_game: int = 300  # seconds
-    max_total_analysis_time: int = 3600  # seconds
+    # Resource Limits - Railway Hobby
+    max_games_per_request: int = 50        # More games per request
+    max_analysis_time_per_game: int = 300  # 5 minutes per game
+    max_total_analysis_time: int = 3600    # 1 hour total
     
     @classmethod
     def for_profile(cls, profile: PerformanceProfile) -> 'AnalysisPerformanceConfig':
-        """Get configuration for a specific performance profile."""
-        if profile == PerformanceProfile.DEVELOPMENT:
-            return cls(
-                stockfish_depth=6,
-                stockfish_skill_level=6,
-                stockfish_time_limit=0.5,
-                stockfish_threads=1,
-                stockfish_hash_size=32,
-                max_concurrent_analyses=2,
-                batch_size=5,
-                parallel_analysis=True,
-                max_memory_usage_mb=256,
-                cleanup_interval_minutes=15,
-                batch_insert_size=50,
-                connection_pool_size=5,
-                query_timeout_seconds=15,
-                enable_analysis_cache=False,
-                max_games_per_request=10,
-                max_analysis_time_per_game=60,
-                max_total_analysis_time=600
-            )
-        
-        elif profile == PerformanceProfile.PRODUCTION:
-            # OPTIMIZED FOR RAILWAY FREE TIER (~512 MB RAM)
-            # These conservative settings prevent OOM kills (exit code -9)
-            return cls(
-                stockfish_depth=8,  # Reduced from 12 to save memory
-                stockfish_skill_level=8,  # Reduced from 10 for speed
-                stockfish_time_limit=0.5,  # Reduced from 2.0 for faster analysis
-                stockfish_threads=1,  # CRITICAL: Only 1 thread to prevent OOM
-                stockfish_hash_size=8,  # CRITICAL: Reduced from 64 MB to 8 MB for Railway free tier
-                max_concurrent_analyses=1,  # CRITICAL: Only 1 concurrent analysis to prevent memory exhaustion
-                batch_size=5,  # Reduced from 10
-                parallel_analysis=True,
-                max_memory_usage_mb=512,
-                cleanup_interval_minutes=30,
-                batch_insert_size=100,
-                connection_pool_size=10,
-                query_timeout_seconds=30,
-                enable_analysis_cache=True,
-                cache_ttl_hours=24,
-                max_cache_size_mb=128,  # Reduced from 256 to save memory
-                max_games_per_request=20,  # Reduced from 50
-                max_analysis_time_per_game=300,
-                max_total_analysis_time=3600
-            )
-        
-        elif profile == PerformanceProfile.HIGH_PERFORMANCE:
-            return cls(
-                stockfish_depth=12,
-                stockfish_skill_level=15,
-                stockfish_time_limit=2.0,
-                stockfish_threads=4,
-                stockfish_hash_size=128,
-                max_concurrent_analyses=8,
-                batch_size=20,
-                parallel_analysis=True,
-                max_memory_usage_mb=1024,
-                cleanup_interval_minutes=60,
-                batch_insert_size=200,
-                connection_pool_size=20,
-                query_timeout_seconds=60,
-                enable_analysis_cache=True,
-                cache_ttl_hours=48,
-                max_cache_size_mb=512,
-                max_games_per_request=100,
-                max_analysis_time_per_game=600,
-                max_total_analysis_time=7200
-            )
-        
-        elif profile == PerformanceProfile.RAILWAY_HOBBY:
-            # OPTIMIZED FOR RAILWAY HOBBY TIER (8 GB RAM, 8 vCPU)
-            # Phase 1: Speed + Accuracy optimizations
-            return cls(
-                stockfish_depth=14,              # Increased from 12 (better accuracy)
-                stockfish_skill_level=20,        # Maximum strength (not 10!)
-                stockfish_time_limit=0.8,        # Faster than 1.0s
-                stockfish_threads=1,             # Deterministic (not 4!)
-                stockfish_hash_size=96,          # Better balance (not 128)
-                max_concurrent_analyses=4,       # Conservative for vCPU (not 6)
-                batch_size=10,                   # Larger batches
-                parallel_analysis=True,          # Enable parallel processing
-                max_memory_usage_mb=3072,        # 3GB max (conservative)
-                cleanup_interval_minutes=30,     # Regular cleanup
-                batch_insert_size=100,           # Efficient database operations
-                connection_pool_size=15,         # More connections
-                query_timeout_seconds=45,        # Longer timeouts
-                enable_analysis_cache=True,      # Enable caching
-                cache_ttl_hours=24,              # 24 hour cache
-                max_cache_size_mb=256,           # 256 MB cache
-                max_games_per_request=50,        # More games per request
-                max_analysis_time_per_game=300,  # 5 minutes per game
-                max_total_analysis_time=3600     # 1 hour total
-            )
-        
-        elif profile == PerformanceProfile.COST_OPTIMIZED:
-            return cls(
-                stockfish_depth=6,
-                stockfish_skill_level=6,
-                stockfish_time_limit=0.5,
-                stockfish_threads=1,
-                stockfish_hash_size=32,
-                max_concurrent_analyses=2,
-                batch_size=5,
-                parallel_analysis=False,
-                max_memory_usage_mb=256,
-                cleanup_interval_minutes=10,
-                batch_insert_size=50,
-                connection_pool_size=5,
-                query_timeout_seconds=15,
-                enable_analysis_cache=True,
-                cache_ttl_hours=72,
-                max_cache_size_mb=128,
-                max_games_per_request=20,
-                max_analysis_time_per_game=120,
-                max_total_analysis_time=1800
-            )
-        
-        else:
-            return cls()  # Default configuration
+        """Get configuration for Railway Hobby tier (only option)."""
+        # Only Railway Hobby tier is supported - always return same config
+        return cls(
+            stockfish_depth=14,              # Better depth for accuracy
+            stockfish_skill_level=20,        # Maximum strength
+            stockfish_time_limit=0.8,        # Fast analysis
+            stockfish_threads=1,             # Deterministic
+            stockfish_hash_size=96,          # Better balance
+            max_concurrent_analyses=4,       # Parallel move processing
+            batch_size=10,                   # Larger batches
+            parallel_analysis=True,          # Enable parallel processing
+            max_memory_usage_mb=3072,        # 3GB max (conservative)
+            cleanup_interval_minutes=30,     # Regular cleanup
+            batch_insert_size=100,           # Efficient database operations
+            connection_pool_size=15,         # More connections
+            query_timeout_seconds=45,        # Longer timeouts
+            enable_analysis_cache=True,      # Enable caching
+            cache_ttl_hours=24,              # 24 hour cache
+            max_cache_size_mb=256,           # 256 MB cache
+            max_games_per_request=50,        # More games per request
+            max_analysis_time_per_game=300,  # 5 minutes per game
+            max_total_analysis_time=3600     # 1 hour total
+        )
     
     def to_stockfish_config(self) -> Dict[str, Any]:
         """Convert to Stockfish engine configuration."""
@@ -228,39 +127,32 @@ class AnalysisPerformanceConfig:
         return True
 
 def get_performance_config() -> AnalysisPerformanceConfig:
-    """Get performance configuration from environment or default."""
-    profile_name = os.getenv("ANALYSIS_PERFORMANCE_PROFILE", "production")
+    """Get performance configuration - Railway Hobby only."""
+    # Always use Railway Hobby tier
+    profile = PerformanceProfile.RAILWAY_HOBBY
+    config = AnalysisPerformanceConfig.for_profile(profile)
     
-    try:
-        profile = PerformanceProfile(profile_name)
-        config = AnalysisPerformanceConfig.for_profile(profile)
-        
-        # Override with environment variables if present
-        if os.getenv("STOCKFISH_DEPTH"):
-            config.stockfish_depth = int(os.getenv("STOCKFISH_DEPTH"))
-        if os.getenv("STOCKFISH_SKILL_LEVEL"):
-            config.stockfish_skill_level = int(os.getenv("STOCKFISH_SKILL_LEVEL"))
-        if os.getenv("STOCKFISH_TIME_LIMIT"):
-            config.stockfish_time_limit = float(os.getenv("STOCKFISH_TIME_LIMIT"))
-        if os.getenv("STOCKFISH_THREADS"):
-            config.stockfish_threads = int(os.getenv("STOCKFISH_THREADS"))
-        if os.getenv("MAX_CONCURRENT_ANALYSES"):
-            config.max_concurrent_analyses = int(os.getenv("MAX_CONCURRENT_ANALYSES"))
-        if os.getenv("BATCH_SIZE"):
-            config.batch_size = int(os.getenv("BATCH_SIZE"))
-        if os.getenv("MAX_GAMES_PER_REQUEST"):
-            config.max_games_per_request = int(os.getenv("MAX_GAMES_PER_REQUEST"))
-        
-        # Validate configuration
-        if not config.validate():
-            print("Warning: Invalid performance configuration, using defaults")
-            return AnalysisPerformanceConfig.for_profile(PerformanceProfile.PRODUCTION)
-        
-        return config
-        
-    except ValueError:
-        print(f"Warning: Unknown performance profile '{profile_name}', using production")
-        return AnalysisPerformanceConfig.for_profile(PerformanceProfile.PRODUCTION)
+    # Override with environment variables if present
+    if os.getenv("STOCKFISH_DEPTH"):
+        config.stockfish_depth = int(os.getenv("STOCKFISH_DEPTH"))
+    if os.getenv("STOCKFISH_SKILL_LEVEL"):
+        config.stockfish_skill_level = int(os.getenv("STOCKFISH_SKILL_LEVEL"))
+    if os.getenv("STOCKFISH_TIME_LIMIT"):
+        config.stockfish_time_limit = float(os.getenv("STOCKFISH_TIME_LIMIT"))
+    if os.getenv("STOCKFISH_THREADS"):
+        config.stockfish_threads = int(os.getenv("STOCKFISH_THREADS"))
+    if os.getenv("MAX_CONCURRENT_ANALYSES"):
+        config.max_concurrent_analyses = int(os.getenv("MAX_CONCURRENT_ANALYSES"))
+    if os.getenv("BATCH_SIZE"):
+        config.batch_size = int(os.getenv("BATCH_SIZE"))
+    if os.getenv("MAX_GAMES_PER_REQUEST"):
+        config.max_games_per_request = int(os.getenv("MAX_GAMES_PER_REQUEST"))
+    
+    # Validate configuration
+    if not config.validate():
+        print("Warning: Invalid performance configuration, using Railway Hobby defaults")
+    
+    return config
 
 def print_performance_config(config: AnalysisPerformanceConfig):
     """Print performance configuration for debugging."""

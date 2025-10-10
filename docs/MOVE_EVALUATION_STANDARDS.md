@@ -15,7 +15,7 @@ Our system uses **10 move categories** to classify chess moves based on their qu
 
 | Category | Symbol | Centipawn Loss | Description | Frequency |
 |----------|--------|----------------|-------------|-----------|
-| **Brilliant** | !! | 0-5cp | Spectacular tactical move with sacrifice or forced mate | Very Rare (~0-2 per game) |
+| **Brilliant** | !! | 0-5cp | Spectacular tactical move with sacrifice or forced mate | Extremely Rare (~0-1 per 100+ games) |
 | **Best** | √ | 0-5cp | Engine's top choice, optimal play | Common (~10-30% of moves) |
 | **Great** | !? | 5-15cp | Very strong move, nearly optimal | Common (~20-40% of moves) |
 | **Excellent** | - | 15-25cp | Nearly optimal, solid play | Common (~10-20% of moves) |
@@ -35,27 +35,29 @@ Our system uses **10 move categories** to classify chess moves based on their qu
 **Criteria (ALL must be met):**
 1. ✅ Must be a **Best move** (0-5cp loss from optimal)
 2. ✅ **AND** one of the following:
-   - Finds **forced mate** (within 5 moves) when there wasn't one before
-   - Makes **significant material sacrifice** (2+ points) while maintaining position
-   - Is the **only winning move** in a complex position
-   - Prevents opponent's only winning plan through tactical brilliance
+   - Finds **very short forced mate** (within 3 moves) when there wasn't one before
+   - Makes **spectacular material sacrifice** (3+ points net) that maintains winning position
 
-3. ✅ Position evaluation remains **at least equal** (not losing badly)
-4. ✅ Move demonstrates **tactical brilliance** (not just a simple capture)
+3. ✅ Position evaluation remains **winning** (not just equal) after sacrifice
+4. ✅ Player must **not already be completely winning** (not just converting)
+5. ✅ Move demonstrates **tactical brilliance** (difficult to find, non-obvious)
 
 **Examples of Brilliant Moves:**
-- Queen sacrifice for forced checkmate
-- Rook sacrifice to win back material with interest
-- Spectacular piece sacrifice that leads to winning attack
-- Only move that prevents opponent's forced mate
+- Queen sacrifice for forced checkmate in 3 moves
+- Rook sacrifice (5 points) for Knight (3 points) that maintains winning position (+100cp+)
+- Spectacular piece sacrifice that leads to winning attack when not already completely winning
 
-**NOT Brilliant:**
-- Simple captures (e.g., Nxe5 capturing an undefended pawn)
+**Examples of moves that are NOT Brilliant:**
+- Simple captures or exchanges (even if best move)
+- Queen trades when already winning (just converting)
+- Opening moves (even if perfect)
+- Moves that only maintain equal position after sacrifice
 - King moves (e.g., Kxf7 - almost never brilliant)
+- Only move that prevents opponent's forced mate
 - Routine best moves without tactical flair
 - Moves that simply maintain equality
 
-**Frequency:** Very rare - 0-2 per game for strong players, 0 per game typical
+**Frequency:** Extremely rare - 0-1 per 100+ games for average players, most games have 0 brilliant moves
 
 ---
 

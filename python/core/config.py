@@ -31,28 +31,24 @@ class DatabaseConfig:
 
 @dataclass
 class StockfishConfig:
-    """Stockfish engine configuration."""
+    """Stockfish engine configuration - Railway Hobby Tier."""
     path: Optional[str] = None
-    depth: int = 8
-    skill_level: int = 8
-    time_limit: float = 1.0
+    depth: int = 14
+    skill_level: int = 20
+    time_limit: float = 0.8
     use_opening_book: bool = True
     use_endgame_tablebase: bool = True
     max_concurrent: int = 4
     
     def __post_init__(self):
-        """Adjust settings based on environment for better performance."""
-        app_env = os.getenv('APP_ENV', 'production').lower()
-        if app_env == 'dev':
-            # Reduce depth and skill for development to improve performance
-            self.depth = 6
-            self.skill_level = 6
-            print(f"[CONFIG] Development mode: Using depth={self.depth}, skill={self.skill_level}")
+        """Railway Hobby tier settings are always used."""
+        # Railway Hobby tier is the only configuration
+        print(f"[CONFIG] Railway Hobby mode: depth={self.depth}, skill={self.skill_level}")
 
 @dataclass
 class AnalysisConfig:
-    """Analysis configuration."""
-    default_type: str = "stockfish"  # basic, stockfish, deep
+    """Analysis configuration - Railway Hobby Tier only."""
+    default_type: str = "stockfish"  # Railway Hobby: stockfish only
     batch_size: int = 10
     max_games_per_request: int = 100
     parallel_processing: bool = True
@@ -114,14 +110,15 @@ class ChessAnalysisConfig:
         # Try to find Stockfish executable
         stockfish_path = self._find_stockfish_executable()
         
+        # Railway Hobby Tier - High Performance Settings
         return StockfishConfig(
             path=stockfish_path,
-            depth=int(os.getenv("STOCKFISH_DEPTH", "14")),  # Phase 1: Better default depth
-            skill_level=int(os.getenv("STOCKFISH_SKILL_LEVEL", "20")),  # Phase 1: Maximum strength
-            time_limit=float(os.getenv("STOCKFISH_TIME_LIMIT", "0.8")),  # Phase 1: Faster analysis
+            depth=int(os.getenv("STOCKFISH_DEPTH", "14")),  # Railway Hobby: Better depth
+            skill_level=int(os.getenv("STOCKFISH_SKILL_LEVEL", "20")),  # Railway Hobby: Maximum strength
+            time_limit=float(os.getenv("STOCKFISH_TIME_LIMIT", "0.8")),  # Railway Hobby: Fast analysis
             use_opening_book=os.getenv("STOCKFISH_USE_OPENING_BOOK", "true").lower() == "true",
             use_endgame_tablebase=os.getenv("STOCKFISH_USE_ENDGAME_TB", "true").lower() == "true",
-            max_concurrent=int(os.getenv("STOCKFISH_MAX_CONCURRENT", "4"))
+            max_concurrent=int(os.getenv("STOCKFISH_MAX_CONCURRENT", "4"))  # Railway Hobby: Parallel
         )
     
     def _load_analysis_config(self) -> AnalysisConfig:

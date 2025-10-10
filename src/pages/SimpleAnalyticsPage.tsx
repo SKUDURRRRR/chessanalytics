@@ -81,6 +81,7 @@ export default function SimpleAnalyticsPage() {
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [showDebug, setShowDebug] = useState(false)
+  const [analyzedGameIds, setAnalyzedGameIds] = useState<Set<string>>(new Set())
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
@@ -466,10 +467,23 @@ export default function SimpleAnalyticsPage() {
                 newSearchParams.delete('openingIdentifiers')
                 setSearchParams(newSearchParams, { replace: true })
               }}
+              onAnalyzedGamesChange={setAnalyzedGameIds}
               onGameSelect={game => {
-                navigate(`/analysis/${platform}/${userId}/${game.provider_game_id}`, {
-                  state: { from: { pathname: location.pathname, search: location.search }, game },
-                })
+                // Check if game is already analyzed
+                const gameId = game.provider_game_id || game.id
+                const isAnalyzed = analyzedGameIds.has(gameId)
+                
+                if (isAnalyzed) {
+                  // If analyzed, navigate to analysis page
+                  navigate(`/analysis/${platform}/${userId}/${gameId}`, {
+                    state: { from: { pathname: location.pathname, search: location.search }, game },
+                  })
+                } else {
+                  // If not analyzed, trigger analysis directly without navigation
+                  console.log('Game not analyzed, triggering analysis directly:', gameId)
+                  // The MatchHistory component will handle the analysis request
+                  // We don't need to do anything here as the analyze button will be shown
+                }
               }}
             />
           </ErrorBoundary>

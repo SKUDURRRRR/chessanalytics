@@ -44,160 +44,160 @@ class EnhancedCommentGenerator:
         self.comment_templates = {
             MoveQuality.BRILLIANT: {
                 'tactical_sacrifice': [
-                    "🌟 Brilliant sacrifice! {tactical_detail} This shows exceptional tactical vision and the ability to calculate complex variations.",
-                    "🌟 Outstanding! {tactical_detail} This kind of move separates strong players from average ones.",
-                    "🌟 Exceptional play! {tactical_detail} You've found a resource that even experienced players might miss."
+                    "Brilliant sacrifice! {tactical_detail} This shows exceptional tactical vision and the ability to calculate complex variations.",
+                    "Outstanding! {tactical_detail} This kind of move separates strong players from average ones.",
+                    "Exceptional play! {tactical_detail} You've found a resource that even experienced players might miss."
                 ],
                 'positional_brilliance': [
-                    "🌟 Brilliant positional understanding! {positional_detail} This demonstrates deep chess knowledge.",
-                    "🌟 Outstanding strategic play! {positional_detail} This shows mastery of positional concepts.",
-                    "🌟 Exceptional move! {positional_detail} This kind of understanding wins games."
+                    "Brilliant positional understanding! {positional_detail} This demonstrates deep chess knowledge.",
+                    "Outstanding strategic play! {positional_detail} This shows mastery of positional concepts.",
+                    "Exceptional move! {positional_detail} This kind of understanding wins games."
                 ],
                 'general': [
-                    "🌟 Brilliant! {specific_detail} This move demonstrates exceptional chess understanding.",
-                    "🌟 Outstanding! {specific_detail} This is the kind of move that wins games.",
-                    "🌟 Exceptional play! {specific_detail} You've shown real chess mastery here."
+                    "Brilliant! {specific_detail} This move demonstrates exceptional chess understanding.",
+                    "Outstanding! {specific_detail} This is the kind of move that wins games.",
+                    "Exceptional play! {specific_detail} You've shown real chess mastery here."
                 ]
             },
             MoveQuality.BEST: {
                 'opening': [
-                    "✅ {move_san} is the correct move in this opening. {opening_principle}",
-                    "✅ Good opening play with {move_san}. {opening_principle}",
-                    "✅ {move_san} follows sound opening principles. {opening_principle}"
+                    "{move_san} is the correct move in this opening. {opening_principle}",
+                    "Good opening play with {move_san}. {opening_principle}",
+                    "{move_san} follows sound opening principles. {opening_principle}"
                 ],
                 'tactical': [
-                    "✅ Perfect! {tactical_detail} This is exactly what the position demands.",
-                    "✅ Excellent! {tactical_detail} You've found the strongest continuation.",
-                    "✅ Well played! {tactical_detail} This maintains your advantage."
+                    "Perfect! {tactical_detail} This is exactly what the position demands.",
+                    "Excellent! {tactical_detail} You've found the strongest continuation.",
+                    "Well played! {tactical_detail} This maintains your advantage."
                 ],
                 'positional': [
-                    "✅ Strong move! {positional_detail} This improves your position significantly.",
-                    "✅ Excellent! {positional_detail} You're playing with good understanding.",
-                    "✅ Good play! {positional_detail} This keeps your position healthy."
+                    "Strong move! {positional_detail} This improves your position significantly.",
+                    "Excellent! {positional_detail} You're playing with good understanding.",
+                    "Good play! {positional_detail} This keeps your position healthy."
                 ],
                 'balanced': [
-                    "✅ {move_san} is the best move available. {specific_detail}",
-                    "✅ Perfect! {move_san} maintains the position well. {specific_detail}",
-                    "✅ Excellent! {move_san} shows good chess understanding. {specific_detail}"
+                    "{move_san} is the best move available. {specific_detail}",
+                    "Perfect! {move_san} maintains the position well. {specific_detail}",
+                    "Excellent! {move_san} shows good chess understanding. {specific_detail}"
                 ]
             },
             MoveQuality.GREAT: {
                 'tactical': [
-                    "🎯 Great move! {tactical_detail} This shows strong tactical awareness.",
-                    "🎯 Well played! {tactical_detail} You're finding good moves consistently.",
-                    "🎯 Excellent! {tactical_detail} This demonstrates solid chess understanding."
+                    "Great move! {tactical_detail} This shows strong tactical awareness.",
+                    "Well played! {tactical_detail} You're finding good moves consistently.",
+                    "Excellent! {tactical_detail} This demonstrates solid chess understanding."
                 ],
                 'positional': [
-                    "🎯 Great positional play! {positional_detail} This improves your position.",
-                    "🎯 Well done! {positional_detail} You're showing good strategic understanding.",
-                    "🎯 Excellent! {positional_detail} This kind of play wins games."
+                    "Great positional play! {positional_detail} This improves your position.",
+                    "Well done! {positional_detail} You're showing good strategic understanding.",
+                    "Excellent! {positional_detail} This kind of play wins games."
                 ],
                 'general': [
-                    "🎯 Great move! {specific_detail} You're playing accurately.",
-                    "🎯 Well played! {specific_detail} This shows good chess fundamentals.",
-                    "🎯 Excellent! {specific_detail} Keep up the good work!"
+                    "Great move! {specific_detail} You're playing accurately.",
+                    "Well played! {specific_detail} This shows good chess fundamentals.",
+                    "Excellent! {specific_detail} Keep up the good work!"
                 ]
             },
             MoveQuality.EXCELLENT: {
                 'tactical': [
-                    "⭐ Excellent! {tactical_detail} This shows good tactical awareness.",
-                    "⭐ Well played! {tactical_detail} You're making solid decisions.",
-                    "⭐ Good move! {tactical_detail} This demonstrates chess understanding."
+                    "Excellent! {tactical_detail} This shows good tactical awareness.",
+                    "Well played! {tactical_detail} You're making solid decisions.",
+                    "Good move! {tactical_detail} This demonstrates chess understanding."
                 ],
                 'positional': [
-                    "⭐ Excellent positional play! {positional_detail} This improves your position.",
-                    "⭐ Well done! {positional_detail} You're showing strategic understanding.",
-                    "⭐ Good move! {positional_detail} This maintains your position well."
+                    "Excellent positional play! {positional_detail} This improves your position.",
+                    "Well done! {positional_detail} You're showing strategic understanding.",
+                    "Good move! {positional_detail} This maintains your position well."
                 ],
                 'general': [
-                    "⭐ Excellent! {specific_detail} You're playing solidly.",
-                    "⭐ Well played! {specific_detail} This shows good fundamentals.",
-                    "⭐ Good move! {specific_detail} Keep it up!"
+                    "Excellent! {specific_detail} You're playing solidly.",
+                    "Well played! {specific_detail} This shows good fundamentals.",
+                    "Good move! {specific_detail} Keep it up!"
                 ]
             },
             MoveQuality.GOOD: {
                 'tactical': [
-                    "👍 Good move! {tactical_detail} This shows tactical awareness.",
-                    "👍 Well played! {tactical_detail} You're making sound decisions.",
-                    "👍 Solid! {tactical_detail} This demonstrates chess understanding."
+                    "Good move! {tactical_detail} This shows tactical awareness.",
+                    "Well played! {tactical_detail} You're making sound decisions.",
+                    "Solid! {tactical_detail} This demonstrates chess understanding."
                 ],
                 'positional': [
-                    "👍 Good positional play! {positional_detail} This helps your position.",
-                    "👍 Well done! {positional_detail} You're showing strategic thinking.",
-                    "👍 Solid! {positional_detail} This maintains your position."
+                    "Good positional play! {positional_detail} This helps your position.",
+                    "Well done! {positional_detail} You're showing strategic thinking.",
+                    "Solid! {positional_detail} This maintains your position."
                 ],
                 'general': [
-                    "👍 Good move! {specific_detail} You're playing solidly.",
-                    "👍 Well played! {specific_detail} This shows good understanding.",
-                    "👍 Solid! {specific_detail} Keep going!"
+                    "Good move! {specific_detail} You're playing solidly.",
+                    "Well played! {specific_detail} This shows good understanding.",
+                    "Solid! {specific_detail} Keep going!"
                 ]
             },
             MoveQuality.ACCEPTABLE: {
                 'opening': [
-                    "📖 {move_san} is a book move. {opening_principle}",
-                    "📖 Standard opening play with {move_san}. {opening_principle}",
-                    "📖 {move_san} follows opening theory. {opening_principle}"
+                    "{move_san} is a book move. {opening_principle}",
+                    "Standard opening play with {move_san}. {opening_principle}",
+                    "{move_san} follows opening theory. {opening_principle}"
                 ],
                 'suboptimal': [
-                    "⚠️ {move_san} is acceptable but not optimal. {improvement_suggestion}",
-                    "⚠️ Playable move, but {improvement_suggestion}",
-                    "⚠️ {move_san} works, though {improvement_suggestion}"
+                    "{move_san} is acceptable but not optimal. {improvement_suggestion}",
+                    "Playable move, but {improvement_suggestion}",
+                    "{move_san} works, though {improvement_suggestion}"
                 ],
                 'general': [
-                    "📖 {move_san} is a reasonable choice. {specific_detail}",
-                    "📖 Solid move with {move_san}. {specific_detail}",
-                    "📖 {move_san} maintains the position. {specific_detail}"
+                    "{move_san} is a reasonable choice. {specific_detail}",
+                    "Solid move with {move_san}. {specific_detail}",
+                    "{move_san} maintains the position. {specific_detail}"
                 ]
             },
             MoveQuality.INACCURACY: {
                 'tactical': [
-                    "⚠️ Inaccuracy! {tactical_problem} {improvement_suggestion}",
-                    "⚠️ Not quite right. {tactical_problem} {improvement_suggestion}",
-                    "⚠️ This move has issues. {tactical_problem} {improvement_suggestion}"
+                    "Inaccuracy! {tactical_problem} {improvement_suggestion}",
+                    "Not quite right. {tactical_problem} {improvement_suggestion}",
+                    "This move has issues. {tactical_problem} {improvement_suggestion}"
                 ],
                 'positional': [
-                    "⚠️ Inaccuracy! {positional_problem} {improvement_suggestion}",
-                    "⚠️ Not optimal. {positional_problem} {improvement_suggestion}",
-                    "⚠️ This weakens your position. {positional_problem} {improvement_suggestion}"
+                    "Inaccuracy! {positional_problem} {improvement_suggestion}",
+                    "Not optimal. {positional_problem} {improvement_suggestion}",
+                    "This weakens your position. {positional_problem} {improvement_suggestion}"
                 ],
                 'general': [
-                    "⚠️ Inaccuracy! {specific_problem} {improvement_suggestion}",
-                    "⚠️ Not quite right. {specific_problem} {improvement_suggestion}",
-                    "⚠️ This move has issues. {specific_problem} {improvement_suggestion}"
+                    "Inaccuracy! {specific_problem} {improvement_suggestion}",
+                    "Not quite right. {specific_problem} {improvement_suggestion}",
+                    "This move has issues. {specific_problem} {improvement_suggestion}"
                 ]
             },
             MoveQuality.MISTAKE: {
                 'tactical': [
-                    "❌ Mistake! {tactical_problem} {improvement_suggestion}",
-                    "❌ This isn't right. {tactical_problem} {improvement_suggestion}",
-                    "❌ This creates problems. {tactical_problem} {improvement_suggestion}"
+                    "Mistake! {tactical_problem} {improvement_suggestion}",
+                    "This isn't right. {tactical_problem} {improvement_suggestion}",
+                    "This creates problems. {tactical_problem} {improvement_suggestion}"
                 ],
                 'positional': [
-                    "❌ Mistake! {positional_problem} {improvement_suggestion}",
-                    "❌ This weakens your position. {positional_problem} {improvement_suggestion}",
-                    "❌ This isn't optimal. {positional_problem} {improvement_suggestion}"
+                    "Mistake! {positional_problem} {improvement_suggestion}",
+                    "This weakens your position. {positional_problem} {improvement_suggestion}",
+                    "This isn't optimal. {positional_problem} {improvement_suggestion}"
                 ],
                 'general': [
-                    "❌ Mistake! {specific_problem} {improvement_suggestion}",
-                    "❌ This isn't right. {specific_problem} {improvement_suggestion}",
-                    "❌ This creates problems. {specific_problem} {improvement_suggestion}"
+                    "Mistake! {specific_problem} {improvement_suggestion}",
+                    "This isn't right. {specific_problem} {improvement_suggestion}",
+                    "This creates problems. {specific_problem} {improvement_suggestion}"
                 ]
             },
             MoveQuality.BLUNDER: {
                 'tactical': [
-                    "💥 Blunder! {tactical_problem} {improvement_suggestion}",
-                    "💥 Serious error! {tactical_problem} {improvement_suggestion}",
-                    "💥 This is a major mistake! {tactical_problem} {improvement_suggestion}"
+                    "Blunder! {tactical_problem} {improvement_suggestion}",
+                    "Serious error! {tactical_problem} {improvement_suggestion}",
+                    "This is a major mistake! {tactical_problem} {improvement_suggestion}"
                 ],
                 'positional': [
-                    "💥 Blunder! {positional_problem} {improvement_suggestion}",
-                    "💥 Serious error! {positional_problem} {improvement_suggestion}",
-                    "💥 This is a major mistake! {positional_problem} {improvement_suggestion}"
+                    "Blunder! {positional_problem} {improvement_suggestion}",
+                    "Serious error! {positional_problem} {improvement_suggestion}",
+                    "This is a major mistake! {positional_problem} {improvement_suggestion}"
                 ],
                 'general': [
-                    "💥 Blunder! {specific_problem} {improvement_suggestion}",
-                    "💥 Serious error! {specific_problem} {improvement_suggestion}",
-                    "💥 This is a major mistake! {specific_problem} {improvement_suggestion}"
+                    "Blunder! {specific_problem} {improvement_suggestion}",
+                    "Serious error! {specific_problem} {improvement_suggestion}",
+                    "This is a major mistake! {specific_problem} {improvement_suggestion}"
                 ]
             }
         }
@@ -236,34 +236,44 @@ class EnhancedCommentGenerator:
         """Setup tactical insight templates."""
         self.tactical_insights = {
             'pin': [
-                "This creates a pin, restricting the opponent's piece movement",
-                "The pin limits your opponent's options and creates tactical opportunities",
-                "Pins are powerful tactical weapons - this one is well-executed"
+                "This creates a pin that restricts your opponent's piece movement and creates tactical opportunities",
+                "The pin limits your opponent's options and forces them to defend passively",
+                "This pin is a powerful tactical weapon that gives you the initiative"
             ],
             'fork': [
-                "This creates a fork, attacking multiple pieces simultaneously",
-                "The fork forces the opponent to choose which piece to save",
-                "Forks are excellent tactical patterns - this one wins material"
+                "This creates a fork that attacks multiple pieces simultaneously and forces your opponent to choose which piece to save",
+                "The fork wins material by threatening two pieces at once - this is excellent tactical play",
+                "This fork is a brilliant tactical pattern that creates immediate winning chances"
             ],
             'skewer': [
-                "This creates a skewer, forcing the opponent to move a valuable piece",
-                "The skewer exposes the opponent's king or valuable pieces",
-                "Skewers are effective tactical patterns - this one is well-timed"
+                "This creates a skewer that forces your opponent to move a valuable piece and exposes their king",
+                "The skewer is a powerful tactical pattern that wins material through forced moves",
+                "This skewer is well-timed and creates serious tactical problems for your opponent"
             ],
             'discovered_attack': [
-                "This creates a discovered attack, revealing threats from other pieces",
-                "The discovered attack creates multiple threats simultaneously",
-                "Discovered attacks are powerful - this one is well-calculated"
+                "This creates a discovered attack that reveals multiple threats from your pieces simultaneously",
+                "The discovered attack is a powerful tactical pattern that creates winning chances",
+                "This discovered attack is brilliantly calculated and gives you a major advantage"
             ],
             'double_attack': [
-                "This creates a double attack, threatening two targets at once",
-                "The double attack forces the opponent to defend multiple threats",
-                "Double attacks are effective - this one creates winning chances"
+                "This creates a double attack that threatens two targets at once and forces your opponent to defend multiple threats",
+                "The double attack is an excellent tactical pattern that creates immediate winning chances",
+                "This double attack is brilliantly executed and gives you a decisive advantage"
             ],
             'sacrifice': [
-                "This is a calculated sacrifice that gains positional compensation",
-                "The sacrifice trades material for tactical or positional advantages",
-                "Sacrifices require precise calculation - this one is well-judged"
+                "This is a brilliant sacrifice that trades material for massive positional compensation and creates winning chances",
+                "The sacrifice is perfectly calculated and gives you a decisive advantage through superior piece activity",
+                "This sacrifice is a masterful tactical decision that creates mate threats and wins the game"
+            ],
+            'mate_threat': [
+                "This creates a mate threat that forces your opponent to defend and gives you a winning advantage",
+                "The mate threat is a powerful tactical weapon that creates immediate winning chances",
+                "This mate threat is brilliantly calculated and could end the game quickly"
+            ],
+            'tactical_shot': [
+                "This is a brilliant tactical shot that creates multiple threats and wins material",
+                "The tactical shot is perfectly timed and gives you a decisive advantage",
+                "This tactical shot is a masterful combination that creates winning chances"
             ]
         }
     
@@ -338,13 +348,13 @@ class EnhancedCommentGenerator:
         """Generate specific details about the move and position."""
         details = {}
         
-        # Tactical details
+        # Tactical details with specific explanations
         if context.tactical_patterns:
             pattern = context.tactical_patterns[0]
             if pattern in self.tactical_insights:
                 details['tactical_detail'] = random.choice(self.tactical_insights[pattern])
         
-        # Positional details
+        # Positional details with specific explanations
         if context.positional_factors:
             factor = context.positional_factors[0]
             if factor in self.positional_insights:
@@ -354,29 +364,40 @@ class EnhancedCommentGenerator:
                     action=action, benefit=benefit
                 )
         
-        # Specific impact details
+        # Specific impact details with more descriptive explanations
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
+        evaluation_change = context.evaluation_change
+        
         if centipawn_loss > 0:
-            details['specific_detail'] = "loses only a small amount compared to the best move"
-        elif context.evaluation_change > 0:
-            details['specific_detail'] = "improves the position significantly"
+            if centipawn_loss < 10:
+                details['specific_detail'] = "Loses only a tiny amount compared to the best move; this is nearly perfect play"
+            elif centipawn_loss < 25:
+                details['specific_detail'] = "Loses only a small amount compared to the best move; this is excellent play"
+            else:
+                details['specific_detail'] = "Loses material compared to the best move"
+        elif evaluation_change > 100:
+            details['specific_detail'] = "This is a brilliant sacrifice that gains massive positional compensation and creates winning chances"
+        elif evaluation_change > 50:
+            details['specific_detail'] = "This is an excellent move that significantly improves your position and creates strong attacking chances"
+        elif evaluation_change > 0:
+            details['specific_detail'] = "This improves your position and gives you better piece coordination"
         else:
-            details['specific_detail'] = "maintains the position well"
+            details['specific_detail'] = "This maintains your position well and keeps your pieces active"
         
         # Opening principles
         if context.game_phase == 'opening' and context.move_number <= 15:
             details['opening_principle'] = self._get_opening_principle(move, context.move_number)
         
-        # Improvement suggestions
+        # Improvement suggestions with specific moves
         if centipawn_loss > 50:
             best_move = move_analysis.get('best_move')
             if best_move:
                 try:
                     best_move_obj = chess.Move.from_uci(best_move)
                     best_move_san = board.san(best_move_obj)
-                    details['improvement_suggestion'] = f"Consider {best_move_san} instead, which is the engine's top choice."
+                    details['improvement_suggestion'] = f"Consider {best_move_san} instead."
                 except:
-                    details['improvement_suggestion'] = "Look for moves that improve your position more significantly."
+                    details['improvement_suggestion'] = "Consider a more accurate move that improves your position."
         
         return details
     
@@ -492,41 +513,90 @@ class EnhancedCommentGenerator:
         problems = []
         
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
-        if centipawn_loss > 100:
-            problems.append("loses material")
+        best_move = move_analysis.get('best_move', '')
+        move_san = move_analysis.get('move_san', '')
         
+        # Generate specific tactical explanations based on centipawn loss
+        if centipawn_loss > 300:
+            problems.append("This is a catastrophic blunder; you likely hung a major piece or allowed mate in a few moves")
+        elif centipawn_loss > 200:
+            problems.append("This is a major blunder; you probably lost a piece or created a fatal weakness")
+        elif centipawn_loss > 100:
+            problems.append("This is a serious mistake; you likely lost material or created significant tactical problems")
+        elif centipawn_loss > 50:
+            problems.append("Loses material compared to the best move")
+        
+        # Add specific tactical problems based on context
         if context.weaknesses_created:
-            problems.append(f"creates weaknesses: {', '.join(context.weaknesses_created[:2])}")
+            for weakness in context.weaknesses_created[:2]:
+                if 'king' in weakness.lower():
+                    problems.append("You weakened king safety; this creates serious vulnerabilities")
+                elif 'pawn' in weakness.lower():
+                    problems.append("You created pawn weaknesses; this gives your opponent targets to attack")
+                elif 'piece' in weakness.lower():
+                    problems.append("You left pieces unprotected; this allows tactical shots")
         
         if context.threats_created:
-            problems.append(f"allows threats: {', '.join(context.threats_created[:2])}")
+            for threat in context.threats_created[:2]:
+                if 'mate' in threat.lower():
+                    problems.append("You allowed mate threats; this could be game-ending")
+                elif 'fork' in threat.lower():
+                    problems.append("You allowed a fork; this will lose material")
+                elif 'pin' in threat.lower():
+                    problems.append("You created a pin; this restricts your piece movement")
         
-        return ", ".join(problems) if problems else "weakens your position"
+        return ", ".join(problems) if problems else "This weakens your position tactically"
     
     def _get_positional_problem(self, move_analysis: Dict[str, Any], context: PositionContext) -> str:
         """Get description of positional problems with the move."""
         problems = []
         
+        centipawn_loss = move_analysis.get('centipawn_loss', 0)
+        best_move = move_analysis.get('best_move', '')
+        
+        # Generate specific positional explanations based on centipawn loss
+        if centipawn_loss > 200:
+            problems.append("This is a major positional blunder; you likely lost the initiative or created fatal weaknesses")
+        elif centipawn_loss > 100:
+            problems.append("This is a serious positional mistake; you probably lost control of key squares or piece coordination")
+        elif centipawn_loss > 50:
+            problems.append("This weakens your position")
+        
+        # Add specific positional problems based on context
         if context.king_safety_score < -50:
-            problems.append("compromises king safety")
+            problems.append("You compromised your king safety; this creates serious vulnerabilities and tactical threats")
         
         if context.piece_activity_score < -20:
-            problems.append("reduces piece activity")
+            problems.append("You reduced piece activity; this makes your pieces passive and less effective")
         
         if context.center_control < -10:
-            problems.append("loses central control")
+            problems.append("You lost central control; this gives your opponent more space and attacking chances")
         
-        return ", ".join(problems) if problems else "weakens your position"
+        # Add specific positional weaknesses
+        if context.weaknesses_created:
+            for weakness in context.weaknesses_created[:2]:
+                if 'back rank' in weakness.lower():
+                    problems.append("You created back rank weaknesses; this allows mate threats")
+                elif 'diagonal' in weakness.lower():
+                    problems.append("You weakened diagonal control; this allows bishop attacks")
+                elif 'file' in weakness.lower():
+                    problems.append("You lost file control; this allows rook infiltration")
+        
+        return ", ".join(problems) if problems else "This weakens your position positionally"
     
     def _get_specific_problem(self, move_analysis: Dict[str, Any], context: PositionContext) -> str:
         """Get specific problem description for the move."""
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
+        best_move = move_analysis.get('best_move', '')
+        move_san = move_analysis.get('move_san', '')
         
-        if centipawn_loss > 200:
-            return "loses significant material - a major disadvantage"
+        if centipawn_loss > 300:
+            return "This is a catastrophic blunder; you likely hung your queen or allowed mate in a few moves."
+        elif centipawn_loss > 200:
+            return "This is a major blunder; you probably lost a piece or created fatal weaknesses that severely damage your position."
         elif centipawn_loss > 100:
-            return "loses material - a serious loss"
+            return "This is a serious mistake; you likely lost material or created significant tactical problems that give your opponent a major advantage."
         elif centipawn_loss > 50:
-            return "loses material compared to the best move"
+            return "This loses material compared to the best move and weakens your position."
         else:
-            return "isn't the most accurate choice in this position"
+            return "This isn't the most accurate choice in this position."
