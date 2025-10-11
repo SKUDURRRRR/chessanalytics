@@ -4,6 +4,7 @@ import { PositionalAnalysis } from './PositionalAnalysis'
 import { OpeningTheoryAnalysis } from './OpeningTheoryAnalysis'
 import { CriticalMomentBoard } from './CriticalMomentBoard'
 import { getMoveClassificationBgColor } from '../../utils/chessColors'
+import { calculateOpeningAccuracyChessCom } from '../../utils/accuracyCalculator'
 
 interface ProcessedMove {
   index: number
@@ -359,16 +360,14 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
 
   const phaseAnalysis = useMemo(() => {
     const totalMoves = userMoves.length
-    const openingEnd = Math.min(12, Math.floor(totalMoves * 0.2))
+    const openingEnd = Math.min(10, Math.floor(totalMoves * 0.2))
     const middlegameEnd = Math.floor(totalMoves * 0.8)
     
     const phases: PhaseAnalysis[] = []
 
     // Opening phase
     const openingMoves = userMoves.slice(0, openingEnd)
-    const openingAccuracy = openingMoves.length > 0 
-      ? (openingMoves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length / openingMoves.length) * 100
-      : 0
+    const openingAccuracy = calculateOpeningAccuracyChessCom(openingMoves)
     
     phases.push({
       phase: 'opening',
@@ -611,7 +610,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
               const isBlunder = move.classification === 'blunder'
               const isBrilliant = move.classification === 'brilliant'
               const isMistake = move.classification === 'mistake'
-              const gamePhase = move.moveNumber <= 12 ? 'Opening' : move.moveNumber <= 30 ? 'Middlegame' : 'Endgame'
+              const gamePhase = move.moveNumber <= 10 ? 'Opening' : move.moveNumber <= 30 ? 'Middlegame' : 'Endgame'
               
               return (
                 <CriticalMomentCard

@@ -1,0 +1,3 @@
+[Smart import] Existing game IDs count: 2088
+[Smart import] Queried for user_id='krecetas', platform='lichess'
+[Smart import] Sample existing game IDs (first 3): ['nrHqJO6n', 'q5OEasMr', 'CxRitIWA']

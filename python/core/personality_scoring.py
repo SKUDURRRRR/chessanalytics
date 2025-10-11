@@ -274,12 +274,12 @@ class PersonalityScorer:
         forcing_accuracy = (metrics.forcing_best / metrics.forcing_moves) if metrics.forcing_moves > 0 else best_rate
         pressure_rate = metrics.forcing_moves / metrics.total_moves
 
-        # Highly sensitive scoring: base 50, very conservative bonuses
+        # Conservative scoring to reserve 95+ for extraordinary players
         error_penalty = (blunder_rate * 40.0) + (mistake_rate * 25.0) + (inaccuracy_rate * 15.0)
-        pressure_bonus = min(5.0, pressure_rate * 15.0)
-        accuracy_bonus = min(8.0, best_rate * 20.0)
-        forcing_bonus = min(4.0, forcing_accuracy * 12.0)
-        streak_bonus = min(3.0, metrics.forcing_streak_max * 0.8)
+        pressure_bonus = min(4.0, pressure_rate * 12.0)  # Reduced from 5.0/15.0
+        accuracy_bonus = min(7.0, best_rate * 18.0)  # Reduced from 8.0/20.0
+        forcing_bonus = min(3.5, forcing_accuracy * 10.0)  # Reduced from 4.0/12.0
+        streak_bonus = min(2.5, metrics.forcing_streak_max * 0.7)  # Reduced from 3.0/0.8
 
         score = 50.0 - error_penalty + pressure_bonus + accuracy_bonus + forcing_bonus + streak_bonus
         return self.clamp_score(score)
@@ -295,40 +295,64 @@ class PersonalityScorer:
         blunder_rate = metrics.blunders / metrics.total_moves
         mistake_rate = metrics.mistakes / metrics.total_moves
 
-        # Highly sensitive scoring: base 50, very conservative bonuses
+        # Conservative scoring to reserve 95+ for extraordinary players
         error_penalty = (blunder_rate * 35.0) + (mistake_rate * 20.0)
         drift_penalty = min(6.0, metrics.centipawn_mean / 20.0)
-        quiet_bonus = min(8.0, quiet_accuracy * 20.0)
-        safety_bonus = min(6.0, quiet_safety * 15.0)
-        streak_bonus = min(3.0, metrics.quiet_streak_max * 0.8)
+        quiet_bonus = min(7.0, quiet_accuracy * 18.0)  # Reduced from 8.0/20.0
+        safety_bonus = min(5.0, quiet_safety * 13.0)  # Reduced from 6.0/15.0
+        streak_bonus = min(2.5, metrics.quiet_streak_max * 0.7)  # Reduced from 3.0/0.8
 
         score = 50.0 - error_penalty - drift_penalty + quiet_bonus + safety_bonus + streak_bonus
         return self.clamp_score(score)
 
     def score_aggressive(self, metrics: PersonalityMetrics) -> float:
-        """Calculate aggressive score - willingness to create pressure."""
+        """Calculate aggressive score - willingness to create pressure.
+        
+        Natural opposition with Patient through shared forcing/quiet ratio.
+        Aggressive increases with forcing moves, decreases with quiet moves.
+        """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
-        forcing_density = metrics.forcing_moves / metrics.total_moves
+        # Shared base metrics with Patient (natural opposition)
+        forcing_ratio = metrics.forcing_moves / metrics.total_moves
+        quiet_ratio = metrics.quiet_moves / metrics.total_moves
+        
+        # Additional aggression indicators
         check_density = metrics.checks / metrics.total_moves
         capture_density = metrics.captures / metrics.total_moves
         blunder_rate = metrics.blunders / metrics.total_moves
         mistake_rate = metrics.mistakes / metrics.total_moves
 
-        # Highly sensitive scoring: base 50, very conservative bonuses
-        attack_bonus = min(10.0, forcing_density * 20.0 + check_density * 15.0 + capture_density * 12.0)
-        streak_bonus = min(5.0, metrics.forcing_streak_max * 1.0)
-        reckless_penalty = (blunder_rate * 25.0) + (mistake_rate * 18.0)
+        # Natural opposition: forcing moves increase aggressive, quiet moves decrease it
+        base = 50.0
+        forcing_bonus = forcing_ratio * 38.0  # Reduced from 45 to make 95+ harder
+        quiet_penalty = quiet_ratio * 32.0     # Reduced from 38 to balance
+        
+        # Additional bonuses for aggressive play (reduced to prevent ceiling hits)
+        attack_bonus = min(10.0, check_density * 24.0 + capture_density * 18.0)
+        streak_bonus = min(8.0, metrics.forcing_streak_max * 1.5)
+        
+        # Less penalty for errors (aggressive players take risks)
+        error_penalty = (blunder_rate * 15.0) + (mistake_rate * 10.0)
 
-        score = 50.0 + attack_bonus + streak_bonus - reckless_penalty
+        score = base + forcing_bonus - quiet_penalty + attack_bonus + streak_bonus - error_penalty
         return self.clamp_score(score)
 
     def score_patient(self, metrics: PersonalityMetrics) -> float:
-        """Calculate patient score - disciplined, consistent play."""
+        """Calculate patient score - disciplined, consistent play.
+        
+        Natural opposition with Aggressive through shared forcing/quiet ratio.
+        Patient increases with quiet moves, decreases with forcing moves.
+        """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
+        # Shared base metrics with Aggressive (natural opposition)
+        forcing_ratio = metrics.forcing_moves / metrics.total_moves
+        quiet_ratio = metrics.quiet_moves / metrics.total_moves
+        
+        # Additional patience indicators
         blunder_rate = metrics.blunders / metrics.total_moves
         mistake_rate = metrics.mistakes / metrics.total_moves
         inaccuracy_rate = metrics.inaccuracies / metrics.total_moves
@@ -336,72 +360,93 @@ class PersonalityScorer:
         endgame_accuracy = (metrics.endgame_best / metrics.endgame_moves) if metrics.endgame_moves > 0 else quiet_safety
         time_factor = metrics.time_management_score / 100.0
 
-        # Highly sensitive scoring: base 50, very conservative bonuses
-        discipline_penalty = (blunder_rate * 30.0) + (mistake_rate * 20.0) + (inaccuracy_rate * 12.0)
-        stability_bonus = min(8.0, quiet_safety * 20.0)
-        time_bonus = min(6.0, time_factor * 15.0)
-        endgame_bonus = min(6.0, endgame_accuracy * 15.0)
+        # Natural opposition: quiet moves increase patient, forcing moves decrease it
+        base = 50.0
+        quiet_bonus = quiet_ratio * 32.0        # Reduced from 38 to make 95+ harder
+        forcing_penalty = forcing_ratio * 36.0  # Reduced from 42 to balance
+        
+        # Additional bonuses for patient play (reduced to prevent ceiling hits)
+        stability_bonus = min(8.0, quiet_safety * 22.0)
+        endgame_bonus = min(7.0, endgame_accuracy * 18.0)
+        time_bonus = min(12.0, time_factor * 30.0)  # Time is important but not overwhelming
         streak_bonus = min(3.0, metrics.safe_streak_max * 0.8)
+        
+        # Penalty for impatience (errors)
+        discipline_penalty = (blunder_rate * 20.0) + (mistake_rate * 12.0) + (inaccuracy_rate * 8.0)
 
-        score = 50.0 - discipline_penalty + stability_bonus + time_bonus + endgame_bonus + streak_bonus
+        score = base + quiet_bonus - forcing_penalty + stability_bonus + endgame_bonus + time_bonus + streak_bonus - discipline_penalty
         return self.clamp_score(score)
 
     def score_novelty(self, metrics: PersonalityMetrics) -> float:
-        """Calculate novelty score - creativity and variety (only for accurate moves)."""
+        """Calculate novelty score - creativity and variety.
+        
+        Natural opposition with Staleness through shared diversity/repetition metrics.
+        Novelty increases with diversity, decreases with repetition.
+        """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
-        # Only count accurate creative moves
+        # Shared base metrics with Staleness (natural opposition)
+        pattern_diversity = metrics.pattern_diversity  # 0.0 to 1.0
+        piece_diversity = min(1.0, metrics.piece_type_count / 6.0)  # Normalize to 0-1 (6 piece types max)
+        opening_variety = min(1.0, metrics.opening_unique_count / max(10, metrics.opening_moves_count))
+        repetition_count = metrics.consecutive_repeat_count
+        
+        # Additional novelty indicators
         accurate_creative_ratio = metrics.creative_moves / metrics.total_moves if metrics.total_moves > 0 else 0
         early_accurate_creative_ratio = (metrics.early_creative_moves / metrics.early_moves) if metrics.early_moves > 0 else 0
         
-        # Penalize inaccurate creative attempts (moves with annotations but poor accuracy)
-        # We'll need to track this in the metrics computation
+        # Penalize inaccurate creative attempts
         inaccurate_creative_penalty = 0.0
         if hasattr(metrics, 'inaccurate_creative_moves'):
             inaccurate_creative_ratio = metrics.inaccurate_creative_moves / metrics.total_moves
-            inaccurate_creative_penalty = min(20.0, inaccurate_creative_ratio * 40.0)
+            inaccurate_creative_penalty = min(12.0, inaccurate_creative_ratio * 30.0)
 
-        piece_diversity_bonus = min(5.0, metrics.piece_type_count * 1.0)
-        creative_bonus = min(8.0, accurate_creative_ratio * 25.0)  # Only accurate creative moves
-        diversity_bonus = min(6.0, metrics.pattern_diversity * 15.0)
-        early_deviation_bonus = min(6.0, early_accurate_creative_ratio * 20.0)
+        # Natural opposition: diversity increases novelty, repetition decreases it
+        base = 50.0
+        diversity_bonus = (pattern_diversity * 18.0 + piece_diversity * 10.0 + opening_variety * 9.0)  # Reduced
+        repetition_penalty = min(18.0, repetition_count * 2.5)
+        
+        # Additional bonuses for novel play (reduced to prevent ceiling)
+        creative_bonus = min(6.0, accurate_creative_ratio * 22.0)  # Reduced from 8.0/25.0
+        early_deviation_bonus = min(4.0, early_accurate_creative_ratio * 16.0)  # Reduced from 5.0/18.0
 
-        score = 50.0 + piece_diversity_bonus + creative_bonus + diversity_bonus + early_deviation_bonus - inaccurate_creative_penalty
+        score = base + diversity_bonus - repetition_penalty + creative_bonus + early_deviation_bonus - inaccurate_creative_penalty
         return self.clamp_score(score)
 
     def score_staleness(self, metrics: PersonalityMetrics) -> float:
-        """Calculate staleness score - tendency toward repetitive, structured play patterns."""
+        """Calculate staleness score - tendency toward repetitive, structured play patterns.
+        
+        Natural opposition with Novelty through shared diversity/repetition metrics.
+        Staleness increases with repetition, decreases with diversity.
+        
+        Note: Staleness is about repetitiveness, NOT accuracy. Errors are not penalized here.
+        """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
-        # Staleness indicators (higher = more repetitive/structured)
-        opening_consistency = 1.0 - (metrics.opening_unique_count / metrics.opening_moves_count) if metrics.opening_moves_count > 0 else 0
-        pattern_consistency = 1.0 - metrics.pattern_diversity
-        move_repetition = metrics.consecutive_repeat_count / metrics.total_moves if metrics.total_moves > 0 else 0
+        # Shared base metrics with Novelty (natural opposition)
+        pattern_diversity = metrics.pattern_diversity  # 0.0 to 1.0
+        piece_diversity = min(1.0, metrics.piece_type_count / 6.0)  # Normalize to 0-1
+        opening_variety = min(1.0, metrics.opening_unique_count / max(10, metrics.opening_moves_count))
+        repetition_count = metrics.consecutive_repeat_count
         
-        # Conservative play indicators (but not penalized for errors)
+        # Additional staleness indicators
         quiet_move_ratio = metrics.quiet_moves / metrics.total_moves if metrics.total_moves > 0 else 0
-        forcing_ratio = metrics.forcing_moves / metrics.total_moves if metrics.total_moves > 0 else 0
+        creative_ratio = metrics.creative_moves / metrics.total_moves if metrics.total_moves > 0 else 0
+
+        # Natural opposition: repetition increases staleness, diversity decreases it
+        base = 50.0
+        repetition_bonus = min(18.0, repetition_count * 2.5)  # Reduced from 20.0/2.8
+        pattern_consistency_bonus = (1.0 - pattern_diversity) * 16.0  # Reduced from 18.0
+        opening_consistency_bonus = (1.0 - opening_variety) * 10.0  # Reduced from 12.0
+        diversity_penalty = (piece_diversity * 15.0)  # Keep strong penalty
         
-        # Staleness bonuses - focus on repetition patterns
-        opening_bonus = min(20.0, opening_consistency * 40.0)  # Few unique opening moves = more staleness
-        pattern_bonus = min(15.0, pattern_consistency * 30.0)  # Consistent move patterns = more staleness
-        repetition_bonus = min(12.0, move_repetition * 25.0)  # Direct move repetition = more staleness
-        quiet_bonus = min(10.0, quiet_move_ratio * 20.0)  # More quiet moves = more staleness
-        
-        # Anti-aggression penalty (conservative players avoid forcing moves)
-        aggression_penalty = min(8.0, forcing_ratio * 20.0)  # Fewer forcing moves = more staleness
-        
-        # Anti-creativity penalty (opposite of novelty) - but less harsh
-        creativity_penalty = min(6.0, (metrics.creative_moves / metrics.total_moves) * 15.0) if metrics.total_moves > 0 else 0
-        
-        # Reduced error penalty - staleness should measure repetition, not accuracy
-        error_penalty = (metrics.blunders + metrics.mistakes + metrics.inaccuracies) / metrics.total_moves * 10.0
-        
-        # Base score + bonuses - penalties
-        score = 50.0 + opening_bonus + pattern_bonus + repetition_bonus + quiet_bonus - aggression_penalty - creativity_penalty - error_penalty
-        
+        # Additional bonuses for stale play (reduced to prevent ceiling)
+        quiet_bonus = min(6.0, quiet_move_ratio * 14.0)  # Reduced from 7.0/16.0
+        creativity_penalty = min(10.0, creative_ratio * 22.0)  # Keep strong penalty
+
+        score = base + repetition_bonus + pattern_consistency_bonus + opening_consistency_bonus + quiet_bonus - diversity_penalty - creativity_penalty
         return self.clamp_score(score)
 
     def calculate_scores(self, moves: List[Dict[str, Any]], time_management_score: float = 0.0, skill_level: str = 'intermediate') -> PersonalityScores:

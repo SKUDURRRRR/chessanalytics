@@ -28,6 +28,7 @@ interface Game {
   time_control: string
   opening_family: string
   opening?: string | null
+  opening_normalized?: string | null
   moves: number | null
   rating: number | null
   opponent_rating: number | null
@@ -335,26 +336,13 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       const canonicalUserId = canonicalizeUserId(userId, platform)
       let query = supabase
         .from('games')
-        .select('id, user_id, platform, result, color, opening, opening_family, accuracy, opponent_rating, my_rating, time_control, played_at, created_at, provider_game_id, total_moves, opponent_name')
+        .select('id, user_id, platform, result, color, opening, opening_family, opening_normalized, accuracy, opponent_rating, my_rating, time_control, played_at, created_at, provider_game_id, total_moves, opponent_name')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
 
-      // Apply opening filter if provided
+      // Apply opening filter at database level using opening_normalized column
       if (openingFilter) {
-        const conditions: string[] = []
-        openingFilter.identifiers.openingFamilies.forEach(family => {
-          const formatted = escapeFilterValue(family)
-          conditions.push(`opening_family.eq.${formatted}`)
-        })
-        openingFilter.identifiers.openings.forEach(opening => {
-          const formatted = escapeFilterValue(opening)
-          conditions.push(`opening.eq.${formatted}`)
-        })
-
-        if (conditions.length > 0) {
-          // Combine conditions with or() using raw strings. Supabase requires each condition to be parentheses-safe.
-          query = query.or(conditions.join(','))
-        }
+        query = query.eq('opening_normalized', openingFilter.normalized)
       }
 
       // Apply opponent filter if provided
@@ -374,16 +362,9 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       }
 
       if (data) {
-        // Additional client-side filtering for normalized opening names
-        let filteredData = data
-        if (openingFilter) {
-          filteredData = data.filter(game => {
-            const gameOpening = normalizeOpeningName(game.opening_family || game.opening || 'Unknown')
-            return gameOpening === openingFilter.normalized
-          })
-        }
-
-        const mappedData = filteredData.map(mapGameRow)
+        // Database filtering is now done via opening_normalized column
+        // No client-side filtering needed - much more efficient!
+        const mappedData = data.map(mapGameRow)
         const isReset = reset || page === 1
         if (isReset) {
           setGames(mappedData)

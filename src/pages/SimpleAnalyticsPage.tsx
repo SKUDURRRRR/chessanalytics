@@ -5,8 +5,10 @@ import { SimpleAnalytics } from '../components/simple/SimpleAnalytics'
 import { MatchHistory } from '../components/simple/MatchHistory'
 import { AnalysisProgressBar } from '../components/simple/AnalysisProgressBar'
 import { ErrorBoundary } from '../components/ErrorBoundary'
-import { AutoImportService } from '../services/autoImportService'
+import { AutoImportService, LargeImportProgress, GameDiscovery, DateRange } from '../services/autoImportService'
 import { UnifiedAnalysisService } from '../services/unifiedAnalysisService'
+import { ProfileService } from '../services/profileService'
+import { supabase } from '../lib/supabase'
 // DatabaseDiagnosticsComponent is development-only, imported conditionally below
 import { EloDataDebugger } from '../components/debug/EloDataDebugger'
 import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
@@ -83,6 +85,29 @@ export default function SimpleAnalyticsPage() {
   const [showDebug, setShowDebug] = useState(false)
   const [analyzedGameIds, setAnalyzedGameIds] = useState<Set<string>>(new Set())
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const [hasGames, setHasGames] = useState(false)
+  const [gameCount, setGameCount] = useState(0)
+  const [largeImportProgress, setLargeImportProgress] = useState<LargeImportProgress | null>(null)
+  const [showDateRangePicker, setShowDateRangePicker] = useState(false)
+  const [dateRange, setDateRange] = useState<DateRange>({})
+  const [gameDiscovery, setGameDiscovery] = useState<GameDiscovery | null>(null)
+  const largeImportIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const lastImportProgressRef = useRef<number>(0)
+  const importStuckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const largeImportDismissTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // Auto-sync state management
+  const [autoSyncing, setAutoSyncing] = useState(false)
+  const [autoSyncProgress, setAutoSyncProgress] = useState<{
+    status: 'idle' | 'checking' | 'importing' | 'complete' | 'error'
+    message: string
+    importedGames: number
+  }>({
+    status: 'idle',
+    message: '',
+    importedGames: 0
+  })
+  const autoSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     // Check for route parameters first, then URL parameters
@@ -126,6 +151,46 @@ export default function SimpleAnalyticsPage() {
   useEffect(() => {
     checkApiHealth()
   }, [])
+
+  // Auto-sync effect - triggers when userId and platform are set
+  useEffect(() => {
+    if (userId && platform && !isLoading) {
+      // Small delay to ensure page is fully loaded
+      const timeoutId = setTimeout(() => {
+        checkAndSyncNewGames()
+      }, 1000)
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [userId, platform, isLoading])
+
+  useEffect(() => {
+    const checkGamesExist = async () => {
+      if (!userId || !platform) return
+      
+      try {
+        // Check if supabase client is available
+        if (!supabase || typeof supabase.from !== 'function') {
+          console.error('Supabase client not initialized')
+          return
+        }
+        
+        const { count } = await supabase
+          .from('games')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('platform', platform)
+        
+        const gameCount = count || 0
+        setGameCount(gameCount)
+        setHasGames(gameCount > 0)
+      } catch (error) {
+        console.error('Error checking games:', error)
+      }
+    }
+    
+    checkGamesExist()
+  }, [userId, platform, refreshKey])
 
   const checkApiHealth = async () => {
     console.log('🔍 Checking API health...')
@@ -196,6 +261,217 @@ export default function SimpleAnalyticsPage() {
       setImportError(message)
     } finally {
       setImporting(false)
+    }
+  }
+
+  const startLargeImport = async () => {
+    if (!userId) return
+    
+    try {
+      // Start import with default limit of 5000
+      // Skip discovery to avoid 404 errors - backend will handle duplicate detection
+      setLargeImportProgress({
+        status: 'importing',
+        importedGames: 0,
+        totalToImport: 5000,
+        progress: 0,
+        message: 'Starting import of up to 5,000 games...'
+      })
+      
+      await AutoImportService.importMoreGames(userId, platform, 5000, dateRange)
+      
+      // Start polling
+      startLargeImportPolling()
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      setLargeImportProgress({
+        status: 'error',
+        importedGames: 0,
+        totalToImport: 0,
+        progress: 0,
+        message: `Import failed: ${errorMessage}`
+      })
+    }
+  }
+
+  const startLargeImportPolling = () => {
+    if (largeImportIntervalRef.current) {
+      clearInterval(largeImportIntervalRef.current)
+    }
+    
+    // Reset progress tracking
+    lastImportProgressRef.current = 0
+    
+    // Start stuck detection timeout
+    const checkStuckImport = () => {
+      if (importStuckTimeoutRef.current) {
+        clearTimeout(importStuckTimeoutRef.current)
+      }
+      
+      importStuckTimeoutRef.current = setTimeout(() => {
+        console.error('Import appears stuck - no progress in 60 seconds')
+        setLargeImportProgress(prev => prev ? {
+          ...prev,
+          status: 'error',
+          message: 'Import timed out - no response from server in 60 seconds. Please refresh the page.'
+        } : null)
+        
+        if (largeImportIntervalRef.current) {
+          clearInterval(largeImportIntervalRef.current)
+          largeImportIntervalRef.current = null
+        }
+      }, 60000) // 60 seconds timeout (longer to allow checking empty months)
+    }
+    
+    checkStuckImport()
+    
+    largeImportIntervalRef.current = setInterval(async () => {
+      try {
+        const progress = await AutoImportService.getImportProgress(userId, platform)
+        setLargeImportProgress(progress)
+        
+        // Check if progress has changed
+        if (progress.importedGames !== lastImportProgressRef.current) {
+          lastImportProgressRef.current = progress.importedGames
+          // Reset timeout since we have progress
+          checkStuckImport()
+        }
+        
+        // Refresh analytics every 500 games
+        if (progress.triggerRefresh) {
+          handleRefresh()
+        }
+        
+        // Stop polling when complete
+        if (progress.status === 'completed' || progress.status === 'cancelled' || progress.status === 'error') {
+          if (largeImportIntervalRef.current) {
+            clearInterval(largeImportIntervalRef.current)
+            largeImportIntervalRef.current = null
+          }
+          if (importStuckTimeoutRef.current) {
+            clearTimeout(importStuckTimeoutRef.current)
+            importStuckTimeoutRef.current = null
+          }
+          
+          // Auto-dismiss completion messages after 3 seconds
+          if (progress.status === 'completed') {
+            largeImportDismissTimeoutRef.current = setTimeout(() => setLargeImportProgress(null), 3000)
+          }
+          
+          handleRefresh() // Final refresh
+          setHasGames(true) // Update hasGames state
+        }
+      } catch (error) {
+        console.error('Polling error:', error)
+      }
+    }, 2000)
+  }
+
+  const cancelLargeImport = async () => {
+    try {
+      await AutoImportService.cancelImport(userId, platform)
+      setLargeImportProgress(prev => prev ? { ...prev, message: 'Cancelling...' } : null)
+    } catch (error) {
+      console.error('Cancel error:', error)
+    }
+  }
+
+  const dismissImportProgress = () => {
+    if (largeImportDismissTimeoutRef.current) {
+      clearTimeout(largeImportDismissTimeoutRef.current)
+      largeImportDismissTimeoutRef.current = null
+    }
+    setLargeImportProgress(null)
+  }
+
+  const checkAndSyncNewGames = async () => {
+    if (!userId || !platform) return
+
+    // Create unique key for this user/platform combination
+    const syncKey = `${userId}-${platform}`
+    
+    // Check if auto-sync is already running to prevent duplicate simultaneous runs
+    if (autoSyncing) {
+      console.log('Auto-sync already in progress, skipping')
+      return
+    }
+
+    try {
+      console.log('Starting auto-sync for:', { userId, platform })
+      setAutoSyncing(true)
+      setAutoSyncProgress({
+        status: 'checking',
+        message: 'Checking for new games...',
+        importedGames: 0
+      })
+
+      // Check if user profile exists in database
+      const profileExists = await ProfileService.checkUserExists(userId, platform)
+      
+      if (!profileExists) {
+        console.log('No profile found, skipping auto-sync')
+        setAutoSyncing(false)
+        setAutoSyncProgress({ status: 'idle', message: '', importedGames: 0 })
+        return
+      }
+
+      // Update progress to importing
+      setAutoSyncProgress({
+        status: 'importing',
+        message: 'Importing new games...',
+        importedGames: 0
+      })
+
+      // Run smart import
+      const result = await AutoImportService.importSmartGames(userId, platform, (progress) => {
+        setAutoSyncProgress({
+          status: 'importing',
+          message: progress.message,
+          importedGames: progress.importedGames
+        })
+      })
+
+      // Check if we actually imported NEW games (not just updated existing ones)
+      // Use newGamesCount explicitly - if it's 0, we want 0 (not importedGames as fallback)
+      const actualNewGames = result.newGamesCount ?? 0
+      console.log('[Auto-sync] Import result:', { importedGames: result.importedGames, newGamesCount: result.newGamesCount, actualNewGames })
+      
+      if (result.success && actualNewGames > 0) {
+        // Show success message
+        setAutoSyncProgress({
+          status: 'complete',
+          message: `Imported ${actualNewGames} new games!`,
+          importedGames: actualNewGames
+        })
+        
+        // Auto-refresh analytics to show new data
+        handleRefresh()
+        
+        // Auto-dismiss after 4 seconds
+        autoSyncTimeoutRef.current = setTimeout(() => {
+          setAutoSyncing(false)
+          setAutoSyncProgress({ status: 'idle', message: '', importedGames: 0 })
+        }, 4000)
+      } else {
+        // No new games - silently dismiss without showing notification
+        console.log('[Auto-sync] No new games found, dismissing silently')
+        setAutoSyncing(false)
+        setAutoSyncProgress({ status: 'idle', message: '', importedGames: 0 })
+      }
+    } catch (error) {
+      console.error('Auto-sync error:', error)
+      setAutoSyncProgress({
+        status: 'error',
+        message: 'Auto-sync failed',
+        importedGames: 0
+      })
+      
+      // Auto-dismiss error after 3 seconds
+      autoSyncTimeoutRef.current = setTimeout(() => {
+        setAutoSyncing(false)
+        setAutoSyncProgress({ status: 'idle', message: '', importedGames: 0 })
+      }, 3000)
     }
   }
 
@@ -340,6 +616,18 @@ export default function SimpleAnalyticsPage() {
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current)
       }
+      if (largeImportIntervalRef.current) {
+        clearInterval(largeImportIntervalRef.current)
+      }
+      if (autoSyncTimeoutRef.current) {
+        clearTimeout(autoSyncTimeoutRef.current)
+      }
+      if (largeImportDismissTimeoutRef.current) {
+        clearTimeout(largeImportDismissTimeoutRef.current)
+      }
+      if (importStuckTimeoutRef.current) {
+        clearTimeout(importStuckTimeoutRef.current)
+      }
     }
   }, [])
 
@@ -388,13 +676,39 @@ export default function SimpleAnalyticsPage() {
 
               <div className="flex flex-col items-center gap-3 text-sm">
                 <div className="flex flex-wrap items-center justify-center gap-2">
-                  <button
-                    onClick={importGames}
-                    disabled={importing}
-                    className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {importing ? 'Importing…' : 'Import Games'}
-                  </button>
+                  {!hasGames ? (
+                    <button
+                      onClick={importGames}
+                      disabled={importing}
+                      className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {importing ? 'Importing…' : 'Import Games (100)'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        // If user has 5000+ games, show date picker for targeted import
+                        // Otherwise, directly import up to 5000 games
+                        if (gameCount >= 5000) {
+                          setShowDateRangePicker(true)
+                        } else {
+                          startLargeImport()
+                        }
+                      }}
+                      disabled={largeImportProgress?.status === 'importing'}
+                      className="inline-flex items-center gap-2 rounded-full border border-purple-400/40 bg-purple-500/10 px-4 py-2 font-medium text-purple-200 transition hover:border-purple-300/60 hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {largeImportProgress?.status === 'importing' ? (
+                        <>
+                          <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-purple-200" />
+                          Importing More Games...
+                        </>
+                      ) : (
+                        'Import More Games'
+                      )}
+                    </button>
+                  )}
+                  
                   <button
                     onClick={() => {
                       console.log('🔘 Analyze My Games button clicked!')
@@ -420,6 +734,107 @@ export default function SimpleAnalyticsPage() {
         )}
 
         <AnalysisProgressBar analyzing={analyzing} progress={analysisProgress} statusMessage={progressStatus} />
+
+        {/* Auto-Sync Progress Bar */}
+        {autoSyncing && (
+          <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-lg font-semibold text-emerald-200">
+                {autoSyncProgress.status === 'complete' ? 'Auto-Sync Complete' : 
+                 autoSyncProgress.status === 'error' ? 'Auto-Sync Error' : 'Auto-Sync Progress'}
+              </h4>
+              <div className="flex items-center gap-2">
+                {autoSyncProgress.status === 'importing' && (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-transparent" />
+                )}
+                {autoSyncProgress.status === 'complete' && autoSyncProgress.importedGames > 0 && (
+                  <div className="text-sm text-emerald-300">
+                    {autoSyncProgress.importedGames} games imported
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {autoSyncProgress.status === 'importing' && (
+              <div className="mb-2">
+                <div className="h-2 w-full rounded-full bg-emerald-900/30">
+                  <div className="h-2 rounded-full bg-emerald-400 transition-all duration-300 animate-pulse" />
+                </div>
+              </div>
+            )}
+            
+            <p className="text-sm text-emerald-200">{autoSyncProgress.message}</p>
+          </div>
+        )}
+
+        {/* Large Import Progress Display */}
+        {largeImportProgress && largeImportProgress.status !== 'idle' && (
+          <div className={`rounded-2xl border p-4 ${
+            largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
+              ? 'border-amber-400/40 bg-amber-500/10'
+              : largeImportProgress.status === 'error'
+              ? 'border-rose-400/40 bg-rose-500/10'
+              : 'border-purple-400/40 bg-purple-500/10'
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className={`text-lg font-semibold ${
+                largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
+                  ? 'text-amber-200'
+                  : largeImportProgress.status === 'error'
+                  ? 'text-rose-200'
+                  : 'text-purple-200'
+              }`}>
+                {largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
+                  ? 'Import Complete'
+                  : largeImportProgress.status === 'error'
+                  ? 'Import Error'
+                  : 'Import Progress'}
+              </h4>
+              <div className="flex items-center gap-2">
+                {largeImportProgress.status === 'importing' && (
+                  <>
+                    <div className="text-sm text-purple-300">
+                      {largeImportProgress.importedGames} / {largeImportProgress.totalToImport} games
+                    </div>
+                    <button
+                      onClick={cancelLargeImport}
+                      className="text-sm text-rose-300 hover:text-rose-200 transition"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+                {(largeImportProgress.status === 'completed' || largeImportProgress.status === 'error') && (
+                  <button
+                    onClick={dismissImportProgress}
+                    className="text-sm text-slate-300 hover:text-white transition"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            {largeImportProgress.status === 'importing' && (
+              <div className="mb-2">
+                <div className="h-2 w-full rounded-full bg-purple-900/30">
+                  <div
+                    className="h-2 rounded-full bg-purple-400 transition-all duration-300"
+                    style={{ width: `${largeImportProgress.progress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            
+            <p className={`text-sm ${
+              largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
+                ? 'text-amber-200'
+                : largeImportProgress.status === 'error'
+                ? 'text-rose-200'
+                : 'text-purple-200'
+            }`}>{largeImportProgress.message}</p>
+          </div>
+        )}
 
         <div className="mx-auto flex max-w-md items-center justify-between rounded-full border border-white/10 bg-white/[0.08] p-1 shadow-lg shadow-black/40">
           <button
@@ -512,6 +927,59 @@ export default function SimpleAnalyticsPage() {
           </div>
         )}
       </div>
+
+      {/* Date Range Picker Modal */}
+      {showDateRangePicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="rounded-2xl border border-white/10 bg-slate-900 p-6 max-w-md w-full mx-4 shadow-2xl">
+            <h3 className="text-xl font-semibold text-white mb-4">Select Date Range</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-slate-300 mb-2">From Date (optional)</label>
+                <input
+                  type="date"
+                  value={dateRange.fromDate || ''}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, fromDate: e.target.value }))}
+                  className="w-full rounded-lg border border-white/10 bg-slate-800 px-3 py-2 text-white focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400/40"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm text-slate-300 mb-2">To Date (optional)</label>
+                <input
+                  type="date"
+                  value={dateRange.toDate || ''}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, toDate: e.target.value }))}
+                  className="w-full rounded-lg border border-white/10 bg-slate-800 px-3 py-2 text-white focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400/40"
+                />
+              </div>
+              
+              <p className="text-xs text-slate-400">
+                Leave dates empty to import all available games (up to 5,000). You can import more games by selecting different date ranges after this import completes.
+              </p>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  startLargeImport()
+                  setShowDateRangePicker(false)
+                }}
+                className="flex-1 rounded-lg bg-purple-500 px-4 py-2 text-white font-medium hover:bg-purple-600 transition"
+              >
+                Start Import
+              </button>
+              <button
+                onClick={() => setShowDateRangePicker(false)}
+                className="flex-1 rounded-lg border border-white/10 px-4 py-2 text-slate-300 hover:bg-white/5 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

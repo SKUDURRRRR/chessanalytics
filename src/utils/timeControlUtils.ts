@@ -1,6 +1,6 @@
 // Time Control Utilities - Convert time formats to categories
 export interface TimeControlInfo {
-  category: 'bullet' | 'blitz' | 'rapid' | 'classical' | 'unknown'
+  category: 'bullet' | 'blitz' | 'rapid' | 'classical' | 'correspondence' | 'unknown'
   displayName: string
   totalTime: number // in seconds
 }
@@ -14,9 +14,18 @@ export function parseTimeControl(timeControl: string): TimeControlInfo {
     }
   }
 
+  // Handle correspondence games (Lichess uses "-" or specific formats like "1/1")
+  if (timeControl === '-' || timeControl.includes('/') || timeControl.toLowerCase().includes('correspondence') || timeControl.toLowerCase().includes('daily')) {
+    return {
+      category: 'correspondence',
+      displayName: 'Correspondence',
+      totalTime: 86400, // 1 day
+    }
+  }
+
   const lowerTimeControl = timeControl.toLowerCase()
-  if (['bullet', 'blitz', 'rapid', 'classical'].includes(lowerTimeControl)) {
-    const category = lowerTimeControl as 'bullet' | 'blitz' | 'rapid' | 'classical'
+  if (['bullet', 'blitz', 'rapid', 'classical', 'correspondence'].includes(lowerTimeControl)) {
+    const category = lowerTimeControl as 'bullet' | 'blitz' | 'rapid' | 'classical' | 'correspondence'
     const displayName = category.charAt(0).toUpperCase() + category.slice(1)
     
     // Set approximate total times for pre-categorized controls
@@ -33,6 +42,9 @@ export function parseTimeControl(timeControl: string): TimeControlInfo {
         break
       case 'classical':
         totalTime = 3600 // 60 minutes
+        break
+      case 'correspondence':
+        totalTime = 86400 // 1 day
         break
     }
     
@@ -147,6 +159,8 @@ export function getTimeControlIcon(category: string): string {
       return '⏱️'
     case 'classical':
       return '♔'
+    case 'correspondence':
+      return '✉️'
     default:
       return '❓'
   }
@@ -162,6 +176,8 @@ export function getTimeControlColor(category: string): string {
       return 'text-blue-600'
     case 'classical':
       return 'text-purple-600'
+    case 'correspondence':
+      return 'text-green-600'
     default:
       return 'text-gray-600'
   }

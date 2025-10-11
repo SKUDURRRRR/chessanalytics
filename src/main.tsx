@@ -1,7 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import { initializeMobileOptimizations } from './utils/mobilePerformance'
 
 // Suppress external script errors (browser extensions, etc.)
 window.addEventListener('error', (event: ErrorEvent) => {
@@ -34,9 +33,6 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
     }
   }
 })
-
-// Initialize mobile optimizations
-initializeMobileOptimizations()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
