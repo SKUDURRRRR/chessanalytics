@@ -1,0 +1,15 @@
+{
+    "name": "locked-project",
+    "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+    "workspaceFolder": "/workspace",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "remoteUser": "vscode",
+    "mounts": [],                           // no extra host mounts
+    "features": {},                         // keep empty unless you need one
+    "runArgs": [
+      "--cap-drop=ALL",                     // reduce container privileges
+      "--pids-limit=512",
+      "--memory=4g"
+    ],
+    "postCreateCommand": "git config --global init.defaultBranch main"
+  }  

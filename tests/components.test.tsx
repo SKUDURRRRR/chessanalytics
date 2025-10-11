@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import React from 'react'
 import { SimpleAnalytics } from '../src/components/simple/SimpleAnalytics'
 
@@ -94,53 +95,62 @@ vi.mock('../src/utils/playerStats', () => ({
   }),
 }))
 
-vi.mock('../src/utils/comprehensiveGameAnalytics', () => ({
-  getComprehensiveGameAnalytics: vi.fn().mockResolvedValue({
-    totalGames: 10,
-    winRate: 60.0,
-    drawRate: 20.0,
-    lossRate: 20.0,
-    highestElo: 1600,
-    lowestElo: 1400,
-    currentElo: 1500,
-    averageElo: 1500,
-    eloRange: 200,
-    timeControlWithHighestElo: 'Rapid',
-    timeControlStats: [],
-    openingStats: [],
-    openingColorStats: { white: [], black: [] },
-    colorStats: {
-      white: { games: 5, winRate: 60.0, averageElo: 1500 },
-      black: { games: 5, winRate: 60.0, averageElo: 1500 },
-    },
-    opponentStats: {
-      averageOpponentRating: 1500,
-      highestOpponentRating: 1600,
-      lowestOpponentRating: 1400,
-      ratingDifference: 0,
-    },
-    temporalStats: {
-      firstGame: '2024-01-01',
-      lastGame: '2024-01-31',
-      gamesThisMonth: 10,
-      gamesThisWeek: 2,
-      averageGamesPerDay: 0.32,
-    },
-    performanceTrends: {
-      recentWinRate: 60.0,
-      recentAverageElo: 1500,
-      eloTrend: 'stable',
-    },
-    gameLengthStats: {
-      averageGameLength: 40.0,
-      shortestGame: 20,
-      longestGame: 80,
-      quickVictories: 1,
-      longGames: 2,
-    },
-  }),
-  getWorstOpeningPerformance: vi.fn().mockResolvedValue([]),
-}))
+vi.mock('../src/utils/comprehensiveGameAnalytics', () => {
+  const defaultOpponentStats = {
+    averageOpponentRating: 1500,
+    highestOpponentRating: 1600,
+    lowestOpponentRating: 1400,
+    ratingDifference: 0,
+    highestOpponentGame: null,
+    highestOpponentWin: null,
+    toughestOpponents: [],
+    favoriteOpponents: [],
+    ratingRangeStats: [],
+  }
+
+  return {
+    getComprehensiveGameAnalytics: vi.fn().mockResolvedValue({
+      totalGames: 10,
+      winRate: 60.0,
+      drawRate: 20.0,
+      lossRate: 20.0,
+      highestElo: 1600,
+      lowestElo: 1400,
+      currentElo: 1500,
+      averageElo: 1500,
+      eloRange: 200,
+      timeControlWithHighestElo: 'Rapid',
+      timeControlStats: [],
+      openingStats: [],
+      openingColorStats: { white: [], black: [] },
+      colorStats: {
+        white: { games: 5, winRate: 60.0, averageElo: 1500 },
+        black: { games: 5, winRate: 60.0, averageElo: 1500 },
+      },
+      opponentStats: defaultOpponentStats,
+      temporalStats: {
+        firstGame: '2024-01-01',
+        lastGame: '2024-01-31',
+        gamesThisMonth: 10,
+        gamesThisWeek: 2,
+        averageGamesPerDay: 0.32,
+      },
+      performanceTrends: {
+        recentWinRate: 60.0,
+        recentAverageElo: 1500,
+        eloTrend: 'stable',
+      },
+      gameLengthStats: {
+        averageGameLength: 40.0,
+        shortestGame: 20,
+        longestGame: 80,
+        quickVictories: 1,
+        longGames: 2,
+      },
+    }),
+    getWorstOpeningPerformance: vi.fn().mockResolvedValue([]),
+  }
+})
 
 
 vi.mock('../src/utils/accuracyCalculator', () => ({
@@ -149,7 +159,13 @@ vi.mock('../src/utils/accuracyCalculator', () => ({
 
 describe('Components', () => {
   it('should render SimpleAnalytics component', async () => {
-    render(React.createElement(SimpleAnalytics, { userId: 'testuser', platform: 'lichess' }))
+    render(
+      React.createElement(
+        MemoryRouter,
+        { initialEntries: ['/'] },
+        React.createElement(SimpleAnalytics, { userId: 'testuser', platform: 'lichess' })
+      )
+    )
     
     // Wait for the component to load and check for actual content
     await screen.findByText('Analysis Statistics')
@@ -159,7 +175,13 @@ describe('Components', () => {
   })
 
   it('should handle loading state', () => {
-    render(React.createElement(SimpleAnalytics, { userId: 'testuser', platform: 'lichess' }))
+    render(
+      React.createElement(
+        MemoryRouter,
+        { initialEntries: ['/'] },
+        React.createElement(SimpleAnalytics, { userId: 'testuser', platform: 'lichess' })
+      )
+    )
     
     // Should show loading state initially
     expect(screen.getByText('Chess Analytics')).toBeInTheDocument()
@@ -168,11 +190,17 @@ describe('Components', () => {
   it('should call onOpeningClick when opening name is clicked', async () => {
     const mockOnOpeningClick = vi.fn()
     
-    render(React.createElement(SimpleAnalytics, { 
-      userId: 'testuser', 
-      platform: 'lichess',
-      onOpeningClick: mockOnOpeningClick
-    }))
+    render(
+      React.createElement(
+        MemoryRouter,
+        { initialEntries: ['/'] },
+        React.createElement(SimpleAnalytics, {
+          userId: 'testuser',
+          platform: 'lichess',
+          onOpeningClick: mockOnOpeningClick
+        })
+      )
+    )
     
     // Wait for component to load
     await new Promise(resolve => setTimeout(resolve, 100))
