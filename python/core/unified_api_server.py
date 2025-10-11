@@ -2679,6 +2679,13 @@ async def import_games(payload: BulkGameImportRequest):
 
     for game in payload.games:
         played_at = _normalize_played_at(game.played_at)
+        # Normalize opening name for efficient filtering
+        opening_normalized = (
+            game.opening_family or 
+            game.opening or 
+            'Unknown'
+        ).strip() if (game.opening_family or game.opening) else 'Unknown'
+        
         games_rows.append({
             "user_id": canonical_user_id,
             "platform": payload.platform,
@@ -2688,6 +2695,7 @@ async def import_games(payload: BulkGameImportRequest):
             "time_control": game.time_control,
             "opening": game.opening,
             "opening_family": game.opening_family,
+            "opening_normalized": opening_normalized,
             "opponent_rating": game.opponent_rating,
             "my_rating": game.my_rating,
             "total_moves": game.total_moves,  # Include total_moves from frontend parsing
@@ -3689,6 +3697,9 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         # Count moves
                         move_count = sum(1 for _ in game.mainline_moves())
                         
+                        opening_value = headers.get('Opening', 'Unknown')
+                        opening_normalized = opening_value.strip() if opening_value else 'Unknown'
+                        
                         game_record = {
                             "user_id": canonical_user_id,
                             "platform": request.platform,
@@ -3696,8 +3707,9 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                             "result": user_result,
                             "color": color,
                             "time_control": headers.get('TimeControl', 'unknown'),
-                            "opening": headers.get('Opening', 'Unknown'),
-                            "opening_family": headers.get('Opening', 'Unknown'),
+                            "opening": opening_value,
+                            "opening_family": opening_value,
+                            "opening_normalized": opening_normalized,
                             "opponent_rating": None,
                             "my_rating": None,
                             "total_moves": move_count,
