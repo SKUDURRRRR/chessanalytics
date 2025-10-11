@@ -267,8 +267,8 @@ export const mobileOptimizations = {
     // Only preload actual static assets that exist and are likely to be used
     // Vite handles module preloading automatically for bundled assets
     const staticAssets = [
-      { href: '/vite.svg', as: 'image' },
       // Add other static assets as needed, but avoid source files
+      // Only include assets that actually exist in the public directory
     ]
 
     staticAssets.forEach(({ href, as }) => {

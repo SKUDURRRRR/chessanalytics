@@ -18,6 +18,23 @@ window.addEventListener('error', (event: ErrorEvent) => {
   }
 })
 
+// Suppress unhandled promise rejections from browser extensions
+window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+  // Check if the error is related to browser extension message channels
+  if (event.reason && typeof event.reason === 'object' && event.reason.message) {
+    const message = event.reason.message.toLowerCase()
+    if (message.includes('listener indicated an asynchronous response') ||
+        message.includes('message channel closed') ||
+        message.includes('extension://') ||
+        message.includes('chrome-extension://') ||
+        message.includes('moz-extension://')) {
+      // Log suppressed promise rejections for observability
+      console.debug('Suppressed extension promise rejection:', event.reason.message)
+      event.preventDefault()
+    }
+  }
+})
+
 // Initialize mobile optimizations
 initializeMobileOptimizations()
 
