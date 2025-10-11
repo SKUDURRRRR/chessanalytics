@@ -1,22 +1,24 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
+import removeConsole from 'vite-plugin-remove-console'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Remove console.log, console.info, console.debug in production builds
+    // Keeps console.error and console.warn for debugging
+    removeConsole({
+      includes: ['log', 'info', 'debug'],
+    }),
+  ],
   server: {
     port: 3000,
     host: true,
   },
   build: {
     target: 'es2015',
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true,
-      },
-    },
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks: {
