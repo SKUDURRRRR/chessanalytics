@@ -2,7 +2,7 @@ Write-Host "Starting Chess Analysis Backend Server..." -ForegroundColor Green
 Write-Host ""
 
 # Change to the python directory where the core module is located
-Set-Location python
+Set-Location "python"
 
 Write-Host "Current directory: $(Get-Location)" -ForegroundColor Cyan
 Write-Host "Checking Python dependencies..." -ForegroundColor Yellow
