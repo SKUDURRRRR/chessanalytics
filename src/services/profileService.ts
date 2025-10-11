@@ -83,6 +83,32 @@ export class ProfileService {
     }
   }
 
+  // Check if user profile exists
+  static async checkUserExists(
+    userId: string,
+    platform: 'lichess' | 'chess.com'
+  ): Promise<boolean> {
+    const canonicalUserId = normalizeUserId(userId, platform)
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('user_id', canonicalUserId)
+        .eq('platform', platform)
+        .maybeSingle()
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error checking user exists:', error)
+        return false
+      }
+
+      return !!data
+    } catch (error) {
+      console.error('Error checking user exists:', error)
+      return false
+    }
+  }
+
   // Update last accessed time
   static async updateLastAccessed(
     userId: string,

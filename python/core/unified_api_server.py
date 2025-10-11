@@ -179,6 +179,10 @@ def _normalize_analysis_type(requested: Optional[str], *, quiet: bool = False) -
 analysis_progress = {}
 ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 
+# Track import progress for large imports
+large_import_progress = {}
+large_import_cancel_flags = {}
+
 # ============================================================================
 # UNIFIED PYDANTIC MODELS
 # ============================================================================
@@ -1846,11 +1850,18 @@ def _parse_lichess_pgn(pgn_text: str, user_id: str) -> List[Dict[str, Any]]:
         print(f"Error parsing Lichess PGN: {e}")
         return []
 
-async def _fetch_games_from_platform(user_id: str, platform: str, limit: int = 100) -> List[Dict[str, Any]]:
-    """Fetch games from external platform (Lichess or Chess.com)"""
+async def _fetch_games_from_platform(user_id: str, platform: str, limit: int = 100, until_timestamp: int = None) -> List[Dict[str, Any]]:
+    """Fetch games from external platform (Lichess or Chess.com)
+    
+    Args:
+        user_id: Username on the platform
+        platform: 'lichess' or 'chess.com'
+        limit: Maximum number of games to fetch
+        until_timestamp: For Lichess, fetch games played before this timestamp (milliseconds since epoch)
+    """
     try:
         if platform == 'lichess':
-            return await _fetch_lichess_games(user_id, limit)
+            return await _fetch_lichess_games(user_id, limit, until_timestamp)
         elif platform == 'chess.com':
             return await _fetch_chesscom_games(user_id, limit)
         else:
@@ -1859,8 +1870,14 @@ async def _fetch_games_from_platform(user_id: str, platform: str, limit: int = 1
         print(f"Error fetching games from {platform}: {e}")
         return []
 
-async def _fetch_lichess_games(user_id: str, limit: int) -> List[Dict[str, Any]]:
-    """Fetch games from Lichess API"""
+async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: int = None) -> List[Dict[str, Any]]:
+    """Fetch games from Lichess API
+    
+    Args:
+        user_id: Lichess username
+        limit: Maximum number of games
+        until_timestamp: Fetch games before this timestamp (milliseconds since epoch)
+    """
     try:
         import aiohttp
         async with aiohttp.ClientSession() as session:
@@ -1868,6 +1885,10 @@ async def _fetch_lichess_games(user_id: str, limit: int) -> List[Dict[str, Any]]
             params = {
                 'max': limit
             }
+            
+            # Add until parameter to fetch older games
+            if until_timestamp:
+                params['until'] = until_timestamp
             
             async with session.get(url, params=params) as response:
                 if response.status == 200:
@@ -2498,6 +2519,254 @@ async def import_games(payload: BulkGameImportRequest):
         message=None  # Will be set by the calling function
     )
 
+
+# ============================================================================
+# LARGE IMPORT ENDPOINTS (5000 games)
+# ============================================================================
+
+@app.post("/api/v1/discover-games")
+async def discover_games(request: Dict[str, Any]):
+    """Discover total games available for a user with optional date range"""
+    user_id = request.get('user_id')
+    platform = request.get('platform')
+    from_date = request.get('from_date')  # Optional ISO date string
+    to_date = request.get('to_date')      # Optional ISO date string
+    
+    if not user_id or not platform:
+        raise HTTPException(status_code=400, detail="user_id and platform are required")
+    
+    canonical_user_id = _canonical_user_id(user_id, platform)
+    db_client = supabase_service or supabase
+    
+    if not db_client:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    try:
+        # Get count from database
+        query = db_client.table('games').select('provider_game_id', count='exact')
+        query = query.eq('user_id', canonical_user_id).eq('platform', platform)
+        
+        if from_date:
+            query = query.gte('played_at', from_date)
+        if to_date:
+            query = query.lte('played_at', to_date)
+        
+        result = query.execute()
+        existing_count = len(result.data or [])
+        
+        # For simplicity, estimate total available as existing + potential 5000 more
+        # In production, this could query platform APIs for exact counts
+        total_available = existing_count + 5000
+        
+        import_limit = min(total_available - existing_count, 5000)
+        
+        return {
+            "success": True,
+            "total_available": total_available,
+            "already_imported": existing_count,
+            "can_import": max(0, import_limit),
+            "capped_at_5000": import_limit >= 5000
+        }
+    except Exception as e:
+        print(f"Error in discover_games: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/import-more-games")
+async def import_more_games(request: Dict[str, Any]):
+    """Import up to 5000 games with progress tracking"""
+    user_id = request.get('user_id')
+    platform = request.get('platform')
+    limit = min(request.get('limit', 5000), 5000)
+    from_date = request.get('from_date')
+    to_date = request.get('to_date')
+    
+    if not user_id or not platform:
+        raise HTTPException(status_code=400, detail="user_id and platform are required")
+    
+    canonical_user_id = _canonical_user_id(user_id, platform)
+    key = f"{canonical_user_id}_{platform}"
+    
+    # Check if import already running
+    if key in large_import_progress and large_import_progress[key].get('status') == 'importing':
+        raise HTTPException(status_code=409, detail="Import already in progress")
+    
+    # Initialize progress tracking
+    large_import_progress[key] = {
+        "status": "importing",
+        "imported_games": 0,
+        "total_to_import": limit,
+        "progress_percentage": 0,
+        "current_phase": "starting",
+        "message": f"Starting import of up to {limit} games..."
+    }
+    large_import_cancel_flags[key] = False
+    
+    # Start background task
+    asyncio.create_task(_perform_large_import(user_id, platform, limit, from_date, to_date))
+    
+    return {"success": True, "message": "Import started", "import_key": key}
+
+
+async def _perform_large_import(user_id: str, platform: str, limit: int, from_date: str = None, to_date: str = None):
+    """Background task to import games in batches"""
+    canonical_user_id = _canonical_user_id(user_id, platform)
+    key = f"{canonical_user_id}_{platform}"
+    batch_size = 100
+    total_imported = 0
+    until_timestamp = None  # For Lichess pagination
+    
+    try:
+        # Get existing game IDs
+        existing_games = supabase_service.table('games').select('provider_game_id').eq(
+            'user_id', canonical_user_id
+        ).eq('platform', platform).execute()
+        existing_ids = {g.get('provider_game_id') for g in (existing_games.data or [])}
+        
+        print(f"[large_import] Starting import for {user_id}, existing games: {len(existing_ids)}")
+        
+        # Import in batches
+        consecutive_no_new_games = 0
+        max_consecutive_no_new = 3  # Stop if we get 3 batches with no new games
+        
+        for batch_start in range(0, limit, batch_size):
+            # Check cancel flag
+            if large_import_cancel_flags.get(key, False):
+                large_import_progress[key].update({
+                    "status": "cancelled",
+                    "message": f"Import cancelled. {total_imported} games imported."
+                })
+                print(f"[large_import] Import cancelled by user")
+                return
+            
+            # Fetch batch with pagination support
+            batch_limit = min(batch_size, limit - batch_start)
+            games_data = await _fetch_games_from_platform(user_id, platform, batch_limit, until_timestamp)
+            
+            if not games_data:
+                print(f"[large_import] No more games to fetch, stopping")
+                break
+            
+            # Filter new games
+            new_games = [g for g in games_data if g.get('id') not in existing_ids]
+            print(f"[large_import] Batch {batch_start//batch_size + 1}: fetched {len(games_data)}, new: {len(new_games)}")
+            
+            # Track consecutive batches with no new games
+            if len(new_games) == 0:
+                consecutive_no_new_games += 1
+                if consecutive_no_new_games >= max_consecutive_no_new:
+                    print(f"[large_import] No new games in {max_consecutive_no_new} consecutive batches, stopping")
+                    break
+            else:
+                consecutive_no_new_games = 0  # Reset counter
+            
+            # Update until_timestamp for next Lichess batch (get oldest game's timestamp)
+            if platform == 'lichess' and games_data:
+                # Find the oldest game's timestamp from this batch
+                for game in reversed(games_data):
+                    played_at = game.get('played_at')
+                    if played_at:
+                        try:
+                            from datetime import datetime
+                            if isinstance(played_at, str):
+                                dt = datetime.fromisoformat(played_at.replace('Z', '+00:00'))
+                                until_timestamp = int(dt.timestamp() * 1000)  # Convert to milliseconds
+                            break
+                        except Exception as e:
+                            print(f"[large_import] Error parsing timestamp: {e}")
+            
+            if new_games:
+                # Import batch
+                parsed_games = []
+                for game in new_games:
+                    parsed_games.append({
+                        'provider_game_id': game.get('id'),
+                        'pgn': game.get('pgn'),
+                        'result': game.get('result'),
+                        'color': game.get('color'),
+                        'time_control': game.get('time_control'),
+                        'opening': game.get('opening'),
+                        'opening_family': game.get('opening_family'),
+                        'opponent_rating': game.get('opponent_rating'),
+                        'my_rating': game.get('my_rating'),
+                        'total_moves': _count_moves_in_pgn(game.get('pgn', '')),
+                        'opponent_name': _extract_opponent_name_from_pgn(game.get('pgn', ''), game.get('color')),
+                        'played_at': game.get('played_at')
+                    })
+                
+                bulk_request = BulkGameImportRequest(
+                    user_id=user_id,
+                    platform=platform,
+                    games=parsed_games
+                )
+                await import_games(bulk_request)
+                
+                total_imported += len(new_games)
+                existing_ids.update({g.get('id') for g in new_games})
+                print(f"[large_import] Imported {len(new_games)} games, total: {total_imported}")
+            
+            # Update progress
+            progress_pct = min(100, int((total_imported / limit) * 100)) if limit > 0 else 100
+            trigger_refresh = total_imported % 500 == 0 and total_imported > 0
+            
+            large_import_progress[key].update({
+                "imported_games": total_imported,
+                "progress_percentage": progress_pct,
+                "current_phase": "importing",
+                "message": f"Imported {total_imported} games...",
+                "trigger_refresh": trigger_refresh
+            })
+            
+            # Small delay to prevent overwhelming the system
+            await asyncio.sleep(0.1)
+        
+        # Complete
+        large_import_progress[key].update({
+            "status": "completed",
+            "progress_percentage": 100,
+            "message": f"Import complete! {total_imported} games imported.",
+            "trigger_refresh": True
+        })
+        print(f"[large_import] Import completed successfully: {total_imported} games")
+        
+    except Exception as e:
+        print(f"[large_import] Error during import: {e}")
+        large_import_progress[key].update({
+            "status": "error",
+            "message": f"Import failed: {str(e)}"
+        })
+
+
+@app.get("/api/v1/import-progress/{user_id}/{platform}")
+async def get_import_progress(user_id: str, platform: str):
+    """Get progress of ongoing import"""
+    canonical_user_id = _canonical_user_id(user_id, platform)
+    key = f"{canonical_user_id}_{platform}"
+    
+    return large_import_progress.get(key, {
+        "status": "idle",
+        "imported_games": 0,
+        "total_to_import": 0,
+        "progress_percentage": 0,
+        "message": "No import in progress"
+    })
+
+
+@app.post("/api/v1/cancel-import")
+async def cancel_import(request: Dict[str, Any]):
+    """Cancel ongoing import"""
+    user_id = request.get('user_id')
+    platform = request.get('platform')
+    
+    if not user_id or not platform:
+        raise HTTPException(status_code=400, detail="user_id and platform are required")
+    
+    canonical_user_id = _canonical_user_id(user_id, platform)
+    key = f"{canonical_user_id}_{platform}"
+    
+    large_import_cancel_flags[key] = True
+    
+    return {"success": True, "message": "Cancel requested"}
 
 
 @app.get("/debug/db-state/{user_id}/{platform}")

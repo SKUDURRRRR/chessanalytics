@@ -5,6 +5,7 @@ import { getPlayerStats } from '../../utils/playerStats'
 import {
   getComprehensiveGameAnalytics,
   getWorstOpeningPerformance,
+  getMostPlayedOpeningForTimeControl,
   type PerformanceTrendSummary
 } from '../../utils/comprehensiveGameAnalytics'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
@@ -40,6 +41,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   const [refreshing, setRefreshing] = useState(false)
   const [selectedTimeControl, setSelectedTimeControl] = useState<string | null>(null)
   const [eloGraphGamesUsed, setEloGraphGamesUsed] = useState<number>(0)
+  const [mostPlayedOpening, setMostPlayedOpening] = useState<{ opening: string; games: number } | null>(null)
   const isLoadingRef = useRef(false)
   const activePerformance = useMemo(() => {
     if (!comprehensiveData?.performanceTrends) {
@@ -197,6 +199,30 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     }
     loadData()
   }, [userId, platform, fromDate, toDate, loadData])
+
+  // Load most played opening when time control changes
+  useEffect(() => {
+    const loadMostPlayedOpening = async () => {
+      if (!userId || !platform || !selectedTimeControl) {
+        setMostPlayedOpening(null)
+        return
+      }
+      
+      try {
+        const result = await getMostPlayedOpeningForTimeControl(
+          userId,
+          platform as 'lichess' | 'chess.com',
+          selectedTimeControl
+        )
+        setMostPlayedOpening(result)
+      } catch (error) {
+        console.error('Error loading most played opening:', error)
+        setMostPlayedOpening(null)
+      }
+    }
+    
+    loadMostPlayedOpening()
+  }, [userId, platform, selectedTimeControl])
 
   if (loading) {
     return (
@@ -385,13 +411,13 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
         <div className={cardClass}>
           <h3 className="text-xs uppercase tracking-wide text-slate-300">Highest Rating</h3>
-          <div className="mt-3 text-2xl font-semibold text-sky-300">{comprehensiveData?.highestElo || safeData.current_rating || 'N/A'}</div>
+          <div className="mt-3 text-2xl font-semibold text-sky-300">{comprehensiveData?.highestElo || 'N/A'}</div>
         </div>
 
         <div className={cardClass}>
-          <h3 className="text-xs uppercase tracking-wide text-slate-300">Time Control (Highest ELO)</h3>
+          <h3 className="text-xs uppercase tracking-wide text-slate-300">Time Control</h3>
           <div className="mt-3 text-2xl font-semibold text-amber-300">
-            {safeData.most_played_time_control ? getTimeControlCategory(safeData.most_played_time_control) : 'N/A'}
+            {comprehensiveData?.timeControlWithHighestElo ? getTimeControlCategory(comprehensiveData.timeControlWithHighestElo) : safeData.most_played_time_control ? getTimeControlCategory(safeData.most_played_time_control) : 'Unknown'}
           </div>
         </div>
       </div>
@@ -748,6 +774,23 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
                       : 'No data'}
                   </div>
+                </div>
+                <div className={subtleCardClass}>
+                  <span className="text-xs uppercase tracking-wide text-slate-400">Most Played Opening</span>
+                  {mostPlayedOpening ? (
+                    <>
+                      <div className="text-sm font-semibold text-purple-300 mt-2 break-words leading-tight">
+                        {normalizeOpeningName(mostPlayedOpening.opening)}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">
+                        {mostPlayedOpening.games} games • {selectedTimeControl || 'All'}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm font-semibold text-slate-500 mt-2">
+                      No data
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="lg:col-span-2 min-w-0">
