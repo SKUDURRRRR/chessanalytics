@@ -153,6 +153,59 @@ export interface GameAnalytics {
 }
 
 /**
+ * Get the most played opening for a specific time control
+ */
+export async function getMostPlayedOpeningForTimeControl(
+  userId: string,
+  platform: 'lichess' | 'chess.com',
+  timeControl: string
+): Promise<{ opening: string; games: number } | null> {
+  try {
+    const canonicalUserId = canonicalizeUserId(userId, platform)
+    
+    // Fetch all games for the specific time control
+    const { data: games, error } = await supabase
+      .from('games')
+      .select('opening, opening_family')
+      .eq('user_id', canonicalUserId)
+      .eq('platform', platform)
+      .eq('time_control', timeControl)
+      .not('opening', 'is', null)
+    
+    if (error || !games || games.length === 0) {
+      return null
+    }
+    
+    // Count openings
+    const openingCounts = new Map<string, number>()
+    
+    for (const game of games) {
+      const openingName = getOpeningNameWithFallback(
+        game.opening,
+        game.opening_family,
+        null
+      )
+      const count = openingCounts.get(openingName) || 0
+      openingCounts.set(openingName, count + 1)
+    }
+    
+    // Find the most played opening
+    let mostPlayed: { opening: string; games: number } | null = null
+    
+    for (const [opening, games] of openingCounts.entries()) {
+      if (!mostPlayed || games > mostPlayed.games) {
+        mostPlayed = { opening, games }
+      }
+    }
+    
+    return mostPlayed
+  } catch (error) {
+    console.error('Error getting most played opening for time control:', error)
+    return null
+  }
+}
+
+/**
  * Get comprehensive game analytics with single queries
  * All data comes from the games table - no analysis required!
  */
@@ -268,17 +321,69 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
   const lossRate = totalGames > 0 ? (losses / totalGames) * 100 : 0
   
   // ELO Statistics
-  const elos = games.map(g => g.my_rating).filter(r => r !== null)
+  // Only filter out games with 'null' string literal (actual corruption)
+  // Keep everything else including "-" which may be correspondence games
+  const validGamesForElo = games.filter(g => 
+    g.time_control !== 'null' &&
+    g.my_rating !== null &&
+    g.my_rating > 0 &&
+    g.my_rating < 4000  // Sanity check for valid ratings
+  )
+  
+  const elos = validGamesForElo.map(g => g.my_rating)
   const highestElo = elos.length > 0 ? Math.max(...elos) : null
   const lowestElo = elos.length > 0 ? Math.min(...elos) : null
   const currentElo = games[0]?.my_rating || null
   const averageElo = elos.length > 0 ? elos.reduce((a, b) => a + b, 0) / elos.length : null
   const eloRange = highestElo && lowestElo ? highestElo - lowestElo : null
   
+  // Debug: Log highest ELO calculation and check for correspondence games
+  const correspondenceGames = validGamesForElo.filter(g => {
+    const tc = g.time_control?.toLowerCase() || ''
+    return tc.includes('/') || tc === '' || tc === '-' || tc.includes('correspondence') || tc.includes('days')
+  })
   
-  // Find the time control where highest ELO was achieved
-  const highestEloGame = games.find(g => g.my_rating === highestElo)
+  const highRatingGames = validGamesForElo
+    .filter(g => g.my_rating >= 1600)
+    .sort((a, b) => b.my_rating - a.my_rating)
+    .slice(0, 10)  // Show top 10 instead of 5
+    .map(g => ({
+      rating: g.my_rating,
+      timeControl: g.time_control,
+      playedAt: g.played_at?.substring(0, 10),  // Just date
+      gameId: g.provider_game_id,
+      opponentRating: g.opponent_rating
+    }))
+  
+  console.log('ELO Statistics Debug:', {
+    totalGames: games.length,
+    validGamesForElo: validGamesForElo.length,
+    filteredOut: games.length - validGamesForElo.length,
+    totalElos: elos.length,
+    highestElo,
+    lowestElo,
+    currentElo,
+    averageElo,
+    correspondenceGamesFound: correspondenceGames.length,
+    dashTimeControlGames: games.filter(g => g.time_control === '-').length,
+    top10HighRatingGames: highRatingGames,
+    sampleElos: elos.slice(0, 10)
+  })
+  
+  // Find the time control where highest ELO was achieved (from valid games only)
+  const highestEloGame = validGamesForElo.find(g => g.my_rating === highestElo)
   const timeControlWithHighestElo = highestEloGame?.time_control || null
+  
+  // Debug: Log highest ELO game details
+  if (highestEloGame) {
+    console.log('Highest ELO Game Found:', {
+      rating: highestEloGame.my_rating,
+      timeControl: highestEloGame.time_control,
+      playedAt: highestEloGame.played_at,
+      gameId: highestEloGame.provider_game_id,
+      opponentRating: highestEloGame.opponent_rating
+    })
+  }
   
   // Time Control Analysis
   const timeControlStats = calculateTimeControlStats(games)
