@@ -163,23 +163,35 @@ export async function getMostPlayedOpeningForTimeControl(
   try {
     const canonicalUserId = canonicalizeUserId(userId, platform)
     
-    // Fetch all games for the specific time control
+    // Import time control utility to filter by category
+    const { getTimeControlCategory } = await import('./timeControlUtils')
+    
+    // Fetch all games with time_control and opening data
     const { data: games, error } = await supabase
       .from('games')
-      .select('opening, opening_family')
+      .select('opening, opening_family, time_control')
       .eq('user_id', canonicalUserId)
       .eq('platform', platform)
-      .eq('time_control', timeControl)
       .not('opening', 'is', null)
+      .not('time_control', 'is', null)
     
     if (error || !games || games.length === 0) {
+      return null
+    }
+    
+    // Filter games by time control category (e.g., "Blitz" matches "3+0", "5+0", etc.)
+    const filteredGames = games.filter(game => 
+      getTimeControlCategory(game.time_control) === timeControl
+    )
+    
+    if (filteredGames.length === 0) {
       return null
     }
     
     // Count openings
     const openingCounts = new Map<string, number>()
     
-    for (const game of games) {
+    for (const game of filteredGames) {
       const openingName = getOpeningNameWithFallback(
         game.opening,
         game.opening_family,

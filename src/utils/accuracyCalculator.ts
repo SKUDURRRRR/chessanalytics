@@ -123,6 +123,41 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
 }
 
 /**
+ * Calculate opening accuracy using a more conservative approach that matches Chess.com
+ * This provides realistic accuracy scores that don't inflate to 100%
+ */
+export function calculateOpeningAccuracyChessCom(moves: MoveAnalysis[]): number {
+  if (!moves || moves.length === 0) return 0
+
+  let totalAccuracy = 0
+  
+  for (const move of moves) {
+    const centipawnLoss = move.centipawn_loss || 0
+    
+    // Much more conservative accuracy calculation to avoid 100% scores
+    // Only truly perfect moves get 100%, everything else is penalized more heavily
+    let moveAccuracy = 100.0
+    if (centipawnLoss <= 2) {
+      moveAccuracy = 100.0  // Only truly perfect moves (0-2 CPL)
+    } else if (centipawnLoss <= 8) {
+      moveAccuracy = 90.0 - (centipawnLoss - 2) * 2.5  // 90% to 75%
+    } else if (centipawnLoss <= 20) {
+      moveAccuracy = 75.0 - (centipawnLoss - 8) * 1.5  // 75% to 57%
+    } else if (centipawnLoss <= 40) {
+      moveAccuracy = 57.0 - (centipawnLoss - 20) * 1.0  // 57% to 37%
+    } else if (centipawnLoss <= 80) {
+      moveAccuracy = 37.0 - (centipawnLoss - 40) * 0.5  // 37% to 17%
+    } else {
+      moveAccuracy = Math.max(5.0, 17.0 - (centipawnLoss - 80) * 0.1)  // 17% to 5%
+    }
+    
+    totalAccuracy += moveAccuracy
+  }
+  
+  return Math.round((totalAccuracy / moves.length) * 10) / 10
+}
+
+/**
  * Calculate accuracy from moves_analysis array in game data
  */
 export function calculateAccuracyFromGameData(gameData: any, playerRating?: number): number {

@@ -14,6 +14,7 @@ export interface ImportResult {
   success: boolean
   message: string
   importedGames?: number
+  newGamesCount?: number
 }
 
 export interface UserValidation {
@@ -235,6 +236,7 @@ export class AutoImportService {
         success: true,
         message: returnMessage,
         importedGames: data.imported_games || 0,
+        newGamesCount: data.new_games_count,
       }
     } catch (error) {
       console.error('Error importing games:', error)

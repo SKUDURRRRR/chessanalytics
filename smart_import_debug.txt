@@ -1,0 +1,3 @@
+[Smart import] Existing game IDs count: 0
+[Smart import] Queried for user_id='testuser', platform='chess.com'
+[Smart import] WARNING: No existing games found in database!

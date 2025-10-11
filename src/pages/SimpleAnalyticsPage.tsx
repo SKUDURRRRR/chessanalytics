@@ -92,6 +92,9 @@ export default function SimpleAnalyticsPage() {
   const [dateRange, setDateRange] = useState<DateRange>({})
   const [gameDiscovery, setGameDiscovery] = useState<GameDiscovery | null>(null)
   const largeImportIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const lastImportProgressRef = useRef<number>(0)
+  const importStuckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const largeImportDismissTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
   // Auto-sync state management
   const [autoSyncing, setAutoSyncing] = useState(false)
@@ -104,7 +107,6 @@ export default function SimpleAnalyticsPage() {
     message: '',
     importedGames: 0
   })
-  const autoSyncRunRef = useRef<Set<string>>(new Set())
   const autoSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
@@ -298,10 +300,43 @@ export default function SimpleAnalyticsPage() {
       clearInterval(largeImportIntervalRef.current)
     }
     
+    // Reset progress tracking
+    lastImportProgressRef.current = 0
+    
+    // Start stuck detection timeout
+    const checkStuckImport = () => {
+      if (importStuckTimeoutRef.current) {
+        clearTimeout(importStuckTimeoutRef.current)
+      }
+      
+      importStuckTimeoutRef.current = setTimeout(() => {
+        console.error('Import appears stuck - no progress in 60 seconds')
+        setLargeImportProgress(prev => prev ? {
+          ...prev,
+          status: 'error',
+          message: 'Import timed out - no response from server in 60 seconds. Please refresh the page.'
+        } : null)
+        
+        if (largeImportIntervalRef.current) {
+          clearInterval(largeImportIntervalRef.current)
+          largeImportIntervalRef.current = null
+        }
+      }, 60000) // 60 seconds timeout (longer to allow checking empty months)
+    }
+    
+    checkStuckImport()
+    
     largeImportIntervalRef.current = setInterval(async () => {
       try {
         const progress = await AutoImportService.getImportProgress(userId, platform)
         setLargeImportProgress(progress)
+        
+        // Check if progress has changed
+        if (progress.importedGames !== lastImportProgressRef.current) {
+          lastImportProgressRef.current = progress.importedGames
+          // Reset timeout since we have progress
+          checkStuckImport()
+        }
         
         // Refresh analytics every 500 games
         if (progress.triggerRefresh) {
@@ -314,6 +349,16 @@ export default function SimpleAnalyticsPage() {
             clearInterval(largeImportIntervalRef.current)
             largeImportIntervalRef.current = null
           }
+          if (importStuckTimeoutRef.current) {
+            clearTimeout(importStuckTimeoutRef.current)
+            importStuckTimeoutRef.current = null
+          }
+          
+          // Auto-dismiss completion messages after 3 seconds
+          if (progress.status === 'completed') {
+            largeImportDismissTimeoutRef.current = setTimeout(() => setLargeImportProgress(null), 3000)
+          }
+          
           handleRefresh() // Final refresh
           setHasGames(true) // Update hasGames state
         }
@@ -332,15 +377,23 @@ export default function SimpleAnalyticsPage() {
     }
   }
 
+  const dismissImportProgress = () => {
+    if (largeImportDismissTimeoutRef.current) {
+      clearTimeout(largeImportDismissTimeoutRef.current)
+      largeImportDismissTimeoutRef.current = null
+    }
+    setLargeImportProgress(null)
+  }
+
   const checkAndSyncNewGames = async () => {
     if (!userId || !platform) return
 
     // Create unique key for this user/platform combination
     const syncKey = `${userId}-${platform}`
     
-    // Check if we've already run auto-sync for this user in this session
-    if (autoSyncRunRef.current.has(syncKey)) {
-      console.log('Auto-sync already run for this user in this session, skipping')
+    // Check if auto-sync is already running to prevent duplicate simultaneous runs
+    if (autoSyncing) {
+      console.log('Auto-sync already in progress, skipping')
       return
     }
 
@@ -363,9 +416,6 @@ export default function SimpleAnalyticsPage() {
         return
       }
 
-      // Mark this user as having auto-sync run
-      autoSyncRunRef.current.add(syncKey)
-
       // Update progress to importing
       setAutoSyncProgress({
         status: 'importing',
@@ -382,12 +432,17 @@ export default function SimpleAnalyticsPage() {
         })
       })
 
-      if (result.success && result.importedGames > 0) {
+      // Check if we actually imported NEW games (not just updated existing ones)
+      // Use newGamesCount explicitly - if it's 0, we want 0 (not importedGames as fallback)
+      const actualNewGames = result.newGamesCount ?? 0
+      console.log('[Auto-sync] Import result:', { importedGames: result.importedGames, newGamesCount: result.newGamesCount, actualNewGames })
+      
+      if (result.success && actualNewGames > 0) {
         // Show success message
         setAutoSyncProgress({
           status: 'complete',
-          message: `Imported ${result.importedGames} new games!`,
-          importedGames: result.importedGames
+          message: `Imported ${actualNewGames} new games!`,
+          importedGames: actualNewGames
         })
         
         // Auto-refresh analytics to show new data
@@ -399,18 +454,10 @@ export default function SimpleAnalyticsPage() {
           setAutoSyncProgress({ status: 'idle', message: '', importedGames: 0 })
         }, 4000)
       } else {
-        // No new games or import failed
-        setAutoSyncProgress({
-          status: 'complete',
-          message: result.message || 'No new games found',
-          importedGames: 0
-        })
-        
-        // Auto-dismiss after 2 seconds for no new games
-        autoSyncTimeoutRef.current = setTimeout(() => {
-          setAutoSyncing(false)
-          setAutoSyncProgress({ status: 'idle', message: '', importedGames: 0 })
-        }, 2000)
+        // No new games - silently dismiss without showing notification
+        console.log('[Auto-sync] No new games found, dismissing silently')
+        setAutoSyncing(false)
+        setAutoSyncProgress({ status: 'idle', message: '', importedGames: 0 })
       }
     } catch (error) {
       console.error('Auto-sync error:', error)
@@ -575,6 +622,12 @@ export default function SimpleAnalyticsPage() {
       if (autoSyncTimeoutRef.current) {
         clearTimeout(autoSyncTimeoutRef.current)
       }
+      if (largeImportDismissTimeoutRef.current) {
+        clearTimeout(largeImportDismissTimeoutRef.current)
+      }
+      if (importStuckTimeoutRef.current) {
+        clearTimeout(importStuckTimeoutRef.current)
+      }
     }
   }, [])
 
@@ -715,37 +768,71 @@ export default function SimpleAnalyticsPage() {
         )}
 
         {/* Large Import Progress Display */}
-        {largeImportProgress && largeImportProgress.status !== 'idle' && largeImportProgress.status !== 'completed' && (
-          <div className="rounded-2xl border border-purple-400/40 bg-purple-500/10 p-4">
+        {largeImportProgress && largeImportProgress.status !== 'idle' && (
+          <div className={`rounded-2xl border p-4 ${
+            largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
+              ? 'border-amber-400/40 bg-amber-500/10'
+              : largeImportProgress.status === 'error'
+              ? 'border-rose-400/40 bg-rose-500/10'
+              : 'border-purple-400/40 bg-purple-500/10'
+          }`}>
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-lg font-semibold text-purple-200">
-                Import Progress
+              <h4 className={`text-lg font-semibold ${
+                largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
+                  ? 'text-amber-200'
+                  : largeImportProgress.status === 'error'
+                  ? 'text-rose-200'
+                  : 'text-purple-200'
+              }`}>
+                {largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
+                  ? 'Import Complete'
+                  : largeImportProgress.status === 'error'
+                  ? 'Import Error'
+                  : 'Import Progress'}
               </h4>
               <div className="flex items-center gap-2">
-                <div className="text-sm text-purple-300">
-                  {largeImportProgress.importedGames} / {largeImportProgress.totalToImport} games
-                </div>
                 {largeImportProgress.status === 'importing' && (
+                  <>
+                    <div className="text-sm text-purple-300">
+                      {largeImportProgress.importedGames} / {largeImportProgress.totalToImport} games
+                    </div>
+                    <button
+                      onClick={cancelLargeImport}
+                      className="text-sm text-rose-300 hover:text-rose-200 transition"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+                {(largeImportProgress.status === 'completed' || largeImportProgress.status === 'error') && (
                   <button
-                    onClick={cancelLargeImport}
-                    className="text-sm text-rose-300 hover:text-rose-200 transition"
+                    onClick={dismissImportProgress}
+                    className="text-sm text-slate-300 hover:text-white transition"
                   >
-                    Cancel
+                    ✕
                   </button>
                 )}
               </div>
             </div>
             
-            <div className="mb-2">
-              <div className="h-2 w-full rounded-full bg-purple-900/30">
-                <div
-                  className="h-2 rounded-full bg-purple-400 transition-all duration-300"
-                  style={{ width: `${largeImportProgress.progress}%` }}
-                />
+            {largeImportProgress.status === 'importing' && (
+              <div className="mb-2">
+                <div className="h-2 w-full rounded-full bg-purple-900/30">
+                  <div
+                    className="h-2 rounded-full bg-purple-400 transition-all duration-300"
+                    style={{ width: `${largeImportProgress.progress}%` }}
+                  />
+                </div>
               </div>
-            </div>
+            )}
             
-            <p className="text-sm text-purple-200">{largeImportProgress.message}</p>
+            <p className={`text-sm ${
+              largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
+                ? 'text-amber-200'
+                : largeImportProgress.status === 'error'
+                ? 'text-rose-200'
+                : 'text-purple-200'
+            }`}>{largeImportProgress.message}</p>
           </div>
         )}
 
