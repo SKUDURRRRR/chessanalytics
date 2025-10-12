@@ -362,17 +362,18 @@ class PersonalityScorer:
 
         # Natural opposition: quiet moves increase patient, forcing moves decrease it
         base = 50.0
-        quiet_bonus = quiet_ratio * 32.0        # Reduced from 38 to make 95+ harder
-        forcing_penalty = forcing_ratio * 36.0  # Reduced from 42 to balance
+        quiet_bonus = quiet_ratio * 24.0        # RECALIBRATED: Reduced from 32 (most games are 60-70% quiet naturally)
+        forcing_penalty = forcing_ratio * 44.0  # RECALIBRATED: Increased from 36 (strengthen opposition)
         
-        # Additional bonuses for patient play (reduced to prevent ceiling hits)
-        stability_bonus = min(8.0, quiet_safety * 22.0)
-        endgame_bonus = min(7.0, endgame_accuracy * 18.0)
-        time_bonus = min(12.0, time_factor * 30.0)  # Time is important but not overwhelming
+        # Additional bonuses for patient play (RECALIBRATED to prevent score inflation)
+        stability_bonus = min(6.0, quiet_safety * 18.0)  # RECALIBRATED: Reduced from min(8.0, × 22.0)
+        endgame_bonus = min(5.0, endgame_accuracy * 14.0)  # RECALIBRATED: Reduced from min(7.0, × 18.0)
+        time_bonus = min(10.0, time_factor * 25.0)  # RECALIBRATED: Reduced from min(12.0, × 30.0) - still important
         streak_bonus = min(3.0, metrics.safe_streak_max * 0.8)
         
-        # Penalty for impatience (errors)
-        discipline_penalty = (blunder_rate * 20.0) + (mistake_rate * 12.0) + (inaccuracy_rate * 8.0)
+        # Penalty for impatience (RECALIBRATED: errors should matter more)
+        discipline_penalty = (blunder_rate * 28.0) + (mistake_rate * 16.0) + (inaccuracy_rate * 10.0)
+        # RECALIBRATED: Increased from (×20.0) + (×12.0) + (×8.0) - discipline is key to patience
 
         score = base + quiet_bonus - forcing_penalty + stability_bonus + endgame_bonus + time_bonus + streak_bonus - discipline_penalty
         return self.clamp_score(score)

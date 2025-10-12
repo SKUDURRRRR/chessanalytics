@@ -183,7 +183,9 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       onGameSelect(buildGameSummary(game))
     } else {
       // If not analyzed, trigger analysis directly
-      console.log('Game not analyzed, triggering analysis directly:', game.provider_game_id || game.id)
+      if (import.meta.env.DEV) {
+        console.log('Game not analyzed, triggering analysis directly:', game.provider_game_id || game.id)
+      }
       requestAnalysis(new Event('click'), game)
     }
   }

@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { getTimeControlCategory } from './timeControlUtils'
 import { getOpeningNameWithFallback } from './openingIdentification'
 import { OpeningIdentifierSets } from '../types'
+import { shouldCountOpeningForColor } from './openingColorClassification'
 
 export interface GameAnalytics {
   // Basic Statistics
@@ -196,6 +197,13 @@ export async function getMostPlayedOpeningForTimeControl(
         game.opening_normalized || game.opening || game.opening_family,
         game  // Pass the full game object
       )
+      
+      // IMPORTANT: Only count openings that the player actually plays
+      // Skip if this is an opponent's opening (e.g., skip Caro-Kann when player played white)
+      if (!shouldCountOpeningForColor(openingName, game.color)) {
+        continue // Skip this game - it's the opponent's opening choice
+      }
+      
       const count = openingCounts.get(openingName) || 0
       openingCounts.set(openingName, count + 1)
     }
@@ -554,6 +562,13 @@ function calculateOpeningStats(games: any[]): Array<{
     // Use opening_normalized first (which has consolidated opening names)
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const opening = getOpeningNameWithFallback(rawOpening, game)
+    
+    // IMPORTANT: Only count openings that the player actually plays
+    // Skip if this is an opponent's opening (e.g., skip Caro-Kann when player played white)
+    if (!shouldCountOpeningForColor(opening, game.color)) {
+      return // Skip this game - it's the opponent's opening choice
+    }
+    
     if (!openingMap.has(opening)) {
       openingMap.set(opening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -669,11 +684,19 @@ function calculateOpeningColorStats(games: any[]): {
   const blackGames = validGames.filter(g => g.color === 'black')
   
   // Group white games by opening (with normalized names)
+  // IMPORTANT: Only count openings that belong to white (not black defenses)
   const whiteOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   whiteGames.forEach(game => {
     // Use opening_normalized first (which has consolidated opening names)
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
+    
+    // Filter: Only include if this opening belongs to white
+    // (e.g., exclude "Caro-Kann" when player played white against it)
+    if (!shouldCountOpeningForColor(normalizedOpening, 'white')) {
+      return // Skip this game for white opening stats
+    }
+    
     if (!whiteOpeningMap.has(normalizedOpening)) {
       whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -692,6 +715,13 @@ function calculateOpeningColorStats(games: any[]): {
     // Use opening_normalized first (which has consolidated opening names)
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
+    
+    // Filter: Only include if this opening belongs to black
+    // (e.g., exclude "Italian Game" when player played black against it)
+    if (!shouldCountOpeningForColor(normalizedOpening, 'black')) {
+      return // Skip this game for black opening stats
+    }
+    
     if (!blackOpeningMap.has(normalizedOpening)) {
       blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1442,10 +1472,18 @@ export async function getOpeningColorPerformance(
   const blackGames = validGames.filter(g => g.color === 'black')
   
   // Group white games by opening (with normalized names)
+  // IMPORTANT: Only count openings that belong to white (not black defenses)
   const whiteOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   whiteGames.forEach(game => {
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
+    
+    // Filter: Only include if this opening belongs to white
+    // (e.g., exclude "Caro-Kann" when player played white against it)
+    if (!shouldCountOpeningForColor(normalizedOpening, 'white')) {
+      return // Skip this game for white opening stats
+    }
+    
     if (!whiteOpeningMap.has(normalizedOpening)) {
       whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1460,10 +1498,18 @@ export async function getOpeningColorPerformance(
   })
   
   // Group black games by opening (with normalized names)
+  // IMPORTANT: Only count openings that belong to black (not white attacks)
   const blackOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   blackGames.forEach(game => {
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
+    
+    // Filter: Only include if this opening belongs to black
+    // (e.g., exclude "Italian Game" when player played black against it)
+    if (!shouldCountOpeningForColor(normalizedOpening, 'black')) {
+      return // Skip this game for black opening stats
+    }
+    
     if (!blackOpeningMap.has(normalizedOpening)) {
       blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1572,6 +1618,13 @@ export async function getWorstOpeningPerformance(
   validGames.forEach(game => {
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
+    
+    // IMPORTANT: Only count openings that the player actually plays
+    // Skip if this is an opponent's opening (e.g., skip Caro-Kann when player played white)
+    if (!shouldCountOpeningForColor(normalizedOpening, game.color)) {
+      return // Skip this game - it's the opponent's opening choice
+    }
+    
     if (!openingMap.has(normalizedOpening)) {
       openingMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }

@@ -57,32 +57,33 @@ const buildChartData = (data: TrendChartProps['data']): ChartEntry[] => {
     }
   })
 
-  // Log warning for large changes (potential data quality issues)
-  const largeChanges = chartData.filter(entry => entry.isLargeChange)
-  if (largeChanges.length > 0) {
-    console.warn(
-      `⚠️ ELO Graph Data Quality Issues:`,
-      {
-        largeChanges: largeChanges.length,
-        changes: largeChanges.map(entry => ({
-          game: entry.index + 1,
-          change: entry.displayChange,
-          rating: entry.rating
-        })),
-        suggestion: 'Check if games are missing from database. Consider re-importing or verifying game history.'
-      }
-    )
-  }
+  // Only log diagnostics in development mode
+  if (import.meta.env.DEV) {
+    const largeChanges = chartData.filter(entry => entry.isLargeChange)
+    if (largeChanges.length > 0) {
+      console.warn(
+        `⚠️ ELO Graph Data Quality Issues:`,
+        {
+          largeChanges: largeChanges.length,
+          changes: largeChanges.map(entry => ({
+            game: entry.index + 1,
+            change: entry.displayChange,
+            rating: entry.rating
+          })),
+          suggestion: 'Check if games are missing from database. Consider re-importing or verifying game history.'
+        }
+      )
+    }
 
-  // Log summary for diagnostics
-  if (chartData.length > 0) {
-    console.log('ELO Graph Summary:', {
-      gamesDisplayed: chartData.length,
-      ratingRange: [Math.min(...chartData.map(d => d.rating)), Math.max(...chartData.map(d => d.rating))],
-      currentRating: chartData[chartData.length - 1]?.rating,
-      largeChangeCount: largeChanges.length,
-      averageChange: (chartData.reduce((sum, d) => sum + Math.abs(d.change), 0) / chartData.length).toFixed(1)
-    })
+    if (chartData.length > 0) {
+      console.log('ELO Graph Summary:', {
+        gamesDisplayed: chartData.length,
+        ratingRange: [Math.min(...chartData.map(d => d.rating)), Math.max(...chartData.map(d => d.rating))],
+        currentRating: chartData[chartData.length - 1]?.rating,
+        largeChangeCount: largeChanges.length,
+        averageChange: (chartData.reduce((sum, d) => sum + Math.abs(d.change), 0) / chartData.length).toFixed(1)
+      })
+    }
   }
 
   return chartData

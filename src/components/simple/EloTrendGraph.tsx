@@ -123,7 +123,8 @@ export function EloTrendGraph({
       .sort((a, b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime())
       .slice(0, gameLimit === 0 ? undefined : gameLimit)  // 0 means show all
     
-    if (filteredGames.length > 0) {
+    // Only log diagnostics in development mode
+    if (import.meta.env.DEV && filteredGames.length > 0) {
       console.log('ELO Trend Filter Debug:', {
         userId,
         activeTimeControl,

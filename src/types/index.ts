@@ -233,6 +233,7 @@ export interface DeepAnalysisData {
       similarity?: string;
     };
   };
+  enhanced_opening_analysis?: EnhancedOpeningAnalysis;
 }
 
 // Component prop types
@@ -410,14 +411,78 @@ export type PlayerStyle = 'positional' | 'tactical' | 'aggressive' | 'balanced'
 export interface OpeningMistake {
   move: number
   moveNotation: string
+  move_notation?: string // snake_case from API
   mistake: string
   correctMove: string
+  correct_move?: string // snake_case from API
   explanation: string
   severity: 'critical' | 'major' | 'minor'
   centipawnLoss: number
+  centipawn_loss?: number // snake_case from API
   classification: 'blunder' | 'mistake' | 'inaccuracy'
+  fen?: string
 }
 
+export interface StyleRecommendation {
+  openingName: string
+  opening_name?: string // snake_case from API
+  compatibilityScore: number
+  compatibility_score?: number // snake_case from API
+  reasoning: string
+  suggestedLines: string[]
+  suggested_lines?: string[] // snake_case from API
+  priority: 'high' | 'medium' | 'low'
+}
+
+export interface TrendPoint {
+  date: string
+  openingWinRate: number
+  opening_win_rate?: number // snake_case from API
+  games: number
+  accuracy?: number
+}
+
+export interface RepertoireAnalysis {
+  diversityScore: number
+  diversity_score?: number // snake_case from API
+  whiteOpenings: string[]
+  white_openings?: string[] // snake_case from API
+  blackOpenings: string[]
+  black_openings?: string[] // snake_case from API
+  mostSuccessful: {
+    opening: string
+    winRate: number
+    win_rate?: number // snake_case from API
+    games: number
+  }
+  most_successful?: any // snake_case from API
+  needsWork: {
+    opening: string
+    winRate: number
+    win_rate?: number // snake_case from API
+    games: number
+  }
+  needs_work?: any // snake_case from API
+  styleMatchScore: number
+  style_match_score?: number // snake_case from API
+}
+
+export interface EnhancedOpeningAnalysis {
+  openingWinRate: number
+  opening_win_rate?: number // snake_case from API
+  specificMistakes: OpeningMistake[]
+  specific_mistakes?: OpeningMistake[] // snake_case from API
+  styleRecommendations: StyleRecommendation[]
+  style_recommendations?: StyleRecommendation[] // snake_case from API
+  actionableInsights: string[]
+  actionable_insights?: string[] // snake_case from API
+  improvementTrend: TrendPoint[]
+  improvement_trend?: TrendPoint[] // snake_case from API
+  repertoireAnalysis: RepertoireAnalysis
+  repertoire_analysis?: RepertoireAnalysis // snake_case from API
+}
+
+// Legacy types for backward compatibility
 export interface StudyRecommendation {
   type: 'video' | 'article' | 'practice' | 'game' | 'course'
   title: string
@@ -434,55 +499,5 @@ export interface PeerComparison {
   trend: 'improving' | 'stable' | 'declining'
   gamesPlayed: number
   ratingRange: string
-}
-
-export interface RepertoireAnalysis {
-  diversity: number
-  colorPerformance: { white: number; black: number }
-  familyStrengths: string[]
-  familyWeaknesses: string[]
-  mostPlayed: string
-  leastPlayed: string
-  recommendation: string
-}
-
-export interface EnhancedOpeningAnalysis {
-  // Basic info
-  openingName: string
-  openingFamily: string
-  accuracy: number
-  theoryKnowledge: number
-  gamesPlayed: number
-  
-  // Detailed insights
-  specificMistakes: OpeningMistake[]
-  commonPatterns: string[]
-  strengths: string[]
-  weaknesses: string[]
-  
-  // Learning resources
-  studyRecommendations: StudyRecommendation[]
-  practicePositions: Array<{
-    position: string
-    description: string
-    difficulty: 'beginner' | 'intermediate' | 'advanced'
-  }>
-  
-  // Comparative analysis
-  peerComparison: PeerComparison
-  
-  // Repertoire insights
-  repertoireAnalysis: RepertoireAnalysis
-  
-  // Improvement tracking
-  improvementTrend: Array<{
-    date: string
-    accuracy: number
-    games: number
-  }>
-  
-  // Next steps
-  nextGoals: string[]
-  focusAreas: string[]
 }
 

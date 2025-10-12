@@ -1802,22 +1802,61 @@ class ChessAnalysisEngine:
         return total_accuracy / len(opening_moves)
     
     def _calculate_time_management_score(self, moves: List[MoveAnalysis]) -> float:
-        """Calculate time management score based on move timing patterns.
+        """Calculate time management score based on move timing patterns and quality.
         
         Returns score on 0-100 scale where:
-        - 0-30: Very fast/impulsive play
-        - 30-50: Quick decisions
-        - 50-70: Balanced time usage
-        - 70-90: Slow/careful thinking
-        - 90-100: Very slow/deliberate play
-        """
-        if not moves:
-            return 50.0
+        - 0-30: Very fast/impulsive play (bullet players, many quick errors)
+        - 30-50: Quick decisions (blitz players, some time pressure errors)
+        - 50-70: Balanced time usage (rapid players, occasional time issues)
+        - 70-90: Slow/careful thinking (classical players, consistent quality)
+        - 90-100: Very slow/deliberate play (correspondence-style, deep calculation)
         
-        # TODO: Implement proper time management calculation using move timestamps
-        # For now, return neutral score (50.0) since we don't have timing data
-        # This prevents the bug where 0.75 was being treated as 0.75% instead of 75%
-        return 50.0  # Neutral - awaiting implementation
+        Uses proxy indicators since exact clock times may not be available:
+        1. Move quality consistency (fast players make more errors)
+        2. Error patterns (blunders/mistakes indicate rushed decisions)
+        3. Move complexity vs quality (simple moves should be quick, complex ones need time)
+        """
+        if not moves or len(moves) < 10:
+            return 50.0  # Need sufficient data
+        
+        # Proxy indicators for time management
+        total_moves = len(moves)
+        blunders = sum(1 for m in moves if m.is_blunder)
+        mistakes = sum(1 for m in moves if m.is_mistake)
+        inaccuracies = sum(1 for m in moves if m.is_inaccuracy)
+        best_moves = sum(1 for m in moves if m.is_best)
+        
+        # Calculate error rates
+        blunder_rate = blunders / total_moves
+        mistake_rate = mistakes / total_moves
+        error_rate = (blunders + mistakes + inaccuracies) / total_moves
+        best_rate = best_moves / total_moves
+        
+        # Calculate move quality variance (consistent = more thoughtful)
+        centipawn_losses = [m.centipawn_loss for m in moves if hasattr(m, 'centipawn_loss')]
+        if centipawn_losses:
+            avg_loss = sum(centipawn_losses) / len(centipawn_losses)
+            variance = sum((loss - avg_loss) ** 2 for loss in centipawn_losses) / len(centipawn_losses)
+            consistency_score = max(0, 100 - (variance ** 0.5) / 2)  # Lower variance = more consistent
+        else:
+            consistency_score = 50.0
+        
+        # Base score starts at 50 (neutral)
+        base_score = 50.0
+        
+        # Penalties for fast/impulsive play (errors suggest rushing)
+        # Fast players tend to make more mistakes, especially blunders
+        error_penalty = (blunder_rate * 80.0) + (mistake_rate * 40.0) + (error_rate * 20.0)
+        
+        # Bonuses for slow/careful play (high accuracy suggests taking time)
+        # Slow players have higher best move rates and consistency
+        quality_bonus = (best_rate * 30.0) + (consistency_score * 0.2)
+        
+        # Calculate final score
+        score = base_score - error_penalty + quality_bonus
+        
+        # Clamp to valid range
+        return max(0.0, min(100.0, score))
     
     def _calculate_personality_scores(self, user_moves: List[MoveAnalysis], time_management_score: float = 0.0) -> Dict[str, float]:
         """Calculate six-trait personality scores from the user's moves."""

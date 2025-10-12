@@ -123,45 +123,52 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
 }
 
 /**
- * Calculate opening accuracy using a more conservative approach that matches Chess.com
- * This provides realistic accuracy scores that don't inflate to 100%
+ * Calculate opening accuracy using Chess.com's CAPS2 algorithm (same as overall accuracy).
+ * Uses the standard accuracy formula consistently across all game phases.
  */
 export function calculateOpeningAccuracyChessCom(moves: MoveAnalysis[]): number {
   if (!moves || moves.length === 0) return 0
 
   console.log('[Opening Accuracy] Calculating for', moves.length, 'moves')
-  let totalAccuracy = 0
   
-  for (let i = 0; i < moves.length; i++) {
-    const move = moves[i]
-    const centipawnLoss = move.centipawn_loss || 0
+  // Extract centipawn losses from moves (handle both naming conventions)
+  const centipawnLosses = moves.map(move => (move as any).centipawnLoss ?? move.centipawn_loss ?? 0)
+  
+  // Use the same Chess.com CAPS2 formula as overall accuracy
+  let totalAccuracy = 0
+  for (let i = 0; i < centipawnLosses.length; i++) {
+    const cpl = Math.min(centipawnLosses[i], 1000) // Cap at 1000 to avoid math errors
     
-    // Much more conservative accuracy calculation to avoid 100% scores
-    // Only truly perfect moves get 100%, everything else is penalized more heavily
-    let moveAccuracy = 100.0
-    if (centipawnLoss <= 2) {
-      moveAccuracy = 100.0  // Only truly perfect moves (0-2 CPL)
-    } else if (centipawnLoss <= 8) {
-      moveAccuracy = 90.0 - (centipawnLoss - 2) * 2.5  // 90% to 75%
-    } else if (centipawnLoss <= 20) {
-      moveAccuracy = 75.0 - (centipawnLoss - 8) * 1.5  // 75% to 57%
-    } else if (centipawnLoss <= 40) {
-      moveAccuracy = 57.0 - (centipawnLoss - 20) * 1.0  // 57% to 37%
-    } else if (centipawnLoss <= 80) {
-      moveAccuracy = 37.0 - (centipawnLoss - 40) * 0.5  // 37% to 17%
+    // Chess.com CAPS2 algorithm thresholds:
+    let moveAccuracy: number
+    if (cpl <= 5) {
+      moveAccuracy = 100.0  // Perfect moves (0-5 CPL)
+    } else if (cpl <= 20) {
+      // Linear interpolation from 100% to 85% for 5-20 CPL
+      moveAccuracy = 100.0 - (cpl - 5) * 1.0  // 100% to 85%
+    } else if (cpl <= 40) {
+      // Linear interpolation from 85% to 70% for 20-40 CPL
+      moveAccuracy = 85.0 - (cpl - 20) * 0.75  // 85% to 70%
+    } else if (cpl <= 80) {
+      // Linear interpolation from 70% to 50% for 40-80 CPL
+      moveAccuracy = 70.0 - (cpl - 40) * 0.5  // 70% to 50%
+    } else if (cpl <= 150) {
+      // Linear interpolation from 50% to 30% for 80-150 CPL
+      moveAccuracy = 50.0 - (cpl - 80) * 0.286  // 50% to 30%
     } else {
-      moveAccuracy = Math.max(5.0, 17.0 - (centipawnLoss - 80) * 0.1)  // 17% to 5%
+      // Linear interpolation from 30% to 15% for 150+ CPL
+      moveAccuracy = Math.max(15.0, 30.0 - (cpl - 150) * 0.1)  // 30% to 15%
     }
     
     if (i < 3) {
-      console.log(`[Opening Accuracy] Move ${i+1} (${move.san}): CPL=${centipawnLoss}, Accuracy=${moveAccuracy.toFixed(1)}%`)
+      console.log(`[Opening Accuracy] Move ${i+1}: CPL=${cpl}, Accuracy=${moveAccuracy.toFixed(1)}%`)
     }
     
     totalAccuracy += moveAccuracy
   }
   
-  const finalAccuracy = Math.round((totalAccuracy / moves.length) * 10) / 10
-  console.log('[Opening Accuracy] Final:', finalAccuracy, '% (avg of', moves.length, 'moves)')
+  const finalAccuracy = Math.round((totalAccuracy / centipawnLosses.length) * 10) / 10
+  console.log('[Opening Accuracy] Final:', finalAccuracy, '% (avg of', centipawnLosses.length, 'moves)')
   
   return finalAccuracy
 }

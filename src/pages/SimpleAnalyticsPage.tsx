@@ -91,6 +91,8 @@ export default function SimpleAnalyticsPage() {
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  // Debug panel only available when VITE_DEBUG is enabled
+  const isDebugEnabled = import.meta.env.VITE_DEBUG === 'true' || import.meta.env.DEV
   const [showDebug, setShowDebug] = useState(false)
   const [analyzedGameIds, setAnalyzedGameIds] = useState<Set<string>>(new Set())
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -929,8 +931,8 @@ export default function SimpleAnalyticsPage() {
           </ErrorBoundary>
         )}
 
-            {/* Debug Panel */}
-            {showDebug && userId && (
+            {/* Debug Panel - Only available in development or when VITE_DEBUG=true */}
+            {isDebugEnabled && showDebug && userId && (
               <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-inner shadow-black/50">
                 <h2 className="text-lg font-semibold text-white">Debug Information</h2>
                 <MobileTestingPanel />

@@ -186,6 +186,39 @@ ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 large_import_progress = {}
 large_import_cancel_flags = {}
 
+# Concurrency control for imports - limit concurrent imports to prevent resource exhaustion
+# With optimizations, Railway Hobby tier can handle 3 concurrent imports
+# On higher tiers: can increase to 4-5
+MAX_CONCURRENT_IMPORTS = int(os.getenv("MAX_CONCURRENT_IMPORTS", "3"))
+import_semaphore = asyncio.Semaphore(MAX_CONCURRENT_IMPORTS)
+import_queue = asyncio.Queue()  # Queue for waiting imports
+print(f"Import concurrency limit: {MAX_CONCURRENT_IMPORTS} concurrent imports")
+
+# Import optimization settings
+IMPORT_BATCH_SIZE = int(os.getenv("IMPORT_BATCH_SIZE", "50"))  # Reduced from 100 to save memory
+EXISTING_GAMES_PAGE_SIZE = int(os.getenv("EXISTING_GAMES_PAGE_SIZE", "2000"))  # Paginate existing games query
+
+# Shared HTTP client for external API calls with connection pooling
+# This prevents creating new connections for each request, reducing overhead
+_shared_http_client = None
+
+async def get_http_client():
+    """Get or create shared HTTP client with connection pooling"""
+    global _shared_http_client
+    if _shared_http_client is None:
+        import aiohttp
+        timeout = aiohttp.ClientTimeout(total=120, connect=30)
+        connector = aiohttp.TCPConnector(
+            limit=15,  # Reduced from 20 to save memory
+            limit_per_host=3,  # Reduced from 5 to save memory
+            ttl_dns_cache=300  # DNS cache TTL
+        )
+        _shared_http_client = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout
+        )
+    return _shared_http_client
+
 # ============================================================================
 # UNIFIED PYDANTIC MODELS
 # ============================================================================
@@ -331,6 +364,56 @@ class BulkGameImportResponse(BaseModel):
     had_existing_games: Optional[bool] = None
     message: Optional[str] = None
 
+class OpeningMistake(BaseModel):
+    """Represents a specific opening mistake."""
+    move: int
+    move_notation: str
+    mistake: str
+    correct_move: str
+    explanation: str
+    severity: str  # 'critical', 'major', 'minor'
+    centipawn_loss: float
+    classification: str  # 'blunder', 'mistake', 'inaccuracy'
+    fen: Optional[str] = None
+
+
+class StyleRecommendation(BaseModel):
+    """Opening recommendation based on player style."""
+    opening_name: str
+    compatibility_score: float
+    reasoning: str
+    suggested_lines: List[str] = []
+    priority: str  # 'high', 'medium', 'low'
+
+
+class TrendPoint(BaseModel):
+    """Point in the trend line."""
+    date: str
+    opening_win_rate: float
+    games: int
+    accuracy: Optional[float] = None
+
+
+class RepertoireAnalysis(BaseModel):
+    """Analysis of the player's opening repertoire."""
+    diversity_score: float
+    white_openings: List[str]
+    black_openings: List[str]
+    most_successful: Dict[str, Any]
+    needs_work: Dict[str, Any]
+    style_match_score: float
+
+
+class EnhancedOpeningAnalysis(BaseModel):
+    """Enhanced opening analysis with personalized insights."""
+    opening_win_rate: float
+    specific_mistakes: List[OpeningMistake]
+    style_recommendations: List[StyleRecommendation]
+    actionable_insights: List[str]
+    improvement_trend: List[TrendPoint]
+    repertoire_analysis: RepertoireAnalysis
+
+
 class DeepAnalysisData(BaseModel):
     """Deep analysis data for personality insights."""
     total_games: int
@@ -347,6 +430,7 @@ class DeepAnalysisData(BaseModel):
     famous_players: Optional[Dict[str, Any]] = None
     ai_style_analysis: Optional[Dict[str, str]] = None
     personality_insights: Optional[Dict[str, str]] = None
+    enhanced_opening_analysis: Optional[EnhancedOpeningAnalysis] = None
 
 # ============================================================================
 # UNIFIED API ENDPOINTS
@@ -490,8 +574,10 @@ async def get_analysis_results(
     try:
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
-        print(f"[DEBUG] get_analysis_results called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
-        print(f"[DEBUG] canonical_user_id={canonical_user_id}")
+        # Debug logging (only when DEBUG=true)
+        if os.getenv("DEBUG", "false").lower() == "true":
+            print(f"[DEBUG] get_analysis_results called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
+            print(f"[DEBUG] canonical_user_id={canonical_user_id}")
         
         if not supabase and not supabase_service:
             print("[warn]  Database not available. Returning empty results.")
@@ -546,7 +632,8 @@ async def get_analysis_stats(
             response = supabase.table('unified_analyses').select('*').eq(
                 'user_id', canonical_user_id
             ).eq('platform', platform).execute()
-            print(f"[DEBUG] Stats query response: {len(response.data) if response.data else 0} records found")
+            if os.getenv("DEBUG", "false").lower() == "true":
+                print(f"[DEBUG] Stats query response: {len(response.data) if response.data else 0} records found")
         else:
             response = type('MockResponse', (), {'data': []})()
         
@@ -556,7 +643,8 @@ async def get_analysis_stats(
             print(f"[stats] Query was: unified_analyses where user_id={canonical_user_id} AND platform={platform}")
             return _get_mock_stats()
         
-        print(f"[DEBUG] Calculating stats for {len(response.data)} analyses")
+        if os.getenv("DEBUG", "false").lower() == "true":
+            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses")
         return _calculate_unified_analysis_stats(response.data)
     except Exception as e:
         print(f"Error fetching analysis stats: {e}")
@@ -584,10 +672,11 @@ async def get_game_analyses(
         # Query the unified_analyses view for individual game data
         response = supabase.table("unified_analyses").select("*").eq("user_id", canonical_user_id).eq("platform", platform).execute()
         
-        print(f"[DEBUG] Query response: {len(response.data) if response.data else 0} records found")
-        if response.data:
-            print(f"[DEBUG] First record keys: {list(response.data[0].keys()) if response.data[0] else 'No keys'}")
-            print(f"[DEBUG] Sample record: {str(response.data[0])[:200]}..." if response.data[0] else "No sample")
+        if os.getenv("DEBUG", "false").lower() == "true":
+            print(f"[DEBUG] Query response: {len(response.data) if response.data else 0} records found")
+            if response.data:
+                print(f"[DEBUG] First record keys: {list(response.data[0].keys()) if response.data[0] else 'No keys'}")
+                print(f"[DEBUG] Sample record: {str(response.data[0])[:200]}..." if response.data[0] else "No sample")
         
         if not response.data or len(response.data) == 0:
             print(f"[analyses] No data found for user {canonical_user_id} on {platform}")
@@ -619,11 +708,13 @@ async def get_game_analyses(
                         # For any other type, convert to string
                         clean_record[key] = str(value)
                 except Exception as e:
-                    print(f"[DEBUG] Error serializing field {key}: {e}")
+                    if os.getenv("DEBUG", "false").lower() == "true":
+                        print(f"[DEBUG] Error serializing field {key}: {e}")
                     clean_record[key] = None
             cleaned_data.append(clean_record)
         
-        print(f"[DEBUG] Cleaned {len(cleaned_data)} records for serialization")
+        if os.getenv("DEBUG", "false").lower() == "true":
+            print(f"[DEBUG] Cleaned {len(cleaned_data)} records for serialization")
         return cleaned_data
         
     except Exception as e:
@@ -671,7 +762,11 @@ async def get_analysis_progress(
 
 @app.get("/api/v1/debug/progress")
 async def debug_progress():
-    """Debug endpoint to check current progress state."""
+    """Debug endpoint to check current progress state. Only available when DEBUG=true."""
+    # Only allow in debug mode
+    if os.getenv("DEBUG", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail="Debug endpoints disabled in production")
+    
     return {
         "analysis_progress": analysis_progress,
         "total_keys": len(analysis_progress),
@@ -1010,17 +1105,31 @@ def _infer_current_rating(games: List[Dict[str, Any]], profile: Dict[str, Any]) 
 
 
 def _compute_opening_accuracy_from_moves(analyses: List[Dict[str, Any]]) -> float:
-    best = 0
-    total = 0
+    """
+    Calculate opening accuracy using centipawn loss (Chess.com style).
+    This provides realistic accuracy scores based on move quality, not just binary best/not-best.
+    """
+    if not analyses:
+        return 0.0
+    
+    total_accuracy = 0.0
+    games_with_opening_moves = 0
+    
     for analysis in analyses:
         moves = analysis.get('moves_analysis') or []
-        for idx, move in enumerate(moves):
-            if idx >= 30:
-                break
-            total += 1
-            if move.get('is_best'):
-                best += 1
-    return (best / total * 100.0) if total else 0.0
+        # Filter for opening moves (first 20 ply) and user moves only
+        opening_moves = [
+            move for move in moves 
+            if move.get('opening_ply', 0) <= 20 and move.get('is_user_move', False)
+        ]
+        
+        if opening_moves:
+            # Use the proper centipawn loss based calculation
+            game_opening_accuracy = _calculate_opening_accuracy_chesscom(opening_moves)
+            total_accuracy += game_opening_accuracy
+            games_with_opening_moves += 1
+    
+    return total_accuracy / games_with_opening_moves if games_with_opening_moves > 0 else 0.0
 
 
 def _calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
@@ -1068,33 +1177,18 @@ def _calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
 
 
 def _calculate_opening_accuracy_chesscom(moves: List[dict]) -> float:
-    """Calculate opening accuracy using a more conservative approach that matches Chess.com."""
+    """
+    Calculate opening accuracy using Chess.com's CAPS2 algorithm (same as overall accuracy).
+    Uses the standard accuracy formula consistently across all game phases.
+    """
     if not moves:
         return 0.0
     
-    total_accuracy = 0.0
-    for move in moves:
-        # Use centipawn loss directly - more reliable than reconstructing evaluations
-        centipawn_loss = move.get('centipawn_loss', 0)
-        
-        # Much more conservative accuracy calculation to avoid 100% scores
-        # Only truly perfect moves get 100%, everything else is penalized more heavily
-        if centipawn_loss <= 2:
-            move_accuracy = 100.0  # Only truly perfect moves (0-2 CPL)
-        elif centipawn_loss <= 8:
-            move_accuracy = 90.0 - (centipawn_loss - 2) * 2.5  # 90% to 75%
-        elif centipawn_loss <= 20:
-            move_accuracy = 75.0 - (centipawn_loss - 8) * 1.5  # 75% to 57%
-        elif centipawn_loss <= 40:
-            move_accuracy = 57.0 - (centipawn_loss - 20) * 1.0  # 57% to 37%
-        elif centipawn_loss <= 80:
-            move_accuracy = 37.0 - (centipawn_loss - 40) * 0.5  # 37% to 17%
-        else:
-            move_accuracy = max(5.0, 17.0 - (centipawn_loss - 80) * 0.1)  # 17% to 5%
-        
-        total_accuracy += move_accuracy
+    # Extract centipawn losses from moves
+    centipawn_losses = [move.get('centipawn_loss', 0) for move in moves]
     
-    return total_accuracy / len(moves)
+    # Use the same formula as overall game accuracy (Chess.com CAPS2)
+    return _calculate_accuracy_from_cpl(centipawn_losses)
 
 
 def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
@@ -1270,8 +1364,52 @@ def _compute_personality_scores(
     
     return aggregated_scores.to_dict()
 
+def _compute_opening_win_rate(analyses: List[Dict[str, Any]]) -> float:
+    """
+    Calculate opening win rate based on position evaluation after move 10.
+    An "opening advantage" is defined as eval > +0.5 after 20 ply (10 full moves).
+    Falls back to move accuracy if position evals are unavailable.
+    """
+    if not analyses:
+        return 0.0
+    
+    games_with_advantage = 0
+    total_evaluable_games = 0
+    
+    for analysis in analyses:
+        moves = analysis.get('moves_analysis') or []
+        
+        # Find move at ply 20 (or closest to it)
+        move_at_20 = None
+        for move in moves:
+            ply = move.get('opening_ply', 0) or move.get('ply', 0)
+            if ply >= 18 and ply <= 22 and move.get('is_user_move'):  # Allow range around move 10
+                move_at_20 = move
+                break
+        
+        if move_at_20:
+            # Check if player had advantage
+            eval_after = move_at_20.get('eval_after')
+            if eval_after is not None:
+                total_evaluable_games += 1
+                # Positive eval means advantage (for white), negative for black
+                # We need to know the color
+                is_white = move_at_20.get('color') == 'white'
+                advantage = eval_after if is_white else -eval_after
+                
+                if advantage > 0.5:  # More than half a pawn advantage
+                    games_with_advantage += 1
+    
+    # If we have position evaluations, use them
+    if total_evaluable_games > 0:
+        return _round2((games_with_advantage / total_evaluable_games) * 100)
+    
+    # Fallback to move accuracy
+    return _round2(_compute_opening_accuracy_from_moves(analyses))
+
+
 def _compute_phase_accuracies(analyses: List[Dict[str, Any]]) -> Dict[str, float]:
-    opening = _round2(_compute_opening_accuracy_from_moves(analyses))
+    opening = _round2(_compute_opening_win_rate(analyses))
     middle = _round2(_safe_average([
         _coerce_float(analysis.get('middle_game_accuracy')) for analysis in analyses
     ], default=opening))
@@ -1667,6 +1805,453 @@ def _generate_famous_player_comparisons(
     }
 
 
+# Opening compatibility matrix
+OPENING_STYLES = {
+    # Aggressive openings
+    "King's Indian": {"aggressive": 80, "tactical": 70, "positional": 40, "patient": 30},
+    "Sicilian Defense": {"aggressive": 75, "tactical": 80, "positional": 50, "patient": 40},
+    "Dutch Defense": {"aggressive": 85, "tactical": 65, "positional": 35, "patient": 30},
+    "Benoni Defense": {"aggressive": 80, "tactical": 75, "positional": 40, "patient": 35},
+    "Dragon Variation": {"aggressive": 90, "tactical": 85, "positional": 30, "patient": 25},
+    
+    # Tactical openings
+    "Scotch Game": {"aggressive": 65, "tactical": 80, "positional": 50, "patient": 45},
+    "Italian Game": {"aggressive": 60, "tactical": 75, "positional": 55, "patient": 50},
+    "Spanish Opening": {"aggressive": 50, "tactical": 70, "positional": 70, "patient": 60},
+    
+    # Positional openings
+    "Queen's Gambit": {"aggressive": 40, "tactical": 55, "positional": 85, "patient": 70},
+    "English Opening": {"aggressive": 35, "tactical": 50, "positional": 85, "patient": 75},
+    "Ruy Lopez": {"aggressive": 45, "tactical": 65, "positional": 80, "patient": 70},
+    "Catalan Opening": {"aggressive": 35, "tactical": 55, "positional": 90, "patient": 75},
+    
+    # Patient openings
+    "French Defense": {"aggressive": 35, "tactical": 50, "positional": 75, "patient": 85},
+    "Caro-Kann Defense": {"aggressive": 30, "tactical": 45, "positional": 80, "patient": 90},
+    "Queen's Pawn Game": {"aggressive": 40, "tactical": 50, "positional": 70, "patient": 75},
+    "Nimzo-Indian Defense": {"aggressive": 40, "tactical": 60, "positional": 80, "patient": 80},
+    "London System": {"aggressive": 30, "tactical": 40, "positional": 75, "patient": 85},
+}
+
+
+def _extract_opening_mistakes(analyses: List[Dict[str, Any]]) -> List[OpeningMistake]:
+    """Extract specific mistakes from the opening phase."""
+    mistakes = []
+    
+    for analysis in analyses:
+        moves = analysis.get('moves_analysis') or []
+        game_id = analysis.get('game_id', '')
+        
+        # Filter opening moves (first 20 ply)
+        opening_moves = [m for m in moves if m.get('opening_ply', 0) <= 20 and m.get('is_user_move', False)]
+        
+        for move in opening_moves:
+            cpl = move.get('centipawn_loss', 0)
+            move_num = move.get('move_number', 0)
+            notation = move.get('move_notation', '')
+            best_move = move.get('best_move', '')
+            fen = move.get('fen_after', '')
+            
+            # Only include significant mistakes (CPL > 100)
+            if cpl >= 200:  # Blunder
+                severity = 'critical'
+                classification = 'blunder'
+                explanation = f"This move loses significant material or position. The engine suggests {best_move} instead."
+            elif cpl >= 100:  # Mistake
+                severity = 'major'
+                classification = 'mistake'
+                explanation = f"This move gives your opponent a clear advantage. Consider {best_move} to maintain balance."
+            elif cpl >= 50:  # Inaccuracy
+                severity = 'minor'
+                classification = 'inaccuracy'
+                explanation = f"While not terrible, {best_move} would be more accurate here."
+            else:
+                continue
+            
+            mistakes.append(OpeningMistake(
+                move=move_num,
+                move_notation=notation,
+                mistake=f"Loss of {cpl} centipawns",
+                correct_move=best_move,
+                explanation=explanation,
+                severity=severity,
+                centipawn_loss=float(cpl),
+                classification=classification,
+                fen=fen
+            ))
+    
+    # Return top 10 most severe mistakes
+    mistakes.sort(key=lambda x: x.centipawn_loss, reverse=True)
+    return mistakes[:10]
+
+
+def _calculate_opening_compatibility(opening_name: str, personality_scores: Dict[str, float]) -> float:
+    """Calculate how well an opening matches the player's style."""
+    # Check if we have compatibility data for this opening
+    opening_profile = None
+    
+    # Try exact match first
+    if opening_name in OPENING_STYLES:
+        opening_profile = OPENING_STYLES[opening_name]
+    else:
+        # Try partial match (e.g., "Sicilian Defense: Najdorf" -> "Sicilian Defense")
+        for known_opening, profile in OPENING_STYLES.items():
+            if known_opening.lower() in opening_name.lower():
+                opening_profile = profile
+                break
+    
+    # If no match, return neutral compatibility
+    if not opening_profile:
+        return 50.0
+    
+    # Calculate compatibility score based on personality match
+    total_score = 0.0
+    for trait in ['aggressive', 'tactical', 'positional', 'patient']:
+        player_score = personality_scores.get(trait, 50.0)
+        opening_score = opening_profile.get(trait, 50.0)
+        
+        # Calculate how well they match (inverse of difference)
+        difference = abs(player_score - opening_score)
+        match_score = 100 - difference
+        total_score += match_score
+    
+    # Average across all traits
+    return total_score / 4.0
+
+
+def _generate_style_recommendations(
+    personality_scores: Dict[str, float],
+    games: List[Dict[str, Any]]
+) -> List[StyleRecommendation]:
+    """Generate opening recommendations based on player style."""
+    recommendations = []
+    
+    # Find player's dominant trait
+    dominant_trait = max(personality_scores.items(), key=lambda x: x[1])
+    trait_name, trait_score = dominant_trait
+    
+    # Only make recommendations if trait is strong (>60)
+    if trait_score < 60:
+        return recommendations
+    
+    # Count player's current openings
+    opening_counts = Counter()
+    for game in games:
+        opening = game.get('opening_normalized') or game.get('opening_family') or game.get('opening')
+        if opening and opening != 'Unknown':
+            opening_counts[opening] += 1
+    
+    # Find compatible openings player hasn't explored much
+    for opening_name, opening_profile in OPENING_STYLES.items():
+        compatibility = _calculate_opening_compatibility(opening_name, personality_scores)
+        current_games = opening_counts.get(opening_name, 0)
+        
+        # Recommend if highly compatible (>70) and underplayed (<10% of games)
+        total_games = len(games)
+        play_rate = (current_games / total_games * 100) if total_games > 0 else 0
+        
+        if compatibility > 70 and play_rate < 10:
+            # Generate reasoning based on dominant trait
+            if trait_name == 'aggressive':
+                reasoning = f"This sharp opening suits your aggressive style ({trait_score:.0f}/100). It leads to dynamic positions with attacking chances."
+            elif trait_name == 'tactical':
+                reasoning = f"This opening creates tactical complications that match your tactical strength ({trait_score:.0f}/100). Rich in combinations."
+            elif trait_name == 'positional':
+                reasoning = f"This positional opening aligns with your strategic approach ({trait_score:.0f}/100). Emphasizes long-term planning."
+            elif trait_name == 'patient':
+                reasoning = f"This solid opening fits your patient style ({trait_score:.0f}/100). Focuses on gradual improvement and solid structure."
+            else:
+                reasoning = f"This opening matches your playing style well (compatibility: {compatibility:.0f}%)."
+            
+            priority = 'high' if compatibility > 80 else 'medium' if compatibility > 70 else 'low'
+            
+            recommendations.append(StyleRecommendation(
+                opening_name=opening_name,
+                compatibility_score=compatibility,
+                reasoning=reasoning,
+                suggested_lines=[],  # Could be expanded with specific variations
+                priority=priority
+            ))
+    
+    # Sort by compatibility and return top 5
+    recommendations.sort(key=lambda x: x.compatibility_score, reverse=True)
+    return recommendations[:5]
+
+
+def _generate_actionable_insights(
+    personality_scores: Dict[str, float],
+    games: List[Dict[str, Any]],
+    analyses: List[Dict[str, Any]]
+) -> List[str]:
+    """Generate specific, actionable insights based on style and performance."""
+    insights = []
+    
+    # Analyze opening performance by style match
+    # Build a map of game_id to analysis for proper matching
+    analysis_map = {}
+    for analysis in analyses:
+        game_id = analysis.get('game_id')
+        if game_id:
+            analysis_map[game_id] = analysis
+    
+    opening_performance = {}
+    for game in games:
+        opening = game.get('opening_normalized') or game.get('opening')
+        if not opening or opening == 'Unknown':
+            continue
+            
+        result = game.get('result')
+        if result not in ['win', 'loss', 'draw']:
+            continue
+        
+        if opening not in opening_performance:
+            opening_performance[opening] = {'wins': 0, 'total': 0, 'compatibility': 0}
+        
+        opening_performance[opening]['total'] += 1
+        if result == 'win':
+            opening_performance[opening]['wins'] += 1
+        opening_performance[opening]['compatibility'] = _calculate_opening_compatibility(opening, personality_scores)
+    
+    # Find style mismatches
+    for opening, stats in opening_performance.items():
+        if stats['total'] < 3:  # Need minimum sample size
+            continue
+            
+        win_rate = (stats['wins'] / stats['total'] * 100) if stats['total'] > 0 else 0
+        compatibility = stats['compatibility']
+        
+        # Style mismatch with poor performance
+        if compatibility < 40 and win_rate < 45:
+            insights.append(
+                f"Your {opening} (win rate: {win_rate:.0f}%) doesn't match your playing style. "
+                f"Consider switching to openings that better suit your strengths."
+            )
+        
+        # High compatibility but underperforming
+        elif compatibility > 70 and win_rate < 40:
+            insights.append(
+                f"Your {opening} should suit your style, but you're underperforming ({win_rate:.0f}% win rate). "
+                f"Consider studying this opening more deeply to unlock its potential."
+            )
+    
+    # Trait-specific insights (more lenient thresholds)
+    aggressive = personality_scores.get('aggressive', 50)
+    tactical = personality_scores.get('tactical', 50)
+    positional = personality_scores.get('positional', 50)
+    patient = personality_scores.get('patient', 50)
+    
+    # Find dominant trait
+    traits = {'aggressive': aggressive, 'tactical': tactical, 'positional': positional, 'patient': patient}
+    dominant_trait = max(traits.items(), key=lambda x: x[1])
+    trait_name, trait_score = dominant_trait
+    
+    # Aggressive player with quiet openings (lowered threshold to 65)
+    if aggressive > 65 and positional < 45:
+        quiet_openings = sum(1 for g in games if any(q in (g.get('opening_normalized') or '').lower() 
+                                                       for q in ['london', 'caro-kann', 'french']))
+        if quiet_openings > len(games) * 0.25:  # Lowered from 30% to 25%
+            insights.append(
+                f"Your aggressive style ({aggressive:.0f}/100) conflicts with your quiet opening choices. "
+                f"Study pawn structure and prophylaxis in closed positions, or try more dynamic openings like the Sicilian Defense."
+            )
+    
+    # Positional player with sharp openings (lowered threshold to 65)
+    if positional > 65 and tactical < 45:
+        sharp_openings = sum(1 for g in games if any(s in (g.get('opening_normalized') or '').lower() 
+                                                      for s in ['sicilian', 'king\'s indian', 'dutch']))
+        if sharp_openings > len(games) * 0.25:  # Lowered from 30% to 25%
+            insights.append(
+                f"Your positional style ({positional:.0f}/100) may struggle in sharp tactical lines. "
+                f"Practice tactical puzzles focusing on opening traps and combinations."
+            )
+    
+    # Patient player trying too many different openings (lowered threshold to 65)
+    if patient > 65:
+        unique_openings = len(set(g.get('opening_normalized') or g.get('opening') 
+                                  for g in games if g.get('opening_normalized') or g.get('opening')))
+        if unique_openings > 12:  # Lowered from 15 to 12
+            insights.append(
+                f"Your patient style ({patient:.0f}/100) benefits from deep preparation. "
+                f"Consider narrowing your repertoire to master fewer openings thoroughly."
+            )
+    
+    # General insights based on dominant trait (always provide at least one)
+    if len(insights) == 0 and trait_score > 55:
+        if trait_name == 'aggressive':
+            insights.append(f"As an aggressive player ({trait_score:.0f}/100), focus on sharp openings that create immediate tension and attacking chances.")
+        elif trait_name == 'tactical':
+            insights.append(f"Your tactical strength ({trait_score:.0f}/100) suits complex openings. Consider studying opening traps and tactical patterns.")
+        elif trait_name == 'positional':
+            insights.append(f"Your positional understanding ({trait_score:.0f}/100) is strong. Focus on strategic openings that emphasize long-term planning.")
+        elif trait_name == 'patient':
+            insights.append(f"Your patient approach ({trait_score:.0f}/100) suits solid openings. Build a consistent repertoire and master key positions.")
+    
+    # Add general insight about opening repertoire if we have enough data
+    if len(games) > 50 and len(insights) < 3:
+        unique_openings = len(set(g.get('opening_normalized') or g.get('opening') 
+                                  for g in games if g.get('opening_normalized') or g.get('opening')))
+        if unique_openings < 5:
+            insights.append("Your repertoire is quite narrow. Consider expanding to 5-8 core openings for more flexibility against different opponents.")
+        elif unique_openings > 20:
+            insights.append("You play many different openings. Focusing on fewer openings will help you develop deeper understanding and preparation.")
+    
+    # Limit to top 5 most relevant insights
+    return insights[:5]
+
+
+def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[str, float]) -> RepertoireAnalysis:
+    """Analyze the player's opening repertoire."""
+    white_openings = Counter()
+    black_openings = Counter()
+    opening_results = {}
+    
+    for game in games:
+        opening = game.get('opening_normalized') or game.get('opening')
+        if not opening or opening == 'Unknown':
+            continue
+        
+        color = game.get('my_color')
+        result = game.get('result')
+        
+        if color == 'white':
+            white_openings[opening] += 1
+        elif color == 'black':
+            black_openings[opening] += 1
+        
+        if opening not in opening_results:
+            opening_results[opening] = {'wins': 0, 'total': 0}
+        opening_results[opening]['total'] += 1
+        if result == 'win':
+            opening_results[opening]['wins'] += 1
+    
+    # Calculate diversity score
+    total_white = sum(white_openings.values())
+    total_black = sum(black_openings.values())
+    unique_white = len(white_openings)
+    unique_black = len(black_openings)
+    
+    # Diversity score: balance between too few (narrow) and too many (unfocused)
+    ideal_repertoire_size = 5  # Ideal is around 5 openings per color
+    white_diversity = min(100, (unique_white / ideal_repertoire_size) * 100) if total_white > 0 else 0
+    black_diversity = min(100, (unique_black / ideal_repertoire_size) * 100) if total_black > 0 else 0
+    diversity_score = (white_diversity + black_diversity) / 2
+    
+    # Find most successful and weakest openings
+    most_successful = {'opening': 'None', 'win_rate': 0, 'games': 0}
+    needs_work = {'opening': 'None', 'win_rate': 100, 'games': 0}
+    
+    for opening, stats in opening_results.items():
+        if stats['total'] < 3:  # Minimum sample size
+            continue
+        win_rate = (stats['wins'] / stats['total'] * 100)
+        
+        if win_rate > most_successful['win_rate']:
+            most_successful = {'opening': opening, 'win_rate': win_rate, 'games': stats['total']}
+        if win_rate < needs_work['win_rate']:
+            needs_work = {'opening': opening, 'win_rate': win_rate, 'games': stats['total']}
+    
+    # Calculate style match score
+    style_matches = []
+    for opening in list(white_openings.keys()) + list(black_openings.keys()):
+        compatibility = _calculate_opening_compatibility(opening, personality_scores)
+        style_matches.append(compatibility)
+    
+    style_match_score = sum(style_matches) / len(style_matches) if style_matches else 50.0
+    
+    return RepertoireAnalysis(
+        diversity_score=_round2(diversity_score),
+        white_openings=list(white_openings.keys())[:5],
+        black_openings=list(black_openings.keys())[:5],
+        most_successful=most_successful,
+        needs_work=needs_work,
+        style_match_score=_round2(style_match_score)
+    )
+
+
+def _generate_improvement_trend(games: List[Dict[str, Any]], analyses: List[Dict[str, Any]]) -> List[TrendPoint]:
+    """Generate opening performance trend over time."""
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    
+    # Build a map of game_id to analysis for proper matching
+    analysis_map = {}
+    for analysis in analyses:
+        game_id = analysis.get('game_id')
+        if game_id:
+            analysis_map[game_id] = analysis
+    
+    # Group games by week
+    weekly_data = defaultdict(lambda: {'wins': 0, 'total': 0, 'opening_accuracies': []})
+    
+    for game in games:
+        played_at = game.get('played_at')
+        if not played_at:
+            continue
+        
+        try:
+            date = datetime.fromisoformat(played_at.replace('Z', '+00:00'))
+            # Get Monday of the week
+            week_start = date - timedelta(days=date.weekday())
+            week_key = week_start.strftime('%Y-%m-%d')
+            
+            result = game.get('result')
+            if result == 'win':
+                weekly_data[week_key]['wins'] += 1
+            weekly_data[week_key]['total'] += 1
+            
+            # Get opening accuracy for this game if analysis exists
+            game_id = game.get('id') or game.get('provider_game_id')
+            if game_id and game_id in analysis_map:
+                analysis = analysis_map[game_id]
+                moves = analysis.get('moves_analysis') or []
+                opening_moves = [m for m in moves if m.get('opening_ply', 0) <= 20 and m.get('is_user_move', False)]
+                if opening_moves:
+                    game_opening_acc = _calculate_opening_accuracy_chesscom(opening_moves)
+                    weekly_data[week_key]['opening_accuracies'].append(game_opening_acc)
+        except Exception as e:
+            print(f"Error processing game for trend: {e}")
+            continue
+    
+    # Convert to trend points
+    trend_points = []
+    for week, data in sorted(weekly_data.items()):
+        win_rate = (data['wins'] / data['total'] * 100) if data['total'] > 0 else 0
+        avg_accuracy = sum(data['opening_accuracies']) / len(data['opening_accuracies']) if data['opening_accuracies'] else 0
+        
+        trend_points.append(TrendPoint(
+            date=week,
+            opening_win_rate=_round2(win_rate),
+            games=data['total'],
+            accuracy=_round2(avg_accuracy)
+        ))
+    
+    # Return last 12 weeks
+    return trend_points[-12:]
+
+
+def _generate_enhanced_opening_analysis(
+    games: List[Dict[str, Any]],
+    analyses: List[Dict[str, Any]],
+    personality_scores: Dict[str, float]
+) -> EnhancedOpeningAnalysis:
+    """Generate comprehensive enhanced opening analysis."""
+    opening_win_rate = _compute_opening_win_rate(analyses)
+    specific_mistakes = _extract_opening_mistakes(analyses)
+    style_recommendations = _generate_style_recommendations(personality_scores, games)
+    actionable_insights = _generate_actionable_insights(personality_scores, games, analyses)
+    improvement_trend = _generate_improvement_trend(games, analyses)
+    repertoire_analysis = _analyze_repertoire(games, personality_scores)
+    
+    return EnhancedOpeningAnalysis(
+        opening_win_rate=opening_win_rate,
+        specific_mistakes=specific_mistakes,
+        style_recommendations=style_recommendations,
+        actionable_insights=actionable_insights,
+        improvement_trend=improvement_trend,
+        repertoire_analysis=repertoire_analysis
+    )
+
+
 def _build_deep_analysis_response(
     canonical_user_id: str,
     games: List[Dict[str, Any]],
@@ -1686,6 +2271,25 @@ def _build_deep_analysis_response(
     recommendations = _build_recommendations(personality_scores, player_style, strengths, improvements, phase_accuracies)
     famous_players = _generate_famous_player_comparisons(personality_scores, player_style)
     ai_style_analysis = _generate_ai_style_analysis(personality_scores, player_style, player_level, total_games, average_accuracy, phase_accuracies)
+    
+    # Generate enhanced opening analysis
+    enhanced_opening_analysis = None
+    if analyses and games:
+        try:
+            print(f"Generating enhanced opening analysis for {len(games)} games, {len(analyses)} analyses")
+            enhanced_opening_analysis = _generate_enhanced_opening_analysis(games, analyses, personality_scores)
+            print(f"Enhanced opening analysis generated successfully")
+            if enhanced_opening_analysis:
+                print(f"  - Win rate: {enhanced_opening_analysis.opening_win_rate}%")
+                print(f"  - Mistakes: {len(enhanced_opening_analysis.specific_mistakes)}")
+                print(f"  - Recommendations: {len(enhanced_opening_analysis.style_recommendations)}")
+                print(f"  - Insights: {len(enhanced_opening_analysis.actionable_insights)}")
+                print(f"  - Trend points: {len(enhanced_opening_analysis.improvement_trend)}")
+        except Exception as e:
+            import traceback
+            print(f"Error generating enhanced opening analysis: {e}")
+            print(traceback.format_exc())
+            # Continue without enhanced analysis if it fails
 
     return DeepAnalysisData(
         total_games=total_games,
@@ -1700,7 +2304,8 @@ def _build_deep_analysis_response(
         phase_accuracies=phase_accuracies,
         recommendations=recommendations,
         famous_players=famous_players,
-        ai_style_analysis=ai_style_analysis
+        ai_style_analysis=ai_style_analysis,
+        enhanced_opening_analysis=enhanced_opening_analysis
     )
 
 
@@ -1970,8 +2575,9 @@ async def _fetch_lichess_games(
         to_date: Optional ISO date string for filtering games before this date
     """
     try:
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
+        # Use shared HTTP client with connection pooling
+        session = await get_http_client()
+        try:
             url = f"https://lichess.org/api/games/user/{user_id}"
             params = {
                 'max': limit
@@ -2009,6 +2615,9 @@ async def _fetch_lichess_games(
                 else:
                     print(f"Lichess API error: {response.status}")
                     return []
+        except Exception as inner_e:
+            print(f"Error in Lichess API request: {inner_e}")
+            return []
     except Exception as e:
         print(f"Error fetching Lichess games: {e}")
         return []
@@ -2016,17 +2625,25 @@ async def _fetch_lichess_games(
 async def _fetch_chesscom_stats(user_id: str) -> Dict[str, Any]:
     """Fetch chess.com player stats to get highest ratings"""
     try:
-        import aiohttp
+        # Use shared HTTP client with connection pooling
+        session = await get_http_client()
         
-        async with aiohttp.ClientSession() as session:
+        # Chess.com API requires User-Agent header
+        headers = {
+            'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
+        }
+        try:
             url = f"https://api.chess.com/pub/player/{user_id}/stats"
             
-            async with session.get(url) as response:
+            async with session.get(url, headers=headers) as response:
                 if response.status == 200:
                     return await response.json()
                 else:
                     print(f"Chess.com stats API returned status {response.status}")
                     return {}
+        except Exception as inner_e:
+            print(f"Error in Chess.com stats request: {inner_e}")
+            return {}
                     
     except Exception as e:
         print(f"Error fetching Chess.com stats: {e}")
@@ -2053,11 +2670,16 @@ async def _fetch_chesscom_games(
     print(f"[chess.com] Date range: from_date={from_date}, to_date={to_date}, oldest_game_month={oldest_game_month}")
     
     try:
-        import aiohttp
         from datetime import datetime, timedelta
 
         games = []
-        async with aiohttp.ClientSession() as session:
+        # Use shared HTTP client with connection pooling
+        session = await get_http_client()
+        # Chess.com API requires User-Agent header per their API guidelines
+        headers = {
+            'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
+        }
+        try:
             # Parse date range if provided
             from_year, from_month = None, None
             to_year, to_month = None, None
@@ -2100,8 +2722,8 @@ async def _fetch_chesscom_games(
             if from_year and from_month:
                 start_year, start_month = from_year, from_month
             else:
-                # Default to 10 years ago to catch all games
-                start_date = datetime.now() - timedelta(days=365 * 10)
+                # Default to 2 years ago - most players don't need more than that
+                start_date = datetime.now() - timedelta(days=365 * 2)
                 start_year = start_date.year
                 start_month = start_date.month
                 print(f"[chess.com] No date range specified, will fetch games back to {start_year}/{start_month:02d}")
@@ -2109,19 +2731,31 @@ async def _fetch_chesscom_games(
             # Fetch in REVERSE chronological order (newest first)
             print(f"[chess.com] Starting fetch loop from {current_year}/{current_month:02d} to {start_year}/{start_month:02d}")
             month_count = 0
+            consecutive_failures = 0
+            max_consecutive_failures = 6  # Stop after 6 months with no games
             
             while (current_year > start_year or (current_year == start_year and current_month >= start_month)) and len(games) < limit:
+                # Check if we should stop due to consecutive failures
+                if consecutive_failures >= max_consecutive_failures:
+                    print(f"[chess.com] Stopping: {consecutive_failures} consecutive months with no games")
+                    break
+                
                 month_count += 1
                 url = f"https://api.chess.com/pub/player/{user_id}/games/{current_year}/{current_month:02d}"
                 print(f"[chess.com] Fetching month {month_count}: {current_year}/{current_month:02d} from {url}")
 
                 try:
-                    async with session.get(url) as response:
+                    async with session.get(url, headers=headers) as response:
                         print(f"[chess.com] Response status: {response.status}")
                         if response.status == 200:
                             data = await response.json()
                             month_games = data.get('games', [])
                             print(f"[chess.com] Month {current_year}/{current_month:02d}: Found {len(month_games)} games")
+                            
+                            if len(month_games) > 0:
+                                consecutive_failures = 0  # Reset counter on success
+                            else:
+                                consecutive_failures += 1  # Empty month counts as failure
                             
                             # Reverse to get newest games in month first
                             month_games.reverse()
@@ -2139,10 +2773,17 @@ async def _fetch_chesscom_games(
                             print(f"[chess.com] Parsed {parsed_count} games, total so far: {len(games)}")
                         elif response.status == 404:
                             print(f"[chess.com] Month {current_year}/{current_month:02d}: No games found (404)")
+                            consecutive_failures += 1
+                        elif response.status == 410:
+                            # 410 Gone - old archives no longer available, should stop
+                            print(f"[chess.com] Month {current_year}/{current_month:02d}: Archive no longer available (410)")
+                            consecutive_failures += 1
                         else:
                             print(f"[chess.com] Month {current_year}/{current_month:02d}: Unexpected status {response.status}")
+                            consecutive_failures += 1
                 except Exception as month_error:
                     print(f"[chess.com] Error fetching month {current_year}/{current_month:02d}: {month_error}")
+                    consecutive_failures += 1
 
                 # Move to previous month
                 if current_month == 1:
@@ -2152,8 +2793,13 @@ async def _fetch_chesscom_games(
                     current_month -= 1
             
             print(f"[chess.com] Fetch complete. Total games fetched: {len(games)}, months checked: {month_count}")
-
-        return games[:limit]
+            return games[:limit]
+        
+        except Exception as inner_e:
+            print(f"[chess.com] ERROR in fetch loop: {inner_e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     except Exception as e:
         print(f"[chess.com] ERROR in _fetch_chesscom_games: {e}")
@@ -2192,7 +2838,11 @@ async def _fetch_single_chesscom_game(user_id: str, game_id: str) -> Optional[st
         # The game_id is typically a URL like "https://www.chess.com/game/live/123456"
         # We'll extract just the number and search through recent months
         
-        async with aiohttp.ClientSession() as session:
+        # Chess.com API requires User-Agent header
+        headers = {
+            'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
+        }
+        async with aiohttp.ClientSession(headers=headers) as session:
             # Search last 3 months of games
             end_date = datetime.now()
             
@@ -2294,7 +2944,8 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
             return None
         
         # Convert result to standard format (win/loss/draw)
-        print(f"[DEBUG] Chess.com result for {user_id}: '{result}' (type: {type(result)})")
+        if os.getenv("DEBUG", "false").lower() == "true":
+            print(f"[DEBUG] Chess.com result for {user_id}: '{result}' (type: {type(result)})")
         if result == 'win':
             result = 'win'
         elif result == 'lose':
@@ -2422,14 +3073,15 @@ async def import_games_smart(request: Dict[str, Any]):
         
         print(f"[Smart import] Paginated through {offset + len(existing_games_response.data) if existing_games_response.data else offset} total game records")
         
-        # DEBUG: Write to file for diagnosis
-        with open('smart_import_debug.txt', 'w') as f:
-            f.write(f"[Smart import] Existing game IDs count: {len(existing_game_ids)}\n")
-            f.write(f"[Smart import] Queried for user_id='{canonical_user_id}', platform='{platform}'\n")
-            if existing_game_ids:
-                f.write(f"[Smart import] Sample existing game IDs (first 3): {list(existing_game_ids)[:3]}\n")
-            else:
-                f.write(f"[Smart import] WARNING: No existing games found in database!\n")
+        # DEBUG: Write to file for diagnosis (only when DEBUG=true)
+        if os.getenv("DEBUG", "false").lower() == "true":
+            with open('smart_import_debug.txt', 'w') as f:
+                f.write(f"[Smart import] Existing game IDs count: {len(existing_game_ids)}\n")
+                f.write(f"[Smart import] Queried for user_id='{canonical_user_id}', platform='{platform}'\n")
+                if existing_game_ids:
+                    f.write(f"[Smart import] Sample existing game IDs (first 3): {list(existing_game_ids)[:3]}\n")
+                else:
+                    f.write(f"[Smart import] WARNING: No existing games found in database!\n")
         
         print(f"[Smart import] Existing game IDs count: {len(existing_game_ids)}")
         print(f"[Smart import] Queried for user_id='{canonical_user_id}', platform='{platform}'")
@@ -2954,10 +3606,10 @@ def _log_task_error(task: asyncio.Task, key: str) -> None:
 
 
 async def _perform_large_import(user_id: str, platform: str, limit: int, from_date: Optional[str] = None, to_date: Optional[str] = None):
-    """Background task to import games in batches"""
+    """Background task to import games in batches (memory-optimized with adaptive sizing)"""
     canonical_user_id = _canonical_user_id(user_id, platform)
     key = f"{canonical_user_id}_{platform.lower()}"
-    batch_size = 100
+    batch_size = IMPORT_BATCH_SIZE  # Start with optimized batch size (50)
     total_imported = 0
     until_timestamp = None  # For Lichess pagination
     oldest_game_month = None  # For Chess.com pagination
@@ -2966,168 +3618,130 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
     print(f"[large_import] User: {user_id}, Platform: {platform}, Limit: {limit}")
     print(f"[large_import] Canonical User ID: {canonical_user_id}, Key: {key}")
     
-    try:
-        # Check if database is configured
-        if not (supabase_service or supabase):
-            error_msg = "Database not configured"
-            large_import_progress[key] = {
-                "status": "error",
-                "imported_games": 0,
-                "total_to_import": 0,
-                "progress_percentage": 0,
-                "current_phase": "error",
-                "message": error_msg
-            }
-            print(f"[large_import] ERROR: {error_msg}")
-            return
-        
-        print(f"[large_import] Database client available: supabase_service={supabase_service is not None}, supabase={supabase is not None}")
-        
-        # Get existing game IDs with error handling
+    # Check if we can acquire semaphore (respects concurrent import limit)
+    semaphore_acquired = False
+    if import_semaphore.locked():
+        # Semaphore is at capacity - inform user they're queued
+        print(f"[large_import] Import semaphore at capacity, waiting for slot...")
+        large_import_progress[key].update({
+            "status": "queued",
+            "message": f"Import queued - {import_semaphore._value} of {MAX_CONCURRENT_IMPORTS} import slots available"
+        })
+    
+    # Acquire semaphore to limit concurrent imports
+    async with import_semaphore:
+        semaphore_acquired = True
+        print(f"[large_import] Semaphore acquired - starting import (available slots: {import_semaphore._value}/{MAX_CONCURRENT_IMPORTS})")
+        large_import_progress[key].update({
+            "status": "importing",
+            "message": "Import slot acquired - starting..."
+        })
+    
         try:
-            print(f"[large_import] Fetching existing games from database...")
-            # IMPORTANT: Must set limit high enough to get ALL games (default is only 1000)
-            existing_games = supabase_service.table('games').select('provider_game_id').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).limit(10000).execute()
-            existing_ids = {g.get('provider_game_id') for g in (existing_games.data or [])}
-            print(f"[large_import] Found {len(existing_ids)} existing games in database")
-        except Exception as e:
-            error_msg = f"Failed to query existing games: {str(e)}"
-            print(f"[large_import] ERROR: {error_msg}")
-            large_import_progress[key].update({
-                "status": "error",
-                "message": error_msg
-            })
-            return
-        
-        print(f"[large_import] Starting import for {user_id}, existing games: {len(existing_ids)}")
-        
-        # Import in batches
-        consecutive_no_new_games = 0
-        # For Chess.com, be more aggressive since we need to check all historical games
-        max_consecutive_no_new = 50 if platform == 'chess.com' else 10
-        total_games_checked = 0  # Track total games fetched from platform
-        print(f"[large_import] Will stop after {max_consecutive_no_new} consecutive batches with no new games")
-        
-        # For Chess.com, use larger batches to get all games from multiple months at once
-        batch_size_adjusted = limit if platform == 'chess.com' else batch_size
-        
-        for batch_start in range(0, limit, batch_size):
-            # Check cancel flag
-            if large_import_cancel_flags.get(key, False):
-                large_import_progress[key].update({
-                    "status": "cancelled",
-                    "message": f"Import cancelled. {total_imported} games imported."
-                })
-                print("[large_import] Import cancelled by user")
+            # Check if database is configured
+            if not (supabase_service or supabase):
+                error_msg = "Database not configured"
+                large_import_progress[key] = {
+                    "status": "error",
+                    "imported_games": 0,
+                    "total_to_import": 0,
+                    "progress_percentage": 0,
+                    "current_phase": "error",
+                    "message": error_msg
+                }
+                print(f"[large_import] ERROR: {error_msg}")
                 return
             
-            # Fetch batch with pagination support
-            batch_limit = batch_size_adjusted if platform == 'chess.com' else min(batch_size, limit - batch_start)
-            batch_num = batch_start // batch_size + 1
-            print(f"[large_import] ===== BATCH {batch_num} =====")
-            print(f"[large_import] Fetching games (batch limit: {batch_limit}, offset: {batch_start}/{limit})")
-            print(f"[large_import] Pagination state - until_timestamp: {until_timestamp}, oldest_game_month: {oldest_game_month}")
+            print(f"[large_import] Database client available: supabase_service={supabase_service is not None}, supabase={supabase is not None}")
             
+            # Get existing game IDs with error handling (paginated for memory efficiency)
             try:
-                games_data = await _fetch_games_from_platform(
-                    user_id, platform, batch_limit, until_timestamp, from_date, to_date, oldest_game_month
-                )
-                print(f"[large_import] Fetch completed. Received {len(games_data) if games_data else 0} games")
+                print(f"[large_import] Fetching existing games from database (paginated)...")
+                existing_ids = set()  # Use set for O(1) lookup and memory efficiency
+                offset = 0
+                
+                # Fetch in pages to reduce memory footprint
+                while True:
+                    page = supabase_service.table('games').select('provider_game_id').eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).range(
+                        offset, offset + EXISTING_GAMES_PAGE_SIZE - 1
+                    ).execute()
+                    
+                    if not page.data or len(page.data) == 0:
+                        break
+                    
+                    # Add to set (memory efficient - no duplicates)
+                    existing_ids.update(g.get('provider_game_id') for g in page.data if g.get('provider_game_id'))
+                    
+                    # Check if we got a full page (if not, we're done)
+                    if len(page.data) < EXISTING_GAMES_PAGE_SIZE:
+                        break
+                    
+                    offset += EXISTING_GAMES_PAGE_SIZE
+                    
+                    # Allow other tasks to run
+                    await asyncio.sleep(0.01)
+                
+                print(f"[large_import] Found {len(existing_ids)} existing games in database")
             except Exception as e:
-                error_msg = f"Failed to fetch games (batch {batch_num}): {str(e)}"
+                error_msg = f"Failed to query existing games: {str(e)}"
                 print(f"[large_import] ERROR: {error_msg}")
                 large_import_progress[key].update({
                     "status": "error",
-                    "message": error_msg,
-                    "imported_games": total_imported
+                    "message": error_msg
                 })
                 return
             
-            if not games_data:
-                print(f"[large_import] No more games to fetch, stopping")
-                break
+            print(f"[large_import] Starting import for {user_id}, existing games: {len(existing_ids)}")
             
-            # Track total games checked
-            total_games_checked += len(games_data)
+            # Import in batches
+            consecutive_no_new_games = 0
+            # For Chess.com, be more aggressive since we need to check all historical games
+            max_consecutive_no_new = 50 if platform == 'chess.com' else 10
+            total_games_checked = 0  # Track total games fetched from platform
+            print(f"[large_import] Will stop after {max_consecutive_no_new} consecutive batches with no new games")
             
-            # Filter new games
-            new_games = [g for g in games_data if g.get('id') not in existing_ids]
-            print(f"[large_import] Batch {batch_num}: fetched {len(games_data)}, new: {len(new_games)}, total checked: {total_games_checked}")
+            # For Chess.com, use larger batches to get all games from multiple months at once
+            batch_size_adjusted = limit if platform == 'chess.com' else batch_size
             
-            # Track consecutive batches with no new games
-            if len(new_games) == 0:
-                consecutive_no_new_games += 1
-                if consecutive_no_new_games >= max_consecutive_no_new:
-                    print(f"[large_import] No new games in {max_consecutive_no_new} consecutive batches, stopping")
-                    break
-            else:
-                consecutive_no_new_games = 0  # Reset counter
-            
-            # Update pagination for next batch
-            if platform == 'lichess' and games_data:
-                # Update until_timestamp for Lichess (get oldest game's timestamp)
-                for game in reversed(games_data):
-                    played_at = game.get('played_at')
-                    if played_at:
-                        try:
-                            from datetime import datetime
-                            if isinstance(played_at, str):
-                                dt = datetime.fromisoformat(played_at.replace('Z', '+00:00'))
-                                until_timestamp = int(dt.timestamp() * 1000)  # Convert to milliseconds
-                            break
-                        except Exception as e:
-                            print(f"[large_import] Error parsing timestamp: {e}")
-            elif platform == 'chess.com' and games_data:
-                # Update oldest_game_month for Chess.com pagination
-                for game in reversed(games_data):
-                    played_at = game.get('played_at')
-                    if played_at:
-                        try:
-                            from datetime import datetime
-                            if isinstance(played_at, str):
-                                dt = datetime.fromisoformat(played_at.replace('Z', '+00:00'))
-                                oldest_game_month = (dt.year, dt.month)
-                            break
-                        except Exception as e:
-                            print(f"[large_import] Error parsing Chess.com timestamp: {e}")
-            
-            if new_games:
-                # Import batch
-                print(f"[large_import] Processing {len(new_games)} new games for import...")
-                parsed_games = []
-                for game in new_games:
-                    parsed_games.append({
-                        'provider_game_id': game.get('id'),
-                        'pgn': game.get('pgn'),
-                        'result': game.get('result'),
-                        'color': game.get('color'),
-                        'time_control': game.get('time_control'),
-                        'opening': game.get('opening'),
-                        'opening_family': game.get('opening_family'),
-                        'opponent_rating': game.get('opponent_rating'),
-                        'my_rating': game.get('my_rating'),
-                        'total_moves': _count_moves_in_pgn(game.get('pgn', '')),
-                        'opponent_name': _extract_opponent_name_from_pgn(game.get('pgn', ''), game.get('color')),
-                        'played_at': game.get('played_at')
+            for batch_start in range(0, limit, batch_size):
+                # Check cancel flag
+                if large_import_cancel_flags.get(key, False):
+                    large_import_progress[key].update({
+                        "status": "cancelled",
+                        "message": f"Import cancelled. {total_imported} games imported."
                     })
+                    print("[large_import] Import cancelled by user")
+                    return
+                
+                # Adaptive batch sizing: reduce batch size for large imports to prevent timeouts
+                if total_imported >= 800:
+                    # Very large import: use smallest batches (25 games)
+                    current_batch_size = 25
+                elif total_imported >= 500:
+                    # Large import: use medium batches (35 games)
+                    current_batch_size = 35
+                else:
+                    # Normal: use standard batch size (50 games)
+                    current_batch_size = batch_size
+                
+                # Fetch batch with pagination support
+                batch_limit = batch_size_adjusted if platform == 'chess.com' else min(current_batch_size, limit - batch_start)
+                batch_num = batch_start // batch_size + 1
+                print(f"[large_import] ===== BATCH {batch_num} =====")
+                if current_batch_size != batch_size:
+                    print(f"[large_import] Using adaptive batch size: {current_batch_size} (reduced from {batch_size}) due to large import ({total_imported} games already imported)")
+                print(f"[large_import] Fetching games (batch limit: {batch_limit}, offset: {batch_start}/{limit})")
+                print(f"[large_import] Pagination state - until_timestamp: {until_timestamp}, oldest_game_month: {oldest_game_month}")
                 
                 try:
-                    bulk_request = BulkGameImportRequest(
-                        user_id=user_id,
-                        platform=platform,
-                        games=parsed_games
+                    games_data = await _fetch_games_from_platform(
+                        user_id, platform, batch_limit, until_timestamp, from_date, to_date, oldest_game_month
                     )
-                    print(f"[large_import] Calling import_games with {len(parsed_games)} games...")
-                    await import_games(bulk_request)
-                    print(f"[large_import] Import successful!")
-                    
-                    total_imported += len(new_games)
-                    existing_ids.update({g.get('id') for g in new_games})
-                    print(f"[large_import] Imported {len(new_games)} games, total: {total_imported}")
+                    print(f"[large_import] Fetch completed. Received {len(games_data) if games_data else 0} games")
                 except Exception as e:
-                    error_msg = f"Failed to import batch: {str(e)}"
+                    error_msg = f"Failed to fetch games (batch {batch_num}): {str(e)}"
                     print(f"[large_import] ERROR: {error_msg}")
                     large_import_progress[key].update({
                         "status": "error",
@@ -3135,54 +3749,164 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                         "imported_games": total_imported
                     })
                     return
+                
+                if not games_data:
+                    print(f"[large_import] No more games to fetch, stopping")
+                    break
+                
+                # Track total games checked
+                total_games_checked += len(games_data)
+                
+                # Filter new games
+                new_games = [g for g in games_data if g.get('id') not in existing_ids]
+                print(f"[large_import] Batch {batch_num}: fetched {len(games_data)}, new: {len(new_games)}, total checked: {total_games_checked}")
+                
+                # Track consecutive batches with no new games
+                if len(new_games) == 0:
+                    consecutive_no_new_games += 1
+                    if consecutive_no_new_games >= max_consecutive_no_new:
+                        print(f"[large_import] No new games in {max_consecutive_no_new} consecutive batches, stopping")
+                        break
+                else:
+                    consecutive_no_new_games = 0  # Reset counter
+                
+                # Update pagination for next batch
+                if platform == 'lichess' and games_data:
+                    # Update until_timestamp for Lichess (get oldest game's timestamp)
+                    for game in reversed(games_data):
+                        played_at = game.get('played_at')
+                        if played_at:
+                            try:
+                                from datetime import datetime
+                                if isinstance(played_at, str):
+                                    dt = datetime.fromisoformat(played_at.replace('Z', '+00:00'))
+                                    until_timestamp = int(dt.timestamp() * 1000)  # Convert to milliseconds
+                                break
+                            except Exception as e:
+                                print(f"[large_import] Error parsing timestamp: {e}")
+                elif platform == 'chess.com' and games_data:
+                    # Update oldest_game_month for Chess.com pagination
+                    for game in reversed(games_data):
+                        played_at = game.get('played_at')
+                        if played_at:
+                            try:
+                                from datetime import datetime
+                                if isinstance(played_at, str):
+                                    dt = datetime.fromisoformat(played_at.replace('Z', '+00:00'))
+                                    oldest_game_month = (dt.year, dt.month)
+                                break
+                            except Exception as e:
+                                print(f"[large_import] Error parsing Chess.com timestamp: {e}")
+                
+                if new_games:
+                    # Import batch
+                    print(f"[large_import] Processing {len(new_games)} new games for import...")
+                    parsed_games = []
+                    for game in new_games:
+                        parsed_games.append({
+                            'provider_game_id': game.get('id'),
+                            'pgn': game.get('pgn'),
+                            'result': game.get('result'),
+                            'color': game.get('color'),
+                            'time_control': game.get('time_control'),
+                            'opening': game.get('opening'),
+                            'opening_family': game.get('opening_family'),
+                            'opponent_rating': game.get('opponent_rating'),
+                            'my_rating': game.get('my_rating'),
+                            'total_moves': _count_moves_in_pgn(game.get('pgn', '')),
+                            'opponent_name': _extract_opponent_name_from_pgn(game.get('pgn', ''), game.get('color')),
+                            'played_at': game.get('played_at')
+                        })
+                    
+                    try:
+                        bulk_request = BulkGameImportRequest(
+                            user_id=user_id,
+                            platform=platform,
+                            games=parsed_games
+                        )
+                        print(f"[large_import] Calling import_games with {len(parsed_games)} games...")
+                        await import_games(bulk_request)
+                        print(f"[large_import] Import successful!")
+                        
+                        total_imported += len(new_games)
+                        existing_ids.update({g.get('id') for g in new_games})
+                        print(f"[large_import] Imported {len(new_games)} games, total: {total_imported}")
+                    except Exception as e:
+                        error_msg = f"Failed to import batch: {str(e)}"
+                        print(f"[large_import] ERROR: {error_msg}")
+                        large_import_progress[key].update({
+                            "status": "error",
+                            "message": error_msg,
+                            "imported_games": total_imported
+                        })
+                        return
+                
+                # Update progress
+                progress_pct = min(100, int((total_imported / limit) * 100)) if limit > 0 else 100
+                trigger_refresh = total_imported % 500 == 0 and total_imported > 0
+                
+                large_import_progress[key].update({
+                    "imported_games": total_imported,
+                    "progress_percentage": progress_pct,
+                    "current_phase": "importing",
+                    "message": f"Imported {total_imported} games...",
+                    "trigger_refresh": trigger_refresh
+                })
+                
+                # For Chess.com, we fetched all games in one go, so break after first batch
+                if platform == 'chess.com':
+                    print(f"[large_import] Chess.com: All available games fetched in batch 1, exiting loop")
+                    break
+                
+                # Memory optimization: More aggressive cleanup for large imports
+                if total_imported > 0:
+                    # Cleanup every 100 games (was 200) for better memory management
+                    if total_imported % 100 == 0:
+                        import gc
+                        games_data = None
+                        new_games = None
+                        parsed_games = None
+                        gc.collect()
+                        print(f"[large_import] Memory cleanup performed at {total_imported} games")
+                    
+                    # For very large imports (500+), add extra progress updates
+                    if total_imported >= 500 and total_imported % 50 == 0:
+                        print(f"[large_import] Progress update: {total_imported} games imported, still processing...")
+                
+                # Adaptive delay: longer delay for large imports to reduce system pressure
+                if total_imported < 500:
+                    await asyncio.sleep(0.1)
+                else:
+                    # Longer delay for large imports to prevent resource exhaustion
+                    await asyncio.sleep(0.2)
             
-            # Update progress
-            progress_pct = min(100, int((total_imported / limit) * 100)) if limit > 0 else 100
-            trigger_refresh = total_imported % 500 == 0 and total_imported > 0
+            # Complete
+            if total_imported == 0:
+                message = f"Import complete! Checked {total_games_checked} games, all were already imported. No new games found."
+            else:
+                message = f"Import complete! {total_imported} new games imported (checked {total_games_checked} total)."
             
             large_import_progress[key].update({
-                "imported_games": total_imported,
-                "progress_percentage": progress_pct,
-                "current_phase": "importing",
-                "message": f"Imported {total_imported} games...",
-                "trigger_refresh": trigger_refresh
+                "status": "completed",
+                "progress_percentage": 100,
+                "message": message,
+                "trigger_refresh": True
             })
+            print(f"[large_import] Import completed successfully: {total_imported} new games, {total_games_checked} total checked")
             
-            # For Chess.com, we fetched all games in one go, so break after first batch
-            if platform == 'chess.com':
-                print(f"[large_import] Chess.com: All available games fetched in batch 1, exiting loop")
-                break
-            
-            # Small delay to prevent overwhelming the system
-            await asyncio.sleep(0.1)
-        
-        # Complete
-        if total_imported == 0:
-            message = f"Import complete! Checked {total_games_checked} games, all were already imported. No new games found."
-        else:
-            message = f"Import complete! {total_imported} new games imported (checked {total_games_checked} total)."
-        
-        large_import_progress[key].update({
-            "status": "completed",
-            "progress_percentage": 100,
-            "message": message,
-            "trigger_refresh": True
-        })
-        print(f"[large_import] Import completed successfully: {total_imported} new games, {total_games_checked} total checked")
-        
-    except Exception as e:
-        print(f"[large_import] Error during import: {e}")
-        large_import_progress[key].update({
-            "status": "error",
-            "message": f"Import failed: {str(e)}"
-        })
+        except Exception as e:
+            print(f"[large_import] Error during import: {e}")
+            large_import_progress[key].update({
+                "status": "error",
+                "message": f"Import failed: {str(e)}"
+            })
 
 
 @app.get("/api/v1/import-progress/{user_id}/{platform}")
 async def get_import_progress(user_id: str, platform: str):
     """Get progress of ongoing import"""
     canonical_user_id = _canonical_user_id(user_id, platform)
-    key = f"{canonical_user_id}_{platform}"
+    key = f"{canonical_user_id}_{platform.lower()}"
     
     return large_import_progress.get(key, {
         "status": "idle",
@@ -3203,7 +3927,7 @@ async def cancel_import(request: Dict[str, Any]):
         raise HTTPException(status_code=400, detail="user_id and platform are required")
     
     canonical_user_id = _canonical_user_id(user_id, platform)
-    key = f"{canonical_user_id}_{platform}"
+    key = f"{canonical_user_id}_{platform.lower()}"
     
     large_import_cancel_flags[key] = True
     
@@ -3212,7 +3936,11 @@ async def cancel_import(request: Dict[str, Any]):
 
 @app.get("/debug/db-state/{user_id}/{platform}")
 async def debug_db_state(user_id: str, platform: str):
-    """Debug endpoint to check database state"""
+    """Debug endpoint to check database state. Only available when DEBUG=true."""
+    # Only allow in debug mode
+    if os.getenv("DEBUG", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail="Debug endpoints disabled in production")
+    
     try:
         canonical_user_id = user_id.strip().lower()
         
@@ -3254,8 +3982,12 @@ async def proxy_chess_com_games(username: str, year: int, month: int):
         url = f"https://api.chess.com/pub/player/{canonical_username}/games/{year}/{month_str}"
         print(f"Proxying request to: {url}")
         
+        # Chess.com API requires User-Agent header
+        headers = {
+            'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
+        }
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=30.0)
+            response = await client.get(url, headers=headers, timeout=30.0)
             
             if response.status_code == 200:
                 return response.json()
@@ -3277,8 +4009,12 @@ async def proxy_chess_com_user(username: str):
         url = f"https://api.chess.com/pub/player/{canonical_username}"
         print(f"Proxying user request to: {url}")
         
+        # Chess.com API requires User-Agent header
+        headers = {
+            'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
+        }
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=30.0)
+            response = await client.get(url, headers=headers, timeout=30.0)
             
             if response.status_code == 200:
                 return response.json()
@@ -3326,10 +4062,14 @@ async def validate_user(request: dict):
         else:  # chess.com
             # Check Chess.com user exists
             import httpx
+            # Chess.com API requires User-Agent header
+            headers = {
+                'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
+            }
             async with httpx.AsyncClient() as client:
                 canonical_username = user_id.strip().lower()
                 url = f"https://api.chess.com/pub/player/{canonical_username}"
-                response = await client.get(url, timeout=10.0)
+                response = await client.get(url, headers=headers, timeout=10.0)
                 
                 if response.status_code == 200:
                     return {"exists": True, "message": "User found on Chess.com"}
@@ -3541,7 +4281,8 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             ).eq('platform', request.platform).limit(5).execute()
             print(f"[SINGLE GAME ANALYSIS] Sample games for this user: {all_games.data if all_games else 'None'}")
         except Exception as debug_error:
-            print(f"[SINGLE GAME ANALYSIS] Debug query failed: {debug_error}")
+            if os.getenv("DEBUG", "false").lower() == "true":
+                print(f"[SINGLE GAME ANALYSIS] Debug query failed: {debug_error}")
         
         try:
             game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(

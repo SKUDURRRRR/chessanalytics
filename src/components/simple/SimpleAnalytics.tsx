@@ -70,7 +70,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   const loadData = useCallback(async (forceRefresh = false) => {
     // Prevent multiple simultaneous calls
     if (isLoadingRef.current) {
-      console.log('Already loading data, skipping duplicate call')
+      if (import.meta.env.DEV) {
+        console.log('Already loading data, skipping duplicate call')
+      }
       return
     }
 
@@ -105,20 +107,23 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       // Set default values for removed services
       const optimizedEloStats = null
 
-      console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
-      console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.totalGames)
-      console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
-      console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
-      console.log('Endgame accuracy:', analysisResult?.average_endgame_accuracy)
+      // Only log diagnostics in development mode
+      if (import.meta.env.DEV) {
+        console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
+        console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.totalGames)
+        console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
+        console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
+        console.log('Endgame accuracy:', analysisResult?.average_endgame_accuracy)
 
-      // Log validation issues if any
-      if (playerStats.validationIssues && playerStats.validationIssues.length > 0) {
-        console.warn('ELO data validation issues detected:', playerStats.validationIssues)
-      }
+        // Log validation issues if any
+        if (playerStats.validationIssues && playerStats.validationIssues.length > 0) {
+          console.warn('ELO data validation issues detected:', playerStats.validationIssues)
+        }
 
-      // Log comprehensive analytics benefits
-      if (comprehensiveAnalytics && comprehensiveAnalytics.totalGames > 0) {
-        console.log(`Comprehensive analytics: ${comprehensiveAnalytics.totalGames} games analyzed with single query`)
+        // Log comprehensive analytics benefits
+        if (comprehensiveAnalytics && comprehensiveAnalytics.totalGames > 0) {
+          console.log(`Comprehensive analytics: ${comprehensiveAnalytics.totalGames} games analyzed with single query`)
+        }
       }
 
       // Calculate realistic accuracy from raw game data using player rating
@@ -136,25 +141,27 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         validation_issues: playerStats.validationIssues
       } : null
 
-      // Debug: Compare the data sources
-      console.log('Data Comparison Debug:', {
-        comprehensiveAnalytics: {
-          totalGames: comprehensiveAnalytics?.totalGames,
-          openingStats: comprehensiveAnalytics?.openingStats?.slice(0, 3).map(o => ({
-            opening: o.opening,
-            games: o.games,
-            winRate: o.winRate
-          }))
-        },
-        worstOpeningsData: {
-          count: worstOpeningsData?.length,
-          openings: worstOpeningsData?.slice(0, 3).map(o => ({
-            opening: o.opening,
-            games: o.games,
-            winRate: o.winRate
-          }))
-        }
-      })
+      // Debug: Compare the data sources (only in development)
+      if (import.meta.env.DEV) {
+        console.log('Data Comparison Debug:', {
+          comprehensiveAnalytics: {
+            totalGames: comprehensiveAnalytics?.totalGames,
+            openingStats: comprehensiveAnalytics?.openingStats?.slice(0, 3).map(o => ({
+              opening: o.opening,
+              games: o.games,
+              winRate: o.winRate
+            }))
+          },
+          worstOpeningsData: {
+            count: worstOpeningsData?.length,
+            openings: worstOpeningsData?.slice(0, 3).map(o => ({
+              opening: o.opening,
+              games: o.games,
+              winRate: o.winRate
+            }))
+          }
+        })
+      }
 
       setData(enhancedData)
       setComprehensiveData(comprehensiveAnalytics)
@@ -902,6 +909,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 phaseAccuracy={deepAnalysisData.phase_accuracies?.opening || 0}
                 openingStats={comprehensiveData?.openingStats || []}
                 totalGames={deepAnalysisData.total_games || 0}
+                enhancedAnalysis={deepAnalysisData.enhanced_opening_analysis}
+                personalityScores={deepAnalysisData.personality_scores}
               />
             </div>
           </div>
