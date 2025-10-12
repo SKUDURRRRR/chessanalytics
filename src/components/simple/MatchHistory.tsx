@@ -350,9 +350,14 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         query = query.eq('opponent_name', opponentFilter)
       }
 
+      // When filtering by opening, fetch ALL games without limit
+      // This is necessary because we filter client-side after fetching
+      // TODO: Once opening_normalized column exists, restore pagination for filtered queries
       const currentPage = reset ? 1 : page
       const pageStart = (currentPage - 1) * gamesPerPage
       const pageEnd = currentPage * gamesPerPage - 1
+      
+      // Database filtering works now, use normal pagination
       const { data, error: dbError } = await query
         .order('played_at', { ascending: false })
         .range(pageStart, pageEnd)
@@ -362,8 +367,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       }
 
       if (data) {
-        // Database filtering is now done via opening_normalized column
-        // No client-side filtering needed - much more efficient!
+        // Database filtering via opening_normalized - no client-side filtering needed
         const mappedData = data.map(mapGameRow)
         const isReset = reset || page === 1
         if (isReset) {
@@ -371,7 +375,9 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         } else {
           setGames(prev => [...prev, ...mappedData])
         }
-        setHasMore(mappedData.length === gamesPerPage)
+        
+        // Normal pagination for all cases
+        setHasMore(data.length === gamesPerPage)
 
         if (isReset) {
           const providerIds = mappedData

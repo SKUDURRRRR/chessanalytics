@@ -18,6 +18,7 @@ export interface GameAnalytics {
   highestElo: number | null
   lowestElo: number | null
   currentElo: number | null
+  currentEloPerTimeControl: Record<string, number>
   averageElo: number | null
   eloRange: number | null
   timeControlWithHighestElo: string | null
@@ -169,10 +170,9 @@ export async function getMostPlayedOpeningForTimeControl(
     // Fetch all games with time_control and opening data
     const { data: games, error } = await supabase
       .from('games')
-      .select('opening, opening_family, time_control')
+      .select('opening, opening_family, opening_normalized, time_control')
       .eq('user_id', canonicalUserId)
       .eq('platform', platform)
-      .not('opening', 'is', null)
       .not('time_control', 'is', null)
     
     if (error || !games || games.length === 0) {
@@ -193,9 +193,8 @@ export async function getMostPlayedOpeningForTimeControl(
     
     for (const game of filteredGames) {
       const openingName = getOpeningNameWithFallback(
-        game.opening,
-        game.opening_family,
-        null
+        game.opening_normalized || game.opening || game.opening_family,
+        game  // Pass the full game object
       )
       const count = openingCounts.get(openingName) || 0
       openingCounts.set(openingName, count + 1)
@@ -349,6 +348,24 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
   const averageElo = elos.length > 0 ? elos.reduce((a, b) => a + b, 0) / elos.length : null
   const eloRange = highestElo && lowestElo ? highestElo - lowestElo : null
   
+  // Calculate current ELO per time control category
+  const currentEloPerTimeControl: Record<string, number> = {}
+  const timeControlGames = validGamesForElo.reduce((acc, game) => {
+    const tc = getTimeControlCategory(game.time_control || 'Unknown')
+    if (!acc[tc]) acc[tc] = []
+    acc[tc].push(game)
+    return acc
+  }, {} as Record<string, any[]>)
+
+  for (const [tc, tcGames] of Object.entries(timeControlGames)) {
+    const validRatings = tcGames
+      .filter(g => g.my_rating && g.my_rating > 0)
+      .sort((a, b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime())
+    if (validRatings.length > 0) {
+      currentEloPerTimeControl[tc] = validRatings[0].my_rating
+    }
+  }
+  
   // Debug: Log highest ELO calculation and check for correspondence games
   const correspondenceGames = validGamesForElo.filter(g => {
     const tc = g.time_control?.toLowerCase() || ''
@@ -444,6 +461,7 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
     highestElo,
     lowestElo,
     currentElo,
+    currentEloPerTimeControl,
     averageElo,
     eloRange,
     timeControlWithHighestElo,
@@ -524,7 +542,7 @@ function calculateOpeningStats(games: any[]): Array<{
 }> {
   // Filter out games without proper opening names (same logic as color performance)
   const validGames = games.filter(game => {
-    const opening = game.opening_family || game.opening
+    const opening = game.opening_normalized || game.opening_family || game.opening
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
   
@@ -533,8 +551,9 @@ function calculateOpeningStats(games: any[]): Array<{
   const openingMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   
   validGames.forEach(game => {
-    const rawOpening = game.opening_family || game.opening
-    const opening = getOpeningNameWithFallback(rawOpening)
+    // Use opening_normalized first (which has consolidated opening names)
+    const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    const opening = getOpeningNameWithFallback(rawOpening, game)
     if (!openingMap.has(opening)) {
       openingMap.set(opening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -576,13 +595,17 @@ function calculateOpeningStats(games: any[]): Array<{
   // Apply minimum game filter for statistical validity (5+ games)
   const filteredOpenings = allOpenings.filter(opening => opening.games >= 5)
 
+  // Filter for winning openings (win rate >= 50%)
+  const winningOpenings = filteredOpenings.filter(opening => opening.winRate >= 50)
+
   // Debug logging for winning openings calculation
   console.log('Winning Openings Debug:', {
     totalGames: games.length,
     validGames: validGames.length,
     totalOpenings: allOpenings.length,
     filteredOpenings: filteredOpenings.length,
-    top10Openings: filteredOpenings.sort((a, b) => b.games - a.games).slice(0, 10).map(o => ({
+    winningOpenings: winningOpenings.length,
+    top10WinningOpenings: winningOpenings.sort((a, b) => b.games - a.games).slice(0, 10).map(o => ({
       opening: o.opening,
       games: o.games,
       winRate: o.winRate.toFixed(1),
@@ -591,32 +614,23 @@ function calculateOpeningStats(games: any[]): Array<{
       draws: o.draws
     })),
     losingOpenings: filteredOpenings.filter(o => o.winRate < 50).length,
-    losingOpeningsDetails: filteredOpenings.filter(o => o.winRate < 50).sort((a, b) => b.games - a.games).slice(0, 15).map(o => ({
+    losingOpeningsDetails: filteredOpenings.filter(o => o.winRate < 50).sort((a, b) => b.games - a.games).slice(0, 10).map(o => ({
       opening: o.opening,
       games: o.games,
       winRate: o.winRate.toFixed(1),
       wins: o.wins,
       losses: o.losses,
       draws: o.draws
-    })),
-    singleGameOpenings: allOpenings.filter(o => o.games === 1).length,
-    filteredOutOpenings: allOpenings.length - filteredOpenings.length,
-    gameCountDistribution: filteredOpenings.reduce((acc, o) => {
-      acc[o.games] = (acc[o.games] || 0) + 1
-      return acc
-    }, {} as Record<number, number>)
+    }))
   })
 
-  return filteredOpenings
+  // Return winning openings (>= 50% win rate) sorted by most-played
+  return winningOpenings
     .sort((a, b) => {
-      // Primary sort: by win rate (descending - highest win rate first)
-      // Secondary sort: by games (descending - more games first for tie-breaking)
-      if (b.winRate !== a.winRate) {
-        return b.winRate - a.winRate
-      }
+      // Sort by games descending - most played winning openings first
       return b.games - a.games
     })
-    .slice(0, 10) // Top 10 openings
+    .slice(0, 10) // Top 10 most-played winning openings
 }
 
 /**
@@ -644,7 +658,7 @@ function calculateOpeningColorStats(games: any[]): {
 } {
   // Filter out games without proper opening names and normalize them
   const validGames = games.filter(game => {
-    const opening = game.opening_family || game.opening
+    const opening = game.opening_normalized || game.opening_family || game.opening
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
   
@@ -657,8 +671,9 @@ function calculateOpeningColorStats(games: any[]): {
   // Group white games by opening (with normalized names)
   const whiteOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   whiteGames.forEach(game => {
-    const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
+    // Use opening_normalized first (which has consolidated opening names)
+    const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
     if (!whiteOpeningMap.has(normalizedOpening)) {
       whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -674,8 +689,9 @@ function calculateOpeningColorStats(games: any[]): {
 
   const blackOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   blackGames.forEach(game => {
-    const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
+    // Use opening_normalized first (which has consolidated opening names)
+    const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
     if (!blackOpeningMap.has(normalizedOpening)) {
       blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -709,7 +725,7 @@ function calculateOpeningColorStats(games: any[]): {
       }
     }
   }).filter(stat => stat.games >= 5) // Only include openings with at least 5 games for statistical validity
-    .sort((a, b) => b.winRate - a.winRate) // Sort by win rate descending
+    .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
 
   const blackStats = Array.from(blackOpeningMap.entries()).map(([opening, details]) => {
     const openingGames = details.games
@@ -731,7 +747,7 @@ function calculateOpeningColorStats(games: any[]): {
       }
     }
   }).filter(stat => stat.games >= 5) // Only include openings with at least 5 games for statistical validity
-    .sort((a, b) => b.winRate - a.winRate) // Sort by win rate descending
+    .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
   
   return {
     white: whiteStats,
@@ -873,7 +889,7 @@ function calculateOpponentStats(games: any[]): {
     result: highestOpponentGame.result,
     gameId: highestOpponentGame.provider_game_id,
     playedAt: highestOpponentGame.played_at,
-    opening: getOpeningNameWithFallback(highestOpponentGame.opening_family || highestOpponentGame.opening || 'Unknown'),
+    opening: getOpeningNameWithFallback(highestOpponentGame.opening_normalized || highestOpponentGame.opening_family || highestOpponentGame.opening || 'Unknown'),
     totalMoves: highestOpponentGame.total_moves,
     color: highestOpponentGame.color,
     accuracy: highestOpponentGame.accuracy
@@ -890,7 +906,7 @@ function calculateOpponentStats(games: any[]): {
     result: 'win' as const,
     gameId: highestOpponentWin.provider_game_id,
     playedAt: highestOpponentWin.played_at,
-    opening: getOpeningNameWithFallback(highestOpponentWin.opening_family || highestOpponentWin.opening || 'Unknown'),
+    opening: getOpeningNameWithFallback(highestOpponentWin.opening_normalized || highestOpponentWin.opening_family || highestOpponentWin.opening || 'Unknown'),
     totalMoves: highestOpponentWin.total_moves,
     color: highestOpponentWin.color,
     accuracy: highestOpponentWin.accuracy
@@ -1228,6 +1244,7 @@ function getEmptyAnalytics(): GameAnalytics {
     highestElo: null,
     lowestElo: null,
     currentElo: null,
+    currentEloPerTimeControl: {},
     averageElo: null,
     eloRange: null,
     timeControlWithHighestElo: null,
@@ -1317,7 +1334,7 @@ export async function getOpeningPerformance(
 > {
   const { data: games, error } = await supabase
     .from('games')
-    .select('opening, opening_family, result, my_rating')
+    .select('opening, opening_family, opening_normalized, result, my_rating')
     .eq('user_id', userId.toLowerCase())
     .eq('platform', platform)
 
@@ -1327,14 +1344,14 @@ export async function getOpeningPerformance(
 
   // Filter out games without proper opening names (same logic as color performance)
   const validGames = games.filter(game => {
-    const opening = game.opening_family || game.opening
+    const opening = game.opening_normalized || game.opening_family || game.opening
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
 
   const openingMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   validGames.forEach(game => {
-    const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
+    const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
     if (!openingMap.has(normalizedOpening)) {
       openingMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1406,7 +1423,7 @@ export async function getOpeningColorPerformance(
 }> {
   const { data: games, error } = await supabase
     .from('games')
-    .select('opening, opening_family, result, my_rating, color')
+    .select('opening, opening_family, opening_normalized, result, my_rating, color')
     .eq('user_id', userId.toLowerCase())
     .eq('platform', platform)
 
@@ -1416,7 +1433,7 @@ export async function getOpeningColorPerformance(
 
   // Filter out games without proper opening names
   const validGames = games.filter(game => {
-    const opening = game.opening_family || game.opening
+    const opening = game.opening_normalized || game.opening_family || game.opening
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
   
@@ -1427,8 +1444,8 @@ export async function getOpeningColorPerformance(
   // Group white games by opening (with normalized names)
   const whiteOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   whiteGames.forEach(game => {
-    const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
+    const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
     if (!whiteOpeningMap.has(normalizedOpening)) {
       whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1445,8 +1462,8 @@ export async function getOpeningColorPerformance(
   // Group black games by opening (with normalized names)
   const blackOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   blackGames.forEach(game => {
-    const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
+    const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
     if (!blackOpeningMap.has(normalizedOpening)) {
       blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1481,7 +1498,7 @@ export async function getOpeningColorPerformance(
       }
     }
   }).filter(stat => stat.games >= 5) // Only include openings with at least 5 games for statistical validity
-    .sort((a, b) => b.winRate - a.winRate) // Sort by win rate descending
+    .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
     .slice(0, limit)
   
   // Calculate black opening stats
@@ -1505,7 +1522,7 @@ export async function getOpeningColorPerformance(
       }
     }
   }).filter(stat => stat.games >= 5) // Only include openings with at least 5 games for statistical validity
-    .sort((a, b) => b.winRate - a.winRate) // Sort by win rate descending
+    .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
     .slice(0, limit)
   
   return {
@@ -1547,14 +1564,14 @@ export async function getWorstOpeningPerformance(
 
   // Filter out games without proper opening names (same logic as other functions)
   const validGames = games.filter(game => {
-    const opening = game.opening_family || game.opening
+    const opening = game.opening_normalized || game.opening_family || game.opening
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
 
   const openingMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   validGames.forEach(game => {
-    const rawOpening = game.opening_family || game.opening
-    const normalizedOpening = getOpeningNameWithFallback(rawOpening)
+    const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
     if (!openingMap.has(normalizedOpening)) {
       openingMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1625,19 +1642,16 @@ export async function getWorstOpeningPerformance(
     }))
   })
 
-  // Get all losing openings (win rate < 50%) with at least 5 games and sort by worst win rate first
+  // Get all losing openings (win rate < 50%) with at least 5 games and sort by most-played
   let losingOpenings = allOpenings
     .filter(opening => opening.winRate < 50 && opening.games >= 5) // Apply both win rate and minimum games filter
     .sort((a, b) => {
-      // Primary sort: by win rate (ascending) - lowest win rate first
-      // Secondary sort: by games (descending) - more games first for tie-breaking
-      if (a.winRate !== b.winRate) {
-        return a.winRate - b.winRate
-      }
+      // Sort by games descending - most played losing openings first
+      // This ensures frequently-played losing openings appear instead of rare low-win-rate openings
       return b.games - a.games
     })
 
-  console.log(`Found ${losingOpenings.length} losing openings, showing top ${Math.min(limit, losingOpenings.length)}`)
+  console.log(`Found ${losingOpenings.length} losing openings, showing top ${Math.min(limit, losingOpenings.length)} most-played`)
 
   // If we have very few losing openings, also include some worst performers by win rate
   if (losingOpenings.length < 3) {
@@ -1755,6 +1769,7 @@ export async function getRecentPerformance(
     .eq('platform', platform)
     .not('my_rating', 'is', null)
     .not('time_control', 'is', null)
+    .order('played_at', { ascending: true })
 
   if (allGamesError || !allGames || allGames.length === 0) {
     return { winRate: 0, averageElo: 0, trend: 'stable', timeControlUsed: 'Unknown' }

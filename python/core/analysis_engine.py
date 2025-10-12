@@ -156,11 +156,17 @@ class AnalysisConfig:
     @classmethod
     def for_deep_analysis(cls) -> 'AnalysisConfig':
         """Configuration optimized for deep analysis (thorough, high accuracy)."""
+        # Use Railway Hobby settings from environment or defaults
+        # This ensures consistency with Railway hobby tier performance settings
+        import os
+        depth = int(os.getenv("STOCKFISH_DEPTH", "14"))
+        time_limit = float(os.getenv("STOCKFISH_TIME_LIMIT", "0.8"))
+        
         return cls(
             analysis_type=AnalysisType.STOCKFISH,
-            depth=18,  # Increased depth for deep analysis
+            depth=depth,  # Use Railway Hobby optimized depth
             skill_level=20,  # Maximum skill level
-            time_limit=3.0,  # 3 seconds per position for thorough analysis
+            time_limit=time_limit,  # Use Railway Hobby optimized time limit
             use_opening_book=True,
             use_endgame_tablebase=True,
             parallel_analysis=False,
@@ -1796,19 +1802,22 @@ class ChessAnalysisEngine:
         return total_accuracy / len(opening_moves)
     
     def _calculate_time_management_score(self, moves: List[MoveAnalysis]) -> float:
-        """Calculate time management score based on move timing patterns."""
+        """Calculate time management score based on move timing patterns.
+        
+        Returns score on 0-100 scale where:
+        - 0-30: Very fast/impulsive play
+        - 30-50: Quick decisions
+        - 50-70: Balanced time usage
+        - 70-90: Slow/careful thinking
+        - 90-100: Very slow/deliberate play
+        """
         if not moves:
-            return 0.0
+            return 50.0
         
-        # Simple time management score based on move consistency
-        # This is a placeholder implementation
-        total_moves = len(moves)
-        if total_moves < 2:
-            return 0.5
-        
-        # Calculate average time per move (simplified)
-        # In a real implementation, this would use actual move timestamps
-        return 0.75  # Placeholder score
+        # TODO: Implement proper time management calculation using move timestamps
+        # For now, return neutral score (50.0) since we don't have timing data
+        # This prevents the bug where 0.75 was being treated as 0.75% instead of 75%
+        return 50.0  # Neutral - awaiting implementation
     
     def _calculate_personality_scores(self, user_moves: List[MoveAnalysis], time_management_score: float = 0.0) -> Dict[str, float]:
         """Calculate six-trait personality scores from the user's moves."""

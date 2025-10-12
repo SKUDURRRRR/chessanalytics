@@ -36,6 +36,9 @@ from .error_handlers import (
     global_exception_handler
 )
 
+# Import opening normalization utilities
+from .opening_utils import normalize_opening_name
+
 # Load environment configuration
 from .config import get_config
 config = get_config()
@@ -1221,7 +1224,17 @@ def _compute_personality_scores(
             continue
             
         # Calculate scores for this analysis with skill level awareness
-        time_score = _coerce_float(analysis.get('time_management_score')) or 0.0
+        time_score = _coerce_float(analysis.get('time_management_score')) or 50.0
+        
+        # BUGFIX: Scale time_score to 0-100 if it's in 0-1 range (legacy data)
+        # New data should be 0-100, but old data might be 0-1
+        if 0 <= time_score <= 1.0:
+            time_score = time_score * 100.0
+        
+        # If still too low (< 10), it's probably corrupt data - use neutral
+        if time_score < 10.0:
+            time_score = 50.0
+        
         scores = scorer.calculate_scores(moves, time_score, skill_level)
         score_lists.append(scores)
         
@@ -2280,7 +2293,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
             # User not found in this game
             return None
         
-        # Convert result to standard format
+        # Convert result to standard format (win/loss/draw)
         print(f"[DEBUG] Chess.com result for {user_id}: '{result}' (type: {type(result)})")
         if result == 'win':
             result = 'win'
@@ -2298,6 +2311,10 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
             result = 'draw'  # Stalemate is a draw
         elif result == 'insufficient' or result == 'timevsinsufficient':
             result = 'draw'  # Insufficient material is a draw
+        elif result == 'repetition':
+            result = 'draw'  # Threefold repetition is a draw
+        elif result == 'abandoned':
+            result = 'draw'  # Abandoned games are typically draws
         else:
             print(f"[WARNING] Unknown chess.com result: '{result}', defaulting to draw")
             result = 'draw'
@@ -2679,12 +2696,11 @@ async def import_games(payload: BulkGameImportRequest):
 
     for game in payload.games:
         played_at = _normalize_played_at(game.played_at)
-        # Normalize opening name for efficient filtering
-        opening_normalized = (
-            game.opening_family or 
-            game.opening or 
-            'Unknown'
-        ).strip() if (game.opening_family or game.opening) else 'Unknown'
+        # Normalize opening name to family for efficient filtering and grouping
+        # This consolidates variations (e.g., "Sicilian Defense, Najdorf") into families ("Sicilian Defense")
+        # matching frontend expectations and enabling proper match history filtering
+        raw_opening = game.opening_family or game.opening or 'Unknown'
+        opening_normalized = normalize_opening_name(raw_opening)
         
         games_rows.append({
             "user_id": canonical_user_id,
@@ -2711,29 +2727,93 @@ async def import_games(payload: BulkGameImportRequest):
             "created_at": now_iso,
         })
 
+    # CRITICAL: Games table MUST be inserted first before PGN due to FK constraint
+    # If games insert fails, we MUST NOT attempt PGN insert
+    games_insert_succeeded = False
+    
     try:
         if games_rows:
+            print(f'[import_games] Upserting {len(games_rows)} game rows')
+            print(f'[import_games] Sample game row: user_id={games_rows[0]["user_id"]}, platform={games_rows[0]["platform"]}, provider_game_id={games_rows[0]["provider_game_id"]}, result={games_rows[0]["result"]}')
+            
             games_response = supabase_service.table('games').upsert(
                 games_rows,
                 on_conflict='user_id,platform,provider_game_id'
             ).execute()
+            
             print('[import_games] games upsert response: count=', getattr(games_response, 'count', None))
+            print(f'[import_games] games upsert response data length: {len(games_response.data) if games_response.data else 0}')
+            
+            # Verify the insert actually worked
+            if games_response.data is None or len(games_response.data) == 0:
+                error_msg = "games upsert returned no data - insert may have been blocked by RLS or constraints"
+                print(f'[import_games] ERROR: {error_msg}')
+                errors.append(error_msg)
+                return BulkGameImportResponse(
+                    success=False,
+                    imported_games=0,
+                    errors=errors,
+                    error_count=len(errors),
+                    message="Failed to import games - upsert returned no data"
+                )
+            
+            # Double-check: Query the database to verify games were actually inserted
+            # This is necessary because upsert can return success even if RLS blocks the insert
+            print(f'[import_games] Verifying games were actually inserted...')
+            verification_query = supabase_service.table('games').select('provider_game_id').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', payload.platform).in_('provider_game_id', [g['provider_game_id'] for g in games_rows[:3]]).execute()
+            
+            if not verification_query.data or len(verification_query.data) == 0:
+                error_msg = "games upsert reported success but games not found in database - likely RLS blocking insert"
+                print(f'[import_games] ERROR: {error_msg}')
+                print(f'[import_games] Checked for games: {[g["provider_game_id"] for g in games_rows[:3]]}')
+                print(f'[import_games] With user_id={canonical_user_id}, platform={payload.platform}')
+                errors.append(error_msg)
+                return BulkGameImportResponse(
+                    success=False,
+                    imported_games=0,
+                    errors=errors,
+                    error_count=len(errors),
+                    message="Failed to import games - RLS or constraint blocking insert"
+                )
+            
+            games_insert_succeeded = True
+            print(f'[import_games] games upsert succeeded and verified: {len(games_response.data)} rows affected, {len(verification_query.data)} verified in DB')
     except Exception as exc:
-        errors.append(f"games upsert failed: {exc}")
+        error_msg = f"games upsert failed: {exc}"
+        print(f'[import_games] ERROR: {error_msg}')
+        import traceback
+        print(f'[import_games] Traceback: {traceback.format_exc()}')
+        errors.append(error_msg)
+        # CRITICAL: Return immediately - don't attempt PGN insert if games failed
+        return BulkGameImportResponse(
+            success=False,
+            imported_games=0,
+            errors=errors,
+            error_count=len(errors),
+            message="Failed to import games into database"
+        )
 
-    try:
-        if pgn_rows:
-            print(f'[import_games] Upserting {len(pgn_rows)} PGN rows')
-            print(f'[import_games] Sample PGN row: {pgn_rows[0] if pgn_rows else "None"}')
-            pgn_response = supabase_service.table('games_pgn').upsert(
-                pgn_rows,
-                on_conflict='user_id,platform,provider_game_id'
-            ).execute()
-            print('[import_games] pgn upsert response: count=', getattr(pgn_response, 'count', None))
-            print(f'[import_games] pgn upsert response data: {pgn_response.data[:2] if pgn_response.data else "None"}')
-    except Exception as exc:
-        print(f'[import_games] ERROR PGN upsert error: {exc}')
-        errors.append(f"games_pgn upsert failed: {exc}")
+    # Only attempt PGN insert if games insert succeeded
+    if games_insert_succeeded:
+        try:
+            if pgn_rows:
+                print(f'[import_games] Upserting {len(pgn_rows)} PGN rows')
+                print(f'[import_games] Sample PGN row (without pgn text): user_id={pgn_rows[0]["user_id"]}, platform={pgn_rows[0]["platform"]}, provider_game_id={pgn_rows[0]["provider_game_id"]}')
+                pgn_response = supabase_service.table('games_pgn').upsert(
+                    pgn_rows,
+                    on_conflict='user_id,platform,provider_game_id'
+                ).execute()
+                print('[import_games] pgn upsert response: count=', getattr(pgn_response, 'count', None))
+                if pgn_response.data:
+                    print(f'[import_games] pgn upsert successful, {len(pgn_response.data)} rows affected')
+        except Exception as exc:
+            error_msg = f"games_pgn upsert failed: {exc}"
+            print(f'[import_games] ERROR: {error_msg}')
+            errors.append(error_msg)
+            # Note: We don't return here because games were imported successfully
+            # The PGN failure is logged but not critical
 
     total_games = 0
     try:
@@ -3698,7 +3778,8 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         move_count = sum(1 for _ in game.mainline_moves())
                         
                         opening_value = headers.get('Opening', 'Unknown')
-                        opening_normalized = opening_value.strip() if opening_value else 'Unknown'
+                        # Normalize opening name to family for consistent filtering
+                        opening_normalized = normalize_opening_name(opening_value)
                         
                         game_record = {
                             "user_id": canonical_user_id,

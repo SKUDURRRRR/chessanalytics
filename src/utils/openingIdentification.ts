@@ -242,12 +242,14 @@ export function identifyOpening(
   const firstMoves = moves ? moves.slice(0, 6) : []
 
   // Priority 1: Use ECO code from game record (highest confidence)
-  if (gameRecord?.eco) {
-    const ecoName = getOpeningNameFromECOCode(gameRecord.eco)
-    if (ecoName && ecoName !== gameRecord.eco) {
+  // ECO codes can be in gameRecord.eco or gameRecord.opening_family (if it looks like an ECO code)
+  const ecoCode = gameRecord?.eco || (gameRecord?.opening_family && /^[A-E]\d{2}/.test(gameRecord.opening_family) ? gameRecord.opening_family : null)
+  if (ecoCode) {
+    const ecoName = getOpeningNameFromECOCode(ecoCode)
+    if (ecoName && ecoName !== ecoCode) {
       return {
         name: ecoName,
-        description: `ECO: ${gameRecord.eco} - Opening from ${gameRecord.platform || 'game data'}`,
+        description: `ECO: ${ecoCode} - Opening from ${gameRecord.platform || 'game data'}`,
         popularity: 'common',
         evaluation: 'equal',
         source: 'eco_code',
@@ -257,8 +259,9 @@ export function identifyOpening(
   }
 
   // Priority 2: Use opening data from game record
-  if (gameRecord?.opening || gameRecord?.opening_family) {
-    const rawOpening = gameRecord.opening_family || gameRecord.opening
+  // Skip if opening_family is an ECO code (we already tried that)
+  if (gameRecord?.opening || (gameRecord?.opening_family && !/^[A-E]\d{2}/.test(gameRecord.opening_family))) {
+    const rawOpening = (gameRecord.opening_family && !/^[A-E]\d{2}/.test(gameRecord.opening_family)) ? gameRecord.opening_family : gameRecord.opening
     const normalizedOpening = normalizeOpeningName(rawOpening)
     
     if (normalizedOpening && normalizedOpening !== 'Unknown') {

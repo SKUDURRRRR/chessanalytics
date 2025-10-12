@@ -42,6 +42,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   const [selectedTimeControl, setSelectedTimeControl] = useState<string | null>(null)
   const [eloGraphGamesUsed, setEloGraphGamesUsed] = useState<number>(0)
   const [mostPlayedOpening, setMostPlayedOpening] = useState<{ opening: string; games: number } | null>(null)
+  const [dataRefreshKey, setDataRefreshKey] = useState<number>(0)
   const isLoadingRef = useRef(false)
   const activePerformance = useMemo(() => {
     if (!comprehensiveData?.performanceTrends) {
@@ -180,6 +181,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       }
       setDeepAnalysisData(deepAnalysis)
       setWorstOpenings(worstOpeningsData)
+      
+      // Increment refresh key to force EloTrendGraph to re-fetch data
+      setDataRefreshKey(prev => prev + 1)
     } catch (err) {
       console.error('Failed to load analytics:', err)
       setError(err instanceof Error ? err.message : 'Failed to load analytics')
@@ -767,11 +771,15 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   </div>
                 </div>
                 <div className={subtleCardClass}>
-                  <span className="text-xs uppercase tracking-wide text-slate-400">Recent Avg ELO</span>
-                  <div className="text-lg font-semibold text-sky-300">{activePerformance ? activePerformance.recentAverageElo.toFixed(0) : '--'}</div>
+                  <span className="text-xs uppercase tracking-wide text-slate-400">Current Rating</span>
+                  <div className="text-lg font-semibold text-sky-300">
+                    {selectedTimeControl && comprehensiveData?.currentEloPerTimeControl?.[selectedTimeControl] 
+                      ? comprehensiveData.currentEloPerTimeControl[selectedTimeControl]
+                      : (comprehensiveData?.currentElo || '--')}
+                  </div>
                   <div className="mt-1 text-xs text-slate-400">
                     {activePerformance
-                      ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
+                      ? `Avg: ${activePerformance.recentAverageElo.toFixed(0)} • ${activePerformance.sampleSize} games`
                       : 'No data'}
                   </div>
                 </div>
@@ -801,6 +809,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   selectedTimeControl={selectedTimeControl}
                   onTimeControlChange={setSelectedTimeControl}
                   onGamesUsedChange={setEloGraphGamesUsed}
+                  key={dataRefreshKey}
                 />
               </div>
             </div>

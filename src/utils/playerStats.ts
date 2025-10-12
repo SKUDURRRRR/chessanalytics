@@ -23,7 +23,7 @@ export async function getHighestEloAndTimeControl(
     
     // For large datasets, use a more efficient approach
     // First, get just the highest ELO game with minimal data
-    const { data: topGame, error: topError } = await supabase
+    const { data: topGames, error: topError } = await supabase
       .from('games')
       .select('my_rating, time_control, provider_game_id')
       .eq('user_id', userId.toLowerCase())
@@ -31,12 +31,13 @@ export async function getHighestEloAndTimeControl(
       .not('my_rating', 'is', null)
       .order('my_rating', { ascending: false })
       .limit(1)
-      .single()
 
-    if (topError || !topGame) {
+    if (topError || !topGames || topGames.length === 0) {
       console.error('Error fetching highest ELO game:', topError)
       return { highestElo: null, timeControlWithHighestElo: null }
     }
+    
+    const topGame = topGames[0]
 
     // Quick validation
     const validationIssues: string[] = []

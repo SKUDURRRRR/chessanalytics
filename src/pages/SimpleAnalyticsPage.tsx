@@ -54,6 +54,15 @@ const parseOpeningIdentifiers = (serialized: string | null): OpeningIdentifierSe
   }
 }
 
+// Canonicalize user ID to match backend logic
+function canonicalizeUserId(userId: string, platform: string): string {
+  if (platform === 'chess.com') {
+    return userId.trim().toLowerCase()
+  } else { // lichess
+    return userId.trim()
+  }
+}
+
 export default function SimpleAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const params = useParams()
@@ -175,11 +184,27 @@ export default function SimpleAnalyticsPage() {
           return
         }
         
+        const canonicalUserId = canonicalizeUserId(userId, platform)
+        console.log('[checkGamesExist] Original userId:', JSON.stringify(userId))
+        console.log('[checkGamesExist] Canonical userId:', JSON.stringify(canonicalUserId))
+        console.log('[checkGamesExist] Platform:', platform)
+        
+        // First, let's see what user_ids exist in the database for this platform
+        const { data: sampleGames } = await supabase
+          .from('games')
+          .select('user_id')
+          .eq('platform', platform)
+          .limit(5)
+        
+        console.log('[checkGamesExist] Sample user_ids in database:', sampleGames?.map(g => JSON.stringify(g.user_id)))
+        
         const { count } = await supabase
           .from('games')
           .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId)
+          .eq('user_id', canonicalUserId)
           .eq('platform', platform)
+        
+        console.log('[checkGamesExist] Game count found:', count)
         
         const gameCount = count || 0
         setGameCount(gameCount)

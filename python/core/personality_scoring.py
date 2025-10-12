@@ -389,7 +389,6 @@ class PersonalityScorer:
         # Shared base metrics with Staleness (natural opposition)
         pattern_diversity = metrics.pattern_diversity  # 0.0 to 1.0
         piece_diversity = min(1.0, metrics.piece_type_count / 6.0)  # Normalize to 0-1 (6 piece types max)
-        opening_variety = min(1.0, metrics.opening_unique_count / max(10, metrics.opening_moves_count))
         repetition_count = metrics.consecutive_repeat_count
         
         # Additional novelty indicators
@@ -403,8 +402,11 @@ class PersonalityScorer:
             inaccurate_creative_penalty = min(12.0, inaccurate_creative_ratio * 30.0)
 
         # Natural opposition: diversity increases novelty, repetition decreases it
+        # NOTE: Opening variety is a GAME-LEVEL concept (variety across multiple games)
+        # and is handled by _estimate_novelty_from_games(). Within a single game,
+        # opening moves are mostly unique, which was causing every game to score 100.
         base = 50.0
-        diversity_bonus = (pattern_diversity * 18.0 + piece_diversity * 10.0 + opening_variety * 9.0)  # Reduced
+        diversity_bonus = (pattern_diversity * 20.0 + piece_diversity * 12.0)  # Removed opening_variety
         repetition_penalty = min(18.0, repetition_count * 2.5)
         
         # Additional bonuses for novel play (reduced to prevent ceiling)
@@ -428,7 +430,6 @@ class PersonalityScorer:
         # Shared base metrics with Novelty (natural opposition)
         pattern_diversity = metrics.pattern_diversity  # 0.0 to 1.0
         piece_diversity = min(1.0, metrics.piece_type_count / 6.0)  # Normalize to 0-1
-        opening_variety = min(1.0, metrics.opening_unique_count / max(10, metrics.opening_moves_count))
         repetition_count = metrics.consecutive_repeat_count
         
         # Additional staleness indicators
@@ -436,17 +437,17 @@ class PersonalityScorer:
         creative_ratio = metrics.creative_moves / metrics.total_moves if metrics.total_moves > 0 else 0
 
         # Natural opposition: repetition increases staleness, diversity decreases it
+        # NOTE: Opening variety is a GAME-LEVEL concept and is handled by _estimate_staleness_from_games()
         base = 50.0
-        repetition_bonus = min(18.0, repetition_count * 2.5)  # Reduced from 20.0/2.8
-        pattern_consistency_bonus = (1.0 - pattern_diversity) * 16.0  # Reduced from 18.0
-        opening_consistency_bonus = (1.0 - opening_variety) * 10.0  # Reduced from 12.0
+        repetition_bonus = min(18.0, repetition_count * 2.5)
+        pattern_consistency_bonus = (1.0 - pattern_diversity) * 18.0  # Increased from 16 to compensate
         diversity_penalty = (piece_diversity * 15.0)  # Keep strong penalty
         
         # Additional bonuses for stale play (reduced to prevent ceiling)
         quiet_bonus = min(6.0, quiet_move_ratio * 14.0)  # Reduced from 7.0/16.0
         creativity_penalty = min(10.0, creative_ratio * 22.0)  # Keep strong penalty
 
-        score = base + repetition_bonus + pattern_consistency_bonus + opening_consistency_bonus + quiet_bonus - diversity_penalty - creativity_penalty
+        score = base + repetition_bonus + pattern_consistency_bonus + quiet_bonus - diversity_penalty - creativity_penalty
         return self.clamp_score(score)
 
     def calculate_scores(self, moves: List[Dict[str, Any]], time_management_score: float = 0.0, skill_level: str = 'intermediate') -> PersonalityScores:

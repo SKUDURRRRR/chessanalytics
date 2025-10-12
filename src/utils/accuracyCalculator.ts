@@ -129,9 +129,11 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
 export function calculateOpeningAccuracyChessCom(moves: MoveAnalysis[]): number {
   if (!moves || moves.length === 0) return 0
 
+  console.log('[Opening Accuracy] Calculating for', moves.length, 'moves')
   let totalAccuracy = 0
   
-  for (const move of moves) {
+  for (let i = 0; i < moves.length; i++) {
+    const move = moves[i]
     const centipawnLoss = move.centipawn_loss || 0
     
     // Much more conservative accuracy calculation to avoid 100% scores
@@ -151,10 +153,17 @@ export function calculateOpeningAccuracyChessCom(moves: MoveAnalysis[]): number 
       moveAccuracy = Math.max(5.0, 17.0 - (centipawnLoss - 80) * 0.1)  // 17% to 5%
     }
     
+    if (i < 3) {
+      console.log(`[Opening Accuracy] Move ${i+1} (${move.san}): CPL=${centipawnLoss}, Accuracy=${moveAccuracy.toFixed(1)}%`)
+    }
+    
     totalAccuracy += moveAccuracy
   }
   
-  return Math.round((totalAccuracy / moves.length) * 10) / 10
+  const finalAccuracy = Math.round((totalAccuracy / moves.length) * 10) / 10
+  console.log('[Opening Accuracy] Final:', finalAccuracy, '% (avg of', moves.length, 'moves)')
+  
+  return finalAccuracy
 }
 
 /**

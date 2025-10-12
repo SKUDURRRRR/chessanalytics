@@ -11,6 +11,7 @@ interface EloTrendGraphProps {
   selectedTimeControl: string | null
   onTimeControlChange?: (timeControl: string) => void
   onGamesUsedChange?: (gamesUsed: number) => void
+  gameLimit?: number  // Default: 50
 }
 
 interface EloDataPoint {
@@ -32,12 +33,14 @@ export function EloTrendGraph({
   selectedTimeControl,
   onTimeControlChange,
   onGamesUsedChange,
+  gameLimit: propGameLimit = 50,
 }: EloTrendGraphProps) {
   const [allGames, setAllGames] = useState<any[]>([])
   const [availableTimeControls, setAvailableTimeControls] = useState<TimeControlOption[]>([])
   const [eloData, setEloData] = useState<EloDataPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [gameLimit, setGameLimit] = useState<number>(propGameLimit)
 
   const activeTimeControl = useMemo(() => {
     if (selectedTimeControl) {
@@ -59,6 +62,8 @@ export function EloTrendGraph({
           .eq('platform', platform)
           .not('my_rating', 'is', null)
           .not('time_control', 'is', null)
+          .order('played_at', { ascending: false })
+          .limit(2000)
 
         if (fetchError) {
           throw fetchError
@@ -116,8 +121,18 @@ export function EloTrendGraph({
         return matches
       })
       .sort((a, b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime())
-      .slice(0, 50)
+      .slice(0, gameLimit === 0 ? undefined : gameLimit)  // 0 means show all
     
+    if (filteredGames.length > 0) {
+      console.log('ELO Trend Filter Debug:', {
+        userId,
+        activeTimeControl,
+        gameLimit,
+        mostRecentPlayedAt: filteredGames[0].played_at,
+        secondRecentPlayedAt: filteredGames[1]?.played_at,
+        totalFilteredGames: filteredGames.length
+      })
+    }
 
     let processedData: EloDataPoint[] = filteredGames
       .filter(game => game.my_rating && game.my_rating > 0)
@@ -129,7 +144,6 @@ export function EloTrendGraph({
       }))
       .reverse()
 
-
     // Use all games for consistency with recent performance calculation
     // No filtering - show all games to match the sample size
 
@@ -137,7 +151,7 @@ export function EloTrendGraph({
     
     // Notify parent component of the actual number of games used in the graph
     onGamesUsedChange?.(processedData.length)
-  }, [allGames, activeTimeControl])
+  }, [allGames, activeTimeControl, gameLimit, onGamesUsedChange])
 
   const activeLabel = useMemo(() => {
     if (!activeTimeControl) return 'Unknown'
@@ -220,6 +234,29 @@ export function EloTrendGraph({
                 {option.value} ({option.count} games)
               </option>
             ))}
+          </select>
+          
+          <label className="text-xs font-medium uppercase tracking-wide text-slate-400 flex-shrink-0" htmlFor="game-limit-selector">
+            Show Games
+          </label>
+          <select
+            id="game-limit-selector"
+            value={gameLimit}
+            onChange={(e) => setGameLimit(Number(e.target.value))}
+            className="rounded-full border border-white/10 bg-slate-800/50 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30 min-w-0 flex-1 sm:flex-none"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23cbd5e1' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+              backgroundPosition: 'right 8px center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: '16px',
+              paddingRight: '32px'
+            }}
+          >
+            <option value={25} className="bg-slate-800 text-slate-100">Last 25</option>
+            <option value={50} className="bg-slate-800 text-slate-100">Last 50</option>
+            <option value={100} className="bg-slate-800 text-slate-100">Last 100</option>
+            <option value={200} className="bg-slate-800 text-slate-100">Last 200</option>
+            <option value={0} className="bg-slate-800 text-slate-100">All Games</option>
           </select>
         </div>
       )}
