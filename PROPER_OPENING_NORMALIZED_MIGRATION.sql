@@ -23,7 +23,7 @@ BEGIN
         -- Sicilian Defense
         WHEN eco_code ~ '^B[2-4]' THEN 'Sicilian Defense'
         -- French Defense
-        WHEN eco_code ~ '^C0[0-1]' THEN 'French Defense'
+        WHEN eco_code ~ '^(C0[0-9]|C1[0-9])' THEN 'French Defense'
         -- King''s Indian Defense
         WHEN eco_code ~ '^E[6-9]' THEN 'King''s Indian Defense'
         -- Queen''s Gambit

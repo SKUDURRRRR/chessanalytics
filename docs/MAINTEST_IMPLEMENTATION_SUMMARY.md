@@ -150,7 +150,7 @@ npm install
 npx playwright install
 
 # 2. Make sure .env file exists with credentials
-cp env.example .env
+cp .env.example .env
 # Edit .env and add your credentials
 
 # 3. Start backend (in one terminal)

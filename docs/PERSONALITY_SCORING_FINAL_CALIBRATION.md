@@ -113,7 +113,7 @@ pattern_consistency_bonus = (1.0 - pattern_diversity) * 18.0
 
 # After (Reduced ~10%)
 repetition_bonus = min(18.0, repetition_count * 2.5)
-pattern_consistency_bonus = (1.0 - pattern_diversity) * 16.0)
+pattern_consistency_bonus = (1.0 - pattern_diversity) * 16.0
 ```
 
 ## Test Results

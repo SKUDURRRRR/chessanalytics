@@ -16,7 +16,7 @@ This caused the component to search for "stranger66" (lowercase) when the actual
 
 ## Platform Differences
 - **Chess.com**: Usernames are case-insensitive → should be lowercased (see [Chess.com Published-Data API](https://www.chess.com/news/view/published-data-api))
-- **Lichess**: Usernames are case-insensitive → should be lowercased (see [Lichess Terms of Service](https://lichess.org/terms-of-service))
+- **Lichess**: Usernames are case-sensitive → should only be trimmed (preserve original case)
 
 ## Fix Applied
 Added proper username canonicalization in `EloTrendGraph.tsx`:

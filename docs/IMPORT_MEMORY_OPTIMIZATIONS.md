@@ -116,15 +116,17 @@ connector = aiohttp.TCPConnector(
 **Savings:** ~5MB
 - Fewer idle HTTP connections
 - Reduced overhead per connection
-- Still sufficient for 3 concurrent imports
+- Sufficient for 2 concurrent imports (production default)
 
-### 5. Increased Concurrent Limit ✅ IMPLEMENTED
+### 5. Increased Concurrent Limit ✅ IMPLEMENTED → REVERTED
 **File:** `python/core/unified_api_server.py`
 **Lines:** 192
 
 ```python
-MAX_CONCURRENT_IMPORTS = 3  # Increased from 2
+MAX_CONCURRENT_IMPORTS = 2  # Reverted from 3 for Railway Hobby stability
 ```
+
+**Note:** The 3-concurrent configuration was reverted to 2 for Railway Hobby tier stability. See `RAILWAY_HOBBY_OPTIMIZATION_FINAL.md` for details on the production configuration.
 
 ## Memory Profile Comparison
 

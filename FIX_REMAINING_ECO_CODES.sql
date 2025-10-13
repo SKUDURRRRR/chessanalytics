@@ -11,10 +11,10 @@ BEGIN
     WHERE opening_normalized IN ('B07', 'B08', 'B09')
       AND opening_normalized IS DISTINCT FROM 'Pirc Defense';
 
-    -- King's Indian Defense (E90-E99, A48)
+    -- King's Indian Defense (E60-E99, A48)
     UPDATE games 
     SET opening_normalized = 'King''s Indian Defense'
-    WHERE (opening_normalized ~ '^E9' OR opening_normalized = 'A48')
+    WHERE (opening_normalized ~ '^E(6[0-9]|[7-9][0-9])' OR opening_normalized = 'A48')
       AND opening_normalized IS DISTINCT FROM 'King''s Indian Defense';
 
     -- Queen's Pawn Game / Indian Game (A45, A46, A49)

@@ -58,6 +58,7 @@ CREATE POLICY "games_pgn_service_role_all" ON games_pgn
 
 -- USER_PROFILES TABLE
 -- Everyone can READ all profiles (for leaderboards, player search, etc.)
+DROP POLICY IF EXISTS "user_profiles_select_all" ON user_profiles;
 CREATE POLICY "user_profiles_select_all" ON user_profiles
   FOR SELECT
   USING (true);  -- Public read access

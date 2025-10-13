@@ -37,7 +37,7 @@ psql $DATABASE_URL -f REVOKE_INSECURE_PERMISSIONS.sql
 
 ### Step 2: Apply secure policies
 ```bash
-psql $DATABASE_URL -f RESTORE_SECURE_RLS_POLICIES.sql
+psql $DATABASE_URL -f RESTORE_SECURE_RLS_POLICIES_PUBLIC_APP.sql
 ```
 
 ### Step 3: Verify (optional)
@@ -72,7 +72,7 @@ Your app will work exactly the same from the user's perspective:
 ## Files to Use
 
 1. **`REVOKE_INSECURE_PERMISSIONS.sql`** - Removes write permissions
-2. **`RESTORE_SECURE_RLS_POLICIES.sql`** - Sets up secure read/write policies
+2. **`RESTORE_SECURE_RLS_POLICIES_PUBLIC_APP.sql`** - Sets up secure read/write policies
 
 ## Files to Ignore
 

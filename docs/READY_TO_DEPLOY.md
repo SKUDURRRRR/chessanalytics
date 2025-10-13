@@ -77,7 +77,7 @@ git commit -m "Pre-deployment: Debug cleanup, validation, and improvements
 - Ready for production deployment"
 
 # 3. Push to production branch (triggers auto-deploy)
-git push origin development
+git push origin master
 
 # Railway and Vercel will automatically deploy
 ```
@@ -207,7 +207,7 @@ git log --oneline -10
 
 # Revert to previous version
 git revert HEAD
-git push origin development
+git push origin master
 ```
 
 ### Option 3: Platform Rollback

@@ -140,11 +140,12 @@ Before submitting a PR, verify:
 
 ### ❌ NEVER Do This:
 
+<!-- Examples below use non-real placeholder values. -->
 ```python
 # Hardcoded credentials
-API_KEY = "sk_live_123456789"
-PASSWORD = "MyPassword123!"
-DATABASE_URL = "postgres://user:pass@host/db"
+API_KEY = "EXAMPLE_NOT_A_REAL_KEY"
+PASSWORD = "EXAMPLE_PASSWORD"
+DATABASE_URL = "postgres://user:password@host/db"
 
 # Credentials in comments
 # TODO: Use key: eyJhbGci...

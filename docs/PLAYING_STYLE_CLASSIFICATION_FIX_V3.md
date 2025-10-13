@@ -65,8 +65,8 @@ if (scoreRange < 8 && highestScore >= 55 && highestScore < 70) {
 
 ### Priority 2: Aggressive/Patient Dimension
 ```typescript
-if (|aggressive - patient| >= 10) {
-  return aggressive-based or patient-based style
+if (Math.abs(aggressive - patient) >= 10) {
+  return aggressive > patient ? "aggressive-based" : "patient-based"
 }
 ```
 
