@@ -19,23 +19,39 @@ BEGIN
         -- Scandinavian Defense
         WHEN eco_code = 'B01' THEN 'Scandinavian Defense'
         -- Caro-Kann Defense
-        WHEN eco_code IN ('B10', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18', 'B19') THEN 'Caro-Kann Defense'
+        WHEN eco_code IN ('B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18', 'B19') THEN 'Caro-Kann Defense'
         -- Sicilian Defense
-        WHEN eco_code ~ '^B[2-4]' THEN 'Sicilian Defense'
+        WHEN eco_code ~ '^B[2-9][0-9]$' THEN 'Sicilian Defense'
         -- French Defense
         WHEN eco_code ~ '^(C0[0-9]|C1[0-9])' THEN 'French Defense'
         -- King''s Indian Defense
-        WHEN eco_code ~ '^E[6-9]' THEN 'King''s Indian Defense'
+        WHEN eco_code ~ '^E[6-9][0-9]$' THEN 'King''s Indian Defense'
         -- Queen''s Gambit
-        WHEN eco_code ~ '^D[3-6]' THEN 'Queen''s Gambit'
+        WHEN eco_code ~ '^D[3-6][0-9]$' THEN 'Queen''s Gambit'
         -- Italian Game
         WHEN eco_code IN ('C50', 'C51', 'C52', 'C53', 'C54', 'C55') THEN 'Italian Game'
         -- Ruy Lopez
-        WHEN eco_code ~ '^C[6-9]' THEN 'Ruy Lopez'
+        WHEN eco_code ~ '^C[6-9][0-9]$' THEN 'Ruy Lopez'
         -- English Opening
-        WHEN eco_code ~ '^A[1-3]' THEN 'English Opening'
+        WHEN eco_code ~ '^A[1-3][0-9]$' THEN 'English Opening'
         -- King''s Gambit
-        WHEN eco_code ~ '^C3' THEN 'King''s Gambit'
+        WHEN eco_code ~ '^C3[0-9]$' THEN 'King''s Gambit'
+        -- Petrov Defense
+        WHEN eco_code IN ('C42', 'C43') THEN 'Petrov Defense'
+        -- Two Knights Defense
+        WHEN eco_code IN ('C56', 'C57', 'C58', 'C59') THEN 'Two Knights Defense'
+        -- Scotch Game
+        WHEN eco_code IN ('C44', 'C45') THEN 'Scotch Game'
+        -- King''s Pawn Game
+        WHEN eco_code IN ('C40', 'C41', 'C46', 'B00') THEN 'King''s Pawn Game'
+        -- Vienna Game
+        WHEN eco_code IN ('C23', 'C24', 'C25', 'C26', 'C27', 'C28', 'C29') THEN 'Vienna Game'
+        -- Queen''s Pawn Game
+        WHEN eco_code IN ('D00', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06') THEN 'Queen''s Pawn Game'
+        -- Modern Defense
+        WHEN eco_code = 'B06' THEN 'Modern Defense'
+        -- Uncommon Opening
+        WHEN eco_code = 'A00' THEN 'Uncommon Opening'
         ELSE NULL
     END;
 END;
