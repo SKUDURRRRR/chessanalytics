@@ -258,33 +258,18 @@ def _calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
 
 
 def _calculate_opening_accuracy_chesscom(moves: List[dict]) -> float:
-    """Calculate opening accuracy using a more conservative approach that matches Chess.com."""
+    """
+    Calculate opening accuracy using Chess.com's CAPS2 algorithm (same as overall accuracy).
+    Uses the standard accuracy formula consistently across all game phases.
+    """
     if not moves:
         return 0.0
     
-    total_accuracy = 0.0
-    for move in moves:
-        # Use centipawn loss directly - more reliable than reconstructing evaluations
-        centipawn_loss = move.get('centipawn_loss', 0)
-        
-        # Much more conservative accuracy calculation to avoid 100% scores
-        # Only truly perfect moves get 100%, everything else is penalized more heavily
-        if centipawn_loss <= 2:
-            move_accuracy = 100.0  # Only truly perfect moves (0-2 CPL)
-        elif centipawn_loss <= 8:
-            move_accuracy = 90.0 - (centipawn_loss - 2) * 2.5  # 90% to 75%
-        elif centipawn_loss <= 20:
-            move_accuracy = 75.0 - (centipawn_loss - 8) * 1.5  # 75% to 57%
-        elif centipawn_loss <= 40:
-            move_accuracy = 57.0 - (centipawn_loss - 20) * 1.0  # 57% to 37%
-        elif centipawn_loss <= 80:
-            move_accuracy = 37.0 - (centipawn_loss - 40) * 0.5  # 37% to 17%
-        else:
-            move_accuracy = max(5.0, 17.0 - (centipawn_loss - 80) * 0.1)  # 17% to 5%
-        
-        total_accuracy += move_accuracy
+    # Extract centipawn losses from moves
+    centipawn_losses = [move.get('centipawn_loss', 0) for move in moves]
     
-    return total_accuracy / len(moves)
+    # Use the same formula as overall game accuracy (Chess.com CAPS2)
+    return _calculate_accuracy_from_cpl(centipawn_losses)
 
 
 def get_analysis_engine() -> ChessAnalysisEngine:

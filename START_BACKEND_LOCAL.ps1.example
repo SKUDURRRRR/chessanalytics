@@ -2,7 +2,7 @@
 # Run this script to start your backend with the right environment variables
 # 
 # IMPORTANT: Make sure you have a .env file with your credentials!
-# See START_BACKEND_LOCAL.ps1.example for the required variables
+# This is an EXAMPLE file - copy it to START_BACKEND_LOCAL.ps1 to use it
 
 # Load environment variables from .env file
 if (Test-Path .env) {
@@ -19,7 +19,10 @@ if (Test-Path .env) {
 } else {
     Write-Host "ERROR: .env file not found!" -ForegroundColor Red
     Write-Host "Please create a .env file with your Supabase credentials." -ForegroundColor Yellow
-    Write-Host "See START_BACKEND_LOCAL.ps1.example for required variables." -ForegroundColor Yellow
+    Write-Host "Required variables:" -ForegroundColor Yellow
+    Write-Host "  SUPABASE_URL=https://your-project.supabase.co" -ForegroundColor Cyan
+    Write-Host "  SUPABASE_ANON_KEY=your_anon_key_here" -ForegroundColor Cyan
+    Write-Host "  SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here" -ForegroundColor Cyan
     exit 1
 }
 

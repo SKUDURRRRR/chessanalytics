@@ -160,15 +160,15 @@ def test_patient_scenarios():
         endgame_accuracy = (metrics.endgame_best / metrics.endgame_moves) if metrics.endgame_moves > 0 else 0
         time_factor = metrics.time_management_score / 100.0
         
-        # Calculate components
-        base = 50.0
-        quiet_bonus = quiet_ratio * 32.0
-        forcing_penalty = forcing_ratio * 36.0
-        stability_bonus = min(8.0, quiet_safety * 22.0)
+        # Calculate components (must match PersonalityScorer.score_patient())
+        base = 35.0
+        quiet_bonus = quiet_ratio * 25.0
+        forcing_penalty = forcing_ratio * 75.0
+        stability_bonus = min(8.0, quiet_safety * 20.0)
         endgame_bonus = min(7.0, endgame_accuracy * 18.0)
-        time_bonus = min(12.0, time_factor * 30.0)
-        streak_bonus = min(3.0, metrics.safe_streak_max * 0.8)
-        discipline_penalty = (blunder_rate * 20.0) + (mistake_rate * 12.0) + (inaccuracy_rate * 8.0)
+        time_bonus = min(12.0, time_factor * 28.0)
+        streak_bonus = min(4.0, metrics.safe_streak_max * 1.0)
+        discipline_penalty = (blunder_rate * 50.0) + (mistake_rate * 32.0) + (inaccuracy_rate * 20.0)
         
         print(f"\nInput Stats:")
         print(f"  Forcing moves: {scenario['forcing_moves']}/{scenario['total_moves']} ({forcing_ratio*100:.1f}%)")
@@ -180,13 +180,13 @@ def test_patient_scenarios():
         
         print(f"\nScore Components:")
         print(f"  Base score:        +{base:.1f}")
-        print(f"  Quiet bonus:       +{quiet_bonus:.1f} ({quiet_ratio*100:.0f}% quiet × 32)")
-        print(f"  Forcing penalty:   -{forcing_penalty:.1f} ({forcing_ratio*100:.0f}% forcing × 36)")
-        print(f"  Stability bonus:   +{stability_bonus:.1f} (quiet safety)")
-        print(f"  Endgame bonus:     +{endgame_bonus:.1f} (endgame accuracy)")
-        print(f"  Time bonus:        +{time_bonus:.1f} (time mgmt {scenario['time_score']})")
-        print(f"  Streak bonus:      +{streak_bonus:.1f}")
-        print(f"  Discipline penalty:-{discipline_penalty:.1f} (errors)")
+        print(f"  Quiet bonus:       +{quiet_bonus:.1f} ({quiet_ratio*100:.0f}% quiet × 25)")
+        print(f"  Forcing penalty:   -{forcing_penalty:.1f} ({forcing_ratio*100:.0f}% forcing × 75)")
+        print(f"  Stability bonus:   +{stability_bonus:.1f} (quiet safety × 20)")
+        print(f"  Endgame bonus:     +{endgame_bonus:.1f} (endgame accuracy × 18)")
+        print(f"  Time bonus:        +{time_bonus:.1f} (time mgmt {scenario['time_score']} × 28)")
+        print(f"  Streak bonus:      +{streak_bonus:.1f} (max streak × 1.0)")
+        print(f"  Discipline penalty:-{discipline_penalty:.1f} (blunders×50 + mistakes×32 + inaccuracies×20)")
         
         calculated = base + quiet_bonus - forcing_penalty + stability_bonus + endgame_bonus + time_bonus + streak_bonus - discipline_penalty
         
@@ -197,16 +197,17 @@ def test_patient_scenarios():
     print(f"\n{'='*70}")
     print("OBSERVATIONS")
     print(f"{'='*70}\n")
-    print("Look at which components contribute most to high scores:")
-    print("- Quiet bonus can add up to 32 points (100% quiet × 32)")
+    print("Look at which components contribute most to scores:")
+    print("- Quiet bonus can add up to 25 points (100% quiet × 25)")
+    print("- Forcing penalty can subtract up to 75 points (100% forcing × 75)")
     print("- Time bonus can add up to 12 points")
     print("- Stability + endgame can add 15 points")
-    print("- Even average players can easily hit 60-70+")
-    print("\nPossible issues:")
-    print("1. Quiet bonus too generous (most games have 60%+ quiet moves)")
-    print("2. Time bonus still significant even with medium scores")
-    print("3. Forcing penalty not strong enough")
-    print("4. Discipline penalty too weak (errors don't hurt enough)")
+    print("- Discipline penalty is significant (errors really hurt)")
+    print("\nBalancing notes:")
+    print("1. Natural opposition with Aggressive through forcing/quiet ratio")
+    print("2. Strong forcing penalty creates clear differentiation")
+    print("3. Discipline penalty is substantial to separate patient vs sloppy play")
+    print("4. Base of 35 requires earning the patient label")
 
 if __name__ == "__main__":
     test_patient_scenarios()
