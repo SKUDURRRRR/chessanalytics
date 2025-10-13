@@ -47,15 +47,44 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_user_profiles_last_accessed 
 ON user_profiles(last_accessed DESC);
 
--- Update RLS policies to allow anonymous access to new columns
+-- DEPRECATED - This section created insecure policies
+-- The original migration granted ALL permissions to anonymous users
+-- which allows anonymous INSERT, UPDATE, and DELETE on user profiles
+--
+-- For secure RLS policies, use RESTORE_SECURE_RLS_POLICIES.sql instead
+--
+-- Original insecure code commented out:
+-- CREATE POLICY "Allow anonymous access to user_profiles" ON user_profiles
+--   FOR ALL USING (true);
+-- GRANT ALL ON user_profiles TO anon;
+
+-- SECURE ALTERNATIVE: Only allow reading profiles, and only authenticated users can modify their own
 DROP POLICY IF EXISTS "Allow anonymous insert to user_profiles" ON user_profiles;
 DROP POLICY IF EXISTS "Allow anonymous update to user_profiles" ON user_profiles;
 DROP POLICY IF EXISTS "Allow anonymous select from user_profiles" ON user_profiles;
+DROP POLICY IF EXISTS "Allow anonymous access to user_profiles" ON user_profiles;
 
-CREATE POLICY "Allow anonymous access to user_profiles" ON user_profiles
-  FOR ALL USING (true);
+-- Read-only access for all users (for leaderboards)
+CREATE POLICY "user_profiles_select_all" ON user_profiles
+  FOR SELECT USING (true);
 
--- Grant permissions
-GRANT ALL ON user_profiles TO anon;
+-- Only authenticated users can insert their own profile
+CREATE POLICY "user_profiles_insert_own" ON user_profiles
+  FOR INSERT 
+  WITH CHECK (auth.uid()::text = user_id);
+
+-- Only authenticated users can update their own profile
+CREATE POLICY "user_profiles_update_own" ON user_profiles
+  FOR UPDATE 
+  USING (auth.uid()::text = user_id)
+  WITH CHECK (auth.uid()::text = user_id);
+
+-- Only authenticated users can delete their own profile
+CREATE POLICY "user_profiles_delete_own" ON user_profiles
+  FOR DELETE 
+  USING (auth.uid()::text = user_id);
+
+-- Grant appropriate permissions (SELECT only for anon)
+GRANT SELECT ON user_profiles TO anon;
 GRANT ALL ON user_profiles TO authenticated;
 GRANT ALL ON user_profiles TO service_role;

@@ -23,7 +23,7 @@
 | **Concurrent Analyses** | 4 | Parallel move processing |
 | **ThreadPool Workers** | 4 | Parallel Stockfish instances |
 | **Batch Size** | 10 | Larger batches |
-| **Max Memory** | 3072 MB | 3GB max (conservative) |
+| **Max Memory** | 512 MB | Railway Hobby tier limit |
 | **Connection Pool** | 15 | More connections |
 | **Query Timeout** | 45s | Longer timeouts |
 | **Cache** | Enabled | 24-hour TTL, 256MB max |

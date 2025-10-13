@@ -9,7 +9,7 @@ WHERE opening_normalized = 'B01';
 -- Caro-Kann Defense (B10-B19)
 UPDATE games 
 SET opening_normalized = 'Caro-Kann Defense'
-WHERE opening_normalized IN ('B10', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18', 'B19');
+WHERE opening_normalized IN ('B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18', 'B19');
 
 -- Sicilian Defense (B20-B99)
 UPDATE games 
@@ -26,10 +26,10 @@ UPDATE games
 SET opening_normalized = 'Petrov Defense'
 WHERE opening_normalized IN ('C42', 'C43');
 
--- Italian Game (C50-C55)
+-- Italian Game (C50-C54)
 UPDATE games 
 SET opening_normalized = 'Italian Game'
-WHERE opening_normalized IN ('C50', 'C53', 'C54', 'C55');
+WHERE opening_normalized IN ('C50', 'C51', 'C52', 'C53', 'C54');
 
 -- Two Knights Defense (C55-C59)
 UPDATE games 
@@ -49,7 +49,7 @@ WHERE opening_normalized IN ('C40', 'C41', 'C46');
 -- Vienna Game (C23-C29)
 UPDATE games 
 SET opening_normalized = 'Vienna Game'
-WHERE opening_normalized IN ('C23', 'C25', 'C26', 'C27', 'C28', 'C29');
+WHERE opening_normalized IN ('C23', 'C24', 'C25', 'C26', 'C27', 'C28', 'C29');
 
 -- Queen's Pawn Game (D00-D06)
 UPDATE games 

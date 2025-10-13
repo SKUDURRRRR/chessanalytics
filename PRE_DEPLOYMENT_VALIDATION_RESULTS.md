@@ -190,7 +190,7 @@ Debug code will be made conditional on environment variables to keep it availabl
 - [ ] Single game analysis: < 15 seconds
 - [ ] 10 games analysis: < 2 minutes
 - [ ] 100 games analysis: < 15 minutes
-- [ ] Memory usage: < 6 GB
+- [ ] Memory usage: < 512 MB
 - [ ] No memory leaks during long operations
 
 **How to Check:**

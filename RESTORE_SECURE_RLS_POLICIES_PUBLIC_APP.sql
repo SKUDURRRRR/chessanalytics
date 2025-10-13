@@ -1,5 +1,8 @@
--- Restore Secure RLS Policies
--- This reverses the permissive anonymous access and restores proper security
+-- Restore Secure RLS Policies - PUBLIC ANALYTICS APP MODEL
+-- This is for a public chess analytics tool where:
+-- - Anyone can view all data (public read access)
+-- - Only the backend (service_role) can write data
+-- - Anonymous users cannot directly insert/update/delete
 
 -- ============================================================================
 -- 0. ENABLE Row Level Security on all tables
@@ -10,7 +13,7 @@ ALTER TABLE games_pgn ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
--- 1. DROP the old insecure policies
+-- 1. DROP existing policies
 -- ============================================================================
 
 DROP POLICY IF EXISTS "Allow anonymous access to games" ON games;
@@ -20,60 +23,85 @@ DROP POLICY IF EXISTS "games_select_own_or_public" ON games;
 DROP POLICY IF EXISTS "games_pgn_select_own_or_public" ON games_pgn;
 DROP POLICY IF EXISTS "games_select_all" ON games;
 DROP POLICY IF EXISTS "games_pgn_select_all" ON games_pgn;
-DROP POLICY IF EXISTS "Allow all access to games" ON games;
 
 -- ============================================================================
 -- 2. CREATE secure policies for PUBLIC ANALYTICS APP
 -- ============================================================================
--- This is a public analytics tool where:
--- - Anyone can VIEW all games and data (public read access)
--- - Only backend (service_role) can INSERT/UPDATE/DELETE data
--- - This prevents anonymous users from corrupting the database
 
 -- GAMES TABLE
--- Everyone can READ all games (public analytics app)
+-- Everyone can READ all games (public analytics)
+-- Only service_role can WRITE (backend manages data)
 CREATE POLICY "games_select_all" ON games
   FOR SELECT
-  USING (true);  -- Public read access - anyone can view any game
+  USING (true);  -- Public read access for analytics
 
--- Service role can do everything (backend API writes data)
-CREATE POLICY "games_service_role_all" ON games
-  FOR ALL
+CREATE POLICY "games_insert_service" ON games
+  FOR INSERT
+  TO service_role
+  WITH CHECK (true);
+
+CREATE POLICY "games_update_service" ON games
+  FOR UPDATE
   TO service_role
   USING (true)
   WITH CHECK (true);
+
+CREATE POLICY "games_delete_service" ON games
+  FOR DELETE
+  TO service_role
+  USING (true);
 
 -- GAMES_PGN TABLE
--- Everyone can READ all PGN data (public analytics app)
+-- Everyone can READ all PGN data
+-- Only service_role can WRITE
 CREATE POLICY "games_pgn_select_all" ON games_pgn
-  FOR SELECT
-  USING (true);  -- Public read access - anyone can view any PGN
-
--- Service role can do everything (backend API writes data)
-CREATE POLICY "games_pgn_service_role_all" ON games_pgn
-  FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
-
--- USER_PROFILES TABLE
--- Everyone can READ all profiles (for leaderboards, player search, etc.)
-CREATE POLICY "user_profiles_select_all" ON user_profiles
   FOR SELECT
   USING (true);  -- Public read access
 
--- Service role can do everything (backend manages profiles)
-CREATE POLICY "user_profiles_service_role_all" ON user_profiles
-  FOR ALL
+CREATE POLICY "games_pgn_insert_service" ON games_pgn
+  FOR INSERT
+  TO service_role
+  WITH CHECK (true);
+
+CREATE POLICY "games_pgn_update_service" ON games_pgn
+  FOR UPDATE
   TO service_role
   USING (true)
   WITH CHECK (true);
+
+CREATE POLICY "games_pgn_delete_service" ON games_pgn
+  FOR DELETE
+  TO service_role
+  USING (true);
+
+-- USER_PROFILES TABLE
+-- Everyone can READ all profiles (for search and leaderboards)
+-- Only service_role can WRITE (backend manages profiles)
+CREATE POLICY "user_profiles_select_all" ON user_profiles
+  FOR SELECT
+  USING (true);
+
+CREATE POLICY "user_profiles_insert_service" ON user_profiles
+  FOR INSERT
+  TO service_role
+  WITH CHECK (true);
+
+CREATE POLICY "user_profiles_update_service" ON user_profiles
+  FOR UPDATE
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "user_profiles_delete_service" ON user_profiles
+  FOR DELETE
+  TO service_role
+  USING (true);
 
 -- ============================================================================
 -- 3. Grant appropriate table-level permissions
 -- ============================================================================
 
--- Anonymous: SELECT only (read-only access to public data)
+-- Anonymous: SELECT only (read-only access)
 GRANT SELECT ON games TO anon;
 GRANT SELECT ON games_pgn TO anon;
 GRANT SELECT ON user_profiles TO anon;
@@ -95,21 +123,11 @@ GRANT ALL ON user_profiles TO service_role;
 NOTIFY pgrst, 'reload schema';
 
 -- ============================================================================
--- SECURITY MODEL SUMMARY
+-- NOTES
 -- ============================================================================
--- This configuration is for a PUBLIC ANALYTICS TOOL where:
--- 
--- ✅ Anyone can view all chess games and analyses (public data)
--- ✅ Backend API (using service_role key) handles all data writes
--- ❌ Anonymous users cannot directly INSERT/UPDATE/DELETE in database
--- 
--- This prevents:
--- - Database corruption by malicious users
--- - Spam/fake data insertion
--- - Deletion of legitimate data
--- 
--- While allowing:
--- - Public access to all chess analytics
--- - Backend to import and analyze games via API
--- - Fast read queries without authentication overhead
+-- This policy model is for a PUBLIC ANALYTICS TOOL where:
+-- 1. Anyone can view all chess games and analyses (public data)
+-- 2. Backend API (using service_role key) handles all data writes
+-- 3. Anonymous users cannot directly modify database (prevents abuse)
+-- 4. Frontend calls backend API endpoints which use service_role to write data
 

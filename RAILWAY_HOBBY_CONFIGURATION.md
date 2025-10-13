@@ -7,7 +7,7 @@ All analysis settings are now configured for **Railway Hobby Tier** high perform
 ### **Performance Configuration**
 - **Default Profile**: `railway_hobby` (both local and production)
 - **PRODUCTION Profile**: Uses Railway Hobby settings (same as railway_hobby)
-- **RAILWAY_HOBBY Profile**: Optimized for 8 GB RAM, 8 vCPU
+- **RAILWAY_HOBBY Profile**: Optimized for 512 MB RAM, shared vCPU
 
 ### **Analysis Settings**
 
@@ -21,7 +21,7 @@ All analysis settings are now configured for **Railway Hobby Tier** high perform
 | **Concurrent Analyses** | 4 | Parallel move processing |
 | **ThreadPool Workers** | 4 | Parallel Stockfish instances |
 | **Batch Size** | 10 | Larger batches |
-| **Max Memory** | 3072 MB | 3GB max (conservative) |
+| **Max Memory** | 512 MB | Railway Hobby tier limit |
 
 ### **Expected Performance**
 

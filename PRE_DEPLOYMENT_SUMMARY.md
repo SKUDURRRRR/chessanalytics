@@ -221,7 +221,7 @@ After deployment, you should see:
 - Single game analysis < 15 seconds ✓
 - 100 games import < 2 minutes ✓
 - Match history loads < 2 seconds ✓
-- Railway memory usage < 6GB ✓
+- Railway memory usage < 512 MB ✓
 
 ### Functionality
 - Game import working (smart + large batch) ✓

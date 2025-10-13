@@ -164,7 +164,7 @@ git push origin development
    - [ ] Verify pagination works
 
 4. **Performance Check:**
-   - [ ] Railway dashboard - memory usage < 6GB
+   - [ ] Railway dashboard - memory usage < 512 MB
    - [ ] No errors in Railway logs
    - [ ] Frontend loads quickly
 
@@ -224,7 +224,7 @@ After deployment, verify:
 - [ ] Single game analysis < 15 seconds
 - [ ] 100 games import < 2 minutes
 - [ ] Match history loads < 2 seconds
-- [ ] Railway memory usage < 6GB
+- [ ] Railway memory usage < 512 MB
 
 ### Functionality
 - [ ] Game import works (smart + large batch)

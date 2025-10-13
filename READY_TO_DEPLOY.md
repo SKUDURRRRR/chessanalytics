@@ -186,7 +186,7 @@ All these features have been implemented and are ready for production:
 ### Performance
 - Railway Hobby settings optimized
 - Expected: Single game < 15s, 100 games < 2 min
-- Memory usage: < 6GB on Railway
+- Memory usage: < 512 MB on Railway
 
 ---
 

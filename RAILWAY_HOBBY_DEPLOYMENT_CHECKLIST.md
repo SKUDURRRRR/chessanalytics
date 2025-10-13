@@ -140,7 +140,7 @@ If issues occur, you can rollback by:
 ### ✅ Performance Improved
 - [ ] Single game analysis < 15 seconds
 - [ ] 10 games analysis < 2 minutes
-- [ ] Memory usage < 6 GB
+- [ ] Memory usage < 512 MB
 - [ ] Parallel processing working
 
 ### ✅ Functionality Working

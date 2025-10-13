@@ -18,7 +18,7 @@ Your chess-analytics app is now running with **Railway Hobby Tier settings**.
 | **Max Concurrent** | 4 | Parallel move processing |
 | **ThreadPool Workers** | 4 | Parallel Stockfish instances |
 | **Batch Size** | 10 | Larger batches |
-| **Max Memory** | 3072 MB | 3GB conservative limit |
+| **Max Memory** | 512 MB | Railway Hobby tier limit |
 | **Connection Pool** | 15 | More database connections |
 | **Cache** | Enabled | 24-hour TTL, 256MB max |
 
@@ -40,7 +40,7 @@ stockfish_depth: int = 14              # Better depth for accuracy
 stockfish_skill_level: int = 20        # Maximum strength
 stockfish_time_limit: float = 0.8      # Fast analysis
 max_concurrent_analyses: int = 4       # Parallel move processing
-max_memory_usage_mb: int = 3072        # 3GB max (conservative)
+max_memory_usage_mb: int = 512         # 512 MB max (Railway Hobby limit)
 ```
 
 ### 2. `python/core/config.py`
