@@ -220,7 +220,7 @@ Debug code will be made conditional on environment variables to keep it availabl
 #### Railway (Backend) - Required Variables
 ```bash
 # Database
-SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+SUPABASE_URL=https://<your-project-id>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
 
 # Railway Hobby Tier Settings
@@ -246,7 +246,7 @@ DEBUG=false
 #### Vercel (Frontend) - Required Variables
 ```bash
 # Database
-VITE_SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+VITE_SUPABASE_URL=https://<your-project-id>.supabase.co
 VITE_SUPABASE_ANON_KEY=<your-anon-key>
 
 # Backend API

@@ -62,7 +62,7 @@ Analytics Page - "Best Black Openings":
 | **Worst Opening Performance** | ✅ FIXED | Only shows player's actual openings |
 | **Most Played by Time Control** | ✅ FIXED | Only counts player's openings |
 | **Enhanced Opening Card** | ✅ AUTO-FIXED | Gets correct data from parent |
-| **Match History** | ⚠️ UNCHANGED | Shows game opening (correct as-is) |
+| **Match History** | ✅ FIXED | Now shows player-perspective openings |
 
 ---
 

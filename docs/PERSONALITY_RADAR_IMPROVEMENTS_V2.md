@@ -2,33 +2,44 @@
 
 ## Problem Identified
 
-Testing with two real players (Krecetas and Skudurelis) revealed that the personality radar wasn't differentiating between distinctly different playing styles:
+Testing with two real players (Player A and Player B) revealed that the personality radar wasn't differentiating between distinctly different playing styles:
+
+*Note: Player names have been anonymized for privacy. Consent was obtained for using anonymized gameplay data in this analysis.*
 
 ### Player Profiles
 
-**Krecetas:**
+**Player A:**
 - Slow, methodical player who thinks carefully before moving
 - Plays the same openings repeatedly (low opening variety)
 - Rarely explores new territory
 - Conservative style
 - **Expected**: HIGH patient, LOW novelty, HIGH staleness, moderate aggressive
 
-**Skudurelis:**
+**Player B:**
 - Fast, aggressive player who moves quickly
 - Varies openings with novel moves
 - Often has more time left than opponents
 - Less patient, takes risks
 - **Expected**: LOW patient, HIGH novelty, LOW staleness, HIGH aggressive
 
+### Time Management Definition
+
+For clarity, "time management" in this context refers to **efficient time usage per move** - specifically, how much time a player spends thinking relative to the complexity of the position. This is measured by:
+
+- **High time management**: Spending appropriate time on complex positions, not rushing through critical decisions
+- **Low time management**: Moving too quickly without sufficient consideration, or conversely, spending excessive time on simple positions
+
+This differs from absolute time remaining, which is not used in the patience scoring algorithm.
+
 ### What the Radar Showed (BEFORE fixes)
 
-**Krecetas:**
+**Player A:**
 - Tactical: 78, Positional: 74
 - Aggressive: 69, **Patient: 99**
 - **Novelty: 80** ❌ (should be LOW!)
 - **Staleness: 62** ❌ (should be HIGH!)
 
-**Skudurelis:**
+**Player B:**
 - Tactical: 72, Positional: 70
 - Aggressive: 61 ❌ (should be HIGH!)
 - **Patient: 100** ❌ (should be LOW!)
@@ -70,7 +81,7 @@ time_bonus = min(8.0, time_factor * 18.0)  # Only 8 points max
 time_bonus = min(15.0, time_factor * 35.0)  # Up to 15 points - KEY differentiator
 ```
 
-**Impact**: Fast players (low time management) lose more patient points, slow thinkers gain more.
+**Impact**: Players with inefficient time usage (moving too quickly without sufficient consideration) lose more patient points, while players who spend appropriate time on complex positions gain more.
 
 ### Fix 2: Stronger Aggressive/Patient Opposition
 **File**: `python/core/personality_scoring.py` (lines 329-330, 366)
@@ -132,31 +143,33 @@ diversity_penalty = (opening_diversity_ratio * 30.0 + time_diversity_ratio * 15.
 
 ## Expected Results After Fixes
 
-### Krecetas (slow, repetitive)
-- **Patient**: Should stay ~90-100 (slow, thoughtful = high patient) ✅
+### Player A (slow, repetitive)
+- **Patient**: Should stay ~90-100 (efficient time usage on complex positions = high patient) ✅
 - **Novelty**: Should drop to ~30-45 (repetitive openings = low novelty) ✅
 - **Staleness**: Should rise to ~70-85 (same openings = high staleness) ✅
 - **Aggressive**: Should stay moderate ~60-70 ✅
 
-### Skudurelis (fast, aggressive, varied)
-- **Patient**: Should drop to ~40-55 (fast play = low patient) ✅
+### Player B (fast, aggressive, varied)
+- **Patient**: Should drop to ~40-55 (inefficient time usage = low patient) ✅
 - **Novelty**: Should stay ~75-85 (varied openings = high novelty) ✅
 - **Staleness**: Should drop to ~30-45 (varied style = low staleness) ✅
-- **Aggressive**: Should rise to ~75-85 (forcing moves + fast = aggressive) ✅
+- **Aggressive**: Should rise to ~75-85 (forcing moves + inefficient time usage = aggressive) ✅
 
 ## Mathematical Summary
 
 ### Key Weight Changes
 
+*Note: For composite entries (e.g., "30.0 + 15.0"), the total is calculated before computing the percent change.*
+
 | Metric | Before | After | Change | Reason |
 |--------|--------|-------|--------|--------|
-| **Patient: time_bonus** | max 8 pts | max 15 pts | +87% | Time management is KEY to patience |
-| **Patient: forcing_penalty** | 35.0x | 42.0x | +20% | Aggressive play strongly opposes patience |
-| **Aggressive: forcing_bonus** | 40.0x | 45.0x | +12% | Reward aggressive play more |
-| **Aggressive: error_penalty** | 18.0/12.0 | 15.0/10.0 | -17% | Aggressive players take risks |
-| **Novelty: game-level weight** | 40% | 70% | +75% | Opening repertoire is game-level |
-| **Novelty: diversity_bonus** | 30.0 + 15.0 | 45.0 + 20.0 | +50% | Opening variety is KEY |
-| **Staleness: repetition_bonus** | 35.0 + 15.0 | 50.0 + 20.0 | +40% | Opening repetition is KEY |
+| **Patient: time_bonus** | max 8 pts | max 15 pts | +87.50% | Time management is KEY to patience |
+| **Patient: forcing_penalty** | 35.0x | 42.0x | +20.00% | Aggressive play strongly opposes patience |
+| **Aggressive: forcing_bonus** | 40.0x | 45.0x | +12.50% | Reward aggressive play more |
+| **Aggressive: error_penalty** | 18.0/12.0 | 15.0/10.0 | -16.67% | Aggressive players take risks |
+| **Novelty: game-level weight** | 40% | 70% | +75.00% | Opening repertoire is game-level |
+| **Novelty: diversity_bonus** | 30.0 + 15.0 | 45.0 + 20.0 | +44.44% | Opening variety is KEY |
+| **Staleness: repetition_bonus** | 35.0 + 15.0 | 50.0 + 20.0 | +40.00% | Opening repetition is KEY |
 
 ## Testing
 

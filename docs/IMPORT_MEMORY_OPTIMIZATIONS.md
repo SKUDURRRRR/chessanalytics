@@ -108,7 +108,7 @@ if total_imported > 0 and total_imported % 200 == 0:
 ```python
 connector = aiohttp.TCPConnector(
     limit=15,  # Reduced from 20
-    limit_per_host=3,  # Reduced from 5
+    limit_per_host=6,  # Increased from 3 to 6 - allows 2 concurrent imports per platform without bottleneck
     ttl_dns_cache=300
 )
 ```

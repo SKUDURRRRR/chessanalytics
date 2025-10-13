@@ -116,8 +116,8 @@ if active_imports >= 2:
   - Success: 98%
 
 ### Scenario 3: Three Concurrent Imports
-- **Removed**: MAX_CONCURRENT_IMPORTS reduced to 2
-- Third import will queue and wait for slot
+- **Updated**: MAX_CONCURRENT_IMPORTS set to 3 (final agreed concurrency limit)
+- All three imports can run simultaneously with memory optimizations
 
 ## Monitoring
 
@@ -133,15 +133,17 @@ Watch for these log messages to confirm fix is working:
 ```
 
 **Key indicators of success:**
-- ✅ Logs show "2 concurrent imports active" messages
+- ✅ Logs show "2-3 concurrent imports active" messages
 - ✅ Import continues past 250 games
 - ✅ No "Failed to fetch games" errors
 - ✅ Reaches 1000 game limit or natural stop
 - ✅ No memory exhaustion at 800-900 games
 
+**Note:** The final agreed concurrency limit is 3 concurrent imports (as documented in CONCURRENT_IMPORT_FINAL_ANSWER.md), enabled through memory optimizations that reduce per-import memory usage by 36%.
+
 ## Cost Analysis
 
-### Per 1000-Game Import (2 Concurrent Users)
+### Per 1000-Game Import (2-3 Concurrent Users)
 
 | Configuration | Time | Cost | Success Rate |
 |--------------|------|------|--------------|
@@ -156,7 +158,7 @@ Note: Reduced from 5000 to 1000 games per session for Railway Hobby tier stabili
 
 **Assumptions:**
 - 10 users × 5000 games/month (5 sessions of 1000 each)
-- 30% have concurrent imports (3 dual imports/month)
+- 30% have concurrent imports (3 dual imports/month, up to 3 concurrent)
 
 ```
 Before fix:
@@ -177,8 +179,8 @@ SAVINGS: $0.049/month = 70% cheaper
 1. **Session limit**: 1000 games per session (users need multiple clicks for full history)
 2. **Delay overhead**: 10% slower when 2 concurrent imports (trade-off for 98% success)
 3. **Memory**: Each import uses ~100-120 MB at 1000 games (Railway Hobby: 512 MB limit, safe headroom)
-4. **Max concurrent**: Limited to 2 imports max (reduced from 3, enforced by semaphore)
-5. **API rate limits**: 6 connections × 2 imports = 12 req/sec peak (safe for Lichess/Chess.com)
+4. **Max concurrent**: Limited to 3 imports max (final agreed limit, enforced by semaphore)
+5. **API rate limits**: 6 connections × 3 imports = 18 req/sec peak (safe for Lichess/Chess.com)
 
 ## Future Optimizations (Optional)
 

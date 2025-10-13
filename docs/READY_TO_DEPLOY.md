@@ -10,7 +10,7 @@ Your chess analytics platform has been validated and prepared for deployment. Al
 
 ### Step 1: Verify Database Migrations (5 minutes)
 
-Go to Supabase SQL Editor: https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn/sql
+Go to Supabase SQL Editor: https://supabase.com/dashboard/project/<your-project-id>/sql
 
 **Run these queries:**
 
@@ -41,7 +41,7 @@ WHERE table_name = 'game_analyses'
 
 #### Railway Backend (https://railway.app/dashboard)
 Check these variables exist and are correct:
-- [ ] `SUPABASE_URL` = `https://nhpsnvhvfscrmyniihdn.supabase.co`
+- [ ] `SUPABASE_URL` = `https://<your-project-id>.supabase.co`
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` = (your key)
 - [ ] `STOCKFISH_DEPTH` = `14`
 - [ ] `STOCKFISH_TIME_LIMIT` = `0.8`
@@ -51,7 +51,7 @@ Check these variables exist and are correct:
 
 #### Vercel Frontend (https://vercel.com/dashboard)
 Check these variables exist and are correct:
-- [ ] `VITE_SUPABASE_URL` = `https://nhpsnvhvfscrmyniihdn.supabase.co`
+- [ ] `VITE_SUPABASE_URL` = `https://<your-project-id>.supabase.co`
 - [ ] `VITE_SUPABASE_ANON_KEY` = (your key)
 - [ ] `VITE_ANALYSIS_API_URL` = (your Railway backend URL)
 - [ ] `NODE_ENV` = `production`
@@ -224,7 +224,7 @@ git push origin master
 - **Feature Docs:** Individual `*_FIX_SUMMARY.md` files
 
 ### Dashboards
-- **Supabase:** https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn
+- **Supabase:** https://supabase.com/dashboard/project/<your-project-id>
 - **Railway:** https://railway.app/dashboard
 - **Vercel:** https://vercel.com/dashboard
 

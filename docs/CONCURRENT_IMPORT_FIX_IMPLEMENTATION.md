@@ -41,8 +41,8 @@ async def get_http_client():
         import aiohttp
         timeout = aiohttp.ClientTimeout(total=120, connect=30)
         connector = aiohttp.TCPConnector(
-            limit=20,  # Total connection limit
-            limit_per_host=5,  # Per-host limit (for lichess.org, chess.com)
+            limit=15,  # Total connection limit
+            limit_per_host=6,  # Per-host limit (for lichess.org, chess.com)
             ttl_dns_cache=300  # DNS cache TTL
         )
         _shared_http_client = aiohttp.ClientSession(

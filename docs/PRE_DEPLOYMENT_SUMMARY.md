@@ -273,7 +273,7 @@ After deployment, you should see:
 - **Deployment Steps:** `DEPLOYMENT_CHECKLIST.md`
 - **Testing Guide:** `PRE_DEPLOYMENT_VALIDATION_RESULTS.md` Phase 3-5
 - **Feature Documentation:** Individual fix summary markdown files
-- **Supabase Dashboard:** https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn
+- **Supabase Dashboard:** https://supabase.com/dashboard/project/<your-project-id>
 - **Railway Dashboard:** https://railway.app/dashboard
 - **Vercel Dashboard:** https://vercel.com/dashboard
 

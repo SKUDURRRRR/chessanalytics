@@ -34,7 +34,7 @@ All 6 files have been updated to use environment variables:
 
 **Before** (❌ INSECURE):
 ```python
-SUPABASE_URL = "https://nhpsnvhvfscrmyniihdn.supabase.co"
+SUPABASE_URL = "https://<your-project-id>.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY = "eyJhbGci..."
 ```
 
@@ -100,7 +100,7 @@ Automatically scans every commit for:
 The exposed credentials are still valid and **MUST** be rotated:
 
 1. **Go to**: https://app.supabase.com
-2. **Select**: Your project (`nhpsnvhvfscrmyniihdn`)
+2. **Select**: Your project (`<your-project-id>`)
 3. **Navigate**: Settings → API → Service Role Key
 4. **Click**: "Reset API Key"
 5. **Copy**: The new key
@@ -116,7 +116,7 @@ cp env.example .env
 
 Your `.env` should look like:
 ```bash
-SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+SUPABASE_URL=https://<your-project-id>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<your_NEW_rotated_key_here>
 SUPABASE_ANON_KEY=<your_anon_key_here>
 ```

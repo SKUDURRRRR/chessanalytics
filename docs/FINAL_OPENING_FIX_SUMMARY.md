@@ -278,7 +278,7 @@ Shows player's perspective for each game
 - ✅ **No Breaking Changes**: Display-only transformation
 
 ### Technical
-- ✅ **No Database Migration**: Works with existing data
+- ⚠️ **Database Migration Required**: Adds opening_normalized migration
 - ✅ **Backward Compatible**: Graceful fallbacks
 - ✅ **Performance**: No additional queries
 - ✅ **Type Safe**: Full TypeScript support
@@ -328,11 +328,12 @@ Your e4 vs Opponent's Defenses:
 - [x] Backward compatible
 
 ### Deployment Notes
-1. No database changes required
+1. **Database migration required**: Run the opening_normalized migration
 2. No API changes required
 3. Frontend-only update
 4. Can be deployed independently
 5. Progressive enhancement (old data works fine)
+6. Migration is lightweight and backward-compatible
 
 ---
 

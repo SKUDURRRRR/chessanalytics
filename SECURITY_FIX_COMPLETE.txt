@@ -56,7 +56,7 @@ VERIFICATION COMPLETE
 YOU MUST ROTATE YOUR SUPABASE KEYS:
 
 1. Go to: https://app.supabase.com
-2. Select project: nhpsnvhvfscrmyniihdn  
+2. Select project: <your-project-id>  
 3. Navigate to: Settings → API → Service Role Key
 4. Click "Reset API Key"
 5. Copy the new key
@@ -65,7 +65,7 @@ YOU MUST ROTATE YOUR SUPABASE KEYS:
    cp env.example .env
    
    Then edit .env and add your NEW keys:
-   SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+   SUPABASE_URL=https://<your-project-id>.supabase.co
    SUPABASE_SERVICE_ROLE_KEY=<your_new_key_here>
    SUPABASE_ANON_KEY=<your_anon_key_here>
 

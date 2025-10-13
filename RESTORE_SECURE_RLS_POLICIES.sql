@@ -32,11 +32,13 @@ DROP POLICY IF EXISTS "Allow all access to games" ON games;
 
 -- GAMES TABLE
 -- Everyone can READ all games (public analytics app)
+DROP POLICY IF EXISTS "games_select_all" ON games;
 CREATE POLICY "games_select_all" ON games
   FOR SELECT
   USING (true);  -- Public read access - anyone can view any game
 
 -- Service role can do everything (backend API writes data)
+DROP POLICY IF EXISTS "games_service_role_all" ON games;
 CREATE POLICY "games_service_role_all" ON games
   FOR ALL
   TO service_role
@@ -45,11 +47,13 @@ CREATE POLICY "games_service_role_all" ON games
 
 -- GAMES_PGN TABLE
 -- Everyone can READ all PGN data (public analytics app)
+DROP POLICY IF EXISTS "games_pgn_select_all" ON games_pgn;
 CREATE POLICY "games_pgn_select_all" ON games_pgn
   FOR SELECT
   USING (true);  -- Public read access - anyone can view any PGN
 
 -- Service role can do everything (backend API writes data)
+DROP POLICY IF EXISTS "games_pgn_service_role_all" ON games_pgn;
 CREATE POLICY "games_pgn_service_role_all" ON games_pgn
   FOR ALL
   TO service_role
@@ -64,6 +68,7 @@ CREATE POLICY "user_profiles_select_all" ON user_profiles
   USING (true);  -- Public read access
 
 -- Service role can do everything (backend manages profiles)
+DROP POLICY IF EXISTS "user_profiles_service_role_all" ON user_profiles;
 CREATE POLICY "user_profiles_service_role_all" ON user_profiles
   FOR ALL
   TO service_role

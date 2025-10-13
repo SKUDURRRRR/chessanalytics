@@ -2,6 +2,7 @@
 """Re-analyze test players with new time management scoring"""
 import sys
 import asyncio
+import argparse
 import requests
 from pathlib import Path
 
@@ -73,12 +74,39 @@ async def check_personality_scores(user_id: str, platform: str):
         print(f"✗ Error fetching scores: {e}")
         return None
 
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(
+        description="Re-analyze test players with new time management scoring",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python reanalyze_test_players.py --limit 50
+  python reanalyze_test_players.py --limit 20
+  python reanalyze_test_players.py  # Uses default limit of 20
+        """
+    )
+    
+    parser.add_argument(
+        '--limit',
+        type=int,
+        default=20,
+        help='Number of games to analyze per player (default: 20)'
+    )
+    
+    return parser.parse_args()
+
 async def main():
+    # Parse command line arguments
+    args = parse_arguments()
+    limit = args.limit
+    
     print("="*60)
     print("CHESS PERSONALITY RADAR - TEST PLAYER RE-ANALYSIS")
     print("="*60)
-    print("\nThis will re-analyze both test players with the new")
-    print("time management scoring implementation.")
+    print(f"\nThis will re-analyze both test players with the new")
+    print(f"time management scoring implementation.")
+    print(f"Games per player: {limit}")
     print()
     
     # Check if backend is running
@@ -98,7 +126,7 @@ async def main():
     # Re-analyze players
     success_count = 0
     for player in TEST_PLAYERS:
-        result = await reanalyze_player(player["user_id"], player["platform"], limit=20)
+        result = await reanalyze_player(player["user_id"], player["platform"], limit=limit)
         if result:
             success_count += 1
         await asyncio.sleep(2)  # Brief pause between requests

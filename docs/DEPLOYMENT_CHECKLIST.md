@@ -5,7 +5,7 @@
 ### Phase 1: Database Migrations ✅
 **Action Required:** User must verify migrations in production Supabase
 
-Run these queries in Supabase SQL Editor (https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn/sql):
+Run these queries in Supabase SQL Editor (https://supabase.com/dashboard/project/<your-project-id>/sql):
 
 ```sql
 -- 1. Check opening_normalized column
@@ -63,7 +63,7 @@ Most warnings are unused variables in debug components and don't prevent deploym
 Required variables:
 ```bash
 # Database
-SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+SUPABASE_URL=https://<your-project-id>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<your-key>
 
 # Railway Hobby Performance
@@ -82,7 +82,7 @@ DEBUG=false
 Required variables:
 ```bash
 # Database
-VITE_SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+VITE_SUPABASE_URL=https://<your-project-id>.supabase.co
 VITE_SUPABASE_ANON_KEY=<your-key>
 
 # Backend API
@@ -246,7 +246,7 @@ After deployment, verify:
 
 ## Support Resources
 
-- **Supabase Dashboard:** https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn
+- **Supabase Dashboard:** https://supabase.com/dashboard/project/<your-project-id>
 - **Railway Dashboard:** https://railway.app/dashboard
 - **Vercel Dashboard:** https://vercel.com/dashboard
 - **Validation Guide:** `PRE_DEPLOYMENT_VALIDATION_RESULTS.md`

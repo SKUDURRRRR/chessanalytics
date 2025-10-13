@@ -40,7 +40,7 @@ Created comprehensive security protection:
 The exposed service role key **MUST** be rotated immediately:
 
 1. **Go to Supabase Dashboard**: https://app.supabase.com
-2. **Select your project**: `nhpsnvhvfscrmyniihdn`
+2. **Select your project**: `<your-project-id>`
 3. **Navigate to**: Settings → API
 4. **Reset the Service Role Key**:
    - Click the "Reset" button next to Service Role Key
@@ -63,7 +63,7 @@ Edit `.env` and add your **NEW** (rotated) credentials:
 
 ```bash
 # .env
-SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+SUPABASE_URL=https://<your-project-id>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<your_new_service_role_key_here>
 SUPABASE_ANON_KEY=<your_anon_key_here>
 ```

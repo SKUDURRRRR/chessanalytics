@@ -1,7 +1,7 @@
 # Opening Performance Display Fix
 
 ## Issue
-Opening performance section was not showing any data despite openings existing in the `openings_normalized` column in the database.
+Opening performance section was not showing any data despite openings existing in the `opening_normalized` column in the database.
 
 ## Root Cause
 The `calculateOpeningStats` function in `src/utils/comprehensiveGameAnalytics.ts` was applying **two filters**:

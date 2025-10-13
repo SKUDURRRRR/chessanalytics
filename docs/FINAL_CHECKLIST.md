@@ -3,13 +3,13 @@
 ## ✅ Verified Working
 1. Python backend can read SUPABASE_URL ✅
 2. Python backend can read SUPABASE_SERVICE_ROLE_KEY ✅
-3. Both pointing to: `nhpsnvhvfscrmyniihdn.supabase.co` ✅
+3. Both pointing to: `<your-project-id>.supabase.co` ✅
 
 ## 🔧 Final Steps
 
 ### Step 1: Verify Migration on Correct Database
 
-Go to: https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn/sql
+Go to: https://supabase.com/dashboard/project/<your-project-id>/sql
 
 Run this to verify the column exists:
 

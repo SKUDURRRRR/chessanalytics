@@ -36,7 +36,16 @@ DROP POLICY IF EXISTS "user_profiles_public_read" ON user_profiles;
 DROP POLICY IF EXISTS "user_profiles_service_role_all" ON user_profiles;
 
 -- ============================================================================
--- 2. CREATE proper secure policies
+-- 2. ENABLE ROW LEVEL SECURITY on all affected tables
+-- ============================================================================
+
+-- Enable RLS on all tables that will have policies
+ALTER TABLE games ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_pgn ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
+-- 3. CREATE proper secure policies
 -- ============================================================================
 
 -- GAMES TABLE
@@ -110,7 +119,36 @@ CREATE POLICY "user_profiles_service_role_all" ON user_profiles
   WITH CHECK (true);
 
 -- ============================================================================
--- 3. Reload schema cache
+-- 4. GRANT TABLE PRIVILEGES
+-- ============================================================================
+
+-- Grant SELECT to anon and authenticated for public read access
+GRANT SELECT ON games TO anon, authenticated;
+GRANT SELECT ON games_pgn TO anon, authenticated;
+GRANT SELECT ON user_profiles TO anon, authenticated;
+
+-- Grant ALL privileges to service_role for backend operations
+GRANT ALL ON games TO service_role;
+GRANT ALL ON games_pgn TO service_role;
+GRANT ALL ON user_profiles TO service_role;
+
+-- Revoke INSERT/UPDATE/DELETE from anon and authenticated (if previously granted)
+-- This ensures only service_role can write data
+REVOKE INSERT, UPDATE, DELETE ON games FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON games_pgn FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON user_profiles FROM anon, authenticated;
+
+-- ============================================================================
+-- 5. FORCE ROW LEVEL SECURITY for stricter enforcement
+-- ============================================================================
+
+-- Force RLS to ensure policies are always enforced
+ALTER TABLE games FORCE ROW LEVEL SECURITY;
+ALTER TABLE games_pgn FORCE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles FORCE ROW LEVEL SECURITY;
+
+-- ============================================================================
+-- 6. Reload schema cache
 -- ============================================================================
 
 NOTIFY pgrst, 'reload schema';

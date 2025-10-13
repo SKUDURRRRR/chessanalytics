@@ -9,13 +9,25 @@ Removes `OR true` vulnerability that allowed anonymous users to access all games
 Go to your Supabase Dashboard → SQL Editor and run:
 
 ```sql
--- Drop the insecure anonymous policies
+-- ============================================================================
+-- 1. ENABLE ROW LEVEL SECURITY FIRST (Critical Security Fix)
+-- ============================================================================
+ALTER TABLE games ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_pgn ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
+-- 2. DROP existing policies
+-- ============================================================================
 DROP POLICY IF EXISTS "Allow anonymous access to games" ON games;
 DROP POLICY IF EXISTS "Allow anonymous access to games_pgn" ON games_pgn;
 
--- GAMES TABLE - Secure policy
-DROP POLICY IF EXISTS "games_select_own_or_public" ON games;
-CREATE POLICY "games_select_own_or_public" ON games
+-- ============================================================================
+-- 3. CREATE secure policies with correct names
+-- ============================================================================
+
+-- GAMES TABLE - Users can only see their own games
+DROP POLICY IF EXISTS "games_select_own" ON games;
+CREATE POLICY "games_select_own" ON games
   FOR SELECT
   USING (
     auth.uid()::text = user_id
@@ -29,9 +41,9 @@ CREATE POLICY "games_service_role_all" ON games
   USING (true)
   WITH CHECK (true);
 
--- GAMES_PGN TABLE - Secure policy
-DROP POLICY IF EXISTS "games_pgn_select_own_or_public" ON games_pgn;
-CREATE POLICY "games_pgn_select_own_or_public" ON games_pgn
+-- GAMES_PGN TABLE - Users can only see their own PGN data
+DROP POLICY IF EXISTS "games_pgn_select_own" ON games_pgn;
+CREATE POLICY "games_pgn_select_own" ON games_pgn
   FOR SELECT
   USING (
     auth.uid()::text = user_id
@@ -91,8 +103,8 @@ If something breaks and you need to temporarily restore access:
 
 ```sql
 -- TEMPORARY - DO NOT USE IN PRODUCTION
-DROP POLICY IF EXISTS "games_select_own_or_public" ON games;
-CREATE POLICY "games_select_own_or_public" ON games
+DROP POLICY IF EXISTS "games_select_own" ON games;
+CREATE POLICY "games_select_own" ON games
   FOR SELECT
   USING (true);  -- WARNING: This allows anonymous access!
 ```
@@ -102,7 +114,7 @@ But better approach: Fix the underlying issue instead of rolling back security!
 ## 🆘 Troubleshooting
 
 ### Error: "permission denied for table games"
-**Solution**: Make sure RLS is enabled:
+**Solution**: RLS is now enabled at the beginning of the script, but if you need to enable manually:
 ```sql
 ALTER TABLE games ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_pgn ENABLE ROW LEVEL SECURITY;
@@ -112,8 +124,8 @@ ALTER TABLE games_pgn ENABLE ROW LEVEL SECURITY;
 **Solution**: Policies already applied! Verify with test script.
 
 ### Test fails: "Anonymous users can read games"
-**Problem**: The OR true clause is still present
-**Solution**: Re-run the SQL commands to drop and recreate policies
+**Problem**: The old policies might still exist
+**Solution**: Re-run the SQL commands to drop and recreate policies with correct names
 
 ### Logged-in users can't see their games
 **Problem**: Policy might be too restrictive or auth.uid() is null

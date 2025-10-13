@@ -27,7 +27,7 @@ Replace any hardcoded credentials with environment variables:
 
 ```python
 # ❌ WRONG - Hardcoded credential
-SUPABASE_URL = "https://nhpsnvhvfscrmyniihdn.supabase.co"
+SUPABASE_URL = "https://<your-project-id>.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY = "eyJhbGci..."
 
 # ✅ CORRECT - Use environment variables

@@ -8,7 +8,7 @@ The hardcoded Supabase credentials have been removed from `START_BACKEND_LOCAL.p
 ### 1. **ROTATE YOUR SUPABASE CREDENTIALS IMMEDIATELY** 
 Your Supabase JWT tokens (anon key and service role key) are **already exposed in Git history** and must be rotated:
 
-1. Go to your Supabase Dashboard: https://nhpsnvhvfscrmyniihdn.supabase.co
+1. Go to your Supabase Dashboard: https://<your-project-id>.supabase.co
 2. Navigate to **Settings** → **API**
 3. Click **"Reset Service Role Key"** and **"Reset Anon Key"**
 4. Copy the new keys
@@ -17,7 +17,7 @@ Your Supabase JWT tokens (anon key and service role key) are **already exposed i
 Update your `.env` file with the **NEW** credentials:
 
 ```env
-SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+SUPABASE_URL=https://<your-project-id>.supabase.co
 SUPABASE_ANON_KEY=<your_new_anon_key>
 SUPABASE_SERVICE_ROLE_KEY=<your_new_service_role_key>
 ```

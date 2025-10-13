@@ -31,21 +31,25 @@ DROP POLICY IF EXISTS "games_pgn_select_all" ON games_pgn;
 -- GAMES TABLE
 -- Everyone can READ all games (public analytics)
 -- Only service_role can WRITE (backend manages data)
+DROP POLICY IF EXISTS "games_select_all" ON games;
 CREATE POLICY "games_select_all" ON games
   FOR SELECT
   USING (true);  -- Public read access for analytics
 
+DROP POLICY IF EXISTS "games_insert_service" ON games;
 CREATE POLICY "games_insert_service" ON games
   FOR INSERT
   TO service_role
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "games_update_service" ON games;
 CREATE POLICY "games_update_service" ON games
   FOR UPDATE
   TO service_role
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "games_delete_service" ON games;
 CREATE POLICY "games_delete_service" ON games
   FOR DELETE
   TO service_role
@@ -54,21 +58,25 @@ CREATE POLICY "games_delete_service" ON games
 -- GAMES_PGN TABLE
 -- Everyone can READ all PGN data
 -- Only service_role can WRITE
+DROP POLICY IF EXISTS "games_pgn_select_all" ON games_pgn;
 CREATE POLICY "games_pgn_select_all" ON games_pgn
   FOR SELECT
   USING (true);  -- Public read access
 
+DROP POLICY IF EXISTS "games_pgn_insert_service" ON games_pgn;
 CREATE POLICY "games_pgn_insert_service" ON games_pgn
   FOR INSERT
   TO service_role
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "games_pgn_update_service" ON games_pgn;
 CREATE POLICY "games_pgn_update_service" ON games_pgn
   FOR UPDATE
   TO service_role
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "games_pgn_delete_service" ON games_pgn;
 CREATE POLICY "games_pgn_delete_service" ON games_pgn
   FOR DELETE
   TO service_role
@@ -77,21 +85,25 @@ CREATE POLICY "games_pgn_delete_service" ON games_pgn
 -- USER_PROFILES TABLE
 -- Everyone can READ all profiles (for search and leaderboards)
 -- Only service_role can WRITE (backend manages profiles)
+DROP POLICY IF EXISTS "user_profiles_select_all" ON user_profiles;
 CREATE POLICY "user_profiles_select_all" ON user_profiles
   FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "user_profiles_insert_service" ON user_profiles;
 CREATE POLICY "user_profiles_insert_service" ON user_profiles
   FOR INSERT
   TO service_role
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "user_profiles_update_service" ON user_profiles;
 CREATE POLICY "user_profiles_update_service" ON user_profiles
   FOR UPDATE
   TO service_role
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "user_profiles_delete_service" ON user_profiles;
 CREATE POLICY "user_profiles_delete_service" ON user_profiles
   FOR DELETE
   TO service_role
