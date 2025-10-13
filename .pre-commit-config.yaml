@@ -1,0 +1,23 @@
+# Pre-commit hooks to prevent security issues
+# Install with: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Check for common security issues
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: detect-private-key
+
+  # Custom secret scanner specific to this project
+  - repo: local
+    hooks:
+      - id: check-supabase-secrets
+        name: Check for hardcoded Supabase credentials
+        entry: python scripts/check_secrets.py
+        language: system
+        pass_filenames: false
+        always_run: true
+

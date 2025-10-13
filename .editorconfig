@@ -1,0 +1,49 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# top-most EditorConfig file
+root = true
+
+# Unix-style newlines with a newline ending every file
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Indentation for TypeScript/JavaScript
+[*.{js,jsx,ts,tsx,mjs,cjs}]
+indent_style = space
+indent_size = 2
+
+# Indentation for JSON
+[*.json]
+indent_style = space
+indent_size = 2
+
+# Indentation for Python
+[*.py]
+indent_style = space
+indent_size = 4
+
+# Indentation for Markdown
+[*.md]
+trim_trailing_whitespace = false
+indent_style = space
+indent_size = 2
+
+# Indentation for YAML
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# Environment files - UTF-8 without BOM
+[.env*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+# PowerShell files
+[*.ps1]
+charset = utf-8
+end_of_line = crlf
+
