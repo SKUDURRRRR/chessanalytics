@@ -23,7 +23,7 @@ def _calculate_time_management_score(self, moves: List[MoveAnalysis]) -> float:
 ```python
 def _calculate_time_management_score(self, moves: List[MoveAnalysis]) -> float:
     """Calculate time management score based on move quality patterns.
-    
+
     Uses proxy indicators since exact clock times may not be available:
     1. Move quality consistency (fast players make more errors)
     2. Error patterns (blunders/mistakes indicate rushed decisions)
@@ -293,8 +293,8 @@ If you encounter issues:
 
 ---
 
-**Status**: ✅ **IMPLEMENTATION COMPLETE**  
-**Date**: {{ current_date }}  
+**Status**: ✅ **IMPLEMENTATION COMPLETE**
+**Date**: 2025-10-13
 **Next Action**: Run re-analysis script to validate
 
 ---
@@ -309,4 +309,3 @@ The time management score is now **fully implemented** using a sophisticated pro
 - Clear differentiation in personality radar visualization
 
 Run the re-analysis script to see the improvements! 🚀
-
