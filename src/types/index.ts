@@ -260,6 +260,7 @@ export interface SerializableOpeningFilter {
 export interface OpeningFilter {
   normalized: string
   identifiers: OpeningIdentifierSets
+  color?: 'white' | 'black' // Optional: filter by player color
 }
 
 export interface MatchHistoryGameSummary {

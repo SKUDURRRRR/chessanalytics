@@ -8,6 +8,9 @@ import { getOpeningNameWithFallback } from './openingIdentification'
 import { OpeningIdentifierSets } from '../types'
 import { shouldCountOpeningForColor } from './openingColorClassification'
 
+// Debug logging flag - set to true for development debugging
+const DEBUG = false
+
 export interface GameAnalytics {
   // Basic Statistics
   totalGames: number
@@ -242,11 +245,11 @@ export async function getComprehensiveGameAnalytics(
   platform: 'lichess' | 'chess.com'
 ): Promise<GameAnalytics> {
   try {
-    console.log(`Getting comprehensive analytics for ${userId} on ${platform}`)
+    if (DEBUG) console.log(`Getting comprehensive analytics for ${userId} on ${platform}`)
     
     // Canonicalize user ID to match backend logic
     const canonicalUserId = canonicalizeUserId(userId, platform)
-    console.log(`Canonicalized user ID: "${canonicalUserId}"`)
+    if (DEBUG) console.log(`Canonicalized user ID: "${canonicalUserId}"`)
     
     // First, get the total count of games
     const { count: totalGamesCount, error: countError } = await supabase
@@ -257,11 +260,11 @@ export async function getComprehensiveGameAnalytics(
       .not('my_rating', 'is', null)
 
     if (countError) {
-      console.error('Error getting games count:', countError)
+      if (DEBUG) console.error('Error getting games count:', countError)
       return getEmptyAnalytics()
     }
 
-    console.log(`Total games in database: ${totalGamesCount}`)
+    if (DEBUG) console.log(`Total games in database: ${totalGamesCount}`)
 
     // Try to fetch all games by using a very high limit and range queries
     let allGames: any[] = []
@@ -280,7 +283,7 @@ export async function getComprehensiveGameAnalytics(
         .range(offset, offset + batchSize - 1)
       
       if (error) {
-        console.error('Error fetching games batch:', error)
+        if (DEBUG) console.error('Error fetching games batch:', error)
         break
       }
       
@@ -295,7 +298,7 @@ export async function getComprehensiveGameAnalytics(
           hasMore = false
         }
         
-        console.log(`Fetched batch: ${batch.length} games (total so far: ${allGames.length})`)
+        if (DEBUG) console.log(`Fetched batch: ${batch.length} games (total so far: ${allGames.length})`)
       }
     }
     
@@ -305,7 +308,7 @@ export async function getComprehensiveGameAnalytics(
       return getEmptyAnalytics()
     }
 
-    console.log(`Fetched ${games.length} games for analytics (total in DB: ${totalGamesCount})`)
+    if (DEBUG) console.log(`Fetched ${games.length} games for analytics (total in DB: ${totalGamesCount})`)
 
     // Calculate all analytics from the single dataset
     return calculateAnalyticsFromGames(games, totalGamesCount)
@@ -323,7 +326,7 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
   const totalGames = actualTotalCount || games.length
   
   // Debug logging for total games calculation
-  console.log('Total Games Calculation Debug:', {
+  if (DEBUG) console.log('Total Games Calculation Debug:', {
     actualTotalCount,
     gamesLength: games.length,
     finalTotalGames: totalGames,
@@ -392,7 +395,7 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
       opponentRating: g.opponent_rating
     }))
   
-  console.log('ELO Statistics Debug:', {
+  if (DEBUG) console.log('ELO Statistics Debug:', {
     totalGames: games.length,
     validGamesForElo: validGamesForElo.length,
     filteredOut: games.length - validGamesForElo.length,
@@ -412,7 +415,7 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
   const timeControlWithHighestElo = highestEloGame?.time_control || null
   
   // Debug: Log highest ELO game details
-  if (highestEloGame) {
+  if (DEBUG && highestEloGame) {
     console.log('Highest ELO Game Found:', {
       rating: highestEloGame.my_rating,
       timeControl: highestEloGame.time_control,
@@ -432,7 +435,7 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
   const openingColorStats = calculateOpeningColorStats(games)
   
   // Debug comparison between the two data sources
-  console.log('Opening Data Comparison:', {
+  if (DEBUG) console.log('Opening Data Comparison:', {
     mainOpeningStats: {
       totalOpenings: openingStats.length,
       top3: openingStats.slice(0, 3).map(o => ({ opening: o.opening, games: o.games, winRate: o.winRate }))
@@ -483,7 +486,7 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
     gameLengthStats
   }
   
-  console.log('Comprehensive analytics result:', {
+  if (DEBUG) console.log('Comprehensive analytics result:', {
     totalGames: result.totalGames,
     winRate: result.winRate,
     drawRate: result.drawRate,
@@ -554,7 +557,10 @@ function calculateOpeningStats(games: any[]): Array<{
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
   
-  console.log(`Opening Stats: ${validGames.length} games with valid openings out of ${games.length} total games`)
+  if (validGames.length === 0) {
+    if (DEBUG) console.warn('No valid opening data found in games')
+    return []
+  }
   
   const openingMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   
@@ -610,42 +616,13 @@ function calculateOpeningStats(games: any[]): Array<{
   // Apply minimum game filter for statistical validity (5+ games)
   const filteredOpenings = allOpenings.filter(opening => opening.games >= 5)
 
-  // Filter for winning openings (win rate >= 50%)
-  const winningOpenings = filteredOpenings.filter(opening => opening.winRate >= 50)
-
-  // Debug logging for winning openings calculation
-  console.log('Winning Openings Debug:', {
-    totalGames: games.length,
-    validGames: validGames.length,
-    totalOpenings: allOpenings.length,
-    filteredOpenings: filteredOpenings.length,
-    winningOpenings: winningOpenings.length,
-    top10WinningOpenings: winningOpenings.sort((a, b) => b.games - a.games).slice(0, 10).map(o => ({
-      opening: o.opening,
-      games: o.games,
-      winRate: o.winRate.toFixed(1),
-      wins: o.wins,
-      losses: o.losses,
-      draws: o.draws
-    })),
-    losingOpenings: filteredOpenings.filter(o => o.winRate < 50).length,
-    losingOpeningsDetails: filteredOpenings.filter(o => o.winRate < 50).sort((a, b) => b.games - a.games).slice(0, 10).map(o => ({
-      opening: o.opening,
-      games: o.games,
-      winRate: o.winRate.toFixed(1),
-      wins: o.wins,
-      losses: o.losses,
-      draws: o.draws
-    }))
-  })
-
-  // Return winning openings (>= 50% win rate) sorted by most-played
-  return winningOpenings
+  // Return ALL openings (not just winning ones) sorted by most-played
+  // The UI will separate them into winning vs losing
+  return filteredOpenings
     .sort((a, b) => {
-      // Sort by games descending - most played winning openings first
+      // Sort by games descending - most played openings first
       return b.games - a.games
     })
-    .slice(0, 10) // Top 10 most-played winning openings
 }
 
 /**
@@ -677,7 +654,7 @@ function calculateOpeningColorStats(games: any[]): {
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
   
-  console.log(`Opening Color Stats: ${validGames.length} games with valid openings out of ${games.length} total games`)
+  if (DEBUG) console.log(`Opening Color Stats: ${validGames.length} games with valid openings out of ${games.length} total games`)
   
   // Separate games by color
   const whiteGames = validGames.filter(g => g.color === 'white')
@@ -1329,10 +1306,13 @@ export async function getWinRateAnalysis(
   userId: string,
   platform: 'lichess' | 'chess.com'
 ): Promise<{ winRate: number; totalGames: number; wins: number; draws: number; losses: number }> {
+  // Canonicalize user ID based on platform
+  const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
+  
   const { data: games, error } = await supabase
     .from('games')
     .select('result')
-    .eq('user_id', userId.toLowerCase())
+    .eq('user_id', canonicalUserId)
     .eq('platform', platform)
 
   if (error || !games) {
@@ -1362,10 +1342,13 @@ export async function getOpeningPerformance(
     identifiers: OpeningIdentifierSets
   }>
 > {
+  // Canonicalize user ID based on platform
+  const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
+  
   const { data: games, error } = await supabase
     .from('games')
     .select('opening, opening_family, opening_normalized, result, my_rating')
-    .eq('user_id', userId.toLowerCase())
+    .eq('user_id', canonicalUserId)
     .eq('platform', platform)
 
   if (error || !games) {
@@ -1451,10 +1434,13 @@ export async function getOpeningColorPerformance(
     identifiers: OpeningIdentifierSets
   }>
 }> {
+  // Canonicalize user ID based on platform
+  const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
+  
   const { data: games, error } = await supabase
     .from('games')
     .select('opening, opening_family, opening_normalized, result, my_rating, color')
-    .eq('user_id', userId.toLowerCase())
+    .eq('user_id', canonicalUserId)
     .eq('platform', platform)
 
   if (error || !games) {
@@ -1583,30 +1569,61 @@ export async function getWorstOpeningPerformance(
   platform: 'lichess' | 'chess.com',
   limit: number = 10
 ): Promise<Array<{ opening: string; games: number; winRate: number; averageElo: number }>> {
-  // Use the same data fetching approach as getComprehensiveGameAnalytics
-  const { data: games, error } = await supabase
-    .from('games')
-    .select('*')
-    .eq('user_id', userId.toLowerCase())
-    .eq('platform', platform)
-    .not('my_rating', 'is', null)
-    .order('played_at', { ascending: false })
+  // Canonicalize user ID to match backend logic
+  const canonicalUserId = canonicalizeUserId(userId, platform)
+  
+  // Fetch ALL games using the same batching approach as getComprehensiveGameAnalytics
+  let allGames: any[] = []
+  let offset = 0
+  const batchSize = 1000
+  let hasMore = true
+  
+  while (hasMore) {
+    const { data: batch, error } = await supabase
+      .from('games')
+      .select('*')
+      .eq('user_id', canonicalUserId)
+      .eq('platform', platform)
+      .not('my_rating', 'is', null)
+      .order('played_at', { ascending: false })
+      .range(offset, offset + batchSize - 1)
+    
+    if (error) {
+      if (DEBUG) console.error('Error fetching games batch:', error)
+      break
+    }
+    
+    if (!batch || batch.length === 0) {
+      hasMore = false
+    } else {
+      allGames = allGames.concat(batch)
+      offset += batchSize
+      
+      // If we got fewer games than the batch size, we've reached the end
+      if (batch.length < batchSize) {
+        hasMore = false
+      }
+    }
+  }
+  
+  const games = allGames
 
-  if (error || !games) {
-    console.error('Error fetching games for worst opening performance:', error)
+  if (!games || games.length === 0) {
     return []
   }
 
-  console.log(`getWorstOpeningPerformance: Fetched ${games.length} games for ${userId} on ${platform}`)
-  
-  // Add a simple data validation
-  const sampleGames = games.slice(0, 5)
-  console.log('Sample games data:', sampleGames.map(g => ({
-    opening: g.opening,
-    opening_family: g.opening_family,
-    result: g.result,
-    my_rating: g.my_rating
-  })))
+  if (DEBUG) {
+    console.log(`getWorstOpeningPerformance: Fetched ${games.length} games for ${userId} on ${platform} (using batching)`)
+    
+    // Add a simple data validation
+    const sampleGames = games.slice(0, 5)
+    console.log('Sample games data:', sampleGames.map(g => ({
+      opening: g.opening,
+      opening_family: g.opening_family,
+      result: g.result,
+      my_rating: g.my_rating
+    })))
+  }
 
   // Filter out games without proper opening names (same logic as other functions)
   const validGames = games.filter(game => {
@@ -1663,7 +1680,7 @@ export async function getWorstOpeningPerformance(
   })
 
   // Debug logging to understand the distribution
-  console.log('Opening Performance Debug (getWorstOpeningPerformance):', {
+  if (DEBUG) console.log('Opening Performance Debug (getWorstOpeningPerformance):', {
     totalGames: games.length,
     validGames: validGames.length,
     totalOpenings: allOpenings.length,
@@ -1704,11 +1721,11 @@ export async function getWorstOpeningPerformance(
       return b.games - a.games
     })
 
-  console.log(`Found ${losingOpenings.length} losing openings, showing top ${Math.min(limit, losingOpenings.length)} most-played`)
+  if (DEBUG) console.log(`Found ${losingOpenings.length} losing openings, showing top ${Math.min(limit, losingOpenings.length)} most-played`)
 
   // If we have very few losing openings, also include some worst performers by win rate
   if (losingOpenings.length < 3) {
-    console.log('Very few losing openings, including worst performers by win rate...')
+    if (DEBUG) console.log('Very few losing openings, including worst performers by win rate...')
     
     const worstPerformers = allOpenings
       .filter(opening => opening.games >= 5) // At least 5 games for statistical significance
@@ -1747,10 +1764,13 @@ export async function getTimeControlPerformance(
   userId: string,
   platform: 'lichess' | 'chess.com'
 ): Promise<Array<{ timeControl: string; games: number; winRate: number; averageElo: number }>> {
+  // Canonicalize user ID based on platform
+  const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
+  
   const { data: games, error } = await supabase
     .from('games')
     .select('time_control, result, my_rating')
-    .eq('user_id', userId.toLowerCase())
+    .eq('user_id', canonicalUserId)
     .eq('platform', platform)
     .not('time_control', 'is', null)
 
@@ -1782,10 +1802,13 @@ export async function getColorPerformance(
   userId: string,
   platform: 'lichess' | 'chess.com'
 ): Promise<{ white: { games: number; winRate: number }; black: { games: number; winRate: number } }> {
+  // Canonicalize user ID based on platform
+  const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
+  
   const { data: games, error } = await supabase
     .from('games')
     .select('color, result')
-    .eq('user_id', userId.toLowerCase())
+    .eq('user_id', canonicalUserId)
     .eq('platform', platform)
     .not('color', 'is', null)
 
@@ -1814,11 +1837,14 @@ export async function getRecentPerformance(
   platform: 'lichess' | 'chess.com',
   games: number = 10
 ): Promise<{ winRate: number; averageElo: number; trend: 'improving' | 'declining' | 'stable'; timeControlUsed: string }> {
+  // Canonicalize user ID based on platform
+  const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
+  
   // First get all games to find most played time control
   const { data: allGames, error: allGamesError } = await supabase
     .from('games')
     .select('time_control, my_rating, played_at, result')
-    .eq('user_id', userId.toLowerCase())
+    .eq('user_id', canonicalUserId)
     .eq('platform', platform)
     .not('my_rating', 'is', null)
     .not('time_control', 'is', null)

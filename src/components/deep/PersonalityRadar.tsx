@@ -35,7 +35,7 @@ const TRAIT_COLORS: Record<keyof PersonalityScores, string> = {
   tactical: 'bg-blue-500',
   positional: 'bg-green-500',
   aggressive: 'bg-red-500',
-  patient: 'bg-indigo-500',
+  patient: 'bg-yellow-500',
   novelty: 'bg-purple-500',
   staleness: 'bg-orange-500',
 }
@@ -186,11 +186,7 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
             <div className="mt-1.5 sm:mt-2 w-full">
               <div className="h-0.5 sm:h-1 w-full rounded-full bg-white/10">
                 <div
-                  className={`h-0.5 sm:h-1 rounded-full transition-all duration-300 ${
-                    score >= 70 ? 'bg-emerald-400' :
-                    score >= 50 ? 'bg-amber-300' :
-                    'bg-rose-400'
-                  }`}
+                  className="h-0.5 sm:h-1 rounded-full transition-all duration-300 bg-emerald-400"
                   style={{ width: `${score}%` }}
                 />
               </div>

@@ -99,6 +99,7 @@ function validateDeepAnalysisData(data: any): DeepAnalysisData | null {
       middle: Math.max(0, Math.min(100, data.phase_accuracies?.middle || 0)),
       endgame: Math.max(0, Math.min(100, data.phase_accuracies?.endgame || 0)),
     },
+    enhanced_opening_analysis: data.enhanced_opening_analysis || undefined,
     recommendations: {
       primary: data.recommendations?.primary || 'Complete a Stockfish analysis to unlock deep recommendations.',
       secondary: data.recommendations?.secondary || 'Play a fresh set of games to refresh recent patterns.',

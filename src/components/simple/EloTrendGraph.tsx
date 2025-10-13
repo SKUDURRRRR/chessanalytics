@@ -49,6 +49,15 @@ export function EloTrendGraph({
     return availableTimeControls[0]?.value || ''
   }, [selectedTimeControl, availableTimeControls])
 
+  // Canonicalize user ID based on platform (chess.com lowercases, lichess preserves case)
+  const canonicalUserId = useMemo(() => {
+    if (platform === 'chess.com') {
+      return userId.trim().toLowerCase()
+    } else { // lichess
+      return userId.trim()
+    }
+  }, [userId, platform])
+
   useEffect(() => {
     const fetchGames = async () => {
       try {
@@ -58,7 +67,7 @@ export function EloTrendGraph({
         const { data: games, error: fetchError } = await supabase
           .from('games')
           .select('time_control, my_rating, played_at, id')
-          .eq('user_id', userId.toLowerCase())
+          .eq('user_id', canonicalUserId)
           .eq('platform', platform)
           .not('my_rating', 'is', null)
           .not('time_control', 'is', null)
@@ -103,7 +112,7 @@ export function EloTrendGraph({
     }
 
     fetchGames()
-  }, [userId, platform, selectedTimeControl, onTimeControlChange])
+  }, [canonicalUserId, platform, selectedTimeControl, onTimeControlChange])
 
   useEffect(() => {
     if (!activeTimeControl || allGames.length === 0) {

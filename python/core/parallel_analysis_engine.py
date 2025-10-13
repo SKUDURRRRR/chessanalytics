@@ -258,7 +258,12 @@ class ParallelAnalysisEngine:
         """Fetch games from database."""
         try:
             # Canonicalize user ID for database operations
-            canonical_user_id = user_id.lower().strip()
+            # Chess.com usernames are case-insensitive (lowercase)
+            # Lichess usernames are case-sensitive (preserve case)
+            if platform == "chess.com":
+                canonical_user_id = user_id.strip().lower()
+            else:  # lichess
+                canonical_user_id = user_id.strip()
             
             # Get games from database (games_pgn table) ordered by most recent first
             games_response = self.supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('updated_at', desc=True).limit(limit).execute()

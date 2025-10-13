@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
 import { normalizeOpeningName } from '../../utils/openingUtils'
+import { getPlayerPerspectiveOpeningShort, getOpeningExplanation } from '../../utils/playerPerspectiveOpening'
 import { MatchHistoryProps, MatchHistoryGameSummary } from '../../types'
 import UnifiedAnalysisService from '../../services/unifiedAnalysisService'
 import { config } from '../../lib/config'
@@ -345,6 +346,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       // Apply opening filter at database level using opening_normalized column
       if (openingFilter) {
         query = query.eq('opening_normalized', openingFilter.normalized)
+        // Also filter by color if specified (e.g., from Best White/Black Openings)
+        if (openingFilter.color) {
+          query = query.eq('color', openingFilter.color)
+        }
       }
 
       // Apply opponent filter if provided
@@ -519,7 +524,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
             <h2 className="text-xl font-semibold text-white">Match History</h2>
             {openingFilter && (
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-200">
-                <span>Filtered by {openingFilter.normalized}</span>
+                <span>
+                  Filtered by {openingFilter.normalized}
+                  {openingFilter.color && ` (as ${openingFilter.color === 'white' ? 'White' : 'Black'})`}
+                </span>
                 <button
                   onClick={onClearFilter}
                   className="text-sky-100 transition hover:text-white"
@@ -604,8 +612,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                   </div>
                   <div>
                     <span className="text-slate-400">Opening:</span>
-                    <div className="font-medium text-slate-200 truncate" title={getOpeningNameWithFallback(game.opening_family, game)}>
-                      {getOpeningNameWithFallback(game.opening_family, game)}
+                    <div 
+                      className="font-medium text-slate-200 truncate" 
+                      title={getOpeningExplanation(game.opening_family, game.color, game)}
+                    >
+                      {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                     </div>
                   </div>
                   <div>
@@ -738,8 +749,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                     <td className="py-3 px-2 text-sm text-slate-100">{game.opponent}</td>
                     <td className="py-3 px-2 text-sm text-slate-300">{getTimeControlCategory(game.time_control)}</td>
                     <td className="py-3 px-2 text-sm text-slate-300">
-                      <div className="max-w-32 truncate" title={getOpeningNameWithFallback(game.opening_family, game)}>
-                        {getOpeningNameWithFallback(game.opening_family, game)}
+                      <div 
+                        className="max-w-32 truncate" 
+                        title={getOpeningExplanation(game.opening_family, game.color, game)}
+                      >
+                        {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                       </div>
                     </td>
                     <td className="py-3 px-2 text-sm text-slate-300">{game.moves}</td>

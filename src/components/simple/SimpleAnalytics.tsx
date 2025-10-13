@@ -4,7 +4,6 @@ import { UnifiedAnalysisService, AnalysisStats, DeepAnalysisData } from '../../s
 import { getPlayerStats } from '../../utils/playerStats'
 import {
   getComprehensiveGameAnalytics,
-  getWorstOpeningPerformance,
   getMostPlayedOpeningForTimeControl,
   type PerformanceTrendSummary
 } from '../../utils/comprehensiveGameAnalytics'
@@ -35,7 +34,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   const [data, setData] = useState<AnalysisStats | null>(null)
   const [comprehensiveData, setComprehensiveData] = useState<any>(null)
   const [deepAnalysisData, setDeepAnalysisData] = useState<DeepAnalysisData | null>(null)
-  const [worstOpenings, setWorstOpenings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -85,9 +83,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       }
       setError(null)
 
-      // Fetch analysis stats, player stats, comprehensive analytics, deep analysis, and worst openings in parallel
+      // Fetch analysis stats, player stats, comprehensive analytics, and deep analysis in parallel
       // Using the unified analysis service for all data
-      const [analysisResult, gamesData, playerStats, comprehensiveAnalytics, deepAnalysis, worstOpeningsData] = await Promise.all([
+      const [analysisResult, gamesData, playerStats, comprehensiveAnalytics, deepAnalysis] = await Promise.all([
         UnifiedAnalysisService.getAnalysisStats(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
@@ -100,8 +98,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         ),
         getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
         getComprehensiveGameAnalytics(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
-        UnifiedAnalysisService.fetchDeepAnalysis(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
-        getWorstOpeningPerformance(userId, (platform as 'lichess' | 'chess.com') || 'lichess', 5)
+        UnifiedAnalysisService.fetchDeepAnalysis(userId, (platform as 'lichess' | 'chess.com') || 'lichess')
       ])
       
       // Set default values for removed services
@@ -141,25 +138,18 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         validation_issues: playerStats.validationIssues
       } : null
 
-      // Debug: Compare the data sources (only in development)
+      // Debug: Opening analytics data (only in development)
       if (import.meta.env.DEV) {
-        console.log('Data Comparison Debug:', {
-          comprehensiveAnalytics: {
-            totalGames: comprehensiveAnalytics?.totalGames,
-            openingStats: comprehensiveAnalytics?.openingStats?.slice(0, 3).map(o => ({
-              opening: o.opening,
-              games: o.games,
-              winRate: o.winRate
-            }))
-          },
-          worstOpeningsData: {
-            count: worstOpeningsData?.length,
-            openings: worstOpeningsData?.slice(0, 3).map(o => ({
-              opening: o.opening,
-              games: o.games,
-              winRate: o.winRate
-            }))
-          }
+        console.log('Opening Analytics Debug:', {
+          totalGames: comprehensiveAnalytics?.totalGames,
+          totalOpenings: comprehensiveAnalytics?.openingStats?.length,
+          winningOpenings: comprehensiveAnalytics?.openingStats?.filter(o => o.winRate >= 50).length,
+          losingOpenings: comprehensiveAnalytics?.openingStats?.filter(o => o.winRate < 50).length,
+          topOpenings: comprehensiveAnalytics?.openingStats?.slice(0, 5).map(o => ({
+            opening: o.opening,
+            games: o.games,
+            winRate: o.winRate.toFixed(1)
+          }))
         })
       }
 
@@ -187,7 +177,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         })
       }
       setDeepAnalysisData(deepAnalysis)
-      setWorstOpenings(worstOpeningsData)
       
       // Increment refresh key to force EloTrendGraph to re-fetch data
       setDataRefreshKey(prev => prev + 1)
@@ -303,7 +292,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   const buildOpeningFilter = (
     normalizedName: string,
     identifiers?: OpeningIdentifierSets,
-    fallback?: { openingFamily?: string | null; opening?: string | null }
+    fallback?: { openingFamily?: string | null; opening?: string | null },
+    color?: 'white' | 'black'
   ): OpeningFilter => {
     const hasIdentifiers = identifiers && (identifiers.openingFamilies.length > 0 || identifiers.openings.length > 0)
     const fallbackFamilies = fallback?.openingFamily ? [fallback.openingFamily] : []
@@ -317,6 +307,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             openingFamilies: fallbackFamilies,
             openings: fallbackOpenings,
           },
+      color,
     }
   }
 
@@ -474,33 +465,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             </div>
           </div>
 
-          {/* ELO Statistics */}
-          <div className={cardClass}>
-            <h3 className="mb-4 text-lg font-semibold text-white">ELO Statistics</h3>
-            <div className="grid-responsive text-sm">
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Highest</span>
-                <div className="text-lg font-semibold text-emerald-300">{comprehensiveData.highestElo || 'N/A'}</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Lowest</span>
-                <div className="text-lg font-semibold text-rose-300">{comprehensiveData.lowestElo || 'N/A'}</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Current</span>
-                <div className="text-lg font-semibold text-sky-300">{comprehensiveData.currentElo || 'N/A'}</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Average</span>
-                <div className="text-lg font-semibold text-purple-300">{comprehensiveData.averageElo?.toFixed(0) || 'N/A'}</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Range</span>
-                <div className="text-lg font-semibold text-amber-300">{comprehensiveData.eloRange || 'N/A'}</div>
-              </div>
-            </div>
-          </div>
-
           {/* Color Performance */}
           <div className={cardClass}>
             <h3 className="mb-4 text-lg font-semibold text-white">Color Performance</h3>
@@ -575,7 +539,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <div>
                 <h4 className="mb-4 text-sm font-semibold text-emerald-200">Winning Openings</h4>
                 <div className="space-y-3">
-                  {comprehensiveData.openingStats.slice(0, 3).map((stat: any, index: number) => (
+                  {comprehensiveData.openingStats && comprehensiveData.openingStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
+                    comprehensiveData.openingStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
                     <div 
                       key={index} 
                       className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
@@ -606,7 +571,13 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         </div>
                       </div>
                     </div>
-                  ))}
+                  ))
+                  ) : (
+                    <div className="rounded-2xl border border-slate-500/40 bg-slate-500/10 p-6 text-center">
+                      <p className="text-sm text-slate-300">No winning openings yet</p>
+                      <p className="mt-2 text-xs text-slate-400">Play more games to build opening statistics</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -614,8 +585,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <div>
                 <h4 className="mb-4 text-sm font-semibold text-amber-200">Losing Openings</h4>
                 <div className="space-y-3">
-                  {worstOpenings.length > 0 ? (
-                    worstOpenings.slice(0, 3).map((stat: any, index: number) => (
+                  {comprehensiveData.openingStats && comprehensiveData.openingStats.filter((stat: any) => stat.winRate < 50).length > 0 ? (
+                    comprehensiveData.openingStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => a.winRate - b.winRate).slice(0, 3).map((stat: any, index: number) => (
                       <div 
                         key={index} 
                         className="cursor-pointer rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 transition hover:border-amber-300/60 hover:bg-amber-500/20"
@@ -648,10 +619,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       </div>
                     ))
                   ) : (
-                    <div className="py-8 text-center text-slate-400">
-                      <div className="mb-2 text-4xl text-slate-600">♘</div>
-                      <p>No losing openings data</p>
-                      <p className="text-xs">Need more games to identify patterns</p>
+                    <div className="rounded-2xl border border-slate-500/40 bg-slate-500/10 p-6 text-center">
+                      <p className="text-sm text-slate-300">No losing openings yet</p>
+                      <p className="mt-2 text-xs text-slate-400">Great! All your openings have 50%+ win rate</p>
                     </div>
                   )}
                 </div>
@@ -676,7 +646,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
                         onClick={() =>
                           onOpeningClick?.(
-                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers)
+                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, undefined, 'white')
                           )
                         }
                         title="Click to view games with this opening"
@@ -719,7 +689,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         className="cursor-pointer rounded-2xl border border-sky-400/40 bg-sky-500/10 p-4 transition hover:border-sky-300/60 hover:bg-sky-500/20"
                         onClick={() =>
                           onOpeningClick?.(
-                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers)
+                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, undefined, 'black')
                           )
                         }
                         title="Click to view games with this opening"

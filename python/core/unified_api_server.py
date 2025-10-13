@@ -187,9 +187,10 @@ large_import_progress = {}
 large_import_cancel_flags = {}
 
 # Concurrency control for imports - limit concurrent imports to prevent resource exhaustion
-# With optimizations, Railway Hobby tier can handle 3 concurrent imports
-# On higher tiers: can increase to 4-5
-MAX_CONCURRENT_IMPORTS = int(os.getenv("MAX_CONCURRENT_IMPORTS", "3"))
+# With optimizations, Railway Hobby tier can handle 2 concurrent imports safely
+# Reduced from 3 to 2 to prevent memory exhaustion at ~800-900 games
+# On higher tiers: can increase to 3-5
+MAX_CONCURRENT_IMPORTS = int(os.getenv("MAX_CONCURRENT_IMPORTS", "2"))
 import_semaphore = asyncio.Semaphore(MAX_CONCURRENT_IMPORTS)
 import_queue = asyncio.Queue()  # Queue for waiting imports
 print(f"Import concurrency limit: {MAX_CONCURRENT_IMPORTS} concurrent imports")
@@ -209,8 +210,8 @@ async def get_http_client():
         import aiohttp
         timeout = aiohttp.ClientTimeout(total=120, connect=30)
         connector = aiohttp.TCPConnector(
-            limit=15,  # Reduced from 20 to save memory
-            limit_per_host=3,  # Reduced from 5 to save memory
+            limit=15,  # Total concurrent connections across all hosts
+            limit_per_host=6,  # Increased from 3 to 6 - allows 2 concurrent imports per platform without bottleneck
             ttl_dns_cache=300  # DNS cache TTL
         )
         _shared_http_client = aiohttp.ClientSession(
@@ -1204,8 +1205,9 @@ def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
         return 50.0  # Need at least 2 games to measure variety
     
     # Shared metrics with staleness (natural opposition)
+    # Use opening_normalized for better grouping (e.g., "Italian Game" instead of "C50")
     opening_counts = Counter(
-        (game.get('opening_family') or game.get('opening') or 'Unknown')
+        (game.get('opening_normalized') or game.get('opening_family') or game.get('opening') or 'Unknown')
         for game in games
     )
     time_counts = Counter(
@@ -1216,18 +1218,27 @@ def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
     # Diversity metrics
     unique_openings = len(opening_counts)
     unique_time_controls = len(time_counts)
-    opening_diversity_ratio = unique_openings / total  # More unique = higher novelty
-    time_diversity_ratio = unique_time_controls / total
     
     # Repetition metrics (opposite of diversity)
     most_common_opening_count = max(opening_counts.values()) if opening_counts else 0
     opening_repetition_ratio = most_common_opening_count / total  # More repetition = lower novelty
     
+    # FIX: Use scaled diversity that works for both small and large datasets
+    # For small datasets (< 20 games): use simple ratio
+    # For large datasets: use absolute counts with diminishing returns
+    if total < 20:
+        opening_diversity_score = (unique_openings / total) * 100
+    else:
+        # Absolute count scale: 1-5 openings = low, 15-25 = medium, 40+ = high, 70+ = very high
+        import math
+        # Use square root for moderate diminishing returns
+        opening_diversity_score = min(100, (math.sqrt(unique_openings) / math.sqrt(100)) * 100)
+    
     # Natural opposition: diversity increases novelty, repetition decreases it
-    base = 50.0
-    # INCREASED: Opening variety is the KEY signal for novelty
-    diversity_bonus = (opening_diversity_ratio * 45.0 + time_diversity_ratio * 20.0)
-    repetition_penalty = opening_repetition_ratio * 35.0
+    # CRITICAL FIX: Game-level novelty also too high - everyone scoring 80+
+    base = 35.0  # Reduced from 45 - creativity requires effort
+    diversity_bonus = opening_diversity_score * 0.30  # Reduced from 0.42 - having variety is normal
+    repetition_penalty = opening_repetition_ratio * 50.0  # Increased from 40 - stronger penalty for repetition
     
     score = base + diversity_bonus - repetition_penalty
     return max(0.0, min(100.0, score))
@@ -1247,8 +1258,9 @@ def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
         return 50.0  # Need at least 2 games to measure staleness
     
     # Shared metrics with novelty (natural opposition)
+    # Use opening_normalized for better grouping (e.g., "Italian Game" instead of "C50")
     opening_counts = Counter(
-        (game.get('opening_family') or game.get('opening') or 'Unknown')
+        (game.get('opening_normalized') or game.get('opening_family') or game.get('opening') or 'Unknown')
         for game in games
     )
     time_counts = Counter(
@@ -1265,14 +1277,21 @@ def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
     # Diversity metrics (opposite of repetition)
     unique_openings = len(opening_counts)
     unique_time_controls = len(time_counts)
-    opening_diversity_ratio = unique_openings / total  # More unique = lower staleness
-    time_diversity_ratio = unique_time_controls / total
+    
+    # FIX: Use scaled diversity that works for both small and large datasets
+    # Mirror novelty calculation but invert the interpretation
+    if total < 20:
+        opening_diversity_score = (unique_openings / total) * 100
+    else:
+        # Absolute count scale with square root diminishing returns
+        import math
+        opening_diversity_score = min(100, (math.sqrt(unique_openings) / math.sqrt(100)) * 100)
     
     # Natural opposition: repetition increases staleness, diversity decreases it
-    base = 50.0
-    # INCREASED: Opening repetition is the KEY signal for staleness
-    repetition_bonus = (opening_repetition_ratio * 50.0 + time_repetition_ratio * 20.0)
-    diversity_penalty = (opening_diversity_ratio * 30.0 + time_diversity_ratio * 15.0)
+    # INCREASED: Need higher staleness to balance with lower novelty
+    base = 55.0  # Increased from 50 - most players ARE somewhat repetitive
+    repetition_bonus = opening_repetition_ratio * 100.0  # Increased from 90 - strong bonus for repetition
+    diversity_penalty = opening_diversity_score * 0.15  # Reduced from 0.2 - lighter penalty
     
     score = base + repetition_bonus - diversity_penalty
     return max(0.0, min(100.0, score))
@@ -1354,10 +1373,10 @@ def _compute_personality_scores(
         move_staleness = aggregated_scores.staleness
         
         # Combine move-level and game-level signals
-        # CHANGED: Opening repertoire is primarily game-level, so increase game weight
-        # Natural opposition emerges from shared metrics in scoring formulas
-        final_novelty = _round2(move_novelty * 0.3 + novelty_signal * 0.7)  # Game-level dominates
-        final_staleness = _round2(move_staleness * 0.3 + staleness_signal * 0.7)  # Game-level dominates
+        # Both use same 70/30 weighting for consistency
+        # Natural opposition comes from inverse formulas (diversity vs repetition), not forced summing
+        final_novelty = _round2(move_novelty * 0.3 + novelty_signal * 0.7)
+        final_staleness = _round2(move_staleness * 0.3 + staleness_signal * 0.7)
         
         aggregated_scores.novelty = final_novelty
         aggregated_scores.staleness = final_staleness
@@ -1834,44 +1853,74 @@ OPENING_STYLES = {
 }
 
 
-def _extract_opening_mistakes(analyses: List[Dict[str, Any]]) -> List[OpeningMistake]:
-    """Extract specific mistakes from the opening phase."""
+def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[str, Any]]) -> List[OpeningMistake]:
+    """Extract specific mistakes from the opening phase with game context."""
     mistakes = []
+    
+    # Build a map of game_id to game for context
+    game_map = {}
+    for game in games:
+        game_id = game.get('id') or game.get('provider_game_id')
+        if game_id:
+            game_map[game_id] = game
+    
+    print(f"[Mistake Extraction] Processing {len(analyses)} analyses with {len(games)} games")
+    print(f"[Mistake Extraction] Game map has {len(game_map)} entries")
     
     for analysis in analyses:
         moves = analysis.get('moves_analysis') or []
         game_id = analysis.get('game_id', '')
         
-        # Filter opening moves (first 20 ply)
-        opening_moves = [m for m in moves if m.get('opening_ply', 0) <= 20 and m.get('is_user_move', False)]
+        # Get game context for opening name
+        game = game_map.get(game_id, {})
+        # Prefer normalized name, then original opening, then ECO code as fallback
+        opening_name = game.get('opening_normalized') or game.get('opening') or game.get('opening_family')
+        
+        # For display, avoid showing ECO codes alone - but we need them to find mistakes
+        display_name = game.get('opening_normalized') or game.get('opening')
+        if not display_name:
+            display_name = opening_name  # Fallback to ECO if nothing else
+        
+        # Skip only if we have absolutely no opening information
+        if not opening_name or opening_name in ['Unknown', 'Unknown Opening', '']:
+            print(f"[Mistake Extraction] Skipping analysis {game_id} - no opening name")
+            continue
+        
+        # Filter opening moves (first 20 ply) - check both 'ply' and 'opening_ply'
+        opening_moves = [m for m in moves if (m.get('ply', 0) <= 20 or m.get('opening_ply', 0) <= 20) and m.get('is_user_move', False)]
+        print(f"[Mistake Extraction] Game {game_id} ({opening_name}): {len(moves)} total moves, {len(opening_moves)} opening moves")
         
         for move in opening_moves:
             cpl = move.get('centipawn_loss', 0)
-            move_num = move.get('move_number', 0)
-            notation = move.get('move_notation', '')
-            best_move = move.get('best_move', '')
+            ply = move.get('ply', 0) or move.get('opening_ply', 0)
+            move_num = (ply + 1) // 2  # Convert ply to move number
+            notation = move.get('move_notation', '') or move.get('move', '')
+            best_move = move.get('best_move', '') or move.get('engine_move', '')
             fen = move.get('fen_after', '')
             
-            # Only include significant mistakes (CPL > 100)
+            # Only include significant mistakes (CPL >= 50)
             if cpl >= 200:  # Blunder
                 severity = 'critical'
                 classification = 'blunder'
-                explanation = f"This move loses significant material or position. The engine suggests {best_move} instead."
+                explanation = f"Critical blunder in {display_name}. This move loses significant material or position. The engine suggests {best_move} instead."
             elif cpl >= 100:  # Mistake
                 severity = 'major'
                 classification = 'mistake'
-                explanation = f"This move gives your opponent a clear advantage. Consider {best_move} to maintain balance."
+                explanation = f"Major mistake in {display_name}. This move gives your opponent a clear advantage. Consider {best_move} to maintain balance."
             elif cpl >= 50:  # Inaccuracy
                 severity = 'minor'
                 classification = 'inaccuracy'
-                explanation = f"While not terrible, {best_move} would be more accurate here."
+                explanation = f"Inaccuracy in {display_name}. While not terrible, {best_move} would be more accurate here."
             else:
                 continue
+            
+            # Add opening context to the mistake description (use display_name for better readability)
+            mistake_desc = f"{display_name} - Move {move_num}"
             
             mistakes.append(OpeningMistake(
                 move=move_num,
                 move_notation=notation,
-                mistake=f"Loss of {cpl} centipawns",
+                mistake=mistake_desc,
                 correct_move=best_move,
                 explanation=explanation,
                 severity=severity,
@@ -1882,6 +1931,9 @@ def _extract_opening_mistakes(analyses: List[Dict[str, Any]]) -> List[OpeningMis
     
     # Return top 10 most severe mistakes
     mistakes.sort(key=lambda x: x.centipawn_loss, reverse=True)
+    print(f"[Mistake Extraction] Found {len(mistakes)} total mistakes, returning top 10")
+    if mistakes:
+        print(f"[Mistake Extraction] Top mistake: {mistakes[0].mistake} ({mistakes[0].centipawn_loss} CPL)")
     return mistakes[:10]
 
 
@@ -2099,6 +2151,51 @@ def _generate_actionable_insights(
     return insights[:5]
 
 
+def _should_count_opening_for_color(opening: str, player_color: str) -> bool:
+    """
+    Check if an opening should be counted for a specific player color.
+    This prevents counting opponent's openings (e.g., skip Caro-Kann when player is white).
+    """
+    opening_lower = opening.lower()
+    
+    # Black openings (defenses) - only count when player is black
+    black_openings = [
+        'sicilian', 'french', 'caro-kann', 'pirc', 'modern defense', 
+        'scandinavian', 'alekhine', 'nimzowitsch defense', 'petrov', 'philidor',
+        "king's indian", 'grunfeld', 'grünfeld', 'nimzo-indian', 
+        "queen's gambit declined", "queen's gambit accepted", 'slav', 'semi-slav',
+        "queen's indian", 'benoni', 'benko', 'dutch', 'budapest', 'tarrasch defense'
+    ]
+    
+    # White openings (systems/attacks) - only count when player is white  
+    white_openings = [
+        'italian', 'ruy lopez', 'spanish', 'scotch', 'four knights', 'vienna',
+        "king's gambit", "bishop's opening", 'center game',
+        "queen's gambit", 'london', 'colle', 'torre', 'trompowsky', 
+        'blackmar-diemer', 'english', 'reti', 'réti', "bird's", "larsen's"
+    ]
+    
+    # Check if it's a black opening
+    for black_op in black_openings:
+        if black_op in opening_lower:
+            return player_color == 'black'
+    
+    # Check if it's a white opening  
+    for white_op in white_openings:
+        if white_op in opening_lower:
+            return player_color == 'white'
+    
+    # Heuristics
+    if 'defense' in opening_lower or 'defence' in opening_lower:
+        return player_color == 'black'
+    
+    if 'attack' in opening_lower or 'system' in opening_lower or 'gambit' in opening_lower:
+        return player_color == 'white'
+    
+    # Neutral or unknown - count for both
+    return True
+
+
 def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[str, float]) -> RepertoireAnalysis:
     """Analyze the player's opening repertoire."""
     white_openings = Counter()
@@ -2112,6 +2209,10 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
         
         color = game.get('my_color')
         result = game.get('result')
+        
+        # IMPORTANT: Only count openings that the player actually plays
+        if not _should_count_opening_for_color(opening, color):
+            continue
         
         if color == 'white':
             white_openings[opening] += 1
@@ -2229,6 +2330,75 @@ def _generate_improvement_trend(games: List[Dict[str, Any]], analyses: List[Dict
     return trend_points[-12:]
 
 
+def _detect_mistake_patterns(mistakes: List[OpeningMistake], games: List[Dict[str, Any]]) -> List[str]:
+    """Detect patterns in opening mistakes."""
+    patterns = []
+    
+    if not mistakes:
+        return patterns
+    
+    # Count blunders, mistakes, inaccuracies
+    blunders = [m for m in mistakes if m.classification == 'blunder']
+    major_mistakes = [m for m in mistakes if m.classification == 'mistake']
+    
+    # Pattern 1: Frequent blunders in specific openings
+    opening_blunders = {}
+    for mistake in blunders:
+        opening = mistake.mistake.split(' - ')[0] if ' - ' in mistake.mistake else 'Unknown'
+        opening_blunders[opening] = opening_blunders.get(opening, 0) + 1
+    
+    if opening_blunders:
+        most_common_opening = max(opening_blunders.items(), key=lambda x: x[1])
+        if most_common_opening[1] >= 2:
+            patterns.append(f"You have {most_common_opening[1]} critical blunders in {most_common_opening[0]}. Focus on studying this opening's tactics.")
+    
+    # Pattern 2: Early vs late opening mistakes
+    early_mistakes = [m for m in mistakes if m.move <= 5]
+    late_mistakes = [m for m in mistakes if m.move > 5]
+    
+    if len(early_mistakes) > len(mistakes) * 0.6:
+        patterns.append("Most mistakes occur in the first 5 moves. Review opening theory and common traps.")
+    elif len(late_mistakes) > len(mistakes) * 0.6:
+        patterns.append("Mistakes increase after move 6. Focus on middlegame transition and piece coordination.")
+    
+    # Pattern 3: High average centipawn loss
+    avg_cpl = sum(m.centipawn_loss for m in mistakes) / len(mistakes) if mistakes else 0
+    if avg_cpl > 150:
+        patterns.append("High average mistake severity. Consider slowing down and calculating key variations.")
+    
+    # Pattern 4: Specific tactical themes
+    hanging_pieces = sum(1 for m in mistakes if any(word in m.explanation.lower() for word in ['material', 'piece', 'hung']))
+    if hanging_pieces >= 2:
+        patterns.append("You often leave pieces undefended. Practice tactical awareness and piece safety.")
+    
+    return patterns[:3]  # Return top 3 patterns
+
+
+def _generate_quick_tip(mistakes: List[OpeningMistake], patterns: List[str]) -> str:
+    """Generate a quick tip based on mistakes and patterns."""
+    if not mistakes:
+        return "Keep up the solid opening play!"
+    
+    # Find most common opening with mistakes
+    opening_counts = {}
+    for mistake in mistakes[:5]:  # Look at top 5 mistakes
+        opening = mistake.mistake.split(' - ')[0] if ' - ' in mistake.mistake else 'Unknown'
+        if opening != 'Unknown':
+            opening_counts[opening] = opening_counts.get(opening, 0) + 1
+    
+    if opening_counts:
+        most_common = max(opening_counts.items(), key=lambda x: x[1])
+        if most_common[1] >= 2:
+            return f"Practice tactics in {most_common[0]} - use Lichess puzzles or opening trainers."
+    
+    # Fallback to general tips
+    blunders = [m for m in mistakes if m.classification == 'blunder']
+    if len(blunders) >= 3:
+        return "Focus on basic tactical patterns: pins, forks, and hanging pieces. Slow down before moving."
+    
+    return "Review your analyzed games and study the engine's suggestions for alternative moves."
+
+
 def _generate_enhanced_opening_analysis(
     games: List[Dict[str, Any]],
     analyses: List[Dict[str, Any]],
@@ -2236,9 +2406,22 @@ def _generate_enhanced_opening_analysis(
 ) -> EnhancedOpeningAnalysis:
     """Generate comprehensive enhanced opening analysis."""
     opening_win_rate = _compute_opening_win_rate(analyses)
-    specific_mistakes = _extract_opening_mistakes(analyses)
+    specific_mistakes = _extract_opening_mistakes(analyses, games)
+    
+    # Add pattern detection and quick tip as actionable insights
+    patterns = _detect_mistake_patterns(specific_mistakes, games)
+    quick_tip = _generate_quick_tip(specific_mistakes, patterns)
+    
     style_recommendations = _generate_style_recommendations(personality_scores, games)
-    actionable_insights = _generate_actionable_insights(personality_scores, games, analyses)
+    base_insights = _generate_actionable_insights(personality_scores, games, analyses)
+    
+    # Combine patterns, quick tip, and style insights
+    actionable_insights = []
+    if quick_tip:
+        actionable_insights.append(f"💡 Quick Tip: {quick_tip}")
+    actionable_insights.extend(patterns)
+    actionable_insights.extend(base_insights)
+    
     improvement_trend = _generate_improvement_trend(games, analyses)
     repertoire_analysis = _analyze_repertoire(games, personality_scores)
     
@@ -2246,7 +2429,7 @@ def _generate_enhanced_opening_analysis(
         opening_win_rate=opening_win_rate,
         specific_mistakes=specific_mistakes,
         style_recommendations=style_recommendations,
-        actionable_insights=actionable_insights,
+        actionable_insights=actionable_insights[:5],  # Top 5 total insights
         improvement_trend=improvement_trend,
         repertoire_analysis=repertoire_analysis
     )
@@ -3695,11 +3878,43 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
             
             print(f"[large_import] Starting import for {user_id}, existing games: {len(existing_ids)}")
             
+            # Smart pagination: Resume from oldest imported game instead of most recent
+            # This allows subsequent imports to continue from where previous import ended
+            try:
+                oldest_game_query = supabase_service.table('games').select('played_at').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).order('played_at', desc=False).limit(1).execute()
+                
+                if oldest_game_query.data and len(oldest_game_query.data) > 0:
+                    # Resume from 1 day before oldest game (safety margin)
+                    from datetime import datetime, timedelta
+                    oldest_played_at = oldest_game_query.data[0]['played_at']
+                    print(f"[large_import] Found oldest game: {oldest_played_at}")
+                    
+                    # Parse timestamp and subtract 1 day
+                    oldest_dt = datetime.fromisoformat(oldest_played_at.replace('Z', '+00:00'))
+                    resume_dt = oldest_dt - timedelta(days=1)
+                    
+                    if platform == 'lichess':
+                        until_timestamp = int(resume_dt.timestamp() * 1000)  # Convert to milliseconds
+                        print(f"[large_import] SMART RESUME: Starting from timestamp {until_timestamp} (oldest game - 1 day)")
+                    elif platform == 'chess.com':
+                        # For Chess.com, set the starting month to resume from
+                        oldest_game_month = (resume_dt.year, resume_dt.month)
+                        print(f"[large_import] SMART RESUME: Starting from {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
+                else:
+                    print(f"[large_import] No existing games found - starting from most recent")
+            except Exception as resume_error:
+                print(f"[large_import] WARNING: Could not determine resume point: {resume_error}")
+                # Continue with default (most recent)
+            
             # Import in batches
             consecutive_no_new_games = 0
-            # For Chess.com, be more aggressive since we need to check all historical games
-            max_consecutive_no_new = 50 if platform == 'chess.com' else 10
+            # Increase threshold: Stop after 100 consecutive empty batches (5000 games buffer)
+            # This prevents premature stopping when hitting duplicate ranges
+            max_consecutive_no_new = 100
             total_games_checked = 0  # Track total games fetched from platform
+            skip_count = 0  # Track how many times we've skipped ahead
             print(f"[large_import] Will stop after {max_consecutive_no_new} consecutive batches with no new games")
             
             # For Chess.com, use larger batches to get all games from multiple months at once
@@ -3735,6 +3950,12 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                 print(f"[large_import] Fetching games (batch limit: {batch_limit}, offset: {batch_start}/{limit})")
                 print(f"[large_import] Pagination state - until_timestamp: {until_timestamp}, oldest_game_month: {oldest_game_month}")
                 
+                # Stagger requests when multiple imports are running to prevent resource contention
+                active_imports = MAX_CONCURRENT_IMPORTS - import_semaphore._value
+                if active_imports >= 2:
+                    await asyncio.sleep(0.5)  # 500ms delay reduces CPU/memory spikes and prevents connection pool exhaustion
+                    print(f"[large_import] {active_imports} concurrent imports active - added 0.5s delay for stability")
+                
                 try:
                     games_data = await _fetch_games_from_platform(
                         user_id, platform, batch_limit, until_timestamp, from_date, to_date, oldest_game_month
@@ -3764,8 +3985,30 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                 # Track consecutive batches with no new games
                 if len(new_games) == 0:
                     consecutive_no_new_games += 1
+                    
+                    # Skip-ahead logic: Jump past duplicate ranges to find older games
+                    if consecutive_no_new_games == 5 and skip_count < 3:
+                        skip_count += 1
+                        print(f"[large_import] Hit 5 empty batches, jumping ahead to skip duplicate range (skip #{skip_count})...")
+                        
+                        # Lichess: Jump back 30 days in time
+                        if until_timestamp and platform == 'lichess':
+                            until_timestamp -= (86400000 * 30)  # 30 days in milliseconds
+                            print(f"[large_import] Skipped back 30 days, new timestamp: {until_timestamp}")
+                        
+                        # Chess.com: Skip back 2 months
+                        elif platform == 'chess.com' and oldest_game_month:
+                            year, month = oldest_game_month
+                            month -= 2
+                            if month < 1:
+                                month += 12
+                                year -= 1
+                            oldest_game_month = (year, month)
+                            print(f"[large_import] Skipped back 2 months, new date: {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
+                    
+                    # Stop after 100 consecutive empty batches (5000 games checked with no new ones)
                     if consecutive_no_new_games >= max_consecutive_no_new:
-                        print(f"[large_import] No new games in {max_consecutive_no_new} consecutive batches, stopping")
+                        print(f"[large_import] No new games in {max_consecutive_no_new} consecutive batches (~{max_consecutive_no_new * 50} games checked), stopping")
                         break
                 else:
                     consecutive_no_new_games = 0  # Reset counter
@@ -3831,6 +4074,18 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                         total_imported += len(new_games)
                         existing_ids.update({g.get('id') for g in new_games})
                         print(f"[large_import] Imported {len(new_games)} games, total: {total_imported}")
+                        
+                        # Hard limit: Stop at 1000 games per import session (Railway Hobby tier safe limit)
+                        # Reduced from 5000 to prevent memory exhaustion and ensure reliable imports
+                        if total_imported >= 1000:
+                            print(f"[large_import] Reached maximum import limit of 1000 games. Stopping.")
+                            large_import_progress[key].update({
+                                "status": "completed",
+                                "imported_games": total_imported,
+                                "progress_percentage": 100,
+                                "message": f"Import complete! Imported {total_imported} games. Click 'Import More Games' to continue."
+                            })
+                            return
                     except Exception as e:
                         error_msg = f"Failed to import batch: {str(e)}"
                         print(f"[large_import] ERROR: {error_msg}")
@@ -3844,12 +4099,13 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                 # Update progress
                 progress_pct = min(100, int((total_imported / limit) * 100)) if limit > 0 else 100
                 trigger_refresh = total_imported % 500 == 0 and total_imported > 0
+                duplicates_skipped = total_games_checked - total_imported
                 
                 large_import_progress[key].update({
                     "imported_games": total_imported,
                     "progress_percentage": progress_pct,
                     "current_phase": "importing",
-                    "message": f"Imported {total_imported} games...",
+                    "message": f"Imported {total_imported} games (checked {total_games_checked}, skipped {duplicates_skipped} duplicates)",
                     "trigger_refresh": trigger_refresh
                 })
                 
@@ -3915,6 +4171,44 @@ async def get_import_progress(user_id: str, platform: str):
         "progress_percentage": 0,
         "message": "No import in progress"
     })
+
+
+@app.get("/api/v1/import-status/{user_id}/{platform}")
+async def get_import_status(user_id: str, platform: str):
+    """Get import status showing oldest game and total games imported"""
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        
+        # Get oldest game
+        oldest_game_query = supabase_service.table('games').select('played_at').eq(
+            'user_id', canonical_user_id
+        ).eq('platform', platform).order('played_at', desc=False).limit(1).execute()
+        
+        # Get total game count
+        total_games_query = supabase_service.table('games').select('id', count='exact', head=True).eq(
+            'user_id', canonical_user_id
+        ).eq('platform', platform).execute()
+        
+        oldest_game = oldest_game_query.data[0]['played_at'] if oldest_game_query.data else None
+        total_games = getattr(total_games_query, 'count', 0)
+        
+        return {
+            "total_games": total_games,
+            "oldest_game": oldest_game,
+            "can_import_more": True,
+            "platform": platform,
+            "user_id": user_id
+        }
+    except Exception as e:
+        print(f"[import_status] Error: {e}")
+        return {
+            "total_games": 0,
+            "oldest_game": None,
+            "can_import_more": True,
+            "platform": platform,
+            "user_id": user_id,
+            "error": str(e)
+        }
 
 
 @app.post("/api/v1/cancel-import")

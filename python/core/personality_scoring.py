@@ -274,14 +274,14 @@ class PersonalityScorer:
         forcing_accuracy = (metrics.forcing_best / metrics.forcing_moves) if metrics.forcing_moves > 0 else best_rate
         pressure_rate = metrics.forcing_moves / metrics.total_moves
 
-        # Conservative scoring to reserve 95+ for extraordinary players
-        error_penalty = (blunder_rate * 40.0) + (mistake_rate * 25.0) + (inaccuracy_rate * 15.0)
-        pressure_bonus = min(4.0, pressure_rate * 12.0)  # Reduced from 5.0/15.0
-        accuracy_bonus = min(7.0, best_rate * 18.0)  # Reduced from 8.0/20.0
-        forcing_bonus = min(3.5, forcing_accuracy * 10.0)  # Reduced from 4.0/12.0
-        streak_bonus = min(2.5, metrics.forcing_streak_max * 0.7)  # Reduced from 3.0/0.8
+        # CRITICAL FIX: Tactical was too high - everyone scoring 70-75
+        error_penalty = (blunder_rate * 70.0) + (mistake_rate * 45.0) + (inaccuracy_rate * 28.0)  # Increased penalties
+        pressure_bonus = min(8.0, pressure_rate * 20.0)  # Reduced from 10/25
+        accuracy_bonus = min(12.0, best_rate * 28.0)  # Reduced from 15/35
+        forcing_bonus = min(6.0, forcing_accuracy * 16.0)  # Reduced from 8/20
+        streak_bonus = min(5.0, metrics.forcing_streak_max * 1.2)  # Reduced from 6/1.4
 
-        score = 50.0 - error_penalty + pressure_bonus + accuracy_bonus + forcing_bonus + streak_bonus
+        score = 40.0 - error_penalty + pressure_bonus + accuracy_bonus + forcing_bonus + streak_bonus  # Base: 30→40
         return self.clamp_score(score)
 
     def score_positional(self, metrics: PersonalityMetrics) -> float:
@@ -295,14 +295,14 @@ class PersonalityScorer:
         blunder_rate = metrics.blunders / metrics.total_moves
         mistake_rate = metrics.mistakes / metrics.total_moves
 
-        # Conservative scoring to reserve 95+ for extraordinary players
-        error_penalty = (blunder_rate * 35.0) + (mistake_rate * 20.0)
-        drift_penalty = min(6.0, metrics.centipawn_mean / 20.0)
-        quiet_bonus = min(7.0, quiet_accuracy * 18.0)  # Reduced from 8.0/20.0
-        safety_bonus = min(5.0, quiet_safety * 13.0)  # Reduced from 6.0/15.0
-        streak_bonus = min(2.5, metrics.quiet_streak_max * 0.7)  # Reduced from 3.0/0.8
+        # REDUCED to match Tactical - both should be similar difficulty
+        error_penalty = (blunder_rate * 65.0) + (mistake_rate * 38.0)  # Increased penalties
+        drift_penalty = min(15.0, metrics.centipawn_mean / 12.0)  # Increased penalty
+        quiet_bonus = min(12.0, quiet_accuracy * 28.0)  # Reduced from 15/35
+        safety_bonus = min(8.0, quiet_safety * 20.0)  # Reduced from 10/25
+        streak_bonus = min(5.0, metrics.quiet_streak_max * 1.2)  # Reduced from 6/1.4
 
-        score = 50.0 - error_penalty - drift_penalty + quiet_bonus + safety_bonus + streak_bonus
+        score = 40.0 - error_penalty - drift_penalty + quiet_bonus + safety_bonus + streak_bonus  # Base: 30→40
         return self.clamp_score(score)
 
     def score_aggressive(self, metrics: PersonalityMetrics) -> float:
@@ -325,16 +325,17 @@ class PersonalityScorer:
         mistake_rate = metrics.mistakes / metrics.total_moves
 
         # Natural opposition: forcing moves increase aggressive, quiet moves decrease it
-        base = 50.0
-        forcing_bonus = forcing_ratio * 38.0  # Reduced from 45 to make 95+ harder
-        quiet_penalty = quiet_ratio * 32.0     # Reduced from 38 to balance
+        # INCREASED VARIANCE + STRONGER OPPOSITION with Patient
+        base = 35.0  # Increased by 10 (was 25)
+        forcing_bonus = forcing_ratio * 70.0  # Increased for more differentiation
+        quiet_penalty = quiet_ratio * 55.0     # Increased to strengthen opposition
         
-        # Additional bonuses for aggressive play (reduced to prevent ceiling hits)
-        attack_bonus = min(10.0, check_density * 24.0 + capture_density * 18.0)
-        streak_bonus = min(8.0, metrics.forcing_streak_max * 1.5)
+        # Additional bonuses for aggressive play - INCREASED for more spread
+        attack_bonus = min(22.0, check_density * 50.0 + capture_density * 38.0)  # Increased
+        streak_bonus = min(16.0, metrics.forcing_streak_max * 3.0)  # Increased
         
         # Less penalty for errors (aggressive players take risks)
-        error_penalty = (blunder_rate * 15.0) + (mistake_rate * 10.0)
+        error_penalty = (blunder_rate * 20.0) + (mistake_rate * 12.0)  # Keep lower for aggressive
 
         score = base + forcing_bonus - quiet_penalty + attack_bonus + streak_bonus - error_penalty
         return self.clamp_score(score)
@@ -361,19 +362,19 @@ class PersonalityScorer:
         time_factor = metrics.time_management_score / 100.0
 
         # Natural opposition: quiet moves increase patient, forcing moves decrease it
-        base = 50.0
-        quiet_bonus = quiet_ratio * 24.0        # RECALIBRATED: Reduced from 32 (most games are 60-70% quiet naturally)
-        forcing_penalty = forcing_ratio * 44.0  # RECALIBRATED: Increased from 36 (strengthen opposition)
+        # CRITICAL FIX: Patient was way too high (everyone 87-89) - drastically reduce bonuses
+        base = 35.0  # Increased by 10 (was 25)
+        quiet_bonus = quiet_ratio * 25.0        # Reduced from 38 (60-70% quiet is normal, not special)
+        forcing_penalty = forcing_ratio * 75.0  # Increased from 68 (stronger opposition)
         
-        # Additional bonuses for patient play (RECALIBRATED to prevent score inflation)
-        stability_bonus = min(6.0, quiet_safety * 18.0)  # RECALIBRATED: Reduced from min(8.0, × 22.0)
-        endgame_bonus = min(5.0, endgame_accuracy * 14.0)  # RECALIBRATED: Reduced from min(7.0, × 18.0)
-        time_bonus = min(10.0, time_factor * 25.0)  # RECALIBRATED: Reduced from min(12.0, × 30.0) - still important
-        streak_bonus = min(3.0, metrics.safe_streak_max * 0.8)
+        # Additional bonuses for patient play - REDUCED significantly
+        stability_bonus = min(8.0, quiet_safety * 20.0)  # Reduced from 12/30
+        endgame_bonus = min(7.0, endgame_accuracy * 18.0)  # Reduced from 10/24
+        time_bonus = min(12.0, time_factor * 28.0)  # Reduced from 18/42 (was inflating scores)
+        streak_bonus = min(4.0, metrics.safe_streak_max * 1.0)  # Reduced from 6/1.4
         
-        # Penalty for impatience (RECALIBRATED: errors should matter more)
-        discipline_penalty = (blunder_rate * 28.0) + (mistake_rate * 16.0) + (inaccuracy_rate * 10.0)
-        # RECALIBRATED: Increased from (×20.0) + (×12.0) + (×8.0) - discipline is key to patience
+        # Penalty for impatience - INCREASED for more differentiation
+        discipline_penalty = (blunder_rate * 50.0) + (mistake_rate * 32.0) + (inaccuracy_rate * 20.0)  # Increased
 
         score = base + quiet_bonus - forcing_penalty + stability_bonus + endgame_bonus + time_bonus + streak_bonus - discipline_penalty
         return self.clamp_score(score)
@@ -406,13 +407,14 @@ class PersonalityScorer:
         # NOTE: Opening variety is a GAME-LEVEL concept (variety across multiple games)
         # and is handled by _estimate_novelty_from_games(). Within a single game,
         # opening moves are mostly unique, which was causing every game to score 100.
-        base = 50.0
-        diversity_bonus = (pattern_diversity * 20.0 + piece_diversity * 12.0)  # Removed opening_variety
-        repetition_penalty = min(18.0, repetition_count * 2.5)
+        # CRITICAL FIX: Everyone scoring 80+ Novelty - need much lower base
+        base = 30.0  # Increased by 10 (was 20)
+        diversity_bonus = (pattern_diversity * 25.0 + piece_diversity * 15.0)  # Reduced - diversity is normal
+        repetition_penalty = min(35.0, repetition_count * 5.0)  # Increased penalty
         
-        # Additional bonuses for novel play (reduced to prevent ceiling)
-        creative_bonus = min(6.0, accurate_creative_ratio * 22.0)  # Reduced from 8.0/25.0
-        early_deviation_bonus = min(4.0, early_accurate_creative_ratio * 16.0)  # Reduced from 5.0/18.0
+        # Additional bonuses for novel play - REDUCED significantly
+        creative_bonus = min(10.0, accurate_creative_ratio * 30.0)  # Reduced
+        early_deviation_bonus = min(6.0, early_accurate_creative_ratio * 20.0)  # Reduced
 
         score = base + diversity_bonus - repetition_penalty + creative_bonus + early_deviation_bonus - inaccurate_creative_penalty
         return self.clamp_score(score)
@@ -439,14 +441,15 @@ class PersonalityScorer:
 
         # Natural opposition: repetition increases staleness, diversity decreases it
         # NOTE: Opening variety is a GAME-LEVEL concept and is handled by _estimate_staleness_from_games()
-        base = 50.0
-        repetition_bonus = min(18.0, repetition_count * 2.5)
-        pattern_consistency_bonus = (1.0 - pattern_diversity) * 18.0  # Increased from 16 to compensate
-        diversity_penalty = (piece_diversity * 15.0)  # Keep strong penalty
+        # INCREASED: Need higher staleness to oppose novelty
+        base = 40.0  # Increased by 10 (was 30)
+        repetition_bonus = min(35.0, repetition_count * 5.0)  # Increased to match novelty penalty
+        pattern_consistency_bonus = (1.0 - pattern_diversity) * 38.0  # Increased
+        diversity_penalty = (piece_diversity * 20.0)  # Reduced penalty (diversity is normal)
         
-        # Additional bonuses for stale play (reduced to prevent ceiling)
-        quiet_bonus = min(6.0, quiet_move_ratio * 14.0)  # Reduced from 7.0/16.0
-        creativity_penalty = min(10.0, creative_ratio * 22.0)  # Keep strong penalty
+        # Additional bonuses for stale play - INCREASED
+        quiet_bonus = min(15.0, quiet_move_ratio * 30.0)  # Increased
+        creativity_penalty = min(20.0, creative_ratio * 42.0)  # Increased penalty for creative moves
 
         score = base + repetition_bonus + pattern_consistency_bonus + quiet_bonus - diversity_penalty - creativity_penalty
         return self.clamp_score(score)

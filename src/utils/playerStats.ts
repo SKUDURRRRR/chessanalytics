@@ -19,14 +19,17 @@ export async function getHighestEloAndTimeControl(
   validationIssues?: string[]
 }> {
   try {
-    console.log(`DEBUG: Querying games for userId="${userId.toLowerCase()}" on platform="${platform}"`)
+    // Canonicalize user ID based on platform
+    const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
+    
+    console.log(`DEBUG: Querying games for userId="${canonicalUserId}" on platform="${platform}"`)
     
     // For large datasets, use a more efficient approach
     // First, get just the highest ELO game with minimal data
     const { data: topGames, error: topError } = await supabase
       .from('games')
       .select('my_rating, time_control, provider_game_id')
-      .eq('user_id', userId.toLowerCase())
+      .eq('user_id', canonicalUserId)
       .eq('platform', platform)
       .not('my_rating', 'is', null)
       .order('my_rating', { ascending: false })
@@ -78,10 +81,13 @@ async function getHighestEloAndTimeControlDetailed(
   validationIssues?: string[]
 }> {
   try {
+    // Canonicalize user ID based on platform
+    const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
+    
     const { data: games, error } = await supabase
       .from('games')
       .select('my_rating, opponent_rating, time_control, played_at, color, provider_game_id')
-      .eq('user_id', userId.toLowerCase())
+      .eq('user_id', canonicalUserId)
       .eq('platform', platform)
       .not('my_rating', 'is', null)
       .not('time_control', 'is', null)
@@ -168,10 +174,13 @@ async function getMostPlayedTimeControl(
   platform: 'lichess' | 'chess.com'
 ): Promise<string | null> {
   try {
+    // Canonicalize user ID based on platform
+    const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
+    
     const { data: games, error } = await supabase
       .from('games')
       .select('time_control')
-      .eq('user_id', userId.toLowerCase())
+      .eq('user_id', canonicalUserId)
       .eq('platform', platform)
       .not('time_control', 'is', null)
 
