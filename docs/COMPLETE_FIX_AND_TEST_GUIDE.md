@@ -116,7 +116,16 @@ GRANT ALL ON games TO service_role;
 GRANT ALL ON games_pgn TO service_role;
 
 -- Verify service_role can bypass RLS:
-ALTER TABLE games FORCE ROW LEVEL SECURITY;  -- or DISABLE
+-- Check if RLS is enabled and service_role has proper policies
+SELECT tablename, rowsecurity FROM pg_tables WHERE tablename = 'games';
+
+-- If RLS is blocking imports, you have two options:
+-- Option 1: Disable RLS entirely (if you want public access)
+-- ALTER TABLE games DISABLE ROW LEVEL SECURITY;
+
+-- Option 2: Ensure service_role policies allow full access (recommended)
+-- Check existing policies:
+SELECT * FROM pg_policies WHERE tablename = 'games';
 ```
 
 ### Check 2: Service Role Configuration

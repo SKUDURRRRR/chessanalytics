@@ -114,7 +114,7 @@ git add .
 git commit -m "Pre-deployment: Debug cleanup and validation"
 
 # Push to main/production branch
-git push origin development
+git push origin master
 
 # Railway will auto-deploy
 ```
@@ -127,7 +127,7 @@ git push origin development
 ### Step 4: Deploy Frontend (Vercel)
 ```bash
 # Same commit as backend
-git push origin development
+git push origin master
 
 # Vercel will auto-deploy
 ```
@@ -192,7 +192,7 @@ git revert <commit-hash>
 
 # Or hard reset (use with caution)
 git reset --hard <commit-hash>
-git push --force origin development
+git push --force origin master
 ```
 
 ### Option 3: Platform Rollback

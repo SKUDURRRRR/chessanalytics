@@ -119,7 +119,7 @@ BEGIN
     WHERE opening_normalized IN ('A45', 'A46', 'A49')
       AND opening_normalized IS DISTINCT FROM 'Queen''s Pawn Game';
 
-    -- Reti Opening (A04, A05)
+    -- Reti Opening (A04–A09)
     UPDATE games 
     SET opening_normalized = 'Reti Opening'
     WHERE opening_normalized IN ('A04', 'A05', 'A06', 'A07', 'A08', 'A09')

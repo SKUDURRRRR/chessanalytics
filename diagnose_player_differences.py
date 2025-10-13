@@ -88,6 +88,9 @@ def analyze_player(user_id: str, platform: str = 'lichess'):
     print("FORCING vs QUIET MOVES")
     print(f"{'-'*70}")
     
+    # Create scorer instance to reuse for forcing move detection
+    scorer = PersonalityScorer()
+    
     total_forcing = 0
     total_quiet = 0
     game_forcing_ratios = []
@@ -102,8 +105,7 @@ def analyze_player(user_id: str, platform: str = 'lichess'):
         for move in moves:
             if isinstance(move, dict):
                 move_san = move.get('move_san', '')
-                is_forcing = ('+' in move_san or '#' in move_san or 
-                            'x' in move_san or move_san == 'O-O' or move_san == 'O-O-O')
+                is_forcing = scorer.is_forcing_move(move_san)
                 if is_forcing:
                     game_forcing += 1
                 else:
@@ -135,7 +137,6 @@ def analyze_player(user_id: str, platform: str = 'lichess'):
     print("SAMPLE INDIVIDUAL GAME SCORES (first 5 games)")
     print(f"{'-'*70}")
     
-    scorer = PersonalityScorer()
     for i, analysis in enumerate(analyses[:5]):
         moves_data = analysis.get('moves_analysis', [])
         if not moves_data:

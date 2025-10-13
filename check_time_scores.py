@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check if time management scores are being calculated"""
 import requests
+import json
 
 BACKEND_URL = "http://localhost:8002"
 
@@ -11,7 +12,11 @@ def get_analyses(user_id, platform):
         if response.status_code == 200:
             return response.json()
         return []
-    except:
+    except (requests.exceptions.RequestException, requests.exceptions.Timeout) as e:
+        print(f"Network error for {user_id}: {e}")
+        return []
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"JSON parsing error for {user_id}: {e}")
         return []
 
 print("="*70)

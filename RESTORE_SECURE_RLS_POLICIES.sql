@@ -2,12 +2,36 @@
 -- This reverses the permissive anonymous access and restores proper security
 
 -- ============================================================================
--- 0. ENABLE Row Level Security on all tables
+-- 0. ENABLE Row Level Security on all tables and add is_public columns
 -- ============================================================================
 
 ALTER TABLE games ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_pgn ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+
+-- Add is_public column to games table if it doesn't exist
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'games' AND column_name = 'is_public'
+  ) THEN
+    ALTER TABLE games ADD COLUMN is_public BOOLEAN DEFAULT false;
+    CREATE INDEX IF NOT EXISTS idx_games_is_public ON games(is_public) WHERE is_public = true;
+  END IF;
+END $$;
+
+-- Add is_public column to user_profiles table if it doesn't exist
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'user_profiles' AND column_name = 'is_public'
+  ) THEN
+    ALTER TABLE user_profiles ADD COLUMN is_public BOOLEAN DEFAULT false;
+    CREATE INDEX IF NOT EXISTS idx_user_profiles_is_public ON user_profiles(is_public) WHERE is_public = true;
+  END IF;
+END $$;
 
 -- ============================================================================
 -- 1. DROP the old insecure policies
@@ -23,19 +47,39 @@ DROP POLICY IF EXISTS "games_pgn_select_all" ON games_pgn;
 DROP POLICY IF EXISTS "Allow all access to games" ON games;
 
 -- ============================================================================
--- 2. CREATE secure policies for PUBLIC ANALYTICS APP
+-- 2. CREATE secure policies with owner-based RLS
 -- ============================================================================
--- This is a public analytics tool where:
--- - Anyone can VIEW all games and data (public read access)
--- - Only backend (service_role) can INSERT/UPDATE/DELETE data
--- - This prevents anonymous users from corrupting the database
+-- This implements proper row-level security where:
+-- - Users can only see their own data or explicitly public data
+-- - Users can only modify their own data
+-- - Service role (backend) has full access for data management
+-- - Anonymous users have no access without authentication
 
 -- GAMES TABLE
--- Everyone can READ all games (public analytics app)
-DROP POLICY IF EXISTS "games_select_all" ON games;
-CREATE POLICY "games_select_all" ON games
+-- Users can only see their own games or public games
+DROP POLICY IF EXISTS "games_select_own_or_public" ON games;
+CREATE POLICY "games_select_own_or_public" ON games
   FOR SELECT
-  USING (true);  -- Public read access - anyone can view any game
+  USING (auth.uid()::text = user_id OR is_public = true);
+
+-- Users can only insert their own games
+DROP POLICY IF EXISTS "games_insert_own" ON games;
+CREATE POLICY "games_insert_own" ON games
+  FOR INSERT
+  WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can only update their own games
+DROP POLICY IF EXISTS "games_update_own" ON games;
+CREATE POLICY "games_update_own" ON games
+  FOR UPDATE
+  USING (auth.uid()::text = user_id)
+  WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can only delete their own games
+DROP POLICY IF EXISTS "games_delete_own" ON games;
+CREATE POLICY "games_delete_own" ON games
+  FOR DELETE
+  USING (auth.uid()::text = user_id);
 
 -- Service role can do everything (backend API writes data)
 DROP POLICY IF EXISTS "games_service_role_all" ON games;
@@ -46,11 +90,30 @@ CREATE POLICY "games_service_role_all" ON games
   WITH CHECK (true);
 
 -- GAMES_PGN TABLE
--- Everyone can READ all PGN data (public analytics app)
-DROP POLICY IF EXISTS "games_pgn_select_all" ON games_pgn;
-CREATE POLICY "games_pgn_select_all" ON games_pgn
+-- Users can only see their own PGN data or public PGN
+DROP POLICY IF EXISTS "games_pgn_select_own_or_public" ON games_pgn;
+CREATE POLICY "games_pgn_select_own_or_public" ON games_pgn
   FOR SELECT
-  USING (true);  -- Public read access - anyone can view any PGN
+  USING (auth.uid()::text = user_id OR is_public = true);
+
+-- Users can only insert their own PGN data
+DROP POLICY IF EXISTS "games_pgn_insert_own" ON games_pgn;
+CREATE POLICY "games_pgn_insert_own" ON games_pgn
+  FOR INSERT
+  WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can only update their own PGN data
+DROP POLICY IF EXISTS "games_pgn_update_own" ON games_pgn;
+CREATE POLICY "games_pgn_update_own" ON games_pgn
+  FOR UPDATE
+  USING (auth.uid()::text = user_id)
+  WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can only delete their own PGN data
+DROP POLICY IF EXISTS "games_pgn_delete_own" ON games_pgn;
+CREATE POLICY "games_pgn_delete_own" ON games_pgn
+  FOR DELETE
+  USING (auth.uid()::text = user_id);
 
 -- Service role can do everything (backend API writes data)
 DROP POLICY IF EXISTS "games_pgn_service_role_all" ON games_pgn;
@@ -61,11 +124,30 @@ CREATE POLICY "games_pgn_service_role_all" ON games_pgn
   WITH CHECK (true);
 
 -- USER_PROFILES TABLE
--- Everyone can READ all profiles (for leaderboards, player search, etc.)
-DROP POLICY IF EXISTS "user_profiles_select_all" ON user_profiles;
-CREATE POLICY "user_profiles_select_all" ON user_profiles
+-- Users can only see their own profiles or public profiles
+DROP POLICY IF EXISTS "user_profiles_select_own_or_public" ON user_profiles;
+CREATE POLICY "user_profiles_select_own_or_public" ON user_profiles
   FOR SELECT
-  USING (true);  -- Public read access
+  USING (auth.uid()::text = user_id OR is_public = true);
+
+-- Users can only insert their own profiles
+DROP POLICY IF EXISTS "user_profiles_insert_own" ON user_profiles;
+CREATE POLICY "user_profiles_insert_own" ON user_profiles
+  FOR INSERT
+  WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can only update their own profiles
+DROP POLICY IF EXISTS "user_profiles_update_own" ON user_profiles;
+CREATE POLICY "user_profiles_update_own" ON user_profiles
+  FOR UPDATE
+  USING (auth.uid()::text = user_id)
+  WITH CHECK (auth.uid()::text = user_id);
+
+-- Users can only delete their own profiles
+DROP POLICY IF EXISTS "user_profiles_delete_own" ON user_profiles;
+CREATE POLICY "user_profiles_delete_own" ON user_profiles
+  FOR DELETE
+  USING (auth.uid()::text = user_id);
 
 -- Service role can do everything (backend manages profiles)
 DROP POLICY IF EXISTS "user_profiles_service_role_all" ON user_profiles;
@@ -78,16 +160,6 @@ CREATE POLICY "user_profiles_service_role_all" ON user_profiles
 -- ============================================================================
 -- 3. Grant appropriate table-level permissions
 -- ============================================================================
-
--- Anonymous: SELECT only (read-only access to public data)
-GRANT SELECT ON games TO anon;
-GRANT SELECT ON games_pgn TO anon;
-GRANT SELECT ON user_profiles TO anon;
-
--- Authenticated: SELECT only (same as anon for this public app)
-GRANT SELECT ON games TO authenticated;
-GRANT SELECT ON games_pgn TO authenticated;
-GRANT SELECT ON user_profiles TO authenticated;
 
 -- Service role: ALL (backend needs full control)
 GRANT ALL ON games TO service_role;
@@ -103,19 +175,22 @@ NOTIFY pgrst, 'reload schema';
 -- ============================================================================
 -- SECURITY MODEL SUMMARY
 -- ============================================================================
--- This configuration is for a PUBLIC ANALYTICS TOOL where:
+-- This configuration implements proper row-level security where:
 -- 
--- ✅ Anyone can view all chess games and analyses (public data)
--- ✅ Backend API (using service_role key) handles all data writes
--- ❌ Anonymous users cannot directly INSERT/UPDATE/DELETE in database
+-- ✅ Users can only access their own data or explicitly public data
+-- ✅ Users can only modify their own data (INSERT/UPDATE/DELETE)
+-- ✅ Backend API (using service_role key) has full access for data management
+-- ❌ Anonymous users have no access without authentication
 -- 
 -- This prevents:
+-- - Unauthorized access to other users' data
 -- - Database corruption by malicious users
 -- - Spam/fake data insertion
--- - Deletion of legitimate data
+-- - Deletion of other users' data
 -- 
 -- While allowing:
--- - Public access to all chess analytics
+-- - Secure access to own data
+-- - Selective public data sharing via is_public flag
 -- - Backend to import and analyze games via API
--- - Fast read queries without authentication overhead
+-- - Proper data isolation between users
 

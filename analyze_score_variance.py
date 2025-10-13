@@ -2,6 +2,8 @@
 """Analyze score variance for Krecetas and Skudurelis"""
 import sys
 import os
+import logging
+import traceback
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -21,6 +23,13 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
 from supabase import create_client
 import requests
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 def get_personality_scores(user_id, platform):
@@ -30,9 +39,14 @@ def get_personality_scores(user_id, platform):
         response = requests.get(url, timeout=30)
         if response.status_code == 200:
             return response.json().get('personality_scores', {})
+        logger.warning(f"API returned status code {response.status_code} for {user_id}")
+        return None
+    except (requests.RequestException, requests.Timeout) as e:
+        logger.error(f"Request failed for {user_id}: {e}")
         return None
     except Exception as e:
-        print(f"Error: {e}")
+        logger.exception(f"Unexpected error occurred while fetching scores for {user_id}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return None
 
 print("="*70)

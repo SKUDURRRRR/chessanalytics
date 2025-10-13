@@ -38,7 +38,7 @@ for user_id in ['krecetas', 'skudurelis']:
     print(f"  Found {len(games)} games in games table")
     
     if games:
-        print(f"\n  Sample openings:")
+        print("\n  Sample openings:")
         for i, game in enumerate(games[:5], 1):
             opening = game.get('opening') or 'NULL'
             family = game.get('opening_family') or 'NULL'
@@ -53,15 +53,15 @@ for user_id in ['krecetas', 'skudurelis']:
         has_family = sum(1 for g in games if g.get('opening_family'))
         has_normalized = sum(1 for g in games if g.get('opening_normalized'))
         
-        print(f"\n  Summary:")
+        print("\n  Summary:")
         print(f"    Games with opening: {has_opening}/{len(games)}")
         print(f"    Games with opening_family: {has_family}/{len(games)}")
         print(f"    Games with opening_normalized: {has_normalized}/{len(games)}")
         
         if has_opening == 0 and has_family == 0:
-            print(f"    ❌ NO OPENING DATA! This breaks Novelty/Staleness!")
+            print("    ❌ NO OPENING DATA! This breaks Novelty/Staleness!")
         else:
-            print(f"    ✅ Has opening data")
+            print("    ✅ Has opening data")
 
 print(f"\n{'='*70}")
 print("DIAGNOSIS")

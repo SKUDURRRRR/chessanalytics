@@ -156,8 +156,8 @@ def test_patient_scenarios():
         blunder_rate = metrics.blunders / metrics.total_moves
         mistake_rate = metrics.mistakes / metrics.total_moves
         inaccuracy_rate = metrics.inaccuracies / metrics.total_moves
-        quiet_safety = (metrics.quiet_safe / metrics.quiet_moves) if metrics.quiet_moves > 0 else 0
-        endgame_accuracy = (metrics.endgame_best / metrics.endgame_moves) if metrics.endgame_moves > 0 else 0
+        quiet_safety = (metrics.quiet_safe / metrics.quiet_moves) if metrics.quiet_moves > 0 else 0.5
+        endgame_accuracy = (metrics.endgame_best / metrics.endgame_moves) if metrics.endgame_moves > 0 else quiet_safety
         time_factor = metrics.time_management_score / 100.0
         
         # Calculate components (must match PersonalityScorer.score_patient())

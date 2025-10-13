@@ -132,7 +132,7 @@ Added compatibility profiles for 15+ major openings across 4 personality traits:
 
 ## Data Flow
 
-```
+```text
 1. User views analytics page
    ↓
 2. SimpleAnalytics fetches DeepAnalysisData

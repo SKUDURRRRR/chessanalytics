@@ -12,7 +12,7 @@ WHERE
     AND (
         opening LIKE '%Caro%' 
         OR opening_family LIKE '%Caro%'
-        OR opening_family IN ('B10', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18', 'B19')
+        OR opening_family IN ('B10','B11','B12','B13','B14','B15','B16','B17','B18','B19')
     )
 GROUP BY opening, opening_family
 ORDER BY game_count DESC;

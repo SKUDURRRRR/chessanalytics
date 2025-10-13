@@ -14,6 +14,7 @@ UPDATE games
 SET opening_normalized = CASE opening_family
     -- Caro-Kann
     WHEN 'B10' THEN 'Caro-Kann Defense'
+    WHEN 'B11' THEN 'Caro-Kann Defense'
     WHEN 'B12' THEN 'Caro-Kann Defense'
     WHEN 'B13' THEN 'Caro-Kann Defense'
     WHEN 'B14' THEN 'Caro-Kann Defense'

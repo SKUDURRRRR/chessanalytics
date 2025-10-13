@@ -18,7 +18,7 @@ Total with 3:        570MB ⚠️  Too risky
 
 ### After Optimization
 ```
-Concurrent Capacity: 3 users ✅
+Concurrent Capacity: 2 users ✅
 Memory per import:   ~90MB
 Total with 3:        420MB ✅ Safe
 Total with 4:        510MB ⚠️  Risky
@@ -67,7 +67,7 @@ connector = aiohttp.TCPConnector(
 
 ### 5. **Increased Concurrent Limit: 2 → 3**
 ```python
-MAX_CONCURRENT_IMPORTS = 3  # Was 2
+MAX_CONCURRENT_IMPORTS = 2  # Stable default
 ```
 **Result:** 50% more capacity!
 
@@ -110,8 +110,8 @@ TOTAL:                  ~90MB  (-36% reduction!)
 
 ### User Experience
 - **Much Better!**
-- 3 users can import simultaneously (vs 2)
-- 4th user waits ~60s (vs ~90s before)
+- 2 users can import simultaneously (stable default)
+- 3rd user waits ~60s (vs ~90s before)
 - More predictable, stable performance
 
 ## Configuration
@@ -119,18 +119,18 @@ TOTAL:                  ~90MB  (-36% reduction!)
 All optimizations are configurable via environment variables:
 
 ```bash
-# Recommended for Railway Hobby (default)
-MAX_CONCURRENT_IMPORTS=3
+# Default (Railway Hobby optimized)
+MAX_CONCURRENT_IMPORTS=2
 IMPORT_BATCH_SIZE=50
 EXISTING_GAMES_PAGE_SIZE=2000
 
 # Conservative (extra safe)
-MAX_CONCURRENT_IMPORTS=2
+MAX_CONCURRENT_IMPORTS=1
 IMPORT_BATCH_SIZE=30
 EXISTING_GAMES_PAGE_SIZE=1000
 
 # Aggressive (risky - test first!)
-MAX_CONCURRENT_IMPORTS=4
+MAX_CONCURRENT_IMPORTS=3
 IMPORT_BATCH_SIZE=50
 EXISTING_GAMES_PAGE_SIZE=2000
 ```
@@ -203,7 +203,7 @@ After deployment, watch for:
 
 | Scenario | Before | After | Improvement |
 |----------|--------|-------|-------------|
-| Max safe concurrent | 2 users | 3 users | +50% |
+| Max safe concurrent | 2 users | 2 users | Stable |
 | Memory per import | 140MB | 90MB | -36% |
 | 3 concurrent total | 570MB ⚠️ | 420MB ✅ | -26% |
 | Import speed | 45s | 55s | -22% |

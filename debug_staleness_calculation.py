@@ -3,7 +3,17 @@
 import math
 
 def calc_staleness(total, unique, most_common_count):
-    """Current staleness formula"""
+    """Current staleness formula with input validation"""
+    # Input validation
+    if total <= 0:
+        return 0.0  # Return sensible default for zero/negative total
+    
+    if total < 0 or unique < 0:
+        raise ValueError("total and unique must be non-negative")
+    
+    # Clamp most_common_count to valid range [0, total]
+    most_common_count = max(0, min(most_common_count, total))
+    
     repetition_ratio = most_common_count / total
     diversity_score = min(100, (math.sqrt(unique) / math.sqrt(100)) * 100)
     

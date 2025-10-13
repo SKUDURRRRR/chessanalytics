@@ -70,13 +70,58 @@ import_semaphore = asyncio.Semaphore(MAX_CONCURRENT_IMPORTS)
 ```
 
 ### Solution 2: HTTP Connection Pooling
-Reuse HTTP clients instead of creating new ones:
+Reuse HTTP clients instead of creating new ones. **Important**: Always manage the session lifecycle properly to avoid resource leaks:
+
+#### Option A: Application Lifecycle Management (Recommended for FastAPI)
 ```python
 # Create at module level
-http_client = aiohttp.ClientSession(
-    connector=aiohttp.TCPConnector(limit=10, limit_per_host=2),
-    timeout=aiohttp.ClientTimeout(total=120)
-)
+http_client = None
+
+async def startup():
+    global http_client
+    http_client = aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(limit=10, limit_per_host=2),
+        timeout=aiohttp.ClientTimeout(total=120)
+    )
+
+async def shutdown():
+    global http_client
+    if http_client:
+        await http_client.close()
+
+# Register with FastAPI app
+app.add_event_handler("startup", startup)
+app.add_event_handler("shutdown", shutdown)
+```
+
+#### Option B: Async Context Manager (Recommended for scripts)
+```python
+# In your main async entrypoint
+async def main():
+    async with aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(limit=10, limit_per_host=2),
+        timeout=aiohttp.ClientTimeout(total=120)
+    ) as http_client:
+        # Use http_client here
+        pass
+    # Session automatically closed when exiting context
+```
+
+#### Option C: AsyncExitStack (For complex scenarios)
+```python
+from contextlib import AsyncExitStack
+
+async def main():
+    async with AsyncExitStack() as stack:
+        http_client = await stack.enter_async_context(
+            aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(limit=10, limit_per_host=2),
+                timeout=aiohttp.ClientTimeout(total=120)
+            )
+        )
+        # Use http_client here
+        pass
+    # All contexts automatically cleaned up
 ```
 
 ### Solution 3: Queue-Based Import System
