@@ -27,23 +27,11 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
         setLoading(true)
         setError(null)
 
-        // Get both the stats and the raw game data
-        const [statsData, gamesData] = await Promise.all([
-          UnifiedAnalysisService.getAnalysisStats(userId, platform, 'stockfish'),
-          UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish')
-        ])
+        // Get stats first (this contains the accuracy we need)
+        const statsData = await UnifiedAnalysisService.getAnalysisStats(userId, platform, 'stockfish')
 
-        // Use backend accuracy if available, otherwise calculate from raw game data
-        let finalAccuracy = statsData?.average_accuracy ?? 0
-
-        // Only calculate from raw data if backend accuracy is 0 or missing
-        if (finalAccuracy === 0 && gamesData && gamesData.length > 0) {
-          const playerRating = statsData?.current_rating
-          const calculatedAccuracy = calculateAverageAccuracy(gamesData, playerRating)
-          if (calculatedAccuracy > 0) {
-            finalAccuracy = calculatedAccuracy
-          }
-        }
+        // Use backend accuracy directly - no need to fetch all game data for this component
+        const finalAccuracy = statsData?.average_accuracy ?? 0
 
         if (statsData) {
           setAnalytics({ ...statsData, average_accuracy: finalAccuracy })
@@ -99,9 +87,9 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
 
   // Check if we're showing mock data - look for actual mock patterns, not just specific values
   const isMockData = analytics && (
-    analytics.total_games_analyzed === 15 && 
-    analytics.average_accuracy === 78.5 && 
-    analytics.total_blunders === 3 && 
+    analytics.total_games_analyzed === 15 &&
+    analytics.average_accuracy === 78.5 &&
+    analytics.total_blunders === 3 &&
     analytics.total_mistakes === 8 &&
     analytics.average_opening_accuracy === 82.3
   )
@@ -116,7 +104,7 @@ export function AnalyticsBar({ userId, platform }: AnalyticsBarProps) {
           </div>
         </div>
       )}
-      
+
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-slate-200">Quick Stats</h3>
         <div className="text-sm text-slate-300">

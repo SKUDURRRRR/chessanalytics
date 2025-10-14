@@ -123,6 +123,57 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
 }
 
 /**
+ * Calculate opening accuracy using Chess.com's CAPS2 algorithm (same as overall accuracy).
+ * Uses the standard accuracy formula consistently across all game phases.
+ */
+export function calculateOpeningAccuracyChessCom(moves: MoveAnalysis[]): number {
+  if (!moves || moves.length === 0) return 0
+
+  console.log('[Opening Accuracy] Calculating for', moves.length, 'moves')
+  
+  // Extract centipawn losses from moves (handle both naming conventions)
+  const centipawnLosses = moves.map(move => (move as any).centipawnLoss ?? move.centipawn_loss ?? 0)
+  
+  // Use the same Chess.com CAPS2 formula as overall accuracy
+  let totalAccuracy = 0
+  for (let i = 0; i < centipawnLosses.length; i++) {
+    const cpl = Math.min(centipawnLosses[i], 1000) // Cap at 1000 to avoid math errors
+    
+    // Chess.com CAPS2 algorithm thresholds:
+    let moveAccuracy: number
+    if (cpl <= 5) {
+      moveAccuracy = 100.0  // Perfect moves (0-5 CPL)
+    } else if (cpl <= 20) {
+      // Linear interpolation from 100% to 85% for 5-20 CPL
+      moveAccuracy = 100.0 - (cpl - 5) * 1.0  // 100% to 85%
+    } else if (cpl <= 40) {
+      // Linear interpolation from 85% to 70% for 20-40 CPL
+      moveAccuracy = 85.0 - (cpl - 20) * 0.75  // 85% to 70%
+    } else if (cpl <= 80) {
+      // Linear interpolation from 70% to 50% for 40-80 CPL
+      moveAccuracy = 70.0 - (cpl - 40) * 0.5  // 70% to 50%
+    } else if (cpl <= 150) {
+      // Linear interpolation from 50% to 30% for 80-150 CPL
+      moveAccuracy = 50.0 - (cpl - 80) * 0.286  // 50% to 30%
+    } else {
+      // Linear interpolation from 30% to 15% for 150+ CPL
+      moveAccuracy = Math.max(15.0, 30.0 - (cpl - 150) * 0.1)  // 30% to 15%
+    }
+    
+    if (i < 3) {
+      console.log(`[Opening Accuracy] Move ${i+1}: CPL=${cpl}, Accuracy=${moveAccuracy.toFixed(1)}%`)
+    }
+    
+    totalAccuracy += moveAccuracy
+  }
+  
+  const finalAccuracy = Math.round((totalAccuracy / centipawnLosses.length) * 10) / 10
+  console.log('[Opening Accuracy] Final:', finalAccuracy, '% (avg of', centipawnLosses.length, 'moves)')
+  
+  return finalAccuracy
+}
+
+/**
  * Calculate accuracy from moves_analysis array in game data
  */
 export function calculateAccuracyFromGameData(gameData: any, playerRating?: number): number {

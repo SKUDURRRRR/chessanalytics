@@ -1,7 +1,7 @@
 /**
  * Unified Analysis Service - Single service for all analysis operations
  * Replaces multiple analysis services with a clean, unified interface.
- * 
+ *
  * @module UnifiedAnalysisService
  */
 
@@ -14,6 +14,7 @@ import {
   PersonalityScores
 } from '../types'
 import { config } from '../lib/config'
+import { withCache, generateCacheKey } from '../utils/apiCache'
 
 const UNIFIED_API_URL = config.getApi().baseUrl
 console.log('🔧 UNIFIED_API_URL configured as:', UNIFIED_API_URL)
@@ -99,6 +100,7 @@ function validateDeepAnalysisData(data: any): DeepAnalysisData | null {
       middle: Math.max(0, Math.min(100, data.phase_accuracies?.middle || 0)),
       endgame: Math.max(0, Math.min(100, data.phase_accuracies?.endgame || 0)),
     },
+    enhanced_opening_analysis: data.enhanced_opening_analysis || undefined,
     recommendations: {
       primary: data.recommendations?.primary || 'Complete a Stockfish analysis to unlock deep recommendations.',
       secondary: data.recommendations?.secondary || 'Play a fresh set of games to refresh recent patterns.',
@@ -159,7 +161,7 @@ export class UnifiedAnalysisService {
         ...(request.fen && { fen: request.fen }),
         ...(request.move && { move: request.move }),
       }
-      
+
       console.log('🌐 API Request:', {
         url: `${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`,
         body: requestBody
@@ -170,7 +172,7 @@ export class UnifiedAnalysisService {
         analysis_type: requestBody.analysis_type,
         limit: requestBody.limit
       })
-      
+
       const response = await fetch(`${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`, {
         method: 'POST',
         headers: {
@@ -180,7 +182,7 @@ export class UnifiedAnalysisService {
       })
 
       console.log('🌐 API Response status:', response.status)
-      
+
       if (!response.ok) {
         const errorText = await response.text()
         console.error('🌐 API Error response:', errorText)
@@ -341,52 +343,99 @@ export class UnifiedAnalysisService {
     platform: Platform,
     analysisType: 'stockfish' | 'deep' = 'stockfish'
   ): Promise<AnalysisStats | null> {
-    try {
-      const url = `${UNIFIED_API_URL}/api/v1/stats/${userId}/${platform}?analysis_type=${analysisType}`
-      console.log(`Fetching analysis stats from: ${url}`)
+    const cacheKey = generateCacheKey('stats', userId, platform, { analysisType })
 
-      const response = await fetch(url)
-
-      if (!response.ok) {
-        console.error(`HTTP error! status: ${response.status} for user ${userId}`)
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      console.log(`Analysis stats response for ${userId}:`, data)
-      return data
-    } catch (error) {
-      console.error('Error fetching analysis stats:', error)
-      return null
+    // Validator: ensure we have valid stats with total_games_analyzed
+    const statsValidator = (data: AnalysisStats | null) => {
+      return data !== null && typeof data.total_games_analyzed === 'number'
     }
+
+    return withCache(cacheKey, async () => {
+      try {
+        const url = `${UNIFIED_API_URL}/api/v1/stats/${userId}/${platform}?analysis_type=${analysisType}`
+        console.log(`Fetching analysis stats from: ${url}`)
+
+        const response = await fetch(url)
+
+        if (!response.ok) {
+          console.error(`HTTP error! status: ${response.status} for user ${userId}`)
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = await response.json()
+        console.log(`Analysis stats response for ${userId}:`, data)
+        return data
+      } catch (error) {
+        console.error('Error fetching analysis stats:', error)
+        return null
+      }
+    }, 60 * 60 * 1000, statsValidator) // 60 minute cache for stats (was 10 min - backend is very slow, cache aggressively)
   }
 
   /**
-   * Get individual game analyses for a user.
+   * Get individual game analyses for a user with pagination support.
    * Returns raw game data with moves_analysis for accuracy calculation
    */
   static async getGameAnalyses(
     userId: string,
     platform: Platform,
-    analysisType: 'stockfish' | 'deep' = 'stockfish'
+    analysisType: 'stockfish' | 'deep' = 'stockfish',
+    limit: number = 100,
+    offset: number = 0
   ): Promise<any[]> {
+    const cacheKey = generateCacheKey('analyses', userId, platform, { analysisType, limit, offset })
+
+    // Validator: ensure we have a valid array (empty array is valid)
+    const analysesValidator = (data: any[]) => {
+      return Array.isArray(data)
+    }
+
+    return withCache(cacheKey, async () => {
+      try {
+        const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}?analysis_type=${analysisType}&limit=${limit}&offset=${offset}`
+        console.log(`Fetching game analyses from: ${url}`)
+
+        const response = await fetch(url)
+
+        if (!response.ok) {
+          console.error(`HTTP error! status: ${response.status} for user ${userId}`)
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = await response.json()
+        console.log(`Game analyses response for ${userId}: ${Array.isArray(data) ? data.length : 0} records`)
+        return Array.isArray(data) ? data : []
+      } catch (error) {
+        console.error('Error fetching game analyses:', error)
+        return []
+      }
+    }, 15 * 60 * 1000, analysesValidator) // 15 minute cache for game analyses (was 5 min - increased for better performance)
+  }
+
+  /**
+   * Get the total count of game analyses for a user.
+   */
+  static async getGameAnalysesCount(
+    userId: string,
+    platform: Platform,
+    analysisType: 'stockfish' | 'deep' = 'stockfish'
+  ): Promise<number> {
     try {
-      const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}?analysis_type=${analysisType}`
-      console.log(`Fetching game analyses from: ${url}`)
+      const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}/count?analysis_type=${analysisType}`
+      console.log(`Fetching game analyses count from: ${url}`)
 
       const response = await fetch(url)
 
       if (!response.ok) {
         console.error(`HTTP error! status: ${response.status} for user ${userId}`)
-        throw new Error(`HTTP error! status: ${response.status}`)
+        return 0
       }
 
       const data = await response.json()
-      console.log(`Game analyses response for ${userId}: ${Array.isArray(data) ? data.length : 0} records`)
-      return Array.isArray(data) ? data : []
+      return data.count || 0
     } catch (error) {
-      console.error('Error fetching game analyses:', error)
-      return []
+      console.error('Error fetching game analyses count:', error)
+      return 0
     }
   }
 
@@ -468,28 +517,36 @@ export class UnifiedAnalysisService {
       throw new Error('Invalid platform provided. Must be "lichess" or "chess.com"')
     }
 
-    try {
-      const response = await fetch(`${UNIFIED_API_URL}/api/v1/deep-analysis/${userId}/${platform}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
+    const cacheKey = generateCacheKey('deep-analysis', userId, platform)
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+    // Validator: ensure we have valid deep analysis data
+    const deepAnalysisValidator = (data: DeepAnalysisData) => {
+      return data && typeof data.total_games === 'number' && data.personality_scores !== undefined
+    }
 
-      const rawData = await response.json()
-      const validatedData = validateDeepAnalysisData(rawData)
-      
-      if (!validatedData) {
-        throw new Error('Invalid data format received from server')
-      }
+    return withCache(cacheKey, async () => {
+      try {
+        const response = await fetch(`${UNIFIED_API_URL}/api/v1/deep-analysis/${userId}/${platform}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
 
-      return validatedData
-    } catch (error) {
-      console.error('Error fetching deep analysis:', error)
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const rawData = await response.json()
+        const validatedData = validateDeepAnalysisData(rawData)
+
+        if (!validatedData) {
+          throw new Error('Invalid data format received from server')
+        }
+
+        return validatedData
+      } catch (error) {
+        console.error('Error fetching deep analysis:', error)
 
       // Return fallback data with neutral personality scores
       return {
@@ -519,6 +576,7 @@ export class UnifiedAnalysisService {
         famous_players: null,
       }
     }
+    }, 60 * 60 * 1000, deepAnalysisValidator) // 60 minute cache for deep analysis (was 30 min - backend is very slow, cache aggressively)
   }
 
   /**
@@ -649,6 +707,3 @@ export default UnifiedAnalysisService
 
 // Export standalone function for backward compatibility
 export const fetchDeepAnalysis = UnifiedAnalysisService.fetchDeepAnalysis.bind(UnifiedAnalysisService)
-
-
-

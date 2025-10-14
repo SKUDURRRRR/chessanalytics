@@ -16,10 +16,10 @@ export default function HomePage() {
             Precision Chess Insights
           </div>
           <h1 className="mt-6 text-fluid-4xl font-semibold leading-tight text-white">
-            Understand every move with <span className="text-sky-300">Chess Analytics</span>
+            Understand your moves with chess data
           </h1>
           <p className="mt-4 text-fluid-base text-slate-300">
-            Explore match histories, uncover openings that win for you, and run deep Stockfish reviews in a single, streamlined workspace.
+            Explore match histories, uncover openings that win for you, and run deep Stockfish reviews in a single, streamlined space.
           </p>
         </header>
 

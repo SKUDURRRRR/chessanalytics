@@ -257,6 +257,21 @@ def _calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
     return total_accuracy / len(centipawn_losses)
 
 
+def _calculate_opening_accuracy_chesscom(moves: List[dict]) -> float:
+    """
+    Calculate opening accuracy using Chess.com's CAPS2 algorithm (same as overall accuracy).
+    Uses the standard accuracy formula consistently across all game phases.
+    """
+    if not moves:
+        return 0.0
+    
+    # Extract centipawn losses from moves
+    centipawn_losses = [move.get('centipawn_loss', 0) for move in moves]
+    
+    # Use the same formula as overall game accuracy (Chess.com CAPS2)
+    return _calculate_accuracy_from_cpl(centipawn_losses)
+
+
 def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
@@ -298,11 +313,11 @@ def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> Game
         good_moves = sum(1 for move in moves if move.get('is_good'))
         acceptable_moves = sum(1 for move in moves if move.get('is_acceptable'))
 
-        opening_moves = [move for move in moves if move.get('opening_ply', 0) <= 15]
+        # Use opening_ply <= 20 (10 full moves) to match Chess.com's typical opening phase
+        opening_moves = [move for move in moves if move.get('opening_ply', 0) <= 20 and move.get('is_user_move', False)]
         if opening_moves:
-            # Use graduated accuracy calculation instead of binary best/not-best
-            opening_centipawn_losses = [move.get('centipawn_loss', 0) for move in opening_moves]
-            opening_accuracy = _calculate_accuracy_from_cpl(opening_centipawn_losses)
+            # Use Chess.com win probability method for opening accuracy
+            opening_accuracy = _calculate_opening_accuracy_chesscom(opening_moves)
         else:
             opening_accuracy = float(analysis_data.get('opening_accuracy', 0))
 

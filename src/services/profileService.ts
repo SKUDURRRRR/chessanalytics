@@ -1,6 +1,7 @@
 // Profile Service - Manages user profiles and recent users
 import { supabase } from '../lib/supabase'
 import { normalizeUserId } from '../lib/security'
+import { quickCache, getUserExistsCacheKey } from '../utils/quickCache'
 
 export interface UserProfile {
   id: string
@@ -80,6 +81,45 @@ export class ProfileService {
     } catch (error) {
       console.error('Error getting/creating profile:', error)
       throw error
+    }
+  }
+
+  // Check if user profile exists (with 2-minute cache)
+  static async checkUserExists(
+    userId: string,
+    platform: 'lichess' | 'chess.com'
+  ): Promise<boolean> {
+    const canonicalUserId = normalizeUserId(userId, platform)
+    const cacheKey = getUserExistsCacheKey(canonicalUserId, platform)
+
+    // Check cache first (2 minute TTL)
+    const cached = quickCache.get<boolean>(cacheKey, 2 * 60 * 1000)
+    if (cached !== null) {
+      console.log(`User exists check (cached): ${cached}`)
+      return cached
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('user_id', canonicalUserId)
+        .eq('platform', platform)
+        .maybeSingle()
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error checking user exists:', error)
+        return false
+      }
+
+      const exists = !!data
+      // Cache the result
+      quickCache.set(cacheKey, exists)
+      console.log(`User exists check (fresh): ${exists}`)
+      return exists
+    } catch (error) {
+      console.error('Error checking user exists:', error)
+      return false
     }
   }
 

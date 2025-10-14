@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Chess } from 'chess.js'
 import { identifyOpening } from '../../utils/openingIdentification'
 import { EnhancedOpeningAnalysis, OpeningMistake, StudyRecommendation, PeerComparison, RepertoireAnalysis } from '../../types'
+import { calculateOpeningAccuracyChessCom } from '../../utils/accuracyCalculator'
 
 interface ProcessedMove {
   index: number
@@ -46,7 +47,7 @@ export function EnhancedOpeningAnalysis({
   const [showStudyResources, setShowStudyResources] = useState(false)
 
   const userMoves = moves.filter(move => move.isUserMove)
-  const openingMoves = userMoves.slice(0, 15) // First 15 moves typically cover opening
+  const openingMoves = userMoves.slice(0, 10) // First 10 moves typically cover opening
 
   const enhancedAnalysis = useMemo((): EnhancedOpeningAnalysis => {
     console.log('EnhancedOpeningAnalysis - openingMoves:', openingMoves.length, openingMoves)
@@ -88,11 +89,8 @@ export function EnhancedOpeningAnalysis({
     
     const identifiedVariation = identifyOpening(gameRecord, openingMoves.map(m => m.san), playerColor)
     
-    // Calculate basic metrics
-    const openingAccuracy = openingMoves.length === 0 ? 0 : 
-      Math.round((openingMoves.filter(move => 
-        move.classification === 'best' || move.classification === 'brilliant'
-      ).length / openingMoves.length) * 100)
+    // Calculate basic metrics using Chess.com method
+    const openingAccuracy = calculateOpeningAccuracyChessCom(openingMoves)
 
     const theoryKnowledge = openingMoves.length === 0 ? 0 :
       Math.round((openingMoves.filter(move => 

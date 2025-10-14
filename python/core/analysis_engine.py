@@ -156,11 +156,17 @@ class AnalysisConfig:
     @classmethod
     def for_deep_analysis(cls) -> 'AnalysisConfig':
         """Configuration optimized for deep analysis (thorough, high accuracy)."""
+        # Use Railway Hobby settings from environment or defaults
+        # This ensures consistency with Railway hobby tier performance settings
+        import os
+        depth = int(os.getenv("STOCKFISH_DEPTH", "14"))
+        time_limit = float(os.getenv("STOCKFISH_TIME_LIMIT", "0.8"))
+        
         return cls(
             analysis_type=AnalysisType.STOCKFISH,
-            depth=18,  # Increased depth for deep analysis
+            depth=depth,  # Use Railway Hobby optimized depth
             skill_level=20,  # Maximum skill level
-            time_limit=3.0,  # 3 seconds per position for thorough analysis
+            time_limit=time_limit,  # Use Railway Hobby optimized time limit
             use_opening_book=True,
             use_endgame_tablebase=True,
             parallel_analysis=False,
@@ -1634,14 +1640,19 @@ class ChessAnalysisEngine:
         user_move_count = len(user_moves)
         opponent_move_count = len(opponent_moves)
 
-        opening_end = min(12, user_move_count)
+        # Chess.com typically uses first 10-12 moves for opening analysis
+        # We'll use 10 moves maximum (20 ply) for more realistic opening accuracy
+        opening_end = min(10, user_move_count)
         endgame_start = max(user_move_count - 10, user_move_count // 2)
 
+        # Filter opening moves - first 10 moves (20 plies)
         opening_moves = user_moves[:opening_end]
+        
         middle_game_moves = user_moves[opening_end:endgame_start]
         endgame_moves = user_moves[endgame_start:]
         
-        opening_accuracy = self._calculate_phase_accuracy(opening_moves)
+        # Use Chess.com method for opening only
+        opening_accuracy = self._calculate_opening_accuracy_chesscom_style(opening_moves)
         middle_game_accuracy = self._calculate_phase_accuracy(middle_game_moves)
         endgame_accuracy = self._calculate_phase_accuracy(endgame_moves)
         
@@ -1754,20 +1765,98 @@ class ChessAnalysisEngine:
         
         return total_accuracy / len(centipawn_losses)
     
-    def _calculate_time_management_score(self, moves: List[MoveAnalysis]) -> float:
-        """Calculate time management score based on move timing patterns."""
-        if not moves:
+    def _centipawns_to_win_prob(self, cp: float) -> float:
+        """Convert centipawns to win probability using Chess.com formula."""
+        return 1.0 / (1.0 + 10 ** (-cp / 400.0))
+
+    def _calculate_opening_accuracy_chesscom_style(self, opening_moves: List[MoveAnalysis]) -> float:
+        """
+        Calculate opening accuracy using a more conservative approach that matches Chess.com.
+        This provides realistic accuracy scores that don't inflate to 100%.
+        """
+        if not opening_moves:
             return 0.0
         
-        # Simple time management score based on move consistency
-        # This is a placeholder implementation
-        total_moves = len(moves)
-        if total_moves < 2:
-            return 0.5
+        total_accuracy = 0.0
+        for move in opening_moves:
+            # Use centipawn loss directly - this is more reliable than trying to reconstruct evaluations
+            centipawn_loss = move.centipawn_loss
+            
+            # Much more conservative accuracy calculation to avoid 100% scores
+            # Only truly perfect moves get 100%, everything else is penalized more heavily
+            if centipawn_loss <= 2:
+                move_accuracy = 100.0  # Only truly perfect moves (0-2 CPL)
+            elif centipawn_loss <= 8:
+                move_accuracy = 90.0 - (centipawn_loss - 2) * 2.5  # 90% to 75%
+            elif centipawn_loss <= 20:
+                move_accuracy = 75.0 - (centipawn_loss - 8) * 1.5  # 75% to 57%
+            elif centipawn_loss <= 40:
+                move_accuracy = 57.0 - (centipawn_loss - 20) * 1.0  # 57% to 37%
+            elif centipawn_loss <= 80:
+                move_accuracy = 37.0 - (centipawn_loss - 40) * 0.5  # 37% to 17%
+            else:
+                move_accuracy = max(5.0, 17.0 - (centipawn_loss - 80) * 0.1)  # 17% to 5%
+            
+            total_accuracy += move_accuracy
         
-        # Calculate average time per move (simplified)
-        # In a real implementation, this would use actual move timestamps
-        return 0.75  # Placeholder score
+        return total_accuracy / len(opening_moves)
+    
+    def _calculate_time_management_score(self, moves: List[MoveAnalysis]) -> float:
+        """Calculate time management score based on move timing patterns and quality.
+        
+        Returns score on 0-100 scale where:
+        - 0-30: Very fast/impulsive play (bullet players, many quick errors)
+        - 30-50: Quick decisions (blitz players, some time pressure errors)
+        - 50-70: Balanced time usage (rapid players, occasional time issues)
+        - 70-90: Slow/careful thinking (classical players, consistent quality)
+        - 90-100: Very slow/deliberate play (correspondence-style, deep calculation)
+        
+        Uses proxy indicators since exact clock times may not be available:
+        1. Move quality consistency (fast players make more errors)
+        2. Error patterns (blunders/mistakes indicate rushed decisions)
+        3. Move complexity vs quality (simple moves should be quick, complex ones need time)
+        """
+        if not moves or len(moves) < 10:
+            return 50.0  # Need sufficient data
+        
+        # Proxy indicators for time management
+        total_moves = len(moves)
+        blunders = sum(1 for m in moves if m.is_blunder)
+        mistakes = sum(1 for m in moves if m.is_mistake)
+        inaccuracies = sum(1 for m in moves if m.is_inaccuracy)
+        best_moves = sum(1 for m in moves if m.is_best)
+        
+        # Calculate error rates
+        blunder_rate = blunders / total_moves
+        mistake_rate = mistakes / total_moves
+        error_rate = (blunders + mistakes + inaccuracies) / total_moves
+        best_rate = best_moves / total_moves
+        
+        # Calculate move quality variance (consistent = more thoughtful)
+        centipawn_losses = [m.centipawn_loss for m in moves if hasattr(m, 'centipawn_loss')]
+        if centipawn_losses:
+            avg_loss = sum(centipawn_losses) / len(centipawn_losses)
+            variance = sum((loss - avg_loss) ** 2 for loss in centipawn_losses) / len(centipawn_losses)
+            consistency_score = max(0, 100 - (variance ** 0.5) / 2)  # Lower variance = more consistent
+        else:
+            consistency_score = 50.0
+        
+        # Base score starts at 50 (neutral)
+        base_score = 50.0
+        
+        # Penalties for fast/impulsive play (errors suggest rushing)
+        # Fast players tend to make more mistakes, especially blunders
+        error_penalty = (blunder_rate * 80.0) + (mistake_rate * 40.0) + (error_rate * 20.0)
+        
+        # Bonuses for slow/careful play (high accuracy suggests taking time)
+        # Slow players have higher best move rates and consistency
+        quality_bonus = (best_rate * 30.0) + (consistency_score * 0.2)
+        
+        # Calculate final score
+        score = base_score - error_penalty + quality_bonus
+        
+        # Clamp to valid range
+        return max(0.0, min(100.0, score))
     
     def _calculate_personality_scores(self, user_moves: List[MoveAnalysis], time_management_score: float = 0.0) -> Dict[str, float]:
         """Calculate six-trait personality scores from the user's moves."""

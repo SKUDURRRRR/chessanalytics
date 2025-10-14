@@ -2,6 +2,7 @@ import React, { useMemo } from 'react'
 import { Chess } from 'chess.js'
 import { identifyOpening } from '../../utils/openingIdentification'
 import { EnhancedOpeningAnalysis } from './EnhancedOpeningAnalysis'
+import { calculateOpeningAccuracyChessCom } from '../../utils/accuracyCalculator'
 
 interface ProcessedMove {
   index: number
@@ -46,7 +47,7 @@ interface OpeningVariation {
 
 export function OpeningTheoryAnalysis({ moves, playerColor, gameRecord, openingStats, totalGames }: OpeningTheoryAnalysisProps) {
   const userMoves = moves.filter(move => move.isUserMove)
-  const openingMoves = userMoves.slice(0, 15) // First 15 moves typically cover opening
+  const openingMoves = userMoves.slice(0, 10) // First 10 moves typically cover opening
 
 
 
@@ -64,13 +65,9 @@ export function OpeningTheoryAnalysis({ moves, playerColor, gameRecord, openingS
     }
   }, [openingMoves, gameRecord, playerColor])
 
-  const openingAccuracy = useMemo(() => {
-    if (openingMoves.length === 0) return 0
-    const bestMoves = openingMoves.filter(move => 
-      move.classification === 'best' || move.classification === 'brilliant'
-    ).length
-    return Math.round((bestMoves / openingMoves.length) * 100)
-  }, [openingMoves])
+  const openingAccuracy = useMemo(() => 
+    calculateOpeningAccuracyChessCom(openingMoves)
+  , [openingMoves])
 
   const theoryKnowledge = useMemo(() => {
     const totalMoves = openingMoves.length

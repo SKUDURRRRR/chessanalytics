@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
 import { normalizeOpeningName } from '../../utils/openingUtils'
+import { getPlayerPerspectiveOpeningShort, getOpeningExplanation } from '../../utils/playerPerspectiveOpening'
 import { MatchHistoryProps, MatchHistoryGameSummary } from '../../types'
 import UnifiedAnalysisService from '../../services/unifiedAnalysisService'
 import { config } from '../../lib/config'
@@ -28,6 +29,7 @@ interface Game {
   time_control: string
   opening_family: string
   opening?: string | null
+  opening_normalized?: string | null
   moves: number | null
   rating: number | null
   opponent_rating: number | null
@@ -182,7 +184,9 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       onGameSelect(buildGameSummary(game))
     } else {
       // If not analyzed, trigger analysis directly
-      console.log('Game not analyzed, triggering analysis directly:', game.provider_game_id || game.id)
+      if (import.meta.env.DEV) {
+        console.log('Game not analyzed, triggering analysis directly:', game.provider_game_id || game.id)
+      }
       requestAnalysis(new Event('click'), game)
     }
   }
@@ -335,25 +339,16 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       const canonicalUserId = canonicalizeUserId(userId, platform)
       let query = supabase
         .from('games')
-        .select('id, user_id, platform, result, color, opening, opening_family, accuracy, opponent_rating, my_rating, time_control, played_at, created_at, provider_game_id, total_moves, opponent_name')
+        .select('id, user_id, platform, result, color, opening, opening_family, opening_normalized, accuracy, opponent_rating, my_rating, time_control, played_at, created_at, provider_game_id, total_moves, opponent_name')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
 
-      // Apply opening filter if provided
+      // Apply opening filter at database level using opening_normalized column
       if (openingFilter) {
-        const conditions: string[] = []
-        openingFilter.identifiers.openingFamilies.forEach(family => {
-          const formatted = escapeFilterValue(family)
-          conditions.push(`opening_family.eq.${formatted}`)
-        })
-        openingFilter.identifiers.openings.forEach(opening => {
-          const formatted = escapeFilterValue(opening)
-          conditions.push(`opening.eq.${formatted}`)
-        })
-
-        if (conditions.length > 0) {
-          // Combine conditions with or() using raw strings. Supabase requires each condition to be parentheses-safe.
-          query = query.or(conditions.join(','))
+        query = query.eq('opening_normalized', openingFilter.normalized)
+        // Also filter by color if specified (e.g., from Best White/Black Openings)
+        if (openingFilter.color) {
+          query = query.eq('color', openingFilter.color)
         }
       }
 
@@ -362,9 +357,14 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         query = query.eq('opponent_name', opponentFilter)
       }
 
+      // When filtering by opening, fetch ALL games without limit
+      // This is necessary because we filter client-side after fetching
+      // TODO: Once opening_normalized column exists, restore pagination for filtered queries
       const currentPage = reset ? 1 : page
       const pageStart = (currentPage - 1) * gamesPerPage
       const pageEnd = currentPage * gamesPerPage - 1
+      
+      // Database filtering works now, use normal pagination
       const { data, error: dbError } = await query
         .order('played_at', { ascending: false })
         .range(pageStart, pageEnd)
@@ -374,23 +374,17 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       }
 
       if (data) {
-        // Additional client-side filtering for normalized opening names
-        let filteredData = data
-        if (openingFilter) {
-          filteredData = data.filter(game => {
-            const gameOpening = normalizeOpeningName(game.opening_family || game.opening || 'Unknown')
-            return gameOpening === openingFilter.normalized
-          })
-        }
-
-        const mappedData = filteredData.map(mapGameRow)
+        // Database filtering via opening_normalized - no client-side filtering needed
+        const mappedData = data.map(mapGameRow)
         const isReset = reset || page === 1
         if (isReset) {
           setGames(mappedData)
         } else {
           setGames(prev => [...prev, ...mappedData])
         }
-        setHasMore(mappedData.length === gamesPerPage)
+        
+        // Normal pagination for all cases
+        setHasMore(data.length === gamesPerPage)
 
         if (isReset) {
           const providerIds = mappedData
@@ -530,7 +524,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
             <h2 className="text-xl font-semibold text-white">Match History</h2>
             {openingFilter && (
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-200">
-                <span>Filtered by {openingFilter.normalized}</span>
+                <span>
+                  Filtered by {openingFilter.normalized}
+                  {openingFilter.color && ` (as ${openingFilter.color === 'white' ? 'White' : 'Black'})`}
+                </span>
                 <button
                   onClick={onClearFilter}
                   className="text-sky-100 transition hover:text-white"
@@ -615,8 +612,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                   </div>
                   <div>
                     <span className="text-slate-400">Opening:</span>
-                    <div className="font-medium text-slate-200 truncate" title={getOpeningNameWithFallback(game.opening_family, game)}>
-                      {getOpeningNameWithFallback(game.opening_family, game)}
+                    <div 
+                      className="font-medium text-slate-200 truncate" 
+                      title={getOpeningExplanation(game.opening_family, game.color, game)}
+                    >
+                      {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                     </div>
                   </div>
                   <div>
@@ -749,8 +749,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                     <td className="py-3 px-2 text-sm text-slate-100">{game.opponent}</td>
                     <td className="py-3 px-2 text-sm text-slate-300">{getTimeControlCategory(game.time_control)}</td>
                     <td className="py-3 px-2 text-sm text-slate-300">
-                      <div className="max-w-32 truncate" title={getOpeningNameWithFallback(game.opening_family, game)}>
-                        {getOpeningNameWithFallback(game.opening_family, game)}
+                      <div 
+                        className="max-w-32 truncate" 
+                        title={getOpeningExplanation(game.opening_family, game.color, game)}
+                      >
+                        {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                       </div>
                     </td>
                     <td className="py-3 px-2 text-sm text-slate-300">{game.moves}</td>

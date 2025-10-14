@@ -1,0 +1,3 @@
+[Smart import] Existing game IDs count: 4358
+[Smart import] Queried for user_id='mohammed_mubashir', platform='chess.com'
+[Smart import] Sample existing game IDs (first 3): ['108318139273', '142287700208', '119861977309']

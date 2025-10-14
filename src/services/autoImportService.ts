@@ -14,11 +14,33 @@ export interface ImportResult {
   success: boolean
   message: string
   importedGames?: number
+  newGamesCount?: number
 }
 
 export interface UserValidation {
   exists: boolean
   message?: string
+}
+
+export interface LargeImportProgress {
+  status: 'idle' | 'discovering' | 'importing' | 'completed' | 'cancelled' | 'error'
+  importedGames: number
+  totalToImport: number
+  progress: number
+  message: string
+  triggerRefresh?: boolean
+}
+
+export interface GameDiscovery {
+  totalAvailable: number
+  alreadyImported: number
+  canImport: number
+  cappedAt5000: boolean
+}
+
+export interface DateRange {
+  fromDate?: string
+  toDate?: string
 }
 
 export class AutoImportService {
@@ -214,6 +236,7 @@ export class AutoImportService {
         success: true,
         message: returnMessage,
         importedGames: data.imported_games || 0,
+        newGamesCount: data.new_games_count,
       }
     } catch (error) {
       console.error('Error importing games:', error)
@@ -232,6 +255,116 @@ export class AutoImportService {
         success: false,
         message: `Import failed: ${errorMessage}`,
       }
+    }
+  }
+
+  /**
+   * Discover available games for import
+   */
+  static async discoverAvailableGames(
+    userId: string,
+    platform: 'lichess' | 'chess.com',
+    dateRange?: DateRange
+  ): Promise<GameDiscovery> {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/discover-games`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          platform: platform,
+          from_date: dateRange?.fromDate,
+          to_date: dateRange?.toDate
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Discovery failed: ${response.status}`)
+      }
+      
+      return await response.json()
+    } catch (error) {
+      console.error('Error discovering games:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Import more games (up to 5000)
+   */
+  static async importMoreGames(
+    userId: string,
+    platform: 'lichess' | 'chess.com',
+    limit: number,
+    dateRange?: DateRange
+  ): Promise<{ success: boolean; importKey: string }> {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/import-more-games`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          platform: platform,
+          limit: limit,
+          from_date: dateRange?.fromDate,
+          to_date: dateRange?.toDate
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Import failed: ${response.status}`)
+      }
+      
+      return await response.json()
+    } catch (error) {
+      console.error('Error importing more games:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get progress of large import
+   */
+  static async getImportProgress(
+    userId: string,
+    platform: 'lichess' | 'chess.com'
+  ): Promise<LargeImportProgress> {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/import-progress/${userId}/${platform}`)
+      
+      if (!response.ok) {
+        throw new Error(`Failed to get progress: ${response.status}`)
+      }
+      
+      return await response.json()
+    } catch (error) {
+      console.error('Error getting import progress:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Cancel ongoing import
+   */
+  static async cancelImport(
+    userId: string,
+    platform: 'lichess' | 'chess.com'
+  ): Promise<{ success: boolean }> {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/cancel-import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, platform: platform })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to cancel import: ${response.status}`)
+      }
+      
+      return await response.json()
+    } catch (error) {
+      console.error('Error cancelling import:', error)
+      throw error
     }
   }
 }

@@ -209,7 +209,7 @@ const buildEnhancedFallbackExplanation = (
   
   // Check if this is an opening move that should get educational treatment
   const moveNumber = move?.moveNumber || 0
-  const isOpeningMove = moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good')
+  const isOpeningMove = moveNumber <= 10 && (classification === 'best' || classification === 'excellent' || classification === 'good')
   
   if (isOpeningMove) {
     // Simple book move comment for opening moves
@@ -225,7 +225,7 @@ const buildEnhancedFallbackExplanation = (
         return '✅ Your opponent played the best move available. This is solid, accurate play that maintains their position well and shows strong chess fundamentals. They found the optimal continuation that keeps their position on track.'
       case 'great':
         // Check if this is an opening move or if evaluation shows minimal change
-        const isOpponentOpeningMove = moveNumber <= 15
+        const isOpponentOpeningMove = moveNumber <= 10
         const hasOpponentMinimalEvalChange = loss != null && loss < 20
         
         if (isOpponentOpeningMove) {
@@ -264,7 +264,7 @@ const buildEnhancedFallbackExplanation = (
       return '✅ Perfect! This is exactly what the position demands. You\'ve found the strongest move available and kept your position on track with optimal play. This shows excellent chess understanding and tactical awareness. You\'re playing at a very high level!'
     case 'great':
       // Check if this is an opening move or if evaluation shows minimal change
-      const isOpeningMove = moveNumber <= 15
+      const isOpeningMove = moveNumber <= 10
       const hasMinimalEvalChange = loss != null && loss < 20
       
       if (isOpeningMove) {
@@ -677,7 +677,7 @@ export default function GameAnalysisPage() {
           bestMoveSan: bestMoveSan,
           moveNumber: moveNumber,
           isUserMove,
-          isOpeningMove: moveNumber <= 15 && (classification === 'best' || classification === 'excellent' || classification === 'good' || classification === 'great'),
+          isOpeningMove: moveNumber <= 10 && (classification === 'best' || classification === 'excellent' || classification === 'good' || classification === 'great'),
           tacticalInsights: move.tactical_insights,
           positionalInsights: move.positional_insights,
           risks: move.risks,

@@ -1,0 +1,3 @@
+[Smart import] Existing game IDs count: 778
+[Smart import] Queried for user_id='audingo', platform='lichess'
+[Smart import] Sample existing game IDs (first 3): ['qDeF2QIm', 'JlarZNrd', 'TwfG1JmC']

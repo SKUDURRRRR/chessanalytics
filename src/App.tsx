@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import { AuthProvider } from './contexts/AuthContext'
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
 import HomePage from './pages/HomePage'
@@ -20,6 +21,7 @@ function App() {
               <Route path="/analysis/:platform/:userId/:gameId" element={<ComponentErrorBoundary><GameAnalysisPage /></ComponentErrorBoundary>} />
             </Routes>
           </div>
+          <SpeedInsights />
         </Router>
       </AuthProvider>
     </PageErrorBoundary>
