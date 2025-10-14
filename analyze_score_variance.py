@@ -11,16 +11,9 @@ PYTHON_DIR = PROJECT_ROOT / 'python'
 if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
-# Load credentials from environment variables
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+# Load backend URL from environment variable
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8002")
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-    print("Error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment variables")
-    print("Please run START_BACKEND_LOCAL.ps1 first or set these variables manually")
-    sys.exit(1)
-
-from supabase import create_client
 import requests
 
 # Configure logging
@@ -30,11 +23,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 def get_personality_scores(user_id, platform):
     """Get personality scores from API"""
-    url = f"http://localhost:8002/api/v1/deep-analysis/{user_id}/{platform}"
+    url = f"{BACKEND_URL}/api/v1/deep-analysis/{user_id}/{platform}"
     try:
         response = requests.get(url, timeout=30)
         if response.status_code == 200:
@@ -73,20 +65,20 @@ if len(all_scores) == 2:
     print(f"\n{'='*70}")
     print("VARIANCE ANALYSIS")
     print("="*70)
-    
+
     traits = ['tactical', 'positional', 'aggressive', 'patient', 'novelty', 'staleness']
-    
+
     k_scores = all_scores['krecetas']
     s_scores = all_scores['skudurelis']
-    
+
     print(f"\n{'Trait':<15} {'Krecetas':<12} {'Skudurelis':<12} {'Difference':<12} {'Status'}")
     print("-" * 70)
-    
+
     for trait in traits:
         k_val = k_scores.get(trait, 0)
         s_val = s_scores.get(trait, 0)
         diff = abs(k_val - s_val)
-        
+
         if diff < 5:
             status = "❌ Too similar"
         elif diff < 10:
@@ -95,35 +87,35 @@ if len(all_scores) == 2:
             status = "✓ Good"
         else:
             status = "✓✓ Great!"
-        
+
         print(f"{trait:<15} {k_val:<12.1f} {s_val:<12.1f} {diff:<12.1f} {status}")
-    
+
     # Overall statistics
     avg_k = sum(k_scores.values()) / len(k_scores)
     avg_s = sum(s_scores.values()) / len(s_scores)
-    
+
     print(f"\n{'='*70}")
     print("OVERALL STATISTICS")
     print("="*70)
     print(f"Krecetas average: {avg_k:.1f}")
     print(f"Skudurelis average: {avg_s:.1f}")
     print(f"Average difference per trait: {sum(abs(k_scores[t] - s_scores[t]) for t in traits) / len(traits):.1f}")
-    
+
     # Check if all scores are in narrow range
     all_vals = list(k_scores.values()) + list(s_scores.values())
     min_score = min(all_vals)
     max_score = max(all_vals)
     score_range = max_score - min_score
-    
+
     print(f"\nScore range: {min_score:.1f} to {max_score:.1f} (spread: {score_range:.1f})")
-    
+
     if score_range < 30:
         print("❌ PROBLEM: Scores are too clustered! Need more variance.")
     elif score_range < 50:
         print("⚠️ Scores have moderate variance. Could be improved.")
     else:
         print("✓ Good score variance!")
-    
+
     print(f"\n{'='*70}")
     print("RECOMMENDATIONS")
     print("="*70)
@@ -132,4 +124,3 @@ if len(all_scores) == 2:
     print("2. Increase bonus/penalty multipliers (×1.5 to ×2)")
     print("3. Add exponential scaling for extreme values")
     print("4. Ensure skill level adjustments don't compress scores")
-

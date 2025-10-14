@@ -218,19 +218,59 @@ export interface DeepAnalysisData {
     improvement_focus: string;
   };
   famous_players?: {
-    primary: {
+    primary?: {
       name: string;
       description: string;
       era: string;
       strengths: string[];
       similarity?: string;
+      similarity_score?: number;
+      match_confidence?: number;
+      trait_similarities?: {
+        tactical: number;
+        positional: number;
+        aggressive: number;
+        patient: number;
+        novelty: number;
+        staleness: number;
+      };
+      insights?: string[];
     };
-    secondary: {
+    secondary?: {
       name: string;
       description: string;
       era: string;
       strengths: string[];
       similarity?: string;
+      similarity_score?: number;
+      match_confidence?: number;
+      trait_similarities?: {
+        tactical: number;
+        positional: number;
+        aggressive: number;
+        patient: number;
+        novelty: number;
+        staleness: number;
+      };
+      insights?: string[];
+    };
+    tertiary?: {
+      name: string;
+      description: string;
+      era: string;
+      strengths: string[];
+      similarity?: string;
+      similarity_score?: number;
+      match_confidence?: number;
+      trait_similarities?: {
+        tactical: number;
+        positional: number;
+        aggressive: number;
+        patient: number;
+        novelty: number;
+        staleness: number;
+      };
+      insights?: string[];
     };
   };
   enhanced_opening_analysis?: EnhancedOpeningAnalysis;
@@ -501,4 +541,3 @@ export interface PeerComparison {
   gamesPlayed: number
   ratingRange: string
 }
-

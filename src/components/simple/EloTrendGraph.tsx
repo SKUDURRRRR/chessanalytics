@@ -64,6 +64,8 @@ export function EloTrendGraph({
         setLoading(true)
         setError(null)
 
+        // Fetch only recent games for ELO trend analysis (500 is sufficient)
+        // Reduced from 2000 to 500 for 4x faster loading
         const { data: games, error: fetchError } = await supabase
           .from('games')
           .select('time_control, my_rating, played_at, id')
@@ -72,7 +74,7 @@ export function EloTrendGraph({
           .not('my_rating', 'is', null)
           .not('time_control', 'is', null)
           .order('played_at', { ascending: false })
-          .limit(2000)
+          .limit(500)
 
         if (fetchError) {
           throw fetchError
@@ -125,13 +127,13 @@ export function EloTrendGraph({
       .filter(game => {
         const category = getTimeControlCategory(game.time_control || 'Unknown')
         const matches = category === activeTimeControl
-        
-        
+
+
         return matches
       })
       .sort((a, b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime())
       .slice(0, gameLimit === 0 ? undefined : gameLimit)  // 0 means show all
-    
+
     // Only log diagnostics in development mode
     if (import.meta.env.DEV && filteredGames.length > 0) {
       console.log('ELO Trend Filter Debug:', {
@@ -158,7 +160,7 @@ export function EloTrendGraph({
     // No filtering - show all games to match the sample size
 
     setEloData(processedData)
-    
+
     // Notify parent component of the actual number of games used in the graph
     onGamesUsedChange?.(processedData.length)
   }, [allGames, activeTimeControl, gameLimit, onGamesUsedChange])
@@ -236,8 +238,8 @@ export function EloTrendGraph({
             }}
           >
             {availableTimeControls.map(option => (
-              <option 
-                key={option.value} 
+              <option
+                key={option.value}
                 value={option.value}
                 className="bg-slate-800 text-slate-100"
               >
@@ -245,7 +247,7 @@ export function EloTrendGraph({
               </option>
             ))}
           </select>
-          
+
           <label className="text-xs font-medium uppercase tracking-wide text-slate-400 flex-shrink-0" htmlFor="game-limit-selector">
             Show Games
           </label>

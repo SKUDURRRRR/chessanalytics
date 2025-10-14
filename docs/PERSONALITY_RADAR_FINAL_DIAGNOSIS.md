@@ -60,7 +60,7 @@ These 0.75 values drag down averages!
 ### Solution
 **Delete analyses with bad time scores** and re-analyze:
 ```sql
-DELETE FROM move_analyses 
+DELETE FROM move_analyses
 WHERE time_management_score < 10.0;
 ```
 
@@ -117,12 +117,41 @@ Even with fixes, Patient scores are still high
 ## Complete Fix Plan
 
 ### Step 1: Clean Database
+
+**⚠️ CRITICAL: Always backup before deleting in production!**
+
 ```sql
--- Remove bad time management scores
-DELETE FROM move_analyses 
+-- Step 1a: Create timestamped backup table
+CREATE TABLE move_analyses_backup_20241220_143000 AS
+SELECT * FROM move_analyses
+WHERE user_id IN ('krecetas', 'skudurelis')
+AND time_management_score < 10.0;
+
+-- Step 1b: Verify backup row count matches intended delete count
+SELECT
+    'Backup table' as source,
+    COUNT(*) as row_count
+FROM move_analyses_backup_20241220_143000
+UNION ALL
+SELECT
+    'Target for deletion' as source,
+    COUNT(*) as row_count
+FROM move_analyses
+WHERE user_id IN ('krecetas', 'skudurelis')
+AND time_management_score < 10.0;
+
+-- Step 1c: Only proceed if counts match (verify output shows same numbers)
+-- If counts match, then execute the DELETE:
+DELETE FROM move_analyses
 WHERE user_id IN ('krecetas', 'skudurelis')
 AND time_management_score < 10.0;
 ```
+
+**Verification Steps:**
+1. ✅ Backup table created with timestamp: `move_analyses_backup_YYYYMMDD_HHMMSS`
+2. ✅ Row counts match between backup and target deletion
+3. ✅ Only then execute DELETE
+4. ✅ Backup table preserved for rollback if needed
 
 ### Step 2: Re-Import Games
 **Need to re-import from Lichess with opening data!**
@@ -206,5 +235,3 @@ If Lichess shows "Sicilian Defense" but your DB shows "Unknown":
 - ⚠️ May need more Patient recalibration
 
 **Next Action**: Fix opening data import!
-
-

@@ -17,7 +17,7 @@ export interface GameAnalytics {
   winRate: number
   drawRate: number
   lossRate: number
-  
+
   // ELO Statistics
   highestElo: number | null
   lowestElo: number | null
@@ -26,7 +26,7 @@ export interface GameAnalytics {
   averageElo: number | null
   eloRange: number | null
   timeControlWithHighestElo: string | null
-  
+
   // Time Control Analysis
   timeControlStats: Array<{
     timeControl: string
@@ -35,7 +35,7 @@ export interface GameAnalytics {
     averageElo: number
     highestElo: number
   }>
-  
+
   // Opening Analysis
   openingStats: Array<{
     opening: string
@@ -45,7 +45,7 @@ export interface GameAnalytics {
     averageElo: number
     identifiers: OpeningIdentifierSets
   }>
-  
+
   // Opening Color Performance
   openingColorStats: {
     white: Array<{
@@ -67,13 +67,13 @@ export interface GameAnalytics {
       rawOpenings: string[]
     }>
   }
-  
+
   // Color Performance
   colorStats: {
     white: { games: number; winRate: number; averageElo: number }
     black: { games: number; winRate: number; averageElo: number }
   }
-  
+
   // Opponent Analysis
   opponentStats: {
     averageOpponentRating: number
@@ -134,7 +134,7 @@ export interface GameAnalytics {
       averageOpponentRating: number
     }>
   }
-  
+
   // Temporal Analysis
   temporalStats: {
     firstGame: string | null
@@ -143,10 +143,10 @@ export interface GameAnalytics {
     gamesThisWeek: number
     averageGamesPerDay: number
   }
-  
+
   // Performance Trends
   performanceTrends: PerformanceTrendsOverview
-  
+
   // Game Length Analysis
   gameLengthStats: {
     averageGameLength: number
@@ -167,10 +167,10 @@ export async function getMostPlayedOpeningForTimeControl(
 ): Promise<{ opening: string; games: number } | null> {
   try {
     const canonicalUserId = canonicalizeUserId(userId, platform)
-    
+
     // Import time control utility to filter by category
     const { getTimeControlCategory } = await import('./timeControlUtils')
-    
+
     // Fetch all games with time_control and opening data
     const { data: games, error } = await supabase
       .from('games')
@@ -178,48 +178,48 @@ export async function getMostPlayedOpeningForTimeControl(
       .eq('user_id', canonicalUserId)
       .eq('platform', platform)
       .not('time_control', 'is', null)
-    
+
     if (error || !games || games.length === 0) {
       return null
     }
-    
+
     // Filter games by time control category (e.g., "Blitz" matches "3+0", "5+0", etc.)
-    const filteredGames = games.filter(game => 
+    const filteredGames = games.filter(game =>
       getTimeControlCategory(game.time_control) === timeControl
     )
-    
+
     if (filteredGames.length === 0) {
       return null
     }
-    
+
     // Count openings
     const openingCounts = new Map<string, number>()
-    
+
     for (const game of filteredGames) {
       const openingName = getOpeningNameWithFallback(
         game.opening_normalized || game.opening || game.opening_family,
         game  // Pass the full game object
       )
-      
+
       // IMPORTANT: Only count openings that the player actually plays
       // Skip if this is an opponent's opening (e.g., skip Caro-Kann when player played white)
       if (!shouldCountOpeningForColor(openingName, game.color)) {
         continue // Skip this game - it's the opponent's opening choice
       }
-      
+
       const count = openingCounts.get(openingName) || 0
       openingCounts.set(openingName, count + 1)
     }
-    
+
     // Find the most played opening
     let mostPlayed: { opening: string; games: number } | null = null
-    
+
     for (const [opening, games] of openingCounts.entries()) {
       if (!mostPlayed || games > mostPlayed.games) {
         mostPlayed = { opening, games }
       }
     }
-    
+
     return mostPlayed
   } catch (error) {
     console.error('Error getting most played opening for time control:', error)
@@ -242,16 +242,17 @@ function canonicalizeUserId(userId: string, platform: string): string {
 
 export async function getComprehensiveGameAnalytics(
   userId: string,
-  platform: 'lichess' | 'chess.com'
+  platform: 'lichess' | 'chess.com',
+  limit: number = 500 // Default to 500 most recent games for performance
 ): Promise<GameAnalytics> {
   try {
-    if (DEBUG) console.log(`Getting comprehensive analytics for ${userId} on ${platform}`)
-    
+    if (DEBUG) console.log(`Getting comprehensive analytics for ${userId} on ${platform} (limit: ${limit})`)
+
     // Canonicalize user ID to match backend logic
     const canonicalUserId = canonicalizeUserId(userId, platform)
     if (DEBUG) console.log(`Canonicalized user ID: "${canonicalUserId}"`)
-    
-    // First, get the total count of games
+
+    // PERFORMANCE: First get total count
     const { count: totalGamesCount, error: countError } = await supabase
       .from('games')
       .select('*', { count: 'exact', head: true })
@@ -260,59 +261,58 @@ export async function getComprehensiveGameAnalytics(
       .not('my_rating', 'is', null)
 
     if (countError) {
-      if (DEBUG) console.error('Error getting games count:', countError)
+      if (DEBUG) console.error('Error fetching game count:', countError)
       return getEmptyAnalytics()
     }
 
-    if (DEBUG) console.log(`Total games in database: ${totalGamesCount}`)
-
-    // Try to fetch all games by using a very high limit and range queries
-    let allGames: any[] = []
-    let offset = 0
+    // Fetch games in batches to handle Supabase's 1000-row limit
     const batchSize = 1000
-    let hasMore = true
-    
-    while (hasMore) {
-      const { data: batch, error } = await supabase
+    const allGames: any[] = []
+    const numBatches = Math.ceil(Math.min(limit, totalGamesCount || 0) / batchSize)
+
+    if (DEBUG) console.log(`Fetching ${Math.min(limit, totalGamesCount || 0)} games in ${numBatches} batch(es) of ${batchSize}`)
+
+    for (let i = 0; i < numBatches; i++) {
+      const offset = i * batchSize
+      const currentLimit = Math.min(batchSize, limit - offset)
+
+      const { data: batch, error: batchError } = await supabase
         .from('games')
         .select('*')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
         .not('my_rating', 'is', null)
         .order('played_at', { ascending: false })
-        .range(offset, offset + batchSize - 1)
-      
-      if (error) {
-        if (DEBUG) console.error('Error fetching games batch:', error)
+        .range(offset, offset + currentLimit - 1)
+
+      if (batchError) {
+        if (DEBUG) console.error(`Error fetching batch ${i + 1}:`, batchError)
         break
       }
-      
-      if (!batch || batch.length === 0) {
-        hasMore = false
-      } else {
-        allGames = allGames.concat(batch)
-        offset += batchSize
-        
-        // If we got fewer games than the batch size, we've reached the end
-        if (batch.length < batchSize) {
-          hasMore = false
-        }
-        
-        if (DEBUG) console.log(`Fetched batch: ${batch.length} games (total so far: ${allGames.length})`)
+
+      if (batch && batch.length > 0) {
+        allGames.push(...batch)
+        if (DEBUG) console.log(`Fetched batch ${i + 1}/${numBatches}: ${batch.length} games (total so far: ${allGames.length})`)
+      }
+
+      // Stop if we got fewer games than requested (no more data)
+      if (!batch || batch.length < currentLimit) {
+        break
       }
     }
-    
+
     const games = allGames
 
     if (!games || games.length === 0) {
       return getEmptyAnalytics()
     }
 
-    if (DEBUG) console.log(`Fetched ${games.length} games for analytics (total in DB: ${totalGamesCount})`)
+    if (DEBUG) console.log(`Fetched ${games.length} total games for analytics (total in DB: ${totalGamesCount})`)
 
-    // Calculate all analytics from the single dataset
-    return calculateAnalyticsFromGames(games, totalGamesCount)
-    
+    // Calculate analytics from the recent games dataset
+    // Pass total count for display, but stats are based on the sample
+    return calculateAnalyticsFromGames(games, totalGamesCount || games.length)
+
   } catch (error) {
     console.error('Error getting comprehensive game analytics:', error)
     return getEmptyAnalytics()
@@ -322,43 +322,46 @@ export async function getComprehensiveGameAnalytics(
 /**
  * Calculate analytics from games data
  */
-function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): GameAnalytics {
-  const totalGames = actualTotalCount || games.length
-  
+function calculateAnalyticsFromGames(games: any[], totalGamesInDB?: number): GameAnalytics {
+  // Use total from database for display, but analyze only the sample
+  const totalGames = totalGamesInDB || games.length
+
   // Debug logging for total games calculation
   if (DEBUG) console.log('Total Games Calculation Debug:', {
-    actualTotalCount,
     gamesLength: games.length,
-    finalTotalGames: totalGames,
-    usingActualCount: actualTotalCount !== undefined
+    totalGamesInDB,
+    finalTotalGames: totalGames
   })
-  
+
   // Basic Statistics
   const wins = games.filter(g => g.result === 'win').length
   const draws = games.filter(g => g.result === 'draw').length
   const losses = games.filter(g => g.result === 'loss').length
-  
-  const winRate = totalGames > 0 ? (wins / totalGames) * 100 : 0
-  const drawRate = totalGames > 0 ? (draws / totalGames) * 100 : 0
-  const lossRate = totalGames > 0 ? (losses / totalGames) * 100 : 0
-  
+
+  // IMPORTANT: Calculate rates based on ANALYZED games, not total games in database
+  // Using totalGames (from database count) with wins from limited sample creates incorrect percentages
+  const analyzedGames = games.length
+  const winRate = analyzedGames > 0 ? (wins / analyzedGames) * 100 : 0
+  const drawRate = analyzedGames > 0 ? (draws / analyzedGames) * 100 : 0
+  const lossRate = analyzedGames > 0 ? (losses / analyzedGames) * 100 : 0
+
   // ELO Statistics
   // Only filter out games with 'null' string literal (actual corruption)
   // Keep everything else including "-" which may be correspondence games
-  const validGamesForElo = games.filter(g => 
+  const validGamesForElo = games.filter(g =>
     g.time_control !== 'null' &&
     g.my_rating !== null &&
     g.my_rating > 0 &&
     g.my_rating < 4000  // Sanity check for valid ratings
   )
-  
+
   const elos = validGamesForElo.map(g => g.my_rating)
   const highestElo = elos.length > 0 ? Math.max(...elos) : null
   const lowestElo = elos.length > 0 ? Math.min(...elos) : null
   const currentElo = games[0]?.my_rating || null
   const averageElo = elos.length > 0 ? elos.reduce((a, b) => a + b, 0) / elos.length : null
   const eloRange = highestElo && lowestElo ? highestElo - lowestElo : null
-  
+
   // Calculate current ELO per time control category
   const currentEloPerTimeControl: Record<string, number> = {}
   const timeControlGames = validGamesForElo.reduce((acc, game) => {
@@ -376,13 +379,13 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
       currentEloPerTimeControl[tc] = validRatings[0].my_rating
     }
   }
-  
+
   // Debug: Log highest ELO calculation and check for correspondence games
   const correspondenceGames = validGamesForElo.filter(g => {
     const tc = g.time_control?.toLowerCase() || ''
     return tc.includes('/') || tc === '' || tc === '-' || tc.includes('correspondence') || tc.includes('days')
   })
-  
+
   const highRatingGames = validGamesForElo
     .filter(g => g.my_rating >= 1600)
     .sort((a, b) => b.my_rating - a.my_rating)
@@ -394,7 +397,7 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
       gameId: g.provider_game_id,
       opponentRating: g.opponent_rating
     }))
-  
+
   if (DEBUG) console.log('ELO Statistics Debug:', {
     totalGames: games.length,
     validGamesForElo: validGamesForElo.length,
@@ -409,11 +412,11 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
     top10HighRatingGames: highRatingGames,
     sampleElos: elos.slice(0, 10)
   })
-  
+
   // Find the time control where highest ELO was achieved (from valid games only)
   const highestEloGame = validGamesForElo.find(g => g.my_rating === highestElo)
   const timeControlWithHighestElo = highestEloGame?.time_control || null
-  
+
   // Debug: Log highest ELO game details
   if (DEBUG && highestEloGame) {
     console.log('Highest ELO Game Found:', {
@@ -424,16 +427,16 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
       opponentRating: highestEloGame.opponent_rating
     })
   }
-  
+
   // Time Control Analysis
   const timeControlStats = calculateTimeControlStats(games)
-  
+
   // Opening Analysis
   const openingStats = calculateOpeningStats(games)
-  
+
   // Opening Color Performance
   const openingColorStats = calculateOpeningColorStats(games)
-  
+
   // Debug comparison between the two data sources
   if (DEBUG) console.log('Opening Data Comparison:', {
     mainOpeningStats: {
@@ -448,22 +451,22 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
       topBlack: openingColorStats.black.slice(0, 3).map(o => ({ opening: o.opening, games: o.games, winRate: o.winRate }))
     }
   })
-  
+
   // Color Performance
   const colorStats = calculateColorStats(games)
-  
+
   // Opponent Analysis
   const opponentStats = calculateOpponentStats(games)
-  
+
   // Temporal Analysis
   const temporalStats = calculateTemporalStats(games)
-  
+
   // Performance Trends
   const performanceTrends = calculatePerformanceTrends(games)
-  
+
   // Game Length Analysis
   const gameLengthStats = calculateGameLengthStats(games)
-  
+
   const result = {
     totalGames,
     winRate,
@@ -485,7 +488,7 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
     performanceTrends,
     gameLengthStats
   }
-  
+
   if (DEBUG) console.log('Comprehensive analytics result:', {
     totalGames: result.totalGames,
     winRate: result.winRate,
@@ -497,7 +500,7 @@ function calculateAnalyticsFromGames(games: any[], actualTotalCount?: number): G
     averageElo: result.averageElo,
     eloRange: result.eloRange
   })
-  
+
   return result
 }
 
@@ -512,7 +515,7 @@ function calculateTimeControlStats(games: any[]): Array<{
   highestElo: number
 }> {
   const timeControlMap = new Map<string, any[]>()
-  
+
   games.forEach(game => {
     const tc = game.time_control || 'Unknown'
     const tcCategory = getTimeControlCategory(tc)
@@ -521,14 +524,14 @@ function calculateTimeControlStats(games: any[]): Array<{
     }
     timeControlMap.get(tcCategory)!.push(game)
   })
-  
+
   return Array.from(timeControlMap.entries()).map(([timeControl, tcGames]) => {
     const wins = tcGames.filter(g => g.result === 'win').length
     const winRate = tcGames.length > 0 ? (wins / tcGames.length) * 100 : 0
     const elos = tcGames.map(g => g.my_rating).filter(r => r !== null)
     const averageElo = elos.length > 0 ? elos.reduce((a, b) => a + b, 0) / elos.length : 0
     const highestElo = elos.length > 0 ? Math.max(...elos) : 0
-    
+
     return {
       timeControl,
       games: tcGames.length,
@@ -556,25 +559,27 @@ function calculateOpeningStats(games: any[]): Array<{
     const opening = game.opening_normalized || game.opening_family || game.opening
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
-  
+
   if (validGames.length === 0) {
     if (DEBUG) console.warn('No valid opening data found in games')
     return []
   }
-  
+
   const openingMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
-  
+
   validGames.forEach(game => {
     // Use opening_normalized first (which has consolidated opening names)
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const opening = getOpeningNameWithFallback(rawOpening, game)
-    
+
     // IMPORTANT: Only count openings that the player actually plays
-    // Skip if this is an opponent's opening (e.g., skip Caro-Kann when player played white)
-    if (!shouldCountOpeningForColor(opening, game.color)) {
+    // Filter out opponent's openings (e.g., skip "Caro-Kann Defense" when player played White against it)
+    // This ensures we show what the player chooses to play, not what they face
+    const playerColor = game.color || game.my_color
+    if (playerColor && !shouldCountOpeningForColor(opening, playerColor)) {
       return // Skip this game - it's the opponent's opening choice
     }
-    
+
     if (!openingMap.has(opening)) {
       openingMap.set(opening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -587,16 +592,31 @@ function calculateOpeningStats(games: any[]): Array<{
       entry.families.add(game.opening_family)
     }
   })
-  
+
+  // Optimized: Calculate stats more efficiently by avoiding multiple filter operations
   const allOpenings = Array.from(openingMap.entries()).map(([opening, details]) => {
     const openingGames = details.games
-    const wins = openingGames.filter(g => g.result === 'win').length
-    const losses = openingGames.filter(g => g.result === 'loss').length
-    const draws = openingGames.filter(g => g.result === 'draw').length
+    let wins = 0
+    let losses = 0
+    let draws = 0
+    let eloSum = 0
+    let eloCount = 0
+
+    // Single pass through games to calculate all stats
+    for (const game of openingGames) {
+      if (game.result === 'win') wins++
+      else if (game.result === 'loss') losses++
+      else if (game.result === 'draw') draws++
+
+      if (game.my_rating !== null && game.my_rating !== undefined) {
+        eloSum += game.my_rating
+        eloCount++
+      }
+    }
+
     const winRate = openingGames.length > 0 ? (wins / openingGames.length) * 100 : 0
-    const elos = openingGames.map(g => g.my_rating).filter(r => r !== null)
-    const averageElo = elos.length > 0 ? elos.reduce((a, b) => a + b, 0) / elos.length : 0
-    
+    const averageElo = eloCount > 0 ? eloSum / eloCount : 0
+
     return {
       opening,
       openingFamily: openingGames[0]?.opening_family || 'Unknown',
@@ -653,27 +673,29 @@ function calculateOpeningColorStats(games: any[]): {
     const opening = game.opening_normalized || game.opening_family || game.opening
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
-  
+
   if (DEBUG) console.log(`Opening Color Stats: ${validGames.length} games with valid openings out of ${games.length} total games`)
-  
+
   // Separate games by color
   const whiteGames = validGames.filter(g => g.color === 'white')
   const blackGames = validGames.filter(g => g.color === 'black')
-  
+
   // Group white games by opening (with normalized names)
   // IMPORTANT: Only count openings that belong to white (not black defenses)
   const whiteOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
+  const whiteFilteredOut: Record<string, number> = {}
   whiteGames.forEach(game => {
     // Use opening_normalized first (which has consolidated opening names)
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
-    
+
     // Filter: Only include if this opening belongs to white
     // (e.g., exclude "Caro-Kann" when player played white against it)
     if (!shouldCountOpeningForColor(normalizedOpening, 'white')) {
+      whiteFilteredOut[normalizedOpening] = (whiteFilteredOut[normalizedOpening] || 0) + 1
       return // Skip this game for white opening stats
     }
-    
+
     if (!whiteOpeningMap.has(normalizedOpening)) {
       whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -692,13 +714,13 @@ function calculateOpeningColorStats(games: any[]): {
     // Use opening_normalized first (which has consolidated opening names)
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
-    
+
     // Filter: Only include if this opening belongs to black
     // (e.g., exclude "Italian Game" when player played black against it)
     if (!shouldCountOpeningForColor(normalizedOpening, 'black')) {
       return // Skip this game for black opening stats
     }
-    
+
     if (!blackOpeningMap.has(normalizedOpening)) {
       blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -712,11 +734,20 @@ function calculateOpeningColorStats(games: any[]): {
     }
   })
 
+  // Optimized: Calculate stats in single pass for white openings
   const whiteStats = Array.from(whiteOpeningMap.entries()).map(([opening, details]) => {
     const openingGames = details.games
-    const wins = openingGames.filter(g => g.result === 'win').length
-    const losses = openingGames.filter(g => g.result === 'loss').length
-    const draws = openingGames.filter(g => g.result === 'draw').length
+    let wins = 0
+    let losses = 0
+    let draws = 0
+
+    // Single pass through games
+    for (const game of openingGames) {
+      if (game.result === 'win') wins++
+      else if (game.result === 'loss') losses++
+      else if (game.result === 'draw') draws++
+    }
+
     const winRate = openingGames.length > 0 ? (wins / openingGames.length) * 100 : 0
 
     return {
@@ -731,14 +762,32 @@ function calculateOpeningColorStats(games: any[]): {
         openings: Array.from(details.openings).filter(Boolean) as string[]
       }
     }
-  }).filter(stat => stat.games >= 5) // Only include openings with at least 5 games for statistical validity
+  }).filter(stat => stat.games >= 3) // Lower threshold for color-specific stats (3 games provides meaningful data)
     .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
 
+  if (DEBUG) {
+    console.log('White games filtered out by shouldCountOpeningForColor:', whiteFilteredOut)
+    console.log('White Opening Stats (before 3-game filter):', Array.from(whiteOpeningMap.entries()).map(([opening, details]) => ({
+      opening,
+      games: details.games.length
+    })))
+    console.log('White Opening Stats (after 3+ game filter):', whiteStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
+  }
+
+  // Optimized: Calculate stats in single pass for black openings
   const blackStats = Array.from(blackOpeningMap.entries()).map(([opening, details]) => {
     const openingGames = details.games
-    const wins = openingGames.filter(g => g.result === 'win').length
-    const losses = openingGames.filter(g => g.result === 'loss').length
-    const draws = openingGames.filter(g => g.result === 'draw').length
+    let wins = 0
+    let losses = 0
+    let draws = 0
+
+    // Single pass through games
+    for (const game of openingGames) {
+      if (game.result === 'win') wins++
+      else if (game.result === 'loss') losses++
+      else if (game.result === 'draw') draws++
+    }
+
     const winRate = openingGames.length > 0 ? (wins / openingGames.length) * 100 : 0
 
     return {
@@ -753,9 +802,17 @@ function calculateOpeningColorStats(games: any[]): {
         openings: Array.from(details.openings).filter(Boolean) as string[]
       }
     }
-  }).filter(stat => stat.games >= 5) // Only include openings with at least 5 games for statistical validity
+  }).filter(stat => stat.games >= 3) // Lower threshold for color-specific stats (3 games provides meaningful data)
     .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
-  
+
+  if (DEBUG) {
+    console.log('Black Opening Stats (before 3-game filter):', Array.from(blackOpeningMap.entries()).map(([opening, details]) => ({
+      opening,
+      games: details.games.length
+    })))
+    console.log('Black Opening Stats (after 3+ game filter):', blackStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
+  }
+
   return {
     white: whiteStats,
     black: blackStats
@@ -771,19 +828,19 @@ function calculateColorStats(games: any[]): {
 } {
   const whiteGames = games.filter(g => g.color === 'white')
   const blackGames = games.filter(g => g.color === 'black')
-  
+
   const whiteWins = whiteGames.filter(g => g.result === 'win').length
   const blackWins = blackGames.filter(g => g.result === 'win').length
-  
+
   const whiteWinRate = whiteGames.length > 0 ? (whiteWins / whiteGames.length) * 100 : 0
   const blackWinRate = blackGames.length > 0 ? (blackWins / blackGames.length) * 100 : 0
-  
+
   const whiteElos = whiteGames.map(g => g.my_rating).filter(r => r !== null)
   const blackElos = blackGames.map(g => g.my_rating).filter(r => r !== null)
-  
+
   const whiteAverageElo = whiteElos.length > 0 ? whiteElos.reduce((a, b) => a + b, 0) / whiteElos.length : 0
   const blackAverageElo = blackElos.length > 0 ? blackElos.reduce((a, b) => a + b, 0) / blackElos.length : 0
-  
+
   return {
     white: {
       games: whiteGames.length,
@@ -861,7 +918,7 @@ function calculateOpponentStats(games: any[]): {
   }>
 } {
   const validGames = games.filter(g => g.opponent_rating !== null && g.my_rating !== null)
-  
+
   if (validGames.length === 0) {
     return {
       averageOpponentRating: 0,
@@ -878,7 +935,7 @@ function calculateOpponentStats(games: any[]): {
 
   const opponentRatings = validGames.map(g => g.opponent_rating)
   const playerRatings = validGames.map(g => g.my_rating)
-  
+
   const averageOpponentRating = opponentRatings.reduce((a, b) => a + b, 0) / opponentRatings.length
   const highestOpponentRating = Math.max(...opponentRatings)
   const lowestOpponentRating = Math.min(...opponentRatings)
@@ -936,15 +993,15 @@ function calculateOpponentStats(games: any[]): {
     const losses = games.filter(g => g.result === 'loss').length
     const draws = games.filter(g => g.result === 'draw').length
     const winRate = (wins / games.length) * 100
-    
+
     // Get most recent game for this opponent group
     const recentGame = games.sort((a, b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime())[0]
-    
+
     // Determine if this is grouped by name or rating
     const isGroupedByName = groupKey.startsWith('rating_') === false
     const opponentName = isGroupedByName ? groupKey : undefined
     const opponentRating = isGroupedByName ? recentGame.opponent_rating : parseInt(groupKey.replace('rating_', ''))
-    
+
     return {
       opponentRating,
       opponentName,
@@ -962,14 +1019,14 @@ function calculateOpponentStats(games: any[]): {
   // For toughest opponents, we want negative win rates (struggling against them)
   let toughestOpponents = []
   let gameThreshold = 10
-  
+
   // Try to find opponents with negative win rates, starting with 10+ games
   while (toughestOpponents.length < 3 && gameThreshold >= 1) {
     toughestOpponents = opponentStats
       .filter(stat => stat.games >= gameThreshold && stat.winRate <= 49) // Negative win rate (49% or lower)
       .sort((a, b) => b.games - a.games) // Sort by most games first, then by worst win rate
       .slice(0, 3)
-    
+
     if (toughestOpponents.length < 3) {
       gameThreshold-- // Lower the threshold if we don't have enough opponents
     }
@@ -978,14 +1035,14 @@ function calculateOpponentStats(games: any[]): {
   // For favorite opponents, we want positive win rates (doing well against them)
   let favoriteOpponents = []
   gameThreshold = 10
-  
+
   // Try to find opponents with positive win rates, starting with 10+ games
   while (favoriteOpponents.length < 3 && gameThreshold >= 1) {
     favoriteOpponents = opponentStats
       .filter(stat => stat.games >= gameThreshold && stat.winRate >= 51) // Positive win rate (51% or higher)
       .sort((a, b) => b.games - a.games) // Sort by most games first, then by best win rate
       .slice(0, 3)
-    
+
     if (favoriteOpponents.length < 3) {
       gameThreshold-- // Lower the threshold if we don't have enough opponents
     }
@@ -1002,18 +1059,18 @@ function calculateOpponentStats(games: any[]): {
   ]
 
   const ratingRangeStats = ratingRanges.map(range => {
-    const rangeGames = validGames.filter(g => 
+    const rangeGames = validGames.filter(g =>
       g.opponent_rating >= range.min && g.opponent_rating <= range.max
     )
-    
+
     if (rangeGames.length === 0) return null
-    
+
     const wins = rangeGames.filter(g => g.result === 'win').length
     const losses = rangeGames.filter(g => g.result === 'loss').length
     const draws = rangeGames.filter(g => g.result === 'draw').length
     const winRate = (wins / rangeGames.length) * 100
     const averageOpponentRating = rangeGames.reduce((sum, g) => sum + g.opponent_rating, 0) / rangeGames.length
-    
+
     return {
       range: range.label,
       games: rangeGames.length,
@@ -1057,24 +1114,24 @@ function calculateTemporalStats(games: any[]): {
   averageGamesPerDay: number
 } {
   const sortedGames = games.sort((a, b) => new Date(a.played_at).getTime() - new Date(b.played_at).getTime())
-  
+
   const firstGame = sortedGames[0]?.played_at || null
   const lastGame = sortedGames[sortedGames.length - 1]?.played_at || null
-  
+
   const now = new Date()
   const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-  
+
   const gamesThisMonth = games.filter(g => new Date(g.played_at) >= oneMonthAgo).length
   const gamesThisWeek = games.filter(g => new Date(g.played_at) >= oneWeekAgo).length
-  
+
   // Calculate average games per day
   let averageGamesPerDay = 0
   if (firstGame && lastGame) {
     const daysDiff = (new Date(lastGame).getTime() - new Date(firstGame).getTime()) / (1000 * 60 * 60 * 24)
     averageGamesPerDay = daysDiff > 0 ? games.length / daysDiff : 0
   }
-  
+
   return {
     firstGame,
     lastGame,
@@ -1108,7 +1165,7 @@ function calculatePerformanceTrends(games: any[]): PerformanceTrendsOverview {
     return acc
   }, {} as Record<string, number>)
 
-  const mostPlayedTimeControl = Object.entries(timeControlCounts).reduce((a, b) => 
+  const mostPlayedTimeControl = Object.entries(timeControlCounts).reduce((a, b) =>
     timeControlCounts[a[0]] > timeControlCounts[b[0]] ? a : b, ['Unknown', 0])[0]
 
   // Filter games by the most played time control (same as ELO graph)
@@ -1175,21 +1232,21 @@ function calculatePerformanceTrends(games: any[]): PerformanceTrendsOverview {
   const recentGames = filteredGames.slice(0, 50)
   const recentWins = recentGames.filter(g => g.result === 'win').length
   const recentWinRate = recentGames.length > 0 ? (recentWins / recentGames.length) * 100 : 0
-  
+
   const recentElos = recentGames.map(g => g.my_rating).filter(r => r !== null)
-  const recentAverageElo = recentElos.length > 0 ? 
+  const recentAverageElo = recentElos.length > 0 ?
     recentElos.reduce((a, b) => a + b, 0) / recentElos.length : 0
-  
+
   // Determine ELO trend using the filtered games
   let eloTrend: 'improving' | 'declining' | 'stable' = 'stable'
   if (filteredGames.length >= 40) {
     const firstHalf = filteredGames.slice(-40, -20).map(g => g.my_rating).filter(r => r !== null)
     const secondHalf = filteredGames.slice(-20).map(g => g.my_rating).filter(r => r !== null)
-    
+
     if (firstHalf.length > 0 && secondHalf.length > 0) {
       const firstHalfAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length
       const secondHalfAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length
-      
+
       if (secondHalfAvg > firstHalfAvg + 10) {
         eloTrend = 'improving'
       } else if (secondHalfAvg < firstHalfAvg - 10) {
@@ -1197,7 +1254,7 @@ function calculatePerformanceTrends(games: any[]): PerformanceTrendsOverview {
       }
     }
   }
-  
+
   return {
     recentWinRate,
     recentAverageElo,
@@ -1220,16 +1277,16 @@ function calculateGameLengthStats(games: any[]): {
   longGames: number
 } {
   const gameLengths = games.map(g => g.total_moves).filter(m => m !== null && m > 0)
-  
-  const averageGameLength = gameLengths.length > 0 ? 
+
+  const averageGameLength = gameLengths.length > 0 ?
     gameLengths.reduce((a, b) => a + b, 0) / gameLengths.length : 0
-  
+
   const shortestGame = gameLengths.length > 0 ? Math.min(...gameLengths) : 0
   const longestGame = gameLengths.length > 0 ? Math.max(...gameLengths) : 0
-  
+
   const quickVictories = games.filter(g => g.total_moves && g.total_moves < 20 && g.result === 'win').length
   const longGames = games.filter(g => g.total_moves && g.total_moves > 60).length
-  
+
   return {
     averageGameLength,
     shortestGame,
@@ -1308,7 +1365,7 @@ export async function getWinRateAnalysis(
 ): Promise<{ winRate: number; totalGames: number; wins: number; draws: number; losses: number }> {
   // Canonicalize user ID based on platform
   const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
-  
+
   const { data: games, error } = await supabase
     .from('games')
     .select('result')
@@ -1344,10 +1401,10 @@ export async function getOpeningPerformance(
 > {
   // Canonicalize user ID based on platform
   const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
-  
+
   const { data: games, error } = await supabase
     .from('games')
-    .select('opening, opening_family, opening_normalized, result, my_rating')
+    .select('opening, opening_family, opening_normalized, result, my_rating, color, my_color')
     .eq('user_id', canonicalUserId)
     .eq('platform', platform)
 
@@ -1365,6 +1422,14 @@ export async function getOpeningPerformance(
   validGames.forEach(game => {
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
+
+    // IMPORTANT: Only count openings that the player actually plays
+    // Filter out opponent's openings (e.g., skip "Caro-Kann Defense" when player played White against it)
+    const playerColor = game.color || game.my_color
+    if (playerColor && !shouldCountOpeningForColor(normalizedOpening, playerColor)) {
+      return // Skip this game - it's the opponent's opening choice
+    }
+
     if (!openingMap.has(normalizedOpening)) {
       openingMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1436,7 +1501,7 @@ export async function getOpeningColorPerformance(
 }> {
   // Canonicalize user ID based on platform
   const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
-  
+
   const { data: games, error } = await supabase
     .from('games')
     .select('opening, opening_family, opening_normalized, result, my_rating, color')
@@ -1452,24 +1517,24 @@ export async function getOpeningColorPerformance(
     const opening = game.opening_normalized || game.opening_family || game.opening
     return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
   })
-  
+
   // Separate games by color
   const whiteGames = validGames.filter(g => g.color === 'white')
   const blackGames = validGames.filter(g => g.color === 'black')
-  
+
   // Group white games by opening (with normalized names)
   // IMPORTANT: Only count openings that belong to white (not black defenses)
   const whiteOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   whiteGames.forEach(game => {
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
-    
+
     // Filter: Only include if this opening belongs to white
     // (e.g., exclude "Caro-Kann" when player played white against it)
     if (!shouldCountOpeningForColor(normalizedOpening, 'white')) {
       return // Skip this game for white opening stats
     }
-    
+
     if (!whiteOpeningMap.has(normalizedOpening)) {
       whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1482,20 +1547,20 @@ export async function getOpeningColorPerformance(
       entry.families.add(game.opening_family)
     }
   })
-  
+
   // Group black games by opening (with normalized names)
   // IMPORTANT: Only count openings that belong to black (not white attacks)
   const blackOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   blackGames.forEach(game => {
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
-    
+
     // Filter: Only include if this opening belongs to black
     // (e.g., exclude "Italian Game" when player played black against it)
     if (!shouldCountOpeningForColor(normalizedOpening, 'black')) {
       return // Skip this game for black opening stats
     }
-    
+
     if (!blackOpeningMap.has(normalizedOpening)) {
       blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1508,7 +1573,7 @@ export async function getOpeningColorPerformance(
       entry.families.add(game.opening_family)
     }
   })
-  
+
   // Calculate white opening stats
   const whiteStats = Array.from(whiteOpeningMap.entries()).map(([opening, details]) => {
     const openingGames = details.games
@@ -1516,7 +1581,7 @@ export async function getOpeningColorPerformance(
     const losses = openingGames.filter(g => g.result === 'loss').length
     const draws = openingGames.filter(g => g.result === 'draw').length
     const winRate = openingGames.length > 0 ? (wins / openingGames.length) * 100 : 0
-    
+
     return {
       opening,
       winRate,
@@ -1532,7 +1597,7 @@ export async function getOpeningColorPerformance(
   }).filter(stat => stat.games >= 5) // Only include openings with at least 5 games for statistical validity
     .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
     .slice(0, limit)
-  
+
   // Calculate black opening stats
   const blackStats = Array.from(blackOpeningMap.entries()).map(([opening, details]) => {
     const openingGames = details.games
@@ -1540,7 +1605,7 @@ export async function getOpeningColorPerformance(
     const losses = openingGames.filter(g => g.result === 'loss').length
     const draws = openingGames.filter(g => g.result === 'draw').length
     const winRate = openingGames.length > 0 ? (wins / openingGames.length) * 100 : 0
-    
+
     return {
       opening,
       winRate,
@@ -1556,7 +1621,7 @@ export async function getOpeningColorPerformance(
   }).filter(stat => stat.games >= 5) // Only include openings with at least 5 games for statistical validity
     .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
     .slice(0, limit)
-  
+
   return {
     white: whiteStats,
     black: blackStats
@@ -1571,13 +1636,13 @@ export async function getWorstOpeningPerformance(
 ): Promise<Array<{ opening: string; games: number; winRate: number; averageElo: number }>> {
   // Canonicalize user ID to match backend logic
   const canonicalUserId = canonicalizeUserId(userId, platform)
-  
+
   // Fetch ALL games using the same batching approach as getComprehensiveGameAnalytics
   let allGames: any[] = []
   let offset = 0
   const batchSize = 1000
   let hasMore = true
-  
+
   while (hasMore) {
     const { data: batch, error } = await supabase
       .from('games')
@@ -1587,25 +1652,25 @@ export async function getWorstOpeningPerformance(
       .not('my_rating', 'is', null)
       .order('played_at', { ascending: false })
       .range(offset, offset + batchSize - 1)
-    
+
     if (error) {
       if (DEBUG) console.error('Error fetching games batch:', error)
       break
     }
-    
+
     if (!batch || batch.length === 0) {
       hasMore = false
     } else {
       allGames = allGames.concat(batch)
       offset += batchSize
-      
+
       // If we got fewer games than the batch size, we've reached the end
       if (batch.length < batchSize) {
         hasMore = false
       }
     }
   }
-  
+
   const games = allGames
 
   if (!games || games.length === 0) {
@@ -1614,7 +1679,7 @@ export async function getWorstOpeningPerformance(
 
   if (DEBUG) {
     console.log(`getWorstOpeningPerformance: Fetched ${games.length} games for ${userId} on ${platform} (using batching)`)
-    
+
     // Add a simple data validation
     const sampleGames = games.slice(0, 5)
     console.log('Sample games data:', sampleGames.map(g => ({
@@ -1635,13 +1700,14 @@ export async function getWorstOpeningPerformance(
   validGames.forEach(game => {
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
-    
+
     // IMPORTANT: Only count openings that the player actually plays
     // Skip if this is an opponent's opening (e.g., skip Caro-Kann when player played white)
-    if (!shouldCountOpeningForColor(normalizedOpening, game.color)) {
+    const playerColor = game.color || game.my_color
+    if (playerColor && !shouldCountOpeningForColor(normalizedOpening, playerColor)) {
       return // Skip this game - it's the opponent's opening choice
     }
-    
+
     if (!openingMap.has(normalizedOpening)) {
       openingMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
     }
@@ -1726,7 +1792,7 @@ export async function getWorstOpeningPerformance(
   // If we have very few losing openings, also include some worst performers by win rate
   if (losingOpenings.length < 3) {
     if (DEBUG) console.log('Very few losing openings, including worst performers by win rate...')
-    
+
     const worstPerformers = allOpenings
       .filter(opening => opening.games >= 5) // At least 5 games for statistical significance
       .sort((a, b) => {
@@ -1737,7 +1803,7 @@ export async function getWorstOpeningPerformance(
         return b.games - a.games
       })
       .slice(0, 3) // Get top 3 worst performers
-    
+
     // Combine losing openings with worst performers, removing duplicates
     const combined = [...losingOpenings]
     worstPerformers.forEach(worst => {
@@ -1745,7 +1811,7 @@ export async function getWorstOpeningPerformance(
         combined.push(worst)
       }
     })
-    
+
     losingOpenings = combined.slice(0, limit)
   }
 
@@ -1766,7 +1832,7 @@ export async function getTimeControlPerformance(
 ): Promise<Array<{ timeControl: string; games: number; winRate: number; averageElo: number }>> {
   // Canonicalize user ID based on platform
   const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
-  
+
   const { data: games, error } = await supabase
     .from('games')
     .select('time_control, result, my_rating')
@@ -1804,7 +1870,7 @@ export async function getColorPerformance(
 ): Promise<{ white: { games: number; winRate: number }; black: { games: number; winRate: number } }> {
   // Canonicalize user ID based on platform
   const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
-  
+
   const { data: games, error } = await supabase
     .from('games')
     .select('color, result')
@@ -1839,7 +1905,7 @@ export async function getRecentPerformance(
 ): Promise<{ winRate: number; averageElo: number; trend: 'improving' | 'declining' | 'stable'; timeControlUsed: string }> {
   // Canonicalize user ID based on platform
   const canonicalUserId = platform === 'chess.com' ? userId.trim().toLowerCase() : userId.trim()
-  
+
   // First get all games to find most played time control
   const { data: allGames, error: allGamesError } = await supabase
     .from('games')
@@ -1861,7 +1927,7 @@ export async function getRecentPerformance(
     return acc
   }, {} as Record<string, number>)
 
-  const mostPlayedTimeControl = Object.entries(timeControlCounts).reduce((a, b) => 
+  const mostPlayedTimeControl = Object.entries(timeControlCounts).reduce((a, b) =>
     timeControlCounts[a[0]] > timeControlCounts[b[0]] ? a : b, ['Unknown', 0])[0]
 
   // Filter games by the most played time control and get recent games

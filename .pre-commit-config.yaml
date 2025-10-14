@@ -10,6 +10,31 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=1000']
       - id: detect-private-key
+        exclude: ^scripts/check_secrets\.py$
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  # Detect secrets using detect-secrets
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            \.secrets\.baseline|
+            \.env\.example|
+            env\.example|
+            package-lock\.json|
+            \.md$|
+            \.log$|
+            \.git/|
+            node_modules/|
+            dist/|
+            __pycache__/
+          )$
 
   # Custom secret scanner specific to this project
   - repo: local
@@ -20,4 +45,3 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-

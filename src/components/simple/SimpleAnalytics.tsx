@@ -83,24 +83,32 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       }
       setError(null)
 
-      // Fetch analysis stats, player stats, comprehensive analytics, and deep analysis in parallel
-      // Using the unified analysis service for all data
-      const [analysisResult, gamesData, playerStats, comprehensiveAnalytics, deepAnalysis] = await Promise.all([
+      // Optimized data fetching - fetch ALL data in parallel for maximum speed
+      const [analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis] = await Promise.all([
         UnifiedAnalysisService.getAnalysisStats(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
           'stockfish'
         ),
+        getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
         UnifiedAnalysisService.getGameAnalyses(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
-          'stockfish'
+          'stockfish',
+          50,
+          0
         ),
-        getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
-        getComprehensiveGameAnalytics(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
-        UnifiedAnalysisService.fetchDeepAnalysis(userId, (platform as 'lichess' | 'chess.com') || 'lichess')
+        getComprehensiveGameAnalytics(
+          userId,
+          (platform as 'lichess' | 'chess.com') || 'lichess',
+          10000  // Analyze ALL games for complete historical data (high limit to handle any user)
+        ),
+        UnifiedAnalysisService.fetchDeepAnalysis(
+          userId,
+          (platform as 'lichess' | 'chess.com') || 'lichess'
+        )
       ])
-      
+
       // Set default values for removed services
       const optimizedEloStats = null
 
@@ -126,7 +134,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       // Calculate realistic accuracy from raw game data using player rating
       const playerRating = playerStats.currentRating || analysisResult?.current_rating || analysisResult?.highest_rating
       const realisticAccuracy = calculateAverageAccuracy(gamesData || [], playerRating)
-      
+
       // Merge analysis stats with player stats and new accuracy
       const enhancedData = analysisResult ? {
         ...analysisResult,
@@ -136,7 +144,27 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         current_rating: playerStats.currentRating,
         most_played_time_control: playerStats.mostPlayedTimeControl,
         validation_issues: playerStats.validationIssues
-      } : null
+      } : {
+        // Fallback when no analysis stats available
+        total_games_analyzed: comprehensiveAnalytics?.totalGames || 0,
+        average_accuracy: realisticAccuracy,
+        current_rating: playerStats.currentRating,
+        most_played_time_control: playerStats.mostPlayedTimeControl,
+        validation_issues: playerStats.validationIssues,
+        average_opening_accuracy: 0,
+        average_middle_game_accuracy: 0,
+        average_endgame_accuracy: 0,
+        blunders_per_game: 0,
+        mistakes_per_game: 0,
+        inaccuracies_per_game: 0,
+        brilliant_moves_per_game: 0,
+        best_moves_per_game: 0,
+        good_moves_per_game: 0,
+        acceptable_moves_per_game: 0,
+        highest_rating: playerStats.currentRating,
+        elo_optimization_active: false,
+        total_games_with_elo: comprehensiveAnalytics?.totalGames || 0
+      }
 
       // Debug: Opening analytics data (only in development)
       if (import.meta.env.DEV) {
@@ -177,7 +205,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         })
       }
       setDeepAnalysisData(deepAnalysis)
-      
+
       // Increment refresh key to force EloTrendGraph to re-fetch data
       setDataRefreshKey(prev => prev + 1)
     } catch (err) {
@@ -207,7 +235,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         setMostPlayedOpening(null)
         return
       }
-      
+
       try {
         const result = await getMostPlayedOpeningForTimeControl(
           userId,
@@ -220,7 +248,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         setMostPlayedOpening(null)
       }
     }
-    
+
     loadMostPlayedOpening()
   }, [userId, platform, selectedTimeControl])
 
@@ -265,9 +293,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
   // Check if we're showing mock data - look for actual mock patterns, not just specific values
   const isMockData = data && (
-    data.total_games_analyzed === 15 && 
-    data.average_accuracy === 78.5 && 
-    data.total_blunders === 3 && 
+    data.total_games_analyzed === 15 &&
+    data.average_accuracy === 78.5 &&
+    data.total_blunders === 3 &&
     data.total_mistakes === 8 &&
     data.average_opening_accuracy === 82.3
   )
@@ -541,8 +569,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <div className="space-y-3">
                   {comprehensiveData.openingStats && comprehensiveData.openingStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
                     comprehensiveData.openingStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
-                    <div 
-                      key={index} 
+                    <div
+                      key={index}
                       className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
                       onClick={() =>
                         onOpeningClick?.(
@@ -586,9 +614,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <h4 className="mb-4 text-sm font-semibold text-amber-200">Losing Openings</h4>
                 <div className="space-y-3">
                   {comprehensiveData.openingStats && comprehensiveData.openingStats.filter((stat: any) => stat.winRate < 50).length > 0 ? (
-                    comprehensiveData.openingStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => a.winRate - b.winRate).slice(0, 3).map((stat: any, index: number) => (
-                      <div 
-                        key={index} 
+                    comprehensiveData.openingStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => b.games - a.games).slice(0, 3).map((stat: any, index: number) => (
+                      <div
+                        key={index}
                         className="cursor-pointer rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 transition hover:border-amber-300/60 hover:bg-amber-500/20"
                         onClick={() =>
                           onOpeningClick?.(
@@ -632,17 +660,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           {/* Opening Color Performance */}
           <div className={cardClass}>
             <h3 className="mb-4 text-lg font-semibold text-white">Opening Performance by Color</h3>
-            
-            {comprehensiveData.openingColorStats && 
+
+            {comprehensiveData.openingColorStats &&
              (comprehensiveData.openingColorStats.white.length > 0 || comprehensiveData.openingColorStats.black.length > 0) ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Best White Openings */}
                 <div>
-                  <h4 className="mb-3 text-sm font-semibold text-emerald-200">Best White Openings</h4>
+                  <h4 className="mb-3 text-sm font-semibold text-emerald-200">Most Played White Openings</h4>
                   <div className="space-y-3">
                     {comprehensiveData.openingColorStats.white.slice(0, 3).map((stat: any, index: number) => (
-                      <div 
-                        key={index} 
+                      <div
+                        key={index}
                         className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
                         onClick={() =>
                           onOpeningClick?.(
@@ -681,11 +709,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
                 {/* Best Black Openings */}
                 <div>
-                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Best Black Openings</h4>
+                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Most Played Black Openings</h4>
                   <div className="space-y-3">
                     {comprehensiveData.openingColorStats.black.slice(0, 3).map((stat: any, index: number) => (
-                      <div 
-                        key={index} 
+                      <div
+                        key={index}
                         className="cursor-pointer rounded-2xl border border-sky-400/40 bg-sky-500/10 p-4 transition hover:border-sky-300/60 hover:bg-sky-500/20"
                         onClick={() =>
                           onOpeningClick?.(
@@ -750,7 +778,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <div className={subtleCardClass}>
                   <span className="text-xs uppercase tracking-wide text-slate-400">Current Rating</span>
                   <div className="text-lg font-semibold text-sky-300">
-                    {selectedTimeControl && comprehensiveData?.currentEloPerTimeControl?.[selectedTimeControl] 
+                    {selectedTimeControl && comprehensiveData?.currentEloPerTimeControl?.[selectedTimeControl]
                       ? comprehensiveData.currentEloPerTimeControl[selectedTimeControl]
                       : (comprehensiveData?.currentElo || '--')}
                   </div>
@@ -793,9 +821,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           </div>
 
           {/* Enhanced Opponent Analysis */}
-          <EnhancedOpponentAnalysis 
+          <EnhancedOpponentAnalysis
             userId={userId}
-            opponentStats={comprehensiveData.opponentStats} 
+            opponentStats={comprehensiveData.opponentStats}
             platform={(platform as 'lichess' | 'chess.com') || 'lichess'}
             onOpponentClick={onOpponentClick}
           />

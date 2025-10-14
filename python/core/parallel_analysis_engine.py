@@ -23,7 +23,7 @@ async def _save_analysis_to_database(analysis, analysis_type_enum):
     """Save analysis results to database."""
     try:
         from .unified_api_server import _save_stockfish_analysis
-        
+
         # Save analysis to move_analyses table (all analysis types now use Stockfish)
         return await _save_stockfish_analysis(analysis)
     except Exception as e:
@@ -42,30 +42,30 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
     analysis_type = game_data.get('analysis_type', 'stockfish')
     depth = game_data.get('depth', 14)
     skill_level = game_data.get('skill_level', 20)
-    
+
     print(f"[Game {game_id}] Starting parallel analysis at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
-    
+
     try:
         # Create engine in this process with config stockfish path
         from .config import get_config
         config = get_config()
         engine = ChessAnalysisEngine(stockfish_path=config.stockfish.path)
-        
+
         # Configure analysis with environment-aware settings
         analysis_type_enum = AnalysisType(analysis_type)
-        
+
         # Use environment-aware depth and skill level
         app_env = os.getenv('APP_ENV', 'production').lower()
         effective_depth = 6 if app_env == 'dev' else (depth or 14)
         effective_skill = 6 if app_env == 'dev' else (skill_level or 20)
-        
+
         config = AnalysisConfig(
             analysis_type=analysis_type_enum,
             depth=effective_depth,
             skill_level=effective_skill
         )
         engine.config = config
-        
+
         # Validate PGN before analysis
         if not pgn or len(pgn.strip()) < 50 or '1.' not in pgn:
             result = {
@@ -75,11 +75,11 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
             }
             print(f"Warning: [Game {game_id}] Skipped - Invalid PGN")
             return result
-        
+
         # Run analysis (this is synchronous within the worker)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         analysis = loop.run_until_complete(
             engine.analyze_game(
                 game_id=game_id,
@@ -89,11 +89,11 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
                 analysis_type=analysis_type_enum
             )
         )
-        
+
         if analysis:
             # Save analysis to database
             save_success = loop.run_until_complete(_save_analysis_to_database(analysis, analysis_type_enum))
-            
+
             result = {
                 'game_id': game_id,
                 'success': True,
@@ -120,9 +120,9 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
                 'error': 'Analysis returned None'
             }
             print(f"[Game {game_id}] Failed - No analysis result")
-        
+
         loop.close()
-            
+
     except Exception as e:
         result = {
             'game_id': game_id,
@@ -130,18 +130,18 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
             'error': str(e)
         }
         print(f"[Game {game_id}] Error: {e}")
-    
+
     return result
 
 class ParallelAnalysisEngine:
     """
     Parallel analysis engine that uses multiprocessing for true parallel game analysis.
     """
-    
+
     def __init__(self, max_workers: int = None):
         """
         Initialize parallel analysis engine.
-        
+
         Args:
             max_workers: Maximum number of parallel processes. If None, auto-calculates based on CPU count.
         """
@@ -153,7 +153,7 @@ class ParallelAnalysisEngine:
         else:
             self.max_workers = max_workers
         self.supabase = get_supabase_client()
-        
+
     async def analyze_games_parallel(
         self,
         user_id: str,
@@ -166,7 +166,7 @@ class ParallelAnalysisEngine:
     ) -> Dict[str, Any]:
         """
         Analyze multiple games in parallel using multiprocessing.
-        
+
         Args:
             user_id: User ID to analyze games for
             platform: Platform (lichess or chess.com)
@@ -174,7 +174,7 @@ class ParallelAnalysisEngine:
             limit: Maximum number of games to analyze
             depth: Stockfish depth
             skill_level: Stockfish skill level
-            
+
         Returns:
             Dictionary with analysis results and statistics
         """
@@ -182,12 +182,12 @@ class ParallelAnalysisEngine:
         print(f"   Max workers: {self.max_workers}")
         print(f"   Analysis type: {analysis_type}")
         print(f"   Limit: {limit}")
-        
+
         start_time = datetime.now()
-        
+
         # Get games from database
         games = await self._fetch_games(user_id, platform, limit)
-        
+
         if not games:
             return {
                 'success': False,
@@ -197,9 +197,9 @@ class ParallelAnalysisEngine:
                 'failed_games': 0,
                 'total_time': 0
             }
-        
+
         print(f"Found {len(games)} games to analyze")
-        
+
         # Prepare game data for parallel processing
         game_data_list = []
         for game in games:
@@ -212,17 +212,17 @@ class ParallelAnalysisEngine:
                 'depth': depth,
                 'skill_level': skill_level
             })
-        
+
         # Analyze games in parallel
         results = await self._analyze_games_parallel(game_data_list, progress_callback)
-        
+
         end_time = datetime.now()
         total_time = (end_time - start_time).total_seconds()
-        
+
         # Process results
         successful_analyses = [r for r in results if r['success']]
         failed_analyses = [r for r in results if not r['success']]
-        
+
         # Calculate statistics
         if successful_analyses:
             total_accuracy = sum(r['analysis']['accuracy'] for r in successful_analyses)
@@ -231,7 +231,7 @@ class ParallelAnalysisEngine:
         else:
             avg_accuracy = 0
             total_moves = 0
-        
+
         result = {
             'success': True,
             'message': f'Parallel analysis completed for {len(successful_analyses)}/{len(games)} games',
@@ -245,17 +245,17 @@ class ParallelAnalysisEngine:
             'speedup': (len(games) * 90) / total_time if total_time > 0 else 0,  # Assume 90s per game sequential
             'results': results
         }
-        
+
         print(f"PARALLEL ANALYSIS COMPLETE:")
         print(f"   Total time: {total_time:.1f}s")
         print(f"   Games analyzed: {len(successful_analyses)}/{len(games)}")
         print(f"   Average accuracy: {avg_accuracy:.1f}%")
         print(f"   Speedup: {result['speedup']:.1f}x")
-        
+
         return result
-    
+
     async def _fetch_games(self, user_id: str, platform: str, limit: int) -> List[Dict[str, Any]]:
-        """Fetch games from database."""
+        """Fetch games from database ordered by played_at (most recent first)."""
         try:
             # Canonicalize user ID for database operations
             # Chess.com usernames are case-insensitive (lowercase)
@@ -264,84 +264,149 @@ class ParallelAnalysisEngine:
                 canonical_user_id = user_id.strip().lower()
             else:  # lichess
                 canonical_user_id = user_id.strip()
-            
-            # Get games from database (games_pgn table) ordered by most recent first
-            games_response = self.supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('updated_at', desc=True).limit(limit).execute()
-            games = games_response.data or []
-            
-            return games
+
+            # CRITICAL FIX: Use two-step approach to maintain chronological ordering
+            # Step 1: Get game IDs from games table ordered by played_at (most recent first)
+            # Step 2: Fetch PGN data for those games and maintain the order
+            # This ensures we always get the most recently PLAYED games, not recently UPDATED games
+
+            print(f"[PARALLEL ENGINE] Fetching {limit} most recent games for {user_id} on {platform}")
+
+            # First get game IDs from games table ordered by played_at (most recent first)
+            games_list_response = self.supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(limit).execute()
+
+            if not games_list_response.data:
+                print(f"[PARALLEL ENGINE] No games found in games table")
+                return []
+
+            # Get provider_game_ids in order with their played_at dates
+            ordered_games = games_list_response.data
+            provider_game_ids = [g['provider_game_id'] for g in ordered_games]
+            print(f"[PARALLEL ENGINE] Found {len(provider_game_ids)} games in database (ordered by most recent)")
+
+            # Now fetch PGN data for these games
+            pgn_response = self.supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+
+            if not pgn_response.data:
+                print(f"[PARALLEL ENGINE] No PGN data found for games")
+                return []
+
+            # Re-order PGN data to match the games table order and add played_at info
+            pgn_map = {g['provider_game_id']: g for g in pgn_response.data}
+            all_games = []
+            for game_info in ordered_games:
+                provider_game_id = game_info['provider_game_id']
+                if provider_game_id in pgn_map:
+                    pgn_data = pgn_map[provider_game_id].copy()
+                    pgn_data['played_at'] = game_info['played_at']  # Add played_at to PGN data
+                    all_games.append(pgn_data)
+
+            print(f"[PARALLEL ENGINE] Found {len(all_games)} games with PGN data (ordered by most recent played_at)")
+            if all_games:
+                print(f"[PARALLEL ENGINE] First game played_at: {all_games[0].get('played_at')} | provider_game_id: {all_games[0].get('provider_game_id')}")
+                if len(all_games) > 1:
+                    print(f"[PARALLEL ENGINE] Last game played_at: {all_games[-1].get('played_at')} | provider_game_id: {all_games[-1].get('provider_game_id')}")
+
+            return all_games
         except Exception as e:
-            print(f"Error fetching games: {e}")
+            print(f"[PARALLEL ENGINE] Error fetching games: {e}")
+            import traceback
+            traceback.print_exc()
             return []
-    
+
     async def _analyze_games_parallel(self, game_data_list: List[Dict[str, Any]], progress_callback=None) -> List[Dict[str, Any]]:
-        """Analyze games in parallel using ProcessPoolExecutor."""
+        """Analyze games in parallel using ProcessPoolExecutor with async execution to avoid blocking."""
         results = []
-        
+
         print(f"PARALLEL PROCESSING: Starting with {len(game_data_list)} games using {self.max_workers} workers")
-        
+
         # Use ProcessPoolExecutor for true parallel processing
+        # CRITICAL FIX: Run ProcessPoolExecutor operations asynchronously to prevent blocking other API requests
         print(f"Starting ProcessPoolExecutor with {self.max_workers} workers...")
         try:
-            with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-                # Submit all tasks
+            # Get the current event loop
+            loop = asyncio.get_event_loop()
+
+            # Create executor
+            executor = ProcessPoolExecutor(max_workers=self.max_workers)
+
+            try:
+                # Submit all tasks and convert to asyncio futures immediately
                 print(f"Submitting {len(game_data_list)} tasks to ProcessPoolExecutor...")
-                future_to_game = {
-                    executor.submit(analyze_game_worker, game_data): game_data 
-                    for game_data in game_data_list
-                }
-                print(f"All {len(future_to_game)} tasks submitted successfully")
-                
-                # Collect results as they complete
-                print(f"Waiting for {len(future_to_game)} tasks to complete...")
+                asyncio_futures = []
+                game_data_map = {}
+
+                for game_data in game_data_list:
+                    # Submit to ProcessPoolExecutor
+                    concurrent_future = executor.submit(analyze_game_worker, game_data)
+                    # Wrap in asyncio future using run_in_executor for the result retrieval
+                    asyncio_future = loop.run_in_executor(None, concurrent_future.result)
+                    asyncio_futures.append(asyncio_future)
+                    game_data_map[asyncio_future] = game_data
+
+                print(f"All {len(asyncio_futures)} tasks submitted successfully")
+
+                # Collect results as they complete using asyncio primitives
+                # This allows other async tasks (like API requests) to run concurrently
+                print(f"Waiting for {len(asyncio_futures)} tasks to complete...")
                 completed_count = 0
-                for future in as_completed(future_to_game):
+
+                # Process futures as they complete
+                for coro in asyncio.as_completed(asyncio_futures):
                     try:
-                        result = future.result()
+                        result = await coro
                         results.append(result)
                         completed_count += 1
-                        print(f"Task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{len(future_to_game)})")
-                        
+                        print(f"Task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{len(asyncio_futures)})")
+
                         # Update progress if callback provided
                         if progress_callback:
-                            progress_percentage = 20 + int((completed_count / len(future_to_game)) * 70)  # 20-90%
-                            progress_callback(completed_count, len(future_to_game), progress_percentage)
-                            # Add a small delay to make progress more visible
-                            import time
-                            time.sleep(0.5)
-                            
+                            progress_percentage = 20 + int((completed_count / len(asyncio_futures)) * 70)  # 20-90%
+                            progress_callback(completed_count, len(asyncio_futures), progress_percentage)
+                            # Small async sleep to yield control and make progress visible
+                            await asyncio.sleep(0.05)
+
                     except Exception as e:
-                        game_data = future_to_game[future]
                         completed_count += 1
-                        print(f"Error analyzing game {game_data['id']}: {e}")
+                        print(f"Error analyzing game: {e}")
                         results.append({
-                            'game_id': game_data['id'],
+                            'game_id': 'unknown',
                             'success': False,
                             'error': str(e)
                         })
-                        
+
                         # Update progress even for failed games
                         if progress_callback:
-                            progress_percentage = 20 + int((completed_count / len(future_to_game)) * 70)  # 20-90%
-                            progress_callback(completed_count, len(future_to_game), progress_percentage)
+                            progress_percentage = 20 + int((completed_count / len(asyncio_futures)) * 70)  # 20-90%
+                            progress_callback(completed_count, len(asyncio_futures), progress_percentage)
+
+            finally:
+                # Clean up executor
+                print("Shutting down ProcessPoolExecutor...")
+                executor.shutdown(wait=False)
+
         except Exception as e:
             print(f"ProcessPoolExecutor failed: {e}")
             import traceback
             traceback.print_exc()
             # Fallback to sequential processing
             print("Falling back to sequential processing...")
+            loop = asyncio.get_event_loop()
             for i, game_data in enumerate(game_data_list):
                 try:
-                    result = analyze_game_worker(game_data)
+                    # Run worker in thread pool to avoid blocking the event loop
+                    result = await loop.run_in_executor(None, analyze_game_worker, game_data)
                     results.append(result)
                     completed_count = i + 1
                     print(f"Sequential task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{len(game_data_list)})")
-                    
+
                     # Update progress if callback provided
                     if progress_callback:
                         progress_percentage = 20 + int((completed_count / len(game_data_list)) * 70)  # 20-90%
                         progress_callback(completed_count, len(game_data_list), progress_percentage)
-                        
+                        # Yield control to event loop
+                        await asyncio.sleep(0.05)
+
                 except Exception as e:
                     print(f"Error in sequential analysis of game {game_data['id']}: {e}")
                     results.append({
@@ -349,5 +414,5 @@ class ParallelAnalysisEngine:
                         'success': False,
                         'error': str(e)
                     })
-        
+
         return results

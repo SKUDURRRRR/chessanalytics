@@ -10,10 +10,10 @@ ALTER TABLE games_pgn ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
 -- Add is_public column to games table if it doesn't exist
-DO $$ 
+DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns 
+    SELECT 1 FROM information_schema.columns
     WHERE table_name = 'games' AND column_name = 'is_public'
   ) THEN
     ALTER TABLE games ADD COLUMN is_public BOOLEAN DEFAULT false;
@@ -22,14 +22,26 @@ BEGIN
 END $$;
 
 -- Add is_public column to user_profiles table if it doesn't exist
-DO $$ 
+DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns 
+    SELECT 1 FROM information_schema.columns
     WHERE table_name = 'user_profiles' AND column_name = 'is_public'
   ) THEN
     ALTER TABLE user_profiles ADD COLUMN is_public BOOLEAN DEFAULT false;
     CREATE INDEX IF NOT EXISTS idx_user_profiles_is_public ON user_profiles(is_public) WHERE is_public = true;
+  END IF;
+END $$;
+
+-- Add is_public column to games_pgn table if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'games_pgn' AND column_name = 'is_public'
+  ) THEN
+    ALTER TABLE games_pgn ADD COLUMN is_public BOOLEAN DEFAULT false;
+    CREATE INDEX IF NOT EXISTS idx_games_pgn_is_public ON games_pgn(is_public) WHERE is_public = true;
   END IF;
 END $$;
 
@@ -176,21 +188,20 @@ NOTIFY pgrst, 'reload schema';
 -- SECURITY MODEL SUMMARY
 -- ============================================================================
 -- This configuration implements proper row-level security where:
--- 
+--
 -- ✅ Users can only access their own data or explicitly public data
 -- ✅ Users can only modify their own data (INSERT/UPDATE/DELETE)
 -- ✅ Backend API (using service_role key) has full access for data management
 -- ❌ Anonymous users have no access without authentication
--- 
+--
 -- This prevents:
 -- - Unauthorized access to other users' data
 -- - Database corruption by malicious users
 -- - Spam/fake data insertion
 -- - Deletion of other users' data
--- 
+--
 -- While allowing:
 -- - Secure access to own data
 -- - Selective public data sharing via is_public flag
 -- - Backend to import and analyze games via API
 -- - Proper data isolation between users
-
