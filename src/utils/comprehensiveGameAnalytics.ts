@@ -322,7 +322,7 @@ export async function getComprehensiveGameAnalytics(
 /**
  * Calculate analytics from games data
  */
-function calculateAnalyticsFromGames(games: any[], totalGamesInDB?: number): GameAnalytics {
+export function calculateAnalyticsFromGames(games: any[], totalGamesInDB?: number): GameAnalytics {
   // Use total from database for display, but analyze only the sample
   const totalGames = totalGamesInDB || games.length
 

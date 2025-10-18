@@ -5,7 +5,7 @@ A single, comprehensive API that consolidates all analysis functionality.
 Replaces multiple redundant endpoints with a clean, unified interface.
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Depends, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
@@ -16,6 +16,7 @@ import uvicorn
 import asyncio
 import os
 from datetime import datetime, timezone
+import time
 from supabase import create_client, Client
 from jose import jwt as jose_jwt
 
@@ -33,7 +34,8 @@ from .error_handlers import (
     ChessAnalyticsError, DatabaseError, AnalysisError, AuthenticationError,
     ValidationError, create_error_response, handle_database_error,
     handle_analysis_error, validate_game_data, validate_analysis_request,
-    global_exception_handler
+    global_exception_handler,
+    RateLimitError,
 )
 
 # Import opening normalization utilities
@@ -122,7 +124,7 @@ async def verify_user_access(user_id: str, token_data: Annotated[dict, Depends(v
 # Optional authentication dependency
 def get_optional_auth():
     """Optional authentication dependency that can be disabled."""
-    auth_enabled = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+    auth_enabled = os.getenv("AUTH_ENABLED", "true").lower() == "true"
     if auth_enabled:
         return Depends(verify_user_access)
     else:
@@ -181,6 +183,26 @@ def _normalize_analysis_type(requested: Optional[str], *, quiet: bool = False) -
 # In-memory storage for analysis progress
 analysis_progress = {}
 ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
+
+# Rate limiting configuration
+ANALYSIS_RATE_LIMIT = int(os.getenv("ANALYSIS_RATE_LIMIT", "5"))  # requests per minute
+IMPORT_RATE_LIMIT = int(os.getenv("IMPORT_RATE_LIMIT", "3"))      # requests per minute
+
+# Track timestamps of requests by user for rate limiting
+user_rate_limits: Dict[str, List[float]] = {}
+
+# Helper for rate limiting
+def _enforce_rate_limit(user_key: str, limit: int, window_seconds: int = 60) -> None:
+    now = time.time()
+    requests = user_rate_limits.setdefault(user_key, [])
+
+    # Remove timestamps outside the window
+    user_rate_limits[user_key] = [ts for ts in requests if now - ts < window_seconds]
+
+    if len(user_rate_limits[user_key]) >= limit:
+        raise RateLimitError("Rate limit exceeded. Please wait before retrying.")
+
+    user_rate_limits[user_key].append(now)
 
 # Track import progress for large imports
 large_import_progress = {}
@@ -484,7 +506,8 @@ async def unified_analyze(
     request: UnifiedAnalysisRequest,
     background_tasks: BackgroundTasks,
     # Optional parallel analysis flag
-    use_parallel: bool = True
+    use_parallel: bool = True,
+    _auth: Optional[bool] = get_optional_auth()
 ):
     """
     Unified analysis endpoint that handles all analysis types.
@@ -496,6 +519,10 @@ async def unified_analyze(
     - /analyze-game (single game analysis)
     """
     try:
+        # Enforce rate limit per user
+        user_key = f"analysis:{request.user_id}:{request.platform}"
+        _enforce_rate_limit(user_key, ANALYSIS_RATE_LIMIT)
+
         # Normalize and validate analysis type
         original_type = request.analysis_type
         normalized_type = _normalize_analysis_type(request.analysis_type)
@@ -766,7 +793,6 @@ async def get_game_analyses_count(
     except Exception as e:
         print(f"Error fetching game analyses count: {e}")
         return {"count": 0}
-
 @app.get("/api/v1/progress/{user_id}/{platform}", response_model=AnalysisProgress)
 async def get_analysis_progress(
     user_id: str,
@@ -951,6 +977,237 @@ async def get_elo_stats(
         raise
     except Exception as e:
         print(f"Error fetching ELO stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/comprehensive-analytics/{user_id}/{platform}")
+async def get_comprehensive_analytics(
+    user_id: str,
+    platform: str,
+    limit: int = Query(500, ge=1, le=10000, description="Number of games to analyze"),
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """Get comprehensive game analytics with single queries.
+
+    All data comes from the games table - no analysis required!
+    Replaces frontend's comprehensiveGameAnalytics.ts direct Supabase queries.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Get total count first
+        count_response = db_client.table('games').select(
+            'id', count='exact', head=True
+        ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+            'my_rating', 'null'
+        ).execute()
+
+        total_games_count = getattr(count_response, 'count', 0) or 0
+
+        if total_games_count == 0:
+            return {"total_games": 0, "games": [], "sample_size": 0}
+
+        # Fetch games in batches (Supabase limit is 1000)
+        all_games = []
+        batch_size = 1000
+        num_batches = (min(limit, total_games_count) + batch_size - 1) // batch_size
+
+        for i in range(num_batches):
+            offset = i * batch_size
+            current_limit = min(batch_size, limit - offset)
+
+            batch_response = db_client.table('games').select('*').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).not_.is_(
+                'my_rating', 'null'
+            ).order('played_at', desc=True).range(
+                offset, offset + current_limit - 1
+            ).execute()
+
+            if batch_response.data:
+                all_games.extend(batch_response.data)
+
+            if not batch_response.data or len(batch_response.data) < current_limit:
+                break
+
+        if not all_games:
+            return {"total_games": 0, "games": [], "sample_size": 0}
+
+        # Return games data - let frontend do the analytics calculation
+        # This reduces backend processing and keeps the logic in one place
+        return {
+            "total_games": total_games_count,
+            "games": all_games,
+            "sample_size": len(all_games)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching comprehensive analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/elo-history/{user_id}/{platform}")
+async def get_elo_history(
+    user_id: str,
+    platform: str,
+    limit: int = Query(500, ge=1, le=2000, description="Number of recent games to return"),
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """Get ELO history for ELO trend graph.
+
+    Returns recent games with ratings and time controls.
+    Replaces EloTrendGraph.tsx direct Supabase queries.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Fetch recent games with ELO data
+        response = db_client.table('games').select(
+            'time_control, my_rating, played_at, provider_game_id'
+        ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+            'my_rating', 'null'
+        ).not_.is_('time_control', 'null').order(
+            'played_at', desc=True
+        ).limit(limit).execute()
+
+        if not response.data:
+            return []
+
+        # Rename provider_game_id to id for frontend compatibility
+        result = []
+        for game in response.data:
+            result.append({
+                'time_control': game['time_control'],
+                'my_rating': game['my_rating'],
+                'played_at': game['played_at'],
+                'id': game['provider_game_id']
+            })
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching ELO history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/player-stats/{user_id}/{platform}")
+async def get_player_stats(
+    user_id: str,
+    platform: str,
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """Get player statistics including highest ELO with detailed validation.
+
+    Replaces playerStats.ts direct Supabase queries.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Get highest ELO game with additional details
+        response = db_client.table('games').select(
+            'my_rating, time_control, provider_game_id, played_at, opponent_rating, color'
+        ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+            'my_rating', 'null'
+        ).order('my_rating', desc=True).limit(1).execute()
+
+        if not response.data or len(response.data) == 0:
+            return {
+                "highest_elo": None,
+                "time_control_with_highest_elo": None,
+                "validation_issues": []
+            }
+
+        game = response.data[0]
+        validation_issues = []
+
+        # Simple validation
+        if game['my_rating'] < 100 or game['my_rating'] > 4000:
+            validation_issues.append(f"Invalid player rating {game['my_rating']} in game {game['provider_game_id']}")
+
+        return {
+            "highest_elo": game['my_rating'],
+            "time_control_with_highest_elo": game['time_control'],
+            "game_id": game['provider_game_id'],
+            "played_at": game['played_at'],
+            "opponent_rating": game.get('opponent_rating'),
+            "color": game.get('color'),
+            "validation_issues": validation_issues
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching player stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/match-history/{user_id}/{platform}")
+async def get_match_history(
+    user_id: str,
+    platform: str,
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    limit: int = Query(20, ge=1, le=100, description="Games per page"),
+    opening_filter: Optional[str] = Query(None, description="Filter by opening_normalized"),
+    opponent_filter: Optional[str] = Query(None, description="Filter by opponent_name"),
+    color_filter: Optional[str] = Query(None, description="Filter by color (white/black)"),
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """Get match history (recent games) for a user.
+
+    Returns paginated list of games with optional filters.
+    Replaces MatchHistory.tsx direct Supabase queries.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Build query
+        query = db_client.table('games').select(
+            'id, user_id, platform, result, color, opening, opening_family, opening_normalized, '
+            'accuracy, opponent_rating, my_rating, time_control, played_at, created_at, '
+            'provider_game_id, total_moves, opponent_name'
+        ).eq('user_id', canonical_user_id).eq('platform', platform)
+
+        # Apply filters
+        if opening_filter:
+            query = query.eq('opening_normalized', opening_filter)
+
+        if opponent_filter:
+            query = query.eq('opponent_name', opponent_filter)
+
+        if color_filter and color_filter in ['white', 'black']:
+            query = query.eq('color', color_filter)
+
+        # Pagination
+        page_start = (page - 1) * limit
+        page_end = page * limit - 1
+
+        response = query.order('played_at', desc=True).range(page_start, page_end).execute()
+
+        if not response.data:
+            return []
+
+        return response.data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching match history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/deep-analysis/{user_id}/{platform}", response_model=DeepAnalysisData)
@@ -1297,8 +1554,6 @@ def _calculate_opening_accuracy_chesscom(moves: List[dict]) -> float:
 
     # Use the same formula as overall game accuracy (Chess.com CAPS2)
     return _calculate_accuracy_from_cpl(centipawn_losses)
-
-
 def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
     """Estimate novelty from game-level patterns - opening variety, time control diversity.
 
@@ -1579,7 +1834,7 @@ def _determine_player_style(personality_scores: Dict[str, float]):
     }, summary
 
 
-def _summarize_strengths_and_gaps(personality_scores: Dict[str, float]):
+def _summarize_strengths_and_gaps(personality_scores: Dict[str, float]) -> Tuple[List[str], List[str]]:
     strengths: List[str] = []
     improvements: List[str] = []
     for key in CORE_PERSONALITY_KEYS:
@@ -2977,303 +3232,6 @@ def _build_fallback_deep_analysis(
         ai_style_analysis=None,
         personality_insights=None
     )
-# ============================================================================
-# HELPER FUNCTIONS FOR GAME IMPORT
-# ============================================================================
-
-def _count_moves_in_pgn(pgn: str) -> int:
-    """Count the number of moves in a PGN string"""
-    if not pgn or not isinstance(pgn, str):
-        return 0
-
-    try:
-        # Remove PGN headers (lines starting with [)
-        lines = pgn.split('\n')
-        game_lines = [line for line in lines if not line.strip().startswith('[')]
-
-        # Join the remaining lines and extract the moves
-        game_text = ' '.join(game_lines)
-
-        # Remove result markers (1-0, 0-1, 1/2-1/2)
-        import re
-        clean_game_text = re.sub(r'\s+(1-0|0-1|1/2-1/2)\s*$', '', game_text)
-
-        # Count move numbers and moves
-        # Pattern matches: 1. e4 e5 2. Nf3 Nc6 etc.
-        move_pattern = r'\d+\.\s+[^\s]+\s+[^\s]+'
-        moves = re.findall(move_pattern, clean_game_text)
-
-        if not moves:
-            return 0
-
-        # Each match represents one full move (white + black)
-        # So total moves = number of matches * 2
-        return len(moves) * 2
-
-    except Exception as e:
-        print(f"Error counting moves in PGN: {e}")
-        return 0
-
-def _extract_opponent_name_from_pgn(pgn: str, player_color: str) -> str:
-    """Extract opponent name from PGN data based on player color"""
-    if not pgn or not isinstance(pgn, str):
-        return None
-
-    try:
-        lines = pgn.split('\n')
-        white_player = ''
-        black_player = ''
-
-        for line in lines:
-            if line.startswith('[White '):
-                # Extract name from [White "PlayerName"]
-                white_player = line.split('"')[1] if '"' in line else ''
-            elif line.startswith('[Black '):
-                # Extract name from [Black "PlayerName"]
-                black_player = line.split('"')[1] if '"' in line else ''
-
-        # Return the opponent's name based on player color
-        if player_color.lower() == 'white':
-            return black_player.strip() if black_player else None
-        else:
-            return white_player.strip() if white_player else None
-
-    except Exception as e:
-        print(f"Error extracting opponent name from PGN: {e}")
-        return None
-
-def _parse_lichess_pgn(pgn_text: str, user_id: str) -> List[Dict[str, Any]]:
-    """Parse Lichess PGN text and extract game data"""
-    try:
-        import chess.pgn
-        import io
-        from datetime import datetime
-
-        games = []
-        pgn_io = io.StringIO(pgn_text)
-
-        while True:
-            game = chess.pgn.read_game(pgn_io)
-            if not game:
-                break
-
-            headers = game.headers
-
-            # Extract game ID from Site header (e.g., "https://lichess.org/abc123" -> "abc123")
-            site = headers.get('Site', '')
-            game_id = site.split('/')[-1] if site else None
-
-            if not game_id:
-                continue
-
-            # Determine if user is white or black
-            white_player = headers.get('White', '')
-            black_player = headers.get('Black', '')
-            user_is_white = white_player.lower() == user_id.lower()
-
-            # Extract result
-            result = headers.get('Result', '')
-            if result == '1-0':
-                game_result = 'win' if user_is_white else 'loss'
-            elif result == '0-1':
-                game_result = 'loss' if user_is_white else 'win'
-            elif result == '1/2-1/2':
-                game_result = 'draw'
-            else:
-                game_result = 'draw'  # Default fallback
-
-            # Extract color
-            color = 'white' if user_is_white else 'black'
-
-            # Extract ratings
-            white_rating = None
-            black_rating = None
-            try:
-                white_rating = int(headers.get('WhiteElo', 0)) if headers.get('WhiteElo') and headers.get('WhiteElo') != '?' else None
-            except (ValueError, TypeError):
-                white_rating = None
-            try:
-                black_rating = int(headers.get('BlackElo', 0)) if headers.get('BlackElo') and headers.get('BlackElo') != '?' else None
-            except (ValueError, TypeError):
-                black_rating = None
-            my_rating = white_rating if user_is_white else black_rating
-            opponent_rating = black_rating if user_is_white else white_rating
-
-            # Extract time control
-            time_control = headers.get('TimeControl', '')
-
-            # Extract opening
-            opening = headers.get('Opening', '')
-            opening_family = headers.get('ECO', '')
-
-            # Extract played date
-            date_str = headers.get('Date', '')
-            time_str = headers.get('UTCTime', '')
-            played_at = None
-            if date_str and time_str:
-                try:
-                    # Parse date and time (format: "2023.12.25" and "14:30:00")
-                    dt_str = f"{date_str} {time_str}"
-                    played_at = datetime.strptime(dt_str, "%Y.%m.%d %H:%M:%S").isoformat() + "Z"
-                except:
-                    played_at = datetime.now().isoformat() + "Z"
-            else:
-                played_at = datetime.now().isoformat() + "Z"
-
-            # Count moves
-            total_moves = _count_moves_in_pgn(str(game))
-
-            # Extract opponent name
-            opponent_name = black_player if user_is_white else white_player
-
-            # Create game data
-            game_data = {
-                'id': game_id,
-                'provider_game_id': game_id,
-                'result': game_result,
-                'color': color,
-                'time_control': time_control,
-                'opening': opening,
-                'opening_family': opening_family,
-                'opponent_rating': opponent_rating,
-                'my_rating': my_rating,
-                'played_at': played_at,
-                'pgn': str(game),
-                'total_moves': total_moves,
-                'opponent_name': opponent_name
-            }
-
-            games.append(game_data)
-
-        return games
-
-    except Exception as e:
-        print(f"Error parsing Lichess PGN: {e}")
-        return []
-
-async def _fetch_games_from_platform(
-    user_id: str,
-    platform: str,
-    limit: int = 100,
-    until_timestamp: Optional[int] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    oldest_game_month: Optional[tuple] = None
-) -> List[Dict[str, Any]]:
-    """Fetch games from external platform (Lichess or Chess.com)
-
-    Args:
-        user_id: Username on the platform
-        platform: 'lichess' or 'chess.com'
-        limit: Maximum number of games to fetch
-        until_timestamp: For Lichess, fetch games played before this timestamp (milliseconds since epoch)
-        from_date: Optional ISO date string for date range filtering
-        to_date: Optional ISO date string for date range filtering
-        oldest_game_month: For Chess.com, tuple of (year, month) to continue from
-    """
-    try:
-        if platform == 'lichess':
-            return await _fetch_lichess_games(user_id, limit, until_timestamp, from_date, to_date)
-        elif platform == 'chess.com':
-            return await _fetch_chesscom_games(user_id, limit, from_date, to_date, oldest_game_month)
-        else:
-            raise ValueError(f"Unsupported platform: {platform}")
-    except Exception as e:
-        print(f"Error fetching games from {platform}: {e}")
-        return []
-
-async def _fetch_lichess_games(
-    user_id: str,
-    limit: int,
-    until_timestamp: Optional[int] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """Fetch games from Lichess API
-
-    Args:
-        user_id: Lichess username
-        limit: Maximum number of games
-        until_timestamp: Fetch games before this timestamp (milliseconds since epoch)
-        from_date: Optional ISO date string for filtering games after this date
-        to_date: Optional ISO date string for filtering games before this date
-    """
-    try:
-        # Use shared HTTP client with connection pooling
-        session = await get_http_client()
-        try:
-            url = f"https://lichess.org/api/games/user/{user_id}"
-            params = {
-                'max': limit
-            }
-
-            # Add until parameter to fetch older games (subtract 1ms to avoid overlap)
-            if until_timestamp:
-                params['until'] = until_timestamp - 1
-
-            # Add since parameter for date range filtering
-            if from_date:
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
-                    params['since'] = int(dt.timestamp() * 1000)
-                except Exception as e:
-                    print(f"Error parsing from_date: {e}")
-
-            # Add until parameter for date range filtering (if not already set by pagination)
-            if to_date and 'until' not in params:
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
-                    params['until'] = int(dt.timestamp() * 1000)
-                except Exception as e:
-                    print(f"Error parsing to_date: {e}")
-
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    # Lichess returns PGN format by default
-                    pgn_text = await response.text()
-                    # Parse PGN to extract game data
-                    games = _parse_lichess_pgn(pgn_text, user_id)
-                    return games[:limit]
-                else:
-                    print(f"Lichess API error: {response.status}")
-                    return []
-        except Exception as inner_e:
-            print(f"Error in Lichess API request: {inner_e}")
-            return []
-    except Exception as e:
-        print(f"Error fetching Lichess games: {e}")
-        return []
-
-async def _fetch_chesscom_stats(user_id: str) -> Dict[str, Any]:
-    """Fetch chess.com player stats to get highest ratings"""
-    try:
-        # Use shared HTTP client with connection pooling
-        session = await get_http_client()
-
-        # Chess.com API requires User-Agent header
-        headers = {
-            'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
-        }
-        try:
-            url = f"https://api.chess.com/pub/player/{user_id}/stats"
-
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    print(f"Chess.com stats API returned status {response.status}")
-                    return {}
-        except Exception as inner_e:
-            print(f"Error in Chess.com stats request: {inner_e}")
-            return {}
-
-    except Exception as e:
-        print(f"Error fetching Chess.com stats: {e}")
-        return {}
-
-
 async def _fetch_chesscom_games(
     user_id: str,
     limit: int,
@@ -3498,10 +3456,6 @@ async def _fetch_single_chesscom_game(user_id: str, game_id: str) -> Optional[st
     except Exception as e:
         print(f"Error fetching Chess.com game {game_id}: {e}")
         return None
-
-
-
-
 def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Dict[str, Any]]:
     """Parse a single chess.com game to extract ratings and metadata"""
     try:
@@ -3655,7 +3609,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
 # PROXY ENDPOINTS (for external APIs)
 # ============================================================================
 @app.post("/api/v1/import-games-smart", response_model=BulkGameImportResponse)
-async def import_games_smart(request: Dict[str, Any]):
+async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = get_optional_auth()):
     """Smart import endpoint - imports only the most recent 100 games"""
     try:
         user_id = request.get('user_id')
@@ -3663,6 +3617,9 @@ async def import_games_smart(request: Dict[str, Any]):
 
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
+
+        user_key = f"import:{user_id}:{platform}:smart"
+        _enforce_rate_limit(user_key, IMPORT_RATE_LIMIT)
 
         canonical_user_id = _canonical_user_id(user_id, platform)
         db_client = supabase_service or supabase
@@ -3869,7 +3826,7 @@ async def import_games_smart(request: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/import-games", response_model=BulkGameImportResponse)
-async def import_games_simple(request: Dict[str, Any]):
+async def import_games_simple(request: Dict[str, Any], _auth: Optional[bool] = get_optional_auth()):
     """Import games endpoint for frontend - handles PGN parsing and move counting"""
     try:
         user_id = request.get('user_id')
@@ -3878,6 +3835,9 @@ async def import_games_simple(request: Dict[str, Any]):
 
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
+
+        rate_key = f"import:{user_id}:{platform}:simple"
+        _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
 
         # Fetch games from platform
         games_data = await _fetch_games_from_platform(user_id, platform, limit)
@@ -3956,12 +3916,17 @@ async def import_games_simple(request: Dict[str, Any]):
     except Exception as e:
         print(f"Error in import-games endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/api/v1/import/games", response_model=BulkGameImportResponse)
-async def import_games(payload: BulkGameImportRequest):
+async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = get_optional_auth()):
     """Import games and PGN data using service role credentials."""
     if not supabase_service:
         raise HTTPException(status_code=503, detail="Database not configured for imports")
+
+    if not payload.user_id or not payload.platform:
+        raise HTTPException(status_code=400, detail="user_id and platform are required")
+
+    rate_key = f"import:{payload.user_id}:{payload.platform}:bulk"
+    _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
 
     canonical_user_id = _canonical_user_id(payload.user_id, payload.platform)
     errors: List[str] = []
@@ -3970,7 +3935,20 @@ async def import_games(payload: BulkGameImportRequest):
     games_rows: List[Dict[str, Any]] = []
     pgn_rows: List[Dict[str, Any]] = []
 
+    skipped_no_id = 0
+    skipped_no_time_control = 0
+
     for game in payload.games:
+        # Validate critical fields before import
+        if not game.provider_game_id:
+            skipped_no_id += 1
+            print(f'[import_games] Skipping game with missing provider_game_id for user={payload.user_id}, platform={payload.platform}')
+            continue
+        if not game.time_control:
+            skipped_no_time_control += 1
+            print(f'[import_games] Skipping game {game.provider_game_id} due to missing time_control')
+            continue
+
         played_at = _normalize_played_at(game.played_at)
         # Normalize opening name to family for efficient filtering and grouping
         # This consolidates variations (e.g., "Sicilian Defense, Najdorf") into families ("Sicilian Defense")
@@ -4002,6 +3980,24 @@ async def import_games(payload: BulkGameImportRequest):
             "pgn": game.pgn,
             "created_at": now_iso,
         })
+
+    if skipped_no_id or skipped_no_time_control:
+        print(
+            f'[import_games] Validation summary: skipped_no_id={skipped_no_id}, '
+            f'skipped_no_time_control={skipped_no_time_control}, '
+            f'processed_games={len(games_rows)}'
+        )
+
+    if not games_rows:
+        errors.append('No valid games to import after validation checks')
+        print('[import_games] No games_rows generated after validation; aborting import')
+        return BulkGameImportResponse(
+            success=False,
+            imported_games=0,
+            errors=errors,
+            error_count=len(errors),
+            message='No valid games to import'
+        )
 
     # CRITICAL: Games table MUST be inserted first before PGN due to FK constraint
     # If games insert fails, we MUST NOT attempt PGN insert
@@ -4138,6 +4134,8 @@ async def discover_games(request: Dict[str, Any]):
     if not user_id or not platform:
         raise HTTPException(status_code=400, detail="user_id and platform are required")
 
+    _enforce_rate_limit(f"import:{user_id}:{platform}:discover", IMPORT_RATE_LIMIT)
+
     canonical_user_id = _canonical_user_id(user_id, platform)
     db_client = supabase_service or supabase
 
@@ -4176,7 +4174,7 @@ async def discover_games(request: Dict[str, Any]):
 
 
 @app.post("/api/v1/import-more-games")
-async def import_more_games(request: Dict[str, Any]):
+async def import_more_games(request: Dict[str, Any], _auth: Optional[bool] = get_optional_auth()):
     """Import up to 5000 games with progress tracking"""
     user_id = request.get('user_id')
     platform = request.get('platform')
@@ -4186,6 +4184,8 @@ async def import_more_games(request: Dict[str, Any]):
 
     if not user_id or not platform:
         raise HTTPException(status_code=400, detail="user_id and platform are required")
+
+    _enforce_rate_limit(f"import:{user_id}:{platform}:more", IMPORT_RATE_LIMIT)
 
     # Validate platform
     if platform not in ('lichess', 'chess.com'):
@@ -4227,8 +4227,6 @@ def _log_task_error(task: asyncio.Task, key: str) -> None:
                 "status": "error",
                 "message": f"Import failed: {str(e)}"
             })
-
-
 async def _perform_large_import(user_id: str, platform: str, limit: int, from_date: Optional[str] = None, to_date: Optional[str] = None):
     """Background task to import games in batches (memory-optimized with adaptive sizing)"""
     canonical_user_id = _canonical_user_id(user_id, platform)
@@ -4653,7 +4651,7 @@ async def get_import_status(user_id: str, platform: str):
 
 
 @app.post("/api/v1/cancel-import")
-async def cancel_import(request: Dict[str, Any]):
+async def cancel_import(request: Dict[str, Any], _auth: Optional[bool] = get_optional_auth()):
     """Cancel ongoing import"""
     user_id = request.get('user_id')
     platform = request.get('platform')
@@ -4705,35 +4703,6 @@ async def debug_db_state(user_id: str, platform: str):
 
     except Exception as e:
         return {"error": str(e)}
-
-@app.get("/proxy/chess-com/{username}/games/{year}/{month}")
-async def proxy_chess_com_games(username: str, year: int, month: int):
-    """Proxy endpoint for Chess.com API to avoid CORS issues."""
-    import httpx
-
-    try:
-        canonical_username = username.strip().lower()
-        month_str = f"{int(month):02d}"
-        url = f"https://api.chess.com/pub/player/{canonical_username}/games/{year}/{month_str}"
-        print(f"Proxying request to: {url}")
-
-        # Chess.com API requires User-Agent header
-        headers = {
-            'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
-        }
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=headers, timeout=30.0)
-
-            if response.status_code == 200:
-                return response.json()
-            else:
-                print(f"Chess.com API returned status {response.status_code}")
-                return {"games": [], "error": f"API returned status {response.status_code}"}
-
-    except Exception as e:
-        print(f"Error proxying Chess.com request: {e}")
-        return {"games": [], "error": str(e)}
-
 @app.get("/proxy/chess-com/{username}")
 async def proxy_chess_com_user(username: str):
     """Proxy endpoint for Chess.com user info to avoid CORS issues."""
@@ -4969,7 +4938,6 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:
     """Handle single game analysis by game_id - fetch PGN from database."""
     try:
@@ -5003,7 +4971,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 message="Database not available"
             )
 
-        db_client = supabase
+        db_client = supabase_service or supabase  # Use service role to bypass RLS
 
         # Try to find the game by provider_game_id first
         print(f"[SINGLE GAME ANALYSIS] Querying games_pgn by provider_game_id: {game_id}")
@@ -5460,7 +5428,6 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
         )
     except Exception as e:
         raise AnalysisError(f"Failed to start batch analysis: {str(e)}", "batch")
-
 def _validate_game_chronological_order(games: list, context: str) -> None:
     """
     CRITICAL VALIDATION: Ensure games are in correct chronological order (most recent first).
@@ -5599,7 +5566,6 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     print(f"[info] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
     print(f"[info] Skipped {analyzed_count} already-analyzed games")
     return unanalyzed_games
-
 async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: str,
                                 limit: int, depth: int, skill_level: int):
     """Perform batch analysis for a user's games using parallel processing."""
@@ -6248,7 +6214,6 @@ def _map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
         analysis_date=analysis.get('analysis_date', ''),
         processing_time_ms=analysis.get('processing_time_ms', 0)
     )
-
 def _map_move_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
     """Map move_analyses table data to response format."""
     moves_analysis = analysis.get('moves_analysis') or []
@@ -6388,7 +6353,6 @@ def _calculate_unified_stats(analyses: list, analysis_type: str) -> AnalysisStat
             brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
             material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
         )
-
 def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
     """Calculate statistics from unified_analyses view data."""
     if not analyses:

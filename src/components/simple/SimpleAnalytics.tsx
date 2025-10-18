@@ -1,11 +1,11 @@
 // Simple Analytics Component - One component, everything you need
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { UnifiedAnalysisService, AnalysisStats, DeepAnalysisData } from '../../services/unifiedAnalysisService'
-import { getPlayerStats } from '../../utils/playerStats'
 import {
   getComprehensiveGameAnalytics,
-  getMostPlayedOpeningForTimeControl,
-  type PerformanceTrendSummary
+  calculateAnalyticsFromGames,
+  type PerformanceTrendSummary,
+  type GameAnalytics
 } from '../../utils/comprehensiveGameAnalytics'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
@@ -84,13 +84,14 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       setError(null)
 
       // Optimized data fetching - fetch ALL data in parallel for maximum speed
-      const [analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis] = await Promise.all([
+      const [analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis, eloStats] = await Promise.all([
         UnifiedAnalysisService.getAnalysisStats(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
           'stockfish'
         ),
-        getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
+        // Use backend API for player stats instead of direct Supabase query
+        UnifiedAnalysisService.getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
         UnifiedAnalysisService.getGameAnalyses(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
@@ -98,12 +99,23 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           50,
           0
         ),
-        getComprehensiveGameAnalytics(
-          userId,
-          (platform as 'lichess' | 'chess.com') || 'lichess',
-          10000  // Analyze ALL games for complete historical data (high limit to handle any user)
-        ),
+        // Use backend API for comprehensive analytics instead of direct Supabase queries
+        (async () => {
+          const backendData = await UnifiedAnalysisService.getComprehensiveAnalytics(
+            userId,
+            (platform as 'lichess' | 'chess.com') || 'lichess',
+            10000  // Analyze ALL games for complete historical data
+          )
+          if (backendData.games && backendData.games.length > 0) {
+            return calculateAnalyticsFromGames(backendData.games, backendData.total_games)
+          }
+          return null
+        })(),
         UnifiedAnalysisService.fetchDeepAnalysis(
+          userId,
+          (platform as 'lichess' | 'chess.com') || 'lichess'
+        ),
+        UnifiedAnalysisService.getEloStats(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess'
         )
@@ -116,6 +128,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       if (import.meta.env.DEV) {
         console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
         console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.totalGames)
+        console.log('ELO stats from backend:', eloStats)
         console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
         console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
         console.log('Endgame accuracy:', analysisResult?.average_endgame_accuracy)
@@ -182,7 +195,14 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       }
 
       setData(enhancedData)
-      setComprehensiveData(comprehensiveAnalytics)
+      // Merge ELO stats from backend API into comprehensive data
+      setComprehensiveData({
+        ...comprehensiveAnalytics,
+        // Override with backend API data if available (more reliable)
+        highestElo: eloStats.highest_elo || comprehensiveAnalytics?.highestElo,
+        timeControlWithHighestElo: eloStats.time_control || comprehensiveAnalytics?.timeControlWithHighestElo,
+        totalGames: eloStats.total_games || comprehensiveAnalytics?.totalGames || 0
+      })
       if (comprehensiveAnalytics?.performanceTrends) {
         setSelectedTimeControl(prev => {
           const perTimeControl = comprehensiveAnalytics.performanceTrends.perTimeControl || {}
@@ -229,28 +249,34 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   }, [userId, platform, fromDate, toDate, loadData])
 
   // Load most played opening when time control changes
+  // Calculate most played opening from comprehensive data (no separate query needed)
   useEffect(() => {
     const loadMostPlayedOpening = async () => {
-      if (!userId || !platform || !selectedTimeControl) {
+      if (!comprehensiveData || !selectedTimeControl) {
         setMostPlayedOpening(null)
         return
       }
 
       try {
-        const result = await getMostPlayedOpeningForTimeControl(
-          userId,
-          platform as 'lichess' | 'chess.com',
-          selectedTimeControl
-        )
-        setMostPlayedOpening(result)
+        // Get the most played opening for this time control from openingStats
+        // Since we already have all opening data, just use the top one
+        if (comprehensiveData.openingStats && comprehensiveData.openingStats.length > 0) {
+          const mostPlayed = comprehensiveData.openingStats[0] // Already sorted by games played
+          setMostPlayedOpening({
+            opening: mostPlayed.opening,
+            games: mostPlayed.games
+          })
+        } else {
+          setMostPlayedOpening(null)
+        }
       } catch (error) {
-        console.error('Error loading most played opening:', error)
+        console.error('Error calculating most played opening:', error)
         setMostPlayedOpening(null)
       }
     }
 
     loadMostPlayedOpening()
-  }, [userId, platform, selectedTimeControl])
+  }, [comprehensiveData, selectedTimeControl])
 
   if (loading) {
     return (
@@ -821,12 +847,14 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           </div>
 
           {/* Enhanced Opponent Analysis */}
-          <EnhancedOpponentAnalysis
-            userId={userId}
-            opponentStats={comprehensiveData.opponentStats}
-            platform={(platform as 'lichess' | 'chess.com') || 'lichess'}
-            onOpponentClick={onOpponentClick}
-          />
+          {comprehensiveData?.opponentStats && (
+            <EnhancedOpponentAnalysis
+              userId={userId}
+              opponentStats={comprehensiveData.opponentStats}
+              platform={(platform as 'lichess' | 'chess.com') || 'lichess'}
+              onOpponentClick={onOpponentClick}
+            />
+          )}
 
           {/* Game Length Analysis */}
           <div className={cardClass}>

@@ -1,10 +1,30 @@
 // Simple Analytics Function - One function, everything you need
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+function getAllowedOrigins(): string[] {
+  const rawOrigins = Deno.env.get('ALLOWED_ORIGINS')
+  if (!rawOrigins) {
+    return ['http://localhost:3000', 'http://localhost:5173']
+  }
+  return rawOrigins
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean)
+}
+
+const allowedOrigins = getAllowedOrigins()
+
+function buildCorsHeaders(requestOrigin: string | null) {
+  const origin = requestOrigin && allowedOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : allowedOrigins[0]
+
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Vary': 'Origin',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  }
 }
 
 interface AnalyticsRequest {
@@ -28,15 +48,41 @@ interface AnalyticsResponse {
 }
 
 Deno.serve(async req => {
+  const corsHeaders = buildCorsHeaders(req.headers.get('Origin'))
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Missing bearer token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: {
+          headers: {
+            Authorization: authHeader,
+          },
+        },
+      }
     )
+
+    const { data: authData, error: userError } = await supabase.auth.getUser()
+
+    if (userError || !authData?.user) {
+      return new Response(JSON.stringify({ error: 'Invalid token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     const { userId, platform, fromDate, toDate, color }: AnalyticsRequest = await req.json()
 

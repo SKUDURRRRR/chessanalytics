@@ -278,7 +278,7 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
       {/* Toughest vs Favorite Opponents */}
       <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Toughest Opponents */}
-        {opponentStats.toughestOpponents.length > 0 && (
+        {opponentStats?.toughestOpponents && opponentStats.toughestOpponents.length > 0 && (
           <div>
             <h4 className="mb-4 flex items-center text-sm font-semibold text-rose-200">
               <span className="mr-2 text-xs uppercase tracking-wide text-rose-100">Tough</span>
@@ -286,8 +286,8 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
             </h4>
             <div className="space-y-3">
               {opponentStats.toughestOpponents.map((opponent, index) => (
-                <div 
-                  key={index} 
+                <div
+                  key={index}
                   className={`flex items-center justify-between rounded-2xl border border-rose-400/40 bg-rose-500/10 p-3 text-slate-100 ${onOpponentClick && opponent.opponentName ? 'cursor-pointer hover:border-rose-300/60 hover:bg-rose-500/20' : ''}`}
                   onClick={() => onOpponentClick && opponent.opponentName && onOpponentClick(opponent.opponentName)}
                 >
@@ -322,7 +322,7 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
         )}
 
         {/* Favorite Opponents */}
-        {opponentStats.favoriteOpponents.length > 0 && (
+        {opponentStats?.favoriteOpponents && opponentStats.favoriteOpponents.length > 0 && (
           <div>
             <h4 className="mb-4 flex items-center text-sm font-semibold text-emerald-200">
               <span className="mr-2 text-xs uppercase tracking-wide text-emerald-100">Familiar</span>
@@ -330,8 +330,8 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
             </h4>
             <div className="space-y-3">
               {opponentStats.favoriteOpponents.map((opponent, index) => (
-                <div 
-                  key={index} 
+                <div
+                  key={index}
                   className={`flex items-center justify-between rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-3 text-slate-100 ${onOpponentClick && opponent.opponentName ? 'cursor-pointer hover:border-emerald-300/60 hover:bg-emerald-500/20' : ''}`}
                   onClick={() => onOpponentClick && opponent.opponentName && onOpponentClick(opponent.opponentName)}
                 >

@@ -15,6 +15,7 @@ import { EloDataDebugger } from '../components/debug/EloDataDebugger'
 import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
 import { ComprehensiveAnalytics } from '../components/debug/ComprehensiveAnalytics'
 import { MobileTestingPanel } from '../components/debug/MobileTestingPanel'
+import { EloGapFiller } from '../components/debug/EloGapFiller'
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
 const ANALYSIS_TEST_LIMIT = 5
@@ -181,35 +182,17 @@ export default function SimpleAnalyticsPage() {
       if (!userId || !platform) return
 
       try {
-        // Check if supabase client is available
-        if (!supabase || typeof supabase.from !== 'function') {
-          console.error('Supabase client not initialized')
-          return
-        }
-
         const canonicalUserId = canonicalizeUserId(userId, platform)
         console.log('[checkGamesExist] Original userId:', JSON.stringify(userId))
         console.log('[checkGamesExist] Canonical userId:', JSON.stringify(canonicalUserId))
         console.log('[checkGamesExist] Platform:', platform)
 
-        // First, let's see what user_ids exist in the database for this platform
-        const { data: sampleGames } = await supabase
-          .from('games')
-          .select('user_id')
-          .eq('platform', platform)
-          .limit(5)
+        // Use backend API to get total games count (instead of direct Supabase query)
+        const eloStats = await UnifiedAnalysisService.getEloStats(canonicalUserId, platform as 'lichess' | 'chess.com')
+        const gameCount = eloStats.total_games || 0
 
-        console.log('[checkGamesExist] Sample user_ids in database:', sampleGames?.map(g => JSON.stringify(g.user_id)))
+        console.log('[checkGamesExist] Game count found:', gameCount)
 
-        const { count } = await supabase
-          .from('games')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', canonicalUserId)
-          .eq('platform', platform)
-
-        console.log('[checkGamesExist] Game count found:', count)
-
-        const gameCount = count || 0
         setGameCount(gameCount)
         setHasGames(gameCount > 0)
       } catch (error) {
@@ -777,6 +760,15 @@ export default function SimpleAnalyticsPage() {
                   >
                     {analyzing ? 'Analyzing…' : 'Analyze My Games'}
                   </button>
+
+                  {isDebugEnabled && (
+                    <button
+                      onClick={() => setShowDebug(!showDebug)}
+                      className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-500/10 px-4 py-2 font-medium text-amber-200 transition hover:border-amber-300/60 hover:bg-amber-500/20"
+                    >
+                      {showDebug ? '🔧 Hide Debug Tools' : '🔧 Show Debug Tools'}
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-400">
                   <span className={apiAvailable ? 'text-emerald-300' : 'text-rose-300'}>
@@ -966,6 +958,11 @@ export default function SimpleAnalyticsPage() {
               <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-inner shadow-black/50">
                 <h2 className="text-lg font-semibold text-white">Debug Information</h2>
                 <MobileTestingPanel />
+                <EloGapFiller
+                  userId={userId}
+                  platform={platform}
+                  onImportComplete={() => setRefreshKey(prev => prev + 1)}
+                />
                 <ComprehensiveAnalytics userId={userId} platform={platform} />
                 <EloStatsOptimizer userId={userId} platform={platform} />
                 <EloDataDebugger userId={userId} platform={platform} />
