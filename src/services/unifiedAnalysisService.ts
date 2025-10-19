@@ -591,6 +591,268 @@ export class UnifiedAnalysisService {
   }
 
   /**
+   * Get ELO statistics from backend API
+   * This includes highest rating, time control, and total games
+   */
+  static async getEloStats(
+    userId: string,
+    platform: Platform
+  ): Promise<{
+    highest_elo: number | null
+    time_control: string | null
+    game_id: string | null
+    played_at: string | null
+    total_games: number
+  }> {
+    if (!validateUserId(userId) || !validatePlatform(platform)) {
+      console.error('Invalid userId or platform for getEloStats')
+      return {
+        highest_elo: null,
+        time_control: null,
+        game_id: null,
+        played_at: null,
+        total_games: 0
+      }
+    }
+
+    try {
+      const response = await fetch(`${UNIFIED_API_URL}/api/v1/elo-stats/${userId}/${platform}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        console.error(`Failed to fetch ELO stats: ${response.status}`)
+        return {
+          highest_elo: null,
+          time_control: null,
+          game_id: null,
+          played_at: null,
+          total_games: 0
+        }
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Error fetching ELO stats:', error)
+      return {
+        highest_elo: null,
+        time_control: null,
+        game_id: null,
+        played_at: null,
+        total_games: 0
+      }
+    }
+  }
+
+  /**
+   * Get comprehensive game analytics (replaces comprehensiveGameAnalytics.ts)
+   */
+  static async getComprehensiveAnalytics(
+    userId: string,
+    platform: Platform,
+    limit: number = 500
+  ): Promise<{
+    total_games: number
+    games: any[]
+    sample_size: number
+  }> {
+    if (!validateUserId(userId) || !validatePlatform(platform)) {
+      console.error('Invalid userId or platform for getComprehensiveAnalytics')
+      return {
+        total_games: 0,
+        games: [],
+        sample_size: 0
+      }
+    }
+
+    try {
+      const response = await fetch(
+        `${UNIFIED_API_URL}/api/v1/comprehensive-analytics/${userId}/${platform}?limit=${limit}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      if (!response.ok) {
+        console.error(`Failed to fetch comprehensive analytics: ${response.status}`)
+        return {
+          total_games: 0,
+          games: [],
+          sample_size: 0
+        }
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Error fetching comprehensive analytics:', error)
+      return {
+        total_games: 0,
+        games: [],
+        sample_size: 0
+      }
+    }
+  }
+
+  /**
+   * Get ELO history for trend graph (replaces EloTrendGraph.tsx direct queries)
+   */
+  static async getEloHistory(
+    userId: string,
+    platform: Platform,
+    limit: number = 500
+  ): Promise<any[]> {
+    if (!validateUserId(userId) || !validatePlatform(platform)) {
+      console.error('Invalid userId or platform for getEloHistory')
+      return []
+    }
+
+    try {
+      const response = await fetch(
+        `${UNIFIED_API_URL}/api/v1/elo-history/${userId}/${platform}?limit=${limit}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      if (!response.ok) {
+        console.error(`Failed to fetch ELO history: ${response.status}`)
+        return []
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Error fetching ELO history:', error)
+      return []
+    }
+  }
+
+  /**
+   * Get player stats (replaces playerStats.ts direct queries)
+   */
+  static async getPlayerStats(
+    userId: string,
+    platform: Platform
+  ): Promise<{
+    highest_elo: number | null
+    time_control_with_highest_elo: string | null
+    game_id?: string
+    played_at?: string
+    opponent_rating?: number
+    color?: string
+    validation_issues: string[]
+  }> {
+    if (!validateUserId(userId) || !validatePlatform(platform)) {
+      console.error('Invalid userId or platform for getPlayerStats')
+      return {
+        highest_elo: null,
+        time_control_with_highest_elo: null,
+        validation_issues: []
+      }
+    }
+
+    try {
+      const response = await fetch(
+        `${UNIFIED_API_URL}/api/v1/player-stats/${userId}/${platform}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      if (!response.ok) {
+        console.error(`Failed to fetch player stats: ${response.status}`)
+        return {
+          highest_elo: null,
+          time_control_with_highest_elo: null,
+          validation_issues: []
+        }
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Error fetching player stats:', error)
+      return {
+        highest_elo: null,
+        time_control_with_highest_elo: null,
+        validation_issues: []
+      }
+    }
+  }
+
+  /**
+   * Get match history (replaces MatchHistory.tsx direct queries)
+   */
+  static async getMatchHistory(
+    userId: string,
+    platform: Platform,
+    page: number = 1,
+    limit: number = 20,
+    filters?: {
+      opening?: string
+      opponent?: string
+      color?: 'white' | 'black'
+    }
+  ): Promise<any[]> {
+    if (!validateUserId(userId) || !validatePlatform(platform)) {
+      console.error('Invalid userId or platform for getMatchHistory')
+      return []
+    }
+
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString()
+      })
+
+      if (filters?.opening) {
+        params.append('opening_filter', filters.opening)
+      }
+      if (filters?.opponent) {
+        params.append('opponent_filter', filters.opponent)
+      }
+      if (filters?.color) {
+        params.append('color_filter', filters.color)
+      }
+
+      const response = await fetch(
+        `${UNIFIED_API_URL}/api/v1/match-history/${userId}/${platform}?${params.toString()}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      if (!response.ok) {
+        console.error(`Failed to fetch match history: ${response.status}`)
+        return []
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Error fetching match history:', error)
+      return []
+    }
+  }
+
+  /**
    * Check if analysis API is available.
    * Replaces: AnalysisService.checkHealth
    */

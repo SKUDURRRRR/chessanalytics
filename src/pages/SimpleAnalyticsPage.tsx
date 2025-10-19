@@ -11,10 +11,8 @@ import { ProfileService } from '../services/profileService'
 import { supabase } from '../lib/supabase'
 import { clearUserCache } from '../utils/apiCache'
 // DatabaseDiagnosticsComponent is development-only, imported conditionally below
-import { EloDataDebugger } from '../components/debug/EloDataDebugger'
-import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
-import { ComprehensiveAnalytics } from '../components/debug/ComprehensiveAnalytics'
-import { MobileTestingPanel } from '../components/debug/MobileTestingPanel'
+// Debug components removed from production
+// import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
 const ANALYSIS_TEST_LIMIT = 5
@@ -92,9 +90,6 @@ export default function SimpleAnalyticsPage() {
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
-  // Debug panel only available when VITE_DEBUG is enabled
-  const isDebugEnabled = import.meta.env.VITE_DEBUG === 'true' || import.meta.env.DEV
-  const [showDebug, setShowDebug] = useState(false)
   const [analyzedGameIds, setAnalyzedGameIds] = useState<Set<string>>(new Set())
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [hasGames, setHasGames] = useState(false)
@@ -181,35 +176,17 @@ export default function SimpleAnalyticsPage() {
       if (!userId || !platform) return
 
       try {
-        // Check if supabase client is available
-        if (!supabase || typeof supabase.from !== 'function') {
-          console.error('Supabase client not initialized')
-          return
-        }
-
         const canonicalUserId = canonicalizeUserId(userId, platform)
         console.log('[checkGamesExist] Original userId:', JSON.stringify(userId))
         console.log('[checkGamesExist] Canonical userId:', JSON.stringify(canonicalUserId))
         console.log('[checkGamesExist] Platform:', platform)
 
-        // First, let's see what user_ids exist in the database for this platform
-        const { data: sampleGames } = await supabase
-          .from('games')
-          .select('user_id')
-          .eq('platform', platform)
-          .limit(5)
+        // Use backend API to get total games count (instead of direct Supabase query)
+        const eloStats = await UnifiedAnalysisService.getEloStats(canonicalUserId, platform as 'lichess' | 'chess.com')
+        const gameCount = eloStats.total_games || 0
 
-        console.log('[checkGamesExist] Sample user_ids in database:', sampleGames?.map(g => JSON.stringify(g.user_id)))
+        console.log('[checkGamesExist] Game count found:', gameCount)
 
-        const { count } = await supabase
-          .from('games')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', canonicalUserId)
-          .eq('platform', platform)
-
-        console.log('[checkGamesExist] Game count found:', count)
-
-        const gameCount = count || 0
         setGameCount(gameCount)
         setHasGames(gameCount > 0)
       } catch (error) {
@@ -960,18 +937,6 @@ export default function SimpleAnalyticsPage() {
             />
           </ErrorBoundary>
         )}
-
-            {/* Debug Panel - Only available in development or when VITE_DEBUG=true */}
-            {isDebugEnabled && showDebug && userId && (
-              <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-inner shadow-black/50">
-                <h2 className="text-lg font-semibold text-white">Debug Information</h2>
-                <MobileTestingPanel />
-                <ComprehensiveAnalytics userId={userId} platform={platform} />
-                <EloStatsOptimizer userId={userId} platform={platform} />
-                <EloDataDebugger userId={userId} platform={platform} />
-                {/* DatabaseDiagnosticsComponent removed for production builds */}
-              </div>
-            )}
 
         {importError && (
           <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">

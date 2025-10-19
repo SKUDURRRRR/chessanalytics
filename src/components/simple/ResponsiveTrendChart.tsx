@@ -45,7 +45,7 @@ const buildChartData = (data: TrendChartProps['data']): ChartEntry[] => {
   const chartData = data.map((point, index) => {
     const previousRating = index > 0 ? data[index - 1].rating : point.rating
     const change = point.rating - previousRating
-    const isLargeChange = index > 0 && Math.abs(change) > LARGE_CHANGE_THRESHOLD
+    const isLargeChange = index > 0 && Math.abs(change) > LARGE_CHANGE_THRESHOLD && !point.isManual
 
     return {
       index,
@@ -92,7 +92,7 @@ const buildChartData = (data: TrendChartProps['data']): ChartEntry[] => {
 export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel, trendDirection, data }: TrendChartProps) {
   const [isMobile, setIsMobile] = useState(false)
   const [chartHeight, setChartHeight] = useState(256)
-  
+
   const chartData = useMemo(() => buildChartData(data), [data])
 
   // Mobile detection and responsive height calculation
@@ -100,12 +100,12 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
     const checkMobile = () => {
       const mobile = window.innerWidth < 768
       setIsMobile(mobile)
-      
+
       // Calculate responsive height based on screen size
       if (mobile) {
         const screenHeight = window.innerHeight
         const screenWidth = window.innerWidth
-        
+
         // More aggressive height calculation for very small screens
         if (screenWidth < 480) {
           const availableHeight = screenHeight - 150 // Less padding for very small screens
@@ -223,9 +223,9 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
           </span>
         </div>
 
-        <div 
+        <div
           className={`relative ${isMobile ? 'select-none' : ''}`}
-          style={{ 
+          style={{
             height: `${chartHeight}px`,
             touchAction: isMobile ? 'manipulation' : 'auto',
             WebkitTouchCallout: isMobile ? 'none' : 'auto',
@@ -236,8 +236,8 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
           }}
         >
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart 
-              data={chartData} 
+            <ComposedChart
+              data={chartData}
               margin={isMobile ? { top: 10, right: 15, bottom: 0, left: 0 } : { top: 15, right: 25, bottom: 0, left: 0 }}
               style={{ userSelect: isMobile ? 'none' : 'auto' }}
             >
@@ -248,18 +248,18 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-              <XAxis 
-                dataKey="index" 
-                tickFormatter={(_, index) => `#${index + 1}`} 
-                stroke="rgba(226,232,240,0.5)" 
+              <XAxis
+                dataKey="index"
+                tickFormatter={(_, index) => `#${index + 1}`}
+                stroke="rgba(226,232,240,0.5)"
                 fontSize={isMobile ? 10 : 12}
                 tick={{ fontSize: isMobile ? 10 : 12 }}
                 axisLine={false}
                 tickLine={false}
               />
-              <YAxis 
-                tickFormatter={formatYAxis} 
-                stroke="rgba(226,232,240,0.5)" 
+              <YAxis
+                tickFormatter={formatYAxis}
+                stroke="rgba(226,232,240,0.5)"
                 fontSize={isMobile ? 10 : 12}
                 tick={{ fontSize: isMobile ? 10 : 12 }}
                 domain={[displayMin, displayMax]}
@@ -304,7 +304,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                 }}
                 position={isMobile ? { x: 0, y: 0 } : undefined}
                 allowEscapeViewBox={{ x: false, y: false }}
-                wrapperStyle={isMobile ? { 
+                wrapperStyle={isMobile ? {
                   position: 'absolute',
                   top: '10px',
                   left: '10px',

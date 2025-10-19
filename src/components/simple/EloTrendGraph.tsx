@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useMemo } from 'react'
-import { supabase } from '../../lib/supabase'
+import { UnifiedAnalysisService } from '../../services/unifiedAnalysisService'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { ResponsiveTrendChart } from './ResponsiveTrendChart'
 
@@ -64,21 +64,12 @@ export function EloTrendGraph({
         setLoading(true)
         setError(null)
 
-        // Fetch only recent games for ELO trend analysis (500 is sufficient)
-        // Reduced from 2000 to 500 for 4x faster loading
-        const { data: games, error: fetchError } = await supabase
-          .from('games')
-          .select('time_control, my_rating, played_at, id')
-          .eq('user_id', canonicalUserId)
-          .eq('platform', platform)
-          .not('my_rating', 'is', null)
-          .not('time_control', 'is', null)
-          .order('played_at', { ascending: false })
-          .limit(500)
-
-        if (fetchError) {
-          throw fetchError
-        }
+        // Fetch games from backend API instead of direct Supabase query
+        const games = await UnifiedAnalysisService.getEloHistory(
+          canonicalUserId,
+          platform,
+          500 // Fetch 500 recent games for ELO trend analysis
+        )
 
         if (!games || games.length === 0) {
           setAllGames([])
@@ -133,18 +124,6 @@ export function EloTrendGraph({
       })
       .sort((a, b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime())
       .slice(0, gameLimit === 0 ? undefined : gameLimit)  // 0 means show all
-
-    // Only log diagnostics in development mode
-    if (import.meta.env.DEV && filteredGames.length > 0) {
-      console.log('ELO Trend Filter Debug:', {
-        userId,
-        activeTimeControl,
-        gameLimit,
-        mostRecentPlayedAt: filteredGames[0].played_at,
-        secondRecentPlayedAt: filteredGames[1]?.played_at,
-        totalFilteredGames: filteredGames.length
-      })
-    }
 
     let processedData: EloDataPoint[] = filteredGames
       .filter(game => game.my_rating && game.my_rating > 0)

@@ -22,10 +22,10 @@ CREATE INDEX IF NOT EXISTS idx_games_pgn_user_platform ON games_pgn(user_id, pla
 ALTER TABLE games_pgn ENABLE ROW LEVEL SECURITY;
 
 -- Add is_public column for selective public access
-DO $$ 
+DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns 
+    SELECT 1 FROM information_schema.columns
     WHERE table_name = 'games_pgn' AND column_name = 'is_public'
   ) THEN
     ALTER TABLE games_pgn ADD COLUMN is_public BOOLEAN DEFAULT false;
@@ -39,6 +39,7 @@ DROP POLICY IF EXISTS "games_pgn_select_own_or_public" ON games_pgn;
 DROP POLICY IF EXISTS "games_pgn_insert_own" ON games_pgn;
 DROP POLICY IF EXISTS "games_pgn_update_own" ON games_pgn;
 DROP POLICY IF EXISTS "games_pgn_delete_own" ON games_pgn;
+DROP POLICY IF EXISTS "games_pgn_service_role_all" ON games_pgn;
 
 -- Users can see their own PGN data OR explicitly public PGN
 CREATE POLICY "games_pgn_select_own_or_public" ON games_pgn
