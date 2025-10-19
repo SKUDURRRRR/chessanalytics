@@ -15,7 +15,7 @@ import { EloDataDebugger } from '../components/debug/EloDataDebugger'
 import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
 import { ComprehensiveAnalytics } from '../components/debug/ComprehensiveAnalytics'
 import { MobileTestingPanel } from '../components/debug/MobileTestingPanel'
-import { EloGapFiller } from '../components/debug/EloGapFiller'
+// import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
 const ANALYSIS_TEST_LIMIT = 5
@@ -958,11 +958,11 @@ export default function SimpleAnalyticsPage() {
               <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-inner shadow-black/50">
                 <h2 className="text-lg font-semibold text-white">Debug Information</h2>
                 <MobileTestingPanel />
-                <EloGapFiller
+                {/* <EloGapFiller
                   userId={userId}
                   platform={platform}
                   onImportComplete={() => setRefreshKey(prev => prev + 1)}
-                />
+                /> */}
                 <ComprehensiveAnalytics userId={userId} platform={platform} />
                 <EloStatsOptimizer userId={userId} platform={platform} />
                 <EloDataDebugger userId={userId} platform={platform} />
