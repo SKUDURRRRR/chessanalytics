@@ -11,10 +11,7 @@ import { ProfileService } from '../services/profileService'
 import { supabase } from '../lib/supabase'
 import { clearUserCache } from '../utils/apiCache'
 // DatabaseDiagnosticsComponent is development-only, imported conditionally below
-import { EloDataDebugger } from '../components/debug/EloDataDebugger'
-import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
-import { ComprehensiveAnalytics } from '../components/debug/ComprehensiveAnalytics'
-import { MobileTestingPanel } from '../components/debug/MobileTestingPanel'
+// Debug components removed from production
 // import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
@@ -93,9 +90,6 @@ export default function SimpleAnalyticsPage() {
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
-  // Debug panel only available when VITE_DEBUG is enabled
-  const isDebugEnabled = import.meta.env.VITE_DEBUG === 'true' || import.meta.env.DEV
-  const [showDebug, setShowDebug] = useState(false)
   const [analyzedGameIds, setAnalyzedGameIds] = useState<Set<string>>(new Set())
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [hasGames, setHasGames] = useState(false)
@@ -760,15 +754,6 @@ export default function SimpleAnalyticsPage() {
                   >
                     {analyzing ? 'Analyzing…' : 'Analyze My Games'}
                   </button>
-
-                  {isDebugEnabled && (
-                    <button
-                      onClick={() => setShowDebug(!showDebug)}
-                      className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-500/10 px-4 py-2 font-medium text-amber-200 transition hover:border-amber-300/60 hover:bg-amber-500/20"
-                    >
-                      {showDebug ? '🔧 Hide Debug Tools' : '🔧 Show Debug Tools'}
-                    </button>
-                  )}
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-400">
                   <span className={apiAvailable ? 'text-emerald-300' : 'text-rose-300'}>
@@ -952,23 +937,6 @@ export default function SimpleAnalyticsPage() {
             />
           </ErrorBoundary>
         )}
-
-            {/* Debug Panel - Only available in development or when VITE_DEBUG=true */}
-            {isDebugEnabled && showDebug && userId && (
-              <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-inner shadow-black/50">
-                <h2 className="text-lg font-semibold text-white">Debug Information</h2>
-                <MobileTestingPanel />
-                {/* <EloGapFiller
-                  userId={userId}
-                  platform={platform}
-                  onImportComplete={() => setRefreshKey(prev => prev + 1)}
-                /> */}
-                <ComprehensiveAnalytics userId={userId} platform={platform} />
-                <EloStatsOptimizer userId={userId} platform={platform} />
-                <EloDataDebugger userId={userId} platform={platform} />
-                {/* DatabaseDiagnosticsComponent removed for production builds */}
-              </div>
-            )}
 
         {importError && (
           <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">
