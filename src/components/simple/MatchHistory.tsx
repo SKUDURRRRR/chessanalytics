@@ -1,9 +1,9 @@
 // Match History Component - Shows recent games in a table format
 import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { supabase } from '../../lib/supabase'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
 import { normalizeOpeningName } from '../../utils/openingUtils'
+import { getPlayerPerspectiveOpeningShort, getOpeningExplanation } from '../../utils/playerPerspectiveOpening'
 import { MatchHistoryProps, MatchHistoryGameSummary } from '../../types'
 import UnifiedAnalysisService from '../../services/unifiedAnalysisService'
 import { config } from '../../lib/config'
@@ -174,16 +174,18 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
     if (!onGameSelect) {
       return
     }
-    
+
     // Check if game is already analyzed
     const isAnalyzed = isGameAnalyzed(game)
-    
+
     if (isAnalyzed) {
       // If analyzed, navigate to analysis page
       onGameSelect(buildGameSummary(game))
     } else {
       // If not analyzed, trigger analysis directly
-      console.log('Game not analyzed, triggering analysis directly:', game.provider_game_id || game.id)
+      if (import.meta.env.DEV) {
+        console.log('Game not analyzed, triggering analysis directly:', game.provider_game_id || game.id)
+      }
       requestAnalysis(new Event('click'), game)
     }
   }
@@ -240,7 +242,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       if (!response.ok) {
         const text = await response.text()
         let errorMessage = `Analysis request failed: ${response.status}`
-        
+
         // Try to extract error message from response
         try {
           const errorData = JSON.parse(text)
@@ -255,7 +257,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
             errorMessage = text
           }
         }
-        
+
         throw new Error(errorMessage)
       }
 
@@ -273,7 +275,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           try {
             const analyses = await UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish')
             const accuracyMap = new Map<string, number>()
-            
+
             analyses.forEach(analysis => {
               const id = analysis?.game_id
               if (typeof id === 'string' && typeof analysis?.accuracy === 'number') {
@@ -284,7 +286,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                 accuracyMap.set(providerId, analysis.accuracy)
               }
             })
-            
+
             setGameAnalyses(prev => {
               const next = new Map(prev)
               accuracyMap.forEach((accuracy, id) => next.set(id, accuracy))
@@ -334,36 +336,31 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       }
 
       const canonicalUserId = canonicalizeUserId(userId, platform)
-      let query = supabase
-        .from('games')
-        .select('id, user_id, platform, result, color, opening, opening_family, opening_normalized, accuracy, opponent_rating, my_rating, time_control, played_at, created_at, provider_game_id, total_moves, opponent_name')
-        .eq('user_id', canonicalUserId)
-        .eq('platform', platform)
-
-      // Apply opening filter at database level using opening_normalized column
-      if (openingFilter) {
-        query = query.eq('opening_normalized', openingFilter.normalized)
-      }
-
-      // Apply opponent filter if provided
-      if (opponentFilter) {
-        query = query.eq('opponent_name', opponentFilter)
-      }
-
       const currentPage = reset ? 1 : page
-      const pageStart = (currentPage - 1) * gamesPerPage
-      const pageEnd = currentPage * gamesPerPage - 1
-      const { data, error: dbError } = await query
-        .order('played_at', { ascending: false })
-        .range(pageStart, pageEnd)
 
-      if (dbError) {
-        throw dbError
+      // Use backend API instead of direct Supabase query
+      const filters: { opening?: string; opponent?: string; color?: 'white' | 'black' } = {}
+
+      if (openingFilter) {
+        filters.opening = openingFilter.normalized
+        if (openingFilter.color) {
+          filters.color = openingFilter.color as 'white' | 'black'
+        }
       }
+
+      if (opponentFilter) {
+        filters.opponent = opponentFilter
+      }
+
+      const data = await UnifiedAnalysisService.getMatchHistory(
+        canonicalUserId,
+        platform,
+        currentPage,
+        gamesPerPage,
+        filters
+      )
 
       if (data) {
-        // Database filtering is now done via opening_normalized column
-        // No client-side filtering needed - much more efficient!
         const mappedData = data.map(mapGameRow)
         const isReset = reset || page === 1
         if (isReset) {
@@ -371,7 +368,8 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         } else {
           setGames(prev => [...prev, ...mappedData])
         }
-        setHasMore(mappedData.length === gamesPerPage)
+
+        setHasMore(data.length === gamesPerPage)
 
         if (isReset) {
           const providerIds = mappedData
@@ -460,6 +458,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       month: 'short',
       day: 'numeric',
       year: 'numeric',
+      timeZone: 'UTC',
     })
   }
 
@@ -468,6 +467,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
     return date.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: 'UTC',
     })
   }
 
@@ -511,7 +511,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
             <h2 className="text-xl font-semibold text-white">Match History</h2>
             {openingFilter && (
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-200">
-                <span>Filtered by {openingFilter.normalized}</span>
+                <span>
+                  Filtered by {openingFilter.normalized}
+                  {openingFilter.color && ` (as ${openingFilter.color === 'white' ? 'White' : 'Black'})`}
+                </span>
                 <button
                   onClick={onClearFilter}
                   className="text-sky-100 transition hover:text-white"
@@ -523,7 +526,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
             )}
           </div>
         </div>
-        
+
         <div className="py-4 text-xs uppercase tracking-wider text-slate-400">{games.length} games loaded</div>
 
         {analysisNotification && (
@@ -584,7 +587,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                     <div className="text-xs text-slate-400">vs {game.opponent_rating ?? '--'}</div>
                   </div>
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <span className="text-slate-400">Time Control:</span>
@@ -596,8 +599,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                   </div>
                   <div>
                     <span className="text-slate-400">Opening:</span>
-                    <div className="font-medium text-slate-200 truncate" title={getOpeningNameWithFallback(game.opening_family, game)}>
-                      {getOpeningNameWithFallback(game.opening_family, game)}
+                    <div
+                      className="font-medium text-slate-200 truncate"
+                      title={getOpeningExplanation(game.opening_family, game.color, game)}
+                    >
+                      {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                     </div>
                   </div>
                   <div>
@@ -730,8 +736,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                     <td className="py-3 px-2 text-sm text-slate-100">{game.opponent}</td>
                     <td className="py-3 px-2 text-sm text-slate-300">{getTimeControlCategory(game.time_control)}</td>
                     <td className="py-3 px-2 text-sm text-slate-300">
-                      <div className="max-w-32 truncate" title={getOpeningNameWithFallback(game.opening_family, game)}>
-                        {getOpeningNameWithFallback(game.opening_family, game)}
+                      <div
+                        className="max-w-32 truncate"
+                        title={getOpeningExplanation(game.opening_family, game.color, game)}
+                      >
+                        {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                       </div>
                     </td>
                     <td className="py-3 px-2 text-sm text-slate-300">{game.moves}</td>

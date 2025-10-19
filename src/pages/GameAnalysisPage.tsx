@@ -59,7 +59,7 @@ interface ProcessedMove {
   explanation: string
   fenBefore: string
   fenAfter: string
-  
+
   // Enhanced coaching fields
   coachingComment?: string
   whatWentRight?: string
@@ -206,16 +206,16 @@ const buildEnhancedFallbackExplanation = (
   isUserMove: boolean = true
 ) => {
   const loss = centipawnLoss != null ? Math.round(centipawnLoss) : null
-  
+
   // Check if this is an opening move that should get educational treatment
   const moveNumber = move?.moveNumber || 0
   const isOpeningMove = moveNumber <= 10 && (classification === 'best' || classification === 'excellent' || classification === 'good')
-  
+
   if (isOpeningMove) {
     // Simple book move comment for opening moves
     return 'Book move.'
   }
-  
+
   if (!isUserMove) {
     // Opponent move analysis
     switch (classification) {
@@ -227,7 +227,7 @@ const buildEnhancedFallbackExplanation = (
         // Check if this is an opening move or if evaluation shows minimal change
         const isOpponentOpeningMove = moveNumber <= 10
         const hasOpponentMinimalEvalChange = loss != null && loss < 20
-        
+
         if (isOpponentOpeningMove) {
           return 'Book move.'
         } else if (hasOpponentMinimalEvalChange) {
@@ -255,7 +255,7 @@ const buildEnhancedFallbackExplanation = (
         return '📝 Opponent move recorded. Analyze the position carefully and look for the best response to maintain or improve your position.'
     }
   }
-  
+
   // User move analysis with enhanced explanations
   switch (classification) {
     case 'brilliant':
@@ -266,7 +266,7 @@ const buildEnhancedFallbackExplanation = (
       // Check if this is an opening move or if evaluation shows minimal change
       const isOpeningMove = moveNumber <= 10
       const hasMinimalEvalChange = loss != null && loss < 20
-      
+
       if (isOpeningMove) {
         return 'Book move.'
       } else if (hasMinimalEvalChange) {
@@ -373,7 +373,7 @@ export default function GameAnalysisPage() {
         setBoardWidth(Math.min(availableWidth * 0.6, 600))
       }
     }
-    
+
     updateBoardWidth()
     window.addEventListener('resize', updateBoardWidth)
     return () => window.removeEventListener('resize', updateBoardWidth)
@@ -412,7 +412,7 @@ export default function GameAnalysisPage() {
     return value
   }
 
-  const requestGameAnalysis = async (providerGameId?: string) => {
+  const requestGameAnalysis = async (providerGameId?: string | React.MouseEvent) => {
     if (!decodedUserId || !decodedGameId || !platform) {
       return
     }
@@ -428,14 +428,16 @@ export default function GameAnalysisPage() {
 
     try {
       const { baseUrl } = config.getApi()
-      const gameIdToUse = providerGameId || gameRecord?.provider_game_id || decodedGameId
+      // If providerGameId is an event object (from onClick), ignore it
+      const providedGameId = (typeof providerGameId === 'string') ? providerGameId : undefined
+      const gameIdToUse = providedGameId || gameRecord?.provider_game_id || decodedGameId
       console.log('Requesting analysis for game:', {
         user_id: decodedUserId,
         platform,
         game_id: gameIdToUse,
         provider_game_id: gameIdToUse
       })
-      
+
       const response = await fetch(`${baseUrl}/api/v1/analyze?use_parallel=false`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -451,7 +453,7 @@ export default function GameAnalysisPage() {
       if (!response.ok) {
         const text = await response.text()
         let errorMessage = `Analysis request failed: ${response.status}`
-        
+
         // Try to extract error message from response
         try {
           const errorData = JSON.parse(text)
@@ -466,7 +468,7 @@ export default function GameAnalysisPage() {
             errorMessage = text
           }
         }
-        
+
         throw new Error(errorMessage)
       }
 
@@ -475,7 +477,7 @@ export default function GameAnalysisPage() {
 
       // Start polling for analysis completion
       const cleanup = pollForAnalysis()
-      
+
       // Store cleanup function for later
       return cleanup
     } catch (error) {
@@ -504,11 +506,11 @@ export default function GameAnalysisPage() {
       try {
         console.log(`Polling for analysis (attempt ${attempts + 1}/${maxAttempts})...`)
         const result = await fetchGameAnalysisData(decodedUserId, platform, decodedGameId)
-        
+
         if (isCancelled) {
           return
         }
-        
+
         if (result.analysis && result.analysis.moves_analysis && result.analysis.moves_analysis.length > 0) {
           // Analysis is complete
           console.log('Analysis found! Updating UI...')
@@ -536,7 +538,7 @@ export default function GameAnalysisPage() {
 
     // Start polling after a short delay to give the backend time to process
     setTimeout(poll, 5000)
-    
+
     // Return cleanup function
     return () => {
       isCancelled = true
@@ -607,12 +609,12 @@ export default function GameAnalysisPage() {
   // Helper function to extract opponent name from PGN if not available in database
   const extractOpponentNameFromPGN = (pgn: string, playerColor: 'white' | 'black'): string | null => {
     if (!pgn) return null
-    
+
     try {
       const lines = pgn.split('\n')
       let whitePlayer = ''
       let blackPlayer = ''
-      
+
       for (const line of lines) {
         if (line.startsWith('[White ')) {
           whitePlayer = line.split('"')[1] || ''
@@ -620,7 +622,7 @@ export default function GameAnalysisPage() {
           blackPlayer = line.split('"')[1] || ''
         }
       }
-      
+
       // Return the opponent's name based on player color
       return playerColor === 'white' ? blackPlayer : whitePlayer
     } catch (error) {
@@ -630,8 +632,8 @@ export default function GameAnalysisPage() {
   }
 
   // Get opponent name with fallback to PGN parsing
-  const opponentName = (gameRecord?.opponent_name?.trim()) || 
-    (pgn ? extractOpponentNameFromPGN(pgn, playerColor)?.trim() : null) || 
+  const opponentName = (gameRecord?.opponent_name?.trim()) ||
+    (pgn ? extractOpponentNameFromPGN(pgn, playerColor)?.trim() : null) ||
     'N/A'
 
   const processedData = useMemo(() => {
@@ -660,12 +662,12 @@ export default function GameAnalysisPage() {
 
       const bestMoveSan = convertUciToSan(fenBefore, move.best_move) || move.best_move || 'the best move'
       const classification = determineClassification(move)
-      
+
       // Use enhanced coaching comment if available and doesn't contain centipawn references,
       // otherwise use enhanced templates for consistent human-friendly explanations
       let explanation
-      if (move.coaching_comment && move.coaching_comment.trim() && 
-          !move.coaching_comment.toLowerCase().includes('centipawn') && 
+      if (move.coaching_comment && move.coaching_comment.trim() &&
+          !move.coaching_comment.toLowerCase().includes('centipawn') &&
           !move.coaching_comment.toLowerCase().includes('cp')) {
         // Use coaching comment if available, not empty, and doesn't contain centipawn references
         explanation = move.coaching_comment
@@ -719,7 +721,7 @@ export default function GameAnalysisPage() {
         explanation,
         fenBefore,
         fenAfter,
-        
+
         // Enhanced coaching fields
         coachingComment: move.coaching_comment,
         whatWentRight: move.what_went_right,
@@ -753,7 +755,7 @@ export default function GameAnalysisPage() {
     if (!processedData.moves || processedData.moves.length === 0) {
       return []
     }
-    
+
     if (currentIndex < 0 || currentIndex >= processedData.moves.length) {
       return []
     }
@@ -765,7 +767,7 @@ export default function GameAnalysisPage() {
 
     // Create a chess instance to replay moves up to the current position
     const chess = new Chess()
-    
+
     // Replay all moves up to (but not including) the current move
     for (let i = 0; i < currentIndex; i++) {
       const move = processedData.moves[i]
@@ -858,7 +860,7 @@ export default function GameAnalysisPage() {
       if (response.success) {
         console.log('✅ Re-analysis successful!')
         setReanalyzeSuccess(true)
-        
+
         // Wait a moment for the backend to save, then reload the data
         setTimeout(async () => {
           const result = await fetchGameAnalysisData(decodedUserId, platform, decodedGameId)
@@ -1154,8 +1156,8 @@ export default function GameAnalysisPage() {
                 disabled={isReanalyzing || !pgn}
                 className={`
                   rounded-full border px-4 py-1.5 font-medium transition
-                  ${isReanalyzing 
-                    ? 'border-purple-400/30 bg-purple-500/10 text-purple-300 cursor-wait' 
+                  ${isReanalyzing
+                    ? 'border-purple-400/30 bg-purple-500/10 text-purple-300 cursor-wait'
                     : reanalyzeSuccess
                     ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
                     : 'border-purple-400/30 bg-purple-500/10 text-purple-300 hover:border-purple-400/50 hover:bg-purple-500/20'

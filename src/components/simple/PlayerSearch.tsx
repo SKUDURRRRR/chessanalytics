@@ -1,7 +1,8 @@
 // Player Search Component - Search for players and open their profiles
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { ProfileService } from '../../services/profileService'
 import { AutoImportService, ImportProgress } from '../../services/autoImportService'
+import { getRecentPlayers, addRecentPlayer, clearRecentPlayers, RecentPlayer } from '../../utils/recentPlayers'
 
 interface PlayerSearchProps {
   onPlayerSelect: (userId: string, platform: 'lichess' | 'chess.com') => void
@@ -16,6 +17,13 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   const [isAutoImporting, setIsAutoImporting] = useState(false)
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null)
   const [showImportPrompt, setShowImportPrompt] = useState(false)
+  const [recentPlayers, setRecentPlayers] = useState<RecentPlayer[]>([])
+  const [showRecentPlayers, setShowRecentPlayers] = useState(false)
+
+  // Load recent players on mount
+  useEffect(() => {
+    setRecentPlayers(getRecentPlayers())
+  }, [])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -76,10 +84,21 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
     }
   }
 
-  const handlePlayerSelect = async (userId: string, platform: 'lichess' | 'chess.com') => {
+  const handlePlayerSelect = async (userId: string, platform: 'lichess' | 'chess.com', displayName?: string, rating?: number) => {
     try {
       // Create or get profile
-      await ProfileService.getOrCreateProfile(userId, platform)
+      const profile = await ProfileService.getOrCreateProfile(userId, platform)
+
+      // Add to recent players
+      addRecentPlayer({
+        userId,
+        platform,
+        displayName: displayName || profile.display_name || userId,
+        rating: rating || profile.current_rating
+      })
+
+      // Update recent players state
+      setRecentPlayers(getRecentPlayers())
 
       // Select the player
       onPlayerSelect(userId, platform)
@@ -165,11 +184,11 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   }
 
   const getPlatformIcon = (platform: 'lichess' | 'chess.com') => {
-    return platform === 'chess.com' ? '♟' : '♞'
+    return platform === 'chess.com' ? '♞' : '♟'
   }
 
   const getPlatformColor = (platform: 'lichess' | 'chess.com') => {
-    return platform === 'chess.com' ? 'text-blue-600' : 'text-green-600'
+    return platform === 'chess.com' ? 'text-green-600' : 'text-blue-600'
   }
 
   return (
@@ -197,7 +216,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               onClick={() => setSelectedPlatform('lichess')}
               className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 selectedPlatform === 'lichess'
-                  ? 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200 shadow-inner shadow-emerald-900/40'
+                  ? 'border border-sky-400/40 bg-sky-500/20 text-sky-200 shadow-inner shadow-sky-900/40'
                   : 'border border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10'
               }`}
               title="Lichess"
@@ -209,7 +228,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               onClick={() => setSelectedPlatform('chess.com')}
               className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 selectedPlatform === 'chess.com'
-                  ? 'border border-sky-400/40 bg-sky-500/20 text-sky-200 shadow-inner shadow-sky-900/40'
+                  ? 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200 shadow-inner shadow-emerald-900/40'
                   : 'border border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10'
               }`}
               title="Chess.com"
@@ -268,7 +287,6 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                 </div>
               ) : showImportPrompt ? (
                 <div className="space-y-4">
-                  <div className="text-4xl text-slate-600">Search</div>
                   <p className="text-lg font-medium text-slate-200">No players found in database</p>
                   <p className="mb-4 text-sm text-slate-400">
                     Player "{searchQuery}" is not in our database yet.
@@ -296,7 +314,6 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="text-4xl text-slate-600">Search</div>
                   <p>No players found matching "{searchQuery}"</p>
                   <p className="text-sm">Try a different search term</p>
                 </div>
@@ -307,12 +324,8 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               {searchResults.map(player => (
                 <div
                   key={`${player.user_id}-${player.platform}`}
-                  onClick={() => handlePlayerSelect(player.user_id, player.platform)}
-                  className={`cursor-pointer rounded-2xl border p-4 transition ${
-                    player.platform_mismatch
-                      ? 'border-amber-300/40 bg-amber-500/10 text-amber-100 hover:border-amber-300/60'
-                      : 'border-white/10 bg-white/5 text-slate-100 hover:border-white/30 hover:bg-white/10'
-                  }`}
+                  onClick={() => handlePlayerSelect(player.user_id, player.platform, player.display_name, player.current_rating)}
+                  className="cursor-pointer rounded-2xl border border-white/10 bg-white/5 p-4 text-slate-100 transition hover:border-white/30 hover:bg-white/10"
                 >
                   <div className="flex items-center space-x-3">
                     <div className={`text-2xl ${getPlatformColor(player.platform)}`}>
@@ -328,12 +341,6 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                       <div className="text-xs text-slate-400">
                         {player.total_games} games - {player.current_rating} rating
                       </div>
-                      {player.platform_mismatch && (
-                        <div className="mt-1 text-xs font-medium text-amber-200">
-                          Warning: Found on {player.original_platform}, but you selected{' '}
-                          {selectedPlatform}
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -408,18 +415,66 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       {/* Quick Access to Recent Players */}
       <div className="mt-6 border-t border-white/10 pt-6">
-        <h3 className="mb-3 text-lg font-semibold text-white">Quick Access</h3>
-        <p className="mb-3 text-sm text-slate-300">
-          Or search for a new player by typing their username above
-        </p>
-        <div className="text-center">
-          <button
-            onClick={() => setShowResults(!showResults)}
-            className="font-medium text-sky-300 hover:text-sky-200"
-          >
-            {showResults ? 'Hide' : 'Show'} Recent Players
-          </button>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold text-white">Quick Access</h3>
+          {recentPlayers.length > 0 && (
+            <button
+              onClick={() => {
+                if (confirm('Are you sure you want to clear all recent players?')) {
+                  clearRecentPlayers()
+                  setRecentPlayers([])
+                  setShowRecentPlayers(false)
+                }
+              }}
+              className="text-xs text-slate-400 hover:text-slate-200"
+            >
+              Clear All
+            </button>
+          )}
         </div>
+
+        {recentPlayers.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            No recent players yet. Search for a player to get started!
+          </p>
+        ) : (
+          <>
+            <div className="text-center mb-3">
+              <button
+                onClick={() => setShowRecentPlayers(!showRecentPlayers)}
+                className="font-medium text-sky-300 hover:text-sky-200 text-sm"
+              >
+                {showRecentPlayers ? 'Hide' : 'Show'} Recent Players ({recentPlayers.length})
+              </button>
+            </div>
+
+            {showRecentPlayers && (
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {recentPlayers.map(player => (
+                  <div
+                    key={`${player.userId}-${player.platform}`}
+                    onClick={() => handlePlayerSelect(player.userId, player.platform, player.displayName, player.rating)}
+                    className="cursor-pointer rounded-xl border border-white/10 bg-white/5 p-3 transition hover:border-white/30 hover:bg-white/10"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className={`text-xl ${getPlatformColor(player.platform)}`}>
+                        {getPlatformIcon(player.platform)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate font-medium text-white text-sm">
+                          {player.displayName || player.userId}
+                        </div>
+                        <div className="truncate text-xs text-slate-400">
+                          {player.platform}{player.rating ? ` • ${player.rating}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   )

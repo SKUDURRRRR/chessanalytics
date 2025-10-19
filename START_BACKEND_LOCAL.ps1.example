@@ -1,0 +1,57 @@
+# Start Backend with Supabase Credentials from .env file
+# Run this script to start your backend with the right environment variables
+#
+# IMPORTANT: Make sure you have a .env file with your credentials!
+# This is an EXAMPLE file - copy it to START_BACKEND_LOCAL.ps1 to use it
+
+# Load environment variables from .env file
+if (Test-Path .env) {
+    Get-Content .env | ForEach-Object {
+        if ($_ -match '^\s*([^#][^=]*)\s*=\s*(.*)$') {
+            $name = $matches[1].Trim()
+            $value = $matches[2].Trim()
+            # Remove quotes if present
+            $value = $value -replace '^["'']|["'']$', ''
+            [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+        }
+    }
+    Write-Host "Loaded environment variables from .env file" -ForegroundColor Green
+} else {
+    Write-Host "ERROR: .env file not found!" -ForegroundColor Red
+    Write-Host "Please create a .env file with your Supabase credentials." -ForegroundColor Yellow
+    Write-Host "Required variables:" -ForegroundColor Yellow
+    Write-Host "  SUPABASE_URL=https://your-project.supabase.co" -ForegroundColor Cyan
+    Write-Host "  SUPABASE_ANON_KEY=your_anon_key_here" -ForegroundColor Cyan
+    Write-Host "  SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here" -ForegroundColor Cyan
+    exit 1
+}
+
+# Check for VITE_* variables as fallbacks if non-VITE variables are missing
+if (-not $env:SUPABASE_URL -and $env:VITE_SUPABASE_URL) {
+    $env:SUPABASE_URL = $env:VITE_SUPABASE_URL
+    Write-Host "Using VITE_SUPABASE_URL as SUPABASE_URL" -ForegroundColor Yellow
+}
+if (-not $env:SUPABASE_ANON_KEY -and $env:VITE_SUPABASE_ANON_KEY) {
+    $env:SUPABASE_ANON_KEY = $env:VITE_SUPABASE_ANON_KEY
+    Write-Host "Using VITE_SUPABASE_ANON_KEY as SUPABASE_ANON_KEY" -ForegroundColor Yellow
+}
+if (-not $env:SUPABASE_SERVICE_ROLE_KEY -and $env:VITE_SUPABASE_SERVICE_ROLE_KEY) {
+    $env:SUPABASE_SERVICE_ROLE_KEY = $env:VITE_SUPABASE_SERVICE_ROLE_KEY
+    Write-Host "Using VITE_SUPABASE_SERVICE_ROLE_KEY as SUPABASE_SERVICE_ROLE_KEY" -ForegroundColor Yellow
+}
+
+# Verify required variables are set
+if (-not $env:SUPABASE_URL -or -not $env:SUPABASE_ANON_KEY -or -not $env:SUPABASE_SERVICE_ROLE_KEY) {
+    Write-Host "ERROR: Missing required environment variables!" -ForegroundColor Red
+    Write-Host "Please ensure your .env file contains:" -ForegroundColor Yellow
+    Write-Host "  - SUPABASE_URL (or VITE_SUPABASE_URL)" -ForegroundColor Yellow
+    Write-Host "  - SUPABASE_ANON_KEY (or VITE_SUPABASE_ANON_KEY)" -ForegroundColor Yellow
+    Write-Host "  - SUPABASE_SERVICE_ROLE_KEY (or VITE_SUPABASE_SERVICE_ROLE_KEY)" -ForegroundColor Yellow
+    exit 1
+}
+
+Write-Host "SUPABASE_URL: $env:SUPABASE_URL" -ForegroundColor Cyan
+Write-Host "Starting backend..." -ForegroundColor Yellow
+
+# Start backend
+python python/main.py

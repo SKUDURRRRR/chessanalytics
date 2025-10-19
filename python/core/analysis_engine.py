@@ -151,16 +151,22 @@ class AnalysisConfig:
     use_endgame_tablebase: bool = True
     parallel_analysis: bool = False
     max_concurrent: int = 4
-    
-    
+
+
     @classmethod
     def for_deep_analysis(cls) -> 'AnalysisConfig':
         """Configuration optimized for deep analysis (thorough, high accuracy)."""
+        # Use Railway Hobby settings from environment or defaults
+        # This ensures consistency with Railway hobby tier performance settings
+        import os
+        depth = int(os.getenv("STOCKFISH_DEPTH", "14"))
+        time_limit = float(os.getenv("STOCKFISH_TIME_LIMIT", "0.8"))
+
         return cls(
             analysis_type=AnalysisType.STOCKFISH,
-            depth=18,  # Increased depth for deep analysis
+            depth=depth,  # Use Railway Hobby optimized depth
             skill_level=20,  # Maximum skill level
-            time_limit=3.0,  # 3 seconds per position for thorough analysis
+            time_limit=time_limit,  # Use Railway Hobby optimized time limit
             use_opening_book=True,
             use_endgame_tablebase=True,
             parallel_analysis=False,
@@ -193,7 +199,7 @@ class MoveAnalysis:
     ply_index: int = 0
     fullmove_number: int = 0
     accuracy_score: float = 0.0
-    
+
     # Enhanced coaching fields
     coaching_comment: str = ""
     what_went_right: str = ""
@@ -216,7 +222,7 @@ class GameAnalysis:
     platform: str
     total_moves: int
     moves_analysis: List[MoveAnalysis]
-    
+
     # Basic metrics
     accuracy: float
     opponent_accuracy: float
@@ -227,12 +233,12 @@ class GameAnalysis:
     best_moves: int
     good_moves: int
     acceptable_moves: int
-    
+
     # Phase analysis
     opening_accuracy: float
     middle_game_accuracy: float
     endgame_accuracy: float
-    
+
     # Advanced metrics
     average_centipawn_loss: float
     worst_blunder_centipawn_loss: float
@@ -240,7 +246,7 @@ class GameAnalysis:
     opponent_average_centipawn_loss: float
     opponent_worst_blunder_centipawn_loss: float
     opponent_time_management_score: float
-    
+
     # Personality scores
     tactical_score: float
     positional_score: float
@@ -248,12 +254,12 @@ class GameAnalysis:
     patient_score: float
     novelty_score: float
     staleness_score: float
-    
+
     # Patterns and themes
     tactical_patterns: List[Dict]
     positional_patterns: List[Dict]
     strategic_themes: List[Dict]
-    
+
     # Metadata
     analysis_type: str
     analysis_date: datetime
@@ -262,7 +268,7 @@ class GameAnalysis:
 
 class ChessAnalysisEngine:
     """Unified chess analysis engine supporting multiple analysis types."""
-    
+
     def __init__(self, config: Optional[AnalysisConfig] = None, stockfish_path: Optional[str] = None):
         """Initialize the analysis engine."""
         self.config = config or AnalysisConfig()
@@ -273,13 +279,13 @@ class ChessAnalysisEngine:
         self._basic_move_cache: Dict[str, List[Dict[str, Any]]] = {}
         self._basic_probe_cache: Dict[str, Dict[str, Any]] = {}
         self.coaching_generator = ChessCoachingGenerator()
-        
+
     def _find_stockfish_path(self, custom_path: Optional[str]) -> Optional[str]:
         """Find the best available Stockfish executable."""
         if custom_path and os.path.exists(custom_path):
             print(f"[ENGINE] Using custom Stockfish path: {custom_path}")
             return custom_path
-        
+
         # Check environment variable
         env_path = os.getenv("STOCKFISH_PATH")
         if env_path:
@@ -289,11 +295,11 @@ class ChessAnalysisEngine:
             elif env_path in ["stockfish", "stockfish.exe"] and self._check_command_exists(env_path):
                 print(f"[ENGINE] Using Stockfish from PATH via env: {env_path}")
                 return env_path
-        
+
         # Determine OS-specific paths
         import platform
         is_windows = platform.system() == "Windows"
-        
+
         if is_windows:
             # Windows paths for local development
             possible_paths = [
@@ -314,7 +320,7 @@ class ChessAnalysisEngine:
                 "/usr/local/bin/stockfish",  # Custom installation location
                 "stockfish"                   # Try PATH as fallback
             ]
-        
+
         print(f"[ENGINE] Checking Stockfish paths: {possible_paths}")
         for path in possible_paths:
             if os.path.exists(path):
@@ -323,10 +329,10 @@ class ChessAnalysisEngine:
             elif path in ["stockfish", "stockfish.exe"] and self._check_command_exists(path):
                 print(f"[ENGINE] Found Stockfish in PATH: {path}")
                 return path
-        
+
         print(f"[ENGINE] No Stockfish executable found")
         return None
-    
+
     def _check_command_exists(self, command: str) -> bool:
         """Check if a command exists in the system PATH."""
         try:
@@ -335,7 +341,7 @@ class ChessAnalysisEngine:
             return True
         except:
             return False
-    
+
     def _load_opening_database(self) -> Dict:
         """Load opening database for heuristic analysis."""
         return {
@@ -357,7 +363,7 @@ class ChessAnalysisEngine:
                 'Nf6': 'English Opening'
             }
         }
-    
+
 
     def _basic_cache_key(self, board: chess.Board) -> str:
         '''Create a normalized cache key for basic evaluation.'''
@@ -696,71 +702,71 @@ class ChessAnalysisEngine:
         """Analyze a chess position."""
         analysis_type = analysis_type or self.config.analysis_type
         start_time = datetime.now()
-        
+
         try:
             return await self._analyze_position_stockfish(fen, analysis_type)
         finally:
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
             print(f"Position analysis completed in {processing_time:.1f}ms")
-    
-    async def analyze_move(self, board: chess.Board, move: chess.Move, 
+
+    async def analyze_move(self, board: chess.Board, move: chess.Move,
                           analysis_type: Optional[AnalysisType] = None) -> MoveAnalysis:
         """Analyze a specific move in a position."""
         analysis_type = analysis_type or self.config.analysis_type
         start_time = datetime.now()
-        
+
         try:
             return await self._analyze_move_stockfish(board, move, analysis_type)
         finally:
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
             print(f"Move analysis completed in {processing_time:.1f}ms")
-    
-    async def analyze_game(self, pgn: str, user_id: str, platform: str, 
-                          analysis_type: Optional[AnalysisType] = None, 
+
+    async def analyze_game(self, pgn: str, user_id: str, platform: str,
+                          analysis_type: Optional[AnalysisType] = None,
                           game_id: Optional[str] = None) -> Optional[GameAnalysis]:
         """Analyze a complete game from PGN."""
         analysis_type = analysis_type or self.config.analysis_type
         start_time = datetime.now()
-        
+
         try:
             # Parse PGN
             print(f"[GAME ANALYSIS] Parsing PGN for game_id: {game_id}, user: {user_id}, platform: {platform}")
             print(f"[GAME ANALYSIS] PGN preview (first 200 chars): {pgn[:200] if pgn else 'None'}...")
             pgn_io = io.StringIO(pgn)
             game = chess.pgn.read_game(pgn_io)
-            
+
             if not game:
                 print(f"[GAME ANALYSIS] ❌ Failed to parse PGN - chess.pgn.read_game() returned None")
                 return None
-            
+
             # Use provided game_id or extract from PGN headers
             if not game_id:
                 headers = game.headers
                 site = headers.get('Site', '')
                 # Extract game ID from Site URL (e.g., "https://www.chess.com/game/live/123456" -> "123456")
                 # or from Link header if Site is not a full URL
-                
+
                 # List of parts to exclude (domain names, path segments)
                 excluded_parts = {'chess.com', 'lichess.org', 'www.chess.com', 'www.lichess.org', 'game', 'live', ''}
-                
+
                 if site:
                     parts = site.split('/')
                     # Get the last non-empty part that's not a domain/path segment
                     # Use case-insensitive comparison
                     game_id = next((part for part in reversed(parts) if part.lower() not in excluded_parts), None)
-                
+
                 # If we couldn't extract from Site, try Link header
                 if not game_id:
                     link = headers.get('Link', '')
                     if link:
                         parts = link.split('/')
                         game_id = next((part for part in reversed(parts) if part.lower() not in excluded_parts), None)
-                
+
                 # Last resort: generate a unique game ID
                 if not game_id:
                     game_id = f"game_{int(datetime.now().timestamp() * 1000)}"
                     print(f"[GAME ANALYSIS] ⚠️  Warning: Could not extract game_id from PGN headers. Site: '{site}'. Generated ID: {game_id}")
-            
+
             # Analyze each move
             moves_analysis = []
             board = game.board()
@@ -769,7 +775,7 @@ class ChessAnalysisEngine:
             if headers:
                 white_player = headers.get('White', '').strip()
                 black_player = headers.get('Black', '').strip()
-                
+
                 # More robust user color detection
                 if white_player and black_player:
                     # Try exact match first
@@ -781,7 +787,7 @@ class ChessAnalysisEngine:
                         # Try partial match (in case of usernames with extra characters)
                         white_match = user_id.lower() in white_player.lower() or white_player.lower() in user_id.lower()
                         black_match = user_id.lower() in black_player.lower() or black_player.lower() in user_id.lower()
-                        
+
                         if white_match and not black_match:
                             user_is_white = True
                         elif black_match and not white_match:
@@ -802,11 +808,11 @@ class ChessAnalysisEngine:
                     print(f"⚠️  WARNING: Illegal move detected during PGN parsing: {move.uci()} at ply {ply_index} in position {board.fen()}")
                     print(f"   This indicates a corrupted or invalid PGN. Skipping this move.")
                     continue
-                
+
                 player_color = 'white' if board.turn == chess.WHITE else 'black'
                 is_user_move = (board.turn == (chess.WHITE if user_is_white else chess.BLACK))
                 fullmove_number = board.fullmove_number
-                
+
                 move_data.append({
                     'board': board.copy(),
                     'move': move,
@@ -816,13 +822,13 @@ class ChessAnalysisEngine:
                     'fullmove_number': fullmove_number
                 })
                 board.push(move)
-            
+
             print(f"[GAME ANALYSIS] Successfully parsed {len(move_data)} moves from PGN")
-            
+
             if not move_data:
                 print(f"[GAME ANALYSIS] ❌ No valid moves found in PGN")
                 return None
-            
+
             # Analyze moves in parallel for better performance
             async def analyze_single_move(data):
                 move_analysis = await self.analyze_move(data['board'], data['move'], analysis_type)
@@ -831,39 +837,39 @@ class ChessAnalysisEngine:
                 move_analysis.ply_index = data['ply_index']
                 move_analysis.fullmove_number = data['fullmove_number']
                 return move_analysis
-            
+
             # Process moves in parallel with Railway Hobby tier optimization
             # Railway Hobby tier has 8 GB RAM, so we can enable parallel move analysis
             # for significant performance improvements
             max_concurrent = 4  # 4 concurrent moves per game for Railway Hobby tier
             semaphore = asyncio.Semaphore(max_concurrent)
-            
+
             async def analyze_with_semaphore(data):
                 async with semaphore:
                     return await analyze_single_move(data)
-            
+
             # Analyze all moves in parallel
             tasks = [analyze_with_semaphore(data) for data in move_data]
             moves_analysis = await asyncio.gather(*tasks)
-            
+
             if not moves_analysis:
                 return None
-            
+
             # Calculate game-level metrics
             game_analysis = self._calculate_game_metrics(
                 game_id, user_id, platform, moves_analysis, analysis_type
             )
-            
+
             # Calculate processing time
             processing_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
             game_analysis.processing_time_ms = processing_time_ms
-            
+
             return game_analysis
-            
+
         except Exception as e:
             print(f"Error analyzing game: {e}")
             return None
-    
+
     async def _analyze_position_basic(self, fen: str) -> Dict:
         """Basic position analysis using heuristics."""
         board = chess.Board(fen)
@@ -891,16 +897,16 @@ class ChessAnalysisEngine:
             }
         }
 
-    
+
     async def _analyze_position_stockfish(self, fen: str, analysis_type: AnalysisType) -> Dict:
         """Stockfish position analysis."""
         if not self.stockfish_path:
             raise ValueError("Stockfish executable not found")
-        
+
         depth = self.config.depth
         if analysis_type == AnalysisType.DEEP:
             depth = max(depth, 20)
-        
+
         try:
             with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
                 # Configure engine for fast analysis (keep original speed)
@@ -909,12 +915,12 @@ class ChessAnalysisEngine:
                     'UCI_LimitStrength': True,  # Keep original settings
                     'UCI_Elo': 2000  # Keep original settings
                 })
-                
+
                 # Use configured time limit from environment variables
                 info = engine.analyse(chess.Board(fen), chess.engine.Limit(time=self.config.time_limit))
                 score = info.get("score", chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
                 best_move = info.get("pv", [None])[0]
-                
+
                 # Convert score to dict
                 if score.pov(chess.WHITE).is_mate():
                     evaluation = {
@@ -926,7 +932,7 @@ class ChessAnalysisEngine:
                         'value': score.pov(chess.WHITE).score(),
                         'type': 'cp'
                     }
-                
+
                 return {
                     'evaluation': evaluation,
                     'best_move': best_move.uci() if best_move else None,
@@ -934,12 +940,12 @@ class ChessAnalysisEngine:
                     'analysis_type': analysis_type.value,
                     'depth': depth
                 }
-                
+
         except Exception as e:
             print(f"Stockfish analysis failed: {e}")
             # Fallback to heuristic analysis
             return await self._analyze_position_basic(fen)
-    
+
     async def _analyze_move_basic(self, board: chess.Board, move: chess.Move) -> MoveAnalysis:
         """Basic move analysis using improved heuristics."""
         # Validate move is legal before proceeding
@@ -965,7 +971,7 @@ class ChessAnalysisEngine:
                 heuristic_details={},
                 accuracy_score=0.0
             )
-        
+
         move_san = board.san(move)
         color_to_move = board.turn
         before_score, before_features = self._evaluate_board_basic(board)
@@ -1091,7 +1097,7 @@ class ChessAnalysisEngine:
         )
 
         explanation_parts = []
-        
+
         # Enhanced explanations for brilliant moves
         if is_brilliant:
             if centipawn_loss > 0:
@@ -1110,18 +1116,18 @@ class ChessAnalysisEngine:
                 explanation_parts.append("resulting in a massive positional advantage")
             elif delta > 0:
                 explanation_parts.append("creating a significant advantage")
-            
+
             # Always provide a brilliant explanation, even if no specific criteria are met
             if not explanation_parts:
                 if gives_check:
                     explanation_parts.append("Brilliant tactical resource that delivers a powerful check")
                 else:
                     explanation_parts.append("Brilliant tactical resource that creates devastating threats")
-            
+
             # Add context about why it's brilliant
             if len(explanation_parts) == 1 and "Brilliant" in explanation_parts[0]:
                 explanation_parts.append("and demonstrates exceptional chess understanding")
-        
+
         # Enhanced explanations for blunders
         elif is_blunder:
             if centipawn_loss > 200:
@@ -1141,7 +1147,7 @@ class ChessAnalysisEngine:
                 explanation_parts.append("causing a devastating evaluation swing")
             if not explanation_parts:
                 explanation_parts.append("Serious tactical error with major consequences")
-        
+
         # Standard explanations for other moves
         else:
             if centipawn_loss > 0 and not is_best:
@@ -1164,7 +1170,7 @@ class ChessAnalysisEngine:
                     explanation_parts.append("Improves your position.")
                 else:
                     explanation_parts.append("Keeps the position balanced.")
-        
+
         explanation = ' '.join(explanation_parts)
 
         heuristic_details = {
@@ -1235,7 +1241,7 @@ class ChessAnalysisEngine:
             heuristic_details=heuristic_details,
             accuracy_score=accuracy_score
         )
-        
+
         # Enhance with coaching comments
         # Move number was already calculated before the move was made
         # For now, assume all moves are user moves - this will be determined by the frontend
@@ -1272,41 +1278,41 @@ class ChessAnalysisEngine:
         """Determine the current game phase based on position and move number."""
         # Count pieces on the board
         piece_count = len(board.piece_map())
-        
+
         # Opening: first 15 moves and many pieces on board
         if move_number <= 15 and piece_count >= 20:
             return GamePhase.OPENING
-        
+
         # Endgame: few pieces remaining
         if piece_count <= 12:
             return GamePhase.ENDGAME
-        
+
         # Middlegame: everything else
         return GamePhase.MIDDLEGAME
 
-    def _enhance_move_analysis_with_coaching(self, move_analysis: MoveAnalysis, board: chess.Board, 
-                                           move: chess.Move, move_number: int, 
+    def _enhance_move_analysis_with_coaching(self, move_analysis: MoveAnalysis, board: chess.Board,
+                                           move: chess.Move, move_number: int,
                                            player_skill_level: str = "intermediate",
                                            is_user_move: bool = True) -> MoveAnalysis:
         """Enhance move analysis with comprehensive coaching comments."""
         try:
             # Determine game phase
             game_phase = self._determine_game_phase(board, move_number)
-            
+
             # Prepare enhanced move analysis data with board positions
             enhanced_move_data = move_analysis.__dict__.copy()
             enhanced_move_data['board_before'] = board.copy()
             enhanced_move_data['board_after'] = board.copy()
             enhanced_move_data['move'] = move
             enhanced_move_data['move_san'] = move_analysis.move_san
-            
+
             # Safely access heuristic_details with null checks
             heuristic_details = move_analysis.heuristic_details or {}
             enhanced_move_data['evaluation_before'] = heuristic_details.get('before_score', 0)
             enhanced_move_data['evaluation_after'] = heuristic_details.get('after_score', 0)
             enhanced_move_data['game_phase'] = game_phase.value
             enhanced_move_data['fullmove_number'] = move_number
-            
+
             # Generate coaching comment
             coaching_comment = self.coaching_generator.generate_coaching_comment(
                 enhanced_move_data,
@@ -1316,7 +1322,7 @@ class ChessAnalysisEngine:
                 player_skill_level,
                 is_user_move
             )
-            
+
             # Update move analysis with coaching data
             move_analysis.coaching_comment = coaching_comment.main_comment
             move_analysis.what_went_right = coaching_comment.what_went_right or ""
@@ -1330,9 +1336,9 @@ class ChessAnalysisEngine:
             move_analysis.encouragement_level = coaching_comment.encouragement_level
             move_analysis.move_quality = coaching_comment.move_quality.value
             move_analysis.game_phase = coaching_comment.game_phase.value
-            
+
             return move_analysis
-            
+
         except Exception as e:
             print(f"Error generating coaching comment: {e}")
             print(f"Move analysis details: move={move_analysis.move_san}, heuristic_details={type(move_analysis.heuristic_details)}")
@@ -1342,20 +1348,20 @@ class ChessAnalysisEngine:
             # Return original analysis if coaching fails
             return move_analysis
 
-    async def _analyze_move_stockfish(self, board: chess.Board, move: chess.Move, 
+    async def _analyze_move_stockfish(self, board: chess.Board, move: chess.Move,
                                     analysis_type: AnalysisType) -> MoveAnalysis:
         """Stockfish move analysis - runs in thread pool for true parallelism."""
         if not self.stockfish_path:
             raise ValueError("Stockfish executable not found")
-        
+
         depth = self.config.depth
         if analysis_type == AnalysisType.DEEP:
             depth = max(depth, 20)
-        
+
         # Run Stockfish analysis in thread pool to avoid blocking
         import concurrent.futures
         loop = asyncio.get_event_loop()
-        
+
         def run_stockfish_analysis():
             try:
                 with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
@@ -1368,10 +1374,10 @@ class ChessAnalysisEngine:
                         'Threads': 1,  # Deterministic analysis
                         'Hash': 96  # Better balance for concurrency
                     })
-                    
+
                     # Use configured time limit from environment variables
                     time_limit = self.config.time_limit
-                    
+
                     # Get evaluation before move
                     info_before = engine.analyse(board, chess.engine.Limit(time=time_limit))
                     eval_before = info_before.get("score", chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
@@ -1390,7 +1396,7 @@ class ChessAnalysisEngine:
                             return result
                         finally:
                             loop.close()
-                    
+
                     # Get SAN notation before making the move
                     move_san = board.san(move)
 
@@ -1408,7 +1414,7 @@ class ChessAnalysisEngine:
                     best_cp = best_eval.score(mate_score=mate_score)
                     actual_cp = actual_eval.score(mate_score=mate_score)
                     centipawn_loss = max(0, best_cp - actual_cp)
-                    
+
                     # Chess.com EXACT standards (Expected Points Model)
                     # Reference: https://support.chess.com/en/articles/8572705
                     # Based on expected points (win probability) loss:
@@ -1438,34 +1444,34 @@ class ChessAnalysisEngine:
                     # 4. Player must not already be completely winning (not just converting)
                     # 5. Move must be difficult to find (tactical brilliance)
                     is_brilliant = False
-                    
+
                     if is_best and centipawn_loss <= 5:  # Must be near-perfect move (0-5cp loss)
                         # Define optimal_cp (the evaluation if best move was played)
                         optimal_cp = best_cp
-                        
+
                         # Check for forced mate found when there wasn't one before
                         forcing_mate_trigger = (
-                            eval_after.pov(player_color).is_mate() and 
+                            eval_after.pov(player_color).is_mate() and
                             not eval_before.pov(player_color).is_mate() and
                             abs(eval_after.pov(player_color).mate()) <= 3  # Very short forced mate (within 3 moves)
                         )
-                        
+
                         # Check for spectacular material sacrifice
                         piece_values = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}
                         sacrifice_trigger = False
-                        
+
                         # Look at the position BEFORE the move was made (need to undo it temporarily)
                         board.pop()  # Undo move to check original position
-                        
+
                         # Check for sacrifice (giving up material for tactical gain)
                         if board.is_capture(move):
                             captured_piece = board.piece_at(move.to_square)
                             moving_piece = board.piece_at(move.from_square)
-                            
+
                             if captured_piece and moving_piece:
                                 captured_value = piece_values.get(captured_piece.symbol().upper(), 0)
                                 moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
-                                
+
                                 # Calculate net material sacrificed
                                 # Positive = sacrificing material (e.g., Queen for Rook = 9-5 = 4)
                                 # Negative = winning material (e.g., Rook for Pawn = 5-1 = 4... wait, that's also positive)
@@ -1474,46 +1480,46 @@ class ChessAnalysisEngine:
                                 # If we give up Rook (5) for Pawn (1): 5-1 = 4 (sacrificed 4 points)
                                 # If we capture Queen (9) with Knight (3): 3-9 = -6 (won 6 points)
                                 net_material_sacrificed = moving_value - captured_value
-                                
+
                                 # STRICTER sacrifice criteria (aligned with Chess.com):
                                 # 1. Must sacrifice at least 3 points net (e.g., Queen for Knight, Rook for Bishop)
                                 # 2. Position must be WINNING after sacrifice (not just equal)
                                 # 3. Player must not already be completely winning (not just converting)
                                 # 4. Move must be engine's top choice
                                 significant_sacrifice = net_material_sacrificed >= 3  # Stricter: 3+ points, not 2+
-                                
+
                                 # Position must be WINNING after sacrifice (not just equal)
                                 # This prevents labeling equal trades as brilliant
                                 position_winning_after = actual_cp >= 100  # Winning by at least 1.0 pawns
-                                
+
                                 # Player must not already be completely winning (not just converting)
                                 # This prevents labeling obvious winning moves as brilliant
                                 not_already_completely_winning = optimal_cp < 300  # Not already +3 pawns ahead
-                                
+
                                 # Position must be maintained or improved (not deteriorated)
                                 position_maintained = actual_cp >= optimal_cp - 30  # Didn't get worse by more than 0.3 pawns
-                                
+
                                 sacrifice_trigger = (
-                                    significant_sacrifice and 
-                                    position_winning_after and 
+                                    significant_sacrifice and
+                                    position_winning_after and
                                     not_already_completely_winning and
                                     position_maintained
                                 )
-                        
+
                         # Restore the board state
                         board.push(move)
-                        
+
                         # Brilliant ONLY for:
                         # - Finding very short forced mate (3 moves or less) OR
                         # - Spectacular sacrifice (3+ material) that maintains winning position
                         is_brilliant = forcing_mate_trigger or sacrifice_trigger
-                    
+
                     # Convert evaluation to dict
                     evaluation = {
                         "value": eval_after.pov(chess.WHITE).score() if not eval_after.pov(chess.WHITE).is_mate() else 0,
                         "type": "cp" if not eval_after.pov(chess.WHITE).is_mate() else "mate"
                     }
-                    
+
                     # Create basic move analysis
                     move_analysis = MoveAnalysis(
                         move=move.uci(),
@@ -1536,7 +1542,7 @@ class ChessAnalysisEngine:
                         heuristic_details={},
                         accuracy_score=100.0 if is_best else max(0.0, 100.0 - centipawn_loss)
                     )
-                    
+
                     # Enhance with coaching comments
                     # Calculate move number BEFORE the move was made
                     # We need to undo the move temporarily to get the correct move number
@@ -1562,7 +1568,7 @@ class ChessAnalysisEngine:
                     return result
                 finally:
                     loop.close()
-        
+
         # Run the blocking Stockfish call in a thread pool executor
         # Use Railway Hobby tier concurrency for better performance
         try:
@@ -1578,9 +1584,9 @@ class ChessAnalysisEngine:
                 print(f"Thread pool execution failed: {e}")
             # Fallback to heuristic analysis
             return await self._analyze_move_basic(board, move)
-    
-    def _calculate_game_metrics(self, game_id: str, user_id: str, platform: str, 
-                               moves_analysis: List[MoveAnalysis], 
+
+    def _calculate_game_metrics(self, game_id: str, user_id: str, platform: str,
+                               moves_analysis: List[MoveAnalysis],
                                analysis_type: AnalysisType) -> GameAnalysis:
         """Calculate comprehensive game-level metrics."""
         # Determine user/opponent moves
@@ -1616,20 +1622,20 @@ class ChessAnalysisEngine:
         # Calculate accuracy using Chess.com-style formula based on win percentage
         # This uses a graduated accuracy system that more accurately reflects how
         # centipawn loss impacts actual game outcomes
-        
+
         if user_move_count > 0:
             centipawn_losses = [m.centipawn_loss for m in user_moves]
             accuracy = self._calculate_accuracy_from_cpl(centipawn_losses)
         else:
             accuracy = 0
-        
+
         # Calculate opponent accuracy similarly
         if opponent_move_count > 0:
             opponent_centipawn_losses = [m.centipawn_loss for m in opponent_moves]
             opponent_accuracy = self._calculate_accuracy_from_cpl(opponent_centipawn_losses)
         else:
             opponent_accuracy = 0
-        
+
         # Phase analysis based on user's moves only
         user_move_count = len(user_moves)
         opponent_move_count = len(opponent_moves)
@@ -1641,15 +1647,15 @@ class ChessAnalysisEngine:
 
         # Filter opening moves - first 10 moves (20 plies)
         opening_moves = user_moves[:opening_end]
-        
+
         middle_game_moves = user_moves[opening_end:endgame_start]
         endgame_moves = user_moves[endgame_start:]
-        
+
         # Use Chess.com method for opening only
         opening_accuracy = self._calculate_opening_accuracy_chesscom_style(opening_moves)
         middle_game_accuracy = self._calculate_phase_accuracy(middle_game_moves)
         endgame_accuracy = self._calculate_phase_accuracy(endgame_moves)
-        
+
         # Advanced metrics
         centipawn_losses = [m.centipawn_loss for m in user_moves]
         average_centipawn_loss = sum(centipawn_losses) / len(centipawn_losses) if centipawn_losses else 0
@@ -1657,22 +1663,22 @@ class ChessAnalysisEngine:
         opponent_centipawn_losses = [m.centipawn_loss for m in opponent_moves]
         opponent_average_cpl = sum(opponent_centipawn_losses) / len(opponent_centipawn_losses) if opponent_centipawn_losses else 0
         opponent_worst_blunder = max(opponent_centipawn_losses) if opponent_centipawn_losses else 0
-        
+
         # Calculate additional metrics for personality scores
         time_management_score = self._calculate_time_management_score(user_moves)
         opponent_time_management_score = self._calculate_time_management_score(opponent_moves)
-        
+
         # Personality scores
         personality_scores = self._calculate_personality_scores(
             user_moves=user_moves,
             time_management_score=time_management_score
         )
-        
+
         # Patterns and themes
         tactical_patterns = self._extract_tactical_patterns(moves_analysis)
         positional_patterns = self._extract_positional_patterns(moves_analysis)
         strategic_themes = self._extract_strategic_themes(moves_analysis)
-        
+
         return GameAnalysis(
             game_id=game_id,
             user_id=user_id,
@@ -1706,23 +1712,23 @@ class ChessAnalysisEngine:
             processing_time_ms=0,  # Will be set by caller
             stockfish_depth=self.config.depth
         )
-    
+
     def _calculate_phase_accuracy(self, moves: List[MoveAnalysis]) -> float:
         """Calculate accuracy for a game phase using Chess.com-style graduated accuracy."""
         if not moves:
             return 0.0
-        
+
         # Use the same graduated accuracy calculation as overall accuracy
         centipawn_losses = [move.centipawn_loss for move in moves]
         return self._calculate_accuracy_from_cpl(centipawn_losses)
-    
+
     def _calculate_accuracy_from_cpl(self, centipawn_losses: List[float]) -> float:
         """
         Calculate accuracy using Chess.com-style formula for realistic scoring.
-        
+
         Based on Chess.com's CAPS2 algorithm research, uses conservative thresholds:
         - 0-5 CPL: 100% accuracy (perfect moves)
-        - 6-20 CPL: 85-100% accuracy (excellent moves) 
+        - 6-20 CPL: 85-100% accuracy (excellent moves)
         - 21-40 CPL: 70-85% accuracy (good moves)
         - 41-80 CPL: 50-70% accuracy (inaccuracies)
         - 81-150 CPL: 30-50% accuracy (mistakes)
@@ -1730,12 +1736,12 @@ class ChessAnalysisEngine:
         """
         if not centipawn_losses:
             return 0.0
-        
+
         total_accuracy = 0.0
         for cpl in centipawn_losses:
             # Cap centipawn loss at 1000 to avoid math errors
             cpl = min(cpl, 1000)
-            
+
             # Chess.com-style accuracy calculation with conservative thresholds
             if cpl <= 5:
                 move_accuracy = 100.0  # Only truly perfect moves
@@ -1754,11 +1760,11 @@ class ChessAnalysisEngine:
             else:
                 # Linear interpolation from 30% to 15% for 150+ CPL
                 move_accuracy = max(15.0, 30.0 - (cpl - 150) * 0.1)  # 30% to 15%
-            
+
             total_accuracy += move_accuracy
-        
+
         return total_accuracy / len(centipawn_losses)
-    
+
     def _centipawns_to_win_prob(self, cp: float) -> float:
         """Convert centipawns to win probability using Chess.com formula."""
         return 1.0 / (1.0 + 10 ** (-cp / 400.0))
@@ -1770,12 +1776,12 @@ class ChessAnalysisEngine:
         """
         if not opening_moves:
             return 0.0
-        
+
         total_accuracy = 0.0
         for move in opening_moves:
             # Use centipawn loss directly - this is more reliable than trying to reconstruct evaluations
             centipawn_loss = move.centipawn_loss
-            
+
             # Much more conservative accuracy calculation to avoid 100% scores
             # Only truly perfect moves get 100%, everything else is penalized more heavily
             if centipawn_loss <= 2:
@@ -1790,30 +1796,72 @@ class ChessAnalysisEngine:
                 move_accuracy = 37.0 - (centipawn_loss - 40) * 0.5  # 37% to 17%
             else:
                 move_accuracy = max(5.0, 17.0 - (centipawn_loss - 80) * 0.1)  # 17% to 5%
-            
+
             total_accuracy += move_accuracy
-        
+
         return total_accuracy / len(opening_moves)
-    
+
     def _calculate_time_management_score(self, moves: List[MoveAnalysis]) -> float:
-        """Calculate time management score based on move timing patterns."""
-        if not moves:
-            return 0.0
-        
-        # Simple time management score based on move consistency
-        # This is a placeholder implementation
+        """Calculate time management score based on move timing patterns and quality.
+
+        Returns score on 0-100 scale where:
+        - 0-30: Very fast/impulsive play (bullet players, many quick errors)
+        - 30-50: Quick decisions (blitz players, some time pressure errors)
+        - 50-70: Balanced time usage (rapid players, occasional time issues)
+        - 70-90: Slow/careful thinking (classical players, consistent quality)
+        - 90-100: Very slow/deliberate play (correspondence-style, deep calculation)
+
+        Uses proxy indicators since exact clock times may not be available:
+        1. Move quality consistency (fast players make more errors)
+        2. Error patterns (blunders/mistakes indicate rushed decisions)
+        3. Move complexity vs quality (simple moves should be quick, complex ones need time)
+        """
+        if not moves or len(moves) < 10:
+            return 50.0  # Need sufficient data
+
+        # Proxy indicators for time management
         total_moves = len(moves)
-        if total_moves < 2:
-            return 0.5
-        
-        # Calculate average time per move (simplified)
-        # In a real implementation, this would use actual move timestamps
-        return 0.75  # Placeholder score
-    
+        blunders = sum(1 for m in moves if m.is_blunder)
+        mistakes = sum(1 for m in moves if m.is_mistake)
+        inaccuracies = sum(1 for m in moves if m.is_inaccuracy)
+        best_moves = sum(1 for m in moves if m.is_best)
+
+        # Calculate error rates
+        blunder_rate = blunders / total_moves
+        mistake_rate = mistakes / total_moves
+        error_rate = (blunders + mistakes + inaccuracies) / total_moves
+        best_rate = best_moves / total_moves
+
+        # Calculate move quality variance (consistent = more thoughtful)
+        centipawn_losses = [m.centipawn_loss for m in moves if hasattr(m, 'centipawn_loss')]
+        if centipawn_losses:
+            avg_loss = sum(centipawn_losses) / len(centipawn_losses)
+            variance = sum((loss - avg_loss) ** 2 for loss in centipawn_losses) / len(centipawn_losses)
+            consistency_score = max(0, 100 - (variance ** 0.5) / 2)  # Lower variance = more consistent
+        else:
+            consistency_score = 50.0
+
+        # Base score starts at 50 (neutral)
+        base_score = 50.0
+
+        # Penalties for fast/impulsive play (errors suggest rushing)
+        # Fast players tend to make more mistakes, especially blunders
+        error_penalty = (blunder_rate * 80.0) + (mistake_rate * 40.0) + (error_rate * 20.0)
+
+        # Bonuses for slow/careful play (high accuracy suggests taking time)
+        # Slow players have higher best move rates and consistency
+        quality_bonus = (best_rate * 30.0) + (consistency_score * 0.2)
+
+        # Calculate final score
+        score = base_score - error_penalty + quality_bonus
+
+        # Clamp to valid range
+        return max(0.0, min(100.0, score))
+
     def _calculate_personality_scores(self, user_moves: List[MoveAnalysis], time_management_score: float = 0.0) -> Dict[str, float]:
         """Calculate six-trait personality scores from the user's moves."""
         from .personality_scoring import PersonalityScorer
-        
+
         # Convert MoveAnalysis objects to dictionaries for the standardized scorer
         moves_data = []
         for move in user_moves:
@@ -1826,10 +1874,10 @@ class ChessAnalysisEngine:
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
             })
-        
+
         scorer = PersonalityScorer()
         scores = scorer.calculate_scores(moves_data, time_management_score)
-        
+
         # Return with legacy field names for backward compatibility
         return {
             'tactical_score': round(scores.tactical, 1),
@@ -1848,11 +1896,11 @@ class ChessAnalysisEngine:
     def _extract_tactical_patterns(self, moves_analysis: List[MoveAnalysis]) -> List[Dict]:
         """Extract tactical patterns from move analysis."""
         patterns = []
-        
+
         # Find sequences of good moves
         good_sequences = []
         current_sequence = []
-        
+
         for move in moves_analysis:
             if move.is_best:
                 current_sequence.append(move)
@@ -1860,10 +1908,10 @@ class ChessAnalysisEngine:
                 if len(current_sequence) >= 3:
                     good_sequences.append(current_sequence)
                 current_sequence = []
-        
+
         if len(current_sequence) >= 3:
             good_sequences.append(current_sequence)
-        
+
         # Add tactical patterns
         for sequence in good_sequences:
             patterns.append({
@@ -1872,43 +1920,43 @@ class ChessAnalysisEngine:
                 'moves': [m.move_san for m in sequence],
                 'average_centipawn_loss': sum(m.centipawn_loss for m in sequence) / len(sequence)
             })
-        
+
         return patterns
-    
+
     def _extract_positional_patterns(self, moves_analysis: List[MoveAnalysis]) -> List[Dict]:
         """Extract positional patterns from move analysis."""
         patterns = []
-        
+
         inaccuracies = [m for m in moves_analysis if m.is_inaccuracy]
         mistakes = [m for m in moves_analysis if m.is_mistake]
-        
+
         if inaccuracies:
             patterns.append({
                 'type': 'positional_inaccuracies',
                 'count': len(inaccuracies),
                 'moves': [m.move_san for m in inaccuracies]
             })
-        
+
         if mistakes:
             patterns.append({
                 'type': 'positional_mistakes',
                 'count': len(mistakes),
                 'moves': [m.move_san for m in mistakes]
             })
-        
+
         return patterns
-    
+
     def _extract_strategic_themes(self, moves_analysis: List[MoveAnalysis]) -> List[Dict]:
         """Extract strategic themes from move analysis."""
         themes = []
-        
+
         total_moves = len(moves_analysis)
         if total_moves == 0:
             return themes
-        
+
         best_moves = sum(1 for m in moves_analysis if m.is_best)
         blunders = sum(1 for m in moves_analysis if m.is_blunder)
-        
+
         # Add strategic themes based on performance
         if best_moves / total_moves > 0.7:
             themes.append({
@@ -1916,56 +1964,43 @@ class ChessAnalysisEngine:
                 'description': 'High percentage of best moves',
                 'strength': 'strong'
             })
-        
+
         if blunders / total_moves > 0.1:
             themes.append({
                 'type': 'tactical_weakness',
                 'description': 'High number of blunders',
                 'strength': 'weak'
             })
-        
+
         return themes
-    
+
 
 # Example usage and testing
 if __name__ == "__main__":
     async def test_analysis_engine():
         """Test the analysis engine with different configurations."""
         print("Testing Chess Analysis Engine...")
-        
+
         # Test heuristic fallback analysis
         print("\n=== Testing Heuristic Fallback Analysis ===")
         heuristic_config = AnalysisConfig(analysis_type=AnalysisType.STOCKFISH)
         heuristic_engine = ChessAnalysisEngine(config=heuristic_config)
-        
+
         starting_position = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
         heuristic_result = await heuristic_engine.analyze_position(starting_position)
         print(f"Heuristic fallback analysis result: {heuristic_result}")
-        
+
         # Test Stockfish analysis (if available)
         if heuristic_engine.stockfish_path:
             print("\n=== Testing Stockfish Analysis ===")
             stockfish_config = AnalysisConfig(analysis_type=AnalysisType.STOCKFISH, depth=10)
             stockfish_engine = ChessAnalysisEngine(config=stockfish_config, stockfish_path=heuristic_engine.stockfish_path)
-            
+
             stockfish_result = await stockfish_engine.analyze_position(starting_position)
             print(f"Stockfish analysis result: {stockfish_result}")
         else:
             print("Stockfish not available, skipping Stockfish tests")
-        
+
         print("\nðŸŽ‰ Analysis engine testing complete!")
-    
+
     asyncio.run(test_analysis_engine())
-
-
-
-
-
-
-
-
-
-
-
-
-

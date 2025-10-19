@@ -9,11 +9,10 @@ import { AutoImportService, LargeImportProgress, GameDiscovery, DateRange } from
 import { UnifiedAnalysisService } from '../services/unifiedAnalysisService'
 import { ProfileService } from '../services/profileService'
 import { supabase } from '../lib/supabase'
+import { clearUserCache } from '../utils/apiCache'
 // DatabaseDiagnosticsComponent is development-only, imported conditionally below
-import { EloDataDebugger } from '../components/debug/EloDataDebugger'
-import { EloStatsOptimizer } from '../components/debug/EloStatsOptimizer'
-import { ComprehensiveAnalytics } from '../components/debug/ComprehensiveAnalytics'
-import { MobileTestingPanel } from '../components/debug/MobileTestingPanel'
+// Debug components removed from production
+// import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
 const ANALYSIS_TEST_LIMIT = 5
@@ -54,6 +53,15 @@ const parseOpeningIdentifiers = (serialized: string | null): OpeningIdentifierSe
   }
 }
 
+// Canonicalize user ID to match backend logic
+function canonicalizeUserId(userId: string, platform: string): string {
+  if (platform === 'chess.com') {
+    return userId.trim().toLowerCase()
+  } else { // lichess
+    return userId.trim()
+  }
+}
+
 export default function SimpleAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const params = useParams()
@@ -82,7 +90,6 @@ export default function SimpleAnalyticsPage() {
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
-  const [showDebug, setShowDebug] = useState(false)
   const [analyzedGameIds, setAnalyzedGameIds] = useState<Set<string>>(new Set())
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [hasGames, setHasGames] = useState(false)
@@ -95,7 +102,7 @@ export default function SimpleAnalyticsPage() {
   const lastImportProgressRef = useRef<number>(0)
   const importStuckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const largeImportDismissTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  
+
   // Auto-sync state management
   const [autoSyncing, setAutoSyncing] = useState(false)
   const [autoSyncProgress, setAutoSyncProgress] = useState<{
@@ -159,7 +166,7 @@ export default function SimpleAnalyticsPage() {
       const timeoutId = setTimeout(() => {
         checkAndSyncNewGames()
       }, 1000)
-      
+
       return () => clearTimeout(timeoutId)
     }
   }, [userId, platform, isLoading])
@@ -167,28 +174,26 @@ export default function SimpleAnalyticsPage() {
   useEffect(() => {
     const checkGamesExist = async () => {
       if (!userId || !platform) return
-      
+
       try {
-        // Check if supabase client is available
-        if (!supabase || typeof supabase.from !== 'function') {
-          console.error('Supabase client not initialized')
-          return
-        }
-        
-        const { count } = await supabase
-          .from('games')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId)
-          .eq('platform', platform)
-        
-        const gameCount = count || 0
+        const canonicalUserId = canonicalizeUserId(userId, platform)
+        console.log('[checkGamesExist] Original userId:', JSON.stringify(userId))
+        console.log('[checkGamesExist] Canonical userId:', JSON.stringify(canonicalUserId))
+        console.log('[checkGamesExist] Platform:', platform)
+
+        // Use backend API to get total games count (instead of direct Supabase query)
+        const eloStats = await UnifiedAnalysisService.getEloStats(canonicalUserId, platform as 'lichess' | 'chess.com')
+        const gameCount = eloStats.total_games || 0
+
+        console.log('[checkGamesExist] Game count found:', gameCount)
+
         setGameCount(gameCount)
         setHasGames(gameCount > 0)
       } catch (error) {
         console.error('Error checking games:', error)
       }
     }
-    
+
     checkGamesExist()
   }, [userId, platform, refreshKey])
 
@@ -246,6 +251,8 @@ export default function SimpleAnalyticsPage() {
       if (result.success) {
         if (result.importedGames > 0) {
           setImportStatus(`Import complete! ${result.message}. Refreshing analytics...`)
+          // Clear cache to force fresh data load after import
+          clearUserCache(userId, platform)
           handleRefresh()
         } else {
           setImportStatus(`Import complete! No new games found. You already have all recent games imported.`)
@@ -266,7 +273,7 @@ export default function SimpleAnalyticsPage() {
 
   const startLargeImport = async () => {
     if (!userId) return
-    
+
     try {
       // Start import with default limit of 5000
       // Skip discovery to avoid 404 errors - backend will handle duplicate detection
@@ -277,12 +284,12 @@ export default function SimpleAnalyticsPage() {
         progress: 0,
         message: 'Starting import of up to 5,000 games...'
       })
-      
+
       await AutoImportService.importMoreGames(userId, platform, 5000, dateRange)
-      
+
       // Start polling
       startLargeImportPolling()
-      
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       setLargeImportProgress({
@@ -299,16 +306,16 @@ export default function SimpleAnalyticsPage() {
     if (largeImportIntervalRef.current) {
       clearInterval(largeImportIntervalRef.current)
     }
-    
+
     // Reset progress tracking
     lastImportProgressRef.current = 0
-    
+
     // Start stuck detection timeout
     const checkStuckImport = () => {
       if (importStuckTimeoutRef.current) {
         clearTimeout(importStuckTimeoutRef.current)
       }
-      
+
       importStuckTimeoutRef.current = setTimeout(() => {
         console.error('Import appears stuck - no progress in 60 seconds')
         setLargeImportProgress(prev => prev ? {
@@ -316,33 +323,33 @@ export default function SimpleAnalyticsPage() {
           status: 'error',
           message: 'Import timed out - no response from server in 60 seconds. Please refresh the page.'
         } : null)
-        
+
         if (largeImportIntervalRef.current) {
           clearInterval(largeImportIntervalRef.current)
           largeImportIntervalRef.current = null
         }
       }, 60000) // 60 seconds timeout (longer to allow checking empty months)
     }
-    
+
     checkStuckImport()
-    
+
     largeImportIntervalRef.current = setInterval(async () => {
       try {
         const progress = await AutoImportService.getImportProgress(userId, platform)
         setLargeImportProgress(progress)
-        
+
         // Check if progress has changed
         if (progress.importedGames !== lastImportProgressRef.current) {
           lastImportProgressRef.current = progress.importedGames
           // Reset timeout since we have progress
           checkStuckImport()
         }
-        
+
         // Refresh analytics every 500 games
         if (progress.triggerRefresh) {
           handleRefresh()
         }
-        
+
         // Stop polling when complete
         if (progress.status === 'completed' || progress.status === 'cancelled' || progress.status === 'error') {
           if (largeImportIntervalRef.current) {
@@ -353,12 +360,14 @@ export default function SimpleAnalyticsPage() {
             clearTimeout(importStuckTimeoutRef.current)
             importStuckTimeoutRef.current = null
           }
-          
+
           // Auto-dismiss completion messages after 3 seconds
           if (progress.status === 'completed') {
             largeImportDismissTimeoutRef.current = setTimeout(() => setLargeImportProgress(null), 3000)
           }
-          
+
+          // Clear cache to force fresh data load after large import
+          clearUserCache(userId, platform)
           handleRefresh() // Final refresh
           setHasGames(true) // Update hasGames state
         }
@@ -390,11 +399,23 @@ export default function SimpleAnalyticsPage() {
 
     // Create unique key for this user/platform combination
     const syncKey = `${userId}-${platform}`
-    
+
     // Check if auto-sync is already running to prevent duplicate simultaneous runs
     if (autoSyncing) {
       console.log('Auto-sync already in progress, skipping')
       return
+    }
+
+    // Skip auto-sync if we synced within the last 10 minutes (saves 2-3 seconds)
+    const lastSyncKey = `lastSync_${syncKey}`
+    const lastSyncTime = localStorage.getItem(lastSyncKey)
+    if (lastSyncTime) {
+      const timeSinceLastSync = Date.now() - parseInt(lastSyncTime)
+      const TEN_MINUTES = 10 * 60 * 1000
+      if (timeSinceLastSync < TEN_MINUTES) {
+        console.log(`Auto-sync skipped - last sync was ${Math.round(timeSinceLastSync / 1000)}s ago`)
+        return
+      }
     }
 
     try {
@@ -408,7 +429,7 @@ export default function SimpleAnalyticsPage() {
 
       // Check if user profile exists in database
       const profileExists = await ProfileService.checkUserExists(userId, platform)
-      
+
       if (!profileExists) {
         console.log('No profile found, skipping auto-sync')
         setAutoSyncing(false)
@@ -436,7 +457,10 @@ export default function SimpleAnalyticsPage() {
       // Use newGamesCount explicitly - if it's 0, we want 0 (not importedGames as fallback)
       const actualNewGames = result.newGamesCount ?? 0
       console.log('[Auto-sync] Import result:', { importedGames: result.importedGames, newGamesCount: result.newGamesCount, actualNewGames })
-      
+
+      // Update last sync timestamp
+      localStorage.setItem(lastSyncKey, Date.now().toString())
+
       if (result.success && actualNewGames > 0) {
         // Show success message
         setAutoSyncProgress({
@@ -444,10 +468,10 @@ export default function SimpleAnalyticsPage() {
           message: `Imported ${actualNewGames} new games!`,
           importedGames: actualNewGames
         })
-        
+
         // Auto-refresh analytics to show new data
         handleRefresh()
-        
+
         // Auto-dismiss after 4 seconds
         autoSyncTimeoutRef.current = setTimeout(() => {
           setAutoSyncing(false)
@@ -466,7 +490,7 @@ export default function SimpleAnalyticsPage() {
         message: 'Auto-sync failed',
         importedGames: 0
       })
-      
+
       // Auto-dismiss error after 3 seconds
       autoSyncTimeoutRef.current = setTimeout(() => {
         setAutoSyncing(false)
@@ -487,11 +511,11 @@ export default function SimpleAnalyticsPage() {
       if (progress) {
         console.log('[SimpleAnalytics] Progress received:', progress)
         setAnalysisProgress(progress)
-        
+
         // Check if this is a real completion or just no analysis running
         const isRealCompletion = progress.is_complete && progress.total_games > 0
         const isNoAnalysisRunning = progress.is_complete && progress.total_games === 0 && progress.analyzed_games === 0
-        
+
         setProgressStatus(
           isRealCompletion
             ? (progress.status_message || 'Analysis complete! Refreshing your insights...')
@@ -508,7 +532,13 @@ export default function SimpleAnalyticsPage() {
           }
           setAnalyzing(false)
           setTimeout(() => setProgressStatus(null), 2500)
-          handleRefresh()
+          // Clear cache to force fresh data load after analysis
+          clearUserCache(userId, platform)
+          // Add small delay to ensure database has finished writing analysis results
+          setTimeout(() => {
+            console.log('[SimpleAnalytics] Refreshing data after analysis completion')
+            handleRefresh()
+          }, 1500)
         } else if (isNoAnalysisRunning) {
           console.log('[SimpleAnalytics] No analysis running, stopping progress polling')
           if (progressIntervalRef.current) {
@@ -523,7 +553,7 @@ export default function SimpleAnalyticsPage() {
         console.log('[SimpleAnalytics] No progress data received')
         setProgressStatus('Waiting for the engine to report progress...')
         setAnalyzing(true)
-        
+
         // Fallback: Check if analysis data is available even without progress
         // This helps detect completion when progress tracking fails
         try {
@@ -538,7 +568,11 @@ export default function SimpleAnalyticsPage() {
             setAnalyzing(false)
             setProgressStatus('Analysis complete! Refreshing your insights...')
             setTimeout(() => setProgressStatus(null), 2500)
-            handleRefresh()
+            // Add small delay to ensure database has finished writing analysis results
+            setTimeout(() => {
+              console.log('[SimpleAnalytics] Refreshing data after fallback detection')
+              handleRefresh()
+            }, 1500)
             return
           }
         } catch (fallbackError) {
@@ -708,7 +742,7 @@ export default function SimpleAnalyticsPage() {
                       )}
                     </button>
                   )}
-                  
+
                   <button
                     onClick={() => {
                       console.log('🔘 Analyze My Games button clicked!')
@@ -740,7 +774,7 @@ export default function SimpleAnalyticsPage() {
           <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-lg font-semibold text-emerald-200">
-                {autoSyncProgress.status === 'complete' ? 'Auto-Sync Complete' : 
+                {autoSyncProgress.status === 'complete' ? 'Auto-Sync Complete' :
                  autoSyncProgress.status === 'error' ? 'Auto-Sync Error' : 'Auto-Sync Progress'}
               </h4>
               <div className="flex items-center gap-2">
@@ -754,7 +788,7 @@ export default function SimpleAnalyticsPage() {
                 )}
               </div>
             </div>
-            
+
             {autoSyncProgress.status === 'importing' && (
               <div className="mb-2">
                 <div className="h-2 w-full rounded-full bg-emerald-900/30">
@@ -762,7 +796,7 @@ export default function SimpleAnalyticsPage() {
                 </div>
               </div>
             )}
-            
+
             <p className="text-sm text-emerald-200">{autoSyncProgress.message}</p>
           </div>
         )}
@@ -814,7 +848,7 @@ export default function SimpleAnalyticsPage() {
                 )}
               </div>
             </div>
-            
+
             {largeImportProgress.status === 'importing' && (
               <div className="mb-2">
                 <div className="h-2 w-full rounded-full bg-purple-900/30">
@@ -825,7 +859,7 @@ export default function SimpleAnalyticsPage() {
                 </div>
               </div>
             )}
-            
+
             <p className={`text-sm ${
               largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
                 ? 'text-amber-200'
@@ -887,7 +921,7 @@ export default function SimpleAnalyticsPage() {
                 // Check if game is already analyzed
                 const gameId = game.provider_game_id || game.id
                 const isAnalyzed = analyzedGameIds.has(gameId)
-                
+
                 if (isAnalyzed) {
                   // If analyzed, navigate to analysis page
                   navigate(`/analysis/${platform}/${userId}/${gameId}`, {
@@ -903,18 +937,6 @@ export default function SimpleAnalyticsPage() {
             />
           </ErrorBoundary>
         )}
-
-            {/* Debug Panel */}
-            {showDebug && userId && (
-              <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-inner shadow-black/50">
-                <h2 className="text-lg font-semibold text-white">Debug Information</h2>
-                <MobileTestingPanel />
-                <ComprehensiveAnalytics userId={userId} platform={platform} />
-                <EloStatsOptimizer userId={userId} platform={platform} />
-                <EloDataDebugger userId={userId} platform={platform} />
-                {/* DatabaseDiagnosticsComponent removed for production builds */}
-              </div>
-            )}
 
         {importError && (
           <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">
@@ -933,7 +955,7 @@ export default function SimpleAnalyticsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="rounded-2xl border border-white/10 bg-slate-900 p-6 max-w-md w-full mx-4 shadow-2xl">
             <h3 className="text-xl font-semibold text-white mb-4">Select Date Range</h3>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm text-slate-300 mb-2">From Date (optional)</label>
@@ -944,7 +966,7 @@ export default function SimpleAnalyticsPage() {
                   className="w-full rounded-lg border border-white/10 bg-slate-800 px-3 py-2 text-white focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400/40"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm text-slate-300 mb-2">To Date (optional)</label>
                 <input
@@ -954,12 +976,12 @@ export default function SimpleAnalyticsPage() {
                   className="w-full rounded-lg border border-white/10 bg-slate-800 px-3 py-2 text-white focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400/40"
                 />
               </div>
-              
+
               <p className="text-xs text-slate-400">
                 Leave dates empty to import all available games (up to 5,000). You can import more games by selecting different date ranges after this import completes.
               </p>
             </div>
-            
+
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => {

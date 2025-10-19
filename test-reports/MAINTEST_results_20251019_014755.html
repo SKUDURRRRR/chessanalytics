@@ -1,0 +1,570 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAINTEST Report - FULL MODE</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 2rem;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            padding: 2rem;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            color: #38bdf8;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-top: 1rem;
+        }
+
+        .status.success {
+            background: #065f46;
+            color: #d1fae5;
+        }
+
+        .status.failure {
+            background: #991b1b;
+            color: #fecaca;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .summary-card {
+            background: #1e293b;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid #334155;
+        }
+
+        .summary-card h3 {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+        }
+
+        .summary-card .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #38bdf8;
+        }
+
+        .category {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+
+        .category-header {
+            background: #334155;
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .category-header h2 {
+            font-size: 1.25rem;
+            color: #e2e8f0;
+        }
+
+        .category-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .stat-passed {
+            color: #6ee7b7;
+        }
+
+        .stat-failed {
+            color: #fca5a5;
+        }
+
+        .test-result {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .test-result:last-child {
+            border-bottom: none;
+        }
+
+        .test-result.passed {
+            background: rgba(6, 95, 70, 0.1);
+        }
+
+        .test-result.failed {
+            background: rgba(153, 27, 27, 0.1);
+        }
+
+        .test-info {
+            flex: 1;
+        }
+
+        .test-name {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .test-icon {
+            font-size: 1.25rem;
+        }
+
+        .test-message {
+            color: #94a3b8;
+            font-size: 0.875rem;
+        }
+
+        .test-details {
+            background: #0f172a;
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-top: 0.5rem;
+            font-size: 0.8125rem;
+            font-family: 'Courier New', monospace;
+            color: #cbd5e1;
+            white-space: pre-wrap;
+            border-left: 3px solid #ef4444;
+        }
+
+        .test-duration {
+            color: #64748b;
+            font-size: 0.75rem;
+            text-align: right;
+        }
+
+        .footer {
+            margin-top: 2rem;
+            padding: 1rem;
+            text-align: center;
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+
+        .metadata {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metadata-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .metadata-item:last-child {
+            border-bottom: none;
+        }
+
+        .metadata-key {
+            color: #94a3b8;
+            font-weight: 500;
+        }
+
+        .metadata-value {
+            color: #e2e8f0;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 MAINTEST Pre-deployment Report</h1>
+            <div>Test Mode: <strong>FULL</strong></div>
+            <div>Generated: 2025-10-19 01:47:55</div>
+            <div class="status failure">❌ SOME TESTS FAILED</div>
+        </div>
+
+        <div class="summary">
+            <div class="summary-card">
+                <h3>Total Tests</h3>
+                <div class="value">17</div>
+            </div>
+            <div class="summary-card">
+                <h3>Passed</h3>
+                <div class="value" style="color: #6ee7b7;">15</div>
+            </div>
+            <div class="summary-card">
+                <h3>Failed</h3>
+                <div class="value" style="color: #fca5a5;">2</div>
+            </div>
+            <div class="summary-card">
+                <h3>Duration</h3>
+                <div class="value" style="font-size: 1.5rem;">16.8s</div>
+            </div>
+        </div>
+
+        <div class="metadata">
+            <h3 style="margin-bottom: 1rem; color: #94a3b8;">Test Environment</h3>
+
+            <div class="metadata-item">
+                <span class="metadata-key">API URL</span>
+                <span class="metadata-value">https://chessanalytics-production.up.railway.app</span>
+            </div>
+
+            <div class="metadata-item">
+                <span class="metadata-key">Frontend URL</span>
+                <span class="metadata-value">http://localhost:3000</span>
+            </div>
+
+            <div class="metadata-item">
+                <span class="metadata-key">Python Version</span>
+                <span class="metadata-value">3.12.7</span>
+            </div>
+
+            <div class="metadata-item">
+                <span class="metadata-key">Test Mode</span>
+                <span class="metadata-value">Full</span>
+            </div>
+        </div>
+
+        <div class="category">
+            <div class="category-header">
+                <h2>Security & Credentials</h2>
+                <div class="category-stats">
+                    <span class="stat-passed">✓ 5 passed</span>
+                    <span class="stat-failed">✗ 1 failed</span>
+                </div>
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Environment Variables Exist</span>
+                    </div>
+                    <div class="test-message">All 5 required environment variables are set</div>
+
+                </div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Environment Variables Not Placeholders</span>
+                    </div>
+                    <div class="test-message">All environment variables have actual values (not placeholders)</div>
+
+                </div>
+
+            </div>
+
+            <div class="test-result failed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">❌</span>
+                        <span>Stockfish Executable Exists</span>
+                    </div>
+                    <div class="test-message">Stockfish executable not found</div>
+
+                    <div class="test-details">Checked: ./stockfish/stockfish.exe, ./stockfish/stockfish, /usr/games/stockfish, /usr/bin/stockfish, /usr/local/bin/stockfish
+Set STOCKFISH_PATH environment variable</div>
+
+                </div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>No Exposed Secrets in Code</span>
+                    </div>
+                    <div class="test-message">No exposed secrets found (scanned 108 files)</div>
+
+                </div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>RLS Anonymous Blocked</span>
+                    </div>
+                    <div class="test-message">Anonymous access properly blocked with error</div>
+
+                </div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>RLS Service Role Access</span>
+                    </div>
+                    <div class="test-message">Service role can access data (found 5 games, 5 PGNs)</div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="category">
+            <div class="category-header">
+                <h2>API Health</h2>
+                <div class="category-stats">
+                    <span class="stat-passed">✓ 1 passed</span>
+                    <span class="stat-failed">✗ 0 failed</span>
+                </div>
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Backend API Health Check</span>
+                    </div>
+                    <div class="test-message">API is healthy (HTTP 200)</div>
+
+                </div>
+
+                <div class="test-duration">625ms</div>
+
+            </div>
+
+        </div>
+
+        <div class="category">
+            <div class="category-header">
+                <h2>Game Import</h2>
+                <div class="category-stats">
+                    <span class="stat-passed">✓ 4 passed</span>
+                    <span class="stat-failed">✗ 0 failed</span>
+                </div>
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Lichess Import (audingo)</span>
+                    </div>
+                    <div class="test-message">Imported 0 games (total: 778)</div>
+
+                    <div class="test-details">API Response: None</div>
+
+                </div>
+
+                <div class="test-duration">3135ms</div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Chess.com Import (skudurelis)</span>
+                    </div>
+                    <div class="test-message">Imported 0 games (total: 0)</div>
+
+                    <div class="test-details">API Response: None</div>
+
+                </div>
+
+                <div class="test-duration">2213ms</div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Smart Import</span>
+                    </div>
+                    <div class="test-message">Smart import completed: 0 games imported, 0 were new</div>
+
+                </div>
+
+                <div class="test-duration">4832ms</div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Duplicate Prevention</span>
+                    </div>
+                    <div class="test-message">Duplicate prevention works (only 0 new games added)</div>
+
+                </div>
+
+                <div class="test-duration">1108ms</div>
+
+            </div>
+
+        </div>
+
+        <div class="category">
+            <div class="category-header">
+                <h2>Game Analysis</h2>
+                <div class="category-stats">
+                    <span class="stat-passed">✓ 2 passed</span>
+                    <span class="stat-failed">✗ 0 failed</span>
+                </div>
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Bulk Analysis (5 games)</span>
+                    </div>
+                    <div class="test-message">Analyzed 0 games successfully</div>
+
+                </div>
+
+                <div class="test-duration">422ms</div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Single Game Analysis</span>
+                    </div>
+                    <div class="test-message">Analysis request accepted (asynchronous)</div>
+
+                    <div class="test-details">Analysis started in background</div>
+
+                </div>
+
+                <div class="test-duration">425ms</div>
+
+            </div>
+
+        </div>
+
+        <div class="category">
+            <div class="category-header">
+                <h2>Data Correctness</h2>
+                <div class="category-stats">
+                    <span class="stat-passed">✓ 3 passed</span>
+                    <span class="stat-failed">✗ 0 failed</span>
+                </div>
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Games Table Has Data</span>
+                    </div>
+                    <div class="test-message">Found 778 games in database</div>
+
+                </div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Accuracy Values Valid</span>
+                    </div>
+                    <div class="test-message">All 0 analyses have valid accuracy (0-100)</div>
+
+                </div>
+
+            </div>
+
+            <div class="test-result passed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">✅</span>
+                        <span>Opening Names Present</span>
+                    </div>
+                    <div class="test-message">93.6% of games have opening names</div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="category">
+            <div class="category-header">
+                <h2>Frontend Tests</h2>
+                <div class="category-stats">
+                    <span class="stat-passed">✓ 0 passed</span>
+                    <span class="stat-failed">✗ 1 failed</span>
+                </div>
+            </div>
+
+            <div class="test-result failed">
+                <div class="test-info">
+                    <div class="test-name">
+                        <span class="test-icon">❌</span>
+                        <span>Playwright Test Suite</span>
+                    </div>
+                    <div class="test-message">Error: [WinError 2] The system cannot find the file specified</div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="footer">
+            Generated by MAINTEST Pre-deployment Suite | Chess Analytics Platform
+        </div>
+    </div>
+</body>
+</html>

@@ -27,6 +27,7 @@ interface ChartEntry {
   change: number
   trendColor: string
   displayChange: string
+  isLargeChange?: boolean
 }
 
 const TREND_COLORS = {
@@ -37,24 +38,61 @@ const TREND_COLORS = {
 
 const formatYAxis = (value: number) => Math.round(value)
 
-const buildChartData = (data: TrendChartProps['data']): ChartEntry[] =>
-  data.map((point, index) => {
+// Threshold for detecting suspiciously large rating changes
+const LARGE_CHANGE_THRESHOLD = 50
+
+const buildChartData = (data: TrendChartProps['data']): ChartEntry[] => {
+  const chartData = data.map((point, index) => {
     const previousRating = index > 0 ? data[index - 1].rating : point.rating
     const change = point.rating - previousRating
+    const isLargeChange = index > 0 && Math.abs(change) > LARGE_CHANGE_THRESHOLD && !point.isManual
 
     return {
       index,
       rating: point.rating,
       change,
       trendColor: change > 0 ? TREND_COLORS.improving : change < 0 ? TREND_COLORS.declining : TREND_COLORS.stable,
-      displayChange: `${change > 0 ? '+' : ''}${change} ELO`
+      displayChange: `${change > 0 ? '+' : ''}${change} ELO`,
+      isLargeChange
     }
   })
+
+  // Only log diagnostics in development mode
+  if (import.meta.env.DEV) {
+    const largeChanges = chartData.filter(entry => entry.isLargeChange)
+    if (largeChanges.length > 0) {
+      console.warn(
+        `⚠️ ELO Graph Data Quality Issues:`,
+        {
+          largeChanges: largeChanges.length,
+          changes: largeChanges.map(entry => ({
+            game: entry.index + 1,
+            change: entry.displayChange,
+            rating: entry.rating
+          })),
+          suggestion: 'Check if games are missing from database. Consider re-importing or verifying game history.'
+        }
+      )
+    }
+
+    if (chartData.length > 0) {
+      console.log('ELO Graph Summary:', {
+        gamesDisplayed: chartData.length,
+        ratingRange: [Math.min(...chartData.map(d => d.rating)), Math.max(...chartData.map(d => d.rating))],
+        currentRating: chartData[chartData.length - 1]?.rating,
+        largeChangeCount: largeChanges.length,
+        averageChange: (chartData.reduce((sum, d) => sum + Math.abs(d.change), 0) / chartData.length).toFixed(1)
+      })
+    }
+  }
+
+  return chartData
+}
 
 export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel, trendDirection, data }: TrendChartProps) {
   const [isMobile, setIsMobile] = useState(false)
   const [chartHeight, setChartHeight] = useState(256)
-  
+
   const chartData = useMemo(() => buildChartData(data), [data])
 
   // Mobile detection and responsive height calculation
@@ -62,12 +100,12 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
     const checkMobile = () => {
       const mobile = window.innerWidth < 768
       setIsMobile(mobile)
-      
+
       // Calculate responsive height based on screen size
       if (mobile) {
         const screenHeight = window.innerHeight
         const screenWidth = window.innerWidth
-        
+
         // More aggressive height calculation for very small screens
         if (screenWidth < 480) {
           const availableHeight = screenHeight - 150 // Less padding for very small screens
@@ -185,9 +223,9 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
           </span>
         </div>
 
-        <div 
+        <div
           className={`relative ${isMobile ? 'select-none' : ''}`}
-          style={{ 
+          style={{
             height: `${chartHeight}px`,
             touchAction: isMobile ? 'manipulation' : 'auto',
             WebkitTouchCallout: isMobile ? 'none' : 'auto',
@@ -198,8 +236,8 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
           }}
         >
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart 
-              data={chartData} 
+            <ComposedChart
+              data={chartData}
               margin={isMobile ? { top: 10, right: 15, bottom: 0, left: 0 } : { top: 15, right: 25, bottom: 0, left: 0 }}
               style={{ userSelect: isMobile ? 'none' : 'auto' }}
             >
@@ -210,18 +248,18 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-              <XAxis 
-                dataKey="index" 
-                tickFormatter={(_, index) => `#${index + 1}`} 
-                stroke="rgba(226,232,240,0.5)" 
+              <XAxis
+                dataKey="index"
+                tickFormatter={(_, index) => `#${index + 1}`}
+                stroke="rgba(226,232,240,0.5)"
                 fontSize={isMobile ? 10 : 12}
                 tick={{ fontSize: isMobile ? 10 : 12 }}
                 axisLine={false}
                 tickLine={false}
               />
-              <YAxis 
-                tickFormatter={formatYAxis} 
-                stroke="rgba(226,232,240,0.5)" 
+              <YAxis
+                tickFormatter={formatYAxis}
+                stroke="rgba(226,232,240,0.5)"
                 fontSize={isMobile ? 10 : 12}
                 tick={{ fontSize: isMobile ? 10 : 12 }}
                 domain={[displayMin, displayMax]}
@@ -241,24 +279,32 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                       <div className="font-semibold">Game {payload.index + 1}</div>
                       <div className="text-gray-300">Rating: {payload.rating}</div>
                       {payload.index > 0 && (
-                        <div
-                          className={`font-medium ${
-                            payload.change > 0
-                              ? 'text-green-400'
-                              : payload.change < 0
-                              ? 'text-red-400'
-                              : 'text-gray-400'
-                          }`}
-                        >
-                          {payload.displayChange}
-                        </div>
+                        <>
+                          <div
+                            className={`font-medium ${
+                              payload.change > 0
+                                ? 'text-green-400'
+                                : payload.change < 0
+                                ? 'text-red-400'
+                                : 'text-gray-400'
+                            }`}
+                          >
+                            {payload.displayChange}
+                          </div>
+                          {payload.isLargeChange && (
+                            <div className="mt-1 text-[10px] text-yellow-400 flex items-center gap-1">
+                              <span>⚠</span>
+                              <span>Large change - possible data gap</span>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )
                 }}
                 position={isMobile ? { x: 0, y: 0 } : undefined}
                 allowEscapeViewBox={{ x: false, y: false }}
-                wrapperStyle={isMobile ? { 
+                wrapperStyle={isMobile ? {
                   position: 'absolute',
                   top: '10px',
                   left: '10px',
@@ -271,6 +317,8 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                 dataKey="rating"
                 stroke="none"
                 fill={`url(#${gradientId})`}
+                dot={false}
+                activeDot={false}
                 key="elo-trend-area"
               />
               <Line

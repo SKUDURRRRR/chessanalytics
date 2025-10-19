@@ -45,16 +45,20 @@ else:
 
 cors_config.log_security_status()
 
-# Initialize Supabase clients
-supabase: Client = create_client(str(config.database.url), config.database.anon_key)
+supabase = None
+supabase_service = None
 
-# Use service role key for move_analyses operations if available, otherwise fall back to anon key
-if config.database.service_role_key:
-    supabase_service: Client = create_client(str(config.database.url), config.database.service_role_key)
-    print("Using service role key for move_analyses operations")
+if config.database.url and config.database.anon_key:
+    supabase = create_client(str(config.database.url), config.database.anon_key)
+
+    if config.database.service_role_key:
+        supabase_service = create_client(str(config.database.url), config.database.service_role_key)
+        print("Using service role key for move_analyses operations")
+    else:
+        supabase_service = supabase
+        print("Warning: Service role key not found, using anon key for move_analyses operations (may cause RLS issues)")
 else:
-    supabase_service: Client = supabase  # Fall back to anon key
-    print("Warning: Service role key not found, using anon key for move_analyses operations (may cause RLS issues)")
+    print("[warn] Supabase credentials not configured; running in offline mode for tests")
 
 # Authentication setup
 security = HTTPBearer()
@@ -216,10 +220,10 @@ class AnalysisProgress(BaseModel):
 def _calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
     """
     Calculate accuracy using Chess.com-style formula for realistic scoring.
-    
+
     Based on Chess.com's CAPS2 algorithm research, uses conservative thresholds:
     - 0-5 CPL: 100% accuracy (perfect moves)
-    - 6-20 CPL: 85-100% accuracy (excellent moves) 
+    - 6-20 CPL: 85-100% accuracy (excellent moves)
     - 21-40 CPL: 70-85% accuracy (good moves)
     - 41-80 CPL: 50-70% accuracy (inaccuracies)
     - 81-150 CPL: 30-50% accuracy (mistakes)
@@ -227,12 +231,12 @@ def _calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
     """
     if not centipawn_losses:
         return 0.0
-    
+
     total_accuracy = 0.0
     for cpl in centipawn_losses:
         # Cap centipawn loss at 1000 to avoid math errors
         cpl = min(cpl, 1000)
-        
+
         # Chess.com-style accuracy calculation with conservative thresholds
         if cpl <= 5:
             move_accuracy = 100.0  # Only truly perfect moves
@@ -251,40 +255,25 @@ def _calculate_accuracy_from_cpl(centipawn_losses: List[float]) -> float:
         else:
             # Linear interpolation from 30% to 15% for 150+ CPL
             move_accuracy = max(15.0, 30.0 - (cpl - 150) * 0.1)  # 30% to 15%
-        
+
         total_accuracy += move_accuracy
-    
+
     return total_accuracy / len(centipawn_losses)
 
 
 def _calculate_opening_accuracy_chesscom(moves: List[dict]) -> float:
-    """Calculate opening accuracy using a more conservative approach that matches Chess.com."""
+    """
+    Calculate opening accuracy using Chess.com's CAPS2 algorithm (same as overall accuracy).
+    Uses the standard accuracy formula consistently across all game phases.
+    """
     if not moves:
         return 0.0
-    
-    total_accuracy = 0.0
-    for move in moves:
-        # Use centipawn loss directly - more reliable than reconstructing evaluations
-        centipawn_loss = move.get('centipawn_loss', 0)
-        
-        # Much more conservative accuracy calculation to avoid 100% scores
-        # Only truly perfect moves get 100%, everything else is penalized more heavily
-        if centipawn_loss <= 2:
-            move_accuracy = 100.0  # Only truly perfect moves (0-2 CPL)
-        elif centipawn_loss <= 8:
-            move_accuracy = 90.0 - (centipawn_loss - 2) * 2.5  # 90% to 75%
-        elif centipawn_loss <= 20:
-            move_accuracy = 75.0 - (centipawn_loss - 8) * 1.5  # 75% to 57%
-        elif centipawn_loss <= 40:
-            move_accuracy = 57.0 - (centipawn_loss - 20) * 1.0  # 57% to 37%
-        elif centipawn_loss <= 80:
-            move_accuracy = 37.0 - (centipawn_loss - 40) * 0.5  # 37% to 17%
-        else:
-            move_accuracy = max(5.0, 17.0 - (centipawn_loss - 80) * 0.1)  # 17% to 5%
-        
-        total_accuracy += move_accuracy
-    
-    return total_accuracy / len(moves)
+
+    # Extract centipawn losses from moves
+    centipawn_losses = [move.get('centipawn_loss', 0) for move in moves]
+
+    # Use the same formula as overall game accuracy (Chess.com CAPS2)
+    return _calculate_accuracy_from_cpl(centipawn_losses)
 
 
 def get_analysis_engine() -> ChessAnalysisEngine:
@@ -441,14 +430,14 @@ def map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
 def _validate_game_chronological_order(games: list, context: str) -> None:
     """
     CRITICAL VALIDATION: Ensure games are in correct chronological order (most recent first).
-    
+
     This function prevents regression of the game selection bug where random games
     were selected instead of the most recent ones.
-    
+
     Args:
         games: List of games with 'played_at' field
         context: Context string for error messages (e.g., "legacy batch analysis")
-    
+
     Raises:
         ValueError: If games are not in chronological order
         TypeError: If games is not a list
@@ -456,17 +445,17 @@ def _validate_game_chronological_order(games: list, context: str) -> None:
     # Input validation
     if not isinstance(games, list):
         raise TypeError(f"Games must be a list, got {type(games)}")
-    
+
     if not games or len(games) < 2:
         print(f"[VALIDATION] Skipping validation for {context}: insufficient games ({len(games) if games else 0})")
         return
-    
+
     played_dates = []
     for i, game in enumerate(games):
         if not isinstance(game, dict):
             print(f"[WARNING] Skipping non-dict game at index {i} in {context}")
             continue
-            
+
         played_at = game.get('played_at')
         if played_at:
             try:
@@ -479,17 +468,17 @@ def _validate_game_chronological_order(games: list, context: str) -> None:
             except (ValueError, TypeError) as e:
                 print(f"[WARNING] Skipping game at index {i} in {context}: invalid played_at '{played_at}' ({e})")
                 continue
-    
+
     if len(played_dates) < 2:
         print(f"[VALIDATION] Skipping validation for {context}: insufficient valid games with played_at ({len(played_dates)})")
         return
-    
+
     # Check if games are in descending order (most recent first)
     for i in range(len(played_dates) - 1):
         try:
             current_date = played_dates[i][1]
             next_date = played_dates[i + 1][1]
-            
+
             # Convert to comparable format if needed
             if isinstance(current_date, str) and isinstance(next_date, str):
                 current_parsed = current_date.replace('Z', '+00:00')
@@ -497,7 +486,7 @@ def _validate_game_chronological_order(games: list, context: str) -> None:
             else:
                 current_parsed = current_date
                 next_parsed = next_date
-            
+
             if current_parsed < next_parsed:
                 error_msg = (
                     f"CRITICAL BUG DETECTED in {context}: Games are NOT in chronological order!\n"
@@ -514,51 +503,54 @@ def _validate_game_chronological_order(games: list, context: str) -> None:
             print(f"[ERROR] Current date: {played_dates[i][1]} (type: {type(played_dates[i][1])})")
             print(f"[ERROR] Next date: {played_dates[i+1][1]} (type: {type(played_dates[i+1][1])})")
             raise
-    
+
     print(f"[VALIDATION] ✅ Games in {context} are correctly ordered chronologically (most recent first) - {len(played_dates)} games validated")
 
 async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str, analysis_type: str, limit: int) -> list:
     """
     Filter out games that are already analyzed, returning only unanalyzed games up to the limit.
-    
+
     Args:
         all_games: List of all games from games_pgn table
         user_id: Canonical user ID
         platform: Platform (lichess or chess.com)
         analysis_type: Type of analysis (stockfish, deep)
         limit: Maximum number of unanalyzed games to return
-        
+
     Returns:
         List of unanalyzed games to analyze
     """
     if not all_games or not supabase:
         return all_games[:limit] if all_games else []
-    
+
     # Get game IDs that are already analyzed
     game_ids = [game.get('provider_game_id') for game in all_games if game.get('provider_game_id')]
-    
+
     if not game_ids:
         return all_games[:limit]
-    
+
     # Check both move_analyses and game_analyses tables for already analyzed games
     analyzed_game_ids = set()
-    
+
     try:
         # Check move_analyses table - filter by analysis_method (stockfish/deep)
+        if not supabase:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+
         move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_method', analysis_type).in_('game_id', game_ids).execute()
         if move_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in move_analyses_response.data)
-        
+
         # Check game_analyses table - filter by analysis_type (stockfish/deep)
         game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_type', analysis_type).in_('game_id', game_ids).execute()
         if game_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
-            
+
     except Exception as e:
         print(f"[warn] Could not check analyzed games: {e}")
         # If we can't check, assume no games are analyzed to be safe
         analyzed_game_ids = set()
-    
+
     # Filter out already analyzed games
     unanalyzed_games = []
     analyzed_count = 0
@@ -571,7 +563,7 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
                 unanalyzed_games.append(game)
                 if len(unanalyzed_games) >= limit:
                     break
-    
+
     print(f"[info] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
     print(f"[info] Skipped {analyzed_count} already-analyzed games from the fetched set")
     print(f"[info] Total analyzed games in database for this user: {len(analyzed_game_ids)}")
@@ -580,7 +572,7 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
         print(f"[info] Last unanalyzed game ID: {unanalyzed_games[-1].get('provider_game_id')}")
     return unanalyzed_games
 
-async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str, 
+async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str,
                                 limit: int, depth: int, skill_level: int):
     """Perform batch analysis for a user's games."""
     # Canonicalize user ID for database operations
@@ -600,47 +592,53 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
         "current_phase": "fetching",
         "estimated_time_remaining": None
     }
-    
+
     try:
         print(f"Starting batch analysis for {user_id} on {platform}")
-        
+
         # Phase 1: Fetch games
         analysis_progress[key]["current_phase"] = "fetching"
         analysis_progress[key]["progress_percentage"] = 10
-        
+
         # ====================================================================================
         # CRITICAL: GAME SELECTION LOGIC - DO NOT MODIFY WITHOUT UNDERSTANDING THE IMPACT
         # ====================================================================================
         # This code was implemented to fix a critical bug where random games were selected
         # instead of the most recent ones. The two-step approach is REQUIRED to maintain
         # chronological ordering. See docs/GAME_SELECTION_PROTECTION.md for details.
-        # 
+        #
         # WARNING: Any changes to this logic MUST:
         # 1. Maintain chronological order (most recent first)
         # 2. Include validation calls
         # 3. Be thoroughly tested
         # 4. Update the protection documentation
         # ====================================================================================
-        
+
         # Get games from database by first fetching from games table, then getting PGN data
         # Get the most recent unanalyzed games by ordering by played_at DESC from games table
         # This ensures we always get the next batch of most recent unanalyzed games
         # Increased multiplier to ensure we find enough unanalyzed games even if many recent games are already analyzed
         fetch_limit = max(limit * 10, 100)  # Get 10x the limit (minimum 100) to ensure we find unanalyzed games
         print(f"[info] Fetching up to {fetch_limit} most recent games to find {limit} unanalyzed games")
-        
+
         # First get game IDs from games table ordered by played_at (most recent first)
+        if not supabase:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+
         games_list_response = supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
-        
+
         if games_list_response.data:
             # Get provider_game_ids in order with their played_at dates
             ordered_games = games_list_response.data
             provider_game_ids = [g['provider_game_id'] for g in ordered_games]
             print(f"[info] Found {len(provider_game_ids)} games in database (ordered by most recent)")
-            
+
             # Now fetch PGN data for these games
+            if not supabase:
+                raise HTTPException(status_code=503, detail="Supabase not configured")
+
             pgn_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
-            
+
             # Re-order PGN data to match the games table order and add played_at info
             pgn_map = {g['provider_game_id']: g for g in (pgn_response.data or [])}
             all_games = []
@@ -650,17 +648,17 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
                     pgn_data = pgn_map[provider_game_id].copy()
                     pgn_data['played_at'] = game_info['played_at']  # Add played_at to PGN data
                     all_games.append(pgn_data)
-            
+
             print(f"[info] Found {len(all_games)} games with PGN data (ordered by most recent played_at)")
             if all_games:
                 print(f"[info] First game played_at: {all_games[0].get('played_at')}")
                 print(f"[info] Last game played_at: {all_games[-1].get('played_at')}")
-                
+
                 # CRITICAL: Validate chronological order to prevent regression
                 _validate_game_chronological_order(all_games, "legacy batch analysis")
         else:
             all_games = []
-        
+
         # Filter out already analyzed games
         games = await _filter_unanalyzed_games(all_games, canonical_user_id, platform, analysis_type, limit)
         analysis_progress[key]["total_games"] = len(games)
@@ -673,15 +671,15 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
                 "progress_percentage": 100
             })
             return
-        
+
         print(f"Found {len(games)} unanalyzed games to analyze")
-        
+
         # Phase 2: Analyze games
         analysis_progress[key]["current_phase"] = "analyzing"
         analysis_progress[key]["progress_percentage"] = 20
-        
+
         engine = get_analysis_engine()
-        
+
         # Configure analysis type
         analysis_type_enum = AnalysisType(analysis_type)
         config = AnalysisConfig(
@@ -690,22 +688,22 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
             skill_level=skill_level
         )
         engine.config = config
-        
+
         processed = 0
         failed = 0
-        
+
         # Process games in parallel with proper concurrency control
         max_concurrent = min(5, len(games))  # Limit concurrent games to prevent resource exhaustion
         semaphore = asyncio.Semaphore(max_concurrent)
-        
+
         async def analyze_with_semaphore(game):
             async with semaphore:
                 return await _analyze_single_game(engine, game, canonical_user_id, platform, analysis_type_enum)
-        
+
         # Process all games in parallel with concurrency limit
         tasks = [analyze_with_semaphore(game) for game in games]
         batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Process results
         for i, result in enumerate(batch_results):
             if isinstance(result, Exception):
@@ -717,7 +715,7 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
             else:
                 failed += 1
                 print(f"Failed to analyze game {i + 1}/{len(games)}")
-            
+
             # Update progress
             progress = int(((i + 1) / len(games)) * 70) + 20  # 20-90% range
             analysis_progress[key].update({
@@ -725,16 +723,16 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
                 "progress_percentage": progress,
                 "current_phase": "analyzing"
             })
-        
+
         # Phase 3: Complete
         analysis_progress[key].update({
             "is_complete": True,
             "current_phase": "complete",
             "progress_percentage": 100
         })
-        
+
         print(f"Batch analysis complete for {user_id}! Processed: {processed}, Failed: {failed}")
-        
+
     except Exception as e:
         print(f"ERROR in batch analysis: {e}")
         import traceback
@@ -750,16 +748,16 @@ async def _analyze_single_game(engine, game, user_id, platform, analysis_type_en
     try:
         # Get PGN data directly from the game record
         pgn_data = game.get('pgn')
-        
+
         if not pgn_data:
             print(f"No PGN data for game {game.get('provider_game_id', 'unknown')}")
             return None
-        
+
         # Analyze game with the correct game_id from games_pgn table
         from datetime import datetime
         game_id = game.get('provider_game_id', f"game_{datetime.now().timestamp()}")
         game_analysis = await engine.analyze_game(pgn_data, user_id, platform, analysis_type_enum, game_id)
-        
+
         if game_analysis:
             # Save to appropriate table based on analysis type
             # Save analysis to move_analyses table (all analysis types now use Stockfish)
@@ -767,7 +765,7 @@ async def _analyze_single_game(engine, game, user_id, platform, analysis_type_en
             return game_analysis
         else:
             return None
-            
+
     except Exception as e:
         print(f"ERROR analyzing game {game.get('provider_game_id', 'unknown')}: {e}")
         return None
@@ -778,7 +776,7 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
     try:
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(analysis.user_id, analysis.platform)
-        
+
         # Convert moves analysis to dict format
         moves_analysis_dict = []
         for move in analysis.moves_analysis:
@@ -816,7 +814,7 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'move_quality': move.move_quality,
                 'game_phase': move.game_phase
             })
-        
+
         # Prepare data for move_analyses table
         data = {
             'game_id': analysis.game_id,
@@ -848,20 +846,20 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth
         }
-        
+
         # Insert or update analysis in move_analyses table using service role
         response = supabase_service.table('move_analyses').upsert(
             data,
             on_conflict='user_id,platform,game_id'
         ).execute()
-        
+
         if response.data:
             print(f"Successfully saved Stockfish analysis for game {analysis.game_id}")
             return True
         else:
             print(f"Failed to save Stockfish analysis for game {analysis.game_id}")
             return False
-            
+
     except Exception as e:
         print(f"Error saving Stockfish analysis: {e}")
         return False
@@ -871,7 +869,7 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
     try:
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(analysis.user_id, analysis.platform)
-        
+
         # Convert moves analysis to dict format
         moves_analysis_dict = []
         for move in analysis.moves_analysis:
@@ -909,7 +907,7 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'move_quality': move.move_quality,
                 'game_phase': move.game_phase
             })
-        
+
         # Prepare data for game_analyses table
         data = {
             'game_id': analysis.game_id,
@@ -945,20 +943,20 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
             'processing_time_ms': analysis.processing_time_ms,
             'stockfish_depth': analysis.stockfish_depth
         }
-        
+
         # Insert or update analysis in game_analyses table using service role
         response = supabase_service.table('game_analyses').upsert(
             data,
             on_conflict='user_id,platform,game_id'
         ).execute()
-        
+
         if response.data:
             print(f"Successfully saved analysis for game {analysis.game_id}")
             return True
         else:
             print(f"Failed to save analysis for game {analysis.game_id}")
             return False
-            
+
     except Exception as e:
         print(f"Error saving game analysis: {e}")
         return False
@@ -966,7 +964,7 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
 # Helper functions
 def _canonical_user_id(user_id: str, platform: str) -> str:
     """Canonicalize user ID for database operations.
-    
+
     Chess.com usernames are case-insensitive and should be stored/queried in lowercase.
     Lichess usernames are case-sensitive and should be left unchanged.
     """
@@ -988,7 +986,7 @@ async def root():
         "features": ["position_analysis", "move_analysis", "game_analysis", "batch_analysis"],
         "deprecated_endpoints": [
             "/analyze-games → /api/v1/analyze",
-            "/analyze-position → /api/v1/analyze", 
+            "/analyze-position → /api/v1/analyze",
             "/analyze-move → /api/v1/analyze",
             "/analyze-game → /api/v1/analyze",
             "/analysis/{user_id}/{platform} → /api/v1/results/{user_id}/{platform}",
@@ -1002,7 +1000,7 @@ async def health_check():
     """Health check endpoint."""
     engine = get_analysis_engine()
     stockfish_available = engine.stockfish_path is not None
-    
+
     return {
         "status": "healthy",
         "service": "unified-chess-analysis-api",
@@ -1014,20 +1012,20 @@ async def health_check():
 async def proxy_chess_com_games(username: str, year: int, month: int):
     """Proxy endpoint for Chess.com API to avoid CORS issues."""
     import httpx
-    
+
     try:
         url = f"https://api.chess.com/pub/player/{username}/games/{year}/{month}"
         print(f"Proxying request to: {url}")
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=30.0)
-            
+
             if response.status_code == 200:
                 return response.json()
             else:
                 print(f"Chess.com API returned status {response.status_code}")
                 return {"games": [], "error": f"API returned status {response.status_code}"}
-                
+
     except Exception as e:
         print(f"Error proxying Chess.com request: {e}")
         return {"games": [], "error": str(e)}
@@ -1036,35 +1034,35 @@ async def proxy_chess_com_games(username: str, year: int, month: int):
 async def proxy_chess_com_user(username: str):
     """Proxy endpoint for Chess.com user info to avoid CORS issues."""
     import httpx
-    
+
     try:
         url = f"https://api.chess.com/pub/player/{username}"
         print(f"Proxying user request to: {url}")
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=30.0)
-            
+
             if response.status_code == 200:
                 return response.json()
             else:
                 print(f"Chess.com API returned status {response.status_code}")
                 return {"error": f"User not found or API returned status {response.status_code}"}
-                
+
     except Exception as e:
         print(f"Error proxying Chess.com user request: {e}")
         return {"error": str(e)}
 
 @app.post("/analyze-games", response_model=AnalysisResponse, deprecated=True)
 async def analyze_games(
-    request: AnalysisRequest, 
+    request: AnalysisRequest,
     background_tasks: BackgroundTasks
 ):
     """
     Start batch analysis for a user's games.
-    
+
     ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
     Please migrate to: POST /api/v1/analyze
-    
+
     Migration guide:
     - Replace with: POST /api/v1/analyze
     - Add 'pgn' field for single game analysis
@@ -1075,14 +1073,14 @@ async def analyze_games(
         # Validate analysis type
         if request.analysis_type not in ["stockfish", "deep"]:
             raise ValidationError("Invalid analysis_type. Must be 'stockfish' or 'deep'", "analysis_type")
-        
+
         # Validate user_id and platform
         if not request.user_id or not isinstance(request.user_id, str):
             raise ValidationError("User ID must be a non-empty string", "user_id")
-        
+
         if request.platform not in ["lichess", "chess.com"]:
             raise ValidationError("Platform must be 'lichess' or 'chess.com'", "platform")
-        
+
         # Start analysis in background
         background_tasks.add_task(
             perform_batch_analysis,
@@ -1093,7 +1091,7 @@ async def analyze_games(
             request.depth,
             request.skill_level
         )
-        
+
         return AnalysisResponse(
             success=True,
             message=f"Analysis started for {request.user_id} on {request.platform} using {request.analysis_type} analysis",
@@ -1108,10 +1106,10 @@ async def analyze_games(
 async def analyze_position(request: PositionAnalysisRequest):
     """
     Analyze a chess position.
-    
+
     ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
     Please migrate to: POST /api/v1/analyze
-    
+
     Migration guide:
     - Replace with: POST /api/v1/analyze
     - Add 'fen' field to request body
@@ -1119,7 +1117,7 @@ async def analyze_position(request: PositionAnalysisRequest):
     """
     try:
         engine = get_analysis_engine()
-        
+
         # Configure analysis type
         analysis_type_enum = AnalysisType(request.analysis_type)
         config = AnalysisConfig(
@@ -1127,9 +1125,9 @@ async def analyze_position(request: PositionAnalysisRequest):
             depth=request.depth
         )
         engine.config = config
-        
+
         result = await engine.analyze_position(request.fen, analysis_type_enum)
-        
+
         return PositionAnalysisResult(
             evaluation=result['evaluation'],
             best_move=result.get('best_move'),
@@ -1144,10 +1142,10 @@ async def analyze_position(request: PositionAnalysisRequest):
 async def analyze_move(request: MoveAnalysisRequest):
     """
     Analyze a specific move in a position.
-    
+
     ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
     Please migrate to: POST /api/v1/analyze
-    
+
     Migration guide:
     - Replace with: POST /api/v1/analyze
     - Add 'fen' and 'move' fields to request body
@@ -1155,9 +1153,9 @@ async def analyze_move(request: MoveAnalysisRequest):
     """
     try:
         import chess
-        
+
         engine = get_analysis_engine()
-        
+
         # Configure analysis type
         analysis_type_enum = AnalysisType(request.analysis_type)
         config = AnalysisConfig(
@@ -1165,13 +1163,13 @@ async def analyze_move(request: MoveAnalysisRequest):
             depth=request.depth
         )
         engine.config = config
-        
+
         # Parse position and move
         board = chess.Board(request.fen)
         move = chess.Move.from_uci(request.move)
-        
+
         result = await engine.analyze_move(board, move, analysis_type_enum)
-        
+
         return MoveAnalysisResult(
             move=result.move,
             move_san=result.move_san,
@@ -1191,10 +1189,10 @@ async def analyze_move(request: MoveAnalysisRequest):
 async def analyze_game(request: GameAnalysisRequest):
     """
     Analyze a single game from PGN.
-    
+
     ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
     Please migrate to: POST /api/v1/analyze
-    
+
     Migration guide:
     - Replace with: POST /api/v1/analyze
     - Add 'pgn' field to request body
@@ -1202,7 +1200,7 @@ async def analyze_game(request: GameAnalysisRequest):
     """
     try:
         engine = get_analysis_engine()
-        
+
         # Configure analysis type
         analysis_type_enum = AnalysisType(request.analysis_type)
         config = AnalysisConfig(
@@ -1210,15 +1208,15 @@ async def analyze_game(request: GameAnalysisRequest):
             depth=request.depth
         )
         engine.config = config
-        
+
         # Analyze game
         game_analysis = await engine.analyze_game(
-            request.pgn, 
-            request.user_id, 
-            request.platform, 
+            request.pgn,
+            request.user_id,
+            request.platform,
             analysis_type_enum
         )
-        
+
         if game_analysis:
             # Save to database
             success = await save_game_analysis(game_analysis)
@@ -1243,19 +1241,19 @@ async def analyze_game(request: GameAnalysisRequest):
 
 @app.get("/analysis/{user_id}/{platform}", response_model=List[GameAnalysisSummary], deprecated=True)
 async def get_analysis_results(
-    user_id: str, 
-    platform: str, 
-    limit: int = Query(10, ge=1, le=100), 
+    user_id: str,
+    platform: str,
+    limit: int = Query(10, ge=1, le=100),
     analysis_type: str = Query("stockfish"),
     # Optional authentication - can be enabled via config
     _: Optional[bool] = Depends(verify_user_access) if config.api.auth_enabled else None
 ):
     """
     Get analysis results for a user from appropriate table based on analysis type.
-    
+
     ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
     Please migrate to: GET /api/v1/results/{user_id}/{platform}
-    
+
     Migration guide:
     - Replace with: GET /api/v1/results/{user_id}/{platform}
     - All parameters remain the same
@@ -1264,7 +1262,10 @@ async def get_analysis_results(
     try:
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
-        
+
+        if not supabase_service or not supabase:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+
         # Use unified view for consistent data access
         if analysis_type in ["stockfish", "deep"]:
             # Filter by analysis type in the unified view
@@ -1284,15 +1285,15 @@ async def get_analysis_results(
             ).order(
                 'analysis_date', desc=True
             ).limit(limit).execute()
-        
+
         if not response.data:
             return []
-        
+
         results = []
         for analysis in response.data:
             # Use simplified mapping since unified view provides consistent fields
             results.append(map_unified_analysis_to_response(analysis))
-        
+
         return results
     except Exception as e:
         print(f"Error fetching analysis results: {e}")
@@ -1300,18 +1301,18 @@ async def get_analysis_results(
 
 @app.get("/analysis-stats/{user_id}/{platform}", deprecated=True)
 async def get_analysis_stats(
-    user_id: str, 
-    platform: str, 
+    user_id: str,
+    platform: str,
     analysis_type: str = Query("stockfish"),
     # Optional authentication - can be enabled via config
     _: Optional[bool] = Depends(verify_user_access) if config.api.auth_enabled else None
 ):
     """
     Get analysis statistics for a user.
-    
+
     ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
     Please migrate to: GET /api/v1/stats/{user_id}/{platform}
-    
+
     Migration guide:
     - Replace with: GET /api/v1/stats/{user_id}/{platform}
     - All parameters remain the same
@@ -1321,7 +1322,10 @@ async def get_analysis_stats(
     try:
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
-        
+
+        if not supabase_service or not supabase:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+
         # Use unified view for consistent data access
         if analysis_type in ["stockfish", "deep"]:
             response = supabase_service.table('unified_analyses').select('*').eq(
@@ -1335,7 +1339,7 @@ async def get_analysis_stats(
             ).eq('platform', platform).eq(
                 'analysis_type', 'stockfish'
             ).execute()
-        
+
         if not response.data:
             return {
                 "total_games_analyzed": 0,
@@ -1355,7 +1359,7 @@ async def get_analysis_stats(
                 "brilliant_moves_per_game": 0,
                 "material_sacrifices_per_game": 0
             }
-        
+
         # Use unified stats calculation
         return calculate_unified_stats(response.data, analysis_type)
     except Exception as e:
@@ -1381,17 +1385,17 @@ async def get_analysis_stats(
 
 @app.get("/analysis-progress/{user_id}/{platform}", response_model=AnalysisProgress, deprecated=True)
 async def get_analysis_progress(
-    user_id: str, 
+    user_id: str,
     platform: str,
     # Optional authentication - can be enabled via config
     _: Optional[bool] = Depends(verify_user_access) if config.api.auth_enabled else None
 ):
     """
     Get analysis progress for a user.
-    
+
     ⚠️ DEPRECATED: This endpoint is deprecated and will be removed in a future version.
     Please migrate to: GET /api/v1/progress/{user_id}/{platform}
-    
+
     Migration guide:
     - Replace with: GET /api/v1/progress/{user_id}/{platform}
     - All parameters remain the same
@@ -1400,7 +1404,7 @@ async def get_analysis_progress(
     canonical_user_id = _canonical_user_id(user_id, platform)
     platform_key = platform.strip().lower()
     key = f"{canonical_user_id}_{platform_key}"
-    
+
     if key not in analysis_progress:
         return AnalysisProgress(
             analyzed_games=0,
@@ -1409,7 +1413,7 @@ async def get_analysis_progress(
             is_complete=False,
             current_phase="not_started"
         )
-    
+
     progress = analysis_progress[key]
     return AnalysisProgress(
         analyzed_games=progress["analyzed_games"],
@@ -1422,16 +1426,16 @@ async def get_analysis_progress(
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Unified Chess Analysis API Server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--port", type=int, default=config.api.port, help="Port to bind to")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
-    
+
     args = parser.parse_args()
-    
+
     print(f"Starting Unified Chess Analysis API Server on {args.host}:{args.port}")
     print("This server provides comprehensive chess analysis capabilities!")
     print("Available analysis types: stockfish, deep")
-    
+
     uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)

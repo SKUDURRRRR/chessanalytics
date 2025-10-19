@@ -20,48 +20,19 @@ export function LongTermPlanner({ data, userId }: LongTermPlannerProps) {
   const aiStyle = data.ai_style_analysis
   const personalityEntries = data.personality_insights ? Object.entries(data.personality_insights).slice(0, 2) : []
 
-  const toSentenceFragment = (value?: string | null) => {
-    if (!value) return ''
-    if (value.length === 0) return ''
-    return value.charAt(0).toLowerCase() + value.slice(1)
+  const getConfidenceColor = (confidence?: number) => {
+    if (!confidence) return 'text-gray-400'
+    if (confidence >= 80) return 'text-emerald-400'
+    if (confidence >= 60) return 'text-yellow-400'
+    return 'text-gray-400'
   }
 
-  const primaryStrengthDescriptor = primaryPlayer?.strengths?.join(', ')
-  const fallbackStrengthDescriptor = primaryStrengthDescriptor || 'strategic depth'
-
-  const similarityInsights: string[] = []
-
-  if (primaryPlayer) {
-    if (aiStyle?.characteristics) {
-      similarityInsights.push(
-        `Your games show ${aiStyle.characteristics}, echoing ${primaryPlayer.name}'s ${toSentenceFragment(fallbackStrengthDescriptor)}.`,
-      )
-    }
-
-    if (aiStyle?.playing_patterns) {
-      const descriptiveFocus = toSentenceFragment(primaryPlayer.description) || 'disciplined game plans'
-      similarityInsights.push(
-        `We consistently detect "${aiStyle.playing_patterns}", a pattern that mirrors ${primaryPlayer.name}'s ${descriptiveFocus}.`,
-      )
-    }
-
-    if (aiStyle?.strengths) {
-      similarityInsights.push(
-        `Your recent games highlight ${aiStyle.strengths} as signature strengths, lining up with ${primaryPlayer.name}'s reputation for ${toSentenceFragment(fallbackStrengthDescriptor)}.`,
-      )
-    }
-
-    if (personalityEntries.length) {
-      const traitsSummary = personalityEntries.map(([trait]) => trait).join(' and ')
-      similarityInsights.push(
-        `Personality cues around ${traitsSummary} match the mindset ${primaryPlayer.name} leverages in elite play.`,
-      )
-    }
+  const getConfidenceBadge = (confidence?: number) => {
+    if (!confidence) return ''
+    if (confidence >= 80) return '●'
+    if (confidence >= 60) return '◐'
+    return '○'
   }
-
-  const insightLines = primaryPlayer
-    ? [primaryPlayer.similarity, ...similarityInsights].filter((line): line is string => Boolean(line))
-    : []
 
   return (
     <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-slate-200 shadow-xl shadow-black/40">
@@ -76,23 +47,23 @@ export function LongTermPlanner({ data, userId }: LongTermPlannerProps) {
               <p className="text-sm text-slate-200">
                 {data.ai_style_analysis.style_summary}
               </p>
-              
+
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
                   <h4 className="mb-1 text-sm font-semibold text-white">Key Characteristics</h4>
                   <p className="text-xs text-slate-200">{data.ai_style_analysis.characteristics}</p>
                 </div>
-                
+
                 <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
                   <h4 className="mb-1 text-sm font-semibold text-white">Main Strengths</h4>
                   <p className="text-xs text-slate-200">{data.ai_style_analysis.strengths}</p>
                 </div>
-                
+
                 <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
                   <h4 className="mb-1 text-sm font-semibold text-white">Playing Patterns</h4>
                   <p className="text-xs text-slate-200">{data.ai_style_analysis.playing_patterns}</p>
                 </div>
-                
+
                 <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
                   <h4 className="mb-1 text-sm font-semibold text-white">Improvement Focus</h4>
                   <p className="text-xs text-slate-200">{data.ai_style_analysis.improvement_focus}</p>
@@ -132,18 +103,30 @@ export function LongTermPlanner({ data, userId }: LongTermPlannerProps) {
         {primaryPlayer ? (
           <div className="rounded-2xl border border-purple-400/30 bg-purple-500/10 p-5">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-purple-200">Player with Similar Style</h3>
+
+            {/* Primary Match */}
             <div className="rounded-2xl border border-purple-300/40 bg-white/[0.06] p-4">
-              <div className="mb-2 flex items-center">
-                <div className="mr-2 h-3 w-3 rounded-full bg-purple-400" />
-                <h4 className="text-sm font-semibold text-white">{primaryPlayer.name}</h4>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="mr-2 h-3 w-3 rounded-full bg-purple-400" />
+                  <h4 className="text-sm font-semibold text-white">{primaryPlayer.name}</h4>
+                </div>
+                {primaryPlayer.similarity_score && (
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-semibold ${getConfidenceColor(primaryPlayer.match_confidence)}`}>
+                      {getConfidenceBadge(primaryPlayer.match_confidence)} {primaryPlayer.similarity_score.toFixed(0)}% match
+                    </span>
+                  </div>
+                )}
               </div>
               <p className="mb-2 text-xs text-purple-100">{primaryPlayer.description}</p>
               <p className="mb-2 text-[11px] uppercase tracking-wide text-purple-200/80">Era: {primaryPlayer.era}</p>
-              {insightLines.length > 0 && (
+
+              {primaryPlayer.insights && primaryPlayer.insights.length > 0 && (
                 <div className="mb-3 space-y-2 rounded-2xl border border-purple-300/30 bg-purple-500/15 p-4">
                   <h5 className="text-[11px] font-semibold uppercase tracking-wide text-purple-100">Why this match resonates</h5>
                   <ul className="space-y-2 text-xs text-purple-100">
-                    {insightLines.map((line, index) => (
+                    {primaryPlayer.insights.map((line, index) => (
                       <li key={index} className="flex gap-2">
                         <div className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-200" />
                         <span>{line}</span>
@@ -152,6 +135,7 @@ export function LongTermPlanner({ data, userId }: LongTermPlannerProps) {
                   </ul>
                 </div>
               )}
+
               <div className="flex flex-wrap gap-2">
                 {primaryPlayer.strengths?.map((strength, index) => (
                   <span key={index} className="rounded-full bg-purple-400/20 px-3 py-1 text-[11px] font-medium text-purple-100">
@@ -160,6 +144,7 @@ export function LongTermPlanner({ data, userId }: LongTermPlannerProps) {
                 ))}
               </div>
             </div>
+
           </div>
         ) : (
           <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-5 text-xs text-amber-100">

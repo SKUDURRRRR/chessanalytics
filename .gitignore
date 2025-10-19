@@ -16,12 +16,23 @@ playwright-report/
 coverage/
 .pytest_cache/
 
-# Environment files
+# Environment files - comprehensive coverage
 .env
+.env.*
+!.env.example
 .env.local
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
+.env.staging
+.env.staging.local
+env.local
+env.development
+env.production
+env.test
 
 # IDE files
 .vscode/

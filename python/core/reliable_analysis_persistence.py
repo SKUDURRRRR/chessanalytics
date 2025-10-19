@@ -232,22 +232,45 @@ class ReliableAnalysisPersistence:
 
                 print(f"[PERSISTENCE] game_analyses response: data={getattr(game_response, 'data', None)}, error={getattr(game_response, 'error', None)}")
                 
-                # Check for foreign key constraint violations
+                # Check for database constraint violations
                 if hasattr(game_response, 'error') and game_response.error:
                     error_msg = str(game_response.error)
+                    
+                    # Check for unique constraint violation (needs database migration)
+                    if 'idx_game_analyses_user_platform_game' in error_msg and 'duplicate key' in error_msg.lower():
+                        print(f"[PERSISTENCE] ❌ DATABASE CONSTRAINT ERROR: {error_msg}")
+                        print(f"[PERSISTENCE] ⚠️  DATABASE MIGRATION REQUIRED!")
+                        print(f"[PERSISTENCE] The database constraint needs to be updated to support reanalysis.")
+                        print(f"[PERSISTENCE] Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
+                        print(f"[PERSISTENCE] See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
+                        return False, None
+                    
+                    # Check for foreign key constraint violations
                     if 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
                         print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
                         print(f"[PERSISTENCE] This means the game record doesn't exist in the games table")
                         print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
+                        print(f"[PERSISTENCE] The game must be imported first before it can be analyzed.")
                         return False, None
                         
             except Exception as db_error:
                 error_msg = str(db_error)
                 print(f"[PERSISTENCE] ❌ DATABASE ERROR during game_analyses save: {error_msg}")
+                
+                # Check for unique constraint violation (needs database migration)
+                if 'idx_game_analyses_user_platform_game' in error_msg and 'duplicate key' in error_msg.lower():
+                    print(f"[PERSISTENCE] ⚠️  DATABASE MIGRATION REQUIRED!")
+                    print(f"[PERSISTENCE] The database constraint needs to be updated to support reanalysis.")
+                    print(f"[PERSISTENCE] Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
+                    print(f"[PERSISTENCE] See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
+                    return False, None
+                
+                # Check for foreign key constraint violations
                 if 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
                     print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
                     print(f"[PERSISTENCE] This means the game record doesn't exist in the games table")
                     print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
+                    print(f"[PERSISTENCE] The game must be imported first before it can be analyzed.")
                 return False, None
 
             game_analysis_id = None
@@ -419,7 +442,22 @@ class ReliableAnalysisPersistence:
             return record_id is not None, record_id
 
         except Exception as e:
-            logger.error(f"Error saving to game_analyses: {str(e)}")
+            error_msg = str(e)
+            logger.error(f"Error saving to game_analyses: {error_msg}")
+            
+            # Check for unique constraint violation (needs database migration)
+            if 'idx_game_analyses_user_platform_game' in error_msg and 'duplicate key' in error_msg.lower():
+                print(f"[PERSISTENCE] ❌ DATABASE CONSTRAINT ERROR: {error_msg}")
+                print(f"[PERSISTENCE] ⚠️  DATABASE MIGRATION REQUIRED!")
+                print(f"[PERSISTENCE] The database constraint needs to be updated to support reanalysis.")
+                print(f"[PERSISTENCE] Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
+                print(f"[PERSISTENCE] See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
+            elif 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
+                print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
+                print(f"[PERSISTENCE] This means the game record doesn't exist in the games table")
+                print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
+                print(f"[PERSISTENCE] The game must be imported first before it can be analyzed.")
+            
             return False, None
 
     def _prepare_analysis_data(self, analysis: GameAnalysis, canonical_user_id: str, analysis_type: AnalysisType) -> Dict[str, Any]:

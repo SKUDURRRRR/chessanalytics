@@ -15,7 +15,7 @@ class PerformanceProfile(Enum):
 
 @dataclass
 class AnalysisPerformanceConfig:
-    """Configuration for analysis performance optimization - Railway Hobby Tier (8 GB RAM, 8 vCPU)."""
+    """Configuration for analysis performance optimization - Railway Hobby Tier (512 MB RAM, shared vCPU)."""
     
     # Stockfish Engine Settings - Railway Hobby
     stockfish_depth: int = 14              # Better depth for accuracy
@@ -30,7 +30,7 @@ class AnalysisPerformanceConfig:
     parallel_analysis: bool = True         # Enable parallel
     
     # Memory Management - Railway Hobby
-    max_memory_usage_mb: int = 3072        # 3GB max (conservative)
+    max_memory_usage_mb: int = 512         # 512 MB max (Railway Hobby limit)
     cleanup_interval_minutes: int = 30     # Regular cleanup
     
     # Database Optimization - Railway Hobby
@@ -61,7 +61,7 @@ class AnalysisPerformanceConfig:
             max_concurrent_analyses=4,       # Parallel move processing
             batch_size=10,                   # Larger batches
             parallel_analysis=True,          # Enable parallel processing
-            max_memory_usage_mb=3072,        # 3GB max (conservative)
+            max_memory_usage_mb=512,         # 512 MB max (Railway Hobby limit)
             cleanup_interval_minutes=30,     # Regular cleanup
             batch_insert_size=100,           # Efficient database operations
             connection_pool_size=15,         # More connections

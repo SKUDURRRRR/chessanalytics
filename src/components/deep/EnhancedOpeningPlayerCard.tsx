@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { EnhancedOpeningAnalysis, OpeningMistake, StudyRecommendation } from '../../types'
+import { EnhancedOpeningAnalysis, OpeningMistake, StudyRecommendation, StyleRecommendation, TrendPoint } from '../../types'
 
 interface EnhancedOpeningPlayerCardProps {
   score: number
@@ -18,6 +18,60 @@ interface EnhancedOpeningPlayerCardProps {
   totalGames?: number
   // Enhanced analysis data
   enhancedAnalysis?: EnhancedOpeningAnalysis
+  // Personality scores for style display
+  personalityScores?: Record<string, number>
+}
+
+// Helper to normalize API data (snake_case to camelCase)
+function normalizeEnhancedAnalysis(data: any): EnhancedOpeningAnalysis | undefined {
+  if (!data) return undefined
+  
+  const normalized: any = {
+    openingWinRate: data.opening_win_rate ?? data.openingWinRate ?? 0,
+    specificMistakes: (data.specific_mistakes || data.specificMistakes || []).map((m: any) => ({
+      move: m.move,
+      moveNotation: m.move_notation || m.moveNotation,
+      mistake: m.mistake,
+      correctMove: m.correct_move || m.correctMove,
+      explanation: m.explanation,
+      severity: m.severity,
+      centipawnLoss: m.centipawn_loss ?? m.centipawnLoss,
+      classification: m.classification,
+      fen: m.fen
+    })),
+    styleRecommendations: (data.style_recommendations || data.styleRecommendations || []).map((r: any) => ({
+      openingName: r.opening_name || r.openingName,
+      compatibilityScore: r.compatibility_score ?? r.compatibilityScore,
+      reasoning: r.reasoning,
+      suggestedLines: r.suggested_lines || r.suggestedLines || [],
+      priority: r.priority
+    })),
+    actionableInsights: data.actionable_insights || data.actionableInsights || [],
+    improvementTrend: (data.improvement_trend || data.improvementTrend || []).map((t: any) => ({
+      date: t.date,
+      openingWinRate: t.opening_win_rate ?? t.openingWinRate,
+      games: t.games,
+      accuracy: t.accuracy
+    })),
+    repertoireAnalysis: {
+      diversityScore: data.repertoire_analysis?.diversity_score ?? data.repertoireAnalysis?.diversityScore ?? 0,
+      whiteOpenings: data.repertoire_analysis?.white_openings || data.repertoireAnalysis?.whiteOpenings || [],
+      blackOpenings: data.repertoire_analysis?.black_openings || data.repertoireAnalysis?.blackOpenings || [],
+      mostSuccessful: {
+        opening: data.repertoire_analysis?.most_successful?.opening || data.repertoireAnalysis?.mostSuccessful?.opening || 'None',
+        winRate: data.repertoire_analysis?.most_successful?.win_rate ?? data.repertoire_analysis?.most_successful?.winRate ?? data.repertoireAnalysis?.mostSuccessful?.winRate ?? 0,
+        games: data.repertoire_analysis?.most_successful?.games || data.repertoireAnalysis?.mostSuccessful?.games || 0
+      },
+      needsWork: {
+        opening: data.repertoire_analysis?.needs_work?.opening || data.repertoireAnalysis?.needsWork?.opening || 'None',
+        winRate: data.repertoire_analysis?.needs_work?.win_rate ?? data.repertoire_analysis?.needs_work?.winRate ?? data.repertoireAnalysis?.needsWork?.winRate ?? 0,
+        games: data.repertoire_analysis?.needs_work?.games || data.repertoireAnalysis?.needsWork?.games || 0
+      },
+      styleMatchScore: data.repertoire_analysis?.style_match_score ?? data.repertoireAnalysis?.styleMatchScore ?? 0
+    }
+  }
+  
+  return normalized
 }
 
 export function EnhancedOpeningPlayerCard({
@@ -25,10 +79,190 @@ export function EnhancedOpeningPlayerCard({
   phaseAccuracy: _phaseAccuracy,
   openingStats = [],
   totalGames = 0,
-  enhancedAnalysis
+  enhancedAnalysis: rawEnhancedAnalysis,
+  personalityScores = {}
 }: EnhancedOpeningPlayerCardProps) {
   const [selectedTab, setSelectedTab] = useState<'overview' | 'mistakes' | 'study' | 'progress'>('overview')
   const [selectedMistake, setSelectedMistake] = useState<OpeningMistake | null>(null)
+  
+  // Normalize the enhanced analysis data
+  const enhancedAnalysis = normalizeEnhancedAnalysis(rawEnhancedAnalysis)
+  
+  
+  // Use opening win rate from enhanced analysis if available, otherwise use score
+  const effectiveScore = enhancedAnalysis?.openingWinRate || score
+  
+  // Get combined playing style description
+  const getPlayingStyle = () => {
+    const aggressive = personalityScores.aggressive || 0
+    const tactical = personalityScores.tactical || 0
+    const positional = personalityScores.positional || 0
+    const patient = personalityScores.patient || 0
+    
+    // All traits with their scores
+    const traits = [
+      { name: 'aggressive', score: aggressive },
+      { name: 'tactical', score: tactical },
+      { name: 'positional', score: positional },
+      { name: 'patient', score: patient }
+    ].sort((a, b) => b.score - a.score)
+    
+    const [first, second, third, fourth] = traits
+    
+    // Calculate score differences
+    const highestScore = first.score
+    const lowestScore = fourth.score
+    const scoreRange = highestScore - lowestScore
+    const topTwoGap = first.score - second.score
+    
+    // PRIORITY 0: Check for developing/low skill players FIRST
+    // Lower elo players have compressed scores in the 30-55 range
+    // We need to identify them before checking if they're "balanced"
+    if (highestScore < 55) {
+      // Low scores - likely beginner/developing player
+      // Still show some variety based on their highest trait
+      const beginnerStyles = {
+        aggressive: { text: 'Developing Attacker', icon: '⚔️' },
+        tactical: { text: 'Learning Tactics', icon: '🎯' },
+        positional: { text: 'Learning Strategy', icon: '🏰' },
+        patient: { text: 'Cautious Player', icon: '🛡️' }
+      }
+      const style = beginnerStyles[first.name] || { text: 'Developing Player', icon: '♟️' }
+      return {
+        description: style.text,
+        icon: style.icon,
+        primaryTrait: first.name,
+        score: Math.round(highestScore)
+      }
+    }
+    
+    // If all scores are very close (within 8 points) AND in mid-skill range, truly balanced
+    // This catches players with scores 55-65 that are genuinely balanced
+    if (scoreRange < 8 && highestScore >= 55 && highestScore < 70) {
+      return { 
+        description: 'Balanced Player', 
+        icon: '⚖️',
+        primaryTrait: 'balanced',
+        score: Math.round(highestScore)
+      }
+    }
+    
+    // PRIORITY 1: Use aggressive/patient dimension if there's meaningful difference
+    // This dimension shows the most playing style variety
+    // Lowered threshold from 15 to 10 to catch more variety
+    const aggrScore = aggressive
+    const patientScore = patient
+    const aggrPatientDiff = Math.abs(aggrScore - patientScore)
+    
+    // If aggressive/patient differ by 10+ points, use that as primary dimension
+    if (aggrPatientDiff >= 10) {
+      const isPrimaryAggressive = aggrScore > patientScore
+      const primaryDimension = isPrimaryAggressive ? 'aggressive' : 'patient'
+      const primaryScore = Math.max(aggrScore, patientScore)
+      
+      // Find strongest secondary trait (tactical vs positional)
+      const tactScore = tactical
+      const posScore = positional
+      const secondaryDimension = tactScore > posScore ? 'tactical' : 'positional'
+      
+      // Style descriptions prioritizing aggr/patient dimension
+      const styleMap = {
+        'aggressive-tactical': { text: 'Aggressive Tactician', icon: '⚔️' },
+        'aggressive-positional': { text: 'Strategic Attacker', icon: '⚔️' },
+        'patient-tactical': { text: 'Defensive Tactician', icon: '🛡️' },
+        'patient-positional': { text: 'Classical Strategist', icon: '🛡️' }
+      }
+      
+      const styleKey = `${primaryDimension}-${secondaryDimension}`
+      const style = styleMap[styleKey] || { text: 'Versatile Player', icon: '♟️' }
+      
+      return {
+        description: style.text,
+        icon: style.icon,
+        primaryTrait: primaryDimension,
+        score: Math.round(primaryScore)
+      }
+    }
+    
+    // PRIORITY 2: Check if one trait is truly dominant
+    // Lowered requirements to catch more variety (12+ gap OR 65+ score with 8+ gap)
+    if ((topTwoGap >= 12 && first.score >= 65) || (topTwoGap >= 8 && first.score >= 75)) {
+      const singleTraitStyles = {
+        aggressive: { text: 'Pure Attacker', icon: '⚔️' },
+        tactical: { text: 'Sharp Tactician', icon: '🎯' },
+        positional: { text: 'Strategic Mastermind', icon: '🏰' },
+        patient: { text: 'Solid Defender', icon: '🛡️' }
+      }
+      const style = singleTraitStyles[first.name] || { text: 'Specialized Player', icon: '♟️' }
+      return {
+        description: style.text,
+        icon: style.icon,
+        primaryTrait: first.name,
+        score: Math.round(first.score)
+      }
+    }
+    
+    // PRIORITY 3: Use top 2 traits, but avoid "Universal Player" unless truly exceptional
+    // Only allow Universal/Complete if BOTH tactical and positional are 70+
+    const key = `${first.name}-${second.name}`
+    
+    // Special handling for tactical-positional combinations
+    if ((first.name === 'tactical' && second.name === 'positional') || 
+        (first.name === 'positional' && second.name === 'tactical')) {
+      // Only call them "Universal/Complete Player" if both scores are genuinely high (70+)
+      if (tactical >= 70 && positional >= 70) {
+        return {
+          description: first.name === 'tactical' ? 'Universal Player' : 'Complete Player',
+          icon: first.name === 'tactical' ? '🎯' : '🏰',
+          primaryTrait: first.name,
+          score: Math.round(first.score)
+        }
+      } 
+      // If scores are moderate (55-70 range) and close together (within 5 points), show combined style
+      else if (Math.abs(tactical - positional) <= 5 && tactical >= 55 && positional >= 55) {
+        return {
+          description: 'Well-Rounded Player',
+          icon: '♟️',
+          primaryTrait: first.name,
+          score: Math.round(first.score)
+        }
+      }
+      // Otherwise, use more specific descriptor based on which is clearly higher
+      else {
+        return {
+          description: tactical > positional ? 'Tactical Player' : 'Positional Player',
+          icon: tactical > positional ? '🎯' : '🏰',
+          primaryTrait: tactical > positional ? 'tactical' : 'positional',
+          score: Math.round(Math.max(tactical, positional))
+        }
+      }
+    }
+    
+    // Standard combined styles for other combinations
+    const combinedStyles = {
+      'aggressive-tactical': { text: 'Aggressive Tactician', icon: '⚔️' },
+      'aggressive-positional': { text: 'Dynamic Attacker', icon: '⚔️' },
+      'aggressive-patient': { text: 'Controlled Aggressor', icon: '⚔️' },
+      'tactical-aggressive': { text: 'Sharp Attacker', icon: '🎯' },
+      'tactical-patient': { text: 'Calculated Tactician', icon: '🎯' },
+      'positional-aggressive': { text: 'Strategic Attacker', icon: '🏰' },
+      'positional-patient': { text: 'Solid Positional Player', icon: '🏰' },
+      'patient-aggressive': { text: 'Counter-Attacker', icon: '🛡️' },
+      'patient-tactical': { text: 'Defensive Tactician', icon: '🛡️' },
+      'patient-positional': { text: 'Classical Strategist', icon: '🛡️' }
+    }
+    
+    const style = combinedStyles[key] || { text: 'Versatile Player', icon: '♟️' }
+    
+    return {
+      description: style.text,
+      icon: style.icon,
+      primaryTrait: first.name,
+      score: Math.round(first.score)
+    }
+  }
+  
+  const playingStyle = getPlayingStyle()
 
   const getScoreLevel = (score: number) => {
     if (score >= 80) return { level: 'Excellent', color: 'text-emerald-300', bgColor: 'bg-emerald-500/20' }
@@ -37,7 +271,7 @@ export function EnhancedOpeningPlayerCard({
     return { level: 'Needs Work', color: 'text-rose-300', bgColor: 'bg-rose-500/20' }
   }
 
-  const { level, color, bgColor } = getScoreLevel(score)
+  const { level, color, bgColor } = getScoreLevel(effectiveScore)
 
   // Calculate opening insights from actual data
   const getOpeningInsights = () => {
@@ -73,36 +307,6 @@ export function EnhancedOpeningPlayerCard({
 
   const insights = getOpeningInsights()
 
-  const getPersonalizedFeedback = () => {
-    if (score >= 80) {
-      return {
-        assessment: "You have excellent opening knowledge and consistently achieve strong positions.",
-        focus: "Maintain your high level and explore advanced variations.",
-        meaning: "Your opening preparation gives you significant advantages in most games."
-      }
-    } else if (score >= 70) {
-      return {
-        assessment: "You have good opening knowledge with solid theoretical understanding.",
-        focus: "Fine-tune your repertoire and study key variations more deeply.",
-        meaning: "Your opening play helps you reach reasonable positions consistently."
-      }
-    } else if (score >= 60) {
-      return {
-        assessment: "You have developing opening knowledge with basic theoretical concepts.",
-        focus: "Study opening principles and expand your repertoire systematically.",
-        meaning: "Your opening knowledge helps you avoid major disadvantages in most games."
-      }
-    } else {
-      return {
-        assessment: "Your opening knowledge needs significant improvement to avoid early disadvantages.",
-        focus: "Focus on fundamental opening principles and basic theory.",
-        meaning: "Improving your opening play will prevent many early game problems."
-      }
-    }
-  }
-
-  const feedback = getPersonalizedFeedback()
-
   const tabs = [
     { id: 'overview', label: 'Overview', icon: '📊' },
     { id: 'mistakes', label: 'Mistakes', icon: '🎯' },
@@ -118,13 +322,13 @@ export function EnhancedOpeningPlayerCard({
           <h3 className="text-lg font-semibold text-white">Enhanced Opening Analysis</h3>
         </div>
         <div className="text-left sm:text-right">
-          <div className="text-2xl font-bold text-white">{Math.round(score)}%</div>
-          <div className="text-xs text-slate-300">Overall Accuracy</div>
+          <div className="text-2xl font-bold text-white">{Math.round(effectiveScore)}%</div>
+          <div className="text-xs text-slate-300">Opening Win Rate</div>
         </div>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex sm:flex sm:space-x-1 grid grid-cols-2 gap-2 sm:gap-0 mb-6 bg-slate-800/50 rounded-xl p-1 sm:p-1 overflow-x-auto sm:overflow-x-auto">
+      <div className="flex sm:flex sm:space-x-1 grid grid-cols-2 gap-2 sm:gap-0 mb-6 bg-slate-800/50 rounded-xl p-1 sm:p-1">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -144,15 +348,49 @@ export function EnhancedOpeningPlayerCard({
       {/* Tab Content */}
       {selectedTab === 'overview' && (
         <div className="space-y-6">
-          <p className="text-sm text-slate-200 mb-4">
-            {feedback.assessment}
-          </p>
+          {/* Data-driven assessment */}
+          {(enhancedAnalysis?.repertoireAnalysis || insights.totalOpeningGames > 0) && (
+            <div className="bg-slate-800/30 rounded-xl p-4">
+              <p className="text-sm text-slate-200 leading-relaxed">
+                {effectiveScore >= 70 
+                  ? `You're performing well in the opening phase with a ${Math.round(effectiveScore)}% win rate across ${insights.totalOpeningGames} games.`
+                  : effectiveScore >= 60
+                  ? `Your opening performance is developing with a ${Math.round(effectiveScore)}% win rate across ${insights.totalOpeningGames} games.`
+                  : `Your opening play has room for improvement with a ${Math.round(effectiveScore)}% win rate across ${insights.totalOpeningGames} games.`
+                }
+                {enhancedAnalysis?.repertoireAnalysis?.mostSuccessful?.opening !== 'None' && enhancedAnalysis?.repertoireAnalysis?.mostSuccessful?.opening ? 
+                  ` Your ${enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening} is especially strong at ${Math.round(enhancedAnalysis.repertoireAnalysis.mostSuccessful.winRate)}% win rate.` :
+                  insights.bestOpening ? ` Your ${insights.bestOpening.opening} is especially strong at ${Math.round(insights.bestOpening.winRate)}% win rate.` : ''
+                }
+              </p>
+            </div>
+          )}
+
+          {/* Player Style Card - Always show for players with any personality scores */}
+          <div className="bg-gradient-to-r from-sky-500/20 to-purple-500/20 border border-sky-500/30 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-slate-300 mb-1">Your Playing Style</div>
+                <div className="text-xl font-bold text-white">
+                  {playingStyle.description}
+                </div>
+                {playingStyle.primaryTrait !== 'balanced' && playingStyle.primaryTrait !== 'developing' && (
+                  <div className="text-xs text-sky-300 mt-1">
+                    Based on {playingStyle.primaryTrait} traits
+                  </div>
+                )}
+              </div>
+              <div className="text-4xl">
+                {playingStyle.icon}
+              </div>
+            </div>
+          </div>
 
           {/* Key Metrics Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className={`${bgColor} rounded-xl p-4`}>
-              <div className="text-lg font-bold text-white">{Math.round(score)}%</div>
-              <div className="text-xs text-slate-300">Opening Accuracy</div>
+              <div className="text-lg font-bold text-white">{Math.round(effectiveScore)}%</div>
+              <div className="text-xs text-slate-300">Opening Win Rate</div>
             </div>
             <div className="bg-slate-800/50 rounded-xl p-4">
               <div className="text-lg font-bold text-emerald-300">{insights.totalOpeningGames}</div>
@@ -163,20 +401,37 @@ export function EnhancedOpeningPlayerCard({
               <div className="text-xs text-slate-300">Openings</div>
             </div>
             <div className="bg-slate-800/50 rounded-xl p-4">
-              <div className="text-lg font-bold text-purple-300">{insights.averageWinRate.toFixed(0)}%</div>
-              <div className="text-xs text-slate-300">Win Rate</div>
+              <div className="text-lg font-bold text-purple-300">
+                {enhancedAnalysis?.repertoireAnalysis?.styleMatchScore?.toFixed(0) || insights.averageWinRate.toFixed(0)}%
+              </div>
+              <div className="text-xs text-slate-300">
+                {enhancedAnalysis?.repertoireAnalysis ? 'Style Match' : 'Win Rate'}
+              </div>
             </div>
           </div>
 
-          {/* Improvement Focus */}
-          <div className="bg-slate-800/30 rounded-xl p-4">
-            <h5 className="font-semibold text-white mb-2">Focus Areas</h5>
-            <p className="text-sm text-slate-200 mb-2">{feedback.focus}</p>
-            <p className="text-xs text-slate-400">{feedback.meaning}</p>
-          </div>
-
-          {/* Opening Statistics */}
-          {insights.totalOpeningGames > 0 && (
+          {/* Opening Statistics - Use backend repertoire analysis if available, otherwise use calculated insights */}
+          {(enhancedAnalysis?.repertoireAnalysis && 
+            (enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening !== 'None' || 
+             enhancedAnalysis.repertoireAnalysis.needsWork.opening !== 'None')) ? (
+            <div className="bg-slate-800/30 rounded-xl p-4">
+              <h5 className="font-semibold text-white mb-3">Your Opening Performance</h5>
+              <div className="space-y-3">
+                {enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening !== 'None' && (
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm space-y-1 sm:space-y-0">
+                    <span className="text-slate-200">Best: {enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening}</span>
+                    <span className="font-semibold text-emerald-300">{enhancedAnalysis.repertoireAnalysis.mostSuccessful.winRate.toFixed(0)}% ({enhancedAnalysis.repertoireAnalysis.mostSuccessful.games} games)</span>
+                  </div>
+                )}
+                {enhancedAnalysis.repertoireAnalysis.needsWork.opening !== 'None' && (
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm space-y-1 sm:space-y-0">
+                    <span className="text-slate-200">Needs work: {enhancedAnalysis.repertoireAnalysis.needsWork.opening}</span>
+                    <span className="font-semibold text-rose-300">{enhancedAnalysis.repertoireAnalysis.needsWork.winRate.toFixed(0)}% ({enhancedAnalysis.repertoireAnalysis.needsWork.games} games)</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : insights.totalOpeningGames > 0 ? (
             <div className="bg-slate-800/30 rounded-xl p-4">
               <h5 className="font-semibold text-white mb-3">Your Opening Performance</h5>
               <div className="space-y-3">
@@ -194,7 +449,7 @@ export function EnhancedOpeningPlayerCard({
                 )}
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -202,44 +457,105 @@ export function EnhancedOpeningPlayerCard({
         <div className="space-y-4">
           {enhancedAnalysis?.specificMistakes && enhancedAnalysis.specificMistakes.length > 0 ? (
             <>
-              <div className="flex items-center justify-between">
-                <h5 className="font-semibold text-white">Recent Mistakes</h5>
-                <span className="text-sm text-slate-400">{enhancedAnalysis.specificMistakes.length} mistakes found</span>
+              {/* Most Costly Mistakes Summary */}
+              <div className="bg-red-500/10 border border-red-400/50 rounded-xl p-4">
+                <h5 className="font-semibold text-red-300 mb-3 flex items-center gap-2">
+                  <span>🎯</span> Most Costly Mistakes
+                </h5>
+                <div className="space-y-2">
+                  {(() => {
+                    const blunders = enhancedAnalysis.specificMistakes.filter(m => m.classification === 'blunder')
+                    const mistakes = enhancedAnalysis.specificMistakes.filter(m => m.classification === 'mistake')
+                    const avgCPL = blunders.length > 0 
+                      ? (blunders.reduce((sum, m) => sum + m.centipawnLoss, 0) / blunders.length).toFixed(0)
+                      : '0'
+                    
+                    // Find most common opening
+                    const openingCounts: Record<string, number> = {}
+                    blunders.forEach(m => {
+                      const opening = m.mistake.split(' - ')[0]
+                      openingCounts[opening] = (openingCounts[opening] || 0) + 1
+                    })
+                    const mostCommonOpening = Object.entries(openingCounts).sort((a, b) => b[1] - a[1])[0]
+                    
+                    return (
+                      <>
+                        <div className="flex items-center text-slate-200">
+                          <span className="text-red-400 mr-2">├─</span>
+                          <span className="text-sm">
+                            <span className="font-semibold text-white">{blunders.length}</span> blunders in opening 
+                            {blunders.length > 0 && <span className="text-slate-400"> (avg {avgCPL} CPL)</span>}
+                          </span>
+                        </div>
+                        {mistakes.length > 0 && (
+                          <div className="flex items-center text-slate-200">
+                            <span className="text-orange-400 mr-2">├─</span>
+                            <span className="text-sm">
+                              <span className="font-semibold text-white">{mistakes.length}</span> major mistakes detected
+                            </span>
+                          </div>
+                        )}
+                        {mostCommonOpening && (
+                          <div className="flex items-center text-slate-200">
+                            <span className="text-sky-400 mr-2">└─</span>
+                            <span className="text-sm">
+                              Study: <span className="font-semibold text-sky-300">{mostCommonOpening[0]}</span> tactics 
+                              <span className="text-slate-400"> ({mostCommonOpening[1]} errors)</span>
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
               </div>
-              
-              <div className="space-y-3">
-                {enhancedAnalysis.specificMistakes.map((mistake, index) => (
-                  <div 
-                    key={index}
-                    className={`p-4 rounded-xl border cursor-pointer transition-all hover:bg-slate-800/30 ${
-                      mistake.severity === 'critical' ? 'border-red-400/50 bg-red-500/10' :
-                      mistake.severity === 'major' ? 'border-orange-400/50 bg-orange-500/10' :
-                      'border-yellow-400/50 bg-yellow-500/10'
-                    }`}
-                    onClick={() => setSelectedMistake(mistake)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold text-white">
-                          Move {mistake.move}: {mistake.moveNotation}
-                        </div>
-                        <div className="text-sm text-slate-300">
-                          {mistake.classification.charAt(0).toUpperCase() + mistake.classification.slice(1)} • 
-                          {mistake.centipawnLoss} point loss
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-sky-300">
-                          Best: {mistake.correctMove}
-                        </div>
-                        <div className="text-xs text-slate-400">
-                          Click for details
-                        </div>
-                      </div>
+
+              {/* Recurring Patterns */}
+              <div className="bg-amber-500/10 border border-amber-400/50 rounded-xl p-4">
+                <h5 className="font-semibold text-amber-300 mb-3 flex items-center gap-2">
+                  <span>🔍</span> Recurring Patterns
+                </h5>
+                <div className="space-y-2">
+                  {enhancedAnalysis.actionableInsights && enhancedAnalysis.actionableInsights.length > 0 ? (
+                    <>
+                      {enhancedAnalysis.actionableInsights
+                        .filter(insight => !insight.includes('💡 Quick Tip') && !insight.includes('player ('))
+                        .slice(0, 3)
+                        .map((pattern, idx, arr) => (
+                          <div key={idx} className="flex items-start text-slate-200">
+                            <span className="text-amber-400 mr-2">{idx === arr.length - 1 ? '└─' : '├─'}</span>
+                            <span className="text-sm flex-1">{pattern}</span>
+                          </div>
+                        ))}
+                    </>
+                  ) : (
+                    <div className="flex items-start text-slate-300">
+                      <span className="text-emerald-400 mr-2">✓</span>
+                      <span className="text-sm">No recurring patterns detected - your mistakes are varied and not systematic</span>
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
+
+              {/* Recent Improvement / Quick Tip */}
+              {enhancedAnalysis.actionableInsights && enhancedAnalysis.actionableInsights.some(i => i.includes('💡 Quick Tip')) && (
+                <div className="bg-sky-500/10 border border-sky-400/50 rounded-xl p-4">
+                  <h5 className="font-semibold text-sky-300 mb-3 flex items-center gap-2">
+                    <span>💡</span> Action Plan
+                  </h5>
+                  <div className="space-y-2">
+                    {enhancedAnalysis.actionableInsights
+                      .filter(insight => insight.includes('💡 Quick Tip'))
+                      .map((tip, idx) => (
+                        <div key={idx} className="flex items-start text-slate-200">
+                          <span className="text-sky-400 mr-2">└─</span>
+                          <span className="text-sm flex-1">{tip.replace('💡 Quick Tip: ', '')}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
             </>
           ) : (
             <div className="text-center py-8">
@@ -297,41 +613,65 @@ export function EnhancedOpeningPlayerCard({
 
       {selectedTab === 'study' && (
         <div className="space-y-4">
-          <h5 className="font-semibold text-white">Study Recommendations</h5>
+          <h5 className="font-semibold text-white">Opening Recommendations for Your Style</h5>
           
-          {enhancedAnalysis?.studyRecommendations && enhancedAnalysis.studyRecommendations.length > 0 ? (
+          {enhancedAnalysis?.styleRecommendations && enhancedAnalysis.styleRecommendations.length > 0 ? (
             <div className="space-y-3">
-              {enhancedAnalysis.studyRecommendations.map((rec, index) => (
-                <div key={index} className="bg-slate-800/50 rounded-xl p-4">
-                  <div className="flex items-start justify-between">
+              {enhancedAnalysis.styleRecommendations.slice(0, 3).map((rec, index) => (
+                <div key={index} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 hover:bg-slate-800/70 transition-colors">
+                  <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="text-lg">{getRecommendationIcon(rec.type)}</span>
-                        <h4 className="font-semibold text-white">{rec.title}</h4>
+                        <span className="text-lg">♟️</span>
+                        <h4 className="font-semibold text-white">{rec.openingName}</h4>
                         <span className={`px-2 py-1 rounded text-xs ${
-                          rec.priority === 'high' ? 'bg-red-500/20 text-red-300' :
-                          rec.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-300' :
-                          'bg-green-500/20 text-green-300'
+                          rec.priority === 'high' ? 'bg-emerald-500/20 text-emerald-300' :
+                          rec.priority === 'medium' ? 'bg-sky-500/20 text-sky-300' :
+                          'bg-slate-500/20 text-slate-300'
                         }`}>
-                          {rec.priority}
+                          {rec.priority} priority
                         </span>
                       </div>
-                      <p className="text-sm text-slate-300 mb-2">{rec.description}</p>
-                      <div className="flex items-center gap-4 text-xs text-slate-400">
-                        <span>⏱️ {rec.estimatedTime}</span>
-                        <span>📊 {rec.difficulty}</span>
-                        {rec.url && (
-                          <a 
-                            href={rec.url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-sky-300 hover:text-sky-200"
-                          >
-                            Open Resource →
-                          </a>
-                        )}
+                      <div className="mb-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="text-xs text-slate-400">Style Match:</div>
+                          <div className="flex-1 bg-slate-700 rounded-full h-2 overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-sky-500 to-emerald-500 h-full transition-all"
+                              style={{ width: `${rec.compatibilityScore}%` }}
+                            />
+                          </div>
+                          <div className="text-xs font-semibold text-emerald-300">{Math.round(rec.compatibilityScore)}%</div>
+                        </div>
                       </div>
+                      <p className="text-sm text-slate-300 leading-relaxed">{rec.reasoning}</p>
+                      {rec.suggestedLines && rec.suggestedLines.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-700">
+                          <div className="text-xs text-slate-400 mb-1">Suggested Lines:</div>
+                          {rec.suggestedLines.map((line, idx) => (
+                            <div key={idx} className="text-xs text-slate-300 font-mono">• {line}</div>
+                          ))}
+                        </div>
+                      )}
                     </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <a 
+                      href={`https://www.youtube.com/results?search_query=${encodeURIComponent(rec.openingName + ' chess opening')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs px-3 py-1 bg-red-500/20 text-red-300 rounded hover:bg-red-500/30 transition-colors"
+                    >
+                      🎥 Watch Video
+                    </a>
+                    <a 
+                      href={`https://lichess.org/study/search?q=${encodeURIComponent(rec.openingName)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs px-3 py-1 bg-sky-500/20 text-sky-300 rounded hover:bg-sky-500/30 transition-colors"
+                    >
+                      📚 Lichess Study
+                    </a>
                   </div>
                 </div>
               ))}
@@ -339,8 +679,8 @@ export function EnhancedOpeningPlayerCard({
           ) : (
             <div className="text-center py-8">
               <div className="text-4xl mb-4">📚</div>
-              <h5 className="font-semibold text-white mb-2">Study Resources Coming Soon</h5>
-              <p className="text-sm text-slate-300">Personalized study recommendations will appear here based on your performance.</p>
+              <h5 className="font-semibold text-white mb-2">Analyzing Your Style</h5>
+              <p className="text-sm text-slate-300">Opening recommendations will appear here based on your playing style and performance.</p>
             </div>
           )}
         </div>
@@ -348,43 +688,97 @@ export function EnhancedOpeningPlayerCard({
 
       {selectedTab === 'progress' && (
         <div className="space-y-4">
-          <h5 className="font-semibold text-white">Progress Tracking</h5>
+          <h5 className="font-semibold text-white">Opening Performance Trend</h5>
           
           {enhancedAnalysis?.improvementTrend && enhancedAnalysis.improvementTrend.length > 0 ? (
             <div className="space-y-4">
               <div className="bg-slate-800/50 rounded-xl p-4">
-                <h6 className="font-semibold text-white mb-3">Accuracy Trend (Last 7 Games)</h6>
-                <div className="flex items-end space-x-2 h-20">
-                  {enhancedAnalysis.improvementTrend.map((point, index) => (
-                    <div key={index} className="flex-1 flex flex-col items-center">
-                      <div 
-                        className="w-full bg-sky-500 rounded-t"
-                        style={{ height: `${(point.accuracy / 100) * 60}px` }}
-                      ></div>
-                      <div className="text-xs text-slate-400 mt-1">{point.accuracy}%</div>
-                    </div>
-                  ))}
+                <h6 className="font-semibold text-white mb-3">Opening Win Rate Over Time</h6>
+                <div className="flex items-end justify-between space-x-1 h-32 mb-2">
+                  {enhancedAnalysis.improvementTrend.map((point, index) => {
+                    const heightPercent = (point.openingWinRate / 100) * 100
+                    const color = point.openingWinRate >= 60 ? 'bg-emerald-500' : 
+                                 point.openingWinRate >= 50 ? 'bg-sky-500' : 
+                                 point.openingWinRate >= 40 ? 'bg-amber-500' : 'bg-rose-500'
+                    return (
+                      <div key={index} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 px-2 py-1 rounded text-xs whitespace-nowrap z-10">
+                          <div className="font-semibold">{point.openingWinRate.toFixed(1)}% win rate</div>
+                          <div className="text-slate-400">{point.games} games</div>
+                          <div className="text-slate-400">{new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                        </div>
+                        <div 
+                          className={`w-full ${color} rounded-t transition-all hover:opacity-80`}
+                          style={{ height: `${heightPercent}%` }}
+                        ></div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="flex justify-between text-xs text-slate-400 mt-2">
+                  <span>{new Date(enhancedAnalysis.improvementTrend[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  <span>{new Date(enhancedAnalysis.improvementTrend[enhancedAnalysis.improvementTrend.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                 </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-slate-800/50 rounded-xl p-4">
-                  <h6 className="font-semibold text-white mb-2">Current Streak</h6>
-                  <div className="text-2xl font-bold text-emerald-300">3</div>
-                  <div className="text-xs text-slate-400">Games without major mistakes</div>
+                  <h6 className="font-semibold text-white mb-2">Recent Performance</h6>
+                  <div className="text-2xl font-bold text-emerald-300">
+                    {enhancedAnalysis.improvementTrend[enhancedAnalysis.improvementTrend.length - 1]?.openingWinRate.toFixed(0) || 0}%
+                  </div>
+                  <div className="text-xs text-slate-400">Last week's win rate</div>
                 </div>
                 <div className="bg-slate-800/50 rounded-xl p-4">
-                  <h6 className="font-semibold text-white mb-2">Best Performance</h6>
-                  <div className="text-2xl font-bold text-blue-300">85%</div>
-                  <div className="text-xs text-slate-400">Highest accuracy achieved</div>
+                  <h6 className="font-semibold text-white mb-2">Best Week</h6>
+                  <div className="text-2xl font-bold text-blue-300">
+                    {Math.max(...enhancedAnalysis.improvementTrend.map(t => t.openingWinRate)).toFixed(0)}%
+                  </div>
+                  <div className="text-xs text-slate-400">Highest win rate achieved</div>
                 </div>
               </div>
+              
+              {enhancedAnalysis.repertoireAnalysis && (
+                <div className="bg-slate-800/50 rounded-xl p-4">
+                  <h6 className="font-semibold text-white mb-3">Repertoire Insights</h6>
+                  <div className="space-y-3">
+                    {enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening !== 'None' && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-300">Best Opening:</span>
+                        <div className="text-right">
+                          <div className="font-semibold text-emerald-300">{enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening}</div>
+                          <div className="text-xs text-slate-400">
+                            {enhancedAnalysis.repertoireAnalysis.mostSuccessful.winRate.toFixed(0)}% win rate ({enhancedAnalysis.repertoireAnalysis.mostSuccessful.games} games)
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {enhancedAnalysis.repertoireAnalysis.needsWork.opening !== 'None' && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-300">Needs Work:</span>
+                        <div className="text-right">
+                          <div className="font-semibold text-rose-300">{enhancedAnalysis.repertoireAnalysis.needsWork.opening}</div>
+                          <div className="text-xs text-slate-400">
+                            {enhancedAnalysis.repertoireAnalysis.needsWork.winRate.toFixed(0)}% win rate ({enhancedAnalysis.repertoireAnalysis.needsWork.games} games)
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center pt-3 border-t border-slate-700">
+                      <span className="text-sm text-slate-300">Repertoire Diversity:</span>
+                      <div className="text-right">
+                        <div className="font-semibold text-sky-300">{enhancedAnalysis.repertoireAnalysis.diversityScore.toFixed(0)}%</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-8">
               <div className="text-4xl mb-4">📈</div>
-              <h5 className="font-semibold text-white mb-2">Progress Tracking Coming Soon</h5>
-              <p className="text-sm text-slate-300">Track your improvement over time with detailed analytics.</p>
+              <h5 className="font-semibold text-white mb-2">Building Your Progress History</h5>
+              <p className="text-sm text-slate-300">Play more games to see your opening performance trends over time.</p>
             </div>
           )}
         </div>
