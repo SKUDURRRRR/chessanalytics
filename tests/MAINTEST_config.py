@@ -12,7 +12,12 @@ TEST_USERS = {
     'lichess_existing': 'audingo',
     'chesscom_existing': 'hikaru',  # Hikaru Nakamura - definitely exists!
     'lichess_fresh': 'magnuscarlsen',  # For testing fresh import
-    'chesscom_fresh': 'fabianocaruana'  # Fabiano Caruana
+    'chesscom_fresh': 'fabianocaruana',  # Fabiano Caruana
+    # Mixed-case username tests (critical for case sensitivity testing)
+    'chesscom_capital': 'Hikaru',  # Capital first letter
+    'chesscom_allcaps': 'HIKARU',  # All uppercase
+    'chesscom_mixed': 'HiKaRu',  # Mixed case
+    'lichess_capital': 'Audingo',  # Capital (Lichess preserves case)
 }
 
 # Expected thresholds for validation

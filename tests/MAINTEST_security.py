@@ -215,8 +215,14 @@ def scan_for_exposed_secrets(quick_mode: bool = False) -> SecurityTestResult:
     )
 
 
-def test_rls_anonymous_blocked() -> SecurityTestResult:
-    """Test that anonymous users cannot read games or games_pgn."""
+def test_rls_public_analytics_model() -> SecurityTestResult:
+    """Test RLS policies for PUBLIC ANALYTICS APP (not private app).
+
+    In a public analytics tool:
+    - Anonymous users MUST be able to READ games/PGN (public data)
+    - Anonymous users MUST NOT be able to WRITE (security)
+    - Service role has full access (backend operations)
+    """
     try:
         from supabase import create_client, Client
 
@@ -225,55 +231,74 @@ def test_rls_anonymous_blocked() -> SecurityTestResult:
 
         if not supabase_url or not supabase_anon_key:
             return SecurityTestResult(
-                "RLS Anonymous Blocked",
+                "RLS Public Analytics Model",
                 False,
                 "Cannot test RLS: Missing Supabase credentials"
             )
 
         anon_client: Client = create_client(supabase_url, supabase_anon_key)
 
-        # Try to read games table
+        # TEST 1: Anonymous users CAN read games (required for public analytics)
         games_result = anon_client.table("games").select("*").limit(5).execute()
 
-        if games_result.data and len(games_result.data) > 0:
+        if not games_result.data or len(games_result.data) == 0:
             return SecurityTestResult(
-                "RLS Anonymous Blocked",
+                "RLS Public Analytics Model",
                 False,
-                "SECURITY ISSUE: Anonymous users can read games!",
-                f"Found {len(games_result.data)} rows accessible to anonymous users"
+                "CRITICAL: Anonymous users cannot read games - entire app is broken!",
+                "Frontend needs to read games. Check RLS policies allow anonymous SELECT."
             )
 
-        # Try to read games_pgn table
+        # TEST 2: Anonymous users CAN read games_pgn (required for re-analyze)
         pgn_result = anon_client.table("games_pgn").select("*").limit(5).execute()
 
-        if pgn_result.data and len(pgn_result.data) > 0:
+        if not pgn_result.data or len(pgn_result.data) == 0:
             return SecurityTestResult(
-                "RLS Anonymous Blocked",
+                "RLS Public Analytics Model",
                 False,
-                "SECURITY ISSUE: Anonymous users can read games_pgn!",
-                f"Found {len(pgn_result.data)} rows accessible to anonymous users"
+                "CRITICAL: Anonymous users cannot read games_pgn - re-analyze button broken!",
+                "Frontend needs PGN data for re-analysis. Check RLS policies."
+            )
+
+        # TEST 3: Anonymous users CANNOT write (security check)
+        write_blocked = False
+        try:
+            anon_client.table("games").insert({
+                'user_id': 'test_security_check',
+                'platform': 'test',
+                'provider_game_id': 'test_123',
+                'result': 'win',
+                'color': 'white',
+                'time_control': 'test',
+                'opening': 'test',
+                'total_moves': 1,
+                'played_at': '2025-01-01T00:00:00Z'
+            }).execute()
+        except Exception as write_error:
+            # Expected to fail - anonymous shouldn't be able to write
+            write_blocked = True
+
+        if not write_blocked:
+            return SecurityTestResult(
+                "RLS Public Analytics Model",
+                False,
+                "SECURITY BREACH: Anonymous users can WRITE to games!",
+                "Anonymous should only have READ access, not WRITE. Fix RLS policies immediately!"
             )
 
         return SecurityTestResult(
-            "RLS Anonymous Blocked",
+            "RLS Public Analytics Model",
             True,
-            "Anonymous users properly blocked from reading games and games_pgn"
+            f"RLS policies correct: Anonymous can READ ({len(games_result.data)} games, {len(pgn_result.data)} PGNs), but cannot WRITE"
         )
 
     except Exception as e:
-        # If there's an error, it might be because access is blocked (good)
-        # or because of a configuration issue (bad)
-        if 'permission denied' in str(e).lower() or 'not authorized' in str(e).lower():
-            return SecurityTestResult(
-                "RLS Anonymous Blocked",
-                True,
-                "Anonymous access properly blocked with error"
-            )
-
+        # Unexpected error
         return SecurityTestResult(
-            "RLS Anonymous Blocked",
+            "RLS Public Analytics Model",
             False,
-            f"Error testing RLS: {str(e)}"
+            f"Error testing RLS: {str(e)}",
+            "This may indicate RLS configuration issues"
         )
 
 
@@ -344,10 +369,11 @@ def run_all_security_tests(quick_mode: bool = False) -> List[SecurityTestResult]
     print(f"\n📋 Scanning for exposed secrets ({'quick' if quick_mode else 'full'} mode)...")
     results.append(scan_for_exposed_secrets(quick_mode))
 
-    # RLS policy tests (only in full mode)
+    # RLS policy tests (CRITICAL - run in both quick and full mode)
+    print("\n📋 Testing RLS policies for PUBLIC ANALYTICS model...")
+    results.append(test_rls_public_analytics_model())
+
     if not quick_mode:
-        print("\n📋 Testing RLS policies...")
-        results.append(test_rls_anonymous_blocked())
         results.append(test_rls_service_role_access())
 
     return results

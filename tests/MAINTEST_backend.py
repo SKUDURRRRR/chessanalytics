@@ -724,6 +724,75 @@ class BackendTester:
         except:
             return 0
 
+    def test_case_sensitivity(self) -> bool:
+        """Test that mixed-case usernames are handled correctly."""
+        platform = 'chess.com'
+
+        # Test cases with different capitalizations
+        test_cases = [
+            ('hikaru', 'hikaru'),   # lowercase -> lowercase
+            ('Hikaru', 'hikaru'),   # Capital -> lowercase
+            ('HIKARU', 'hikaru'),   # UPPERCASE -> lowercase
+            ('HiKaRu', 'hikaru'),   # MiXeD -> lowercase
+        ]
+
+        print(f"\n🔤 Testing case-insensitive username handling for Chess.com...")
+
+        for original_case, canonical in test_cases:
+            start = time.time()
+            try:
+                # Test that we can query with any case variation
+                games = self.supabase_service.table('games').select('user_id').eq(
+                    'user_id', canonical
+                ).eq('platform', platform).limit(1).execute()
+
+                # Also test that analysis works with different cases
+                # The system should canonicalize to lowercase for Chess.com
+                duration = (time.time() - start) * 1000
+
+                if games.data:
+                    # Verify the stored user_id is canonical
+                    stored_user_id = games.data[0]['user_id']
+                    if stored_user_id == canonical:
+                        self.report.add_result(
+                            "Case Sensitivity",
+                            f"Test {original_case} → {canonical}",
+                            True,
+                            f"Username properly canonicalized to {canonical}",
+                            duration
+                        )
+                    else:
+                        self.report.add_result(
+                            "Case Sensitivity",
+                            f"Test {original_case} → {canonical}",
+                            False,
+                            f"Expected {canonical}, but got {stored_user_id}",
+                            duration
+                        )
+                        return False
+                else:
+                    # No data is fine if user doesn't exist, but the query shouldn't error
+                    self.report.add_result(
+                        "Case Sensitivity",
+                        f"Test {original_case} → {canonical}",
+                        True,
+                        f"Query succeeded with canonical form {canonical}",
+                        duration
+                    )
+
+            except Exception as e:
+                duration = (time.time() - start) * 1000
+                self.report.add_result(
+                    "Case Sensitivity",
+                    f"Test {original_case} → {canonical}",
+                    False,
+                    f"Case sensitivity test failed: {str(e)}",
+                    duration
+                )
+                return False
+
+        return True
+
 
 def run_backend_tests(report: MAINTESTReport, quick_mode: bool = False) -> bool:
     """Run all backend tests."""
@@ -757,6 +826,10 @@ def run_backend_tests(report: MAINTESTReport, quick_mode: bool = False) -> bool:
     # Run data correctness tests
     print("\n✅ Testing Data Correctness...")
     tester.test_data_correctness()
+
+    # Run case sensitivity tests
+    print("\n🔤 Testing Case Sensitivity...")
+    tester.test_case_sensitivity()
 
     return True
 

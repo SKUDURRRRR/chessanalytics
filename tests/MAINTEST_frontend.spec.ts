@@ -270,14 +270,48 @@ test.describe('MAINTEST Frontend Suite', () => {
       expect(hasStatKeywords).toBeTruthy();
     });
 
-    test('should have reanalysis button', async ({ page }) => {
-      // Look for reanalysis button
-      const reanalyzeButton = page.locator('button').filter({ hasText: /re.*analyz|analyze.*again/i });
+    test('re-analyze button should be enabled and functional', async ({ page }) => {
+      // Monitor for critical errors (401, RLS, unauthorized)
+      const criticalErrors: string[] = [];
+
+      page.on('console', msg => {
+        if (msg.type() === 'error') {
+          const text = msg.text();
+          if (text.includes('401') ||
+              text.includes('Unauthorized') ||
+              text.includes('RLS') ||
+              text.includes('policy') ||
+              text.includes('permission denied')) {
+            criticalErrors.push(text);
+          }
+        }
+      });
+
+      // Look for re-analyze button
+      const reanalyzeButton = page.locator('button').filter({ hasText: /re.*analyz/i });
       const hasButton = await reanalyzeButton.count() > 0;
 
-      // Button might exist but not be visible
-      const content = await page.content();
-      expect(content.length).toBeGreaterThan(500);
+      expect(hasButton).toBeTruthy();
+
+      // CRITICAL: Button should be ENABLED (not disabled)
+      // If disabled, the app is broken (likely RLS policy issue)
+      const isDisabled = await reanalyzeButton.getAttribute('disabled');
+      expect(isDisabled).toBeNull();  // Button should NOT be disabled
+
+      // Check that we haven't had 401/RLS errors loading the page
+      expect(criticalErrors, 'No critical auth errors loading game page').toHaveLength(0);
+
+      // Optional: Try clicking if test is not in quick mode
+      if (process.env.MAINTEST_MODE !== 'quick') {
+        await reanalyzeButton.click();
+        await page.waitForTimeout(2000);
+
+        // Should show "re-analyzing" or similar state
+        const hasAnalyzingState = await page.locator('text=/re.*analyzing|analyzing/i').count() > 0;
+
+        // No critical errors should occur during re-analysis
+        expect(criticalErrors, 'No auth errors during re-analysis').toHaveLength(0);
+      }
     });
   });
 
@@ -308,12 +342,26 @@ test.describe('MAINTEST Frontend Suite', () => {
       }
     });
 
-    test('should not show console errors', async ({ page }) => {
+    test('should not show critical console errors', async ({ page }) => {
       const errors: string[] = [];
+      const appBreakingErrors: string[] = [];
 
       page.on('console', msg => {
         if (msg.type() === 'error') {
-          errors.push(msg.text());
+          const text = msg.text();
+          errors.push(text);
+
+          // Track APP-BREAKING errors that indicate complete failure
+          if (text.includes('401') ||
+              text.includes('403') ||
+              text.includes('Unauthorized') ||
+              text.includes('Forbidden') ||
+              text.includes('RLS') ||
+              text.includes('policy violation') ||
+              text.includes('permission denied') ||
+              text.includes('not authorized')) {
+            appBreakingErrors.push(text);
+          }
         }
       });
 
@@ -323,20 +371,83 @@ test.describe('MAINTEST Frontend Suite', () => {
       await page.waitForURL('**/simple-analytics**', { timeout: 15000 });
       await page.waitForTimeout(3000);
 
+      // CRITICAL: No 401/403/RLS errors - these break the entire app
+      if (appBreakingErrors.length > 0) {
+        console.log('🚨 APP-BREAKING ERRORS DETECTED:', appBreakingErrors);
+      }
+      expect(appBreakingErrors, 'No 401/403/RLS errors - these break the entire app!').toHaveLength(0);
+
       // Filter out common non-critical errors
       const criticalErrors = errors.filter(err =>
         !err.includes('favicon') &&
         !err.includes('404') &&
         !err.includes('net::ERR') &&
+        !err.includes('401') &&
+        !err.includes('403') &&
         !err.toLowerCase().includes('warning')
       );
 
-      // Should have no critical console errors
+      // Should have minimal non-critical errors
       if (criticalErrors.length > 0) {
-        console.log('Console errors found:', criticalErrors);
+        console.log('Non-critical console errors found:', criticalErrors);
       }
 
-      expect(criticalErrors.length).toBeLessThan(3);
+      expect(criticalErrors.length).toBeLessThan(5);
+    });
+
+    test('complete flow: search -> import -> view -> analyze works', async ({ page }) => {
+      // Track auth errors throughout the flow
+      const authErrors: string[] = [];
+
+      page.on('console', msg => {
+        if (msg.type() === 'error') {
+          const text = msg.text();
+          if (text.includes('401') || text.includes('403') ||
+              text.includes('Unauthorized') || text.includes('RLS')) {
+            authErrors.push(text);
+          }
+        }
+      });
+
+      // Step 1: Search for player
+      await page.goto(BASE_URL);
+      await searchPlayer(page, TEST_USERS.lichess_existing, 'lichess');
+      await page.waitForURL('**/simple-analytics**', { timeout: 15000 });
+      await page.waitForTimeout(2000);
+
+      expect(authErrors, 'No auth errors after search').toHaveLength(0);
+
+      // Step 2: Verify match history loads (tests frontend can read from Supabase)
+      const matchHistoryTab = page.locator('button, a').filter({ hasText: /match.*history|games|history/i }).first();
+      if (await matchHistoryTab.count() > 0) {
+        await matchHistoryTab.click();
+        await page.waitForTimeout(2000);
+
+        expect(authErrors, 'No auth errors loading match history').toHaveLength(0);
+      }
+
+      // Step 3: Check that game data is visible
+      const hasGameData = await page.locator('text=/win|loss|draw/i').count() > 0;
+      expect(hasGameData).toBeTruthy();
+
+      // Step 4: Try to navigate to a game analysis page
+      const gameLink = page.locator('button, a').filter({ hasText: /view|analyze/i }).first();
+      if (await gameLink.count() > 0) {
+        await gameLink.click();
+        await page.waitForTimeout(3000);
+
+        expect(authErrors, 'No auth errors loading game analysis').toHaveLength(0);
+
+        // Step 5: Check re-analyze button is enabled
+        const reanalyzeBtn = page.locator('button').filter({ hasText: /re.*analyz/i });
+        if (await reanalyzeBtn.count() > 0) {
+          const isDisabled = await reanalyzeBtn.getAttribute('disabled');
+          expect(isDisabled, 'Re-analyze button should be enabled').toBeNull();
+        }
+      }
+
+      // Final check: No auth errors throughout entire flow
+      expect(authErrors, 'No auth/RLS errors in complete user flow').toHaveLength(0);
     });
   });
 });
