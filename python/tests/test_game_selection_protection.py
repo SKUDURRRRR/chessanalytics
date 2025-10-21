@@ -224,7 +224,7 @@ class TestGameSelectionProtection:
 class TestGameSelectionIntegration:
     """Integration tests for game selection logic."""
 
-    @patch('core.unified_api_server.get_supabase_client')
+    @patch('core.unified_api_server.supabase_service')
     def test_game_selection_maintains_order(self, mock_supabase):
         """Test that the full game selection process maintains chronological order."""
         # Mock Supabase responses

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { fetchGameAnalysisData } from '../services/gameAnalysisService'
@@ -328,6 +328,7 @@ export default function GameAnalysisPage() {
   const [boardWidth, setBoardWidth] = useState(700)
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const locationState = (location.state ?? {}) as LocationState
   const mobileOpts = useMobileOptimizations()
   const layoutContainerRef = useRef<HTMLDivElement | null>(null)
@@ -930,6 +931,23 @@ export default function GameAnalysisPage() {
     console.log('🔥 NAVIGATION DEBUG: Moving from', currentIndex, 'to', clampedIndex)
     setCurrentIndex(clampedIndex)
   }
+
+  // Handle URL query parameter for move navigation
+  useEffect(() => {
+    const moveParam = searchParams.get('move')
+    if (moveParam && !loading && processedData.moves.length > 0) {
+      const moveNumber = parseInt(moveParam, 10)
+      if (!isNaN(moveNumber) && moveNumber > 0) {
+        // Convert move number to index (ply)
+        // Move 1 = index 1 (ply 1), Move 2 = index 2 (ply 2), etc.
+        const targetIndex = moveNumber
+        if (targetIndex >= 0 && targetIndex <= processedData.positions.length - 1) {
+          console.log(`Navigating to move ${moveNumber} (index ${targetIndex}) from URL parameter`)
+          setCurrentIndex(targetIndex)
+        }
+      }
+    }
+  }, [searchParams, loading, processedData.positions.length, processedData.moves.length])
 
   const handleBack = () => {
     if (locationState.from) {

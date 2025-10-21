@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Annotated, Union, Tuple
 from collections import Counter
 from decimal import Decimal
+import re
 import uvicorn
 import asyncio
 import os
@@ -93,9 +94,49 @@ else:
     supabase_service = None
     persistence = None
 
+# Debug mode configuration
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+
 # Authentication setup
 security = HTTPBearer()
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
+
+# Simple in-memory cache for analytics with TTL
+_analytics_cache: Dict[str, Dict[str, Any]] = {}
+CACHE_TTL_SECONDS = 300  # 5 minutes cache TTL
+
+def _get_from_cache(cache_key: str) -> Optional[Dict[str, Any]]:
+    """Get data from cache if it exists and is not expired."""
+    if cache_key in _analytics_cache:
+        cached_entry = _analytics_cache[cache_key]
+        timestamp = cached_entry.get('timestamp', 0)
+        if time.time() - timestamp < CACHE_TTL_SECONDS:
+            if DEBUG:
+                print(f"[CACHE] Hit for key: {cache_key}")
+            return cached_entry.get('data')
+        else:
+            # Cache expired, remove it
+            if DEBUG:
+                print(f"[CACHE] Expired for key: {cache_key}")
+            del _analytics_cache[cache_key]
+    return None
+
+def _set_in_cache(cache_key: str, data: Dict[str, Any]) -> None:
+    """Store data in cache with current timestamp."""
+    _analytics_cache[cache_key] = {
+        'data': data,
+        'timestamp': time.time()
+    }
+    if DEBUG:
+        print(f"[CACHE] Set for key: {cache_key}")
+
+def _invalidate_cache(user_id: str, platform: str) -> None:
+    """Invalidate all cache entries for a specific user/platform."""
+    keys_to_delete = [k for k in _analytics_cache.keys() if f"{user_id}:{platform}" in k]
+    for key in keys_to_delete:
+        del _analytics_cache[key]
+    if DEBUG and keys_to_delete:
+        print(f"[CACHE] Invalidated {len(keys_to_delete)} entries for {user_id}:{platform}")
 
 # Authentication utilities
 async def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]) -> dict:
@@ -398,6 +439,7 @@ class OpeningMistake(BaseModel):
     centipawn_loss: float
     classification: str  # 'blunder', 'mistake', 'inaccuracy'
     fen: Optional[str] = None
+    game_id: Optional[str] = None  # Add game_id for linking to specific games
 
 
 class StyleRecommendation(BaseModel):
@@ -646,10 +688,18 @@ async def get_analysis_stats(
 ):
     """Get analysis statistics for a user."""
     try:
-        print(f"[DEBUG] get_analysis_stats called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
-        print(f"[DEBUG] canonical_user_id={canonical_user_id}")
+
+        # Check cache first
+        cache_key = f"analysis_stats:{canonical_user_id}:{platform}:{analysis_type}"
+        cached_data = _get_from_cache(cache_key)
+        if cached_data is not None:
+            return cached_data
+
+        if DEBUG:
+            print(f"[DEBUG] get_analysis_stats called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
+            print(f"[DEBUG] canonical_user_id={canonical_user_id}")
 
         if not supabase and not supabase_service:
             print("[warn]  Database not available. Returning empty stats.")
@@ -674,9 +724,12 @@ async def get_analysis_stats(
             print(f"[stats] Query was: unified_analyses where user_id={canonical_user_id} AND platform={platform}")
             return _get_mock_stats()
 
-        if os.getenv("DEBUG", "false").lower() == "true":
+        if DEBUG:
             print(f"[DEBUG] Calculating stats for {len(response.data)} analyses")
-        return _calculate_unified_analysis_stats(response.data)
+
+        result = _calculate_unified_analysis_stats(response.data)
+        _set_in_cache(cache_key, result)
+        return result
     except Exception as e:
         print(f"Error fetching analysis stats: {e}")
         return _get_empty_stats()
@@ -693,9 +746,18 @@ async def get_game_analyses(
 ):
     """Get individual game analyses for a user with pagination support."""
     try:
-        print(f"[DEBUG] get_game_analyses called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}, limit={limit}, offset={offset}")
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
+
+        # Check cache first (only cache offset=0 to avoid too many cache entries)
+        if offset == 0:
+            cache_key = f"game_analyses:{canonical_user_id}:{platform}:{analysis_type}:{limit}"
+            cached_data = _get_from_cache(cache_key)
+            if cached_data is not None:
+                return cached_data
+
+        if DEBUG:
+            print(f"[DEBUG] get_game_analyses called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}, limit={limit}, offset={offset}")
         print(f"[DEBUG] canonical_user_id={canonical_user_id}")
 
         if not supabase and not supabase_service:
@@ -747,13 +809,18 @@ async def get_game_analyses(
                         # For any other type, convert to string
                         clean_record[key] = str(value)
                 except Exception as e:
-                    if os.getenv("DEBUG", "false").lower() == "true":
+                    if DEBUG:
                         print(f"[DEBUG] Error serializing field {key}: {e}")
                     clean_record[key] = None
             cleaned_data.append(clean_record)
 
-        if os.getenv("DEBUG", "false").lower() == "true":
+        if DEBUG:
             print(f"[DEBUG] Cleaned {len(cleaned_data)} records for serialization")
+
+        # Cache the result if offset=0
+        if offset == 0:
+            _set_in_cache(cache_key, cleaned_data)
+
         return cleaned_data
 
     except Exception as e:
@@ -936,6 +1003,13 @@ async def get_elo_stats(
     """
     try:
         canonical_user_id = _canonical_user_id(user_id, platform)
+
+        # Check cache first
+        cache_key = f"elo_stats:{canonical_user_id}:{platform}"
+        cached_data = _get_from_cache(cache_key)
+        if cached_data is not None:
+            return cached_data
+
         db_client = supabase_service or supabase
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured for ELO stats")
@@ -965,7 +1039,7 @@ async def get_elo_stats(
 
         total_games = getattr(count_response, 'count', 0) or 0
 
-        return {
+        result = {
             "highest_elo": highest_game['my_rating'],
             "time_control": highest_game['time_control'],
             "game_id": highest_game['provider_game_id'],
@@ -973,11 +1047,270 @@ async def get_elo_stats(
             "total_games": total_games
         }
 
+        _set_in_cache(cache_key, result)
+        return result
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error fetching ELO stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+def _safe_divide(numerator: float, denominator: float) -> float:
+    """Helper to avoid division by zero."""
+    if not denominator:
+        return 0.0
+    return numerator / denominator
+
+
+def _bucket_game_length(total_moves: Optional[int]) -> Optional[str]:
+    """Convert a raw move count into a labeled bucket used for distribution analytics."""
+    if total_moves is None or total_moves <= 0:
+        return None
+
+    if total_moves < 20:
+        return "under_20"
+    if total_moves < 40:
+        return "20_39"
+    if total_moves < 60:
+        return "40_59"
+    if total_moves < 80:
+        return "60_79"
+    if total_moves < 100:
+        return "80_99"
+    return "100_plus"
+
+
+def _parse_termination_from_pgn(pgn: Optional[str]) -> Optional[str]:
+    """Extract the Termination header from a PGN string if available."""
+    if not pgn:
+        return None
+
+    match = re.search(r"Termination\s+\"([^\"]+)\"", pgn)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _detect_quick_victory_type(game: Dict[str, Any], opponent_analysis: Optional[Dict[str, Any]]) -> str:
+    """Classify a quick victory to highlight opponent blunders vs player attack."""
+    accuracy = game.get('accuracy')
+    opponent_accuracy = game.get('opponent_accuracy')
+    brilliant_moves = game.get('brilliant_moves', 0)
+    blunders = (opponent_analysis or {}).get('blunders') or game.get('opponent_blunders') or 0
+
+    if opponent_accuracy is not None and opponent_accuracy < 60:
+        return 'opponent_blunder'
+
+    if accuracy is not None and accuracy >= 85:
+        if brilliant_moves and brilliant_moves > 0:
+            return 'tactical_blow'
+        return 'clean_conversion'
+
+    if blunders and blunders >= 2:
+        return 'opponent_blunder'
+
+    return 'other'
+
+
+def _compute_comeback_metric(game: Dict[str, Any], move_analysis: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Extract comeback stats based on evaluation swings when available."""
+    moves_analysis = move_analysis.get('moves_analysis') if move_analysis else game.get('moves_analysis')
+    if not moves_analysis:
+        return None
+
+    comeback_found = False
+    largest_swing = 0.0
+    for move in moves_analysis:
+        if not isinstance(move, dict):
+            continue
+        eval_before = move.get('evaluation_before')
+        eval_after = move.get('evaluation_after')
+        if eval_before is None or eval_after is None:
+            continue
+        swing = float(eval_after) - float(eval_before)
+        # Identify sign changes that indicate comebacks
+        if (eval_before < -100 and eval_after > -50) or (eval_before <= 0 < eval_after):
+            comeback_found = True
+        largest_swing = max(largest_swing, abs(swing))
+
+    if not comeback_found:
+        return None
+
+    return {
+        'largest_swing': round(largest_swing, 2)
+    }
+
+
+def _compute_patience_rating(game_analysis: Optional[Dict[str, Any]]) -> Optional[float]:
+    if not game_analysis:
+        return None
+    patient_score = game_analysis.get('patient_score')
+    if patient_score is None:
+        return None
+    if isinstance(patient_score, (int, float)):
+        return float(patient_score)
+    return None
+
+
+def _compute_personal_records(existing_records: Dict[str, Any], game: Dict[str, Any], analysis: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Update running record metrics such as fastest win."""
+    records = existing_records.copy()
+    total_moves = game.get('total_moves') or 0
+    result = game.get('result')
+    accuracy = analysis.get('accuracy') if analysis else game.get('accuracy')
+
+    if result == 'win':
+        if records.get('fastest_win') is None or total_moves < records['fastest_win']['moves']:
+            records['fastest_win'] = {
+                'moves': total_moves,
+                'game_id': game.get('provider_game_id'),
+                'played_at': game.get('played_at')
+            }
+
+        if accuracy is not None:
+            if records.get('highest_accuracy_win') is None or accuracy > records['highest_accuracy_win']['accuracy']:
+                records['highest_accuracy_win'] = {
+                    'accuracy': round(float(accuracy), 2),
+                    'game_id': game.get('provider_game_id'),
+                    'played_at': game.get('played_at')
+                }
+
+    if total_moves and (records.get('longest_game') is None or total_moves > records['longest_game']['moves']):
+        records['longest_game'] = {
+            'moves': total_moves,
+            'result': result,
+            'game_id': game.get('provider_game_id'),
+            'played_at': game.get('played_at')
+        }
+
+    return records
+
+
+def _get_time_control_category(time_control: str) -> str:
+    """Helper function to categorize time controls."""
+    if not time_control:
+        return 'Unknown'
+    tc = time_control.lower()
+    if 'bullet' in tc or ('180' in tc and '+0' in tc) or ('60' in tc):
+        return 'Bullet'
+    elif 'blitz' in tc or ('300' in tc) or ('180' in tc):
+        return 'Blitz'
+    elif 'rapid' in tc or ('600' in tc) or ('900' in tc) or ('1800' in tc):
+        return 'Rapid'
+    elif 'classical' in tc or 'standard' in tc:
+        return 'Classical'
+    elif 'correspondence' in tc or 'daily' in tc:
+        return 'Correspondence'
+    else:
+        return 'Other'
+
+
+def _calculate_performance_trends(games: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Calculate performance trends similar to TypeScript calculatePerformanceTrends function.
+
+    Returns:
+        - recentWinRate: Win rate from recent 50 games
+        - recentAverageElo: Average ELO from recent 50 games
+        - eloTrend: 'improving', 'declining', or 'stable'
+        - timeControlUsed: Most played time control
+        - sampleSize: Number of games in sample
+        - perTimeControl: Dict with stats per time control
+    """
+    if not games:
+        return {
+            'recentWinRate': 0,
+            'recentAverageElo': 0,
+            'eloTrend': 'stable',
+            'timeControlUsed': 'Unknown',
+            'sampleSize': 0,
+            'totalGamesConsidered': 0,
+            'perTimeControl': {}
+        }
+
+    # Group games by time control
+    by_time_control = {}
+    for game in games:
+        category = _get_time_control_category(game.get('time_control', ''))
+        if category not in by_time_control:
+            by_time_control[category] = []
+        by_time_control[category].append(game)
+
+    # Find most played time control
+    most_played_time_control = max(by_time_control.keys(), key=lambda k: len(by_time_control[k]), default='Unknown')
+
+    # Calculate stats per time control
+    per_time_control = {}
+    for category, category_games in by_time_control.items():
+        # Sort by played_at descending
+        sorted_games = sorted(category_games, key=lambda g: g.get('played_at', ''), reverse=True)
+
+        # Use recent 50 games
+        recent_games = sorted_games[:50]
+        wins = len([g for g in recent_games if g.get('result') == 'win'])
+        recent_win_rate = (wins / len(recent_games)) * 100 if recent_games else 0
+
+        recent_elos = [g.get('my_rating') for g in recent_games if g.get('my_rating') is not None]
+        recent_avg_elo = sum(recent_elos) / len(recent_elos) if recent_elos else 0
+
+        # ELO trend calculation
+        elo_trend = 'stable'
+        if len(sorted_games) >= 40:
+            first_half_elos = [g.get('my_rating') for g in sorted_games[-40:-20] if g.get('my_rating') is not None]
+            second_half_elos = [g.get('my_rating') for g in sorted_games[-20:] if g.get('my_rating') is not None]
+
+            if first_half_elos and second_half_elos:
+                first_half_avg = sum(first_half_elos) / len(first_half_elos)
+                second_half_avg = sum(second_half_elos) / len(second_half_elos)
+
+                if second_half_avg > first_half_avg + 10:
+                    elo_trend = 'improving'
+                elif second_half_avg < first_half_avg - 10:
+                    elo_trend = 'declining'
+
+        per_time_control[category] = {
+            'recentWinRate': round(recent_win_rate, 1),
+            'recentAverageElo': round(recent_avg_elo, 0),
+            'eloTrend': elo_trend,
+            'sampleSize': len(recent_games)
+        }
+
+    # Calculate overall stats for most played time control
+    filtered_games = by_time_control.get(most_played_time_control, [])
+    filtered_games = sorted(filtered_games, key=lambda g: g.get('played_at', ''), reverse=True)
+
+    recent_games = filtered_games[:50]
+    recent_wins = len([g for g in recent_games if g.get('result') == 'win'])
+    recent_win_rate = (recent_wins / len(recent_games)) * 100 if recent_games else 0
+
+    recent_elos = [g.get('my_rating') for g in recent_games if g.get('my_rating') is not None]
+    recent_avg_elo = sum(recent_elos) / len(recent_elos) if recent_elos else 0
+
+    # Determine ELO trend
+    elo_trend = 'stable'
+    if len(filtered_games) >= 40:
+        first_half_elos = [g.get('my_rating') for g in filtered_games[-40:-20] if g.get('my_rating') is not None]
+        second_half_elos = [g.get('my_rating') for g in filtered_games[-20:] if g.get('my_rating') is not None]
+
+        if first_half_elos and second_half_elos:
+            first_half_avg = sum(first_half_elos) / len(first_half_elos)
+            second_half_avg = sum(second_half_elos) / len(second_half_elos)
+
+            if second_half_avg > first_half_avg + 10:
+                elo_trend = 'improving'
+            elif second_half_avg < first_half_avg - 10:
+                elo_trend = 'declining'
+
+    return {
+        'recentWinRate': round(recent_win_rate, 1),
+        'recentAverageElo': round(recent_avg_elo, 0),
+        'eloTrend': elo_trend,
+        'timeControlUsed': most_played_time_control,
+        'sampleSize': len(recent_games),
+        'totalGamesConsidered': len(filtered_games),
+        'perTimeControl': per_time_control
+    }
+
 
 @app.get("/api/v1/comprehensive-analytics/{user_id}/{platform}")
 async def get_comprehensive_analytics(
@@ -987,68 +1320,398 @@ async def get_comprehensive_analytics(
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
 ):
-    """Get comprehensive game analytics with single queries.
-
-    All data comes from the games table - no analysis required!
-    Replaces frontend's comprehensiveGameAnalytics.ts direct Supabase queries.
-    """
+    """Get comprehensive game analytics and derive distribution metrics."""
     try:
+        if DEBUG:
+            print(f"[DEBUG] get_comprehensive_analytics called: user_id={user_id}, platform={platform}, limit={limit}")
         canonical_user_id = _canonical_user_id(user_id, platform)
+        if DEBUG:
+            print(f"[DEBUG] canonical_user_id={canonical_user_id}")
+
+        # Check cache first
+        cache_key = f"comprehensive_analytics:{canonical_user_id}:{platform}:{limit}"
+        cached_data = _get_from_cache(cache_key)
+        if cached_data is not None:
+            return cached_data
+
         db_client = supabase_service or supabase
         if not db_client:
+            print("[ERROR] Database not configured")
             raise HTTPException(status_code=503, detail="Database not configured")
 
-        # Get total count first
-        count_response = db_client.table('games').select(
-            'id', count='exact', head=True
-        ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-            'my_rating', 'null'
-        ).execute()
-
+        # Determine total available games (for UI pagination context)
+        count_response = db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()
         total_games_count = getattr(count_response, 'count', 0) or 0
 
-        if total_games_count == 0:
-            return {"total_games": 0, "games": [], "sample_size": 0}
+        # Base games query constrained by requested limit
+        # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
+        games_query = db_client.table('games').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True)
 
-        # Fetch games in batches (Supabase limit is 1000)
-        all_games = []
-        batch_size = 1000
-        num_batches = (min(limit, total_games_count) + batch_size - 1) // batch_size
+        # Supabase has a default limit of 1000 rows, so we need to explicitly set the limit
+        # If user requests >= 10000, fetch all available games
+        effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
 
-        for i in range(num_batches):
-            offset = i * batch_size
-            current_limit = min(batch_size, limit - offset)
+        # Ensure we fetch at least the requested amount or all available games
+        if effective_limit > 0:
+            games_response = games_query.limit(effective_limit).execute()
+        else:
+            # Fallback: use the requested limit if we couldn't determine total
+            games_response = games_query.limit(limit).execute()
 
-            batch_response = db_client.table('games').select('*').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).not_.is_(
-                'my_rating', 'null'
-            ).order('played_at', desc=True).range(
-                offset, offset + current_limit - 1
-            ).execute()
+        games = games_response.data or []
 
-            if batch_response.data:
-                all_games.extend(batch_response.data)
+        if DEBUG:
+            print(f"[DEBUG] Fetched {len(games)} games out of {total_games_count} total games (requested limit={limit}, effective_limit={effective_limit})")
 
-            if not batch_response.data or len(batch_response.data) < current_limit:
+        if not games:
+            return {
+                "total_games": 0,
+                "games": [],
+                "sample_size": 0,
+                "game_length_distribution": {},
+                "win_rate_by_length": {},
+                "quick_victory_breakdown": {},
+                "marathon_performance": {},
+                "recent_trend": {},
+                "personal_records": {},
+                "patience_rating": None,
+                "comeback_potential": None,
+                "resignation_timing": None
+            }
+
+        # Fetch analysis data for the games for richer insights
+        provider_ids = [g['provider_game_id'] for g in games if g.get('provider_game_id')]
+        analyses_map: Dict[str, Dict[str, Any]] = {}
+        move_analyses_map: Dict[str, Dict[str, Any]] = {}
+
+        if provider_ids:
+            # game_analyses
+            analyses_response = db_client.table('game_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+            for row in analyses_response.data or []:
+                analyses_map[row['game_id']] = row
+
+            move_response = db_client.table('move_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+            for row in move_response.data or []:
+                move_analyses_map[row['game_id']] = row
+
+        # Quick map of PGN terminations
+        pgn_response = db_client.table('games_pgn').select('provider_game_id, pgn').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_ids).execute()
+        pgn_map = {row['provider_game_id']: row.get('pgn') for row in (pgn_response.data or [])}
+
+        # Distribution counters
+        distribution: Dict[str, Dict[str, Any]] = {}
+        quick_victory_breakdown = Counter()
+
+        total_moves = 0
+        marathon_games = []
+        resignation_moves = []
+        opponent_resignation_moves = []
+        patience_scores: List[float] = []
+
+        records: Dict[str, Any] = {
+            'fastest_win': None,
+            'highest_accuracy_win': None,
+            'longest_game': None
+        }
+        comeback_summaries: List[Dict[str, Any]] = []
+
+        last_fifty = games[:50]
+        last_fifty_moves = [g['total_moves'] for g in last_fifty if g.get('total_moves')]
+        baseline_moves = [g['total_moves'] for g in games[50:200] if g.get('total_moves')]
+
+        for game in games:
+            bucket = _bucket_game_length(game.get('total_moves'))
+            result = game.get('result')
+            game_id = game.get('provider_game_id')
+            total_moves += game.get('total_moves') or 0
+
+            if bucket:
+                bucket_entry = distribution.setdefault(bucket, {'games': 0, 'wins': 0, 'losses': 0, 'draws': 0})
+                bucket_entry['games'] += 1
+                if result == 'win':
+                    bucket_entry['wins'] += 1
+                elif result == 'loss':
+                    bucket_entry['losses'] += 1
+                elif result == 'draw':
+                    bucket_entry['draws'] += 1
+
+            analysis = analyses_map.get(game_id)
+            move_analysis = move_analyses_map.get(game_id)
+
+            # Quick victory classification (<20 moves win)
+            if game.get('total_moves') and game['total_moves'] < 20 and result == 'win':
+                victory_type = _detect_quick_victory_type(analysis or game, move_analysis)
+                quick_victory_breakdown[victory_type] += 1
+
+            # Marathon stats (>80 moves)
+            if game.get('total_moves') and game['total_moves'] >= 80:
+                marathon_games.append({
+                    'game_id': game_id,
+                    'moves': game['total_moves'],
+                    'result': result,
+                    'accuracy': (analysis or game).get('accuracy'),
+                    'time_management_score': (analysis or game).get('time_management_score'),
+                    'blunders': (analysis or game).get('blunders'),
+                    'opponent_blunders': (analysis or game).get('opponent_blunders')
+                })
+
+            # Resignation timing derived from PGN header
+            termination = _parse_termination_from_pgn(pgn_map.get(game_id)) if pgn_map else None
+            if termination:
+                # Check for resignations
+                if 'resign' in termination.lower():
+                    if 'opponent' in termination.lower() or 'resigned' in termination.lower() and result == 'win':
+                        opponent_resignation_moves.append(game.get('total_moves') or 0)
+                    else:
+                        resignation_moves.append(game.get('total_moves') or 0)
+
+            # Patience rating
+            patience_score = _compute_patience_rating(analysis)
+            if patience_score is not None:
+                patience_scores.append(patience_score)
+
+            # Update records
+            records = _compute_personal_records(records, game, analysis)
+
+            # Comeback stats
+            comeback_stats = _compute_comeback_metric(game, move_analysis)
+            if comeback_stats:
+                comeback_summaries.append(comeback_stats)
+
+        # Compute aggregated metrics
+        distribution_summary = {}
+        for bucket, stats in distribution.items():
+            win_rate = _safe_divide(stats['wins'], stats['games']) * 100
+            distribution_summary[bucket] = {**stats, 'win_rate': round(win_rate, 2)}
+
+        quick_victory_summary = {label: count for label, count in quick_victory_breakdown.items()}
+
+        marathon_summary = {}
+        if marathon_games:
+            accuracy_values = [g['accuracy'] for g in marathon_games if g.get('accuracy') is not None]
+            blunders_values = [g.get('blunders') or 0 for g in marathon_games]
+            time_management_values = [g.get('time_management_score') or 0 for g in marathon_games]
+            marathon_summary = {
+                'count': len(marathon_games),
+                'average_accuracy': round(sum(accuracy_values) / len(accuracy_values), 2) if accuracy_values else None,
+                'average_blunders': round(sum(blunders_values) / len(blunders_values), 2) if blunders_values else None,
+                'average_time_management': round(sum(time_management_values) / len(time_management_values), 2) if time_management_values else None
+            }
+
+        recent_trend = {}
+        if last_fifty_moves:
+            recent_avg = sum(last_fifty_moves) / len(last_fifty_moves)
+            baseline_avg = sum(baseline_moves) / len(baseline_moves) if baseline_moves else recent_avg
+            recent_trend = {
+                'recent_average_moves': round(recent_avg, 2),
+                'baseline_average_moves': round(baseline_avg, 2),
+                'difference': round(recent_avg - baseline_avg, 2)
+            }
+
+        patience_rating = round(sum(patience_scores) / len(patience_scores), 2) if patience_scores else None
+
+        comeback_summary = None
+        if comeback_summaries:
+            comeback_summary = {
+                'games': len(comeback_summaries),
+                'average_largest_swing': round(
+                    sum(entry['largest_swing'] for entry in comeback_summaries) / len(comeback_summaries),
+                    2
+                )
+            }
+
+        resignation_summary = None
+        if resignation_moves or opponent_resignation_moves:
+            resignation_summary = {
+                'my_average_resignation_move': round(sum(resignation_moves) / len(resignation_moves), 2) if resignation_moves else None,
+                'opponent_average_resignation_move': round(sum(opponent_resignation_moves) / len(opponent_resignation_moves), 2) if opponent_resignation_moves else None,
+                'my_resignations': len(resignation_moves),
+                'opponent_resignations': len(opponent_resignation_moves)
+            }
+
+        # Calculate basic analytics from games
+        wins = len([g for g in games if g.get('result') == 'win'])
+        draws = len([g for g in games if g.get('result') == 'draw'])
+        losses = len([g for g in games if g.get('result') == 'loss'])
+
+        win_rate = _safe_divide(wins, len(games)) * 100
+        draw_rate = _safe_divide(draws, len(games)) * 100
+        loss_rate = _safe_divide(losses, len(games)) * 100
+
+        # Color stats
+        white_games = [g for g in games if g.get('color') == 'white']
+        black_games = [g for g in games if g.get('color') == 'black']
+
+        white_wins = len([g for g in white_games if g.get('result') == 'win'])
+        black_wins = len([g for g in black_games if g.get('result') == 'win'])
+
+        white_elos = [g.get('my_rating') for g in white_games if g.get('my_rating')]
+        black_elos = [g.get('my_rating') for g in black_games if g.get('my_rating')]
+
+        color_stats = {
+            'white': {
+                'games': len(white_games),
+                'winRate': round(_safe_divide(white_wins, len(white_games)) * 100, 1) if white_games else 0,
+                'averageElo': round(sum(white_elos) / len(white_elos), 0) if white_elos else 0
+            },
+            'black': {
+                'games': len(black_games),
+                'winRate': round(_safe_divide(black_wins, len(black_games)) * 100, 1) if black_games else 0,
+                'averageElo': round(sum(black_elos) / len(black_elos), 0) if black_elos else 0
+            }
+        }
+
+        # Opening stats
+        opening_performance = {}
+        for game in games:
+            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+            if opening not in opening_performance:
+                opening_performance[opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
+
+            opening_performance[opening]['games'] += 1
+            result = game.get('result')
+            if result == 'win':
+                opening_performance[opening]['wins'] += 1
+            elif result == 'draw':
+                opening_performance[opening]['draws'] += 1
+            elif result == 'loss':
+                opening_performance[opening]['losses'] += 1
+
+            # Track ELO for this opening
+            if game.get('my_rating'):
+                opening_performance[opening]['elos'].append(game.get('my_rating'))
+
+        opening_stats = []
+        for opening, stats in opening_performance.items():
+            avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
+            opening_stats.append({
+                'opening': opening,
+                'games': stats['games'],
+                'wins': stats['wins'],
+                'draws': stats['draws'],
+                'losses': stats['losses'],
+                'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
+                'averageElo': avg_elo
+            })
+
+        # Sort by number of games played
+        opening_stats.sort(key=lambda x: x['games'], reverse=True)
+
+        # Opening stats by color
+        opening_color_performance = {'white': {}, 'black': {}}
+        for game in games:
+            color = game.get('color')
+            if color not in ['white', 'black']:
+                continue
+
+            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+            if opening not in opening_color_performance[color]:
+                opening_color_performance[color][opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
+
+            opening_color_performance[color][opening]['games'] += 1
+            result = game.get('result')
+            if result == 'win':
+                opening_color_performance[color][opening]['wins'] += 1
+            elif result == 'draw':
+                opening_color_performance[color][opening]['draws'] += 1
+            elif result == 'loss':
+                opening_color_performance[color][opening]['losses'] += 1
+
+            if game.get('my_rating'):
+                opening_color_performance[color][opening]['elos'].append(game.get('my_rating'))
+
+        opening_color_stats = {'white': [], 'black': []}
+        for color in ['white', 'black']:
+            for opening, stats in opening_color_performance[color].items():
+                avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
+                opening_color_stats[color].append({
+                    'opening': opening,
+                    'games': stats['games'],
+                    'wins': stats['wins'],
+                    'draws': stats['draws'],
+                    'losses': stats['losses'],
+                    'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
+                    'averageElo': avg_elo
+                })
+            # Sort by number of games
+            opening_color_stats[color].sort(key=lambda x: x['games'], reverse=True)
+
+        # Highest ELO
+        highest_elo = None
+        time_control_with_highest_elo = None
+        elos_with_tc = [(g.get('my_rating'), g.get('time_control')) for g in games if g.get('my_rating')]
+        if elos_with_tc:
+            highest_elo_tuple = max(elos_with_tc, key=lambda x: x[0])
+            highest_elo = highest_elo_tuple[0]
+            time_control_with_highest_elo = highest_elo_tuple[1]
+
+        # Calculate performance trends (for Recent Performance section)
+        performance_trends = _calculate_performance_trends(games)
+
+        # Calculate current ELO (most recent rating across all games)
+        current_elo = None
+        games_sorted_by_date = sorted(games, key=lambda g: g.get('played_at', ''), reverse=True)
+        for game in games_sorted_by_date:
+            if game.get('my_rating'):
+                current_elo = game['my_rating']
                 break
 
-        if not all_games:
-            return {"total_games": 0, "games": [], "sample_size": 0}
+        # Calculate current ELO per time control (most recent rating for each time control)
+        current_elo_per_time_control = {}
+        games_by_tc = {}
+        for game in games:
+            tc = game.get('time_control', '')
+            if tc:
+                # Use the same time control categorization as performance trends
+                tc_category = _get_time_control_category(tc)
+                if tc_category not in games_by_tc:
+                    games_by_tc[tc_category] = []
+                games_by_tc[tc_category].append(game)
 
-        # Return games data - let frontend do the analytics calculation
-        # This reduces backend processing and keeps the logic in one place
-        return {
-            "total_games": total_games_count,
-            "games": all_games,
-            "sample_size": len(all_games)
+        for tc_category, tc_games in games_by_tc.items():
+            tc_sorted = sorted(tc_games, key=lambda g: g.get('played_at', ''), reverse=True)
+            for game in tc_sorted:
+                if game.get('my_rating'):
+                    current_elo_per_time_control[tc_category] = game['my_rating']
+                    break
+
+        result = {
+            'total_games': total_games_count,
+            'totalGames': len(games),  # Actual games analyzed
+            'winRate': round(win_rate, 1),
+            'drawRate': round(draw_rate, 1),
+            'lossRate': round(loss_rate, 1),
+            'colorStats': color_stats,
+            'openingStats': opening_stats,
+            'openingColorStats': opening_color_stats,
+            'highestElo': highest_elo,
+            'timeControlWithHighestElo': time_control_with_highest_elo,
+            'currentElo': current_elo,
+            'currentEloPerTimeControl': current_elo_per_time_control,
+            'performanceTrends': performance_trends,
+            'games': games,
+            'sample_size': len(games),
+            'game_length_distribution': distribution_summary,
+            'quick_victory_breakdown': quick_victory_summary,
+            'marathon_performance': marathon_summary,
+            'recent_trend': recent_trend,
+            'personal_records': records,
+            'patience_rating': patience_rating,
+            'comeback_potential': comeback_summary,
+            'resignation_timing': resignation_summary
         }
+
+        # Cache the result before returning
+        _set_in_cache(cache_key, result)
+        return result
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching comprehensive analytics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[ERROR] Error in get_comprehensive_analytics: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching comprehensive analytics: {str(e)}")
 
 @app.get("/api/v1/elo-history/{user_id}/{platform}")
 async def get_elo_history(
@@ -1112,6 +1775,13 @@ async def get_player_stats(
     """
     try:
         canonical_user_id = _canonical_user_id(user_id, platform)
+
+        # Check cache first
+        cache_key = f"player_stats:{canonical_user_id}:{platform}"
+        cached_data = _get_from_cache(cache_key)
+        if cached_data is not None:
+            return cached_data
+
         db_client = supabase_service or supabase
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured")
@@ -1137,7 +1807,7 @@ async def get_player_stats(
         if game['my_rating'] < 100 or game['my_rating'] > 4000:
             validation_issues.append(f"Invalid player rating {game['my_rating']} in game {game['provider_game_id']}")
 
-        return {
+        result = {
             "highest_elo": game['my_rating'],
             "time_control_with_highest_elo": game['time_control'],
             "game_id": game['provider_game_id'],
@@ -1146,6 +1816,9 @@ async def get_player_stats(
             "color": game.get('color'),
             "validation_issues": validation_issues
         }
+
+        _set_in_cache(cache_key, result)
+        return result
 
     except HTTPException:
         raise
@@ -1219,21 +1892,27 @@ async def get_deep_analysis(
 ):
     """Get deep analysis with personality insights."""
     try:
-        print(f"[INFO] Deep analysis request for user_id={user_id}, platform={platform}")
+        if DEBUG:
+            print(f"[INFO] Deep analysis request for user_id={user_id}, platform={platform}")
         canonical_user_id = _canonical_user_id(user_id, platform)
-        print(f"[INFO] Canonical user_id={canonical_user_id}")
+        if DEBUG:
+            print(f"[INFO] Canonical user_id={canonical_user_id}")
+
+        # Check cache first
+        cache_key = f"deep_analysis:{canonical_user_id}:{platform}"
+        cached_data = _get_from_cache(cache_key)
+        if cached_data is not None:
+            return cached_data
 
         db_client = supabase_service or supabase
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured for deep analysis")
 
-        # TODO: Add caching later
-        # cache_key = f"deep_analysis:{canonical_user_id}:{platform}"
-
         # PERFORMANCE: Reduced from 500 to 100 games (5x faster)
         # Recent games are more relevant for personality analysis
+        # IMPORTANT: Also fetch 'id' field for proper game-analysis matching
         games_response = db_client.table('games').select(
-            'provider_game_id, result, opening, opening_family, time_control, my_rating, played_at'
+            'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at'
         ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
             'my_rating', 'null'
         ).order('played_at', desc=True).limit(100).execute()
@@ -1253,14 +1932,17 @@ async def get_deep_analysis(
                 'user_id', canonical_user_id
             ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
             analyses = analyses_response.data or []
-            print(f"[DEBUG] unified_analyses query found {len(analyses)} records")
+            if DEBUG:
+                print(f"[DEBUG] unified_analyses query found {len(analyses)} records")
 
             # Check if analyses have moves_analysis field
             if analyses and not any(a.get('moves_analysis') for a in analyses):
-                print(f"[DEBUG] unified_analyses records don't have moves_analysis field, trying move_analyses table")
+                if DEBUG:
+                    print(f"[DEBUG] unified_analyses records don't have moves_analysis field, trying move_analyses table")
                 analyses = []
         except Exception as e:
-            print(f"[DEBUG] unified_analyses query failed: {e}")
+            if DEBUG:
+                print(f"[DEBUG] unified_analyses query failed: {e}")
             analyses = []
 
         # Fallback to move_analyses if unified doesn't work
@@ -1270,9 +1952,11 @@ async def get_deep_analysis(
                     'user_id', canonical_user_id
                 ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
                 analyses = analyses_response.data or []
-                print(f"[DEBUG] move_analyses query found {len(analyses)} records")
+                if DEBUG:
+                    print(f"[DEBUG] move_analyses query found {len(analyses)} records")
             except Exception as e:
-                print(f"[DEBUG] move_analyses query failed: {e}")
+                if DEBUG:
+                    print(f"[DEBUG] move_analyses query failed: {e}")
                 analyses = []
 
         # Final fallback to game_analyses (different structure, needs transformation)
@@ -1282,7 +1966,8 @@ async def get_deep_analysis(
                     'user_id', canonical_user_id
                 ).eq('platform', platform).order('created_at', desc=True).limit(100).execute()
                 game_analyses = analyses_response.data or []
-                print(f"[DEBUG] game_analyses query found {len(game_analyses)} records")
+                if DEBUG:
+                    print(f"[DEBUG] game_analyses query found {len(game_analyses)} records")
 
                 # Transform game_analyses format to match expected structure
                 analyses = []
@@ -1297,15 +1982,20 @@ async def get_deep_analysis(
                         'accuracy': ga.get('accuracy')
                     })
             except Exception as e:
-                print(f"[DEBUG] game_analyses query failed: {e}")
+                if DEBUG:
+                    print(f"[DEBUG] game_analyses query failed: {e}")
                 analyses = []
 
-        print(f"[DEBUG] Final analyses count: {len(analyses)} for {canonical_user_id}")
+        if DEBUG:
+            print(f"[DEBUG] Final analyses count: {len(analyses)} for {canonical_user_id}")
 
         if not analyses:
             result = _build_fallback_deep_analysis(canonical_user_id, games, profile)
         else:
             result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile)
+
+        # Cache the result before returning
+        _set_in_cache(cache_key, result)
 
         # TODO: Cache the result for 15 minutes (implement caching functions)
         return result
@@ -1347,7 +2037,6 @@ async def get_job_status(job_id: str):
     except Exception as e:
         print(f"Error fetching job status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/v1/queue-stats")
 async def get_queue_stats():
     """Get analysis queue statistics."""
@@ -1810,7 +2499,7 @@ def _determine_player_level(current_rating: int, average_accuracy: float) -> str
     if accuracy >= 85.0:
         return 'intermediate'  # High accuracy but low rating = intermediate
     if accuracy >= 70.0:
-        return 'intermediate'
+        return 'intermediate'  # High accuracy but low rating = intermediate
 
     return 'beginner'
 
@@ -2554,20 +3243,40 @@ def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[s
     mistakes = []
 
     # Build a map of game_id to game for context
+    # IMPORTANT: Store games under BOTH 'id' and 'provider_game_id' keys for reliable matching
+    # This ensures analyses can match whether they store game_id as internal UUID or provider_game_id
     game_map = {}
     for game in games:
-        game_id = game.get('id') or game.get('provider_game_id')
+        # Add entry for internal UUID 'id'
+        game_id = game.get('id')
         if game_id:
             game_map[game_id] = game
 
-    print(f"[Mistake Extraction] Processing {len(analyses)} analyses with {len(games)} games")
+        # Add entry for 'provider_game_id' (e.g., chess.com URL game ID, lichess game ID)
+        provider_id = game.get('provider_game_id')
+        if provider_id:
+            game_map[provider_id] = game
+
+    if DEBUG:
+        print(f"[Mistake Extraction] Processing {len(analyses)} analyses with {len(games)} games")
+        print(f"[Mistake Extraction] Built game_map with {len(game_map)} total entries")
 
     for analysis in analyses:
         moves = analysis.get('moves_analysis') or []
         game_id = analysis.get('game_id', '')
 
+        if not game_id:
+            if DEBUG:
+                print(f"[Mistake Extraction] Analysis has no game_id, skipping")
+            continue
+
         # Get game context for opening name
         game = game_map.get(game_id, {})
+        if not game:
+            if DEBUG:
+                print(f"[Mistake Extraction] No game found for game_id={game_id}, skipping")
+            continue
+
         # Prefer normalized name, then original opening, then ECO code as fallback
         opening_name = game.get('opening_normalized') or game.get('opening') or game.get('opening_family')
 
@@ -2583,18 +3292,33 @@ def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[s
 
         # Skip only if we have absolutely no opening information
         if not opening_name or opening_name in ['Unknown', 'Unknown Opening', '']:
+            if DEBUG:
+                print(f"[Mistake Extraction] No opening info for game_id={game_id}, skipping")
             continue
 
         # Filter opening moves (first 20 ply) - check both 'ply' and 'opening_ply'
         opening_moves = [m for m in moves if (m.get('ply', 0) <= 20 or m.get('opening_ply', 0) <= 20) and m.get('is_user_move', False)]
 
+        if not opening_moves:
+            if DEBUG:
+                print(f"[Mistake Extraction] No user opening moves found for game_id={game_id}")
+            continue
+
+        if DEBUG:
+            print(f"[Mistake Extraction] Game {game_id}: Found {len(opening_moves)} user opening moves in {display_name}")
+
         for move in opening_moves:
             cpl = move.get('centipawn_loss', 0)
             ply = move.get('ply', 0) or move.get('opening_ply', 0)
             move_num = (ply + 1) // 2  # Convert ply to move number
-            notation = move.get('move_notation', '') or move.get('move', '')
-            best_move = move.get('best_move', '') or move.get('engine_move', '')
-            fen = move.get('fen_after', '')
+
+            # Use move_san (Standard Algebraic Notation) if available, otherwise fall back to UCI
+            notation = move.get('move_san', '') or move.get('move_notation', '') or move.get('move', '')
+            # Also prefer best_move_san over UCI notation
+            best_move = move.get('best_move_san', '') or move.get('best_move', '') or move.get('engine_move', '')
+
+            # Store FEN BEFORE the move for future use
+            fen = move.get('fen_before', '') or move.get('fen_after', '')
 
             # Only include significant mistakes (CPL >= 50)
             if cpl >= 200:  # Blunder
@@ -2624,12 +3348,16 @@ def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[s
                 severity=severity,
                 centipawn_loss=float(cpl),
                 classification=classification,
-                fen=fen
+                fen=fen,
+                game_id=game_id  # Include game_id for linking to specific games
             ))
+            if DEBUG:
+                print(f"[Mistake Extraction] Added {classification}: {mistake_desc} ({notation}), CPL={cpl}, game_id={game_id}")
 
     # Return top 10 most severe mistakes
     mistakes.sort(key=lambda x: x.centipawn_loss, reverse=True)
-    print(f"[Mistake Extraction] Found {len(mistakes)} total mistakes, returning top 10")
+    if DEBUG:
+        print(f"[Mistake Extraction] Found {len(mistakes)} total mistakes, returning top 10")
     return mistakes[:10]
 
 
@@ -2903,7 +3631,7 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
         if not opening or opening == 'Unknown':
             continue
 
-        color = game.get('my_color')
+        color = game.get('color')
         result = game.get('result')
 
         # IMPORTANT: Only count openings that the player actually plays
@@ -2997,9 +3725,14 @@ def _generate_improvement_trend(games: List[Dict[str, Any]], analyses: List[Dict
             weekly_data[week_key]['total'] += 1
 
             # Get opening accuracy for this game if analysis exists
-            game_id = game.get('id') or game.get('provider_game_id')
-            if game_id and game_id in analysis_map:
-                analysis = analysis_map[game_id]
+            # Try both id and provider_game_id for matching
+            analysis = None
+            if game.get('id') and game.get('id') in analysis_map:
+                analysis = analysis_map[game.get('id')]
+            elif game.get('provider_game_id') and game.get('provider_game_id') in analysis_map:
+                analysis = analysis_map[game.get('provider_game_id')]
+
+            if analysis:
                 moves = analysis.get('moves_analysis') or []
                 opening_moves = [m for m in moves if m.get('opening_ply', 0) <= 20 and m.get('is_user_move', False)]
                 if opening_moves:
@@ -3155,10 +3888,12 @@ def _build_deep_analysis_response(
     enhanced_opening_analysis = None
     if analyses and games:
         try:
-            print(f"Generating enhanced opening analysis for {len(games)} games, {len(analyses)} analyses")
+            if DEBUG:
+                print(f"Generating enhanced opening analysis for {len(games)} games, {len(analyses)} analyses")
             enhanced_opening_analysis = _generate_enhanced_opening_analysis(games, analyses, personality_scores)
-            print(f"Enhanced opening analysis generated successfully")
-            if enhanced_opening_analysis:
+            if DEBUG:
+                print(f"Enhanced opening analysis generated successfully")
+            if DEBUG and enhanced_opening_analysis:
                 print(f"  - Win rate: {enhanced_opening_analysis.opening_win_rate}%")
                 print(f"  - Mistakes: {len(enhanced_opening_analysis.specific_mistakes)}")
                 print(f"  - Recommendations: {len(enhanced_opening_analysis.style_recommendations)}")
@@ -3166,8 +3901,9 @@ def _build_deep_analysis_response(
                 print(f"  - Trend points: {len(enhanced_opening_analysis.improvement_trend)}")
         except Exception as e:
             import traceback
-            print(f"Error generating enhanced opening analysis: {e}")
-            print(traceback.format_exc())
+            if DEBUG:
+                print(f"Error generating enhanced opening analysis: {e}")
+                print(traceback.format_exc())
             # Continue without enhanced analysis if it fails
 
     return DeepAnalysisData(
@@ -6090,6 +6826,12 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             moves_analysis_dict.append({
                 'move': move.move,
                 'move_san': move.move_san,
+                'move_notation': move.move,  # Legacy field
+                'best_move': move.best_move,  # UCI notation
+                'best_move_san': getattr(move, 'best_move_san', ''),  # SAN notation
+                'engine_move': move.best_move,  # Legacy field
+                'fen_before': getattr(move, 'fen_before', ''),  # FEN before move
+                'fen_after': getattr(move, 'fen_after', ''),  # FEN after move
                 'evaluation': move.evaluation,
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
@@ -6105,6 +6847,8 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'is_user_move': move.is_user_move,
                 'player_color': move.player_color,
                 'ply_index': move.ply_index,
+                'ply': move.ply_index,  # Legacy field
+                'opening_ply': move.ply_index,  # Legacy field
                 'explanation': move.explanation,
                 'heuristic_details': move.heuristic_details,
                 'coaching_comment': move.coaching_comment,

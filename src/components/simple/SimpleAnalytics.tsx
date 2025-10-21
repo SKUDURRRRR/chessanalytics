@@ -106,10 +106,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             (platform as 'lichess' | 'chess.com') || 'lichess',
             10000  // Analyze ALL games for complete historical data
           )
-          if (backendData.games && backendData.games.length > 0) {
-            return calculateAnalyticsFromGames(backendData.games, backendData.total_games)
-          }
-          return null
+          // Return the full backend response with all the new analytics
+          return backendData
         })(),
         UnifiedAnalysisService.fetchDeepAnalysis(
           userId,
@@ -127,7 +125,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       // Only log diagnostics in development mode
       if (import.meta.env.DEV) {
         console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
-        console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.totalGames)
+        console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.total_games)
+        console.log('Comprehensive analytics full data:', comprehensiveAnalytics)
         console.log('ELO stats from backend:', eloStats)
         console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
         console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
@@ -139,8 +138,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         }
 
         // Log comprehensive analytics benefits
-        if (comprehensiveAnalytics && comprehensiveAnalytics.totalGames > 0) {
-          console.log(`Comprehensive analytics: ${comprehensiveAnalytics.totalGames} games analyzed with single query`)
+        if (comprehensiveAnalytics && (comprehensiveAnalytics.total_games || comprehensiveAnalytics.totalGames) > 0) {
+          console.log(`Comprehensive analytics: ${comprehensiveAnalytics.total_games || comprehensiveAnalytics.totalGames} games analyzed with single query`)
         }
       }
 
@@ -159,7 +158,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         validation_issues: playerStats.validationIssues
       } : {
         // Fallback when no analysis stats available
-        total_games_analyzed: comprehensiveAnalytics?.totalGames || 0,
+        total_games_analyzed: comprehensiveAnalytics?.total_games || comprehensiveAnalytics?.totalGames || 0,
         average_accuracy: realisticAccuracy,
         current_rating: playerStats.currentRating,
         most_played_time_control: playerStats.mostPlayedTimeControl,
@@ -176,13 +175,13 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         acceptable_moves_per_game: 0,
         highest_rating: playerStats.currentRating,
         elo_optimization_active: false,
-        total_games_with_elo: comprehensiveAnalytics?.totalGames || 0
+        total_games_with_elo: comprehensiveAnalytics?.total_games || comprehensiveAnalytics?.totalGames || 0
       }
 
       // Debug: Opening analytics data (only in development)
       if (import.meta.env.DEV) {
         console.log('Opening Analytics Debug:', {
-          totalGames: comprehensiveAnalytics?.totalGames,
+          totalGames: comprehensiveAnalytics?.total_games || comprehensiveAnalytics?.totalGames,
           totalOpenings: comprehensiveAnalytics?.openingStats?.length,
           winningOpenings: comprehensiveAnalytics?.openingStats?.filter(o => o.winRate >= 50).length,
           losingOpenings: comprehensiveAnalytics?.openingStats?.filter(o => o.winRate < 50).length,
@@ -343,6 +342,104 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     validation_issues: []
   }
 
+  const safeComprehensive = comprehensiveData
+    ? {
+        ...comprehensiveData,
+        totalGames: comprehensiveData.totalGames ?? comprehensiveData.total_games ?? 0,
+        winRate: comprehensiveData.winRate ?? comprehensiveData.win_rate ?? 0,
+        drawRate: comprehensiveData.drawRate ?? comprehensiveData.draw_rate ?? 0,
+        lossRate: comprehensiveData.lossRate ?? comprehensiveData.loss_rate ?? 0,
+        highestElo: comprehensiveData.highestElo ?? comprehensiveData.highest_elo ?? null,
+        timeControlWithHighestElo: comprehensiveData.timeControlWithHighestElo ?? comprehensiveData.time_control_with_highest_elo ?? null,
+        currentEloPerTimeControl: comprehensiveData.currentEloPerTimeControl ?? comprehensiveData.current_elo_per_time_control ?? {},
+        currentElo: comprehensiveData.currentElo ?? null,
+        colorStats: comprehensiveData.colorStats || {
+          white: { games: 0, winRate: 0, averageElo: 0 },
+          black: { games: 0, winRate: 0, averageElo: 0 }
+        },
+        timeControlStats: comprehensiveData.timeControlStats || [],
+        openingStats: comprehensiveData.openingStats || [],
+        openingColorStats: comprehensiveData.openingColorStats || { white: [], black: [] },
+        opponentStats: comprehensiveData.opponentStats || null,
+        temporalStats: comprehensiveData.temporalStats || null,
+        gameLengthStats: comprehensiveData.gameLengthStats || null
+      }
+    : null
+
+  const safeColorStats = safeComprehensive?.colorStats || {
+    white: { games: 0, winRate: 0, averageElo: 0 },
+    black: { games: 0, winRate: 0, averageElo: 0 }
+  }
+
+  const safeTimeControlStats = safeComprehensive?.timeControlStats || []
+  const safeOpeningStats = safeComprehensive?.openingStats || []
+  const safeOpeningColorStats = safeComprehensive?.openingColorStats || { white: [], black: [] }
+  const safeOpponentStats = safeComprehensive?.opponentStats || null
+  const safeTemporalStats = safeComprehensive?.temporalStats || {
+    firstGame: null,
+    lastGame: null,
+    gamesThisMonth: 0,
+    gamesThisWeek: 0,
+    averageGamesPerDay: 0
+  }
+
+  // Helper functions for safe formatting
+  const formatPercent = (value: number | null | undefined, decimals: number = 1): string => {
+    return typeof value === 'number' && !isNaN(value) ? value.toFixed(decimals) : '0.0'
+  }
+
+  const formatNumber = (value: number | null | undefined, fallback: string = '0'): string => {
+    return typeof value === 'number' && !isNaN(value) ? value.toString() : fallback
+  }
+
+  const gameLengthStats = (() => {
+    if (safeComprehensive?.gameLengthStats) {
+      return safeComprehensive.gameLengthStats
+    }
+
+    const games = Array.isArray((safeComprehensive as any)?.games)
+      ? (safeComprehensive as any).games
+      : []
+
+    if (!games.length) {
+      return {
+        averageGameLength: 0,
+        shortestGame: 0,
+        longestGame: 0,
+        quickVictories: 0,
+        longGames: 0
+      }
+    }
+
+    const lengths = games
+      .map((g: any) => g?.total_moves || g?.totalMoves)
+      .filter((value: any) => typeof value === 'number' && value > 0)
+
+    if (!lengths.length) {
+      return {
+        averageGameLength: 0,
+        shortestGame: 0,
+        longestGame: 0,
+        quickVictories: 0,
+        longGames: 0
+      }
+    }
+
+    const averageGameLength = lengths.reduce((a: number, b: number) => a + b, 0) / lengths.length
+    const shortestGame = Math.min(...lengths)
+    const longestGame = Math.max(...lengths)
+    const quickVictories = games.filter((g: any) => (g?.total_moves || g?.totalMoves || 0) < 20 && g?.result === 'win').length
+    const longGames = games.filter((g: any) => (g?.total_moves || g?.totalMoves || 0) > 60).length
+
+    return {
+      averageGameLength,
+      shortestGame,
+      longestGame,
+      quickVictories,
+      longGames
+    }
+  })()
+
   const buildOpeningFilter = (
     normalizedName: string,
     identifiers?: OpeningIdentifierSets,
@@ -467,19 +564,19 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
         <div className={cardClass}>
           <h3 className="text-xs uppercase tracking-wide text-slate-300">Highest Rating</h3>
-          <div className="mt-3 text-2xl font-semibold text-sky-300">{comprehensiveData?.highestElo || 'N/A'}</div>
+          <div className="mt-3 text-2xl font-semibold text-sky-300">{safeComprehensive?.highestElo || 'N/A'}</div>
         </div>
 
         <div className={cardClass}>
           <h3 className="text-xs uppercase tracking-wide text-slate-300">Time Control</h3>
           <div className="mt-3 text-2xl font-semibold text-amber-300">
-            {comprehensiveData?.timeControlWithHighestElo ? getTimeControlCategory(comprehensiveData.timeControlWithHighestElo) : safeData.most_played_time_control ? getTimeControlCategory(safeData.most_played_time_control) : 'Unknown'}
+            {safeComprehensive?.timeControlWithHighestElo ? getTimeControlCategory(safeComprehensive.timeControlWithHighestElo) : safeData.most_played_time_control ? getTimeControlCategory(safeData.most_played_time_control) : 'Unknown'}
           </div>
         </div>
       </div>
 
       {/* Backend Analysis Status */}
-      {!data && comprehensiveData && comprehensiveData.totalGames > 0 && (
+      {!data && safeComprehensive && safeComprehensive.totalGames > 0 && (
         <div className="rounded-2xl border border-sky-400/30 bg-sky-500/10 p-5 shadow-lg shadow-sky-900/30">
           <div className="flex items-start space-x-3">
             <div className="text-xl text-sky-200">…</div>
@@ -494,7 +591,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       )}
 
       {/* Comprehensive Analytics Section */}
-      {comprehensiveData && comprehensiveData.totalGames > 0 && (
+      {safeComprehensive && safeComprehensive.totalGames > 0 && (
         <div className="space-y-4">
           {/* Basic Statistics */}
           <div className={cardClass}>
@@ -502,19 +599,19 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             <div className="grid-responsive text-sm">
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Total Games</span>
-                <div className="text-xl font-semibold text-sky-300">{comprehensiveData.totalGames}</div>
+                <div className="text-xl font-semibold text-sky-300">{safeComprehensive.totalGames}</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Win Rate</span>
-                <div className="text-xl font-semibold text-emerald-300">{comprehensiveData.winRate.toFixed(1)}%</div>
+                <div className="text-xl font-semibold text-emerald-300">{formatPercent(safeComprehensive.winRate, 1)}%</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Draw Rate</span>
-                <div className="text-xl font-semibold text-amber-300">{comprehensiveData.drawRate.toFixed(1)}%</div>
+                <div className="text-xl font-semibold text-amber-300">{formatPercent(safeComprehensive.drawRate, 1)}%</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Loss Rate</span>
-                <div className="text-xl font-semibold text-rose-300">{comprehensiveData.lossRate.toFixed(1)}%</div>
+                <div className="text-xl font-semibold text-rose-300">{formatPercent(safeComprehensive.lossRate, 1)}%</div>
               </div>
             </div>
           </div>
@@ -528,15 +625,15 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <div className="space-y-2 text-sm text-slate-200">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Games:</span>
-                    <span className="font-semibold text-white">{comprehensiveData.colorStats.white.games}</span>
+                    <span className="font-semibold text-white">{safeColorStats.white.games}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Win Rate:</span>
-                    <span className="font-semibold text-emerald-300">{comprehensiveData.colorStats.white.winRate.toFixed(1)}%</span>
+                    <span className="font-semibold text-emerald-300">{formatPercent(safeColorStats.white.winRate, 1)}%</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Avg ELO:</span>
-                    <span className="font-semibold text-white">{comprehensiveData.colorStats.white.averageElo.toFixed(0)}</span>
+                    <span className="font-semibold text-white">{formatPercent(safeColorStats.white.averageElo, 0)}</span>
                   </div>
                 </div>
               </div>
@@ -545,15 +642,15 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <div className="space-y-2 text-sm text-slate-200">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Games:</span>
-                    <span className="font-semibold text-white">{comprehensiveData.colorStats.black.games}</span>
+                    <span className="font-semibold text-white">{safeColorStats.black.games}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Win Rate:</span>
-                    <span className="font-semibold text-emerald-300">{comprehensiveData.colorStats.black.winRate.toFixed(1)}%</span>
+                    <span className="font-semibold text-emerald-300">{formatPercent(safeColorStats.black.winRate, 1)}%</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Avg ELO:</span>
-                    <span className="font-semibold text-white">{comprehensiveData.colorStats.black.averageElo.toFixed(0)}</span>
+                    <span className="font-semibold text-white">{formatPercent(safeColorStats.black.averageElo, 0)}</span>
                   </div>
                 </div>
               </div>
@@ -564,7 +661,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           <div className={`${cardClass} hidden`}>
             <h3 className="mb-4 text-lg font-semibold text-white">Time Control Performance</h3>
             <div className="space-y-3">
-              {comprehensiveData.timeControlStats.slice(0, 3).map((stat: any, index: number) => (
+              {safeTimeControlStats.slice(0, 3).map((stat: any, index: number) => (
                 <div key={index} className={subtleCardClass}>
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-medium text-white">{stat.timeControl}</span>
@@ -573,11 +670,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   <div className="grid grid-cols-2 gap-4 text-sm text-slate-200">
                     <div>
                       <span className="text-slate-400">Win Rate:</span>
-                      <span className="ml-2 font-semibold text-emerald-300">{stat.winRate.toFixed(1)}%</span>
+                      <span className="ml-2 font-semibold text-emerald-300">{formatPercent(stat.winRate, 1)}%</span>
                     </div>
                     <div>
                       <span className="text-slate-400">Avg ELO:</span>
-                      <span className="ml-2 font-semibold text-white">{stat.averageElo.toFixed(0)}</span>
+                      <span className="ml-2 font-semibold text-white">{formatPercent(stat.averageElo, 0)}</span>
                     </div>
                   </div>
                 </div>
@@ -593,8 +690,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <div>
                 <h4 className="mb-4 text-sm font-semibold text-emerald-200">Winning Openings</h4>
                 <div className="space-y-3">
-                  {comprehensiveData.openingStats && comprehensiveData.openingStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
-                    comprehensiveData.openingStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
+                  {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
+                    safeOpeningStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
                     <div
                       key={index}
                       className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
@@ -617,11 +714,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       <div className="grid grid-cols-2 gap-4 text-sm text-emerald-100">
                         <div>
                           <span className="text-emerald-100/70">Win Rate:</span>
-                          <span className="ml-2 font-semibold">{stat.winRate.toFixed(1)}%</span>
+                          <span className="ml-2 font-semibold">{formatPercent(stat.winRate, 1)}%</span>
                         </div>
                         <div>
                           <span className="text-emerald-100/70">Avg ELO:</span>
-                          <span className="ml-2 font-semibold">{stat.averageElo.toFixed(0)}</span>
+                          <span className="ml-2 font-semibold">{formatPercent(stat.averageElo, 0)}</span>
                         </div>
                       </div>
                     </div>
@@ -639,8 +736,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <div>
                 <h4 className="mb-4 text-sm font-semibold text-amber-200">Losing Openings</h4>
                 <div className="space-y-3">
-                  {comprehensiveData.openingStats && comprehensiveData.openingStats.filter((stat: any) => stat.winRate < 50).length > 0 ? (
-                    comprehensiveData.openingStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => b.games - a.games).slice(0, 3).map((stat: any, index: number) => (
+                  {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate < 50).length > 0 ? (
+                    safeOpeningStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => b.games - a.games).slice(0, 3).map((stat: any, index: number) => (
                       <div
                         key={index}
                         className="cursor-pointer rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 transition hover:border-amber-300/60 hover:bg-amber-500/20"
@@ -663,11 +760,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         <div className="grid grid-cols-2 gap-4 text-sm text-amber-100">
                           <div>
                             <span className="text-amber-100/70">Win Rate:</span>
-                            <span className="ml-2 font-semibold">{stat.winRate.toFixed(1)}%</span>
+                            <span className="ml-2 font-semibold">{formatPercent(stat.winRate, 1)}%</span>
                           </div>
                           <div>
                             <span className="text-amber-100/70">Avg ELO:</span>
-                            <span className="ml-2 font-semibold">{stat.averageElo.toFixed(0)}</span>
+                            <span className="ml-2 font-semibold">{formatPercent(stat.averageElo, 0)}</span>
                           </div>
                         </div>
                       </div>
@@ -687,14 +784,14 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           <div className={cardClass}>
             <h3 className="mb-4 text-lg font-semibold text-white">Opening Performance by Color</h3>
 
-            {comprehensiveData.openingColorStats &&
-             (comprehensiveData.openingColorStats.white.length > 0 || comprehensiveData.openingColorStats.black.length > 0) ? (
+            {safeOpeningColorStats &&
+             (safeOpeningColorStats.white.length > 0 || safeOpeningColorStats.black.length > 0) ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Best White Openings */}
                 <div>
                   <h4 className="mb-3 text-sm font-semibold text-emerald-200">Most Played White Openings</h4>
                   <div className="space-y-3">
-                    {comprehensiveData.openingColorStats.white.slice(0, 3).map((stat: any, index: number) => (
+                    {safeOpeningColorStats.white.slice(0, 3).map((stat: any, index: number) => (
                       <div
                         key={index}
                         className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
@@ -714,7 +811,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                             stat.winRate >= 50 ? 'bg-sky-500/20 text-sky-300' :
                             'bg-rose-500/20 text-rose-300'
                           }`}>
-                            {stat.winRate.toFixed(1)}%
+                            {formatPercent(stat.winRate, 1)}%
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-xs text-emerald-100">
@@ -725,7 +822,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         </div>
                       </div>
                     ))}
-                    {comprehensiveData.openingColorStats.white.length === 0 && (
+                    {safeOpeningColorStats.white.length === 0 && (
                       <div className="py-4 text-center text-xs text-slate-400">
                         No white opening data available
                       </div>
@@ -737,7 +834,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <div>
                   <h4 className="mb-3 text-sm font-semibold text-sky-200">Most Played Black Openings</h4>
                   <div className="space-y-3">
-                    {comprehensiveData.openingColorStats.black.slice(0, 3).map((stat: any, index: number) => (
+                    {safeOpeningColorStats.black.slice(0, 3).map((stat: any, index: number) => (
                       <div
                         key={index}
                         className="cursor-pointer rounded-2xl border border-sky-400/40 bg-sky-500/10 p-4 transition hover:border-sky-300/60 hover:bg-sky-500/20"
@@ -757,7 +854,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                             stat.winRate >= 50 ? 'bg-sky-500/20 text-sky-300' :
                             'bg-rose-500/20 text-rose-300'
                           }`}>
-                            {stat.winRate.toFixed(1)}%
+                            {formatPercent(stat.winRate, 1)}%
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-xs text-sky-100">
@@ -768,7 +865,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         </div>
                       </div>
                     ))}
-                    {comprehensiveData.openingColorStats.black.length === 0 && (
+                    {safeOpeningColorStats.black.length === 0 && (
                       <div className="py-4 text-center text-xs text-slate-400">
                         No black opening data available
                       </div>
@@ -793,7 +890,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <div className={subtleCardClass}>
                   <div>
                     <span className="text-xs uppercase tracking-wide text-slate-400">Recent Win Rate</span>
-                    <div className="text-lg font-semibold text-emerald-300">{activePerformance ? activePerformance.recentWinRate.toFixed(1) : '--'}%</div>
+                    <div className="text-lg font-semibold text-emerald-300">{activePerformance ? formatPercent(activePerformance.recentWinRate, 1) : '--'}%</div>
                     <div className="mt-1 text-xs text-slate-400">
                       {activePerformance
                         ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
@@ -805,12 +902,12 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   <span className="text-xs uppercase tracking-wide text-slate-400">Current Rating</span>
                   <div className="text-lg font-semibold text-sky-300">
                     {selectedTimeControl && comprehensiveData?.currentEloPerTimeControl?.[selectedTimeControl]
-                      ? comprehensiveData.currentEloPerTimeControl[selectedTimeControl]
+                      ? safeComprehensive.currentEloPerTimeControl[selectedTimeControl]
                       : (comprehensiveData?.currentElo || '--')}
                   </div>
                   <div className="mt-1 text-xs text-slate-400">
                     {activePerformance
-                      ? `Avg: ${activePerformance.recentAverageElo.toFixed(0)} • ${activePerformance.sampleSize} games`
+                      ? `Avg: ${formatPercent(activePerformance.recentAverageElo, 0)} • ${activePerformance.sampleSize} games`
                       : 'No data'}
                   </div>
                 </div>
@@ -850,7 +947,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           {comprehensiveData?.opponentStats && (
             <EnhancedOpponentAnalysis
               userId={userId}
-              opponentStats={comprehensiveData.opponentStats}
+              opponentStats={safeOpponentStats}
               platform={(platform as 'lichess' | 'chess.com') || 'lichess'}
               onOpponentClick={onOpponentClick}
             />
@@ -862,26 +959,210 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             <div className="grid-responsive text-sm text-slate-200">
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Avg Length</span>
-                <div className="text-lg font-semibold text-sky-300">{comprehensiveData.gameLengthStats.averageGameLength.toFixed(1)} moves</div>
+                <div className="text-lg font-semibold text-sky-300">{typeof gameLengthStats.averageGameLength === 'number' ? formatPercent(gameLengthStats.averageGameLength, 1) : '0.0'} moves</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Shortest</span>
-                <div className="text-lg font-semibold text-emerald-300">{comprehensiveData.gameLengthStats.shortestGame} moves</div>
+                <div className="text-lg font-semibold text-emerald-300">{formatNumber(gameLengthStats.shortestGame)} moves</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Longest</span>
-                <div className="text-lg font-semibold text-rose-300">{comprehensiveData.gameLengthStats.longestGame} moves</div>
+                <div className="text-lg font-semibold text-rose-300">{formatNumber(gameLengthStats.longestGame)} moves</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Quick Victories</span>
-                <div className="text-lg font-semibold text-purple-300">{comprehensiveData.gameLengthStats.quickVictories} games</div>
+                <div className="text-lg font-semibold text-purple-300">{formatNumber(gameLengthStats.quickVictories)} games</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Long Games</span>
-                <div className="text-lg font-semibold text-amber-300">{comprehensiveData.gameLengthStats.longGames} games</div>
+                <div className="text-lg font-semibold text-amber-300">{formatNumber(gameLengthStats.longGames)} games</div>
               </div>
             </div>
           </div>
+
+          {/* NEW: Enhanced Game Length Insights - Compact Block 1 */}
+          {(comprehensiveData?.game_length_distribution || comprehensiveData?.quick_victory_breakdown || comprehensiveData?.marathon_performance || comprehensiveData?.recent_trend) && (
+            <div className={cardClass}>
+              <h3 className="mb-4 text-lg font-semibold text-white">📊 Enhanced Game Length Insights</h3>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Quick Victory Breakdown */}
+                {comprehensiveData?.quick_victory_breakdown && Object.keys(comprehensiveData.quick_victory_breakdown).length > 0 && (
+                  <div>
+                    <h4 className="mb-3 text-sm font-semibold text-purple-200">⚡ Quick Victory Analysis</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Object.entries(comprehensiveData.quick_victory_breakdown).map(([type, count]: [string, any]) => (
+                        <div key={type} className={subtleCardClass}>
+                          <span className="text-xs text-slate-400">{type}</span>
+                          <div className="text-xl font-semibold text-purple-300">{count}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Marathon Performance */}
+                {comprehensiveData?.marathon_performance && comprehensiveData.marathon_performance.count > 0 && (
+                  <div>
+                    <h4 className="mb-3 text-sm font-semibold text-amber-200">🏃 Marathon Performance (80+ moves)</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className={subtleCardClass}>
+                        <span className="text-xs text-slate-400">Games</span>
+                        <div className="text-xl font-semibold text-sky-300">{comprehensiveData.marathon_performance.count}</div>
+                      </div>
+                      {comprehensiveData.marathon_performance.average_accuracy && (
+                        <div className={subtleCardClass}>
+                          <span className="text-xs text-slate-400">Avg Accuracy</span>
+                          <div className="text-xl font-semibold text-emerald-300">{formatPercent(comprehensiveData.marathon_performance.average_accuracy, 1)}%</div>
+                        </div>
+                      )}
+                      {comprehensiveData.marathon_performance.average_blunders !== null && (
+                        <div className={subtleCardClass}>
+                          <span className="text-xs text-slate-400">Avg Blunders</span>
+                          <div className="text-xl font-semibold text-rose-300">{formatPercent(comprehensiveData.marathon_performance.average_blunders, 1)}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Recent Trend - Full Width */}
+              {comprehensiveData?.recent_trend && comprehensiveData.recent_trend.recent_average_moves && (
+                <div className="mt-6 pt-6 border-t border-white/10">
+                  <h4 className="mb-3 text-sm font-semibold text-sky-200">📈 Recent Trend</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <span className="text-xs text-slate-400">Last 50 Games</span>
+                      <div className="text-xl font-semibold text-sky-300">{formatPercent(comprehensiveData.recent_trend.recent_average_moves, 1)} moves</div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-400">Baseline</span>
+                      <div className="text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.recent_trend.baseline_average_moves, 1)} moves</div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-400">Change</span>
+                      <div className={`text-xl font-semibold ${comprehensiveData.recent_trend.difference > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
+                        {comprehensiveData.recent_trend.difference > 0 ? '+' : ''}{formatPercent(comprehensiveData.recent_trend.difference, 1)}
+                      </div>
+                    </div>
+                  </div>
+                  {comprehensiveData.recent_trend.difference !== 0 && (
+                    <p className="mt-2 text-xs text-slate-400">
+                      {comprehensiveData.recent_trend.difference > 0
+                        ? `📊 Your recent games are ${Math.abs(comprehensiveData.recent_trend.difference).toFixed(1)} moves longer than usual`
+                        : `⚡ Your recent games are ${Math.abs(comprehensiveData.recent_trend.difference).toFixed(1)} moves shorter than usual`
+                      }
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* NEW: Performance Highlights - Compact Block 2 */}
+          {(comprehensiveData?.personal_records || comprehensiveData?.patience_rating !== null || comprehensiveData?.comeback_potential || comprehensiveData?.resignation_timing) && (
+            <div className={cardClass}>
+              <h3 className="mb-4 text-lg font-semibold text-white">🏆 Performance Highlights</h3>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Personal Records */}
+                {comprehensiveData?.personal_records && (
+                  <div>
+                    <h4 className="mb-3 text-sm font-semibold text-emerald-200">🏆 Personal Records</h4>
+                    <div className="space-y-2">
+                      {comprehensiveData.personal_records.fastest_win && (
+                        <div className={subtleCardClass}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">⚡ Fastest Win</span>
+                            <span className="font-semibold text-emerald-300">{comprehensiveData.personal_records.fastest_win.moves} moves</span>
+                          </div>
+                        </div>
+                      )}
+                      {comprehensiveData.personal_records.highest_accuracy_win && (
+                        <div className={subtleCardClass}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">🎯 Most Accurate Win</span>
+                            <span className="font-semibold text-sky-300">{formatPercent(comprehensiveData.personal_records.highest_accuracy_win.accuracy, 1)}%</span>
+                          </div>
+                        </div>
+                      )}
+                      {comprehensiveData.personal_records.longest_game && (
+                        <div className={subtleCardClass}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">🏃 Longest Game</span>
+                            <span className="font-semibold text-purple-300">{comprehensiveData.personal_records.longest_game.moves} moves</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Patience & Comeback */}
+                <div className="space-y-4">
+                  {/* Patience Rating */}
+                  {comprehensiveData?.patience_rating !== null && comprehensiveData?.patience_rating !== undefined && (
+                    <div>
+                      <h4 className="mb-3 text-sm font-semibold text-purple-200">🧘 Patience Rating</h4>
+                      <div className={subtleCardClass}>
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-purple-300">{formatPercent(comprehensiveData.patience_rating, 1)}</div>
+                          <p className="text-xs text-slate-400 mt-1">
+                            {comprehensiveData.patience_rating > 75
+                              ? "Endgame specialist"
+                              : comprehensiveData.patience_rating > 50
+                              ? "Tactical player"
+                              : "Quick finisher"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Comeback Potential */}
+                  {comprehensiveData?.comeback_potential && (
+                    <div>
+                      <h4 className="mb-3 text-sm font-semibold text-amber-200">💪 Comeback Ability</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className={subtleCardClass}>
+                          <span className="text-xs text-slate-400">Games</span>
+                          <div className="text-xl font-semibold text-amber-300">{comprehensiveData.comeback_potential.games}</div>
+                        </div>
+                        <div className={subtleCardClass}>
+                          <span className="text-xs text-slate-400">Avg Swing</span>
+                          <div className="text-xl font-semibold text-emerald-300">{formatPercent(comprehensiveData.comeback_potential.average_largest_swing, 1)}%</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Resignation Timing - Full Width */}
+              {comprehensiveData?.resignation_timing && (
+                <div className="mt-6 pt-6 border-t border-white/10">
+                  <h4 className="mb-3 text-sm font-semibold text-rose-200">🏳️ Resignation Timing</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    {comprehensiveData.resignation_timing.my_average_resignation_move && (
+                      <div className={subtleCardClass}>
+                        <span className="text-xs text-slate-400">You Resign At</span>
+                        <div className="text-xl font-semibold text-rose-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} moves</div>
+                        <span className="text-xs text-slate-500">({comprehensiveData.resignation_timing.my_resignations} games)</span>
+                      </div>
+                    )}
+                    {comprehensiveData.resignation_timing.opponent_average_resignation_move && (
+                      <div className={subtleCardClass}>
+                        <span className="text-xs text-slate-400">Opponents Resign At</span>
+                        <div className="text-xl font-semibold text-emerald-300">{formatPercent(comprehensiveData.resignation_timing.opponent_average_resignation_move, 1)} moves</div>
+                        <span className="text-xs text-slate-500">({comprehensiveData.resignation_timing.opponent_resignations} games)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Temporal Analysis */}
           <div className={cardClass}>
@@ -889,23 +1170,23 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             <div className="grid-responsive text-sm text-slate-200">
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">First Game</span>
-                <div className="text-sm font-medium text-white">{comprehensiveData.temporalStats.firstGame ? new Date(comprehensiveData.temporalStats.firstGame).toLocaleDateString() : 'N/A'}</div>
+                <div className="text-sm font-medium text-white">{safeTemporalStats.firstGame ? new Date(safeTemporalStats.firstGame).toLocaleDateString() : 'N/A'}</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Last Game</span>
-                <div className="text-sm font-medium text-white">{comprehensiveData.temporalStats.lastGame ? new Date(comprehensiveData.temporalStats.lastGame).toLocaleDateString() : 'N/A'}</div>
+                <div className="text-sm font-medium text-white">{safeTemporalStats.lastGame ? new Date(safeTemporalStats.lastGame).toLocaleDateString() : 'N/A'}</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">This Month</span>
-                <div className="text-lg font-semibold text-sky-300">{comprehensiveData.temporalStats.gamesThisMonth} games</div>
+                <div className="text-lg font-semibold text-sky-300">{safeTemporalStats.gamesThisMonth} games</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">This Week</span>
-                <div className="text-lg font-semibold text-emerald-300">{comprehensiveData.temporalStats.gamesThisWeek} games</div>
+                <div className="text-lg font-semibold text-emerald-300">{safeTemporalStats.gamesThisWeek} games</div>
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-slate-400">Avg / Day</span>
-                <div className="text-lg font-semibold text-purple-300">{comprehensiveData.temporalStats.averageGamesPerDay.toFixed(2)}</div>
+                <div className="text-lg font-semibold text-purple-300">{formatPercent(safeTemporalStats.averageGamesPerDay, 2)}</div>
               </div>
             </div>
           </div>

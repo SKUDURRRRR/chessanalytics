@@ -2,7 +2,7 @@
 -- These queries should return 0 rows for a healthy database
 -- If any query returns rows, the database has integrity issues
 
--- A) Check that totals equal wins+losses+draws per user
+-- A) Check that totals equal wins+losses+draws per user (unchanged, existing check)
 -- This ensures our analytics math is correct
 WITH user_totals AS (
   SELECT user_id,
@@ -13,7 +13,7 @@ WITH user_totals AS (
   FROM public.games
   GROUP BY 1
 )
-SELECT 
+SELECT
   'MATH_MISMATCH' as check_type,
   user_id,
   total,
@@ -22,16 +22,16 @@ SELECT
   draws,
   (wins + losses + draws) as calculated_total,
   (total - (wins + losses + draws)) as difference
-FROM user_totals 
+FROM user_totals
 WHERE total <> wins + losses + draws;
 
--- B) Check for duplicate provider game IDs per user/platform
+-- B) Check for duplicate provider game IDs per user/platform (existing)
 -- This ensures our unique constraint is working
-SELECT 
+SELECT
   'DUPLICATE_GAMES' as check_type,
-  user_id, 
-  platform, 
-  provider_game_id, 
+  user_id,
+  platform,
+  provider_game_id,
   COUNT(*) as duplicate_count
 FROM public.games
 GROUP BY 1,2,3
@@ -39,7 +39,7 @@ HAVING COUNT(*) > 1;
 
 -- C) Check for invalid result values
 -- This ensures data integrity constraints
-SELECT 
+SELECT
   'INVALID_RESULT' as check_type,
   user_id,
   provider_game_id,
@@ -49,7 +49,7 @@ WHERE result NOT IN ('win', 'loss', 'draw');
 
 -- D) Check for invalid color values
 -- This ensures data integrity constraints
-SELECT 
+SELECT
   'INVALID_COLOR' as check_type,
   user_id,
   provider_game_id,
@@ -59,7 +59,7 @@ WHERE color NOT IN ('white', 'black');
 
 -- E) Check for invalid platform values
 -- This ensures data integrity constraints
-SELECT 
+SELECT
   'INVALID_PLATFORM' as check_type,
   user_id,
   provider_game_id,
@@ -69,11 +69,11 @@ WHERE platform NOT IN ('lichess', 'chess.com');
 
 -- F) Check for missing required fields
 -- This ensures data completeness
-SELECT 
+SELECT
   'MISSING_FIELDS' as check_type,
   user_id,
   provider_game_id,
-  CASE 
+  CASE
     WHEN user_id IS NULL THEN 'user_id'
     WHEN platform IS NULL THEN 'platform'
     WHEN provider_game_id IS NULL THEN 'provider_game_id'
@@ -82,16 +82,16 @@ SELECT
     WHEN color IS NULL THEN 'color'
   END as missing_field
 FROM public.games
-WHERE user_id IS NULL 
-   OR platform IS NULL 
-   OR provider_game_id IS NULL 
-   OR played_at IS NULL 
-   OR result IS NULL 
+WHERE user_id IS NULL
+   OR platform IS NULL
+   OR provider_game_id IS NULL
+   OR played_at IS NULL
+   OR result IS NULL
    OR color IS NULL;
 
 -- G) Check for future dates (data quality)
 -- This catches potential data import issues
-SELECT 
+SELECT
   'FUTURE_DATES' as check_type,
   user_id,
   provider_game_id,
@@ -101,7 +101,7 @@ WHERE played_at > NOW() + INTERVAL '1 day';
 
 -- H) Check for very old dates (data quality)
 -- This catches potential data import issues
-SELECT 
+SELECT
   'ANCIENT_DATES' as check_type,
   user_id,
   provider_game_id,
@@ -109,24 +109,48 @@ SELECT
 FROM public.games
 WHERE played_at < '1900-01-01'::timestamp;
 
--- I) Check for invalid rating ranges
+-- I) Check for invalid rating ranges (existing)
 -- This ensures data quality
-SELECT 
+SELECT
   'INVALID_RATINGS' as check_type,
   user_id,
   provider_game_id,
   opponent_rating
 FROM public.games
-WHERE opponent_rating IS NOT NULL 
+WHERE opponent_rating IS NOT NULL
   AND (opponent_rating < 100 OR opponent_rating > 4000);
 
--- J) Check for invalid accuracy ranges
--- This ensures data quality
-SELECT 
+-- J) Check for invalid accuracy ranges (existing)
+
+-- K) Check that total_moves statistics align with new analytics expectations
+SELECT
+  'GAME_LENGTH_MISSING' as check_type,
+  user_id,
+  provider_game_id
+FROM public.games
+WHERE total_moves IS NULL
+   OR total_moves <= 0;
+
+-- L) Ensure we have corresponding analysis rows for move-based insights
+-- L) Ensure we have corresponding analysis rows for move-based insights
+SELECT
+  'ANALYSIS_MISSING' as check_type,
+  g.user_id,
+  g.provider_game_id
+FROM public.games g
+LEFT JOIN public.game_analyses ga
+  ON ga.user_id = g.user_id
+ AND ga.platform = g.platform
+ AND ga.game_id = g.provider_game_id
+WHERE ga.id IS NULL
+  AND g.result IN ('win','loss','draw')
+LIMIT 50;
+-- J) Check for invalid accuracy ranges (existing)
+SELECT
   'INVALID_ACCURACY' as check_type,
   user_id,
   provider_game_id,
   accuracy
 FROM public.games
-WHERE accuracy IS NOT NULL 
+WHERE accuracy IS NOT NULL
   AND (accuracy < 0 OR accuracy > 100);

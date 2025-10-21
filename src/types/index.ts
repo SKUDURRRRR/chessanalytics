@@ -462,6 +462,8 @@ export interface OpeningMistake {
   centipawn_loss?: number // snake_case from API
   classification: 'blunder' | 'mistake' | 'inaccuracy'
   fen?: string
+  game_id?: string // For linking to specific games
+  gameId?: string // camelCase version
 }
 
 export interface StyleRecommendation {

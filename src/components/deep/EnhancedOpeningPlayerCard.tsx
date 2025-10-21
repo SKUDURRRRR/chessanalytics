@@ -1,5 +1,22 @@
 import React, { useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { Chess } from 'chess.js'
 import { EnhancedOpeningAnalysis, OpeningMistake, StudyRecommendation, StyleRecommendation, TrendPoint } from '../../types'
+
+// Helper to convert UCI notation to SAN (Standard Algebraic Notation)
+const convertUciToSan = (fen: string, uci: string): string => {
+  try {
+    const chess = new Chess(fen)
+    const from = uci.slice(0, 2)
+    const to = uci.slice(2, 4)
+    const promotion = uci.length > 4 ? uci[4] : undefined
+    const result = chess.move({ from, to, promotion })
+    return result ? result.san : uci
+  } catch (error) {
+    // If conversion fails, return original UCI
+    return uci
+  }
+}
 
 interface EnhancedOpeningPlayerCardProps {
   score: number
@@ -25,7 +42,7 @@ interface EnhancedOpeningPlayerCardProps {
 // Helper to normalize API data (snake_case to camelCase)
 function normalizeEnhancedAnalysis(data: any): EnhancedOpeningAnalysis | undefined {
   if (!data) return undefined
-  
+
   const normalized: any = {
     openingWinRate: data.opening_win_rate ?? data.openingWinRate ?? 0,
     specificMistakes: (data.specific_mistakes || data.specificMistakes || []).map((m: any) => ({
@@ -70,7 +87,7 @@ function normalizeEnhancedAnalysis(data: any): EnhancedOpeningAnalysis | undefin
       styleMatchScore: data.repertoire_analysis?.style_match_score ?? data.repertoireAnalysis?.styleMatchScore ?? 0
     }
   }
-  
+
   return normalized
 }
 
@@ -84,21 +101,25 @@ export function EnhancedOpeningPlayerCard({
 }: EnhancedOpeningPlayerCardProps) {
   const [selectedTab, setSelectedTab] = useState<'overview' | 'mistakes' | 'study' | 'progress'>('overview')
   const [selectedMistake, setSelectedMistake] = useState<OpeningMistake | null>(null)
-  
+  const [showBlundersModal, setShowBlundersModal] = useState(false)
+  const [selectedOpeningBlunders, setSelectedOpeningBlunders] = useState<OpeningMistake[]>([])
+  const navigate = useNavigate()
+  const location = useLocation()
+
   // Normalize the enhanced analysis data
   const enhancedAnalysis = normalizeEnhancedAnalysis(rawEnhancedAnalysis)
-  
-  
+
+
   // Use opening win rate from enhanced analysis if available, otherwise use score
   const effectiveScore = enhancedAnalysis?.openingWinRate || score
-  
+
   // Get combined playing style description
   const getPlayingStyle = () => {
     const aggressive = personalityScores.aggressive || 0
     const tactical = personalityScores.tactical || 0
     const positional = personalityScores.positional || 0
     const patient = personalityScores.patient || 0
-    
+
     // All traits with their scores
     const traits = [
       { name: 'aggressive', score: aggressive },
@@ -106,15 +127,15 @@ export function EnhancedOpeningPlayerCard({
       { name: 'positional', score: positional },
       { name: 'patient', score: patient }
     ].sort((a, b) => b.score - a.score)
-    
+
     const [first, second, third, fourth] = traits
-    
+
     // Calculate score differences
     const highestScore = first.score
     const lowestScore = fourth.score
     const scoreRange = highestScore - lowestScore
     const topTwoGap = first.score - second.score
-    
+
     // PRIORITY 0: Check for developing/low skill players FIRST
     // Lower elo players have compressed scores in the 30-55 range
     // We need to identify them before checking if they're "balanced"
@@ -135,36 +156,36 @@ export function EnhancedOpeningPlayerCard({
         score: Math.round(highestScore)
       }
     }
-    
+
     // If all scores are very close (within 8 points) AND in mid-skill range, truly balanced
     // This catches players with scores 55-65 that are genuinely balanced
     if (scoreRange < 8 && highestScore >= 55 && highestScore < 70) {
-      return { 
-        description: 'Balanced Player', 
+      return {
+        description: 'Balanced Player',
         icon: '⚖️',
         primaryTrait: 'balanced',
         score: Math.round(highestScore)
       }
     }
-    
+
     // PRIORITY 1: Use aggressive/patient dimension if there's meaningful difference
     // This dimension shows the most playing style variety
     // Lowered threshold from 15 to 10 to catch more variety
     const aggrScore = aggressive
     const patientScore = patient
     const aggrPatientDiff = Math.abs(aggrScore - patientScore)
-    
+
     // If aggressive/patient differ by 10+ points, use that as primary dimension
     if (aggrPatientDiff >= 10) {
       const isPrimaryAggressive = aggrScore > patientScore
       const primaryDimension = isPrimaryAggressive ? 'aggressive' : 'patient'
       const primaryScore = Math.max(aggrScore, patientScore)
-      
+
       // Find strongest secondary trait (tactical vs positional)
       const tactScore = tactical
       const posScore = positional
       const secondaryDimension = tactScore > posScore ? 'tactical' : 'positional'
-      
+
       // Style descriptions prioritizing aggr/patient dimension
       const styleMap = {
         'aggressive-tactical': { text: 'Aggressive Tactician', icon: '⚔️' },
@@ -172,10 +193,10 @@ export function EnhancedOpeningPlayerCard({
         'patient-tactical': { text: 'Defensive Tactician', icon: '🛡️' },
         'patient-positional': { text: 'Classical Strategist', icon: '🛡️' }
       }
-      
+
       const styleKey = `${primaryDimension}-${secondaryDimension}`
       const style = styleMap[styleKey] || { text: 'Versatile Player', icon: '♟️' }
-      
+
       return {
         description: style.text,
         icon: style.icon,
@@ -183,7 +204,7 @@ export function EnhancedOpeningPlayerCard({
         score: Math.round(primaryScore)
       }
     }
-    
+
     // PRIORITY 2: Check if one trait is truly dominant
     // Lowered requirements to catch more variety (12+ gap OR 65+ score with 8+ gap)
     if ((topTwoGap >= 12 && first.score >= 65) || (topTwoGap >= 8 && first.score >= 75)) {
@@ -201,13 +222,13 @@ export function EnhancedOpeningPlayerCard({
         score: Math.round(first.score)
       }
     }
-    
+
     // PRIORITY 3: Use top 2 traits, but avoid "Universal Player" unless truly exceptional
     // Only allow Universal/Complete if BOTH tactical and positional are 70+
     const key = `${first.name}-${second.name}`
-    
+
     // Special handling for tactical-positional combinations
-    if ((first.name === 'tactical' && second.name === 'positional') || 
+    if ((first.name === 'tactical' && second.name === 'positional') ||
         (first.name === 'positional' && second.name === 'tactical')) {
       // Only call them "Universal/Complete Player" if both scores are genuinely high (70+)
       if (tactical >= 70 && positional >= 70) {
@@ -217,7 +238,7 @@ export function EnhancedOpeningPlayerCard({
           primaryTrait: first.name,
           score: Math.round(first.score)
         }
-      } 
+      }
       // If scores are moderate (55-70 range) and close together (within 5 points), show combined style
       else if (Math.abs(tactical - positional) <= 5 && tactical >= 55 && positional >= 55) {
         return {
@@ -237,7 +258,7 @@ export function EnhancedOpeningPlayerCard({
         }
       }
     }
-    
+
     // Standard combined styles for other combinations
     const combinedStyles = {
       'aggressive-tactical': { text: 'Aggressive Tactician', icon: '⚔️' },
@@ -251,9 +272,9 @@ export function EnhancedOpeningPlayerCard({
       'patient-tactical': { text: 'Defensive Tactician', icon: '🛡️' },
       'patient-positional': { text: 'Classical Strategist', icon: '🛡️' }
     }
-    
+
     const style = combinedStyles[key] || { text: 'Versatile Player', icon: '♟️' }
-    
+
     return {
       description: style.text,
       icon: style.icon,
@@ -261,7 +282,7 @@ export function EnhancedOpeningPlayerCard({
       score: Math.round(first.score)
     }
   }
-  
+
   const playingStyle = getPlayingStyle()
 
   const getScoreLevel = (score: number) => {
@@ -352,13 +373,13 @@ export function EnhancedOpeningPlayerCard({
           {(enhancedAnalysis?.repertoireAnalysis || insights.totalOpeningGames > 0) && (
             <div className="bg-slate-800/30 rounded-xl p-4">
               <p className="text-sm text-slate-200 leading-relaxed">
-                {effectiveScore >= 70 
+                {effectiveScore >= 70
                   ? `You're performing well in the opening phase with a ${Math.round(effectiveScore)}% win rate across ${insights.totalOpeningGames} games.`
                   : effectiveScore >= 60
                   ? `Your opening performance is developing with a ${Math.round(effectiveScore)}% win rate across ${insights.totalOpeningGames} games.`
                   : `Your opening play has room for improvement with a ${Math.round(effectiveScore)}% win rate across ${insights.totalOpeningGames} games.`
                 }
-                {enhancedAnalysis?.repertoireAnalysis?.mostSuccessful?.opening !== 'None' && enhancedAnalysis?.repertoireAnalysis?.mostSuccessful?.opening ? 
+                {enhancedAnalysis?.repertoireAnalysis?.mostSuccessful?.opening !== 'None' && enhancedAnalysis?.repertoireAnalysis?.mostSuccessful?.opening ?
                   ` Your ${enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening} is especially strong at ${Math.round(enhancedAnalysis.repertoireAnalysis.mostSuccessful.winRate)}% win rate.` :
                   insights.bestOpening ? ` Your ${insights.bestOpening.opening} is especially strong at ${Math.round(insights.bestOpening.winRate)}% win rate.` : ''
                 }
@@ -411,8 +432,8 @@ export function EnhancedOpeningPlayerCard({
           </div>
 
           {/* Opening Statistics - Use backend repertoire analysis if available, otherwise use calculated insights */}
-          {(enhancedAnalysis?.repertoireAnalysis && 
-            (enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening !== 'None' || 
+          {(enhancedAnalysis?.repertoireAnalysis &&
+            (enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening !== 'None' ||
              enhancedAnalysis.repertoireAnalysis.needsWork.opening !== 'None')) ? (
             <div className="bg-slate-800/30 rounded-xl p-4">
               <h5 className="font-semibold text-white mb-3">Your Opening Performance</h5>
@@ -466,10 +487,10 @@ export function EnhancedOpeningPlayerCard({
                   {(() => {
                     const blunders = enhancedAnalysis.specificMistakes.filter(m => m.classification === 'blunder')
                     const mistakes = enhancedAnalysis.specificMistakes.filter(m => m.classification === 'mistake')
-                    const avgCPL = blunders.length > 0 
+                    const avgCPL = blunders.length > 0
                       ? (blunders.reduce((sum, m) => sum + m.centipawnLoss, 0) / blunders.length).toFixed(0)
                       : '0'
-                    
+
                     // Find most common opening
                     const openingCounts: Record<string, number> = {}
                     blunders.forEach(m => {
@@ -477,13 +498,13 @@ export function EnhancedOpeningPlayerCard({
                       openingCounts[opening] = (openingCounts[opening] || 0) + 1
                     })
                     const mostCommonOpening = Object.entries(openingCounts).sort((a, b) => b[1] - a[1])[0]
-                    
+
                     return (
                       <>
                         <div className="flex items-center text-slate-200">
                           <span className="text-red-400 mr-2">├─</span>
                           <span className="text-sm">
-                            <span className="font-semibold text-white">{blunders.length}</span> blunders in opening 
+                            <span className="font-semibold text-white">{blunders.length}</span> blunders in opening
                             {blunders.length > 0 && <span className="text-slate-400"> (avg {avgCPL} CPL)</span>}
                           </span>
                         </div>
@@ -496,10 +517,18 @@ export function EnhancedOpeningPlayerCard({
                           </div>
                         )}
                         {mostCommonOpening && (
-                          <div className="flex items-center text-slate-200">
+                          <div
+                            className="flex items-center text-slate-200 cursor-pointer hover:bg-sky-500/5 rounded-lg p-2 -m-2 transition-colors"
+                            onClick={() => {
+                              // Get all blunders for this opening
+                              const openingBlunders = blunders.filter(b => b.mistake.split(' - ')[0] === mostCommonOpening[0])
+                              setSelectedOpeningBlunders(openingBlunders)
+                              setShowBlundersModal(true)
+                            }}
+                          >
                             <span className="text-sky-400 mr-2">└─</span>
                             <span className="text-sm">
-                              Study: <span className="font-semibold text-sky-300">{mostCommonOpening[0]}</span> tactics 
+                              Study: <span className="font-semibold text-sky-300 underline decoration-dotted">{mostCommonOpening[0]}</span> tactics
                               <span className="text-slate-400"> ({mostCommonOpening[1]} errors)</span>
                             </span>
                           </div>
@@ -573,14 +602,14 @@ export function EnhancedOpeningPlayerCard({
                   <h4 className="text-xl font-bold text-white">
                     Move {selectedMistake.move} Analysis
                   </h4>
-                  <button 
+                  <button
                     onClick={() => setSelectedMistake(null)}
                     className="text-slate-400 hover:text-white"
                   >
                     ✕
                   </button>
                 </div>
-                
+
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -592,12 +621,12 @@ export function EnhancedOpeningPlayerCard({
                       <div className="text-lg font-semibold text-green-300">{selectedMistake.correctMove}</div>
                     </div>
                   </div>
-                  
+
                   <div>
                     <div className="text-sm text-slate-400">Explanation</div>
                     <div className="text-slate-200">{selectedMistake.explanation}</div>
                   </div>
-                  
+
                   <div className="bg-slate-700/50 rounded-lg p-4">
                     <div className="text-sm text-slate-400 mb-2">Learning Tip</div>
                     <div className="text-slate-200">
@@ -614,7 +643,7 @@ export function EnhancedOpeningPlayerCard({
       {selectedTab === 'study' && (
         <div className="space-y-4">
           <h5 className="font-semibold text-white">Opening Recommendations for Your Style</h5>
-          
+
           {enhancedAnalysis?.styleRecommendations && enhancedAnalysis.styleRecommendations.length > 0 ? (
             <div className="space-y-3">
               {enhancedAnalysis.styleRecommendations.slice(0, 3).map((rec, index) => (
@@ -636,7 +665,7 @@ export function EnhancedOpeningPlayerCard({
                         <div className="flex items-center gap-2 mb-1">
                           <div className="text-xs text-slate-400">Style Match:</div>
                           <div className="flex-1 bg-slate-700 rounded-full h-2 overflow-hidden">
-                            <div 
+                            <div
                               className="bg-gradient-to-r from-sky-500 to-emerald-500 h-full transition-all"
                               style={{ width: `${rec.compatibilityScore}%` }}
                             />
@@ -656,7 +685,7 @@ export function EnhancedOpeningPlayerCard({
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <a 
+                    <a
                       href={`https://www.youtube.com/results?search_query=${encodeURIComponent(rec.openingName + ' chess opening')}`}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -664,7 +693,7 @@ export function EnhancedOpeningPlayerCard({
                     >
                       🎥 Watch Video
                     </a>
-                    <a 
+                    <a
                       href={`https://lichess.org/study/search?q=${encodeURIComponent(rec.openingName)}`}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -689,7 +718,7 @@ export function EnhancedOpeningPlayerCard({
       {selectedTab === 'progress' && (
         <div className="space-y-4">
           <h5 className="font-semibold text-white">Opening Performance Trend</h5>
-          
+
           {enhancedAnalysis?.improvementTrend && enhancedAnalysis.improvementTrend.length > 0 ? (
             <div className="space-y-4">
               <div className="bg-slate-800/50 rounded-xl p-4">
@@ -697,8 +726,8 @@ export function EnhancedOpeningPlayerCard({
                 <div className="flex items-end justify-between space-x-1 h-32 mb-2">
                   {enhancedAnalysis.improvementTrend.map((point, index) => {
                     const heightPercent = (point.openingWinRate / 100) * 100
-                    const color = point.openingWinRate >= 60 ? 'bg-emerald-500' : 
-                                 point.openingWinRate >= 50 ? 'bg-sky-500' : 
+                    const color = point.openingWinRate >= 60 ? 'bg-emerald-500' :
+                                 point.openingWinRate >= 50 ? 'bg-sky-500' :
                                  point.openingWinRate >= 40 ? 'bg-amber-500' : 'bg-rose-500'
                     return (
                       <div key={index} className="flex-1 flex flex-col items-center justify-end h-full group relative">
@@ -707,7 +736,7 @@ export function EnhancedOpeningPlayerCard({
                           <div className="text-slate-400">{point.games} games</div>
                           <div className="text-slate-400">{new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
                         </div>
-                        <div 
+                        <div
                           className={`w-full ${color} rounded-t transition-all hover:opacity-80`}
                           style={{ height: `${heightPercent}%` }}
                         ></div>
@@ -720,7 +749,7 @@ export function EnhancedOpeningPlayerCard({
                   <span>{new Date(enhancedAnalysis.improvementTrend[enhancedAnalysis.improvementTrend.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-slate-800/50 rounded-xl p-4">
                   <h6 className="font-semibold text-white mb-2">Recent Performance</h6>
@@ -737,7 +766,7 @@ export function EnhancedOpeningPlayerCard({
                   <div className="text-xs text-slate-400">Highest win rate achieved</div>
                 </div>
               </div>
-              
+
               {enhancedAnalysis.repertoireAnalysis && (
                 <div className="bg-slate-800/50 rounded-xl p-4">
                   <h6 className="font-semibold text-white mb-3">Repertoire Insights</h6>
@@ -783,6 +812,107 @@ export function EnhancedOpeningPlayerCard({
           )}
         </div>
       )}
+
+      {/* Blunders Modal */}
+      {showBlundersModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setShowBlundersModal(false)}>
+          <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-slate-900 border-b border-white/10 p-4 flex justify-between items-center z-10">
+              <h3 className="text-lg font-semibold text-white">Critical Blunders to Review </h3>
+              <button
+                onClick={() => setShowBlundersModal(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              {selectedOpeningBlunders.map((blunder, idx) => {
+                const moveParts = blunder.mistake.split(' - ')
+                const opening = moveParts[0]
+                const moveInfo = moveParts[1] || `Move ${blunder.move}`
+                const gameId = blunder.game_id || blunder.gameId
+
+                // Extract userId and platform from location
+                const pathParts = location.pathname.split('/')
+                const userId = pathParts[pathParts.indexOf('analytics') + 1]
+                const platform = pathParts[pathParts.indexOf('analytics') + 2]
+
+                // Convert UCI moves to SAN if FEN is available
+                const yourMove = blunder.moveNotation || blunder.move_notation || '?'
+                const bestMove = blunder.correctMove || blunder.correct_move || '?'
+                const displayYourMove = (blunder.fen && yourMove !== '?') ? convertUciToSan(blunder.fen, yourMove) : yourMove
+                const displayBestMove = (blunder.fen && bestMove !== '?') ? convertUciToSan(blunder.fen, bestMove) : bestMove
+
+                const handleBlunderClick = () => {
+                  if (gameId && blunder.move) {
+                    // Navigate to the game analysis page with the move number as a query parameter
+                    navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}?move=${blunder.move}`)
+                    setShowBlundersModal(false)
+                  }
+                }
+
+                return (
+                  <div
+                    key={idx}
+                    onClick={handleBlunderClick}
+                    className={`bg-red-500/5 border border-red-400/30 rounded-lg p-4 transition-all ${
+                      gameId ? 'hover:bg-red-500/10 hover:border-red-400/50 cursor-pointer hover:scale-[1.02]' : ''
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-red-300 mb-1">
+                          {opening}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {moveInfo}
+                        </div>
+                      </div>
+                      <div className="text-right ml-3">
+                        <div className="text-lg font-bold text-red-400">
+                          -{Math.round(blunder.centipawnLoss || blunder.centipawn_loss || 0)}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          CPL
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div className="bg-red-500/10 rounded px-2 py-1.5">
+                        <div className="text-xs text-slate-400">You played</div>
+                        <div className="text-sm font-mono font-semibold text-red-300">
+                          {displayYourMove}
+                        </div>
+                      </div>
+                      <div className="bg-emerald-500/10 rounded px-2 py-1.5">
+                        <div className="text-xs text-slate-400">Best move</div>
+                        <div className="text-sm font-mono font-semibold text-emerald-300">
+                          {displayBestMove}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-slate-300 leading-relaxed mb-2">
+                      {blunder.explanation}
+                    </div>
+
+                    {gameId && (
+                      <div className="flex items-center justify-center gap-2 text-xs text-sky-300 font-medium">
+                        <span>📋</span>
+                        <span>Click to review in game</span>
+                        <span>→</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -794,7 +924,7 @@ function getLearningTip(classification: string, moveNumber: number): string {
     mistake: 'This move gives your opponent a significant advantage. Focus on the fundamental principles you violated.',
     inaccuracy: 'This move is not the best but not terrible. Look for ways to improve your position more efficiently.'
   }
-  
+
   return tips[classification] || 'Review this move and understand the engine\'s recommendation.'
 }
 
