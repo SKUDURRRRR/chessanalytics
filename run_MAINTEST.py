@@ -67,7 +67,7 @@ class MAINTESTRunner:
     def print_header(self):
         """Print test suite header."""
         print("\n" + "="*80)
-        print("🧪 MAINTEST PRE-DEPLOYMENT TEST SUITE")
+        print("MAINTEST PRE-DEPLOYMENT TEST SUITE")
         print("="*80)
         print(f"Mode: {'Quick' if self.quick_mode else 'Full'}")
         print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -81,16 +81,7 @@ class MAINTESTRunner:
         print("ENVIRONMENT CHECK")
         print("="*80)
 
-        # Check if .env file exists
-        if not Path('.env').exists():
-            print("❌ .env file not found!")
-            print("   Please create .env file with required credentials.")
-            print("   See env.example for template.")
-            return False
-
-        print("✅ .env file found")
-
-        # Check required environment variables
+        # Check required environment variables (can come from .env or system environment)
         required_vars = [
             'SUPABASE_URL',
             'SUPABASE_SERVICE_ROLE_KEY',
@@ -102,8 +93,22 @@ class MAINTESTRunner:
             if not os.getenv(var) and not os.getenv(f'VITE_{var}'):
                 missing.append(var)
 
+        # Check if .env file exists
+        env_file_exists = Path('.env').exists()
+
+        if env_file_exists:
+            print("✅ .env file found")
+        else:
+            print("⚠️  .env file not found (checking system environment variables)")
+
         if missing:
             print(f"❌ Missing required environment variables: {', '.join(missing)}")
+            print("\n💡 For production testing, set these environment variables:")
+            print("   $env:VITE_SUPABASE_URL='<your-supabase-project-url>'")
+            print("   $env:VITE_SUPABASE_ANON_KEY='<your-anon-key>'")
+            print("   $env:SUPABASE_SERVICE_ROLE_KEY='<your-service-role-key>'")
+            print("\n   Or create a .env file (see env.example)")
+            print("   Or use: .\\run_maintest_production.ps1 -Quick")
             return False
 
         print(f"✅ All required environment variables set")
