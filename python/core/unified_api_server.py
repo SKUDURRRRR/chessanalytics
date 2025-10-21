@@ -3390,6 +3390,202 @@ async def _fetch_chesscom_games(
         return []
 
 
+async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Fetch games from Lichess API
+
+    Args:
+        user_id: Lichess username
+        limit: Maximum number of games to fetch
+        until_timestamp: Unix timestamp in milliseconds - fetch games until this time
+    """
+    print(f"[lichess] Fetching games for user: {user_id}, limit: {limit}, until: {until_timestamp}")
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            url = f"https://lichess.org/api/games/user/{user_id}"
+            params = {
+                'max': limit,
+                'pgnInJson': 'true',
+                'clocks': 'true',
+                'evals': 'false',
+                'opening': 'true'
+            }
+
+            # Add until parameter if provided
+            if until_timestamp:
+                params['until'] = until_timestamp
+
+            async with session.get(url, params=params) as response:
+                if response.status != 200:
+                    print(f"[lichess] API error: {response.status}")
+                    return []
+
+                games = []
+                async for line in response.content:
+                    if not line.strip():
+                        continue
+                    try:
+                        import json
+                        game_data = json.loads(line.decode('utf-8'))
+                        games.append(game_data)
+                    except Exception as e:
+                        print(f"[lichess] Error parsing game data: {e}")
+                        continue
+
+                print(f"[lichess] Fetched {len(games)} games")
+                return games
+
+    except Exception as e:
+        print(f"[lichess] ERROR in _fetch_lichess_games: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+async def _fetch_chesscom_stats(user_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch user stats from Chess.com API"""
+    try:
+        import aiohttp
+        headers = {
+            'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
+        }
+        async with aiohttp.ClientSession(headers=headers) as session:
+            url = f"https://api.chess.com/pub/player/{user_id}/stats"
+            async with session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    print(f"Chess.com stats API error: {response.status}")
+                    return None
+    except Exception as e:
+        print(f"Error fetching Chess.com stats: {e}")
+        return None
+
+
+async def _fetch_games_from_platform(
+    user_id: str,
+    platform: str,
+    limit: int,
+    until_timestamp: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    oldest_game_month: Optional[tuple] = None
+) -> List[Dict[str, Any]]:
+    """
+    Fetch games from the specified platform (lichess or chess.com)
+    Returns a list of game dictionaries with standardized fields
+
+    Args:
+        user_id: Username on the platform
+        platform: 'chess.com' or 'lichess'
+        limit: Maximum number of games to fetch
+        until_timestamp: For lichess - fetch games until this timestamp
+        from_date: ISO date string for filtering games after this date
+        to_date: ISO date string for filtering games before this date
+        oldest_game_month: For chess.com pagination - tuple of (year, month)
+    """
+    print(f"[_fetch_games_from_platform] Called for {user_id} on {platform}, limit: {limit}")
+    if platform == 'chess.com':
+        # Fetch chess.com games (already parsed by _fetch_chesscom_games)
+        print(f"[_fetch_games_from_platform] Calling _fetch_chesscom_games...")
+        games = await _fetch_chesscom_games(user_id, limit, from_date, to_date, oldest_game_month)
+        print(f"[_fetch_games_from_platform] _fetch_chesscom_games returned {len(games) if games else 0} games")
+        return games
+
+    elif platform == 'lichess':
+        # Fetch lichess games
+        # Convert until_timestamp to int if it's a string
+        until_ts = None
+        if until_timestamp:
+            try:
+                until_ts = int(until_timestamp) if isinstance(until_timestamp, str) else until_timestamp
+            except (ValueError, TypeError):
+                print(f"[lichess] Invalid until_timestamp: {until_timestamp}")
+
+        raw_games = await _fetch_lichess_games(user_id, limit, until_ts)
+        # Parse into standardized format
+        parsed_games = []
+        for game in raw_games:
+            try:
+                # Lichess API returns JSON with PGN embedded
+                pgn = game.get('pgn', '')
+                game_id = game.get('id', '')
+
+                # Determine player color
+                players = game.get('players', {})
+                white_user = players.get('white', {}).get('user', {}).get('name', '').lower()
+                black_user = players.get('black', {}).get('user', {}).get('name', '').lower()
+                user_lower = user_id.lower()
+
+                if white_user == user_lower:
+                    color = 'white'
+                    my_rating = players.get('white', {}).get('rating')
+                    opponent_rating = players.get('black', {}).get('rating')
+                    opponent_name = players.get('black', {}).get('user', {}).get('name', 'Unknown')
+                elif black_user == user_lower:
+                    color = 'black'
+                    my_rating = players.get('black', {}).get('rating')
+                    opponent_rating = players.get('white', {}).get('rating')
+                    opponent_name = players.get('white', {}).get('user', {}).get('name', 'Unknown')
+                else:
+                    print(f"[lichess] Could not determine player color for game {game_id}")
+                    continue
+
+                # Parse result
+                status = game.get('status', '')
+                winner = game.get('winner')
+                if winner == color:
+                    result = 'win'
+                elif winner and winner != color:
+                    result = 'loss'
+                else:
+                    result = 'draw'
+
+                # Parse time control
+                clock = game.get('clock', {})
+                if clock:
+                    initial = clock.get('initial', 0) // 60  # Convert seconds to minutes
+                    increment = clock.get('increment', 0)
+                    time_control = f"{initial}+{increment}"
+                else:
+                    time_control = game.get('speed', 'unknown')
+
+                # Parse opening
+                opening = game.get('opening', {})
+                opening_name = opening.get('name', 'Unknown Opening')
+
+                # Parse played_at
+                played_at = game.get('createdAt')
+                if played_at:
+                    from datetime import datetime
+                    played_at = datetime.fromtimestamp(played_at / 1000).isoformat()
+
+                parsed_game = {
+                    'id': game_id,
+                    'pgn': pgn,
+                    'result': result,
+                    'color': color,
+                    'time_control': time_control,
+                    'opening': opening_name,
+                    'opening_family': opening_name,  # Lichess doesn't separate these
+                    'opponent_rating': opponent_rating,
+                    'my_rating': my_rating,
+                    'played_at': played_at,
+                    'opponent_name': opponent_name
+                }
+                parsed_games.append(parsed_game)
+
+            except Exception as e:
+                print(f"[lichess] Error parsing game: {e}")
+                continue
+
+        return parsed_games
+
+    else:
+        print(f"Unknown platform: {platform}")
+        return []
+
+
 async def _fetch_single_lichess_game(game_id: str) -> Optional[str]:
     """Fetch a single game PGN from Lichess by game ID"""
     try:
@@ -3456,6 +3652,92 @@ async def _fetch_single_chesscom_game(user_id: str, game_id: str) -> Optional[st
     except Exception as e:
         print(f"Error fetching Chess.com game {game_id}: {e}")
         return None
+
+
+def _count_moves_in_pgn(pgn: str) -> int:
+    """Count the number of moves in a PGN string"""
+    try:
+        if not pgn:
+            return 0
+
+        # Find the moves section (after all headers)
+        lines = pgn.split('\n')
+        moves_text = ''
+        in_moves = False
+
+        for line in lines:
+            if line.strip() and not line.startswith('['):
+                in_moves = True
+            if in_moves:
+                moves_text += ' ' + line
+
+        # Remove comments and variations
+        import re
+        moves_text = re.sub(r'\{[^}]*\}', '', moves_text)  # Remove comments
+        moves_text = re.sub(r'\([^)]*\)', '', moves_text)  # Remove variations
+
+        # Count move numbers (e.g., "1.", "2.", etc.)
+        move_numbers = re.findall(r'\d+\.', moves_text)
+
+        # The number of moves is approximately the last move number
+        # We need to check if there's a move after the last move number
+        if move_numbers:
+            last_move_num = int(move_numbers[-1].replace('.', ''))
+            # Check if there are any moves after the last move number
+            after_last = moves_text.split(move_numbers[-1], 1)[-1]
+            tokens = after_last.split()
+            # Filter out result markers
+            actual_moves = [t for t in tokens if t not in ['1-0', '0-1', '1/2-1/2', '*']]
+
+            # If there are 2 moves after last number, it's complete
+            # If there's 1 move, black didn't move
+            if len(actual_moves) >= 2:
+                return last_move_num * 2
+            elif len(actual_moves) == 1:
+                return last_move_num * 2 - 1
+            else:
+                return (last_move_num - 1) * 2
+
+        return 0
+    except Exception as e:
+        print(f"Error counting moves in PGN: {e}")
+        return 0
+
+
+def _extract_opponent_name_from_pgn(pgn: str, user_color: str) -> str:
+    """Extract opponent's name from PGN headers"""
+    try:
+        if not pgn:
+            return 'Unknown'
+
+        lines = pgn.split('\n')
+        white_name = None
+        black_name = None
+
+        for line in lines:
+            if line.startswith('[White '):
+                try:
+                    white_name = line.split('"')[1]
+                except:
+                    pass
+            elif line.startswith('[Black '):
+                try:
+                    black_name = line.split('"')[1]
+                except:
+                    pass
+
+        # Return opponent's name based on user's color
+        if user_color == 'white' and black_name:
+            return black_name
+        elif user_color == 'black' and white_name:
+            return white_name
+
+        return 'Unknown'
+    except Exception as e:
+        print(f"Error extracting opponent name from PGN: {e}")
+        return 'Unknown'
+
+
 def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Dict[str, Any]]:
     """Parse a single chess.com game to extract ratings and metadata"""
     try:
@@ -4887,6 +5169,9 @@ def get_analysis_engine() -> ChessAnalysisEngine:
 async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:
     """Handle single game analysis with PGN data."""
     try:
+        # Canonicalize user ID for database consistency
+        canonical_user_id = _canonical_user_id(request.user_id, request.platform)
+
         engine = get_analysis_engine()
 
         # Configure analysis type with optimized settings
@@ -4910,7 +5195,7 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
         analysis_game_id = request.game_id or request.provider_game_id
         game_analysis = await engine.analyze_game(
             request.pgn,
-            request.user_id,
+            canonical_user_id,  # Use canonical user ID
             request.platform,
             analysis_type_enum,
             analysis_game_id
@@ -5103,6 +5388,15 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 # Count moves
                 move_count = sum(1 for _ in game.mainline_moves())
 
+                # Parse played_at date
+                played_at_raw = headers.get('UTCDate') or headers.get('Date', now_iso)
+                # Try to parse and normalize the date
+                try:
+                    from dateutil import parser as date_parser
+                    played_at = date_parser.parse(played_at_raw).isoformat()
+                except Exception:
+                    played_at = now_iso
+
                 game_record = {
                     "user_id": canonical_user_id,
                     "platform": request.platform,
@@ -5111,21 +5405,23 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                     "color": color,
                     "time_control": headers.get('TimeControl', 'unknown'),
                     "opening": headers.get('Opening', 'Unknown'),
-                    "opening_family": headers.get('Opening', 'Unknown'),
+                    "opening_family": headers.get('Opening', 'Unknown').split(',')[0].split(':')[0].strip() if headers.get('Opening') else 'Unknown',
                     "opponent_rating": None,  # Not available in basic PGN
                     "my_rating": None,  # Not available in basic PGN
                     "total_moves": move_count,
-                    "played_at": headers.get('Date', now_iso),
+                    "played_at": played_at,
                     "opponent_name": black_player if user_is_white else white_player,
                     "created_at": now_iso,
                 }
 
                 try:
+                    print(f"[SINGLE GAME ANALYSIS] Creating game record with canonical user_id: {canonical_user_id}")
                     games_response = db_client.table('games').upsert(
                         game_record,
                         on_conflict='user_id,platform,provider_game_id'
                     ).execute()
-                    print(f"[SINGLE GAME ANALYSIS] Created game record: {game_id}")
+                    print(f"[SINGLE GAME ANALYSIS] ✅ Created game record: {game_id}")
+                    print(f"[SINGLE GAME ANALYSIS] Game record: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
                 except Exception as e:
                     print(f"[SINGLE GAME ANALYSIS] Failed to create game record: {e}")
                     return UnifiedAnalysisResponse(
@@ -5615,7 +5911,9 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
         # Get games from database (games_pgn table for PGN data)
         all_games: list = []
 
-        if supabase:
+        # Use service role client for database queries
+        db_client = supabase_service or supabase
+        if db_client:
             # ====================================================================================
             # CRITICAL: GAME SELECTION LOGIC - DO NOT MODIFY WITHOUT UNDERSTANDING THE IMPACT
             # ====================================================================================
@@ -5637,7 +5935,7 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
             print(f"[info] Fetching up to {fetch_limit} most recent games to find {limit} unanalyzed games")
 
             # First get game IDs from games table ordered by played_at (most recent first)
-            games_list_response = supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
+            games_list_response = db_client.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
 
             if games_list_response.data:
                 # Get provider_game_ids in order with their played_at dates
@@ -5646,7 +5944,7 @@ async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: st
                 print(f"[info] Found {len(provider_game_ids)} games in database (ordered by most recent)")
 
                 # Now fetch PGN data for these games
-                pgn_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+                pgn_response = db_client.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
 
                 # Re-order PGN data to match the games table order and add played_at info
                 pgn_map = {g['provider_game_id']: g for g in (pgn_response.data or [])}
@@ -5889,7 +6187,9 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
         analysis_progress[key]["progress_percentage"] = 10
 
         # Get games from database (join games table for ordering with games_pgn for PGN data)
-        if supabase:
+        # Use service role client for database queries
+        db_client = supabase_service or supabase
+        if db_client:
             # ====================================================================================
             # CRITICAL: GAME SELECTION LOGIC - DO NOT MODIFY WITHOUT UNDERSTANDING THE IMPACT
             # ====================================================================================
@@ -5911,7 +6211,7 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
             print(f"[info] Fetching up to {fetch_limit} most recent games to find {limit} unanalyzed games")
 
             # First get game IDs from games table ordered by played_at (most recent first)
-            games_list_response = supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
+            games_list_response = db_client.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
 
             if games_list_response.data:
                 # Get provider_game_ids in order with their played_at dates
@@ -5920,7 +6220,7 @@ async def _perform_sequential_batch_analysis(user_id: str, platform: str, analys
                 print(f"[info] Found {len(provider_game_ids)} games in database (ordered by most recent)")
 
                 # Now fetch PGN data for these games
-                pgn_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+                pgn_response = db_client.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
 
                 # Re-order PGN data to match the games table order and add played_at info
                 pgn_map = {g['provider_game_id']: g for g in (pgn_response.data or [])}

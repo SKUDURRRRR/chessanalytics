@@ -15,9 +15,10 @@ from .config import get_config
 from supabase import create_client, Client
 
 def get_supabase_client() -> Client:
-    """Get Supabase client."""
+    """Get Supabase client with service role permissions."""
     config = get_config()
-    return create_client(config.database.url, config.database.anon_key)
+    # Use service role key for backend operations that need full database access
+    return create_client(config.database.url, config.database.service_role_key)
 
 async def _save_analysis_to_database(analysis, analysis_type_enum):
     """Save analysis results to database."""
