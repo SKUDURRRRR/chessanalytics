@@ -1,32 +1,84 @@
-# PowerShell script to run MAINTEST against production environment
-# Sets environment variables for Railway backend and Vercel frontend
+# MAINTEST Production Test Runner
+# Run MAINTEST against production deployment (Railway + Vercel)
+# This script sets environment variables from your production deployment
 
-Write-Host "Setting up production environment for MAINTEST..." -ForegroundColor Cyan
+param(
+    [switch]$Quick,
+    [switch]$Full,
+    [switch]$BackendOnly,
+    [switch]$FrontendOnly
+)
 
-# Production URLs
-$env:VITE_ANALYSIS_API_URL = "https://chessanalytics-production.up.railway.app"
-$env:FRONTEND_URL = "https://chess-analytics-martynas2000.vercel.app"
+Write-Host "MAINTEST Production Test Runner" -ForegroundColor Cyan
+Write-Host "================================" -ForegroundColor Cyan
+Write-Host ""
 
-# Stockfish
+# Get production URLs from user input or use defaults
+$productionBackend = Read-Host "Enter your Railway backend URL (or press Enter for localhost:8002)"
+if ([string]::IsNullOrWhiteSpace($productionBackend)) {
+    $productionBackend = "http://localhost:8002"
+}
+
+$productionFrontend = Read-Host "Enter your Vercel frontend URL (or press Enter for localhost:3000)"
+if ([string]::IsNullOrWhiteSpace($productionFrontend)) {
+    $productionFrontend = "http://localhost:3000"
+}
+
+Write-Host ""
+Write-Host "Now you need to provide Supabase credentials..." -ForegroundColor Yellow
+Write-Host "Get them from: https://app.supabase.com -> Your Project -> Settings -> API" -ForegroundColor Gray
+Write-Host ""
+
+$supabaseUrl = Read-Host "Enter SUPABASE_URL"
+$supabaseAnonKey = Read-Host "Enter SUPABASE_ANON_KEY"
+$supabaseServiceKey = Read-Host "Enter SUPABASE_SERVICE_ROLE_KEY (will be hidden)" -AsSecureString
+
+# Convert secure string to plain text for environment variable
+$BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($supabaseServiceKey)
+$supabaseServiceKeyPlain = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+
+# Set environment variables for this session
+$env:VITE_SUPABASE_URL = $supabaseUrl
+$env:VITE_SUPABASE_ANON_KEY = $supabaseAnonKey
+$env:SUPABASE_URL = $supabaseUrl
+$env:SUPABASE_ANON_KEY = $supabaseAnonKey
+$env:SUPABASE_SERVICE_ROLE_KEY = $supabaseServiceKeyPlain
+$env:VITE_ANALYSIS_API_URL = $productionBackend
+$env:VITE_API_URL = $productionBackend
+$env:FRONTEND_URL = $productionFrontend
 $env:STOCKFISH_PATH = "./stockfish/stockfish-windows-x86-64-avx2.exe"
 
-# Python encoding for Unicode support
-$env:PYTHONIOENCODING = "utf-8"
+Write-Host ""
+Write-Host "Environment configured:" -ForegroundColor Green
+Write-Host "  Backend:  $productionBackend" -ForegroundColor White
+Write-Host "  Frontend: $productionFrontend" -ForegroundColor White
+Write-Host "  Supabase: $supabaseUrl" -ForegroundColor White
+Write-Host ""
 
-Write-Host "`nEnvironment configured:" -ForegroundColor Green
-Write-Host "  Backend (Railway):  $env:VITE_ANALYSIS_API_URL" -ForegroundColor Yellow
-Write-Host "  Frontend (Vercel):  $env:FRONTEND_URL" -ForegroundColor Yellow
-Write-Host "  Stockfish:          $env:STOCKFISH_PATH" -ForegroundColor Yellow
+# Build command
+$command = "python run_MAINTEST.py"
 
-Write-Host "`nNote: Supabase credentials should be configured in Railway environment" -ForegroundColor Magenta
-Write-Host "      The backend will use those credentials for database access`n" -ForegroundColor Magenta
+if ($Quick) {
+    $command += " --quick"
+} elseif ($Full) {
+    $command += " --full"
+} else {
+    # Default to quick mode
+    $command += " --quick"
+}
 
-Write-Host "Running MAINTEST..." -ForegroundColor Cyan
-Write-Host "======================================`n" -ForegroundColor Cyan
+if ($BackendOnly) {
+    $command += " --backend-only"
+} elseif ($FrontendOnly) {
+    $command += " --frontend-only"
+}
 
-# Run MAINTEST with --backend-only since we're testing production backend
-# Skip security tests that require direct DB access (use --ignore-security)
-python run_MAINTEST.py --full --backend-only --ignore-security
+Write-Host "Running: $command" -ForegroundColor Cyan
+Write-Host ""
 
-Write-Host "`n======================================" -ForegroundColor Cyan
-Write-Host "MAINTEST completed" -ForegroundColor Green
+# Run MAINTEST
+Invoke-Expression $command
+
+# Clean up sensitive data
+Remove-Variable -Name supabaseServiceKeyPlain -ErrorAction SilentlyContinue
+[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
