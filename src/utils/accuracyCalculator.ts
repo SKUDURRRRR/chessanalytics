@@ -87,7 +87,7 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
   let total_accuracy = 0
   for (const move of moves) {
     const centipawn_loss = move.centipawn_loss || 0
-    
+
     if (centipawn_loss <= 5) {
       total_accuracy += 100.0  // Only truly perfect moves
     } else if (centipawn_loss <= 20) {
@@ -107,7 +107,7 @@ export function calculateRealisticAccuracy(moves: MoveAnalysis[], playerRating?:
       total_accuracy += Math.max(15.0, 30.0 - (centipawn_loss - 150) * 0.1)
     }
   }
-  
+
   const accuracy = total_accuracy / moves.length
 
   return {
@@ -130,15 +130,15 @@ export function calculateOpeningAccuracyChessCom(moves: MoveAnalysis[]): number 
   if (!moves || moves.length === 0) return 0
 
   console.log('[Opening Accuracy] Calculating for', moves.length, 'moves')
-  
+
   // Extract centipawn losses from moves (handle both naming conventions)
   const centipawnLosses = moves.map(move => (move as any).centipawnLoss ?? move.centipawn_loss ?? 0)
-  
+
   // Use the same Chess.com CAPS2 formula as overall accuracy
   let totalAccuracy = 0
   for (let i = 0; i < centipawnLosses.length; i++) {
     const cpl = Math.min(centipawnLosses[i], 1000) // Cap at 1000 to avoid math errors
-    
+
     // Chess.com CAPS2 algorithm thresholds:
     let moveAccuracy: number
     if (cpl <= 5) {
@@ -159,17 +159,17 @@ export function calculateOpeningAccuracyChessCom(moves: MoveAnalysis[]): number 
       // Linear interpolation from 30% to 15% for 150+ CPL
       moveAccuracy = Math.max(15.0, 30.0 - (cpl - 150) * 0.1)  // 30% to 15%
     }
-    
+
     if (i < 3) {
       console.log(`[Opening Accuracy] Move ${i+1}: CPL=${cpl}, Accuracy=${moveAccuracy.toFixed(1)}%`)
     }
-    
+
     totalAccuracy += moveAccuracy
   }
-  
+
   const finalAccuracy = Math.round((totalAccuracy / centipawnLosses.length) * 10) / 10
   console.log('[Opening Accuracy] Final:', finalAccuracy, '% (avg of', centipawnLosses.length, 'moves)')
-  
+
   return finalAccuracy
 }
 
