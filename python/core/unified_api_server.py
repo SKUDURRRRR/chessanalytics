@@ -16,6 +16,7 @@ import re
 import uvicorn
 import asyncio
 import os
+import uuid
 from datetime import datetime, timezone
 import time
 from supabase import create_client, Client
@@ -72,28 +73,6 @@ else:
     cors_config = get_default_cors_config()
     print(f"Using default localhost CORS configuration")
 
-# Initialize Supabase clients with fallback for missing config
-if config.database.url and config.database.anon_key:
-    supabase: Client = create_client(str(config.database.url), config.database.anon_key)
-
-    # Use service role key for move_analyses operations if available
-    if config.database.service_role_key:
-        supabase_service: Client = create_client(str(config.database.url), config.database.service_role_key)
-        print("Using service role key for move_analyses operations")
-    else:
-        supabase_service: Client = supabase
-        print("Service role key not found, using anon key for move_analyses operations")
-
-    # Initialize reliable persistence system
-    persistence = ReliableAnalysisPersistence(supabase, supabase_service)
-    print("Reliable analysis persistence system initialized")
-else:
-    print("[warn]  Database configuration not found. Using mock clients for development.")
-    # Create mock clients for development
-    supabase = None
-    supabase_service = None
-    persistence = None
-
 # Debug mode configuration
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
@@ -137,6 +116,28 @@ def _invalidate_cache(user_id: str, platform: str) -> None:
         del _analytics_cache[key]
     if DEBUG and keys_to_delete:
         print(f"[CACHE] Invalidated {len(keys_to_delete)} entries for {user_id}:{platform}")
+
+# Initialize Supabase clients with fallback for missing config
+if config.database.url and config.database.anon_key:
+    supabase: Client = create_client(str(config.database.url), config.database.anon_key)
+
+    # Use service role key for move_analyses operations if available
+    if config.database.service_role_key:
+        supabase_service: Client = create_client(str(config.database.url), config.database.service_role_key)
+        print("Using service role key for move_analyses operations")
+    else:
+        supabase_service: Client = supabase
+        print("Service role key not found, using anon key for move_analyses operations")
+
+    # Initialize reliable persistence system with cache invalidation callback
+    persistence = ReliableAnalysisPersistence(supabase, supabase_service, on_save_callback=_invalidate_cache)
+    print("Reliable analysis persistence system initialized with cache invalidation")
+else:
+    print("[warn]  Database configuration not found. Using mock clients for development.")
+    # Create mock clients for development
+    supabase = None
+    supabase_service = None
+    persistence = None
 
 # Authentication utilities
 async def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]) -> dict:
@@ -223,6 +224,7 @@ def _normalize_analysis_type(requested: Optional[str], *, quiet: bool = False) -
 
 # In-memory storage for analysis progress
 analysis_progress = {}
+progress_tokens: Dict[str, str] = {}
 ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 
 # Rate limiting configuration
@@ -594,37 +596,8 @@ async def unified_analyze(
                 # Position analysis
                 return await _handle_position_analysis(request)
         else:
-            # Batch analysis - temporarily bypass queue system for debugging
-            if use_parallel:
-                # Canonicalize user ID for database operations
-                canonical_user_id = _canonical_user_id(request.user_id, request.platform)
-
-                # Use the old parallel batch analysis directly
-                background_tasks.add_task(
-                    _perform_batch_analysis,
-                    canonical_user_id,
-                    request.platform,
-                    request.analysis_type,
-                    request.limit or 5,
-                    request.depth or 8,
-                    request.skill_level or 8
-                )
-
-                return UnifiedAnalysisResponse(
-                    success=True,
-                    message="Analysis started in background",
-                    analysis_id="direct_analysis",
-                    data={
-                        "job_id": "direct_analysis",
-                        "user_id": canonical_user_id,
-                        "platform": request.platform,
-                        "analysis_type": request.analysis_type,
-                        "limit": request.limit or 5,
-                        "status": "running"
-                    }
-                )
-            else:
-                return await _handle_batch_analysis(request, background_tasks, use_parallel)
+            # Batch analysis - use the unified handler
+            return await _handle_batch_analysis(request, background_tasks, use_parallel)
 
     except ValidationError as e:
         raise e
@@ -940,18 +913,23 @@ async def get_realtime_analysis_progress(
 
         # Try multiple key formats to find progress
         progress_data = None
+        stored_key = None
         possible_keys = [
-            progress_key,  # canonical_user_id_platform
-            f"{user_id.lower().strip()}_{platform_key}",  # original_user_id_platform
-            f"{user_id}_{platform_key}",  # original_user_id_platform (no lower)
+            f"{canonical_user_id}_{platform_key}",
+            f"{user_id.lower().strip()}_{platform_key}",
+            f"{user_id}_{platform_key}",
         ]
 
         print(f"[PROGRESS REQUEST] Trying keys: {possible_keys}")
-        for key in possible_keys:
-            if key in analysis_progress:
-                progress_data = analysis_progress[key]
-                print(f"[PROGRESS REQUEST] Found progress with key: {key}")
-                print(f"[PROGRESS REQUEST] Progress data: {progress_data}")
+        for candidate_suffix in possible_keys:
+            for key, value in analysis_progress.items():
+                if key.endswith(candidate_suffix):
+                    stored_key = key
+                    progress_data = value
+                    print(f"[PROGRESS REQUEST] Found progress with key: {key}")
+                    print(f"[PROGRESS REQUEST] Progress data: {progress_data}")
+                    break
+            if progress_data:
                 break
 
         if progress_data:
@@ -1204,8 +1182,6 @@ def _get_time_control_category(time_control: str) -> str:
         return 'Correspondence'
     else:
         return 'Other'
-
-
 def _calculate_performance_trends(games: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Calculate performance trends similar to TypeScript calculatePerformanceTrends function.
 
@@ -1488,11 +1464,14 @@ async def get_comprehensive_analytics(
 
         marathon_summary = {}
         if marathon_games:
+            # FIXED: Only include games with actual analysis data (filter out None values)
             accuracy_values = [g['accuracy'] for g in marathon_games if g.get('accuracy') is not None]
-            blunders_values = [g.get('blunders') or 0 for g in marathon_games]
-            time_management_values = [g.get('time_management_score') or 0 for g in marathon_games]
+            blunders_values = [g['blunders'] for g in marathon_games if g.get('blunders') is not None]
+            time_management_values = [g['time_management_score'] for g in marathon_games if g.get('time_management_score') is not None]
+
             marathon_summary = {
                 'count': len(marathon_games),
+                'analyzed_count': len(accuracy_values),  # Add count of analyzed games
                 'average_accuracy': round(sum(accuracy_values) / len(accuracy_values), 2) if accuracy_values else None,
                 'average_blunders': round(sum(blunders_values) / len(blunders_values), 2) if blunders_values else None,
                 'average_time_management': round(sum(time_management_values) / len(time_management_values), 2) if time_management_values else None
@@ -1861,7 +1840,7 @@ async def get_match_history(
             query = query.eq('opening_normalized', opening_filter)
 
         if opponent_filter:
-            query = query.eq('opponent_name', opponent_filter)
+            query = query.eq('opening_normalized', opponent_filter)
 
         if color_filter and color_filter in ['white', 'black']:
             query = query.eq('color', color_filter)
@@ -2100,8 +2079,6 @@ STYLE_SUMMARIES = {
     'positional': 'Strategic planner who values positional advantages.',
     'balanced': 'Balanced and patient style that values solidity.',
 }
-
-
 def _coerce_float(value: Any) -> Optional[float]:
     if value is None:
         return None
@@ -2118,8 +2095,6 @@ def _coerce_float(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
-
-
 def _safe_average(values: List[Optional[float]], default: float = 0.0) -> float:
     filtered = [v for v in values if v is not None]
     if not filtered:
@@ -2247,6 +2222,7 @@ def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
     """Estimate novelty from game-level patterns - opening variety, time control diversity.
 
     Natural opposition with staleness through shared diversity/repetition metrics.
+    Centered around 50 (neutral) with proper distribution.
     """
     if not games:
         return 50.0
@@ -2272,19 +2248,32 @@ def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
 
     # Repetition metrics (opposite of diversity)
     most_common_opening_count = max(opening_counts.values()) if opening_counts else 0
-    opening_repetition_ratio = most_common_opening_count / total  # More repetition = lower novelty
+    opening_repetition_ratio = most_common_opening_count / total
 
     # Calculate diversity ratios
     opening_diversity_ratio = unique_openings / total
     time_diversity_ratio = unique_time_controls / total
 
-    # Natural opposition: diversity increases novelty, repetition decreases it
-    # Updated per doc: diversity_bonus = (opening_diversity_ratio * 45.0 + time_diversity_ratio * 20.0)
-    base = 35.0  # Reduced from 45 - creativity requires effort
-    diversity_bonus = (opening_diversity_ratio * 45.0 + time_diversity_ratio * 20.0)
-    repetition_penalty = opening_repetition_ratio * 50.0  # Increased from 40 - stronger penalty for repetition
+    # FIXED FORMULA: Centered around 50 (neutral)
+    # Expected ranges:
+    # - Low diversity (repetitive): 0.10-0.20 ratio (4-8 unique openings in 40 games) → 30-40 score
+    # - Normal diversity: 0.20-0.30 ratio (8-12 unique openings) → 45-55 score
+    # - High diversity (creative): 0.35-0.60+ ratio (14-24+ unique openings) → 60-80 score
 
-    score = base + diversity_bonus - repetition_penalty
+    base = 50.0  # Neutral starting point
+
+    # Opening diversity component - centered around 0.25 (normal variety)
+    # Deviation from normal (0.25) × 80 gives ±20 points for ±0.25 deviation
+    opening_component = (opening_diversity_ratio - 0.25) * 80.0
+
+    # Time diversity component - less impactful, centered around 0.05 (1-2 time controls)
+    time_component = (time_diversity_ratio - 0.05) * 40.0
+
+    # Repetition penalty - if playing same opening > 25% of games
+    # Normal: most common ~20-30%, High repetition: >40%
+    repetition_component = max(0, (opening_repetition_ratio - 0.25) * 60.0)
+
+    score = base + opening_component + time_component - repetition_component
     return max(0.0, min(100.0, score))
 
 
@@ -2292,7 +2281,7 @@ def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
     """Estimate staleness from game-level patterns - opening repetition, time control consistency.
 
     Natural opposition with novelty through shared diversity/repetition metrics.
-    Focuses purely on repetition patterns, NOT accuracy.
+    Centered around 50 (neutral) with proper distribution.
     """
     if not games:
         return 50.0
@@ -2315,7 +2304,7 @@ def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
     # Repetition metrics
     most_common_opening_count = max(opening_counts.values()) if opening_counts else 0
     most_common_time_count = max(time_counts.values()) if time_counts else 0
-    opening_repetition_ratio = most_common_opening_count / total  # More repetition = higher staleness
+    opening_repetition_ratio = most_common_opening_count / total
     time_repetition_ratio = most_common_time_count / total
 
     # Diversity metrics (opposite of repetition)
@@ -2326,13 +2315,25 @@ def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
     opening_diversity_ratio = unique_openings / total
     time_diversity_ratio = unique_time_controls / total
 
-    # Natural opposition: repetition increases staleness, diversity decreases it
-    # Updated per doc: repetition_bonus and diversity_penalty values
-    base = 55.0  # Increased from 50 - most players ARE somewhat repetitive
-    repetition_bonus = opening_repetition_ratio * 100.0  # Increased from 90 - strong bonus for repetition
-    diversity_penalty = (opening_diversity_ratio * 45.0 + time_diversity_ratio * 20.0)  # Updated per doc
+    # FIXED FORMULA: Centered around 50 (neutral) - natural opposition to novelty
+    # Expected ranges:
+    # - Low staleness (varied): 0.10-0.20 repetition ratio → 30-40 score
+    # - Normal staleness: 0.20-0.30 repetition ratio → 45-55 score
+    # - High staleness (repetitive): 0.40-0.60+ repetition ratio → 60-80 score
 
-    score = base + repetition_bonus - diversity_penalty
+    base = 50.0  # Neutral starting point
+
+    # Repetition component - centered around 0.25 (normal repetition)
+    # Deviation from normal (0.25) × 80 gives ±20 points for ±0.25 deviation
+    repetition_component = (opening_repetition_ratio - 0.25) * 80.0
+
+    # Time repetition component - less impactful
+    time_component = (time_repetition_ratio - 0.75) * 30.0  # Most players stick to 1-2 time controls
+
+    # Diversity penalty - high variety decreases staleness
+    diversity_component = max(0, (opening_diversity_ratio - 0.25) * 60.0)
+
+    score = base + repetition_component + time_component - diversity_component
     return max(0.0, min(100.0, score))
 
 
@@ -2479,8 +2480,6 @@ def _compute_phase_accuracies(analyses: List[Dict[str, Any]]) -> Dict[str, float
         'middle': middle,
         'endgame': endgame,
     }
-
-
 def _determine_player_level(current_rating: int, average_accuracy: float) -> str:
     rating = current_rating or 0
     accuracy = average_accuracy or 0.0
@@ -3104,7 +3103,6 @@ def _generate_famous_player_comparisons(
             'training': 'Balance modern opening theory with solid fundamentals'
         }
     }
-
     # Generate detailed similarity insights
     def generate_similarity_insights(player_name: str, player_profile: Dict[str, Any],
                                      trait_sims: Dict[str, float]) -> List[str]:
@@ -3691,8 +3689,6 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
         needs_work=needs_work,
         style_match_score=_round2(style_match_score)
     )
-
-
 def _generate_improvement_trend(games: List[Dict[str, Any]], analyses: List[Dict[str, Any]]) -> List[TrendPoint]:
     """Generate opening performance trend over time."""
     from datetime import datetime, timedelta
@@ -4340,8 +4336,6 @@ async def _fetch_single_lichess_game(game_id: str) -> Optional[str]:
     except Exception as e:
         print(f"Error fetching Lichess game {game_id}: {e}")
         return None
-
-
 async def _fetch_single_chesscom_game(user_id: str, game_id: str) -> Optional[str]:
     """Fetch a single game PGN from Chess.com by searching recent games"""
     try:
@@ -5889,7 +5883,6 @@ def _validate_single_game_analysis_request(request: UnifiedAnalysisRequest) -> T
         return False, f"Unsupported platform: {request.platform}"
 
     return True, "Valid"
-
 def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
@@ -5939,7 +5932,7 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
 
         if game_analysis:
             # Save to database
-            success = await _save_game_analysis(game_analysis)
+            success = await _save_stockfish_analysis(game_analysis)
             if success:
                 return UnifiedAnalysisResponse(
                     success=True,
@@ -6321,7 +6314,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
 
             # Save to database with comprehensive error handling
             try:
-                success = await _save_game_analysis(game_analysis)
+                success = await _save_stockfish_analysis(game_analysis)
                 if success:
                     print(f"[SINGLE GAME ANALYSIS] SUCCESS Analysis completed and saved for game_id: {analysis_game_id}")
                     print(f"[SINGLE GAME ANALYSIS] This was a SINGLE game analysis - NOT starting batch analysis")
@@ -6538,7 +6531,6 @@ def _validate_game_chronological_order(games: list, context: str) -> None:
             raise
 
     print(f"[VALIDATION] SUCCESS Games in {context} are correctly ordered chronologically (most recent first) - {len(played_dates)} games validated")
-
 async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str, analysis_type: str, limit: int) -> list:
     """
     Filter out games that are already analyzed, returning only unanalyzed games up to the limit.
@@ -6598,520 +6590,6 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     print(f"[info] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
     print(f"[info] Skipped {analyzed_count} already-analyzed games")
     return unanalyzed_games
-async def _perform_batch_analysis(user_id: str, platform: str, analysis_type: str,
-                                limit: int, depth: int, skill_level: int):
-    """Perform batch analysis for a user's games using parallel processing."""
-    # Canonicalize user ID for database operations
-    canonical_user_id = _canonical_user_id(user_id, platform)
-
-    print(f"[parallel] BACKGROUND TASK STARTED for {user_id} (canonical: {canonical_user_id}) on {platform}")
-    platform_key = platform.strip().lower()
-    # Use the same canonicalization as the progress endpoint
-    key = f"{canonical_user_id}_{platform_key}"
-    print(f"[parallel] Using progress key: {key}")
-
-    # Clear any existing progress for this user to ensure fresh start
-    if key in analysis_progress:
-        print(f"[parallel] Clearing existing progress for key: {key}")
-        del analysis_progress[key]
-
-    limit = limit or ANALYSIS_TEST_LIMIT
-    if ANALYSIS_TEST_LIMIT:
-        limit = min(limit, ANALYSIS_TEST_LIMIT)
-    limit = max(1, limit)
-    analysis_progress[key] = {
-        "analyzed_games": 0,
-        "total_games": limit,
-        "progress_percentage": 0,
-        "is_complete": False,
-        "current_phase": "fetching",
-        "estimated_time_remaining": None,
-        "parallel_mode": True
-    }
-
-    print(f"[parallel] Initial progress key set: {key}")
-    print(f"[parallel] Initial progress data: {analysis_progress[key]}")
-
-    try:
-        resolved_type = _normalize_analysis_type(analysis_type, quiet=True)
-        if resolved_type != analysis_type:
-            print(f"[info] Batch analysis requested as '{analysis_type}' mapped to '{resolved_type}'.")
-        analysis_type = resolved_type
-        print(f"[parallel] Starting batch analysis for {user_id} on {platform}")
-
-        # Phase 1: Fetch games
-        analysis_progress[key]["current_phase"] = "fetching"
-        analysis_progress[key]["progress_percentage"] = 10
-        print(f"Phase 1 - Fetching games: {analysis_progress[key]}")
-
-        # Get games from database (games_pgn table for PGN data)
-        all_games: list = []
-
-        # Use service role client for database queries
-        db_client = supabase_service or supabase
-        if db_client:
-            # ====================================================================================
-            # CRITICAL: GAME SELECTION LOGIC - DO NOT MODIFY WITHOUT UNDERSTANDING THE IMPACT
-            # ====================================================================================
-            # This code was implemented to fix a critical bug where random games were selected
-            # instead of the most recent ones. The two-step approach is REQUIRED to maintain
-            # chronological ordering. See docs/GAME_SELECTION_PROTECTION.md for details.
-            #
-            # WARNING: Any changes to this logic MUST:
-            # 1. Maintain chronological order (most recent first)
-            # 2. Include validation calls
-            # 3. Be thoroughly tested
-            # 4. Update the protection documentation
-            # ====================================================================================
-
-            # Get the most recent games by first fetching from games table, then getting PGN data
-            # This ensures we get games in the correct chronological order
-            # Increased multiplier to ensure we find enough unanalyzed games even if many recent games are already analyzed
-            fetch_limit = max(limit * 10, 100)  # Get 10x the limit (minimum 100) to ensure we find unanalyzed games
-            print(f"[info] Fetching up to {fetch_limit} most recent games to find {limit} unanalyzed games")
-
-            # First get game IDs from games table ordered by played_at (most recent first)
-            games_list_response = db_client.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
-
-            if games_list_response.data:
-                # Get provider_game_ids in order with their played_at dates
-                ordered_games = games_list_response.data
-                provider_game_ids = [g['provider_game_id'] for g in ordered_games]
-                print(f"[info] Found {len(provider_game_ids)} games in database (ordered by most recent)")
-
-                # Now fetch PGN data for these games
-                pgn_response = db_client.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
-
-                # Re-order PGN data to match the games table order and add played_at info
-                pgn_map = {g['provider_game_id']: g for g in (pgn_response.data or [])}
-                all_games = []
-                for game_info in ordered_games:
-                    provider_game_id = game_info['provider_game_id']
-                    if provider_game_id in pgn_map:
-                        pgn_data = pgn_map[provider_game_id].copy()
-                        pgn_data['played_at'] = game_info['played_at']  # Add played_at to PGN data
-                        all_games.append(pgn_data)
-
-                print(f"[info] Found {len(all_games)} games with PGN data (ordered by most recent played_at)")
-                if all_games:
-                    print(f"[info] First game played_at: {all_games[0].get('played_at')}")
-                    print(f"[info] Last game played_at: {all_games[-1].get('played_at')}")
-
-                    # CRITICAL: Validate chronological order to prevent regression
-                    _validate_game_chronological_order(all_games, "parallel analysis")
-            else:
-                all_games = []
-
-            # Filter out already analyzed games
-            games = await _filter_unanalyzed_games(all_games, canonical_user_id, platform, analysis_type, limit)
-
-            # Log which games were selected for analysis
-            if games:
-                print(f"[info] ========================================")
-                print(f"[info] SELECTED {len(games)} GAMES FOR ANALYSIS:")
-                for i, game in enumerate(games):
-                    print(f"[info]   {i+1}. {game.get('played_at')} | {game.get('provider_game_id')}")
-                print(f"[info] ========================================")
-        else:
-            print('[ERROR] Database client not available. Cannot fetch games for analysis.')
-            analysis_progress[key].update({
-                "is_complete": True,
-                "current_phase": "error",
-                "progress_percentage": 100,
-                "analyzed_games": 0,
-                "total_games": 0,
-                "status_message": "Database connection error. Please try again later.",
-                "error": "Database client not available"
-            })
-            return
-
-        # If no games found, don't create mock games - this indicates a real issue
-        if not games:
-            print(f"[ERROR] No unanalyzed games found for {user_id} on {platform}")
-            print(f"[ERROR] This could mean:")
-            print(f"[ERROR]   1. All games are already analyzed")
-            print(f"[ERROR]   2. No games exist in database for this user")
-            print(f"[ERROR]   3. Database connection issue")
-
-            # Add debugging information
-            try:
-                if supabase:
-                    # Check if any games exist at all for this user
-                    total_games_check = supabase.table('games').select('provider_game_id').eq('user_id', canonical_user_id).eq('platform', platform).limit(1).execute()
-                    print(f"[DEBUG] Total games in database for {canonical_user_id}: {len(total_games_check.data) if total_games_check.data else 0}")
-
-                    # Check if any PGN data exists
-                    pgn_check = supabase.table('games_pgn').select('provider_game_id').eq('user_id', canonical_user_id).eq('platform', platform).limit(1).execute()
-                    print(f"[DEBUG] Total PGN records for {canonical_user_id}: {len(pgn_check.data) if pgn_check.data else 0}")
-
-                    # Check analyzed games
-                    analyzed_check = supabase.table('move_analyses').select('game_id').eq('user_id', canonical_user_id).eq('platform', platform).eq('analysis_method', analysis_type).limit(1).execute()
-                    print(f"[DEBUG] Total analyzed games for {canonical_user_id}: {len(analyzed_check.data) if analyzed_check.data else 0}")
-            except Exception as debug_e:
-                print(f"[DEBUG] Error during debugging: {debug_e}")
-
-            analysis_progress[key].update({
-                "is_complete": True,
-                "current_phase": "complete",
-                "progress_percentage": 100,
-                "analyzed_games": 0,
-                "total_games": 0,
-                "status_message": "No unanalyzed games found. All your recent games may already be analyzed, or there may be a database issue.",
-                "all_games_analyzed": True
-            })
-            return
-
-        analysis_progress[key]["total_games"] = len(games)
-
-        print(f"Found {len(games)} unanalyzed games to analyze")
-
-        # Phase 2: Use parallel analysis engine
-        analysis_progress[key]["current_phase"] = "analyzing"
-        analysis_progress[key]["progress_percentage"] = 20
-        analysis_progress[key]["analyzed_games"] = 0
-        analysis_progress[key]["total_games"] = len(games)
-
-        print(f"Phase 2 - Starting analysis: {analysis_progress[key]}")
-
-        # Import and use the new parallel analysis engine
-        from .parallel_analysis_engine import ParallelAnalysisEngine
-
-        # Create parallel analysis engine with dynamic worker count
-        # This prevents CPU saturation while maintaining good performance
-        parallel_engine = ParallelAnalysisEngine()  # Uses auto-calculated worker count
-
-        print(f"PARALLEL BATCH ANALYSIS: Using {parallel_engine.max_workers} parallel workers for {len(games)} games")
-        print(f"Games to analyze: {[game.get('provider_game_id', 'unknown') for game in games[:5]]}...")
-
-        # Create progress callback function
-        def update_progress(completed: int, total: int, percentage: int):
-            progress_update = {
-                "analyzed_games": completed,
-                "total_games": total,
-                "progress_percentage": percentage,
-                "current_phase": "analyzing"
-            }
-            analysis_progress[key].update(progress_update)
-            print(f"[parallel] Progress update for key {key}: {progress_update}")
-
-            # Also log the current progress state for debugging
-            print(f"[parallel] Current stored progress: {analysis_progress[key]}")
-            print(f"[parallel] Available progress keys after update: {list(analysis_progress.keys())}")
-
-        # Start parallel analysis
-        start_time = datetime.now()
-        result = await parallel_engine.analyze_games_parallel(
-            user_id=canonical_user_id,
-            platform=platform,
-            analysis_type=analysis_type,
-            limit=limit,
-            depth=depth,
-            skill_level=skill_level,
-            progress_callback=update_progress
-        )
-        end_time = datetime.now()
-
-        # Process results
-        if result['success']:
-            processed = result['analyzed_games']
-            failed = result['failed_games']
-            total_time = result['total_time']
-            avg_accuracy = result['average_accuracy']
-            speedup = result['speedup']
-
-            print("[parallel] Analysis complete")
-            print(f"   Total time: {total_time:.1f}s")
-            print(f"   Games analyzed: {processed}/{len(games)}")
-            print(f"   Average accuracy: {avg_accuracy:.1f}%")
-            print(f"   Speedup: {speedup:.1f}x")
-
-            # Update progress to complete
-            analysis_progress[key].update({
-                "is_complete": True,
-                "current_phase": "complete",
-                "progress_percentage": 100,
-                "analyzed_games": processed,
-                "total_time": total_time,
-                "average_accuracy": avg_accuracy,
-                "speedup": speedup
-            })
-
-            print(f"[COMPLETE] Parallel batch analysis complete for {user_id}! Processed: {processed}, Failed: {failed}")
-
-            # Schedule cleanup of progress data after 2 minutes to prevent memory leaks
-            # This gives the frontend enough time to detect completion
-            import asyncio
-            async def cleanup_progress():
-                await asyncio.sleep(120)  # Wait 2 minutes
-                if key in analysis_progress:
-                    print(f"[CLEANUP] Removing completed progress for key: {key}")
-                    del analysis_progress[key]
-
-            # Schedule cleanup in background
-            asyncio.create_task(cleanup_progress())
-        else:
-            print(f"[ERROR] Parallel analysis failed: {result['message']}")
-            analysis_progress[key].update({
-                "is_complete": True,
-                "current_phase": "error",
-                "progress_percentage": 100
-            })
-
-            # Schedule cleanup of error progress data after 2 minutes
-            import asyncio
-            async def cleanup_progress():
-                await asyncio.sleep(120)  # Wait 2 minutes
-                if key in analysis_progress:
-                    print(f"[CLEANUP] Removing error progress for key: {key}")
-                    del analysis_progress[key]
-
-            # Schedule cleanup in background
-            asyncio.create_task(cleanup_progress())
-
-    except Exception as e:
-        print(f"[error] ERROR in parallel batch analysis: {e}")
-        import traceback
-        traceback.print_exc()
-        analysis_progress[key].update({
-            "is_complete": True,
-            "current_phase": "error",
-            "progress_percentage": 100
-        })
-
-        # Schedule cleanup of error progress data after 2 minutes
-        import asyncio
-        async def cleanup_progress():
-            await asyncio.sleep(120)  # Wait 2 minutes
-            if key in analysis_progress:
-                print(f"[CLEANUP] Removing exception progress for key: {key}")
-                del analysis_progress[key]
-
-        # Schedule cleanup in background
-        asyncio.create_task(cleanup_progress())
-
-async def _perform_sequential_batch_analysis(user_id: str, platform: str, analysis_type: str,
-                                           limit: int, depth: int, skill_level: int):
-    """Perform batch analysis for a user's games using sequential processing (fallback)."""
-    # Canonicalize user ID for database operations
-    canonical_user_id = _canonical_user_id(user_id, platform)
-    print(f"[BACKGROUND] SEQUENTIAL batch analysis for {user_id} (canonical: {canonical_user_id}) on {platform}")
-    platform_key = platform.strip().lower()
-    key = f"{canonical_user_id}_{platform_key}"
-    limit = limit or ANALYSIS_TEST_LIMIT
-    if ANALYSIS_TEST_LIMIT:
-        limit = min(limit, ANALYSIS_TEST_LIMIT)
-    limit = max(1, limit)
-    analysis_progress[key] = {
-        "analyzed_games": 0,
-        "total_games": limit,
-        "progress_percentage": 0,
-        "is_complete": False,
-        "current_phase": "fetching",
-        "estimated_time_remaining": None,
-        "parallel_mode": False
-    }
-
-    try:
-        resolved_type = _normalize_analysis_type(analysis_type, quiet=True)
-        if resolved_type != analysis_type:
-            print(f"[info] Sequential batch analysis requested as '{analysis_type}' mapped to '{resolved_type}'.")
-        analysis_type = resolved_type
-        print(f"[sequential] Starting batch analysis for {user_id} on {platform}")
-
-        # Phase 1: Fetch games
-        analysis_progress[key]["current_phase"] = "fetching"
-        analysis_progress[key]["progress_percentage"] = 10
-
-        # Get games from database (join games table for ordering with games_pgn for PGN data)
-        # Use service role client for database queries
-        db_client = supabase_service or supabase
-        if db_client:
-            # ====================================================================================
-            # CRITICAL: GAME SELECTION LOGIC - DO NOT MODIFY WITHOUT UNDERSTANDING THE IMPACT
-            # ====================================================================================
-            # This code was implemented to fix a critical bug where random games were selected
-            # instead of the most recent ones. The two-step approach is REQUIRED to maintain
-            # chronological ordering. See docs/GAME_SELECTION_PROTECTION.md for details.
-            #
-            # WARNING: Any changes to this logic MUST:
-            # 1. Maintain chronological order (most recent first)
-            # 2. Include validation calls
-            # 3. Be thoroughly tested
-            # 4. Update the protection documentation
-            # ====================================================================================
-
-            # Get the most recent games by first fetching from games table, then getting PGN data
-            # This ensures we get games in the correct chronological order
-            # Increased multiplier to ensure we find enough unanalyzed games even if many recent games are already analyzed
-            fetch_limit = max(limit * 10, 100)  # Get 10x the limit (minimum 100) to ensure we find unanalyzed games
-            print(f"[info] Fetching up to {fetch_limit} most recent games to find {limit} unanalyzed games")
-
-            # First get game IDs from games table ordered by played_at (most recent first)
-            games_list_response = db_client.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
-
-            if games_list_response.data:
-                # Get provider_game_ids in order with their played_at dates
-                ordered_games = games_list_response.data
-                provider_game_ids = [g['provider_game_id'] for g in ordered_games]
-                print(f"[info] Found {len(provider_game_ids)} games in database (ordered by most recent)")
-
-                # Now fetch PGN data for these games
-                pgn_response = db_client.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
-
-                # Re-order PGN data to match the games table order and add played_at info
-                pgn_map = {g['provider_game_id']: g for g in (pgn_response.data or [])}
-                all_games = []
-                for game_info in ordered_games:
-                    provider_game_id = game_info['provider_game_id']
-                    if provider_game_id in pgn_map:
-                        pgn_data = pgn_map[provider_game_id].copy()
-                        pgn_data['played_at'] = game_info['played_at']  # Add played_at to PGN data
-                        all_games.append(pgn_data)
-
-                print(f"[info] Found {len(all_games)} games with PGN data (ordered by most recent played_at)")
-                if all_games:
-                    print(f"[info] First game played_at: {all_games[0].get('played_at')}")
-                    print(f"[info] Last game played_at: {all_games[-1].get('played_at')}")
-
-                    # CRITICAL: Validate chronological order to prevent regression
-                    _validate_game_chronological_order(all_games, "sequential analysis")
-            else:
-                all_games = []
-
-            # Filter out already analyzed games
-            games = await _filter_unanalyzed_games(all_games, canonical_user_id, platform, analysis_type, limit)
-            analysis_progress[key]["total_games"] = len(games)
-        else:
-            print("[warn]  Database not available. Using mock data for development.")
-            games = []
-            analysis_progress[key]["total_games"] = 0
-
-        if not games:
-            print(f"No unanalyzed games found for {user_id} on {platform}")
-            analysis_progress[key].update({
-                "is_complete": True,
-                "current_phase": "complete",
-                "progress_percentage": 100,
-                "status_message": "All your recent games have already been analyzed! Your analytics are up to date.",
-                "all_games_analyzed": True
-            })
-            return
-
-        print(f"Found {len(games)} unanalyzed games to analyze")
-
-        # Phase 2: Sequential analysis
-        analysis_progress[key]["current_phase"] = "analyzing"
-        analysis_progress[key]["progress_percentage"] = 20
-
-        # Get analysis engine
-        engine = get_analysis_engine()
-        analysis_type_enum = AnalysisType(resolved_type)
-
-        # Configure analysis
-        if resolved_type == "deep":
-            engine.config = AnalysisConfig.for_deep_analysis()
-        else:
-            engine.config = AnalysisConfig(
-                analysis_type=analysis_type_enum,
-                depth=depth,
-                skill_level=skill_level
-            )
-
-        # Analyze games sequentially
-        start_time = datetime.now()
-        successful_analyses = 0
-        failed_analyses = 0
-
-        for i, game in enumerate(games):
-            try:
-                print(f"[ANALYZING] Game {i+1}/{len(games)}: {game.get('provider_game_id', 'unknown')}")
-
-                # Analyze single game
-                game_analysis = await _analyze_single_game(engine, game, canonical_user_id, platform, analysis_type_enum)
-
-                if game_analysis:
-                    successful_analyses += 1
-                    print(f"[SUCCESS] Game {i+1} analyzed successfully")
-                else:
-                    failed_analyses += 1
-                    print(f"[FAILED] Game {i+1} analysis failed")
-
-                # Update progress
-                progress_percentage = 20 + int((i + 1) / len(games) * 70)  # 20-90%
-                analysis_progress[key].update({
-                    "analyzed_games": i + 1,
-                    "progress_percentage": progress_percentage
-                })
-
-            except Exception as e:
-                failed_analyses += 1
-                print(f"[ERROR] Error analyzing game {i+1}: {e}")
-
-        end_time = datetime.now()
-        total_time = (end_time - start_time).total_seconds()
-
-        # Calculate average accuracy
-        avg_accuracy = 0.0
-        if successful_analyses > 0:
-            # This would need to be calculated from the actual analysis results
-            # For now, we'll use a placeholder
-            avg_accuracy = 75.0  # Placeholder value
-
-        print("[sequential] Analysis complete")
-        print(f"   Total time: {total_time:.1f}s")
-        print(f"   Games analyzed: {successful_analyses}/{len(games)}")
-        print(f"   Average accuracy: {avg_accuracy:.1f}%")
-
-        # Update progress to complete
-        analysis_progress[key].update({
-            "is_complete": True,
-            "current_phase": "complete",
-            "progress_percentage": 100,
-            "analyzed_games": successful_analyses,
-            "total_time": total_time,
-            "average_accuracy": avg_accuracy
-        })
-
-        print(f"[COMPLETE] Sequential batch analysis complete for {user_id}! Processed: {successful_analyses}, Failed: {failed_analyses}")
-
-    except Exception as e:
-        print(f"[error] ERROR in sequential batch analysis: {e}")
-        import traceback
-        traceback.print_exc()
-        analysis_progress[key].update({
-            "is_complete": True,
-            "current_phase": "error",
-            "progress_percentage": 100
-        })
-
-async def _analyze_single_game(engine, game, user_id, platform, analysis_type_enum):
-    """Helper function to analyze a single game."""
-    try:
-        # Get PGN data directly from the game record
-        pgn_data = game.get('pgn')
-
-        if not pgn_data:
-            print(f"No PGN data for game {game.get('provider_game_id', 'unknown')}")
-            return None
-
-        # Analyze game with the correct game_id from games_pgn table
-        from datetime import datetime
-        game_id = game.get('provider_game_id', f"game_{datetime.now().timestamp()}")
-        game_analysis = await engine.analyze_game(pgn_data, user_id, platform, analysis_type_enum, game_id)
-
-        if game_analysis:
-            # Save analysis to move_analyses table (all analysis types now use Stockfish)
-            await _save_stockfish_analysis(game_analysis)
-            return game_analysis
-        else:
-            return None
-
-    except Exception as e:
-        print(f"[error] ERROR analyzing game {game.get('provider_game_id', 'unknown')}: {e}")
-        return None
-
-
-
 async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
     """Persist Stockfish/deep analysis using reliable persistence fallback."""
     try:
@@ -7119,6 +6597,11 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
 
         if persistence:
             result = await persistence.save_analysis_with_retry(analysis)
+            if result.success:
+                # Invalidate cache for this user/platform to ensure fresh stats
+                _invalidate_cache(canonical_user_id, analysis.platform)
+                if DEBUG:
+                    print(f"[CACHE] Invalidated cache for {canonical_user_id}:{analysis.platform} after successful analysis save")
             return result.success
 
         moves_analysis_dict = []
@@ -7133,6 +6616,8 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'fen_before': getattr(move, 'fen_before', ''),  # FEN before move
                 'fen_after': getattr(move, 'fen_after', ''),  # FEN after move
                 'evaluation': move.evaluation,
+                'evaluation_before': getattr(move, 'evaluation_before', None),
+                'evaluation_after': getattr(move, 'evaluation_after', None),
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
                 'is_great': move.is_great,
@@ -7204,36 +6689,19 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             data,
             on_conflict='user_id,platform,game_id,analysis_method'
         ).execute()
-        return bool(getattr(response, 'data', None))
+
+        success = bool(getattr(response, 'data', None))
+        if success:
+            # Invalidate cache for this user/platform to ensure fresh stats
+            _invalidate_cache(canonical_user_id, analysis.platform)
+            if DEBUG:
+                print(f"[CACHE] Invalidated cache for {canonical_user_id}:{analysis.platform} after successful analysis save (fallback path)")
+        return success
 
     except Exception as e:
         print(f"Error saving Stockfish analysis: {e}")
         return False
 
-
-async def _save_game_analysis(analysis: GameAnalysis) -> bool:
-    """Save game analysis using reliable persistence system."""
-    if persistence is None:
-        print("Warning: Persistence system not available, skipping save")
-        return False
-
-    try:
-        print(f"[SAVE ANALYSIS] Starting save for game_id: {analysis.game_id}, user: {analysis.user_id}, platform: {analysis.platform}")
-        print(f"[SAVE ANALYSIS] Analysis type: {analysis.analysis_type}, moves count: {len(analysis.moves_analysis)}")
-
-        result = await persistence.save_analysis_with_retry(analysis)
-
-        print(f"[SAVE ANALYSIS] Save result: success={result.success}, status={result.status}, message={result.message}")
-        if not result.success:
-            print(f"[SAVE ANALYSIS] Save failed: {result.error_details}")
-
-        return result.success
-    except Exception as e:
-        print(f"[SAVE ANALYSIS] ERROR CRITICAL ERROR in reliable persistence: {e}")
-        print(f"[SAVE ANALYSIS] Error type: {type(e).__name__}")
-        import traceback
-        print(f"[SAVE ANALYSIS] Traceback: {traceback.format_exc()}")
-        return False
 
 def _map_unified_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
     """Map unified analysis data to response format."""

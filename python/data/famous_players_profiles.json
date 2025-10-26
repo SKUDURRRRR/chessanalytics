@@ -1,1 +1,212 @@
-[]
+[
+  {
+    "name": "Magnus Carlsen",
+    "era": "2000s-present",
+    "description": "Universal player with exceptional endgame skills and practical play",
+    "strengths": ["Universal style", "Endgame mastery", "Practical play"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 87.3,
+      "positional": 91.7,
+      "aggressive": 44.6,
+      "patient": 93.2,
+      "novelty": 55.4,
+      "staleness": 55.7
+    },
+    "confidence": 90.0,
+    "metadata": {
+      "total_moves": 1640,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  },
+  {
+    "name": "Fabiano Caruana",
+    "era": "2010s-present",
+    "description": "Universal player with deep opening preparation",
+    "strengths": ["Universal style", "Opening preparation", "Technical precision"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 87.2,
+      "positional": 91.2,
+      "aggressive": 36.8,
+      "patient": 94.7,
+      "novelty": 51.6,
+      "staleness": 65.7
+    },
+    "confidence": 90.0,
+    "metadata": {
+      "total_moves": 1640,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  },
+  {
+    "name": "Ding Liren",
+    "era": "2010s-present",
+    "description": "Solid positional player with deep calculation and modern style",
+    "strengths": ["Solid play", "Deep calculation", "Modern openings"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 89.6,
+      "positional": 93.3,
+      "aggressive": 47.7,
+      "patient": 93.5,
+      "novelty": 29.2,
+      "staleness": 90.3
+    },
+    "confidence": 85.0,
+    "metadata": {
+      "total_moves": 1200,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  },
+  {
+    "name": "Alireza Firouzja",
+    "era": "2020s-present",
+    "description": "Young aggressive talent with dynamic attacking style",
+    "strengths": ["Dynamic play", "Aggression", "Modern tactics"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 86.3,
+      "positional": 90.1,
+      "aggressive": 36.3,
+      "patient": 95.2,
+      "novelty": 52.8,
+      "staleness": 60.8
+    },
+    "confidence": 85.0,
+    "metadata": {
+      "total_moves": 1440,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  },
+  {
+    "name": "Levon Aronian",
+    "era": "2000s-2020s",
+    "description": "Creative player known for deep preparation and unique ideas",
+    "strengths": ["Creativity", "Deep preparation", "Universal style"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 87.9,
+      "positional": 93.5,
+      "aggressive": 42.3,
+      "patient": 96.3,
+      "novelty": 53.3,
+      "staleness": 62.1
+    },
+    "confidence": 85.0,
+    "metadata": {
+      "total_moves": 1600,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  },
+  {
+    "name": "Ian Nepomniachtchi",
+    "era": "2010s-present",
+    "description": "Aggressive attacking player known for sharp tactical play",
+    "strengths": ["Attacking play", "Sharp tactics", "Fighting spirit"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 86.5,
+      "positional": 89.8,
+      "aggressive": 45.9,
+      "patient": 91.7,
+      "novelty": 55.0,
+      "staleness": 57.2
+    },
+    "confidence": 85.0,
+    "metadata": {
+      "total_moves": 1520,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  },
+  {
+    "name": "Dommaraju Gukesh",
+    "era": "2020s-present",
+    "description": "Young prodigy with solid technique and modern understanding",
+    "strengths": ["Modern preparation", "Solid technique", "Universal style"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 86.5,
+      "positional": 90.9,
+      "aggressive": 42.2,
+      "patient": 94.6,
+      "novelty": 55.5,
+      "staleness": 55.8
+    },
+    "confidence": 85.0,
+    "metadata": {
+      "total_moves": 1600,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  },
+  {
+    "name": "Rameshbabu Praggnanandhaa",
+    "era": "2020s-present",
+    "description": "Young talent with solid classical style",
+    "strengths": ["Classical understanding", "Solid play", "Tactical vision"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 87.0,
+      "positional": 90.9,
+      "aggressive": 41.3,
+      "patient": 92.8,
+      "novelty": 52.2,
+      "staleness": 62.2
+    },
+    "confidence": 85.0,
+    "metadata": {
+      "total_moves": 1560,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  },
+  {
+    "name": "Arjun Erigaisi",
+    "era": "2020s-present",
+    "description": "Rising star with sharp tactical style",
+    "strengths": ["Tactical prowess", "Sharp play", "Modern openings"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 87.7,
+      "positional": 92.4,
+      "aggressive": 44.3,
+      "patient": 93.3,
+      "novelty": 50.2,
+      "staleness": 67.5
+    },
+    "confidence": 85.0,
+    "metadata": {
+      "total_moves": 1600,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  },
+  {
+    "name": "Hikaru Nakamura",
+    "era": "2000s-present",
+    "description": "Modern attacking player known for rapid chess and initiative",
+    "strengths": ["Modern attacks", "Initiative", "Practical play"],
+    "games_analyzed": 40,
+    "profile": {
+      "tactical": 86.6,
+      "positional": 91.2,
+      "aggressive": 40.6,
+      "patient": 94.1,
+      "novelty": 56.8,
+      "staleness": 53.4
+    },
+    "confidence": 90.0,
+    "metadata": {
+      "total_moves": 1640,
+      "platform": "chess.com",
+      "analyzed_date": "2025-10-23"
+    }
+  }
+]

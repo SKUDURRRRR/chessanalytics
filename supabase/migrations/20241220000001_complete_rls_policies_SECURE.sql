@@ -64,10 +64,10 @@ DROP POLICY IF EXISTS "game_features_delete_own" ON game_features;
 -- ============================================================================
 
 -- Add is_public column if it doesn't exist
-DO $$ 
+DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns 
+    SELECT 1 FROM information_schema.columns
     WHERE table_name = 'games' AND column_name = 'is_public'
   ) THEN
     ALTER TABLE games ADD COLUMN is_public BOOLEAN DEFAULT false;
@@ -129,10 +129,10 @@ CREATE POLICY "user_profiles_delete_own" ON user_profiles
 CREATE POLICY "game_analyses_select_own" ON game_analyses
     FOR SELECT
     USING (
-        auth.uid()::text = user_id 
+        auth.uid()::text = user_id
         OR EXISTS (
-            SELECT 1 FROM games 
-            WHERE games.game_id = game_analyses.game_id 
+            SELECT 1 FROM games
+            WHERE games.provider_game_id = game_analyses.game_id
             AND games.is_public = true
         )
     );
@@ -161,10 +161,10 @@ CREATE POLICY "game_analyses_delete_own" ON game_analyses
 CREATE POLICY "move_analyses_select_own" ON move_analyses
     FOR SELECT
     USING (
-        auth.uid()::text = user_id 
+        auth.uid()::text = user_id
         OR EXISTS (
-            SELECT 1 FROM games 
-            WHERE games.game_id = move_analyses.game_id 
+            SELECT 1 FROM games
+            WHERE games.provider_game_id = move_analyses.game_id
             AND games.is_public = true
         )
     );
@@ -193,10 +193,10 @@ CREATE POLICY "move_analyses_delete_own" ON move_analyses
 CREATE POLICY "game_features_select_own" ON game_features
     FOR SELECT
     USING (
-        auth.uid()::text = user_id 
+        auth.uid()::text = user_id
         OR EXISTS (
-            SELECT 1 FROM games 
-            WHERE games.game_id = game_features.game_id 
+            SELECT 1 FROM games
+            WHERE games.provider_game_id = game_features.game_id
             AND games.is_public = true
         )
     );
@@ -247,4 +247,3 @@ CREATE POLICY "game_features_service_role_all" ON game_features
 -- ============================================================================
 
 NOTIFY pgrst, 'reload schema';
-

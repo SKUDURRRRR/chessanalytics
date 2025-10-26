@@ -58,38 +58,39 @@ class ReliableAnalysisPersistence:
     """
     Reliable analysis persistence with retry logic, progress tracking, and error handling.
     """
-    
-    def __init__(self, supabase_client: Client, supabase_service: Client):
+
+    def __init__(self, supabase_client: Client, supabase_service: Client, on_save_callback=None):
         self.supabase = supabase_client
         self.supabase_service = supabase_service
         self.max_retries = 3
         self.retry_delay = 1.0  # seconds
-        
+        self.on_save_callback = on_save_callback  # Optional callback to trigger after successful save
+
     async def save_analysis_with_retry(
-        self, 
-        analysis: GameAnalysis, 
+        self,
+        analysis: GameAnalysis,
         job_id: Optional[str] = None
     ) -> PersistenceResult:
         """
         Save analysis with retry logic and progress tracking.
-        
+
         Args:
             analysis: The analysis to save
             job_id: Optional job ID for tracking
-            
+
         Returns:
             PersistenceResult with success status and details
         """
         if job_id is None:
             job_id = f"{analysis.user_id}_{analysis.platform}_{analysis.game_id}_{str(analysis.analysis_type)}"
-        
+
         # Create or update job tracking
         job = await self._create_or_update_job(job_id, analysis)
-        
+
         try:
             # Attempt to save analysis
             success, saved_payload = await self._save_analysis_atomic(analysis)
-            
+
             if success:
                 extra_fields: Dict[str, Any] = {}
                 analysis_identifier = job_id
@@ -110,15 +111,15 @@ class ReliableAnalysisPersistence:
             else:
                 await self._handle_persistence_failure(job_id, "Failed to save analysis")
                 return await self._retry_if_possible(job_id, analysis)
-                
+
         except Exception as e:
             error_msg = f"Exception during analysis save: {str(e)}"
             logger.error(f"Error saving analysis {job_id}: {error_msg}")
             logger.error(traceback.format_exc())
-            
+
             await self._handle_persistence_failure(job_id, error_msg)
             return await self._retry_if_possible(job_id, analysis)
-    
+
     async def _save_analysis_atomic(self, analysis: GameAnalysis) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
         Atomically save analysis to the appropriate table(s).
@@ -143,6 +144,14 @@ class ReliableAnalysisPersistence:
                     analysis_type_enum.value,
                     analysis.game_id
                 )
+
+                # Trigger callback if provided (for cache invalidation, etc.)
+                if self.on_save_callback:
+                    try:
+                        self.on_save_callback(canonical_user_id, analysis.platform)
+                    except Exception as callback_error:
+                        logger.warning(f"Callback error after save: {callback_error}")
+
                 return True, analysis_data
 
             logger.error(
@@ -159,7 +168,7 @@ class ReliableAnalysisPersistence:
             print(f"[PERSISTENCE] Error type: {type(e).__name__}")
             print(f"[PERSISTENCE] Traceback: {traceback.format_exc()}")
             return False, None
-    
+
     async def _save_to_both_tables(self, analysis_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """Save analysis to both game_analyses and move_analyses tables."""
         try:
@@ -170,7 +179,7 @@ class ReliableAnalysisPersistence:
                 ).eq('platform', analysis_data['platform']).eq(
                     'provider_game_id', analysis_data['game_id']
                 ).limit(1).execute()
-                
+
                 if not game_check.data:
                     print(f"[PERSISTENCE] ❌ Game not found in games table:")
                     print(f"[PERSISTENCE]    user_id: {analysis_data['user_id']}")
@@ -181,7 +190,7 @@ class ReliableAnalysisPersistence:
             except Exception as check_error:
                 print(f"[PERSISTENCE] ⚠️  Warning: Could not verify game existence: {check_error}")
                 # Continue anyway - let the database constraint catch it
-            
+
             game_analyses_data = {
                 'game_id': analysis_data['game_id'],
                 'user_id': analysis_data['user_id'],
@@ -223,7 +232,7 @@ class ReliableAnalysisPersistence:
             }
 
             print(f"[PERSISTENCE] Saving to game_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, type={analysis_data['analysis_type']}")
-            
+
             try:
                 game_response = self.supabase_service.table('game_analyses').upsert(
                     game_analyses_data,
@@ -231,11 +240,11 @@ class ReliableAnalysisPersistence:
                 ).execute()
 
                 print(f"[PERSISTENCE] game_analyses response: data={getattr(game_response, 'data', None)}, error={getattr(game_response, 'error', None)}")
-                
+
                 # Check for database constraint violations
                 if hasattr(game_response, 'error') and game_response.error:
                     error_msg = str(game_response.error)
-                    
+
                     # Check for unique constraint violation (needs database migration)
                     if 'idx_game_analyses_user_platform_game' in error_msg and 'duplicate key' in error_msg.lower():
                         print(f"[PERSISTENCE] ❌ DATABASE CONSTRAINT ERROR: {error_msg}")
@@ -244,7 +253,7 @@ class ReliableAnalysisPersistence:
                         print(f"[PERSISTENCE] Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
                         print(f"[PERSISTENCE] See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
                         return False, None
-                    
+
                     # Check for foreign key constraint violations
                     if 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
                         print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
@@ -252,11 +261,11 @@ class ReliableAnalysisPersistence:
                         print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
                         print(f"[PERSISTENCE] The game must be imported first before it can be analyzed.")
                         return False, None
-                        
+
             except Exception as db_error:
                 error_msg = str(db_error)
                 print(f"[PERSISTENCE] ❌ DATABASE ERROR during game_analyses save: {error_msg}")
-                
+
                 # Check for unique constraint violation (needs database migration)
                 if 'idx_game_analyses_user_platform_game' in error_msg and 'duplicate key' in error_msg.lower():
                     print(f"[PERSISTENCE] ⚠️  DATABASE MIGRATION REQUIRED!")
@@ -264,7 +273,7 @@ class ReliableAnalysisPersistence:
                     print(f"[PERSISTENCE] Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
                     print(f"[PERSISTENCE] See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
                     return False, None
-                
+
                 # Check for foreign key constraint violations
                 if 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
                     print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
@@ -331,7 +340,7 @@ class ReliableAnalysisPersistence:
             )
 
             print(f"[PERSISTENCE] Saving to move_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, method={analysis_data['analysis_type']}")
-            
+
             move_response = self.supabase_service.table('move_analyses').upsert(
                 move_analyses_data,
                 on_conflict='user_id,platform,game_id,analysis_method'
@@ -340,9 +349,9 @@ class ReliableAnalysisPersistence:
             move_data = getattr(move_response, 'data', None)
             move_error = getattr(move_response, 'error', None)
             move_count = len(move_data) if isinstance(move_data, list) else 0
-            
+
             print(f"[PERSISTENCE] move_analyses response: rows={move_count}, error={move_error}")
-            
+
             logger.info(
                 "move_analyses upsert result rows=%s error=%s",
                 move_count,
@@ -371,7 +380,7 @@ class ReliableAnalysisPersistence:
                 ).eq('platform', analysis_data['platform']).eq(
                     'provider_game_id', analysis_data['game_id']
                 ).limit(1).execute()
-                
+
                 if not game_check.data:
                     print(f"[PERSISTENCE] ❌ Game not found in games table:")
                     print(f"[PERSISTENCE]    user_id: {analysis_data['user_id']}")
@@ -382,7 +391,7 @@ class ReliableAnalysisPersistence:
             except Exception as check_error:
                 print(f"[PERSISTENCE] ⚠️  Warning: Could not verify game existence: {check_error}")
                 # Continue anyway - let the database constraint catch it
-            
+
             game_analyses_data = {
                 'game_id': analysis_data['game_id'],
                 'user_id': analysis_data['user_id'],
@@ -444,7 +453,7 @@ class ReliableAnalysisPersistence:
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Error saving to game_analyses: {error_msg}")
-            
+
             # Check for unique constraint violation (needs database migration)
             if 'idx_game_analyses_user_platform_game' in error_msg and 'duplicate key' in error_msg.lower():
                 print(f"[PERSISTENCE] ❌ DATABASE CONSTRAINT ERROR: {error_msg}")
@@ -457,7 +466,7 @@ class ReliableAnalysisPersistence:
                 print(f"[PERSISTENCE] This means the game record doesn't exist in the games table")
                 print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
                 print(f"[PERSISTENCE] The game must be imported first before it can be analyzed.")
-            
+
             return False, None
 
     def _prepare_analysis_data(self, analysis: GameAnalysis, canonical_user_id: str, analysis_type: AnalysisType) -> Dict[str, Any]:
@@ -469,6 +478,8 @@ class ReliableAnalysisPersistence:
                 'move': move.move,
                 'move_san': move.move_san,
                 'evaluation': move.evaluation,
+                'evaluation_before': getattr(move, 'evaluation_before', None),  # CRITICAL: for personality scoring
+                'evaluation_after': getattr(move, 'evaluation_after', None),  # CRITICAL: for personality scoring
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
                 'is_great': getattr(move, 'is_great', False),  # NEW field
@@ -501,7 +512,7 @@ class ReliableAnalysisPersistence:
                 'ply_index': move.ply_index,
                 'opening_ply': move.ply_index  # Add opening_ply field for opening accuracy calculation
             })
-        
+
         return {
             'game_id': analysis.game_id,
             'user_id': canonical_user_id,
@@ -544,7 +555,7 @@ class ReliableAnalysisPersistence:
             'aggressiveness_index': getattr(analysis, 'aggressiveness_index', analysis.aggressive_score),
             'game_analysis_id': None
         }
-    
+
     def _normalize_analysis_type(self, analysis_type: Any) -> AnalysisType:
         """Convert analysis_type into AnalysisType enum."""
         if isinstance(analysis_type, AnalysisType):
@@ -569,11 +580,11 @@ class ReliableAnalysisPersistence:
         elif platform == 'chess.com' and user_id.startswith('chesscom_'):
             return user_id[9:]  # Remove 'chesscom_' prefix
         return user_id
-    
+
     async def _create_or_update_job(self, job_id: str, analysis: GameAnalysis) -> AnalysisJob:
         """Create or update analysis job tracking."""
         now = datetime.now(timezone.utc)
-        
+
         analysis_type_enum = self._normalize_analysis_type(analysis.analysis_type)
 
         job = AnalysisJob(
@@ -591,7 +602,7 @@ class ReliableAnalysisPersistence:
                 analysis_type_enum
             )
         )
-        
+
         # Store job in database for tracking
         try:
             job_data = {
@@ -608,17 +619,17 @@ class ReliableAnalysisPersistence:
                 'error_message': job.error_message,
                 'analysis_data': job.analysis_data
             }
-            
+
             self.supabase_service.table('analysis_jobs').upsert(
                 job_data,
                 on_conflict='job_id'
             ).execute()
-            
+
         except Exception as e:
             logger.warning(f"Could not store job tracking: {str(e)}")
-        
+
         return job
-    
+
     async def _update_job_status(self, job_id: str, status: PersistenceStatus, message: str, extra_fields: Optional[Dict[str, Any]] = None):
         """Update job status in database."""
         try:
@@ -642,17 +653,17 @@ class ReliableAnalysisPersistence:
             self.supabase_service.table('analysis_jobs').update(payload).eq('job_id', job_id).execute()
         except Exception as e:
             logger.warning(f"Could not update job status: {str(e)}")
-    
+
     async def _handle_persistence_failure(self, job_id: str, error_message: str):
         """Handle persistence failure and update job status."""
         try:
             # Get current job
             response = self.supabase_service.table('analysis_jobs').select('*').eq('job_id', job_id).execute()
-            
+
             if response.data:
                 job_data = response.data[0]
                 retry_count = job_data.get('retry_count', 0) + 1
-                
+
                 # Update retry count and status
                 self.supabase_service.table('analysis_jobs').update({
                     'retry_count': retry_count,
@@ -660,28 +671,28 @@ class ReliableAnalysisPersistence:
                     'updated_at': datetime.now(timezone.utc).isoformat(),
                     'error_message': error_message
                 }).eq('job_id', job_id).execute()
-                
+
         except Exception as e:
             logger.warning(f"Could not handle persistence failure: {str(e)}")
-    
+
     async def _retry_if_possible(self, job_id: str, analysis: GameAnalysis) -> PersistenceResult:
         """Retry analysis persistence if retries are available."""
         try:
             # Get current job status
             response = self.supabase_service.table('analysis_jobs').select('*').eq('job_id', job_id).execute()
-            
+
             if response.data:
                 job_data = response.data[0]
                 retry_count = job_data.get('retry_count', 0)
                 max_retries = job_data.get('max_retries', self.max_retries)
-                
+
                 if retry_count < max_retries:
                     # Wait before retry
                     await asyncio.sleep(self.retry_delay * (retry_count + 1))
-                    
+
                     # Retry the save
                     success, saved_payload = await self._save_analysis_atomic(analysis)
-                    
+
                     if success:
                         extra_fields: Dict[str, Any] = {}
                         analysis_identifier = job_id
@@ -725,7 +736,7 @@ class ReliableAnalysisPersistence:
                     message="Job not found",
                     error_details="Could not find job for retry"
                 )
-                
+
         except Exception as e:
             logger.error(f"Error during retry: {str(e)}")
             return PersistenceResult(
@@ -734,19 +745,19 @@ class ReliableAnalysisPersistence:
                 message="Error during retry",
                 error_details=str(e)
             )
-    
+
     async def get_analysis_progress(self, user_id: str, platform: str) -> Dict[str, Any]:
         """Get analysis progress for a user."""
         try:
             response = self.supabase_service.table('analysis_jobs').select('*').eq('user_id', user_id).eq('platform', platform).execute()
-            
+
             if response.data:
                 jobs = response.data
                 total_jobs = len(jobs)
                 completed_jobs = len([job for job in jobs if job['status'] == PersistenceStatus.COMPLETED.value])
                 failed_jobs = len([job for job in jobs if job['status'] == PersistenceStatus.FAILED.value])
                 in_progress_jobs = len([job for job in jobs if job['status'] in [PersistenceStatus.IN_PROGRESS.value, PersistenceStatus.RETRYING.value]])
-                
+
                 return {
                     'total_jobs': total_jobs,
                     'completed_jobs': completed_jobs,
@@ -766,7 +777,7 @@ class ReliableAnalysisPersistence:
                     'is_complete': True,
                     'current_phase': 'complete'
                 }
-                
+
         except Exception as e:
             logger.error(f"Error getting analysis progress: {str(e)}")
             return {

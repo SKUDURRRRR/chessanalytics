@@ -43,6 +43,18 @@ class PersonalityMetrics:
     opening_unique_count: int
     unique_san_count: int
     time_management_score: float = 0.0
+    pressure_moves: int = 0
+    pressure_gain: float = 0.0
+    pressure_advantage_sum: float = 0.0
+    risk_moves: int = 0
+    risk_severe_moves: int = 0
+    risk_loss: float = 0.0
+    initiative_gain: float = 0.0
+    initiative_bursts: int = 0
+    initiative_streak_max: int = 0
+    king_pressure_moves: int = 0
+    endgame_grind_moves: int = 0
+    endgame_liquidation_moves: int = 0
 
 
 @dataclass
@@ -91,6 +103,7 @@ class PersonalityScores:
         )
 
 
+
 class PersonalityScorer:
     """Standardized personality scoring engine."""
 
@@ -137,7 +150,11 @@ class PersonalityScorer:
                 quiet_streak_max=0, safe_streak_max=0, endgame_moves=0, endgame_best=0,
                 early_moves=0, early_creative_moves=0, opening_moves_count=0,
                 centipawn_mean=0.0, centipawn_std=0.0, pattern_diversity=0.0,
-                piece_type_count=0, opening_unique_count=0, unique_san_count=0
+                piece_type_count=0, opening_unique_count=0, unique_san_count=0,
+                pressure_moves=0, pressure_gain=0.0, pressure_advantage_sum=0.0,
+                risk_moves=0, risk_severe_moves=0, risk_loss=0.0,
+                initiative_gain=0.0, initiative_bursts=0, initiative_streak_max=0,
+                king_pressure_moves=0, endgame_grind_moves=0, endgame_liquidation_moves=0
             )
 
         # Sort moves by ply index
@@ -153,7 +170,11 @@ class PersonalityScorer:
             quiet_streak_max=0, safe_streak_max=0, endgame_moves=0, endgame_best=0,
             early_moves=0, early_creative_moves=0, opening_moves_count=0,
             centipawn_mean=0.0, centipawn_std=0.0, pattern_diversity=0.0,
-            piece_type_count=0, opening_unique_count=0, unique_san_count=0
+            piece_type_count=0, opening_unique_count=0, unique_san_count=0,
+            pressure_moves=0, pressure_gain=0.0, pressure_advantage_sum=0.0,
+            risk_moves=0, risk_severe_moves=0, risk_loss=0.0,
+            initiative_gain=0.0, initiative_bursts=0, initiative_streak_max=0,
+            king_pressure_moves=0, endgame_grind_moves=0, endgame_liquidation_moves=0
         )
 
         piece_types = set()
@@ -164,6 +185,7 @@ class PersonalityScorer:
         forcing_streak = 0
         quiet_streak = 0
         safe_streak = 0
+        initiative_streak = 0
         prev_san = None
         endgame_boundary = max(total - 8, 0)
 
@@ -171,6 +193,8 @@ class PersonalityScorer:
             san = move.get('move_san', '').strip()
             ply_index = move.get('ply_index', index + 1)
             loss = max(0.0, float(move.get('centipawn_loss', 0.0)))
+            eval_before = move.get('evaluation_before')
+            eval_after = move.get('evaluation_after')
 
             loss_sum += loss
             loss_sq_sum += loss * loss
@@ -180,6 +204,45 @@ class PersonalityScorer:
             metrics.mistakes += 1 if move.get('is_mistake', False) else 0
             metrics.inaccuracies += 1 if move.get('is_inaccuracy', False) else 0
             metrics.best_moves += 1 if move.get('is_best', False) else 0
+
+            # Intensity metrics require evaluation data
+            eval_available = eval_before is not None and eval_after is not None
+            eval_before_cp = None
+            eval_after_cp = None
+
+            if eval_available:
+                try:
+                    eval_before_cp = float(eval_before)
+                    eval_after_cp = float(eval_after)
+                except (TypeError, ValueError):
+                    eval_available = False
+
+            eval_change = 0.0
+            if eval_available:
+                eval_change = eval_after_cp - eval_before_cp
+
+                # Pressure: moves that increase evaluation significantly
+                if eval_change >= 50.0:
+                    metrics.pressure_moves += 1
+                    metrics.pressure_gain += eval_change
+                if eval_after_cp >= 50.0:
+                    metrics.pressure_advantage_sum += eval_after_cp
+
+                # Risk: self-inflicted evaluation drops
+                if eval_change <= -50.0:
+                    metrics.risk_moves += 1
+                    metrics.risk_loss += abs(eval_change)
+                    if eval_change <= -150.0:
+                        metrics.risk_severe_moves += 1
+
+            # Initiative bursts: streaks of positive evaluation gain
+            if eval_available:
+                if eval_change > 20.0:
+                    initiative_streak = initiative_streak + 1
+                    metrics.initiative_gain += eval_change
+                    metrics.initiative_streak_max = max(metrics.initiative_streak_max, initiative_streak)
+                else:
+                    initiative_streak = 0
 
             # Forcing vs quiet moves
             is_forcing = self.is_forcing_move(san)
@@ -209,6 +272,7 @@ class PersonalityScorer:
             # Move type analysis
             if '+' in san or '#' in san:
                 metrics.checks += 1
+                metrics.king_pressure_moves += 1
             if 'x' in san:
                 metrics.captures += 1
 
@@ -244,6 +308,11 @@ class PersonalityScorer:
                 metrics.endgame_moves += 1
                 if move.get('is_best', False) or loss <= 40.0:
                     metrics.endgame_best += 1
+                if eval_available:
+                    if abs(eval_after_cp) >= 80.0 and loss <= 40.0:
+                        metrics.endgame_grind_moves += 1
+                    if eval_change < -60.0 and 'x' in san:
+                        metrics.endgame_liquidation_moves += 1
 
         # Finalize streaks
         if forcing_streak >= 3:
@@ -256,6 +325,11 @@ class PersonalityScorer:
             metrics.centipawn_std = math.sqrt(variance)
             metrics.pattern_diversity = len(unique_san) / total
 
+            metrics.pressure_gain = metrics.pressure_gain / total
+            metrics.pressure_advantage_sum = metrics.pressure_advantage_sum / total
+            metrics.risk_loss = metrics.risk_loss / total
+            metrics.initiative_gain = metrics.initiative_gain / total
+
         metrics.piece_type_count = len(piece_types)
         metrics.opening_unique_count = len(opening_unique)
         metrics.unique_san_count = len(unique_san)
@@ -263,7 +337,11 @@ class PersonalityScorer:
         return metrics
 
     def score_tactical(self, metrics: PersonalityMetrics) -> float:
-        """Calculate tactical score - accuracy in forcing sequences."""
+        """Calculate tactical score - accuracy in forcing sequences.
+
+        GMs should score 80-92 based on their high accuracy in forcing moves.
+        Elite GMs (95+) need 80%+ best move rate with minimal errors.
+        """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
@@ -274,18 +352,25 @@ class PersonalityScorer:
         forcing_accuracy = (metrics.forcing_best / metrics.forcing_moves) if metrics.forcing_moves > 0 else best_rate
         pressure_rate = metrics.forcing_moves / metrics.total_moves
 
-        # CRITICAL FIX: Tactical was too high - everyone scoring 70-75
-        error_penalty = (blunder_rate * 70.0) + (mistake_rate * 45.0) + (inaccuracy_rate * 28.0)  # Increased penalties
-        pressure_bonus = min(8.0, pressure_rate * 20.0)  # Reduced from 10/25
-        accuracy_bonus = min(12.0, best_rate * 28.0)  # Reduced from 15/35
-        forcing_bonus = min(6.0, forcing_accuracy * 16.0)  # Reduced from 8/20
-        streak_bonus = min(5.0, metrics.forcing_streak_max * 1.2)  # Reduced from 6/1.4
+        # Recalibrated: GMs score 80-92, exceptional players 93-97
+        base = 30.0  # Reduced from 50.0 to lower ceiling
 
-        score = 40.0 - error_penalty + pressure_bonus + accuracy_bonus + forcing_bonus + streak_bonus  # Base: 30→40
+        # Significantly reduced multipliers to prevent ceiling hits
+        error_penalty = (blunder_rate * 65.0) + (mistake_rate * 40.0) + (inaccuracy_rate * 20.0)
+        pressure_bonus = pressure_rate * 12.0  # Reduced from 25.0
+        accuracy_bonus = best_rate * 35.0  # Reduced from 60.0 - even 70% best moves = 24.5 pts
+        forcing_bonus = forcing_accuracy * 12.0  # Reduced from 20.0
+        streak_bonus = min(8.0, metrics.forcing_streak_max * 1.0)  # Capped at 8pts
+
+        score = base - error_penalty + pressure_bonus + accuracy_bonus + forcing_bonus + streak_bonus
         return self.clamp_score(score)
 
     def score_positional(self, metrics: PersonalityMetrics) -> float:
-        """Calculate positional score - accuracy in quiet play."""
+        """Calculate positional score - accuracy in quiet play.
+
+        GMs should score 80-92 based on their high accuracy in quiet positions.
+        Elite GMs (95+) need 90%+ quiet accuracy with minimal drift.
+        """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
@@ -295,14 +380,17 @@ class PersonalityScorer:
         blunder_rate = metrics.blunders / metrics.total_moves
         mistake_rate = metrics.mistakes / metrics.total_moves
 
-        # REDUCED to match Tactical - both should be similar difficulty
-        error_penalty = (blunder_rate * 65.0) + (mistake_rate * 38.0)  # Increased penalties
-        drift_penalty = min(15.0, metrics.centipawn_mean / 12.0)  # Increased penalty
-        quiet_bonus = min(12.0, quiet_accuracy * 28.0)  # Reduced from 15/35
-        safety_bonus = min(8.0, quiet_safety * 20.0)  # Reduced from 10/25
-        streak_bonus = min(5.0, metrics.quiet_streak_max * 1.2)  # Reduced from 6/1.4
+        # Recalibrated: GMs score 80-92, exceptional players 93-97
+        base = 30.0  # Reduced from 50.0 to lower ceiling
 
-        score = 40.0 - error_penalty - drift_penalty + quiet_bonus + safety_bonus + streak_bonus  # Base: 30→40
+        # Significantly reduced multipliers to prevent ceiling hits
+        error_penalty = (blunder_rate * 65.0) + (mistake_rate * 40.0)
+        drift_penalty = min(15.0, metrics.centipawn_mean / 12.0)  # Capped to prevent over-penalization
+        quiet_bonus = quiet_accuracy * 35.0  # Reduced from 60.0
+        safety_bonus = quiet_safety * 15.0  # Reduced from 25.0
+        streak_bonus = min(8.0, metrics.quiet_streak_max * 1.0)  # Capped at 8pts
+
+        score = base - error_penalty - drift_penalty + quiet_bonus + safety_bonus + streak_bonus
         return self.clamp_score(score)
 
     def score_aggressive(self, metrics: PersonalityMetrics) -> float:
@@ -310,34 +398,37 @@ class PersonalityScorer:
 
         Natural opposition with Patient through shared forcing/quiet ratio.
         Aggressive increases with forcing moves, decreases with quiet moves.
+
+        Range: 25 (Caruana/passive) to 95 (Nepo/Firouzja/ultra-aggressive)
         """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
-        # Shared base metrics with Patient (natural opposition)
-        forcing_ratio = metrics.forcing_moves / metrics.total_moves
-        quiet_ratio = metrics.quiet_moves / metrics.total_moves
+        total = max(1, metrics.total_moves)
+        forcing_ratio = metrics.forcing_moves / total
+        quiet_ratio = metrics.quiet_moves / total
+        forcing_accuracy = (metrics.forcing_best / metrics.forcing_moves) if metrics.forcing_moves > 0 else forcing_ratio
+        check_density = metrics.checks / total
+        capture_density = metrics.captures / total
 
-        # Additional aggression indicators
-        check_density = metrics.checks / metrics.total_moves
-        capture_density = metrics.captures / metrics.total_moves
-        blunder_rate = metrics.blunders / metrics.total_moves
-        mistake_rate = metrics.mistakes / metrics.total_moves
+        # New signals
+        pressure_density = metrics.pressure_gain  # average eval gain per move
+        advantage_density = metrics.pressure_advantage_sum
+        king_pressure = metrics.king_pressure_moves / total
+        initiative_gain = metrics.initiative_gain
+        risk_ratio = metrics.risk_moves / total
 
-        # Natural opposition: forcing moves increase aggressive, quiet moves decrease it
-        # INCREASED VARIANCE + STRONGER OPPOSITION with Patient
-        base = 35.0  # Increased by 10 (was 25)
-        forcing_bonus = forcing_ratio * 45.0  # Updated per doc
-        quiet_penalty = quiet_ratio * 55.0     # Increased to strengthen opposition
+        base = 10.0  # Lowered to make room for bigger spread
+        # Amplify forcing component to create 20-30pt spread from 20-50% forcing ratios
+        forcing_component = forcing_ratio * 120.0 + forcing_accuracy * 30.0
+        pressure_component = pressure_density * 0.3 + advantage_density * 0.08  # Bonus if eval data present
+        initiative_component = initiative_gain * 0.4 + metrics.initiative_streak_max * 2.5
+        king_component = king_pressure * 60.0 + check_density * 80.0  # Amplified
 
-        # Additional bonuses for aggressive play - INCREASED for more spread
-        attack_bonus = min(22.0, check_density * 50.0 + capture_density * 38.0)  # Increased
-        streak_bonus = min(16.0, metrics.forcing_streak_max * 3.0)  # Increased
+        quiet_penalty = quiet_ratio * 50.0  # Increased penalty for quiet play
+        risk_penalty = risk_ratio * 40.0  # Reduced - aggression involves risk
 
-        # Less penalty for errors (aggressive players take risks)
-        error_penalty = (blunder_rate * 15.0) + (mistake_rate * 10.0)  # Reduced per doc
-
-        score = base + forcing_bonus - quiet_penalty + attack_bonus + streak_bonus - error_penalty
+        score = base + forcing_component + pressure_component + initiative_component + king_component - quiet_penalty - risk_penalty
         return self.clamp_score(score)
 
     def score_patient(self, metrics: PersonalityMetrics) -> float:
@@ -345,38 +436,46 @@ class PersonalityScorer:
 
         Natural opposition with Aggressive through shared forcing/quiet ratio.
         Patient increases with quiet moves, decreases with forcing moves.
+
+        Range: 25 (Nepo/impatient) to 95 (Magnus/Caruana/patient)
         """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
-        # Shared base metrics with Aggressive (natural opposition)
-        forcing_ratio = metrics.forcing_moves / metrics.total_moves
-        quiet_ratio = metrics.quiet_moves / metrics.total_moves
-
-        # Additional patience indicators
-        blunder_rate = metrics.blunders / metrics.total_moves
-        mistake_rate = metrics.mistakes / metrics.total_moves
-        inaccuracy_rate = metrics.inaccuracies / metrics.total_moves
+        total = max(1, metrics.total_moves)
+        forcing_ratio = metrics.forcing_moves / total
+        quiet_ratio = metrics.quiet_moves / total
+        quiet_accuracy = (metrics.quiet_best / metrics.quiet_moves) if metrics.quiet_moves > 0 else 0.5
         quiet_safety = (metrics.quiet_safe / metrics.quiet_moves) if metrics.quiet_moves > 0 else 0.5
         endgame_accuracy = (metrics.endgame_best / metrics.endgame_moves) if metrics.endgame_moves > 0 else quiet_safety
         time_factor = metrics.time_management_score / 100.0
 
-        # Natural opposition: quiet moves increase patient, forcing moves decrease it
-        # CRITICAL FIX: Patient was way too high (everyone 87-89) - drastically reduce bonuses
-        base = 35.0  # Increased by 10 (was 25)
-        quiet_bonus = quiet_ratio * 25.0        # Reduced from 38 (60-70% quiet is normal, not special)
-        forcing_penalty = forcing_ratio * 42.0  # Updated per doc
+        risk_ratio = metrics.risk_moves / total
+        severe_risk_ratio = metrics.risk_severe_moves / total
+        grind_ratio = metrics.endgame_grind_moves / max(1, metrics.endgame_moves or 1)
+        liquidation_ratio = metrics.endgame_liquidation_moves / max(1, metrics.endgame_moves or 1)
 
-        # Additional bonuses for patient play - REDUCED significantly
-        stability_bonus = min(8.0, quiet_safety * 20.0)  # Reduced from 12/30
-        endgame_bonus = min(7.0, endgame_accuracy * 18.0)  # Reduced from 10/24
-        time_bonus = min(15.0, time_factor * 35.0)  # Updated per doc
-        streak_bonus = min(4.0, metrics.safe_streak_max * 1.0)  # Reduced from 6/1.4
+        # Cap quiet play impact using logistic curve centered at 60%
+        quiet_curve = 1.0 / (1.0 + math.exp(-12.0 * (quiet_ratio - 0.6)))
 
-        # Penalty for impatience - INCREASED for more differentiation
-        discipline_penalty = (blunder_rate * 50.0) + (mistake_rate * 32.0) + (inaccuracy_rate * 20.0)  # Increased
+        base = 15.0  # Reduced from 25.0
+        quiet_component = quiet_curve * 40.0 + quiet_accuracy * 18.0 + quiet_safety * 20.0  # Reduced from 70+28+32
 
-        score = base + quiet_bonus - forcing_penalty + stability_bonus + endgame_bonus + time_bonus + streak_bonus - discipline_penalty
+        advantage_density = metrics.pressure_advantage_sum
+        endgame_component = (
+            endgame_accuracy * 25.0  # Reduced from 45.0
+            + grind_ratio * quiet_safety * 35.0  # Reduced from 60.0
+        )
+        liquidation_penalty = liquidation_ratio * (25.0 + max(0.0, advantage_density * 0.2))  # Reduced from 40
+
+        time_component = time_factor * 20.0  # Reduced from 35.0
+
+        # Risk penalties (quadratic scaling so repeated risk matters)
+        risk_penalty = (risk_ratio ** 2) * 250.0 + severe_risk_ratio * 80.0 + metrics.risk_loss * 0.15  # Reduced
+
+        forcing_penalty = forcing_ratio * 55.0  # Reduced from 95.0
+
+        score = base + quiet_component + endgame_component + time_component - liquidation_penalty - risk_penalty - forcing_penalty
         return self.clamp_score(score)
 
     def score_novelty(self, metrics: PersonalityMetrics) -> float:
@@ -384,39 +483,43 @@ class PersonalityScorer:
 
         Natural opposition with Staleness through shared diversity/repetition metrics.
         Novelty increases with diversity, decreases with repetition.
+
+        FIXED: Centered around 50 (neutral) with proper distribution
+        Range: 30 (repetitive/prepared) to 70 (creative/novel)
         """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
-        # Shared base metrics with Staleness (natural opposition)
         pattern_diversity = metrics.pattern_diversity  # 0.0 to 1.0
-        piece_diversity = min(1.0, metrics.piece_type_count / 6.0)  # Normalize to 0-1 (6 piece types max)
-        repetition_count = metrics.consecutive_repeat_count
+        piece_diversity = min(1.0, metrics.piece_type_count / 6.0)
+        total = max(1, metrics.total_moves)
+        accurate_creative_ratio = metrics.creative_moves / total
+        early_creative_ratio = (metrics.early_creative_moves / metrics.early_moves) if metrics.early_moves > 0 else 0
+        initiative_gain = metrics.initiative_gain
+        king_pressure = metrics.king_pressure_moves / max(1, metrics.total_moves)
+        advantage_density = metrics.pressure_advantage_sum
 
-        # Additional novelty indicators
-        accurate_creative_ratio = metrics.creative_moves / metrics.total_moves if metrics.total_moves > 0 else 0
-        early_accurate_creative_ratio = (metrics.early_creative_moves / metrics.early_moves) if metrics.early_moves > 0 else 0
+        inaccurate_creative_ratio = metrics.inaccurate_creative_moves / total
 
-        # Penalize inaccurate creative attempts
-        inaccurate_creative_penalty = 0.0
-        if hasattr(metrics, 'inaccurate_creative_moves'):
-            inaccurate_creative_ratio = metrics.inaccurate_creative_moves / metrics.total_moves
-            inaccurate_creative_penalty = min(12.0, inaccurate_creative_ratio * 30.0)
+        # FIXED FORMULA: Centered around 50
+        # Expected:
+        # - Normal diversity (0.4-0.6 pattern, 0.5-0.7 piece) → 50
+        # - High diversity + creativity → 65-75
+        # - Low diversity, repetitive → 35-45
+        base = 50.0
 
-        # Natural opposition: diversity increases novelty, repetition decreases it
-        # NOTE: Opening variety is a GAME-LEVEL concept (variety across multiple games)
-        # and is handled by _estimate_novelty_from_games(). Within a single game,
-        # opening moves are mostly unique, which was causing every game to score 100.
-        # CRITICAL FIX: Everyone scoring 80+ Novelty - need much lower base
-        base = 30.0  # Increased by 10 (was 20)
-        diversity_bonus = (pattern_diversity * 25.0 + piece_diversity * 15.0)  # Reduced - diversity is normal
-        repetition_penalty = min(35.0, repetition_count * 5.0)  # Increased penalty
+        # Diversity components - centered around typical values (0.5)
+        pattern_component = (pattern_diversity - 0.5) * 30.0  # ±15 for ±0.5 deviation
+        piece_component = (piece_diversity - 0.6) * 20.0  # ±12 for ±0.6 deviation
 
-        # Additional bonuses for novel play - REDUCED significantly
-        creative_bonus = min(10.0, accurate_creative_ratio * 30.0)  # Reduced
-        early_deviation_bonus = min(6.0, early_accurate_creative_ratio * 20.0)  # Reduced
+        # Creativity components - reward creative play
+        creativity_component = accurate_creative_ratio * 25.0 + early_creative_ratio * 15.0
+        initiative_component = initiative_gain * 0.15 + king_pressure * 15.0 + advantage_density * 0.05
 
-        score = base + diversity_bonus - repetition_penalty + creative_bonus + early_deviation_bonus - inaccurate_creative_penalty
+        # Penalties for repetition and inaccurate creativity
+        penalty_component = inaccurate_creative_ratio * 15.0 + metrics.consecutive_repeat_count * 2.0
+
+        score = base + pattern_component + piece_component + creativity_component + initiative_component - penalty_component
         return self.clamp_score(score)
 
     def score_staleness(self, metrics: PersonalityMetrics) -> float:
@@ -425,33 +528,43 @@ class PersonalityScorer:
         Natural opposition with Novelty through shared diversity/repetition metrics.
         Staleness increases with repetition, decreases with diversity.
 
-        Note: Staleness is about repetitiveness, NOT accuracy. Errors are not penalized here.
+        FIXED: Centered around 50 (neutral) with proper distribution
+        Range: 30 (creative/varied) to 70 (repetitive/structured)
         """
         if metrics.total_moves == 0:
             return 50.0  # Standard neutral base
 
-        # Shared base metrics with Novelty (natural opposition)
-        pattern_diversity = metrics.pattern_diversity  # 0.0 to 1.0
-        piece_diversity = min(1.0, metrics.piece_type_count / 6.0)  # Normalize to 0-1
-        repetition_count = metrics.consecutive_repeat_count
+        pattern_diversity = metrics.pattern_diversity
+        piece_diversity = min(1.0, metrics.piece_type_count / 6.0)
+        total = max(1, metrics.total_moves)
+        quiet_ratio = metrics.quiet_moves / total
+        creative_ratio = metrics.creative_moves / total
+        risk_ratio = metrics.risk_moves / total
+        grind_ratio = metrics.endgame_grind_moves / max(1, metrics.endgame_moves or 1)
+        liquidation_ratio = metrics.endgame_liquidation_moves / max(1, metrics.endgame_moves or 1)
 
-        # Additional staleness indicators
-        quiet_move_ratio = metrics.quiet_moves / metrics.total_moves if metrics.total_moves > 0 else 0
-        creative_ratio = metrics.creative_moves / metrics.total_moves if metrics.total_moves > 0 else 0
+        # FIXED FORMULA: Centered around 50 (natural opposition to novelty)
+        # Expected:
+        # - Normal repetition (0.5 pattern diversity, moderate repeats) → 50
+        # - High repetition (low diversity, many repeats) → 60-70
+        # - Low repetition (high diversity, few repeats) → 35-45
+        base = 50.0
 
-        # Natural opposition: repetition increases staleness, diversity decreases it
-        # NOTE: Opening variety is a GAME-LEVEL concept and is handled by _estimate_staleness_from_games()
-        # INCREASED: Need higher staleness to oppose novelty
-        base = 40.0  # Increased by 10 (was 30)
-        repetition_bonus = min(35.0, repetition_count * 5.0)  # Increased to match novelty penalty
-        pattern_consistency_bonus = (1.0 - pattern_diversity) * 38.0  # Increased
-        diversity_penalty = (piece_diversity * 20.0)  # Reduced penalty (diversity is normal)
+        # Repetition components - reward repetition
+        repetition_component = metrics.consecutive_repeat_count * 3.0
+        quiet_component = (quiet_ratio - 0.5) * 25.0  # Centered around 50% quiet moves
 
-        # Additional bonuses for stale play - INCREASED
-        quiet_bonus = min(15.0, quiet_move_ratio * 30.0)  # Increased
-        creativity_penalty = min(20.0, creative_ratio * 42.0)  # Increased penalty for creative moves
+        # Structured play indicators
+        stability_component = metrics.safe_streak_max * 0.8 - risk_ratio * 20.0
+        liquidation_component = liquidation_ratio * 15.0 - grind_ratio * 10.0
 
-        score = base + repetition_bonus + pattern_consistency_bonus + quiet_bonus - diversity_penalty - creativity_penalty
+        # Diversity penalties - high variety reduces staleness
+        diversity_penalty = (pattern_diversity - 0.5) * 25.0 + (piece_diversity - 0.6) * 15.0
+
+        # Creativity penalty - creative play reduces staleness
+        creativity_penalty = creative_ratio * 15.0 + metrics.initiative_gain * 0.1
+
+        score = base + repetition_component + quiet_component + stability_component + liquidation_component - diversity_penalty - creativity_penalty
         return self.clamp_score(score)
 
     def calculate_scores(self, moves: List[Dict[str, Any]], time_management_score: float = 0.0, skill_level: str = 'intermediate') -> PersonalityScores:
@@ -482,12 +595,12 @@ class PersonalityScorer:
         staleness = self._apply_relative_scoring(staleness, skill_level, 'staleness')
 
         return PersonalityScores(
-            tactical=self._scale_score(tactical, skill_multiplier, skill_level),
-            positional=self._scale_score(positional, skill_multiplier, skill_level),
-            aggressive=self._scale_score(aggressive, skill_multiplier, skill_level),
-            patient=self._scale_score(patient, skill_multiplier, skill_level),
-            novelty=self._scale_score(novelty, skill_multiplier, skill_level),
-            staleness=self._scale_score(staleness, skill_multiplier, skill_level),
+            tactical=self._scale_score(tactical, skill_multiplier, skill_level, 'tactical'),
+            positional=self._scale_score(positional, skill_multiplier, skill_level, 'positional'),
+            aggressive=self._scale_score(aggressive, skill_multiplier, skill_level, 'aggressive'),
+            patient=self._scale_score(patient, skill_multiplier, skill_level, 'patient'),
+            novelty=self._scale_score(novelty, skill_multiplier, skill_level, 'novelty'),
+            staleness=self._scale_score(staleness, skill_multiplier, skill_level, 'staleness'),
         )
 
     def _get_skill_multiplier(self, skill_level: str) -> float:
@@ -512,8 +625,12 @@ class PersonalityScorer:
         }
         return offsets.get(skill_level.lower(), 0.0)
 
-    def _scale_score(self, base_score: float, multiplier: float, skill_level: str) -> float:
-        """Apply restrained scaling and mild offsets for skill awareness."""
+    def _scale_score(self, base_score: float, multiplier: float, skill_level: str, trait: str) -> float:
+        """Apply scaling/offsets, but only for skill-based traits."""
+        if trait in ('aggressive', 'patient', 'novelty', 'staleness'):
+            # Style traits should remain in the raw range produced by formulas
+            return self.clamp_score(base_score, 0.0, 100.0)
+
         scaled = base_score * multiplier
         adjusted = scaled + self._get_skill_offset(skill_level)
         return self.clamp_score(adjusted, 0.0, 100.0)
@@ -547,12 +664,16 @@ class PersonalityScorer:
         expected = expectations.get(skill_level, expectations['intermediate']).get(trait, 50)
 
         # Adjust score relative to expectations - more conservative
+        if trait in ('aggressive', 'patient', 'novelty', 'staleness'):
+            # Style traits should reflect raw personality without expectation compression
+            return self.clamp_score(base_score, 0.0, 100.0)
+
         if base_score >= expected:
-            # Above expectations - moderate boost
-            relative_score = expected + (base_score - expected) * 1.2
+            # Above expectations - allow more differentiation
+            relative_score = expected + (base_score - expected) * 1.3
         else:
-            # Below expectations - compress the score
-            relative_score = expected - (expected - base_score) * 0.7
+            # Below expectations - apply lighter compression to show weaknesses
+            relative_score = expected - (expected - base_score) * 0.5
 
         return self.clamp_score(relative_score, 0.0, 100.0)
 

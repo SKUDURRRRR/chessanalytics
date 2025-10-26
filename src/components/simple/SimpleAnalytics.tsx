@@ -953,35 +953,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             />
           )}
 
-          {/* Game Length Analysis */}
-          <div className={cardClass}>
-            <h3 className="mb-4 text-lg font-semibold text-white">Game Length Analysis</h3>
-            <div className="grid-responsive text-sm text-slate-200">
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Avg Length</span>
-                <div className="text-lg font-semibold text-sky-300">{typeof gameLengthStats.averageGameLength === 'number' ? formatPercent(gameLengthStats.averageGameLength, 1) : '0.0'} moves</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Shortest</span>
-                <div className="text-lg font-semibold text-emerald-300">{formatNumber(gameLengthStats.shortestGame)} moves</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Longest</span>
-                <div className="text-lg font-semibold text-rose-300">{formatNumber(gameLengthStats.longestGame)} moves</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Quick Victories</span>
-                <div className="text-lg font-semibold text-purple-300">{formatNumber(gameLengthStats.quickVictories)} games</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Long Games</span>
-                <div className="text-lg font-semibold text-amber-300">{formatNumber(gameLengthStats.longGames)} games</div>
-              </div>
-            </div>
-          </div>
-
-          {/* NEW: Enhanced Game Length Insights - Compact Block 1 */}
-          {(comprehensiveData?.game_length_distribution || comprehensiveData?.quick_victory_breakdown || comprehensiveData?.marathon_performance || comprehensiveData?.recent_trend) && (
+          {/* NEW: Enhanced Game Length Insights & Performance Highlights - Combined Block */}
+          {(comprehensiveData?.game_length_distribution || comprehensiveData?.quick_victory_breakdown || comprehensiveData?.marathon_performance || comprehensiveData?.recent_trend || comprehensiveData?.personal_records || comprehensiveData?.patience_rating !== null || comprehensiveData?.comeback_potential || comprehensiveData?.resignation_timing) && (
             <div className={cardClass}>
               <h3 className="mb-4 text-lg font-semibold text-white">📊 Enhanced Game Length Insights</h3>
 
@@ -1010,16 +983,22 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         <span className="text-xs text-slate-400">Games</span>
                         <div className="text-xl font-semibold text-sky-300">{comprehensiveData.marathon_performance.count}</div>
                       </div>
-                      {comprehensiveData.marathon_performance.average_accuracy && (
+                      {comprehensiveData.marathon_performance.average_accuracy !== null && comprehensiveData.marathon_performance.average_accuracy !== undefined && (
                         <div className={subtleCardClass}>
                           <span className="text-xs text-slate-400">Avg Accuracy</span>
                           <div className="text-xl font-semibold text-emerald-300">{formatPercent(comprehensiveData.marathon_performance.average_accuracy, 1)}%</div>
+                          {comprehensiveData.marathon_performance.analyzed_count && comprehensiveData.marathon_performance.analyzed_count < comprehensiveData.marathon_performance.count && (
+                            <span className="text-xs text-slate-500">({comprehensiveData.marathon_performance.analyzed_count} analyzed)</span>
+                          )}
                         </div>
                       )}
-                      {comprehensiveData.marathon_performance.average_blunders !== null && (
+                      {comprehensiveData.marathon_performance.average_blunders !== null && comprehensiveData.marathon_performance.average_blunders !== undefined && (
                         <div className={subtleCardClass}>
                           <span className="text-xs text-slate-400">Avg Blunders</span>
                           <div className="text-xl font-semibold text-rose-300">{formatPercent(comprehensiveData.marathon_performance.average_blunders, 1)}</div>
+                          {comprehensiveData.marathon_performance.analyzed_count && comprehensiveData.marathon_performance.analyzed_count < comprehensiveData.marathon_performance.count && (
+                            <span className="text-xs text-slate-500">({comprehensiveData.marathon_performance.analyzed_count} analyzed)</span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1057,87 +1036,87 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   )}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* NEW: Performance Highlights - Compact Block 2 */}
-          {(comprehensiveData?.personal_records || comprehensiveData?.patience_rating !== null || comprehensiveData?.comeback_potential || comprehensiveData?.resignation_timing) && (
-            <div className={cardClass}>
-              <h3 className="mb-4 text-lg font-semibold text-white">🏆 Performance Highlights</h3>
+              {/* Performance Highlights Section */}
+              {(comprehensiveData?.personal_records || comprehensiveData?.patience_rating !== null || comprehensiveData?.comeback_potential) && (
+                <div className="mt-6 pt-6 border-t border-white/10">
+                  <h4 className="mb-4 text-base font-semibold text-white">🏆 Performance Highlights</h4>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Personal Records */}
-                {comprehensiveData?.personal_records && (
-                  <div>
-                    <h4 className="mb-3 text-sm font-semibold text-emerald-200">🏆 Personal Records</h4>
-                    <div className="space-y-2">
-                      {comprehensiveData.personal_records.fastest_win && (
-                        <div className={subtleCardClass}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-400">⚡ Fastest Win</span>
-                            <span className="font-semibold text-emerald-300">{comprehensiveData.personal_records.fastest_win.moves} moves</span>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Personal Records */}
+                    {comprehensiveData?.personal_records && (
+                      <div>
+                        <h5 className="mb-3 text-sm font-semibold text-emerald-200">🏆 Personal Records</h5>
+                        <div className="space-y-2">
+                          {comprehensiveData.personal_records.fastest_win && (
+                            <div className={subtleCardClass}>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-400">⚡ Fastest Win</span>
+                                <span className="font-semibold text-emerald-300">{comprehensiveData.personal_records.fastest_win.moves} moves</span>
+                              </div>
+                            </div>
+                          )}
+                          {comprehensiveData.personal_records.highest_accuracy_win && (
+                            <div className={subtleCardClass}>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-400">🎯 Most Accurate Win</span>
+                                <span className="font-semibold text-sky-300">{formatPercent(comprehensiveData.personal_records.highest_accuracy_win.accuracy, 1)}%</span>
+                              </div>
+                            </div>
+                          )}
+                          {comprehensiveData.personal_records.longest_game && (
+                            <div className={subtleCardClass}>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-400">🏃 Longest Game</span>
+                                <span className="font-semibold text-purple-300">{comprehensiveData.personal_records.longest_game.moves} moves</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Patience & Comeback */}
+                    <div className="space-y-4">
+                      {/* Patience Rating */}
+                      {comprehensiveData?.patience_rating !== null && comprehensiveData?.patience_rating !== undefined && (
+                        <div>
+                          <h5 className="mb-3 text-sm font-semibold text-purple-200">🧘 Patience Rating</h5>
+                          <div className={subtleCardClass}>
+                            <div className="text-center">
+                              <div className="text-3xl font-bold text-purple-300">{formatPercent(comprehensiveData.patience_rating, 1)}</div>
+                              <p className="text-xs text-slate-400 mt-1">
+                                {comprehensiveData.patience_rating > 75
+                                  ? "Endgame specialist"
+                                  : comprehensiveData.patience_rating > 50
+                                  ? "Tactical player"
+                                  : "Quick finisher"}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       )}
-                      {comprehensiveData.personal_records.highest_accuracy_win && (
-                        <div className={subtleCardClass}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-400">🎯 Most Accurate Win</span>
-                            <span className="font-semibold text-sky-300">{formatPercent(comprehensiveData.personal_records.highest_accuracy_win.accuracy, 1)}%</span>
-                          </div>
-                        </div>
-                      )}
-                      {comprehensiveData.personal_records.longest_game && (
-                        <div className={subtleCardClass}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-400">🏃 Longest Game</span>
-                            <span className="font-semibold text-purple-300">{comprehensiveData.personal_records.longest_game.moves} moves</span>
+
+                      {/* Comeback Potential */}
+                      {comprehensiveData?.comeback_potential && (
+                        <div>
+                          <h5 className="mb-3 text-sm font-semibold text-amber-200">💪 Comeback Ability</h5>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className={subtleCardClass}>
+                              <span className="text-xs text-slate-400">Games</span>
+                              <div className="text-xl font-semibold text-amber-300">{comprehensiveData.comeback_potential.games}</div>
+                            </div>
+                            <div className={subtleCardClass}>
+                              <span className="text-xs text-slate-400">Avg Swing</span>
+                              <div className="text-xl font-semibold text-emerald-300">{formatPercent(comprehensiveData.comeback_potential.average_largest_swing, 1)}%</div>
+                            </div>
                           </div>
                         </div>
                       )}
                     </div>
                   </div>
-                )}
-
-                {/* Patience & Comeback */}
-                <div className="space-y-4">
-                  {/* Patience Rating */}
-                  {comprehensiveData?.patience_rating !== null && comprehensiveData?.patience_rating !== undefined && (
-                    <div>
-                      <h4 className="mb-3 text-sm font-semibold text-purple-200">🧘 Patience Rating</h4>
-                      <div className={subtleCardClass}>
-                        <div className="text-center">
-                          <div className="text-3xl font-bold text-purple-300">{formatPercent(comprehensiveData.patience_rating, 1)}</div>
-                          <p className="text-xs text-slate-400 mt-1">
-                            {comprehensiveData.patience_rating > 75
-                              ? "Endgame specialist"
-                              : comprehensiveData.patience_rating > 50
-                              ? "Tactical player"
-                              : "Quick finisher"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Comeback Potential */}
-                  {comprehensiveData?.comeback_potential && (
-                    <div>
-                      <h4 className="mb-3 text-sm font-semibold text-amber-200">💪 Comeback Ability</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className={subtleCardClass}>
-                          <span className="text-xs text-slate-400">Games</span>
-                          <div className="text-xl font-semibold text-amber-300">{comprehensiveData.comeback_potential.games}</div>
-                        </div>
-                        <div className={subtleCardClass}>
-                          <span className="text-xs text-slate-400">Avg Swing</span>
-                          <div className="text-xl font-semibold text-emerald-300">{formatPercent(comprehensiveData.comeback_potential.average_largest_swing, 1)}%</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              </div>
+              )}
 
               {/* Resignation Timing - Full Width */}
               {comprehensiveData?.resignation_timing && (

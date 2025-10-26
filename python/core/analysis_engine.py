@@ -203,6 +203,10 @@ class MoveAnalysis:
     fen_before: str = ""  # FEN position before the move
     fen_after: str = ""   # FEN position after the move
 
+    # Evaluation fields for personality scoring (CRITICAL for aggressive/patient metrics)
+    evaluation_before: Optional[float] = None  # Centipawn eval before move
+    evaluation_after: Optional[float] = None   # Centipawn eval after move
+
     # Enhanced coaching fields
     coaching_comment: str = ""
     what_went_right: str = ""
@@ -1253,7 +1257,9 @@ class ChessAnalysisEngine:
             heuristic_details=heuristic_details,
             accuracy_score=accuracy_score,
             fen_before=fen_before,  # Add FEN before move
-            fen_after=fen_after      # Add FEN after move
+            fen_after=fen_after,      # Add FEN after move
+            evaluation_before=float(before_score),  # CRITICAL: for personality scoring
+            evaluation_after=float(after_score)     # CRITICAL: for personality scoring
         )
 
         # Enhance with coaching comments
@@ -1534,6 +1540,10 @@ class ChessAnalysisEngine:
                         "type": "cp" if not eval_after.pov(chess.WHITE).is_mate() else "mate"
                     }
 
+                    # Extract centipawn values for personality scoring
+                    eval_before_cp = eval_before.pov(player_color).score(mate_score=1000) if eval_before else 0
+                    eval_after_cp = eval_after.pov(player_color).score(mate_score=1000) if eval_after else 0
+
                     # Create basic move analysis
                     move_analysis = MoveAnalysis(
                         move=move.uci(),
@@ -1554,7 +1564,9 @@ class ChessAnalysisEngine:
                         analysis_time_ms=int(time_limit * 1000),
                         explanation=None,
                         heuristic_details={},
-                        accuracy_score=100.0 if is_best else max(0.0, 100.0 - centipawn_loss)
+                        accuracy_score=100.0 if is_best else max(0.0, 100.0 - centipawn_loss),
+                        evaluation_before=float(eval_before_cp),  # CRITICAL: for personality scoring
+                        evaluation_after=float(eval_after_cp)     # CRITICAL: for personality scoring
                     )
 
                     # Enhance with coaching comments

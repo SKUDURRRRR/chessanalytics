@@ -36,6 +36,7 @@ PLAYERS: List[Dict[str, str]] = [
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8002")
 ANALYSIS_LIMIT = int(os.getenv("CALIBRATION_ANALYSIS_LIMIT", "40"))
 SLEEP_AFTER_ANALYSIS = int(os.getenv("CALIBRATION_ANALYSIS_SLEEP", "15"))
+RUN_IN_PARALLEL = os.getenv("CALIBRATION_ANALYSIS_PARALLEL", "false").lower() == "true"
 REPORT_DIR = Path(os.getenv("CALIBRATION_LOG_DIR", "logs/calibration_runs"))
 
 
@@ -67,13 +68,14 @@ def import_games(player: Dict[str, str]) -> Dict[str, Any]:
 
 
 def analyze_games(player: Dict[str, str]) -> Dict[str, Any]:
-    url = f"{BACKEND_URL}/api/v1/analyze?use_parallel=true"
     payload = {
         "user_id": player['user_id'],
         "platform": player['platform'],
         "analysis_type": "stockfish",
         "limit": ANALYSIS_LIMIT,
     }
+    params = "?use_parallel=true" if RUN_IN_PARALLEL else "?use_parallel=false"
+    url = f"{BACKEND_URL}/api/v1/analyze{params}"
     return post(url, payload, timeout=900)
 
 
@@ -127,6 +129,7 @@ def write_report(results: List[Dict[str, Any]]) -> Path:
 def main() -> None:
     load_environment()
     print(f"Using backend: {BACKEND_URL}")
+    print(f"Analysis limit per player: {ANALYSIS_LIMIT} (parallel={RUN_IN_PARALLEL})")
     results: List[Dict[str, Any]] = []
     for player in PLAYERS:
         results.append(process_player(player))
