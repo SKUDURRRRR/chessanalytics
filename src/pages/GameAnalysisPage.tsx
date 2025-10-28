@@ -102,10 +102,10 @@ export interface ProcessedMove {
 type MoveClassification =
   | 'brilliant'
   | 'best'
-  | 'great'  // NEW: Very strong moves (5-15cp loss)
-  | 'excellent'  // NEW: Nearly optimal moves (15-25cp loss)
-  | 'good'
-  | 'acceptable'
+  | 'excellent'  // Merged: great+excellent (5-25cp loss)
+  | 'great'  // Kept for backward compatibility, maps to excellent
+  | 'good'  // Merged: good+acceptable (25-100cp loss)
+  | 'acceptable'  // Kept for backward compatibility, maps to good
   | 'inaccuracy'
   | 'mistake'
   | 'blunder'

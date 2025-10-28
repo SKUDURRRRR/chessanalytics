@@ -19,13 +19,14 @@ class MoveQuality(Enum):
     """Classification of move quality for coaching purposes."""
     BRILLIANT = "brilliant"
     BEST = "best"
-    GREAT = "great"  # NEW: Very strong moves (5-15cp loss)
-    EXCELLENT = "excellent"  # NEW: Nearly optimal moves (15-25cp loss)
-    GOOD = "good"
-    ACCEPTABLE = "acceptable"
+    EXCELLENT = "excellent"  # Merged great+excellent (5-25cp loss)
+    GOOD = "good"  # Merged good+acceptable (25-100cp loss)
     INACCURACY = "inaccuracy"
     MISTAKE = "mistake"
     BLUNDER = "blunder"
+    # Keep old values for backward compatibility
+    GREAT = "excellent"  # Alias
+    ACCEPTABLE = "good"  # Alias
 
 
 class GamePhase(Enum):
@@ -234,14 +235,10 @@ class ChessCoachingGenerator:
             return MoveQuality.BRILLIANT
         elif move_analysis.get('is_best', False):
             return MoveQuality.BEST
-        elif move_analysis.get('is_great', False):
-            return MoveQuality.GREAT
-        elif move_analysis.get('is_excellent', False):
-            return MoveQuality.EXCELLENT
-        elif move_analysis.get('is_good', False):
-            return MoveQuality.GOOD
-        elif move_analysis.get('is_acceptable', False):
-            return MoveQuality.ACCEPTABLE
+        elif move_analysis.get('is_excellent', False) or move_analysis.get('is_great', False):
+            return MoveQuality.EXCELLENT  # Merged great+excellent
+        elif move_analysis.get('is_good', False) or move_analysis.get('is_acceptable', False):
+            return MoveQuality.GOOD  # Merged good+acceptable
         elif move_analysis.get('is_inaccuracy', False):
             return MoveQuality.INACCURACY
         elif move_analysis.get('is_mistake', False):
@@ -249,7 +246,7 @@ class ChessCoachingGenerator:
         elif move_analysis.get('is_blunder', False):
             return MoveQuality.BLUNDER
         else:
-            return MoveQuality.ACCEPTABLE
+            return MoveQuality.GOOD  # Default to good instead of acceptable
 
     def _generate_main_comment(self, move_quality: MoveQuality, move_analysis: Dict[str, Any], is_user_move: bool = True) -> str:
         """Generate the main coaching comment with detailed explanations."""

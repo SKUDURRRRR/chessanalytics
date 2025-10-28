@@ -172,6 +172,9 @@ export interface AnalysisStats {
   average_tactical_score: number
   average_positional_score: number
   average_aggressive_score: number
+  // Status flags to detect mock/placeholder data
+  is_mock_data?: boolean
+  analysis_status?: 'complete' | 'no_analyses' | 'partial'
   average_patient_score: number
   average_novelty_score: number
   average_staleness_score: number
@@ -274,6 +277,9 @@ export interface DeepAnalysisData {
     };
   };
   enhanced_opening_analysis?: EnhancedOpeningAnalysis;
+  // Status flags to detect fallback/placeholder data
+  is_fallback_data?: boolean;
+  analysis_status?: 'complete' | 'no_analyses' | 'insufficient_data';
 }
 
 // Component prop types

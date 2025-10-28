@@ -38,6 +38,74 @@ PIECE_VALUES = {
     'K': 0
 }
 
+
+def get_rating_adjusted_brilliant_threshold(player_rating: Optional[int] = None) -> Dict[str, float]:
+    """
+    Get Chess.com-aligned thresholds for brilliant move detection based on player rating.
+
+    Chess.com adjusts brilliant move criteria based on rating:
+    - Lower-rated players: More lenient (encourage learning)
+    - Higher-rated players: Stricter (truly exceptional required)
+
+    Args:
+        player_rating: Player's rating (e.g., 1200, 1800, 2400). None = use default (1500)
+
+    Returns:
+        Dict with adjusted thresholds for brilliant detection
+    """
+    # Default to intermediate player if no rating provided
+    if player_rating is None:
+        player_rating = 1500
+
+    # Chess.com rating adjustment tiers
+    # Based on observations of Chess.com's brilliant move frequency by rating
+    if player_rating < 1000:
+        # Beginner: Very lenient - encourage creative play
+        return {
+            'min_sacrifice_value': 2,        # Minor piece sacrifice sufficient
+            'max_position_cp': 500,          # Can be more winning
+            'min_compensation_cp': -100,     # Allow larger deficit with compensation
+            'non_obvious_threshold': 5,      # Fewer alternatives needed
+            'mate_in_moves': 7,              # Longer mates count
+        }
+    elif player_rating < 1400:
+        # Beginner-Intermediate: Lenient
+        return {
+            'min_sacrifice_value': 2,        # Minor piece sacrifice
+            'max_position_cp': 450,
+            'min_compensation_cp': -75,
+            'non_obvious_threshold': 6,
+            'mate_in_moves': 6,
+        }
+    elif player_rating < 1800:
+        # Intermediate: Standard (Chess.com default)
+        return {
+            'min_sacrifice_value': 2,        # Minor piece or better
+            'max_position_cp': 400,
+            'min_compensation_cp': -50,
+            'non_obvious_threshold': 8,
+            'mate_in_moves': 5,
+        }
+    elif player_rating < 2200:
+        # Advanced: Stricter
+        return {
+            'min_sacrifice_value': 3,        # Rook or Queen preferred
+            'max_position_cp': 350,
+            'min_compensation_cp': -25,
+            'non_obvious_threshold': 10,
+            'mate_in_moves': 4,
+        }
+    else:
+        # Expert/Master: Very strict - truly exceptional only
+        return {
+            'min_sacrifice_value': 3,        # Significant sacrifice only
+            'max_position_cp': 300,
+            'min_compensation_cp': 0,        # Must maintain equality minimum
+            'non_obvious_threshold': 12,
+            'mate_in_moves': 3,
+        }
+
+
 PIECE_SQUARE_TABLES = {
     'P': [
          0,   0,   0,   0,   0,   0,   0,   0,
@@ -110,17 +178,15 @@ PASSED_PAWN_BONUS = [0, 10, 20, 35, 60, 100, 160, 0]
 HANGING_PIECE_VALUE_MULTIPLIER = 0.6
 HANGING_PIECE_MIN_PENALTY = 40
 BASIC_MOVE_CANDIDATE_LIMIT = 5
-# Chess.com-aligned move classification thresholds
-# For Stockfish analysis: best(0-5), great(5-15), excellent(15-25), good(25-50), acceptable(25-50), inaccuracy(50-100), mistake(100-200), blunder(200+)
-# For basic analysis: combines categories for simpler classification
+# Simplified Chess.com-aligned move classification thresholds
+# Merged categories for cleaner user experience:
+# - best(0-5), excellent(5-25), good(25-100), inaccuracy(100-200), mistake(200-400), blunder(400+)
 BASIC_BEST_THRESHOLD = 5  # Best moves (0-5cp loss)
-BASIC_GREAT_THRESHOLD = 15  # Great moves (5-15cp loss) - for Stockfish analysis
-BASIC_EXCELLENT_THRESHOLD = 25  # Excellent moves (15-25cp loss) - for Stockfish analysis
-BASIC_GOOD_THRESHOLD = 25  # Good moves threshold for basic analysis (5-25cp loss)
-BASIC_ACCEPTABLE_THRESHOLD = 50  # Acceptable moves (25-50cp loss)
-BASIC_INACCURACY_THRESHOLD = 100  # Inaccuracies (50-100cp loss) - Chess.com standard
-BASIC_MISTAKE_THRESHOLD = 200  # Mistakes (100-200cp loss) - Chess.com standard
-BASIC_BLUNDER_THRESHOLD = 200  # Blunders (200+cp loss) - Chess.com standard
+BASIC_EXCELLENT_THRESHOLD = 25  # Excellent moves (5-25cp loss) - merged great+excellent
+BASIC_GOOD_THRESHOLD = 100  # Good moves (25-100cp loss) - merged good+acceptable
+BASIC_INACCURACY_THRESHOLD = 200  # Inaccuracies (100-200cp loss) - Chess.com standard
+BASIC_MISTAKE_THRESHOLD = 400  # Mistakes (200-400cp loss) - Chess.com standard
+BASIC_BLUNDER_THRESHOLD = 400  # Blunders (400+cp loss) - Chess.com standard
 SEE_MATERIAL_LOSS_TRIGGER = -40
 KING_SAFETY_DROP_TRIGGER = 25
 MOBILITY_DROP_TRIGGER = -2
@@ -1091,19 +1157,113 @@ class ChessAnalysisEngine:
         is_best = centipawn_loss <= BASIC_BEST_THRESHOLD
 
         triggers = triggers or []
-        # Heuristic brilliant move detection - much stricter to match Chess.com standards
-        # Only mark as brilliant if it's a best move AND has very specific tactical brilliance
-        sacrifice_trigger = ('capture' in triggers and delta > 0) or 'exposes_piece' in triggers
-        forcing_mate_trigger = bool(refinement and refinement.get('after') and refinement['after'].get('type') == 'mate')
-        evaluation_swing_trigger = delta >= 200
-        checking_move_trigger = ('check' in triggers and delta > 0)
 
-        # Much stricter brilliant criteria for heuristic analysis
-        # Only allow if it's a best move AND has forced mate (heuristic can't detect sacrifices well)
-        is_brilliant = is_best and forcing_mate_trigger
-        is_good = BASIC_BEST_THRESHOLD < centipawn_loss <= BASIC_GOOD_THRESHOLD
-        is_acceptable = BASIC_GOOD_THRESHOLD < centipawn_loss <= BASIC_ACCEPTABLE_THRESHOLD
-        is_inaccuracy = BASIC_ACCEPTABLE_THRESHOLD < centipawn_loss <= BASIC_INACCURACY_THRESHOLD
+        # ============================================================================
+        # HEURISTIC BRILLIANT MOVE DETECTION - Chess.com Aligned
+        # ============================================================================
+        # Heuristic mode has limited information, but we can still detect:
+        # 1. Forced mates (from refinement data)
+        # 2. Material sacrifices (from SEE and hanging pieces)
+        # 3. Significant evaluation swings (from delta)
+        # ============================================================================
+
+        # Forced mate detection (most reliable in heuristic mode)
+        forcing_mate_trigger = bool(refinement and refinement.get('after') and refinement['after'].get('type') == 'mate')
+
+        # Sacrifice detection (Chess.com aligned)
+        # Look for moves that sacrifice material but have tactical compensation
+        sacrifice_trigger = False
+
+        if is_best:  # Only consider for best moves
+            # Type 1: SEE-based sacrifice detection
+            # Negative SEE means we're losing material in the exchange
+            piece_values = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}
+
+            if see_score < -200:  # Losing at least 2 pawns worth in exchange
+                # But position evaluation improves or stays winning (compensation exists)
+                has_compensation = delta >= 0 or (refinement and refinement.get('after', {}).get('value', 0) > 0)
+
+                # Check if we're not already crushing (Chess.com criteria)
+                not_already_crushing = True
+                if refinement and refinement.get('before'):
+                    before_eval = refinement['before'].get('value', 0)
+                    not_already_crushing = abs(before_eval) < 400
+
+                sacrifice_trigger = has_compensation and not_already_crushing
+
+            # Type 2: Capture with more valuable piece that improves position
+            elif is_capture and 'capture' in triggers:
+                # Get piece values for the move
+                moving_piece = board.piece_at(move.from_square)
+                target_square = move.to_square
+
+                # Need to check position before move
+                board.push(move)
+                captured_something = True  # We know it's a capture
+                board.pop()
+
+                if moving_piece:
+                    moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
+
+                    # Check if the moved piece hangs after the capture
+                    board.push(move)
+                    piece_hangs = 'exposes_piece' in triggers or bool(new_hanging)
+                    board.pop()
+
+                    # Sacrifice if:
+                    # - We're capturing with a valuable piece (N, B, R, Q)
+                    # - Piece hangs after capture OR SEE is negative
+                    # - But position improves (delta > 0) or stays winning
+                    if moving_value >= 3 and (piece_hangs or see_score < 0):
+                        has_compensation = delta >= 50 or forcing_mate_trigger
+
+                        # Check not already crushing
+                        not_already_crushing = True
+                        if refinement and refinement.get('before'):
+                            before_eval = refinement['before'].get('value', 0)
+                            not_already_crushing = abs(before_eval) < 400
+
+                        sacrifice_trigger = has_compensation and not_already_crushing
+
+            # Type 3: Non-capture moves that expose/hang pieces but have tactical point
+            elif 'exposes_piece' in triggers or bool(new_hanging):
+                # Piece hangs but position improves significantly
+                has_strong_compensation = delta >= 100 or forcing_mate_trigger or ('check' in triggers and delta > 0)
+
+                # Check the hanging piece is valuable enough (not just a pawn)
+                valuable_piece_hanging = False
+                if new_hanging:
+                    for hanging in new_hanging:
+                        piece_symbol = hanging.get('piece', '').upper()
+                        if piece_symbol in ['N', 'B', 'R', 'Q']:
+                            valuable_piece_hanging = True
+                            break
+
+                # Check not already crushing
+                not_already_crushing = True
+                if refinement and refinement.get('before'):
+                    before_eval = refinement['before'].get('value', 0)
+                    not_already_crushing = abs(before_eval) < 400
+
+                sacrifice_trigger = (
+                    valuable_piece_hanging and
+                    has_strong_compensation and
+                    not_already_crushing
+                )
+
+        # Non-obvious detection (simplified for heuristic mode)
+        # A move is non-obvious if position is complex (many legal moves)
+        is_non_obvious = len(list(board.legal_moves)) > 8
+
+        # FINAL BRILLIANT DETERMINATION (Chess.com aligned)
+        # - Forced mate OR
+        # - Sacrifice that is non-obvious and best move
+        is_brilliant = is_best and (forcing_mate_trigger or (sacrifice_trigger and is_non_obvious))
+        is_excellent = BASIC_BEST_THRESHOLD < centipawn_loss <= BASIC_EXCELLENT_THRESHOLD  # Merged great+excellent (5-25cp)
+        is_great = is_excellent  # Alias for backward compatibility
+        is_good = BASIC_EXCELLENT_THRESHOLD < centipawn_loss <= BASIC_GOOD_THRESHOLD  # Merged good+acceptable (25-100cp)
+        is_acceptable = is_good  # Alias for backward compatibility
+        is_inaccuracy = BASIC_GOOD_THRESHOLD < centipawn_loss <= BASIC_INACCURACY_THRESHOLD
         is_mistake = BASIC_INACCURACY_THRESHOLD < centipawn_loss <= BASIC_MISTAKE_THRESHOLD
         is_blunder = centipawn_loss > BASIC_BLUNDER_THRESHOLD and (
             loss_from_best_gap or
@@ -1247,8 +1407,10 @@ class ChessAnalysisEngine:
             best_move_san=best_move_san,  # Add SAN notation for best move
             is_best=is_best,
             is_brilliant=is_brilliant,
+            is_excellent=is_excellent,
+            is_great=is_excellent,  # Alias for backward compatibility
             is_good=is_good,
-            is_acceptable=is_acceptable,
+            is_acceptable=is_good,  # Alias for backward compatibility
             is_blunder=is_blunder,
             is_mistake=is_mistake,
             is_inaccuracy=is_inaccuracy,
@@ -1453,143 +1615,208 @@ class ChessAnalysisEngine:
                     # - Mistake: 0.10-0.20 loss    (~100-200cp depending on position)
                     # - Blunder: 0.20+ loss        (~200+cp depending on position)
                     #
-                    # Chess.com-aligned thresholds:
+                    # Simplified Chess.com-aligned thresholds:
                     is_best = centipawn_loss <= 5      # Best moves (engine top choice, 0-5cp)
-                    is_great = 5 < centipawn_loss <= 15      # Great moves (very strong, 5-15cp)
-                    is_excellent = 15 < centipawn_loss <= 25  # Excellent moves (nearly optimal, 15-25cp)
-                    is_good = 25 < centipawn_loss <= 50      # Good/Acceptable moves (solid play, 25-50cp)
-                    is_acceptable = 25 < centipawn_loss <= 50  # Same as good (conventional moves)
-                    is_inaccuracy = 50 < centipawn_loss <= 100  # Inaccuracies (50-100cp) - Chess.com standard
-                    is_mistake = 100 < centipawn_loss <= 200  # Mistakes (100-200cp) - Chess.com standard
-                    is_blunder = centipawn_loss > 200  # Blunders (200+cp) - Chess.com standard
+                    is_excellent = 5 < centipawn_loss <= 25  # Excellent moves (nearly optimal, 5-25cp) - merged great+excellent
+                    is_great = 5 < centipawn_loss <= 25      # Alias for is_excellent (for backward compatibility)
+                    is_good = 25 < centipawn_loss <= 100     # Good moves (solid play, 25-100cp) - merged good+acceptable
+                    is_acceptable = 25 < centipawn_loss <= 100  # Alias for is_good (for backward compatibility)
+                    is_inaccuracy = 100 < centipawn_loss <= 200  # Inaccuracies (100-200cp) - Chess.com standard
+                    is_mistake = 200 < centipawn_loss <= 400  # Mistakes (200-400cp) - Chess.com standard
+                    is_blunder = centipawn_loss > 400  # Blunders (400+cp) - Chess.com standard
 
-                    # Brilliant moves: EXTREMELY rare - Chess.com/Lichess standards
-                    # Should appear in ~0-1 per 100+ games (not per game!)
-                    # Requirements based on Chess.com official criteria:
+                    # ============================================================================
+                    # BRILLIANT MOVE DETECTION - Chess.com Aligned
+                    # ============================================================================
+                    # Based on Chess.com official criteria (support.chess.com/articles/8572705):
                     # 1. Must be best or nearly best move (0-5cp loss maximum)
-                    # 2. Must involve non-obvious piece sacrifice (3+ points net) OR find short forced mate
-                    # 3. Position must remain winning after sacrifice (not just equal)
-                    # 4. Player must not already be completely winning (not just converting)
-                    # 5. Move must be difficult to find (tactical brilliance)
+                    # 2. Must involve non-obvious piece sacrifice OR find forced mate
+                    # 3. Position must not be completely winning without the move
+                    # 4. Move should be difficult to find (non-obvious/surprising)
+                    # 5. Adjusted for player rating (harder requirements for stronger players)
+                    #
+                    # Frequency: EXTREMELY rare - should appear in ~0-1% of games
+                    # ============================================================================
                     is_brilliant = False
 
                     if is_best and centipawn_loss <= 5:  # Must be near-perfect move (0-5cp loss)
-                        # Define optimal_cp (the evaluation if best move was played)
                         optimal_cp = best_cp
 
-                        # Check for forced mate found when there wasn't one before
-                        forcing_mate_trigger = (
-                            eval_after.pov(player_color).is_mate() and
-                            not eval_before.pov(player_color).is_mate() and
-                            abs(eval_after.pov(player_color).mate()) <= 3  # Very short forced mate (within 3 moves)
-                        )
+                        # Get rating-adjusted thresholds (default to 1500 if not available)
+                        # TODO: Pass actual player rating from game analysis context
+                        rating_thresholds = get_rating_adjusted_brilliant_threshold(player_rating=None)
 
-                        # Check for spectacular material sacrifice
-                        piece_values = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}
-                        sacrifice_trigger = False
+                        # -----------------------------------------------------------------------
+                        # CRITERION 1: Non-Obvious Move Detection
+                        # -----------------------------------------------------------------------
+                        # A move is "non-obvious" if there are multiple reasonable alternatives
+                        # Chess.com emphasizes this - brilliant moves should be surprising/creative
+                        is_non_obvious = False
 
-                        # Look at the position BEFORE the move was made (need to undo it temporarily)
-                        board.pop()  # Undo move to check original position
+                        # Temporarily undo move to analyze alternatives
+                        board.pop()
 
-                        # Check for sacrifice (giving up material for tactical gain)
-                        if board.is_capture(move):
-                            captured_piece = board.piece_at(move.to_square)
-                            moving_piece = board.piece_at(move.from_square)
+                        try:
+                            # Get top 3 moves to check if there are multiple good options
+                            multipv_analysis = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=3)
 
-                            if captured_piece and moving_piece:
-                                captured_value = piece_values.get(captured_piece.symbol().upper(), 0)
-                                moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
+                            if len(multipv_analysis) >= 2:
+                                # Check if the played move is significantly better than alternatives
+                                # or if there are multiple similarly good moves (making this choice non-obvious)
+                                best_score = multipv_analysis[0]["score"].pov(player_color).score(mate_score=1000)
+                                second_best_score = multipv_analysis[1]["score"].pov(player_color).score(mate_score=1000)
 
-                                # BRILLIANT MOVE SACRIFICE DETECTION (Fixed Logic)
-                                #
-                                # Understanding "Sacrifice" in chess:
-                                # - A REAL sacrifice = giving up material with NO immediate compensation
-                                # - Example: Rxe6 (Rook takes pawn) where the Rook will be captured next
-                                # - NOT a sacrifice: Rxe6 where the Rook safely captures and stays protected
-                                #
-                                # The KEY insight: The engine evaluation ALREADY includes whether pieces are hanging!
-                                # - If Rxa7 leaves the Rook hanging, the evaluation will DROP significantly
-                                # - If Rxa7 is safe, the evaluation will IMPROVE (we gained a pawn)
-                                #
-                                # CORRECT LOGIC:
-                                # A capture is a "spectacular sacrifice" IF:
-                                # 1. Moving piece is more valuable than captured piece (Q×P, R×P, etc.)
-                                # 2. Position evaluation DROPS materially (piece is hanging/will be captured)
-                                # 3. BUT it's still the best move (tactical brilliance - sacrifice for compensation)
-                                # 4. AND position remains winning overall (not just drawing)
-                                #
-                                # Examples:
-                                # - Rxe6! (Brilliant): Rook takes pawn, rook hangs, but leads to forced mate
-                                #   → moving_value=5 > captured_value=1 ✓
-                                #   → evaluation drops ~400cp (rook value) but is best move ✓
-                                #   → position winning after (+300cp) ✓
-                                #
-                                # - Rxa7 (Best Move, NOT Brilliant): Rook safely takes pawn
-                                #   → moving_value=5 > captured_value=1 ✓
-                                #   → evaluation IMPROVES ~100cp (gained pawn) ✗
-                                #   → Not a sacrifice, just winning material
-                                #
-                                # - Qxh7+ (Brilliant Greek Gift): Queen takes pawn with check, Queen trapped but mate follows
-                                #   → moving_value=9 > captured_value=1 ✓
-                                #   → evaluation drops ~800cp (Queen lost) but is best move ✓
-                                #   → position winning after (mate threat) ✓
+                                # Non-obvious if: multiple good moves exist (within 50cp) OR move is uniquely strong
+                                alternatives_close = abs(best_score - second_best_score) <= 50
+                                move_uniquely_strong = (best_score - second_best_score) > 150
 
-                                # Check if this COULD be a material sacrifice (piece more valuable than capture)
-                                is_potential_sacrifice = moving_value > captured_value
-                                sacrifice_value = moving_value - captured_value if is_potential_sacrifice else 0
+                                is_non_obvious = alternatives_close or move_uniquely_strong
+                            else:
+                                # If only one legal move, it's not brilliant (forced)
+                                is_non_obvious = len(list(board.legal_moves)) > 3
 
-                                # TRUE sacrifice detection: Did the evaluation DROP significantly?
-                                # (This means the piece is likely hanging or will be lost)
-                                #
-                                # CRITICAL: Compare BEFORE and AFTER position evaluations
-                                # If evaluation drops by ~piece value, it's a real sacrifice
-                                #
-                                # For a Rook "sacrifice" (value 5 = 500cp):
-                                # - Evaluation should drop by ~400-500cp (rook will be lost)
-                                # - But move is still "best" (tactical compensation)
-                                #
-                                # For normal winning captures (Rxa7 safely):
-                                # - Evaluation IMPROVES by ~100cp (gained pawn)
-                                # - This is NOT a sacrifice!
-                                evaluation_dropped = optimal_cp - actual_cp  # Positive if position got worse
+                            # Apply rating-adjusted threshold
+                            num_legal_moves = len(list(board.legal_moves))
+                            is_non_obvious = is_non_obvious and num_legal_moves >= rating_thresholds['non_obvious_threshold']
 
-                                # Significant evaluation drop indicates real sacrifice:
-                                # - Must drop by at least 200cp (2 pawns worth)
-                                # - This ensures we're truly giving up material, not just winning it
-                                evaluation_drop_significant = evaluation_dropped >= 200
-
-                                # Final sacrifice criteria (MUCH stricter):
-                                significant_sacrifice = (
-                                    is_potential_sacrifice and  # Capturing with more valuable piece
-                                    sacrifice_value >= 3 and  # At least 3 points difference (Q/R sacrifice)
-                                    evaluation_drop_significant  # Evaluation drops significantly (piece is actually sacrificed)
-                                )
-
-                                # Position must be WINNING after sacrifice (not just equal)
-                                # This prevents labeling equal trades as brilliant
-                                position_winning_after = actual_cp >= 100  # Winning by at least 1.0 pawns
-
-                                # Player must not already be completely winning (not just converting)
-                                # This prevents labeling obvious winning moves as brilliant
-                                not_already_completely_winning = optimal_cp < 300  # Not already +3 pawns ahead
-
-                                # Position must be maintained or improved (not deteriorated)
-                                position_maintained = actual_cp >= optimal_cp - 30  # Didn't get worse by more than 0.3 pawns
-
-                                sacrifice_trigger = (
-                                    significant_sacrifice and
-                                    position_winning_after and
-                                    not_already_completely_winning and
-                                    position_maintained
-                                )
+                        except Exception as e:
+                            print(f"[BRILLIANT] Error in non-obvious detection: {e}")
+                            # Fallback: assume non-obvious if position is complex
+                            num_legal_moves = len(list(board.legal_moves))
+                            is_non_obvious = num_legal_moves >= rating_thresholds['non_obvious_threshold']
 
                         # Restore the board state
                         board.push(move)
 
-                        # Brilliant ONLY for:
-                        # - Finding very short forced mate (3 moves or less) OR
-                        # - Spectacular sacrifice (3+ material) that maintains winning position
-                        is_brilliant = forcing_mate_trigger or sacrifice_trigger
+                        # -----------------------------------------------------------------------
+                        # CRITERION 2: Forced Mate Detection (Rating-Adjusted)
+                        # -----------------------------------------------------------------------
+                        # Finding a forced mate, especially a short one, is brilliant
+                        forcing_mate_trigger = (
+                            eval_after.pov(player_color).is_mate() and
+                            not eval_before.pov(player_color).is_mate() and
+                            abs(eval_after.pov(player_color).mate()) <= rating_thresholds['mate_in_moves']
+                        )
+
+                        # -----------------------------------------------------------------------
+                        # CRITERION 3: Material Sacrifice Detection (Rating-Adjusted)
+                        # -----------------------------------------------------------------------
+                        piece_values = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}
+                        sacrifice_trigger = False
+
+                        # Check both captures AND non-capturing sacrifices (e.g., piece moves to hanging square)
+                        board.pop()  # Undo move to check original position
+
+                        moving_piece = board.piece_at(move.from_square)
+                        if moving_piece:
+                            moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
+
+                            # Type 1: Capture Sacrifices (taking with more valuable piece)
+                            if board.is_capture(move):
+                                captured_piece = board.piece_at(move.to_square)
+                                if captured_piece:
+                                    captured_value = piece_values.get(captured_piece.symbol().upper(), 0)
+
+                                    # Chess.com: Sacrifice = giving up material for tactical compensation
+                                    # Key: Compare position evaluations to see if material is truly sacrificed
+                                    is_potential_sacrifice = moving_value > captured_value
+                                    sacrifice_value = moving_value - captured_value if is_potential_sacrifice else 0
+
+                                    # Calculate if evaluation "drops" compared to material exchange
+                                    # For a true sacrifice: position should be worse than simple material exchange
+                                    material_exchange_value = (moving_value - captured_value) * 100  # Convert to centipawns
+                                    expected_eval = optimal_cp - material_exchange_value
+
+                                    # True sacrifice: position evaluation is significantly worse than expected
+                                    # but still winning overall (tactical compensation exists)
+                                    # Rating-adjusted: lower ratings = more lenient
+                                    is_true_sacrifice = (
+                                        is_potential_sacrifice and
+                                        sacrifice_value >= rating_thresholds['min_sacrifice_value'] and
+                                        actual_cp < expected_eval + 150  # Eval worse than expected exchange
+                                    )
+
+                                    # Type 2: Check for pieces hanging after sacrifice
+                                    board.push(move)
+                                    moving_piece_hangs = False
+                                    to_square = move.to_square
+
+                                    # Check if the piece that just moved is now hanging
+                                    if board.piece_at(to_square):
+                                        # Check if piece is attacked and not defended enough
+                                        attackers = board.attackers(not player_color, to_square)
+                                        defenders = board.attackers(player_color, to_square)
+                                        moving_piece_hangs = len(attackers) > len(defenders)
+
+                                    board.pop()
+
+                                    # Sacrifice if piece hangs OR evaluation drop detected
+                                    sacrifice_detected = is_true_sacrifice or (
+                                        is_potential_sacrifice and
+                                        moving_piece_hangs and
+                                        sacrifice_value >= rating_thresholds['min_sacrifice_value']
+                                    )
+
+                                    if sacrifice_detected:
+                                        # Additional Chess.com criteria (rating-adjusted):
+                                        # - Position should not be completely winning already (not just converting)
+                                        # - Position should remain favorable after sacrifice (tactical compensation)
+
+                                        # Rating-adjusted: allow wider range for lower ratings
+                                        not_already_crushing = optimal_cp < rating_thresholds['max_position_cp']
+
+                                        # Position should be at least equal or slightly worse, but with compensation
+                                        # Rating-adjusted: allow more deficit for lower ratings
+                                        has_compensation = actual_cp >= rating_thresholds['min_compensation_cp']
+
+                                        # For mates, always consider as having compensation
+                                        if eval_after.pov(player_color).is_mate():
+                                            has_compensation = True
+
+                                        sacrifice_trigger = (
+                                            sacrifice_detected and
+                                            not_already_crushing and
+                                            has_compensation
+                                        )
+
+                            # Type 2: Non-Capture Sacrifices (moving piece to hanging square)
+                            elif moving_value >= rating_thresholds['min_sacrifice_value']:  # Rating-adjusted minimum
+                                board.push(move)
+                                to_square = move.to_square
+
+                                # Check if piece is now hanging
+                                attackers = board.attackers(not player_color, to_square)
+                                defenders = board.attackers(player_color, to_square)
+                                piece_hangs = len(attackers) > len(defenders)
+
+                                board.pop()
+
+                                if piece_hangs:
+                                    # Non-capture sacrifice: moved piece to attacked square
+                                    # Check if it's truly sacrificial (eval drops or stays winning with compensation)
+                                    not_already_crushing = optimal_cp < rating_thresholds['max_position_cp']
+                                    has_compensation = (
+                                        actual_cp >= rating_thresholds['min_compensation_cp'] or
+                                        eval_after.pov(player_color).is_mate()
+                                    )
+
+                                    sacrifice_trigger = (
+                                        not_already_crushing and
+                                        has_compensation
+                                    )
+
+                        # Restore board state
+                        board.push(move)
+
+                        # -----------------------------------------------------------------------
+                        # FINAL BRILLIANT DETERMINATION
+                        # -----------------------------------------------------------------------
+                        # Chess.com criteria:
+                        # - Forced mate (even if position was already good) OR
+                        # - Sacrifice that is non-obvious
+                        #
+                        # Note: is_non_obvious check ensures move is not trivial/forced
+                        is_brilliant = (forcing_mate_trigger or (sacrifice_trigger and is_non_obvious))
 
                     # Convert evaluation to dict
                     evaluation = {
@@ -1601,12 +1828,26 @@ class ChessAnalysisEngine:
                     eval_before_cp = eval_before.pov(player_color).score(mate_score=1000) if eval_before else 0
                     eval_after_cp = eval_after.pov(player_color).score(mate_score=1000) if eval_after else 0
 
+                    # Convert best move to SAN notation for frontend display
+                    best_move_san = ""
+                    if best_move_before:
+                        try:
+                            # Temporarily undo the actual move to get back to "before" state
+                            board.pop()
+                            best_move_san = board.san(best_move_before)
+                            # Restore the actual move
+                            board.push(move)
+                        except Exception as e:
+                            logger.warning(f"Failed to convert best move to SAN: {e}")
+                            best_move_san = best_move_before.uci()
+
                     # Create basic move analysis
                     move_analysis = MoveAnalysis(
                         move=move.uci(),
                         move_san=move_san,
                         evaluation=evaluation,
                         best_move=best_move_before.uci() if best_move_before else None,
+                        best_move_san=best_move_san,  # Add SAN notation for best move
                         best_move_pv=best_move_pv,  # Full PV for the best move line
                         is_best=is_best,
                         is_brilliant=is_brilliant,

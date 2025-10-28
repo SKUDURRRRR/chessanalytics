@@ -37,47 +37,28 @@ export class ProfileService {
     displayName?: string
   ): Promise<UserProfile> {
     try {
-      const canonicalUserId = normalizeUserId(userId, platform)
-      // Try to get existing profile
-      const { data: existingProfile, error: fetchError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('user_id', canonicalUserId)
-        .eq('platform', platform)
-        .maybeSingle()
+      // Use backend API which has service role access
+      const API_BASE_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8000'
 
-      // If profile exists and no error, return it
-      if (existingProfile && !fetchError) {
-        // Update last accessed time
-        await this.updateLastAccessed(canonicalUserId, platform)
-        return existingProfile
-      }
-
-      // If error is "not found", continue to create profile
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        console.warn('Error fetching existing profile:', fetchError)
-        // Continue to create profile anyway
-      }
-
-      // Create new profile
-      const { data: newProfile, error: createError } = await supabase
-        .from('user_profiles')
-        .insert({
-          user_id: canonicalUserId,
+      const response = await fetch(`${API_BASE_URL}/api/v1/profiles`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId,
           platform: platform,
           display_name: displayName || userId,
-          current_rating: 1200,
-          total_games: 0,
-          win_rate: 0,
-        })
-        .select()
-        .single()
+        }),
+      })
 
-      if (createError) {
-        throw new Error(`Failed to create profile: ${createError.message}`)
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(`Failed to create profile: ${errorData.detail || response.statusText}`)
       }
 
-      return newProfile
+      const profile = await response.json()
+      return profile
     } catch (error) {
       console.error('Error getting/creating profile:', error)
       throw error

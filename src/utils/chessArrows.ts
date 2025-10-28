@@ -17,10 +17,10 @@ export interface ModernArrow {
 export type MoveClassification =
   | 'brilliant'
   | 'best'
-  | 'great'
-  | 'excellent'
-  | 'good'
-  | 'acceptable'
+  | 'excellent'  // Merged: great+excellent (5-25cp loss)
+  | 'great'  // Kept for backward compatibility, maps to excellent
+  | 'good'  // Merged: good+acceptable (25-100cp loss)
+  | 'acceptable'  // Kept for backward compatibility, maps to good
   | 'inaccuracy'
   | 'mistake'
   | 'blunder'
@@ -161,10 +161,11 @@ export function generateModernMoveArrows(
   const arrows: ModernArrow[] = []
 
   // Determine if we should show the best move suggestion
+  // Show best move arrow for any move that is NOT "best" or "brilliant"
   const shouldShowBestMove =
     moveAnalysis.bestMoveSan &&
     moveAnalysis.bestMoveSan !== moveAnalysis.san &&
-    ['inaccuracy', 'mistake', 'blunder'].includes(moveAnalysis.classification)
+    !['best', 'brilliant'].includes(moveAnalysis.classification)
 
   // Add arrow for the actual move played
   const actualMove = sanToUci(moveAnalysis.san, chess)

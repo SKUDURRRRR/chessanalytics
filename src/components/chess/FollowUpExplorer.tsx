@@ -66,10 +66,11 @@ export function FollowUpExplorer({
   }, [explorationMoves])
 
   // Check if this move has a better alternative
+  // Show for any move that is NOT "best" or "brilliant"
   const hasBetterMove = useMemo(() => {
     return currentMove.bestMoveSan &&
            currentMove.bestMoveSan !== currentMove.san &&
-           ['inaccuracy', 'mistake', 'blunder'].includes(currentMove.classification)
+           !['best', 'brilliant'].includes(currentMove.classification)
   }, [currentMove])
 
   // Calculate current exploration position and generate analysis

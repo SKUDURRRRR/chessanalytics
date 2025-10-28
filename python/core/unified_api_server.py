@@ -461,6 +461,8 @@ class AnalysisStats(BaseModel):
     inaccuracies_per_game: float
     brilliant_moves_per_game: float
     material_sacrifices_per_game: float
+    is_mock_data: bool = False  # Indicates if this is placeholder/mock data
+    analysis_status: str = "complete"  # Status: "complete", "no_analyses", "partial"
 
 class AnalysisProgress(BaseModel):
     """Analysis progress tracking."""
@@ -592,6 +594,8 @@ class DeepAnalysisData(BaseModel):
     ai_style_analysis: Optional[Dict[str, str]] = None
     personality_insights: Optional[Dict[str, str]] = None
     enhanced_opening_analysis: Optional[EnhancedOpeningAnalysis] = None
+    is_fallback_data: bool = False  # Indicates if this is fallback/neutral data
+    analysis_status: str = "complete"  # Status: "complete", "no_analyses", "insufficient_data"
 
 # ============================================================================
 # UNIFIED API ENDPOINTS
@@ -2297,10 +2301,21 @@ async def get_deep_analysis(
 
         if DEBUG:
             print(f"[DEBUG] Final analyses count: {len(analyses)} for {canonical_user_id}")
+            if analyses and len(analyses) > 0:
+                # Check if first analysis has moves_analysis
+                first_analysis = analyses[0]
+                has_moves = 'moves_analysis' in first_analysis and first_analysis['moves_analysis']
+                print(f"[DEBUG] First analysis has moves_analysis: {has_moves}")
+                if has_moves:
+                    print(f"[DEBUG] Number of moves in first analysis: {len(first_analysis['moves_analysis'])}")
+                else:
+                    print(f"[DEBUG] First analysis keys: {list(first_analysis.keys())}")
 
         if not analyses:
+            print(f"[INFO] No analyses found for {canonical_user_id} - returning fallback data")
             result = _build_fallback_deep_analysis(canonical_user_id, games, profile)
         else:
+            print(f"[INFO] Building deep analysis from {len(analyses)} analysis records")
             result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile)
 
         # Cache the result before returning
@@ -2678,6 +2693,7 @@ def _compute_personality_scores(
     from .personality_scoring import PersonalityScorer, PersonalityScores
 
     if not analyses:
+        print("[INFO] No analyses provided to _compute_personality_scores - returning neutral scores")
         return PersonalityScores.neutral().to_dict()
 
     scorer = PersonalityScorer()
@@ -2685,11 +2701,14 @@ def _compute_personality_scores(
     weights = []
 
     # Process each analysis
+    analyses_with_moves = 0
     for analysis in analyses:
         # Extract moves data
         moves_data = analysis.get('moves_analysis', [])
         if not moves_data:
             continue
+
+        analyses_with_moves += 1
 
         # Convert moves to the format expected by PersonalityScorer
         moves = []
@@ -2733,7 +2752,10 @@ def _compute_personality_scores(
             weight = float(len(moves))
         weights.append(weight)
 
+    print(f"[INFO] Personality scoring: {len(analyses)} analyses provided, {analyses_with_moves} had moves_analysis, {len(score_lists)} contributed to scores")
+
     if not score_lists:
+        print("[INFO] No valid move data found in analyses - returning neutral scores")
         return PersonalityScores.neutral().to_dict()
 
     # Aggregate scores
@@ -4139,23 +4161,26 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
         if not opening or opening == 'Unknown':
             continue
 
+        # Convert ECO codes to full opening names for better display
+        display_opening = get_opening_name_from_eco_code(opening)
+
         color = game.get('color')
         result = game.get('result')
 
         # IMPORTANT: Only count openings that the player actually plays
-        if not _should_count_opening_for_color(opening, color):
+        if not _should_count_opening_for_color(display_opening, color):
             continue
 
         if color == 'white':
-            white_openings[opening] += 1
+            white_openings[display_opening] += 1
         elif color == 'black':
-            black_openings[opening] += 1
+            black_openings[display_opening] += 1
 
-        if opening not in opening_results:
-            opening_results[opening] = {'wins': 0, 'total': 0}
-        opening_results[opening]['total'] += 1
+        if display_opening not in opening_results:
+            opening_results[display_opening] = {'wins': 0, 'total': 0}
+        opening_results[display_opening]['total'] += 1
         if result == 'win':
-            opening_results[opening]['wins'] += 1
+            opening_results[display_opening]['wins'] += 1
 
     # Calculate diversity score
     total_white = sum(white_openings.values())
@@ -4472,7 +4497,9 @@ def _build_fallback_deep_analysis(
         },
         famous_players=famous_players,
         ai_style_analysis=None,
-        personality_insights=None
+        personality_insights=None,
+        is_fallback_data=True,  # IMPORTANT: Indicates this is fallback/neutral data
+        analysis_status="no_analyses"  # Status message for UI
     )
 async def _fetch_chesscom_games(
     user_id: str,
@@ -5581,8 +5608,9 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
         # Normalize opening name to family for efficient filtering and grouping
         # This consolidates variations (e.g., "Sicilian Defense, Najdorf") into families ("Sicilian Defense")
         # matching frontend expectations and enabling proper match history filtering
-        # IMPORTANT: Prioritize actual opening name over ECO code to avoid "Uncommon Opening" for A00
-        raw_opening = game.opening or game.opening_family or 'Unknown'
+        # IMPORTANT: Prioritize ECO code (opening_family) over generic "Unknown" in opening field
+        # Chess.com provides ECO codes in opening_family, which normalize_opening_name can convert to names
+        raw_opening = game.opening_family or game.opening or 'Unknown'
         opening_normalized = normalize_opening_name(raw_opening)
 
         games_rows.append({
@@ -6533,6 +6561,63 @@ async def check_user_exists(request: dict):
         print(f"Error checking user existence: {e}")
         return {"exists": False}
 
+@app.post("/api/v1/profiles")
+async def get_or_create_profile(request: dict):
+    """Get or create a user profile using service role access."""
+    try:
+        user_id = request.get("user_id")
+        platform = request.get("platform")
+        display_name = request.get("display_name")
+
+        if not user_id or not platform:
+            raise HTTPException(status_code=400, detail="Missing user_id or platform")
+
+        if platform not in ["lichess", "chess.com"]:
+            raise HTTPException(status_code=400, detail="Platform must be 'lichess' or 'chess.com'")
+
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(user_id, platform)
+
+        # Use service role to check if profile exists
+        if not supabase_service:
+            raise HTTPException(status_code=500, detail="Database service not available")
+
+        # Try to get existing profile
+        result = supabase_service.table("user_profiles").select("*").eq(
+            "user_id", canonical_user_id
+        ).eq("platform", platform).maybe_single().execute()
+
+        # If profile exists, update last_accessed and return it
+        if result.data:
+            updated = supabase_service.table("user_profiles").update({
+                "last_accessed": datetime.utcnow().isoformat()
+            }).eq("user_id", canonical_user_id).eq("platform", platform).execute()
+            return updated.data[0] if updated.data else result.data
+
+        # Create new profile with service role
+        profile_data = {
+            "user_id": canonical_user_id,
+            "platform": platform,
+            "display_name": display_name or user_id,
+            "current_rating": 1200,
+            "total_games": 0,
+            "win_rate": 0.0,
+            "last_accessed": datetime.utcnow().isoformat()
+        }
+
+        create_result = supabase_service.table("user_profiles").insert(profile_data).execute()
+
+        if not create_result.data:
+            raise HTTPException(status_code=500, detail="Failed to create profile")
+
+        return create_result.data[0]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_or_create_profile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -6942,8 +7027,11 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         move_count = sum(1 for _ in game.mainline_moves())
 
                         opening_value = headers.get('Opening', 'Unknown')
+                        eco_value = headers.get('ECO', 'Unknown')
+                        # Prioritize ECO code for normalization as it's more reliable
+                        raw_opening_for_normalization = eco_value if eco_value != 'Unknown' else opening_value
                         # Normalize opening name to family for consistent filtering
-                        opening_normalized = normalize_opening_name(opening_value)
+                        opening_normalized = normalize_opening_name(raw_opening_for_normalization)
 
                         game_record = {
                             "user_id": canonical_user_id,
@@ -6953,7 +7041,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                             "color": color,
                             "time_control": headers.get('TimeControl', 'unknown'),
                             "opening": opening_value,
-                            "opening_family": opening_value,
+                            "opening_family": eco_value,
                             "opening_normalized": opening_normalized,
                             "opponent_rating": None,
                             "my_rating": None,
@@ -7682,22 +7770,24 @@ def _get_empty_stats() -> AnalysisStats:
 def _get_mock_stats() -> AnalysisStats:
     """Return mock stats for development when database is not available."""
     return AnalysisStats(
-        total_games_analyzed=15,
-        average_accuracy=78.5,
-        total_blunders=3,
-        total_mistakes=8,
-        total_inaccuracies=12,
-        total_brilliant_moves=2,
-        total_material_sacrifices=1,
-        average_opening_accuracy=82.3,
-        average_middle_game_accuracy=76.8,
-        average_endgame_accuracy=79.2,
-        average_aggressiveness_index=65.4,
-        blunders_per_game=0.2,
-        mistakes_per_game=0.53,
-        inaccuracies_per_game=0.8,
-        brilliant_moves_per_game=0.13,
-        material_sacrifices_per_game=0.07
+        total_games_analyzed=0,
+        average_accuracy=0,
+        total_blunders=0,
+        total_mistakes=0,
+        total_inaccuracies=0,
+        total_brilliant_moves=0,
+        total_material_sacrifices=0,
+        average_opening_accuracy=0,
+        average_middle_game_accuracy=0,
+        average_endgame_accuracy=0,
+        average_aggressiveness_index=0,
+        blunders_per_game=0,
+        mistakes_per_game=0,
+        inaccuracies_per_game=0,
+        brilliant_moves_per_game=0,
+        material_sacrifices_per_game=0,
+        is_mock_data=True,  # IMPORTANT: Indicates this is placeholder data
+        analysis_status="no_analyses"  # Status message for UI
     )
 
 def _get_mock_analysis_results() -> List[GameAnalysisSummary]:

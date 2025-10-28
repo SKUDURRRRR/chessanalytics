@@ -456,9 +456,12 @@ class PersonalityScorer:
         king_component = king_pressure * 60.0 + check_density * 80.0  # Amplified
 
         quiet_penalty = quiet_ratio * 50.0  # Increased penalty for quiet play
-        risk_penalty = risk_ratio * 40.0  # Reduced - aggression involves risk
 
-        score = base + forcing_component + pressure_component + initiative_component + king_component - quiet_penalty - risk_penalty
+        # BUGFIX: Removed risk_penalty - aggressive players SHOULD take risks!
+        # Risk (making mistakes) is about accuracy, not aggression
+        # Old: risk_penalty = risk_ratio * 40.0 (inappropriate)
+
+        score = base + forcing_component + pressure_component + initiative_component + king_component - quiet_penalty
         return self.clamp_score(score)
 
     def score_patient(self, metrics: PersonalityMetrics) -> float:
@@ -500,10 +503,17 @@ class PersonalityScorer:
 
         time_component = time_factor * 18.0  # Reduced from 20.0
 
-        # Risk penalties (quadratic scaling so repeated risk matters)
-        risk_penalty = (risk_ratio ** 2) * 250.0 + severe_risk_ratio * 80.0 + metrics.risk_loss * 0.15  # Keep same
+        # Risk penalties - SIGNIFICANTLY REDUCED
+        # BUGFIX 3: Risk (making mistakes) is about ACCURACY, not PATIENCE
+        # Patient should measure calmness/consistency, not tactical accuracy
+        # Old formula: (risk_ratio ** 2) * 120.0 + severe_risk_ratio * 40.0 (too harsh)
+        # New formula: Much lighter penalty, mainly for severe/repeated mistakes
+        risk_penalty = severe_risk_ratio * 20.0 + (risk_ratio ** 2) * 30.0
 
-        forcing_penalty = forcing_ratio * 75.0  # Increased from 55.0 to create stronger opposition with Aggressive
+        # BUGFIX 2: Reduced forcing_penalty to better balance with Aggressive score
+        # Old: 75.0 was creating too much opposition even for moderately active players
+        # New: 45.0 creates appropriate opposition while allowing balanced players to have ~50
+        forcing_penalty = forcing_ratio * 45.0
 
         score = base + quiet_component + endgame_component + time_component - liquidation_penalty - risk_penalty - forcing_penalty
         return self.clamp_score(score)
