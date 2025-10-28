@@ -1952,6 +1952,8 @@ class ChessAnalysisEngine:
                 'is_inaccuracy': move.is_inaccuracy,
                 'evaluation_before': move.evaluation_before,
                 'evaluation_after': move.evaluation_after,
+                'heuristic_details': move.heuristic_details,
+                'player_color': move.player_color,
             })
 
         scorer = PersonalityScorer()

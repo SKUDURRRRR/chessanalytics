@@ -1387,22 +1387,97 @@ def _compute_personal_records(existing_records: Dict[str, Any], game: Dict[str, 
 
 
 def _get_time_control_category(time_control: str) -> str:
-    """Helper function to categorize time controls."""
-    if not time_control:
+    """Helper function to categorize time controls.
+
+    Properly parses time control strings and categorizes them based on total time.
+    Aligned with Lichess boundaries and frontend logic (src/utils/timeControlUtils.ts).
+
+    Args:
+        time_control: Time control string (e.g., "180+0", "600+5", "blitz", "1800+20")
+
+    Returns:
+        Category string: 'Bullet', 'Blitz', 'Rapid', 'Classical', 'Correspondence', or 'Other'
+    """
+    if not time_control or time_control.lower() == 'unknown':
         return 'Unknown'
-    tc = time_control.lower()
-    if 'bullet' in tc or ('180' in tc and '+0' in tc) or ('60' in tc):
-        return 'Bullet'
-    elif 'blitz' in tc or ('300' in tc) or ('180' in tc):
-        return 'Blitz'
-    elif 'rapid' in tc or ('600' in tc) or ('900' in tc) or ('1800' in tc):
-        return 'Rapid'
-    elif 'classical' in tc or 'standard' in tc:
-        return 'Classical'
-    elif 'correspondence' in tc or 'daily' in tc:
+
+    tc = time_control.strip()
+    tc_lower = tc.lower()
+
+    # Handle correspondence games (Lichess uses "-" or formats like "1/1")
+    if tc == '-' or '/' in tc or 'correspondence' in tc_lower or 'daily' in tc_lower:
         return 'Correspondence'
-    else:
+
+    # Check if it's a pre-labeled category (e.g., "bullet", "blitz", "rapid")
+    if tc_lower in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
+        return tc_lower.capitalize()
+
+    # Parse time control to calculate total time
+    total_time = 0
+
+    try:
+        if '+' in tc:
+            # Format: "base+increment" (e.g., "180+0", "600+5")
+            parts = tc.split('+')
+            if len(parts) != 2:
+                return 'Other'
+
+            base = float(parts[0])
+            increment = float(parts[1])
+
+            # Determine if base is in minutes or seconds based on typical values
+            # Lichess formats: 60, 180, 300, 600, 900, 1800 (seconds)
+            # Or: 1, 3, 5, 10, 15, 30 (minutes)
+            if base >= 60 and base % 60 == 0 and base <= 1800:
+                # Seconds format (60, 180, 300, 600, 900, 1800)
+                base_seconds = base
+                increment_seconds = increment
+                # Total time estimate: base + (increment * 40 moves average)
+                total_time = base_seconds + increment_seconds * 40
+            elif base <= 30:
+                # Minutes format (1, 3, 5, 10, 15, 30)
+                base_seconds = base * 60
+                increment_seconds = increment
+                total_time = base_seconds + increment_seconds * 40
+            else:
+                # Fallback: assume seconds
+                total_time = base + increment * 40
+
+        elif tc.replace('.', '', 1).isdigit():
+            # Format: just a number (e.g., "180", "600")
+            base = float(tc)
+
+            if base >= 60 and base % 60 == 0 and base <= 1800:
+                # Seconds format
+                total_time = base
+            elif base <= 30:
+                # Minutes format
+                total_time = base * 60
+            else:
+                # Fallback: assume seconds
+                total_time = base
+        else:
+            # Unrecognized format
+            return 'Other'
+
+    except (ValueError, AttributeError):
+        # Failed to parse - return Other
         return 'Other'
+
+    # Categorize based on total time - aligned with Lichess boundaries
+    # Lichess uses: Bullet (< 3 min), Blitz (3-8 min), Rapid (8-25 min), Classical (25+ min)
+    if total_time < 180:
+        # Less than 3 minutes (e.g., 60+0, 120+1)
+        return 'Bullet'
+    elif total_time < 480:
+        # 3-8 minutes (e.g., 180+0, 180+2, 300+0)
+        return 'Blitz'
+    elif total_time < 1500:
+        # 8-25 minutes (e.g., 600+0, 600+5, 900+10)
+        return 'Rapid'
+    else:
+        # 25+ minutes (e.g., 1800+0, 1800+20)
+        return 'Classical'
 def _calculate_performance_trends(games: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Calculate performance trends similar to TypeScript calculatePerformanceTrends function.
 
@@ -2628,6 +2703,10 @@ def _compute_personality_scores(
                     'is_blunder': move.get('is_blunder', False),
                     'is_mistake': move.get('is_mistake', False),
                     'is_inaccuracy': move.get('is_inaccuracy', False),
+                    'evaluation_before': move.get('evaluation_before'),
+                    'evaluation_after': move.get('evaluation_after'),
+                    'heuristic_details': move.get('heuristic_details', {}),
+                    'player_color': move.get('player_color', ''),
                 })
 
         if not moves:

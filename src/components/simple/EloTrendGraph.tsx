@@ -207,13 +207,13 @@ export function EloTrendGraph({
             id="time-control-selector"
             value={activeTimeControl}
             onChange={handleTimeControlSelection}
-            className="rounded-full border border-white/10 bg-slate-800/50 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30 min-w-0 flex-1 sm:flex-none"
+            className="rounded-full border border-white/10 bg-slate-800/50 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30 min-w-0 flex-1 sm:flex-none appearance-none"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23cbd5e1' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-              backgroundPosition: 'right 8px center',
+              backgroundPosition: 'right 4px center',
               backgroundRepeat: 'no-repeat',
-              backgroundSize: '16px',
-              paddingRight: '32px'
+              backgroundSize: '14px',
+              paddingRight: '24px'
             }}
           >
             {availableTimeControls.map(option => (
@@ -234,13 +234,13 @@ export function EloTrendGraph({
             id="game-limit-selector"
             value={gameLimit}
             onChange={(e) => setGameLimit(Number(e.target.value))}
-            className="rounded-full border border-white/10 bg-slate-800/50 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30 min-w-0 flex-1 sm:flex-none"
+            className="rounded-full border border-white/10 bg-slate-800/50 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30 min-w-0 flex-1 sm:flex-none appearance-none"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23cbd5e1' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-              backgroundPosition: 'right 8px center',
+              backgroundPosition: 'right 4px center',
               backgroundRepeat: 'no-repeat',
-              backgroundSize: '16px',
-              paddingRight: '32px'
+              backgroundSize: '14px',
+              paddingRight: '24px'
             }}
           >
             <option value={25} className="bg-slate-800 text-slate-100">Last 25</option>
