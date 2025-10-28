@@ -481,7 +481,7 @@ All personality scoring formulas are centralized in:
 
 **Documentation:**
 - `docs/PERSONALITY_MODEL.md` - Trait semantics and data contracts
-- `PERSONALITY_SCORING_AUDIT_2025.md` - Complete system audit
+- `docs/PERSONALITY_SCORING_AUDIT_2025.md` - Complete system audit
 
 ---
 

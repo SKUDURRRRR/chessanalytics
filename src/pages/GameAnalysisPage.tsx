@@ -17,12 +17,19 @@ import { getDarkChessBoardTheme } from '../utils/chessBoardTheme'
 import { generateMoveArrows, generateModernMoveArrows, Arrow } from '../utils/chessArrows'
 import { ModernChessArrows } from '../components/chess/ModernChessArrows'
 import { buildHumanComment, CommentContext, HumanReasonContext } from '../utils/commentTemplates'
+import { generateChessComComment, formatChessComComment, type ChessComCommentContext } from '../utils/chessComStyleComments'
 import { calculatePerformanceRating, MoveForRating } from '../utils/performanceRatingCalculator'
+import { convertPvToSan } from '../utils/pvConverter'
+import { useExplorationAnalysis } from '../hooks/useExplorationAnalysis'
+import { useChessSound } from '../hooks/useChessSound'
+import { useChessSoundSettings } from '../contexts/ChessSoundContext'
+import { getMoveSoundSimple } from '../utils/chessSounds'
 import type { MatchHistoryGameSummary, Platform } from '../types'
 
 interface EvaluationInfo {
   type: 'cp' | 'mate'
   value: number
+  pv?: string[]  // Principal Variation from Stockfish (UCI moves)
 }
 
 interface AnalysisMoveRecord {
@@ -30,6 +37,7 @@ interface AnalysisMoveRecord {
   move_san: string
   evaluation?: EvaluationInfo
   best_move?: string
+  best_move_pv?: string[]  // PV for the best move line (UCI moves)
   explanation?: string
   centipawn_loss?: number
   is_best?: boolean
@@ -41,9 +49,24 @@ interface AnalysisMoveRecord {
   is_inaccuracy?: boolean
   is_good?: boolean
   is_acceptable?: boolean
+
+  // Enhanced coaching fields
+  coaching_comment?: string
+  what_went_right?: string
+  what_went_wrong?: string
+  how_to_improve?: string
+  tactical_insights?: string[]
+  positional_insights?: string[]
+  risks?: string[]
+  benefits?: string[]
+  learning_points?: string[]
+  encouragement_level?: number
+  move_quality?: string
+  game_phase?: string
+  is_user_move?: boolean
 }
 
-interface ProcessedMove {
+export interface ProcessedMove {
   index: number
   ply: number
   moveNumber: number
@@ -59,6 +82,7 @@ interface ProcessedMove {
   explanation: string
   fenBefore: string
   fenAfter: string
+  pvMoves?: string[]  // Principal Variation in SAN notation for follow-up display
 
   // Enhanced coaching fields
   coachingComment?: string
@@ -333,6 +357,10 @@ export default function GameAnalysisPage() {
   const mobileOpts = useMobileOptimizations()
   const layoutContainerRef = useRef<HTMLDivElement | null>(null)
 
+  // Chess sound support
+  const { soundEnabled, volume } = useChessSoundSettings()
+  const { playSound } = useChessSound({ enabled: soundEnabled, volume })
+
   const decodedUserId = userParam ? decodeURIComponent(userParam) : ''
 
   // Handle responsive board sizing with mobile optimizations
@@ -391,6 +419,12 @@ export default function GameAnalysisPage() {
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [isReanalyzing, setIsReanalyzing] = useState(false)
   const [reanalyzeSuccess, setReanalyzeSuccess] = useState(false)
+
+  // Follow-up exploration state
+  const [isExploringFollowUp, setIsExploringFollowUp] = useState(false)
+  const [explorationMoves, setExplorationMoves] = useState<string[]>([])
+  const [explorationBaseIndex, setExplorationBaseIndex] = useState<number | null>(null)
+  const [isFreeExploration, setIsFreeExploration] = useState(false) // New: track free exploration mode
 
   const parseNumericValue = (value: unknown): number | null => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -661,50 +695,109 @@ export default function GameAnalysisPage() {
         ? evaluationToScoreForPlayer(evaluation, playerColor)
         : evaluationToScoreForPlayer(evaluation, player === 'white' ? 'black' : 'white')
 
-      const bestMoveSan = convertUciToSan(fenBefore, move.best_move) || move.best_move || 'the best move'
+      // Use best_move_san from backend if available, otherwise convert UCI to SAN
+      const bestMoveSan = move.best_move_san || convertUciToSan(fenBefore, move.best_move) || move.best_move || null
       const classification = determineClassification(move)
 
-      // Use enhanced coaching comment if available and doesn't contain centipawn references,
-      // otherwise use enhanced templates for consistent human-friendly explanations
-      let explanation
-      if (move.coaching_comment && move.coaching_comment.trim() &&
-          !move.coaching_comment.toLowerCase().includes('centipawn') &&
-          !move.coaching_comment.toLowerCase().includes('cp')) {
-        // Use coaching comment if available, not empty, and doesn't contain centipawn references
-        explanation = move.coaching_comment
-      } else {
-        // Use enhanced comment templates for variety and insight
-        const commentContext: HumanReasonContext = {
-          classification,
-          centipawnLoss: move.centipawn_loss ?? null,
-          bestMoveSan: bestMoveSan,
-          moveNumber: moveNumber,
-          isUserMove,
-          isOpeningMove: moveNumber <= 10 && (classification === 'best' || classification === 'excellent' || classification === 'good' || classification === 'great'),
-          tacticalInsights: move.tactical_insights,
-          positionalInsights: move.positional_insights,
-          risks: move.risks,
-          benefits: move.benefits,
-          fenBefore: fenBefore,
-          move: move.move_san,
+      // Convert UCI move to SAN if move_san is not available or looks incorrect
+      // This ensures we always show proper SAN notation like "Rxd5" instead of "exd5"
+      let displaySan = move.move_san
+      if (!displaySan || displaySan === move.move) {
+        // If move_san is missing or is just the UCI move, convert it
+        const convertedSan = convertUciToSan(fenBefore, move.move)
+        if (convertedSan) {
+          displaySan = convertedSan
         }
-        explanation = buildHumanComment(commentContext)
       }
 
+      // Use enhanced coaching comment if available and doesn't contain centipawn references,
+      // otherwise use Chess.com-style comments for concise tactical explanations
+      let explanation
+
+      // Try Chess.com-style comment first for more concise, tactical explanations
       try {
-        const { from, to, promotion } = parseUciMove(move.move)
-        chess.move({ from, to, promotion })
-      } catch (err) {
-        console.warn('Failed to apply move, attempting SAN fallback', move.move, err)
+        const prevEvaluation: EvaluationInfo | null = idx > 0 && rawMoves[idx - 1]?.evaluation
+          ? rawMoves[idx - 1].evaluation!
+          : null
+
+        const chessComContext: ChessComCommentContext = {
+          classification,
+          centipawnLoss: move.centipawn_loss ?? null,
+          evaluation: evaluation,
+          prevEvaluation: prevEvaluation,
+          san: displaySan,
+          bestMoveSan: bestMoveSan,
+          isUserMove,
+          player,
+          fenBefore: fenBefore,
+          fenAfter: '', // Will be set after move is applied
+          tacticalInsights: move.tactical_insights,
+          positionalInsights: move.positional_insights
+        }
+
+        // Apply move first to get fenAfter
         try {
-          chess.move(move.move_san)
-        } catch (fallbackError) {
-          console.error('Unable to apply move to board', move.move_san, fallbackError)
+          const { from, to, promotion } = parseUciMove(move.move)
+          chess.move({ from, to, promotion })
+        } catch (err) {
+          console.warn('Failed to apply move, attempting SAN fallback', move.move, err)
+          try {
+            chess.move(move.move_san)
+          } catch (fallbackError) {
+            console.error('Unable to apply move to board', move.move_san, fallbackError)
+          }
+        }
+
+        chessComContext.fenAfter = chess.fen()
+
+        const chessComComment = generateChessComComment(chessComContext)
+        explanation = formatChessComComment(chessComComment, displaySan)
+      } catch (error) {
+        console.warn('Error generating Chess.com-style comment, falling back to standard comment', error)
+
+        // Fallback to existing comment generation
+        if (move.coaching_comment && move.coaching_comment.trim() &&
+            !move.coaching_comment.toLowerCase().includes('centipawn') &&
+            !move.coaching_comment.toLowerCase().includes('cp')) {
+          explanation = move.coaching_comment
+        } else {
+          const commentContext: HumanReasonContext = {
+            classification,
+            centipawnLoss: move.centipawn_loss ?? null,
+            bestMoveSan: bestMoveSan,
+            moveNumber: moveNumber,
+            isUserMove,
+            isOpeningMove: moveNumber <= 10 && (classification === 'best' || classification === 'excellent' || classification === 'good' || classification === 'great'),
+            tacticalInsights: move.tactical_insights,
+            positionalInsights: move.positional_insights,
+            risks: move.risks,
+            benefits: move.benefits,
+            fenBefore: fenBefore,
+            move: move.move_san,
+          }
+          explanation = buildHumanComment(commentContext)
+        }
+
+        // Apply move if not already applied
+        try {
+          const { from, to, promotion } = parseUciMove(move.move)
+          chess.move({ from, to, promotion })
+        } catch (err) {
+          // Already logged
         }
       }
 
       const fenAfter = chess.fen()
       positions.push(fenAfter)
+
+      // Convert best move PV from UCI to SAN notation for follow-up display
+      // This is the continuation AFTER the best move (not after the played move)
+      let pvMoves: string[] | undefined
+      if (move.best_move_pv && Array.isArray(move.best_move_pv) && move.best_move_pv.length > 0) {
+        // The PV starts from the position BEFORE the move (fenBefore), not after
+        // First move in PV is the best move itself
+        pvMoves = convertPvToSan(fenBefore, move.best_move_pv)
+      }
 
       moves.push({
         index: idx,
@@ -712,7 +805,7 @@ export default function GameAnalysisPage() {
         moveNumber,
         player,
         isUserMove,
-        san: move.move_san,
+        san: displaySan,
         bestMoveSan,
         evaluation,
         scoreForPlayer,
@@ -722,6 +815,7 @@ export default function GameAnalysisPage() {
         explanation,
         fenBefore,
         fenAfter,
+        pvMoves,  // Include converted PV moves for follow-up feature
 
         // Enhanced coaching fields
         coachingComment: move.coaching_comment,
@@ -754,45 +848,61 @@ export default function GameAnalysisPage() {
   const currentMoveArrows = useMemo(() => {
     // Check if we have moves and if currentIndex is valid
     if (!processedData.moves || processedData.moves.length === 0) {
+      console.log('[GameAnalysisPage] No moves to generate arrows for')
       return []
     }
 
-    if (currentIndex < 0 || currentIndex >= processedData.moves.length) {
+    // currentIndex refers to positions array (which includes starting position at index 0)
+    // moves array is 0-indexed and corresponds to positions [1..]
+    // So position index N shows the board AFTER move N-1
+    // We need to show arrows for the move that LED TO this position
+    const moveIndex = currentIndex - 1
+
+    if (moveIndex < 0 || moveIndex >= processedData.moves.length) {
+      console.log('[GameAnalysisPage] Move index out of bounds:', moveIndex, 'moves length:', processedData.moves.length)
       return []
     }
 
-    const currentMove = processedData.moves[currentIndex]
+    const currentMove = processedData.moves[moveIndex]
     if (!currentMove) {
+      console.log('[GameAnalysisPage] No current move at index:', moveIndex)
       return []
     }
 
-    // Create a chess instance to replay moves up to the current position
+    console.log('[GameAnalysisPage] Generating arrows for move:', {
+      moveIndex,
+      san: currentMove.san,
+      bestMoveSan: currentMove.bestMoveSan,
+      classification: currentMove.classification,
+      isUserMove: currentMove.isUserMove
+    })
+
+    // Create a chess instance to replay moves up to the position BEFORE the current move
     const chess = new Chess()
 
     // Replay all moves up to (but not including) the current move
-    for (let i = 0; i < currentIndex; i++) {
+    for (let i = 0; i < moveIndex; i++) {
       const move = processedData.moves[i]
       if (move) {
         try {
-          const { from, to, promotion } = parseUciMove(move.san)
-          chess.move({ from, to, promotion })
+          // move.san contains Standard Algebraic Notation, not UCI
+          chess.move(move.san)
         } catch (err) {
-          try {
-            chess.move(move.san)
-          } catch (fallbackError) {
-            console.warn('Failed to apply move for arrow generation:', move.san, fallbackError)
-          }
+          console.warn('Failed to apply move for arrow generation:', move.san, err)
         }
       }
     }
 
     // Generate modern arrows for the current move
-    return generateModernMoveArrows({
+    const arrows = generateModernMoveArrows({
       san: currentMove.san,
       bestMoveSan: currentMove.bestMoveSan,
       classification: currentMove.classification,
       isUserMove: currentMove.isUserMove
     }, chess)
+
+    console.log('[GameAnalysisPage] Generated arrows:', arrows.length, 'for move:', currentMove.san, 'at position index:', currentIndex, 'move index:', moveIndex)
+    return arrows
   }, [currentIndex, processedData.moves])
 
   // Auto-scroll is now handled by UnifiedChessAnalysis component
@@ -805,6 +915,11 @@ export default function GameAnalysisPage() {
         return
       }
 
+      // Don't allow keyboard navigation during follow-up exploration
+      if (isExploringFollowUp) {
+        console.log('⚠️ Keyboard navigation blocked during follow-up exploration')
+        return
+      }
 
       switch (event.key) {
         case 'ArrowLeft':
@@ -830,7 +945,7 @@ export default function GameAnalysisPage() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [currentIndex, processedData.positions.length])
+  }, [currentIndex, processedData.positions.length, isExploringFollowUp])
 
   // Re-analyze handler
   const handleReanalyze = async () => {
@@ -925,11 +1040,206 @@ export default function GameAnalysisPage() {
 
   const currentScore = currentMove ? currentMove.scoreForPlayer : 0
 
+  // Calculate display position (normal or exploration)
+  const displayPosition = useMemo(() => {
+    // If exploring (either follow-up or free), calculate exploration position
+    if (isExploringFollowUp || isFreeExploration) {
+      try {
+        // Start from the current displayed position
+        let baseFen: string
+
+        if (isExploringFollowUp && currentMove?.fenBefore) {
+          // Follow-up mode: start from before the move, then apply best move
+          baseFen = currentMove.fenBefore
+        } else {
+          // Free exploration: start from current position (after the move)
+          baseFen = processedData.positions[currentIndex] || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+        }
+
+        const game = new Chess(baseFen)
+
+        // If in follow-up mode, apply best move first
+        if (isExploringFollowUp && currentMove?.bestMoveSan) {
+          game.move(currentMove.bestMoveSan)
+        }
+
+        // Apply exploration moves
+        for (const move of explorationMoves) {
+          game.move(move)
+        }
+
+        return game.fen()
+      } catch (err) {
+        console.warn('Error calculating exploration position:', err)
+        return processedData.positions[currentIndex]
+      }
+    }
+
+    return processedData.positions[currentIndex]
+  }, [isExploringFollowUp, isFreeExploration, currentMove, explorationMoves, processedData.positions, currentIndex])
+
+  // Live analysis for exploration positions
+  const explorationAnalysis = useExplorationAnalysis(
+    (isExploringFollowUp || isFreeExploration) ? displayPosition : null,
+    isExploringFollowUp || isFreeExploration
+  )
+
   const navigateToMove = (index: number) => {
     const clampedIndex = clamp(index, 0, processedData.positions.length - 1)
     console.log('navigateToMove called:', { index, clampedIndex, currentIndex, totalPositions: processedData.positions.length })
     console.log('🔥 NAVIGATION DEBUG: Moving from', currentIndex, 'to', clampedIndex)
+
+    // If in any exploration mode, exit it first and then navigate
+    if (isExploringFollowUp || isFreeExploration) {
+      console.log('⚠️ Exiting exploration to navigate')
+      setIsExploringFollowUp(false)
+      setIsFreeExploration(false)
+      setExplorationMoves([])
+      setExplorationBaseIndex(null)
+    }
+
     setCurrentIndex(clampedIndex)
+  }
+
+  // Handle follow-up exploration
+  const handleExploringChange = (exploring: boolean) => {
+    if (exploring && currentMove) {
+      // Start guided follow-up exploration - apply the best move
+      setIsExploringFollowUp(true)
+      setIsFreeExploration(false) // Clear free exploration when starting guided
+      setExplorationMoves([])
+      setExplorationBaseIndex(currentIndex)
+    } else {
+      // Stop exploration - return to original position
+      setIsExploringFollowUp(false)
+      setIsFreeExploration(false)
+      setExplorationMoves([])
+      if (explorationBaseIndex !== null) {
+        setCurrentIndex(explorationBaseIndex)
+      }
+      setExplorationBaseIndex(null)
+    }
+  }
+
+  const handleResetExploration = () => {
+    setExplorationMoves([])
+  }
+
+  const handleExitFreeExploration = () => {
+    // Exit free exploration mode
+    setIsFreeExploration(false)
+    setExplorationMoves([])
+    if (explorationBaseIndex !== null) {
+      setCurrentIndex(explorationBaseIndex)
+    }
+    setExplorationBaseIndex(null)
+  }
+
+  const handleUndoExplorationMove = () => {
+    if (explorationMoves.length > 0) {
+      setExplorationMoves(explorationMoves.slice(0, -1))
+    }
+  }
+
+  // Handle piece drop on main board during exploration
+  const handlePieceDrop = (sourceSquare: string, targetSquare: string): boolean => {
+    console.log('🎯 handlePieceDrop called:', {
+      sourceSquare,
+      targetSquare,
+      currentIndex,
+      isExploring: isExploringFollowUp || isFreeExploration,
+      currentPosition: processedData.positions[currentIndex]
+    })
+
+    try {
+      // Determine the starting FEN for exploration
+      let startingFen: string
+
+      if (isExploringFollowUp || isFreeExploration) {
+        // Already exploring - use current exploration position
+        const game = new Chess(currentMove?.fenBefore || processedData.positions[currentIndex])
+
+        // If in follow-up mode, apply the best move first
+        if (isExploringFollowUp && currentMove?.bestMoveSan) {
+          game.move(currentMove.bestMoveSan)
+        }
+
+        // Apply exploration moves
+        for (const move of explorationMoves) {
+          game.move(move)
+        }
+
+        startingFen = game.fen()
+      } else {
+        // Not exploring yet - use CURRENT display position
+        // Important: processedData.positions[currentIndex] is the position AFTER the move at currentIndex
+        startingFen = processedData.positions[currentIndex]
+
+        if (!startingFen) {
+          // Fallback to standard chess starting position
+          startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+          console.log('⚠️ No position found, using starting position')
+        }
+      }
+
+      console.log('🎯 Starting FEN:', startingFen)
+
+      // Create a chess instance with the starting position
+      const game = new Chess(startingFen)
+
+      // Try to make the new move
+      // Only specify promotion if it's a pawn move to the 8th rank
+      const piece = game.get(sourceSquare as any)
+      const isPromotion = piece?.type === 'p' && (targetSquare[1] === '8' || targetSquare[1] === '1')
+
+      console.log('🎯 Piece info:', { piece, isPromotion, turn: game.turn() })
+
+      const moveOptions: any = {
+        from: sourceSquare,
+        to: targetSquare
+      }
+
+      if (isPromotion) {
+        moveOptions.promotion = 'q'
+      }
+
+      console.log('🎯 Attempting move with options:', moveOptions)
+
+      const move = game.move(moveOptions)
+
+            if (move) {
+              console.log('✅ Move successful:', move.san)
+
+              // Play sound for the move
+              const soundType = getMoveSoundSimple(move.san)
+              playSound(soundType)
+
+              setExplorationMoves([...explorationMoves, move.san])
+
+              // If not already exploring, enter free exploration mode
+              if (!isExploringFollowUp && !isFreeExploration) {
+                console.log('🔵 Entering free exploration mode')
+                setIsFreeExploration(true)
+                setExplorationBaseIndex(currentIndex)
+                console.log('🔵 isFreeExploration should now be TRUE')
+              } else {
+                console.log('🔵 Already in exploration mode:', { isExploringFollowUp, isFreeExploration })
+              }
+
+              return true
+            }
+    } catch (err) {
+      console.error('❌ Invalid exploration move:', err)
+    }
+
+    return false
+  }
+
+  // Handle adding exploration moves programmatically (for auto-play)
+  const handleAddExplorationMove = (move: string) => {
+    console.log('📝 Adding exploration move:', move)
+    // Use functional update to avoid stale closure issues
+    setExplorationMoves(prev => [...prev, move])
   }
 
   // Handle URL query parameter for move navigation
@@ -1242,12 +1552,12 @@ export default function GameAnalysisPage() {
           </div>
         )}
 
-        <div className="mb-8 grid-responsive lg:grid-cols-[1.3fr,1fr]">
-          <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-5 shadow-xl shadow-black/40">
+        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr,1fr]">
+          <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-4 shadow-xl shadow-black/40">
             <h1 className="text-2xl font-semibold text-white">Game Overview</h1>
-            <div className="mt-5 grid-responsive text-sm text-slate-200">
-              <div>
-                <span className="font-medium">Result: </span>
+            <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-2 text-base text-slate-200">
+              <div className="min-w-0">
+                <span className="font-medium whitespace-nowrap">Result: </span>
                 <span className={
                   gameRecord?.result === 'win'
                     ? 'text-emerald-300'
@@ -1260,29 +1570,29 @@ export default function GameAnalysisPage() {
                   {gameRecord?.result ? gameRecord.result.toUpperCase() : 'Unknown'}
                 </span>
               </div>
-              <div>
-                <span className="font-medium">Played as: </span>
+              <div className="min-w-0">
+                <span className="font-medium whitespace-nowrap">Time Control: </span>
+                <span className="break-words">{gameRecord?.time_control ? getTimeControlCategory(gameRecord.time_control) : 'N/A'}</span>
+              </div>
+              <div className="min-w-0">
+                <span className="font-medium whitespace-nowrap">Played as: </span>
                 <span className="capitalize text-white">{playerColor}</span>
               </div>
-              <div>
-                <span className="font-medium">Opponent: </span>
-                <span className="text-white">{opponentName}</span>
+              <div className="min-w-0">
+                <span className="font-medium whitespace-nowrap">Opening: </span>
+                <span className="break-words">{getOpeningNameWithFallback(gameRecord?.opening_family ?? gameRecord?.opening, gameRecord)}</span>
               </div>
-              <div>
-                <span className="font-medium">Time Control: </span>
-                <span>{gameRecord?.time_control ? getTimeControlCategory(gameRecord.time_control) : 'N/A'}</span>
+              <div className="min-w-0">
+                <span className="font-medium whitespace-nowrap">Opponent: </span>
+                <span className="text-white truncate inline-block max-w-full align-bottom">{opponentName}</span>
               </div>
-              <div>
-                <span className="font-medium">Opening: </span>
-                <span>{getOpeningNameWithFallback(gameRecord?.opening_family ?? gameRecord?.opening, gameRecord)}</span>
-              </div>
-              <div>
-                <span className="font-medium">Moves: </span>
+              <div className="min-w-0">
+                <span className="font-medium whitespace-nowrap">Moves: </span>
                 <span>{processedData.moves.length > 0 ? processedData.moves.length : analysisRecord?.total_moves ?? 0}</span>
               </div>
                {performanceRating && (
-                 <div>
-                   <span className="font-medium">Performance Rating: </span>
+                 <div className="min-w-0 col-span-2">
+                   <span className="font-medium whitespace-nowrap">Performance Rating: </span>
                    <span className="text-yellow-300 font-semibold">
                      {performanceRating.rating}
                    </span>
@@ -1290,14 +1600,14 @@ export default function GameAnalysisPage() {
                )}
             </div>
           </div>
-          <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-5 shadow-xl shadow-black/40">
+          <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-4 shadow-xl shadow-black/40">
             <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
-            <p className="mt-1 text-xs text-slate-300">Key highlights from Stockfish at a glance.</p>
-            <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4">
+            <p className="mt-0.5 text-xs text-slate-300">Key highlights from Stockfish at a glance.</p>
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
               {summaryCards.map(card => (
-                <div key={card.label} className="flex-1 rounded-xl border border-white/10 bg-white/10 p-2 sm:p-3 md:p-4 text-center shadow-inner shadow-black/30">
-                  <div className="text-xs sm:text-xs uppercase tracking-wide text-slate-300">{card.label}</div>
-                  <div className={`mt-1 sm:mt-2 text-sm sm:text-base md:text-lg font-semibold ${card.color}`}>{card.value}</div>
+                <div key={card.label} className="min-w-0 rounded-xl border border-white/10 bg-white/10 p-2.5 sm:p-3 text-center shadow-inner shadow-black/30">
+                  <div className="text-[0.65rem] sm:text-xs uppercase tracking-wide text-slate-300 break-words hyphens-auto leading-tight">{card.label}</div>
+                  <div className={`mt-1.5 text-lg sm:text-xl md:text-2xl font-bold ${card.color}`}>{card.value}</div>
                 </div>
               ))}
             </div>
@@ -1306,7 +1616,7 @@ export default function GameAnalysisPage() {
 
         {/* Unified Chess Analysis Component */}
         <UnifiedChessAnalysis
-          currentPosition={processedData.positions[currentIndex]}
+          currentPosition={displayPosition}
           currentMove={currentMove}
           allMoves={processedData.moves}
           playerColor={playerColor}
@@ -1314,6 +1624,16 @@ export default function GameAnalysisPage() {
           boardWidth={boardWidth}
           currentMoveArrows={currentMoveArrows}
           onMoveNavigation={navigateToMove}
+          isExploringFollowUp={isExploringFollowUp}
+          isFreeExploration={isFreeExploration}
+          explorationMoves={explorationMoves}
+          explorationAnalysis={explorationAnalysis}
+          onExploringChange={handleExploringChange}
+          onExitFreeExploration={handleExitFreeExploration}
+          onResetExploration={handleResetExploration}
+          onUndoExplorationMove={handleUndoExplorationMove}
+          onAddExplorationMove={handleAddExplorationMove}
+          onPieceDrop={handlePieceDrop}
         />
 
         <div className="mt-8">
@@ -1322,6 +1642,7 @@ export default function GameAnalysisPage() {
             playerColor={playerColor}
             currentMove={currentMove}
             gameRecord={gameRecord}
+            analysisRecord={analysisRecord}
           />
         </div>
       </div>

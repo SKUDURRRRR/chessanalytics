@@ -1,6 +1,6 @@
 /**
  * Enhanced Comment Templates for Chess Move Analysis
- * 
+ *
  * This file provides diverse, insightful comment templates to avoid repetition
  * and provide more educational value to users.
  */
@@ -41,7 +41,7 @@ export const commentTemplates = {
       "Your opponent played masterfully! This brilliant move creates immediate winning chances and could be game-ending."
     ]
   },
-  
+
   best: {
     user: [
       "Perfect! This is exactly what the position demands and shows excellent chess understanding.",
@@ -58,7 +58,7 @@ export const commentTemplates = {
       "Your opponent played optimally. This shows they understand the position well."
     ]
   },
-  
+
   great: {
     user: [
       "Great move! This shows strong chess understanding and improves your position significantly.",
@@ -75,7 +75,7 @@ export const commentTemplates = {
       "Your opponent played well! This kind of move demonstrates good chess fundamentals."
     ]
   },
-  
+
   excellent: {
     user: [
       "Excellent! This move strengthens your position by improving piece coordination and central control.",
@@ -92,7 +92,7 @@ export const commentTemplates = {
       "Your opponent played solidly! This kind of move demonstrates strong chess fundamentals and positional understanding."
     ]
   },
-  
+
   good: {
     user: [
       "Good move! This maintains a solid position and shows reasonable chess understanding.",
@@ -109,7 +109,7 @@ export const commentTemplates = {
       "Your opponent made a sound choice. This keeps their position healthy and shows strategic thinking."
     ]
   },
-  
+
   acceptable: {
     user: [
       "This is a reasonable choice, though stronger options were available.",
@@ -126,55 +126,43 @@ export const commentTemplates = {
       "Your opponent's move works, but stronger options were available that could improve their position."
     ]
   },
-  
+
   inaccuracy: {
     user: [
-      "This move has some issues. You likely lost a small amount of material or created minor weaknesses. Consider {bestMoveSan} instead to improve your position.",
-      "Not quite optimal. You probably weakened your position slightly or lost some piece activity. Consider {bestMoveSan} instead for better piece coordination.",
-      "This weakens your position slightly. You likely lost some control or created minor tactical problems. Consider {bestMoveSan} instead to maintain better coordination.",
-      "This isn't the best choice. You probably lost some advantage or created minor weaknesses. Consider {bestMoveSan} instead to maintain your advantage.",
-      "This move has problems. You likely made a small tactical error that costs some material. Consider {bestMoveSan} instead for a stronger continuation."
+      "Inaccuracy. You lost position or created minor weaknesses. {bestMoveSan} improves your position.",
+      "Not optimal. You weakened your position slightly. {bestMoveSan} maintains better coordination.",
+      "This has issues. You lost control or created tactical problems. {bestMoveSan} is better."
     ],
     opponent: [
-      "Your opponent's move isn't optimal - they likely lost some material or created minor weaknesses. Look for ways to exploit this and gain an advantage!",
-      "Your opponent made an inaccuracy - they probably weakened their position slightly. This gives you an opportunity to gain an advantage and improve your position.",
-      "Your opponent's move has issues - they likely lost some control or created minor tactical problems. Look for ways to exploit this and win!",
-      "Not the best choice by your opponent - they probably made a small tactical error. This creates opportunities for you to gain an edge and potentially win.",
-      "Your opponent's move isn't optimal - they likely lost some advantage or created minor weaknesses. Look for tactical opportunities to exploit this and win!"
+      "Opponent's move isn't optimal - they created weaknesses. Exploit this for advantage!",
+      "Opponent made an inaccuracy. Find ways to improve your position!",
+      "Not the best choice by opponent. Look for tactical opportunities!"
     ]
   },
-  
+
   mistake: {
     user: [
-      "This creates serious problems for your position. You likely lost material or created tactical vulnerabilities. Consider {bestMoveSan} instead to avoid these issues.",
-      "This isn't the right approach. You probably weakened your king safety or lost piece coordination. Consider {bestMoveSan} instead for better tactical opportunities.",
-      "This move has major drawbacks. You likely left pieces unprotected or created weaknesses. Consider {bestMoveSan} instead to maintain your advantage.",
-      "This weakens your position significantly. You probably lost the initiative or created tactical problems. Consider {bestMoveSan} instead to keep your position strong.",
-      "This creates serious difficulties. You likely made a tactical error that costs material. Consider {bestMoveSan} instead for a much stronger alternative."
+      "This isn't right. This is a serious mistake; you likely lost material or created significant tactical problems that give your opponent a major advantage. {bestMoveSan} was the best move here.",
+      "This has major drawbacks. You weakened your position and allowed tactical threats. {bestMoveSan} would maintain better control.",
+      "This creates serious difficulties. You made a tactical error that costs material or position. {bestMoveSan} was better."
     ],
     opponent: [
-      "Your opponent made a serious mistake - they likely lost material or created tactical vulnerabilities. Look for immediate tactical opportunities to exploit this!",
-      "Your opponent blundered! This creates major tactical opportunities for you to gain a significant advantage and potentially win the game.",
-      "Your opponent's move has serious problems - they likely left pieces unprotected or weakened their position. Look for ways to take advantage and win!",
-      "This is a major mistake by your opponent - they probably lost the initiative or created tactical weaknesses. Look for winning tactical opportunities!",
-      "Your opponent's move creates serious difficulties for them - they likely made a tactical error. This could be a turning point - look for decisive winning tactics!"
+      "Your opponent made a serious mistake! Look for tactical opportunities to exploit this weakness.",
+      "Opponent blundered - they weakened their position significantly. Find ways to take advantage!",
+      "This is a major error by your opponent. Look for winning tactical opportunities!"
     ]
   },
-  
+
   blunder: {
     user: [
-      "This is a catastrophic blunder. You likely hung your queen or allowed mate in a few moves. Consider {bestMoveSan} instead to avoid this disaster.",
-      "This is a major blunder. You probably lost a piece or created fatal weaknesses. Consider {bestMoveSan} instead to keep your pieces safe.",
-      "This creates major problems. You likely left pieces unprotected or weakened your king. Consider {bestMoveSan} instead to keep your position solid.",
-      "This is a significant error. You probably lost the initiative or created tactical vulnerabilities. Consider {bestMoveSan} instead to maintain better piece coordination.",
-      "Major blunder. You likely made a tactical mistake that costs material. Consider {bestMoveSan} instead to keep your position safe and well-coordinated."
+      "Major blunder! You hung material or allowed mate. {bestMoveSan} would avoid this disaster.",
+      "Critical error - you lost a piece or created fatal weaknesses. {bestMoveSan} keeps your pieces safe.",
+      "Significant blunder that weakens your king or loses material. Better moves were available."
     ],
     opponent: [
-      "Your opponent made a catastrophic blunder - they likely hung their queen or allowed mate in a few moves. Look for immediate winning combinations!",
-      "Your opponent blundered badly - they probably lost a piece or created fatal weaknesses. This creates a major tactical opportunity for you to win!",
-      "This is a major error by your opponent - they likely left pieces unprotected or weakened their king. Look for ways to exploit this and win the game!",
-      "Your opponent made a serious mistake - they probably lost the initiative or created tactical vulnerabilities. This could be game-changing - look for winning tactics!",
-      "Your opponent blundered catastrophically - they likely made a tactical mistake that costs material. This creates a major opportunity for you to win decisively!"
+      "Opponent blundered catastrophically! Look for immediate winning combinations.",
+      "Major error by your opponent - find the winning tactic!",
+      "Opponent made a critical mistake. This creates a decisive opportunity to win!"
     ]
   }
 };
@@ -182,13 +170,13 @@ export const commentTemplates = {
 export function getRandomComment(classification: string, isUserMove: boolean): string {
   const templates = commentTemplates[classification as keyof typeof commentTemplates];
   if (!templates) return "Move recorded.";
-  
+
   const userTemplates = templates.user || [];
   const opponentTemplates = templates.opponent || [];
-  
+
   const availableTemplates = isUserMove ? userTemplates : opponentTemplates;
   if (availableTemplates.length === 0) return "Move recorded.";
-  
+
   return availableTemplates[Math.floor(Math.random() * availableTemplates.length)];
 }
 
@@ -230,7 +218,7 @@ export function buildHumanComment(context: HumanReasonContext): string {
   // Use position-specific analysis for blunders, mistakes, and brilliant moves
   if (fenBefore && move && isUserMove) {
     const safeBestMove = bestMoveSan || 'the best move'
-    
+
     if (classification === 'blunder' && centipawnLoss && centipawnLoss > 50) {
       try {
         const { generateSpecificBlunderComment } = require('./positionSpecificComments')
@@ -277,7 +265,7 @@ export function buildHumanComment(context: HumanReasonContext): string {
 
   const positives: string[] = []
   const negatives: string[] = []
-  
+
   // Prioritize tactical and positional insights for educational value
   if (tacticalInsights.length) {
     tacticalInsights.slice(0, 2).forEach(insight => {
@@ -311,9 +299,8 @@ export function buildHumanComment(context: HumanReasonContext): string {
         return /[.!?]$/.test(capitalized) ? capitalized.slice(0, -1) : capitalized
       })
     if (!cleaned.length) return ''
-    if (cleaned.length === 1) return cleaned[0] + '.'
-    if (cleaned.length === 2) return cleaned[0] + ' and ' + cleaned[1] + '.'
-    return cleaned.slice(0, 2).join('; ') + '.'
+    // Limit to 1 insight for brevity
+    return cleaned[0] + '.'
   }
 
   switch (classification) {
@@ -337,7 +324,7 @@ export function buildHumanComment(context: HumanReasonContext): string {
     case 'inaccuracy':
     case 'mistake':
     case 'blunder': {
-      const why = fmt(negatives.length ? negatives : risks.concat(tacticalInsights).slice(0, 2))
+      const why = fmt(negatives.length ? negatives : risks.concat(tacticalInsights).slice(0, 1))
       if (why) {
         // Ensure proper sentence structure
         if (baseComment.endsWith('.') || baseComment.endsWith('!') || baseComment.endsWith('?')) {
@@ -353,8 +340,8 @@ export function buildHumanComment(context: HumanReasonContext): string {
   }
 
   if (bestMoveSan && (classification === 'mistake' || classification === 'blunder')) {
-    if (isUserMove) baseComment += ` Better was ${bestMoveSan}.`
-    else baseComment += ` They could have tried ${bestMoveSan} instead.`
+    if (isUserMove) baseComment += ` ${bestMoveSan} was better.`
+    else baseComment += ` ${bestMoveSan} instead.`
   }
 
   return baseComment

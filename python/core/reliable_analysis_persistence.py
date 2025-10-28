@@ -477,7 +477,7 @@ class ReliableAnalysisPersistence:
             moves_analysis_dict.append({
                 'move': move.move,
                 'move_san': move.move_san,
-                'evaluation': move.evaluation,
+                'evaluation': move.evaluation,  # Contains 'pv' field with full Stockfish PV line
                 'evaluation_before': getattr(move, 'evaluation_before', None),  # CRITICAL: for personality scoring
                 'evaluation_after': getattr(move, 'evaluation_after', None),  # CRITICAL: for personality scoring
                 'is_best': move.is_best,
@@ -492,6 +492,10 @@ class ReliableAnalysisPersistence:
                 'centipawn_loss': move.centipawn_loss,
                 'depth_analyzed': move.depth_analyzed,
                 'best_move': move.best_move,
+                'best_move_san': getattr(move, 'best_move_san', ''),  # SAN notation for best move
+                'best_move_pv': getattr(move, 'best_move_pv', []),  # PV for best move line (UCI)
+                'fen_before': getattr(move, 'fen_before', ''),  # FEN before move
+                'fen_after': getattr(move, 'fen_after', ''),  # FEN after move
                 'explanation': move.explanation,
                 'heuristic_details': move.heuristic_details,
                 'coaching_comment': move.coaching_comment,

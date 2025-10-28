@@ -76,9 +76,26 @@ else:
 # Debug mode configuration
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
-# Authentication setup
+# Authentication setup - Fail fast if JWT configuration is missing
 security = HTTPBearer()
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
+
+# Critical security configuration - no defaults allowed
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError(
+        "CRITICAL SECURITY ERROR: JWT_SECRET environment variable is not set. "
+        "The application cannot start without proper JWT configuration. "
+        "Set JWT_SECRET to a secure random string (minimum 32 characters)."
+    )
+
+# Optional JWT claim validation configuration
+JWT_ISSUER = os.getenv("JWT_ISSUER")  # Expected 'iss' claim value
+JWT_AUDIENCE = os.getenv("JWT_AUDIENCE")  # Expected 'aud' claim value
+
+if JWT_ISSUER:
+    print(f"JWT validation configured with issuer: {JWT_ISSUER}")
+if JWT_AUDIENCE:
+    print(f"JWT validation configured with audience: {JWT_AUDIENCE}")
 
 # Simple in-memory cache for analytics with TTL
 _analytics_cache: Dict[str, Dict[str, Any]] = {}
@@ -141,15 +158,79 @@ else:
 
 # Authentication utilities
 async def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]) -> dict:
-    """Verify JWT token and return payload."""
+    """
+    Verify JWT token with comprehensive validation.
+
+    Validates:
+    - Token signature using JWT_SECRET
+    - Token expiration (exp claim)
+    - Token issuer (iss claim) if JWT_ISSUER is configured
+    - Token audience (aud claim) if JWT_AUDIENCE is configured
+
+    Returns:
+        dict: Decoded JWT payload if all validations pass
+
+    Raises:
+        HTTPException: 401 if token is invalid, expired, or claims don't match
+    """
+    from jose import JWTError, ExpiredSignatureError
+
     try:
         token = credentials.credentials
-        payload = jose_jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+
+        # Build decode options - configure claim validation
+        options = {
+            "verify_signature": True,
+            "verify_exp": True,  # Always verify expiration
+            "verify_aud": bool(JWT_AUDIENCE),  # Verify audience if configured
+            "verify_iss": bool(JWT_ISSUER),  # Verify issuer if configured
+        }
+
+        # Decode and validate token
+        payload = jose_jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=["HS256"],
+            options=options,
+            audience=JWT_AUDIENCE if JWT_AUDIENCE else None,
+            issuer=JWT_ISSUER if JWT_ISSUER else None
+        )
+
         return payload
-    except Exception as e:
+
+    except ExpiredSignatureError:
         raise HTTPException(
             status_code=401,
-            detail="Invalid authentication token",
+            detail="Authentication token has expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except JWTError as e:
+        # Handle specific JWT validation errors
+        error_msg = str(e).lower()
+
+        if "signature" in error_msg:
+            detail = "Invalid token signature. Token may be forged or corrupted."
+        elif "issuer" in error_msg or "iss" in error_msg:
+            detail = f"Token issuer validation failed. Expected issuer: {JWT_ISSUER}"
+        elif "audience" in error_msg or "aud" in error_msg:
+            detail = f"Token audience validation failed. Expected audience: {JWT_AUDIENCE}"
+        elif "expired" in error_msg:
+            detail = "Authentication token has expired. Please log in again."
+        else:
+            detail = f"Invalid authentication token: {str(e)}"
+
+        raise HTTPException(
+            status_code=401,
+            detail=detail,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        # Catch-all for unexpected errors
+        if DEBUG:
+            print(f"[AUTH ERROR] Unexpected error during token verification: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication failed. Invalid or malformed token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -312,6 +393,19 @@ class UnifiedAnalysisResponse(BaseModel):
     analysis_id: Optional[str] = None
     data: Optional[Dict[str, Any]] = None
     progress: Optional[Dict[str, Any]] = None
+
+class QuickPositionAnalysisRequest(BaseModel):
+    """Request for quick position analysis during exploration."""
+    fen: str = Field(..., description="FEN string of position to analyze")
+    depth: int = Field(10, description="Analysis depth (lower for speed)")
+
+class QuickPositionAnalysisResponse(BaseModel):
+    """Response with quick position analysis."""
+    fen: str
+    evaluation: Dict[str, Any]
+    best_move: Optional[Dict[str, str]] = None
+    pv_line: List[str] = []
+    analysis_time_ms: int
 
 class GameAnalysisSummary(BaseModel):
     """Unified game analysis summary with extended metrics."""
@@ -544,6 +638,133 @@ async def health_check():
         "database_connected": True,
         "timestamp": datetime.now().isoformat()
     }
+
+@app.post("/api/v1/analyze-position-quick", response_model=QuickPositionAnalysisResponse)
+async def analyze_position_quick(request: QuickPositionAnalysisRequest):
+    """
+    Quick position analysis for exploration mode.
+    Returns fast analysis without rate limits for interactive exploration.
+    """
+    import chess
+    import chess.engine
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _analyze_position(fen: str, depth: int):
+        """Synchronous analysis function to run in thread pool."""
+        try:
+            # Validate FEN
+            board = chess.Board(fen)
+
+            # Get Stockfish path from engine
+            from .analysis_engine import ChessAnalysisEngine, AnalysisConfig
+            temp_engine = ChessAnalysisEngine(config=AnalysisConfig())
+            stockfish_path = temp_engine.stockfish_path
+
+            if not stockfish_path:
+                raise ValueError("Stockfish not available")
+
+            start_time = time.time()
+
+            # Analyze with Stockfish
+            with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
+                # Configure for speed
+                try:
+                    engine.configure({
+                        'Skill Level': 20,
+                        'Threads': 1,
+                        'Hash': 64,
+                        'UCI_AnalyseMode': True
+                    })
+                except:
+                    pass  # Some engines don't support all options
+
+                # Quick analysis
+                info = engine.analyse(board, chess.engine.Limit(depth=depth))
+
+                # Extract evaluation
+                score = info.get("score")
+                eval_dict = {"type": "cp", "value": 0, "score_for_white": 0}
+
+                if score:
+                    if score.is_mate():
+                        mate_value = score.relative.mate()
+                        # Convert mate to large cp value for display
+                        score_for_white = 10000 if mate_value > 0 else -10000
+                        if not board.turn:  # Black to move
+                            score_for_white = -score_for_white
+                        eval_dict = {
+                            "type": "mate",
+                            "value": mate_value,
+                            "score_for_white": score_for_white / 100
+                        }
+                    else:
+                        cp_value = score.relative.score()
+                        score_for_white = cp_value if board.turn else -cp_value
+                        eval_dict = {
+                            "type": "cp",
+                            "value": cp_value,
+                            "score_for_white": score_for_white / 100
+                        }
+
+                # Extract best move and PV
+                pv = info.get("pv", [])
+                best_move_dict = None
+                pv_san = []
+
+                if pv and len(pv) > 0:
+                    best_move_uci = pv[0]
+                    try:
+                        best_move_dict = {
+                            "san": board.san(best_move_uci),
+                            "uci": best_move_uci.uci(),
+                            "from": chess.square_name(best_move_uci.from_square),
+                            "to": chess.square_name(best_move_uci.to_square)
+                        }
+
+                        # Convert PV to SAN (first 5 moves)
+                        temp_board = board.copy()
+                        for move in pv[:5]:
+                            try:
+                                pv_san.append(temp_board.san(move))
+                                temp_board.push(move)
+                            except:
+                                break
+                    except Exception as e:
+                        print(f"Error extracting best move: {e}")
+
+                analysis_time_ms = int((time.time() - start_time) * 1000)
+
+                return {
+                    "fen": fen,
+                    "evaluation": eval_dict,
+                    "best_move": best_move_dict,
+                    "pv_line": pv_san,
+                    "analysis_time_ms": analysis_time_ms
+                }
+
+        except Exception as e:
+            print(f"Error in synchronous analysis: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    try:
+        # Run synchronous analysis in thread pool
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = await loop.run_in_executor(executor, _analyze_position, request.fen, request.depth)
+
+        return QuickPositionAnalysisResponse(**result)
+
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except chess.InvalidMoveError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid FEN: {str(e)}")
+    except Exception as e:
+        print(f"Error in quick position analysis: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
 
 @app.post("/api/v1/analyze", response_model=UnifiedAnalysisResponse)
 async def unified_analyze(
@@ -1436,7 +1657,7 @@ async def get_comprehensive_analytics(
             if termination:
                 # Check for resignations
                 if 'resign' in termination.lower():
-                    if 'opponent' in termination.lower() or 'resigned' in termination.lower() and result == 'win':
+                    if ('opponent' in termination.lower() or 'resigned' in termination.lower()) and result == 'win':
                         opponent_resignation_moves.append(game.get('total_moves') or 0)
                     else:
                         resignation_moves.append(game.get('total_moves') or 0)
@@ -1501,11 +1722,45 @@ async def get_comprehensive_analytics(
 
         resignation_summary = None
         if resignation_moves or opponent_resignation_moves:
+            # Calculate recent resignation timing (last 50 games)
+            recent_resignation_moves = []
+            for i, game in enumerate(games[:50]):
+                game_id = game.get('provider_game_id')
+                termination = _parse_termination_from_pgn(pgn_map.get(game_id)) if pgn_map else None
+                result = game.get('result')
+                if termination and 'resign' in termination.lower():
+                    # Determine if this is my resignation or opponent's
+                    if ('opponent' in termination.lower() or 'resigned' in termination.lower()) and result == 'win':
+                        # Opponent resigned
+                        pass
+                    else:
+                        # I resigned
+                        recent_resignation_moves.append(game.get('total_moves') or 0)
+
+            recent_avg = round(sum(recent_resignation_moves) / len(recent_resignation_moves), 2) if recent_resignation_moves else None
+            overall_avg = round(sum(resignation_moves) / len(resignation_moves), 2) if resignation_moves else None
+
+            # Calculate change and insight
+            change = round(recent_avg - overall_avg, 1) if (recent_avg and overall_avg) else None
+            insight = None
+            if change is not None:
+                abs_change = abs(change)
+                if change < 0:
+                    insight = f"You're resigning {abs_change} moves earlier than usual"
+                elif change > 0:
+                    insight = f"You're fighting {abs_change} moves longer before resigning"
+                else:
+                    insight = "Your resignation timing is consistent"
+
             resignation_summary = {
-                'my_average_resignation_move': round(sum(resignation_moves) / len(resignation_moves), 2) if resignation_moves else None,
+                'my_average_resignation_move': overall_avg,
                 'opponent_average_resignation_move': round(sum(opponent_resignation_moves) / len(opponent_resignation_moves), 2) if opponent_resignation_moves else None,
                 'my_resignations': len(resignation_moves),
-                'opponent_resignations': len(opponent_resignation_moves)
+                'opponent_resignations': len(opponent_resignation_moves),
+                'recent_average_resignation_move': recent_avg,
+                'recent_resignations': len(recent_resignation_moves),
+                'change': change,
+                'insight': insight
             }
 
         # Calculate basic analytics from games
@@ -1840,7 +2095,7 @@ async def get_match_history(
             query = query.eq('opening_normalized', opening_filter)
 
         if opponent_filter:
-            query = query.eq('opening_normalized', opponent_filter)
+            query = query.eq('opponent_name', opponent_filter)
 
         if color_filter and color_filter in ['white', 'black']:
             query = query.eq('color', color_filter)
@@ -2233,8 +2488,9 @@ def _estimate_novelty_from_games(games: List[Dict[str, Any]]) -> float:
 
     # Shared metrics with staleness (natural opposition)
     # Use opening_normalized for better grouping (e.g., "Italian Game" instead of "C50")
+    # IMPORTANT: Prioritize actual opening name over ECO code to avoid "Uncommon Opening" for A00
     opening_counts = Counter(
-        (game.get('opening_normalized') or game.get('opening_family') or game.get('opening') or 'Unknown')
+        (game.get('opening_normalized') or game.get('opening') or game.get('opening_family') or 'Unknown')
         for game in games
     )
     time_counts = Counter(
@@ -2292,8 +2548,9 @@ def _estimate_staleness_from_games(games: List[Dict[str, Any]]) -> float:
 
     # Shared metrics with novelty (natural opposition)
     # Use opening_normalized for better grouping (e.g., "Italian Game" instead of "C50")
+    # IMPORTANT: Prioritize actual opening name over ECO code to avoid "Uncommon Opening" for A00
     opening_counts = Counter(
-        (game.get('opening_normalized') or game.get('opening_family') or game.get('opening') or 'Unknown')
+        (game.get('opening_normalized') or game.get('opening') or game.get('opening_family') or 'Unknown')
         for game in games
     )
     time_counts = Counter(
@@ -2732,6 +2989,9 @@ def _generate_famous_player_comparisons(
     """Generate famous player comparisons based on personality scores."""
 
     # Famous players database with personality profiles
+    # Database expanded from 26 to 39 players to improve matching accuracy
+    # Includes more modern players (2010s-present) for better coverage of contemporary styles
+    # NOTE: Profiles are currently estimated - Priority 1 improvement is to calculate from real games
     famous_players = [
         {
             'name': 'Mikhail Tal',
@@ -2941,6 +3201,102 @@ def _generate_famous_player_comparisons(
             'profile': {'tactical': 80, 'aggressive': 70, 'positional': 85, 'patient': 80, 'novelty': 72, 'staleness': 48},
             'confidence': 70.0
         },
+        {
+            'name': 'Ian Nepomniachtchi',
+            'description': 'Aggressive tactical player with dynamic attacking style',
+            'era': '2010s-present',
+            'strengths': ['Tactical aggression', 'Initiative', 'Complex positions'],
+            'profile': {'tactical': 90, 'aggressive': 88, 'positional': 72, 'patient': 58, 'novelty': 75, 'staleness': 48},
+            'confidence': 85.0
+        },
+        {
+            'name': 'Maxime Vachier-Lagrave',
+            'description': 'Universal player with strong tactics and solid technique',
+            'era': '2010s-present',
+            'strengths': ['Universal style', 'Tactical sharpness', 'Calculation'],
+            'profile': {'tactical': 90, 'aggressive': 75, 'positional': 85, 'patient': 75, 'novelty': 68, 'staleness': 54},
+            'confidence': 85.0
+        },
+        {
+            'name': 'Richard Rapport',
+            'description': 'Highly creative player known for unorthodox openings',
+            'era': '2010s-present',
+            'strengths': ['Creativity', 'Unconventional ideas', 'Surprising moves'],
+            'profile': {'tactical': 82, 'aggressive': 80, 'positional': 70, 'patient': 60, 'novelty': 95, 'staleness': 25},
+            'confidence': 80.0
+        },
+        {
+            'name': 'Wesley So',
+            'description': 'Solid positional player with exceptional technique',
+            'era': '2010s-present',
+            'strengths': ['Solid play', 'Technical precision', 'Endgame mastery'],
+            'profile': {'tactical': 82, 'aggressive': 58, 'positional': 92, 'patient': 90, 'novelty': 52, 'staleness': 68},
+            'confidence': 85.0
+        },
+        {
+            'name': 'Anish Giri',
+            'description': 'Solid positional player with deep opening preparation',
+            'era': '2010s-present',
+            'strengths': ['Positional understanding', 'Opening preparation', 'Defensive resources'],
+            'profile': {'tactical': 85, 'aggressive': 55, 'positional': 92, 'patient': 88, 'novelty': 58, 'staleness': 65},
+            'confidence': 85.0
+        },
+        {
+            'name': 'Daniil Dubov',
+            'description': 'Creative aggressive player with unconventional ideas',
+            'era': '2015-present',
+            'strengths': ['Creativity', 'Aggressive play', 'Surprising ideas'],
+            'profile': {'tactical': 88, 'aggressive': 85, 'positional': 75, 'patient': 55, 'novelty': 92, 'staleness': 30},
+            'confidence': 80.0
+        },
+        {
+            'name': 'Shakhriyar Mamedyarov',
+            'description': 'Dynamic player with aggressive style and tactical sharpness',
+            'era': '2010s-present',
+            'strengths': ['Dynamic play', 'Tactical aggression', 'Initiative'],
+            'profile': {'tactical': 88, 'aggressive': 88, 'positional': 75, 'patient': 60, 'novelty': 78, 'staleness': 42},
+            'confidence': 85.0
+        },
+        {
+            'name': 'Teimour Radjabov',
+            'description': 'Solid positional player with excellent defensive skills',
+            'era': '2000s-present',
+            'strengths': ['Defensive mastery', 'Positional play', 'Solid preparation'],
+            'profile': {'tactical': 80, 'aggressive': 52, 'positional': 90, 'patient': 92, 'novelty': 55, 'staleness': 70},
+            'confidence': 80.0
+        },
+        {
+            'name': 'Alexander Grischuk',
+            'description': 'Universal player with strong tactics and time pressure skills',
+            'era': '2000s-present',
+            'strengths': ['Universal play', 'Tactical vision', 'Time pressure'],
+            'profile': {'tactical': 90, 'aggressive': 78, 'positional': 82, 'patient': 68, 'novelty': 72, 'staleness': 50},
+            'confidence': 85.0
+        },
+        {
+            'name': 'Boris Gelfand',
+            'description': 'Solid positional player with deep opening knowledge',
+            'era': '1990s-2010s',
+            'strengths': ['Opening preparation', 'Solid play', 'Technical precision'],
+            'profile': {'tactical': 82, 'aggressive': 58, 'positional': 90, 'patient': 88, 'novelty': 50, 'staleness': 72},
+            'confidence': 85.0
+        },
+        {
+            'name': 'Peter Leko',
+            'description': 'Solid defensive player known for drawing ability',
+            'era': '1990s-2010s',
+            'strengths': ['Defensive resources', 'Solid play', 'Technical precision'],
+            'profile': {'tactical': 78, 'aggressive': 48, 'positional': 92, 'patient': 95, 'novelty': 45, 'staleness': 75},
+            'confidence': 80.0
+        },
+        {
+            'name': 'Vassily Ivanchuk',
+            'description': 'Creative genius with unpredictable style and brilliant ideas',
+            'era': '1980s-2010s',
+            'strengths': ['Creativity', 'Tactical brilliance', 'Unpredictability'],
+            'profile': {'tactical': 92, 'aggressive': 80, 'positional': 82, 'patient': 60, 'novelty': 95, 'staleness': 28},
+            'confidence': 85.0
+        },
     ]
 
     # Calculate similarity scores using all 6 personality traits
@@ -2951,24 +3307,38 @@ def _generate_famous_player_comparisons(
     player_novelty = personality_scores.get('novelty', 50.0)
     player_staleness = personality_scores.get('staleness', 50.0)
 
+    # Trait weights: distinctive traits (novelty/staleness) weighted more heavily
+    # Common traits (tactical/positional) weighted less since most strong players score high
+    trait_weights = {
+        'tactical': 0.8,      # Common trait - most strong players score high
+        'positional': 0.8,    # Common trait - most strong players score high
+        'aggressive': 1.2,    # Moderately distinctive
+        'patient': 1.2,       # Moderately distinctive
+        'novelty': 1.5,       # Highly distinctive - rare trait
+        'staleness': 1.5      # Highly distinctive - rare trait
+    }
+
     scored_players = []
     for famous in famous_players:
         profile = famous['profile']
 
-        # Calculate Euclidean distance in 6D personality space
-        diff_tactical = (player_tactical - profile.get('tactical', 50.0)) ** 2
-        diff_aggressive = (player_aggressive - profile.get('aggressive', 50.0)) ** 2
-        diff_positional = (player_positional - profile.get('positional', 50.0)) ** 2
-        diff_patient = (player_patient - profile.get('patient', 50.0)) ** 2
-        diff_novelty = (player_novelty - profile.get('novelty', 50.0)) ** 2
-        diff_staleness = (player_staleness - profile.get('staleness', 50.0)) ** 2
+        # Calculate WEIGHTED Euclidean distance in 6D personality space
+        # More distinctive traits have higher weights
+        diff_tactical = trait_weights['tactical'] * (player_tactical - profile.get('tactical', 50.0)) ** 2
+        diff_aggressive = trait_weights['aggressive'] * (player_aggressive - profile.get('aggressive', 50.0)) ** 2
+        diff_positional = trait_weights['positional'] * (player_positional - profile.get('positional', 50.0)) ** 2
+        diff_patient = trait_weights['patient'] * (player_patient - profile.get('patient', 50.0)) ** 2
+        diff_novelty = trait_weights['novelty'] * (player_novelty - profile.get('novelty', 50.0)) ** 2
+        diff_staleness = trait_weights['staleness'] * (player_staleness - profile.get('staleness', 50.0)) ** 2
 
         distance = (diff_tactical + diff_aggressive + diff_positional +
                    diff_patient + diff_novelty + diff_staleness) ** 0.5
 
         # Convert distance to similarity percentage (0-100)
-        # Max distance in 6D space: sqrt(6 * 100^2) ≈ 244.9
-        max_distance = 244.9
+        # Max weighted distance: sqrt(sum(weight * 100^2))
+        # = sqrt(0.8*10000 + 0.8*10000 + 1.2*10000 + 1.2*10000 + 1.5*10000 + 1.5*10000)
+        # = sqrt(70000) ≈ 264.6
+        max_distance = 264.6
         overall_similarity = max(0, 100 - (distance / max_distance * 100))
 
         # Calculate per-trait similarity scores (inverse of percentage difference)
@@ -3101,6 +3471,66 @@ def _generate_famous_player_comparisons(
             'openings': ['Italian Game', 'Queen\'s Gambit', 'Grünfeld Defense'],
             'tactics': ['Solid play', 'Modern preparation', 'Deep calculation'],
             'training': 'Balance modern opening theory with solid fundamentals'
+        },
+        'Ian Nepomniachtchi': {
+            'openings': ['Sicilian Najdorf', 'King\'s Indian Defense', 'Grünfeld Defense'],
+            'tactics': ['Tactical aggression', 'Initiative and pressure', 'Dynamic attacks'],
+            'training': 'Study sharp tactical positions. Focus on maintaining initiative'
+        },
+        'Maxime Vachier-Lagrave': {
+            'openings': ['Najdorf Sicilian', 'Grünfeld Defense', 'King\'s Indian Defense'],
+            'tactics': ['Universal play', 'Sharp calculations', 'Tactical precision'],
+            'training': 'Build a broad repertoire with tactical sharpness. Practice calculation'
+        },
+        'Richard Rapport': {
+            'openings': ['Rapport-Jobava System', 'London System', 'King\'s Indian Attack'],
+            'tactics': ['Unconventional ideas', 'Creative sacrifices', 'Surprising moves'],
+            'training': 'Don\'t be afraid to be different. Study creative games and unusual openings'
+        },
+        'Wesley So': {
+            'openings': ['Petroff Defense', 'Berlin Defense', 'Queen\'s Gambit'],
+            'tactics': ['Solid technique', 'Endgame precision', 'Defensive resources'],
+            'training': 'Master solid openings and endgame technique. Focus on consistency'
+        },
+        'Anish Giri': {
+            'openings': ['Najdorf Sicilian', 'Berlin Defense', 'Queen\'s Indian Defense'],
+            'tactics': ['Deep preparation', 'Solid positional play', 'Defensive mastery'],
+            'training': 'Study opening theory deeply. Focus on solid defensive technique'
+        },
+        'Daniil Dubov': {
+            'openings': ['Catalan Opening', 'English Opening', 'Unconventional lines'],
+            'tactics': ['Creative ideas', 'Aggressive play', 'Surprising tactics'],
+            'training': 'Think outside the box. Study creative sacrifices and unusual ideas'
+        },
+        'Shakhriyar Mamedyarov': {
+            'openings': ['King\'s Indian Defense', 'Sicilian Najdorf', 'Grünfeld Defense'],
+            'tactics': ['Dynamic play', 'Tactical aggression', 'Initiative'],
+            'training': 'Study dynamic positions. Practice aggressive tactical play'
+        },
+        'Teimour Radjabov': {
+            'openings': ['Grünfeld Defense', 'Nimzo-Indian Defense', 'Caro-Kann Defense'],
+            'tactics': ['Solid play', 'Defensive resources', 'Positional understanding'],
+            'training': 'Master defensive technique and solid positional play'
+        },
+        'Alexander Grischuk': {
+            'openings': ['Ruy Lopez', 'Grünfeld Defense', 'King\'s Indian Defense'],
+            'tactics': ['Universal style', 'Quick calculations', 'Time pressure skills'],
+            'training': 'Build strong universal skills. Practice calculating quickly'
+        },
+        'Boris Gelfand': {
+            'openings': ['Najdorf Sicilian', 'Semi-Slav', 'Queen\'s Indian Defense'],
+            'tactics': ['Deep preparation', 'Solid technique', 'Opening novelties'],
+            'training': 'Study opening theory deeply. Focus on preparation and solid technique'
+        },
+        'Peter Leko': {
+            'openings': ['Berlin Defense', 'Petroff Defense', 'Queen\'s Gambit'],
+            'tactics': ['Defensive resources', 'Solid play', 'Technical precision'],
+            'training': 'Master defensive technique. Study how to hold difficult positions'
+        },
+        'Vassily Ivanchuk': {
+            'openings': ['King\'s Indian Defense', 'French Defense', 'Unconventional openings'],
+            'tactics': ['Creative brilliance', 'Tactical fireworks', 'Unpredictable play'],
+            'training': 'Study creative and brilliant tactical combinations. Think unconventionally'
         }
     }
     # Generate detailed similarity insights
@@ -3411,7 +3841,8 @@ def _generate_style_recommendations(
     # Count player's current openings
     opening_counts = Counter()
     for game in games:
-        opening = game.get('opening_normalized') or game.get('opening_family') or game.get('opening')
+        # IMPORTANT: Prioritize actual opening name over ECO code to avoid "Uncommon Opening" for A00
+        opening = game.get('opening_normalized') or game.get('opening') or game.get('opening_family')
         if opening and opening != 'Unknown':
             opening_counts[opening] += 1
 
@@ -4122,49 +4553,105 @@ async def _fetch_chesscom_games(
         return []
 
 
-async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
+async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Optional[int] = None, since_timestamp: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch games from Lichess API
 
     Args:
         user_id: Lichess username
         limit: Maximum number of games to fetch
-        until_timestamp: Unix timestamp in milliseconds - fetch games until this time
+        until_timestamp: Unix timestamp in milliseconds - fetch games until (before) this time
+        since_timestamp: Unix timestamp in milliseconds - fetch games since (after) this time
     """
-    print(f"[lichess] Fetching games for user: {user_id}, limit: {limit}, until: {until_timestamp}")
+    print(f"[lichess] Fetching games for user: {user_id}, limit: {limit}, until: {until_timestamp}, since: {since_timestamp}")
     try:
         import aiohttp
+        import json
+
         async with aiohttp.ClientSession() as session:
             url = f"https://lichess.org/api/games/user/{user_id}"
             params = {
                 'max': limit,
-                'pgnInJson': 'true',
+                'pgnInJson': 'true',  # This makes Lichess return NDJSON format
                 'clocks': 'true',
                 'evals': 'false',
                 'opening': 'true'
             }
 
-            # Add until parameter if provided
+            # Add until parameter if provided (fetch games BEFORE this time)
             if until_timestamp:
                 params['until'] = until_timestamp
 
-            async with session.get(url, params=params) as response:
+            # Add since parameter if provided (fetch games AFTER this time)
+            if since_timestamp:
+                params['since'] = since_timestamp
+
+            print(f"[lichess] Request URL: {url}")
+            print(f"[lichess] Request params: {params}")
+
+            async with session.get(url, params=params, headers={'Accept': 'application/x-ndjson'}) as response:
                 if response.status != 200:
                     print(f"[lichess] API error: {response.status}")
+                    response_text = await response.text()
+                    print(f"[lichess] Error response: {response_text[:500]}")
                     return []
 
+                print(f"[lichess] Response status: {response.status}")
+                print(f"[lichess] Response content-type: {response.headers.get('content-type')}")
+
                 games = []
-                async for line in response.content:
-                    if not line.strip():
-                        continue
-                    try:
-                        import json
-                        game_data = json.loads(line.decode('utf-8'))
-                        games.append(game_data)
-                    except Exception as e:
-                        print(f"[lichess] Error parsing game data: {e}")
+                # Lichess returns NDJSON (newline-delimited JSON)
+                # Each line is a complete JSON object for one game
+                text = await response.text()
+
+                if not text.strip():
+                    print(f"[lichess] WARNING: Empty response from Lichess API")
+                    return []
+
+                # Check if response starts with PGN or JSON
+                first_line = text.split('\n')[0].strip() if text else ""
+                print(f"[lichess] First line of response (first 100 chars): {first_line[:100]}")
+
+                # Split by newlines and parse each line as JSON
+                lines = text.strip().split('\n')
+                print(f"[lichess] Total lines in response: {len(lines)}")
+
+                for line_num, line in enumerate(lines, 1):
+                    line = line.strip()
+                    if not line:
                         continue
 
-                print(f"[lichess] Fetched {len(games)} games")
+                    # Skip if this looks like PGN format (starts with '[')
+                    if line.startswith('['):
+                        if line_num <= 3:  # Only log first few
+                            print(f"[lichess] WARNING: Line {line_num} looks like PGN, not JSON: {line[:50]}")
+                        continue
+
+                    try:
+                        game_data = json.loads(line)
+                        games.append(game_data)
+
+                        # Log first game for debugging
+                        if line_num == 1:
+                            game_id = game_data.get('id', 'unknown')
+                            has_pgn = 'pgn' in game_data
+                            print(f"[lichess] First game parsed successfully: id={game_id}, has_pgn={has_pgn}")
+
+                    except json.JSONDecodeError as e:
+                        if line_num <= 5:  # Only log first few errors
+                            print(f"[lichess] JSON parse error on line {line_num}: {e}")
+                            print(f"[lichess] Problematic line (first 100 chars): {line[:100]}")
+                        continue
+                    except Exception as e:
+                        if line_num <= 5:
+                            print(f"[lichess] Unexpected error on line {line_num}: {e}")
+                        continue
+
+                print(f"[lichess] Successfully fetched and parsed {len(games)} games")
+
+                if len(games) == 0 and len(lines) > 0:
+                    print(f"[lichess] ERROR: Fetched {len(lines)} lines but parsed 0 games!")
+                    print(f"[lichess] This suggests the response format is not NDJSON as expected")
+
                 return games
 
     except Exception as e:
@@ -4201,7 +4688,8 @@ async def _fetch_games_from_platform(
     until_timestamp: Optional[str] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
-    oldest_game_month: Optional[tuple] = None
+    oldest_game_month: Optional[tuple] = None,
+    since_timestamp: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Fetch games from the specified platform (lichess or chess.com)
@@ -4211,10 +4699,11 @@ async def _fetch_games_from_platform(
         user_id: Username on the platform
         platform: 'chess.com' or 'lichess'
         limit: Maximum number of games to fetch
-        until_timestamp: For lichess - fetch games until this timestamp
+        until_timestamp: For lichess - fetch games until (before) this timestamp
         from_date: ISO date string for filtering games after this date
         to_date: ISO date string for filtering games before this date
         oldest_game_month: For chess.com pagination - tuple of (year, month)
+        since_timestamp: For lichess - fetch games since (after) this timestamp
     """
     print(f"[_fetch_games_from_platform] Called for {user_id} on {platform}, limit: {limit}")
     if platform == 'chess.com':
@@ -4226,15 +4715,23 @@ async def _fetch_games_from_platform(
 
     elif platform == 'lichess':
         # Fetch lichess games
-        # Convert until_timestamp to int if it's a string
+        # Convert timestamps to int if they're strings
         until_ts = None
+        since_ts = None
+
         if until_timestamp:
             try:
                 until_ts = int(until_timestamp) if isinstance(until_timestamp, str) else until_timestamp
             except (ValueError, TypeError):
                 print(f"[lichess] Invalid until_timestamp: {until_timestamp}")
 
-        raw_games = await _fetch_lichess_games(user_id, limit, until_ts)
+        if since_timestamp:
+            try:
+                since_ts = int(since_timestamp) if isinstance(since_timestamp, str) else since_timestamp
+            except (ValueError, TypeError):
+                print(f"[lichess] Invalid since_timestamp: {since_timestamp}")
+
+        raw_games = await _fetch_lichess_games(user_id, limit, until_ts, since_ts)
         # Parse into standardized format
         parsed_games = []
         for game in raw_games:
@@ -4489,24 +4986,39 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
         time_control = game_data.get('time_control', '')
         time_class = game_data.get('time_class', '')
 
-        # Parse time control from chess.com format (e.g., "600+5" -> "rapid")
-        if time_class:
-            time_control = time_class
-        elif time_control:
-            # Convert time control to readable format
-            try:
-                base_time, increment = time_control.split('+')
-                total_time = int(base_time) + int(increment) * 40  # Estimate
-                if total_time <= 180:  # 3 minutes
-                    time_control = 'bullet'
-                elif total_time <= 600:  # 10 minutes
-                    time_control = 'blitz'
-                elif total_time <= 1800:  # 30 minutes
-                    time_control = 'rapid'
-                else:
-                    time_control = 'classical'
-            except:
-                time_control = 'unknown'
+        # FIRST: Try to extract TimeControl from PGN header (most accurate)
+        pgn_time_control = None
+        if pgn:
+            lines = pgn.split('\n')
+            for line in lines:
+                if line.startswith('[TimeControl '):
+                    try:
+                        pgn_time_control = line.split('"')[1]
+                        if pgn_time_control and pgn_time_control != '-':
+                            time_control = pgn_time_control
+                            break
+                    except:
+                        pass
+
+        # FALLBACK: If no PGN time control, use time_control or time_class from API
+        if not pgn_time_control:
+            if time_class:
+                time_control = time_class
+            elif time_control:
+                # Convert time control to readable format
+                try:
+                    base_time, increment = time_control.split('+')
+                    total_time = int(base_time) + int(increment) * 40  # Estimate
+                    if total_time <= 180:  # 3 minutes
+                        time_control = 'bullet'
+                    elif total_time <= 600:  # 10 minutes
+                        time_control = 'blitz'
+                    elif total_time <= 1800:  # 30 minutes
+                        time_control = 'rapid'
+                    else:
+                        time_control = 'classical'
+                except:
+                    time_control = 'unknown'
 
         # Extract player info
         white_player = game_data.get('white', {})
@@ -4570,6 +5082,14 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
                     opening = line.split('"')[1] if '"' in line else 'Unknown'
                 elif line.startswith('[ECO '):
                     opening_family = line.split('"')[1] if '"' in line else 'Unknown'
+
+        # If ECO code is A00 but no opening name, identify from moves
+        # A00 is a catch-all for many different irregular openings
+        if opening_family == 'A00' and (opening == 'Unknown' or opening == 'Uncommon Opening'):
+            from opening_utils import identify_a00_opening_from_moves
+            identified_opening = identify_a00_opening_from_moves(pgn)
+            if identified_opening != 'Uncommon Opening':
+                opening = identified_opening
 
         # Extract played_at from PGN headers (fallback if API didn't provide end_time)
         played_at = played_at_from_api  # Start with API timestamp if available
@@ -4684,11 +5204,19 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
             print(f"[Smart import] WARNING: No existing games found in database!")
 
         # Fetch the most recent 100 games from the platform
+        print(f"[Smart import] ===== FETCHING GAMES FROM {platform.upper()} =====")
         games_data = await _fetch_games_from_platform(user_id, platform, 100)
         print(f"[Smart import] Fetched {len(games_data) if games_data else 0} games from platform API")
         if games_data:
             sample_ids = [g.get('id') or g.get('provider_game_id') for g in games_data[:3]]
+            sample_dates = []
+            for g in games_data[:3]:
+                date = g.get('played_at', 'No date')
+                sample_dates.append(date)
             print(f"[Smart import] Sample fetched game IDs (first 3): {sample_ids}")
+            print(f"[Smart import] Sample fetched game DATES (first 3): {sample_dates}")
+            print(f"[Smart import] Most recent game date: {games_data[0].get('played_at', 'No date') if games_data else 'N/A'}")
+            print(f"[Smart import] Oldest game date in batch: {games_data[-1].get('played_at', 'No date') if games_data else 'N/A'}")
 
         if not games_data:
             if existing_game_ids:
@@ -4719,19 +5247,26 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
 
         # Filter to get only new games (games not in our database)
         new_games = []
-        print(f"[Smart import] Starting duplicate check. Database has {len(existing_game_ids)} game IDs")
+        print(f"[Smart import] ===== DUPLICATE CHECK =====")
+        print(f"[Smart import] Database has {len(existing_game_ids)} game IDs")
         if existing_game_ids:
-            print(f"[Smart import] Sample database IDs (first 3): {list(existing_game_ids)[:3]}")
+            sample_existing = list(existing_game_ids)[:5]
+            print(f"[Smart import] Sample database IDs (first 5): {sample_existing}")
 
         for idx, game in enumerate(games_data):
             game_id = game.get('id') or game.get('provider_game_id')
-            if idx < 3:  # Log first 3 games
-                print(f"[Smart import] Game {idx+1}: ID={game_id}, In DB={game_id in existing_game_ids if game_id else 'No ID'}")
+            game_date = game.get('played_at', 'No date')
+
+            if idx < 5:  # Log first 5 games with MORE detail
+                in_db = game_id in existing_game_ids if game_id else False
+                print(f"[Smart import] Game {idx+1}: ID={game_id}, Date={game_date}, In DB={in_db}")
 
             if game_id and game_id not in existing_game_ids:
                 new_games.append(game)
+                if idx < 10:  # Log first 10 new games
+                    print(f"[Smart import] ✓ NEW GAME FOUND: {game_id} ({game_date})")
             elif game_id and idx < 10:  # Log first 10 skipped games
-                print(f"[Smart import] Skipping existing game: {game_id}")
+                print(f"[Smart import] ✗ SKIPPING existing game: {game_id} ({game_date})")
 
         print(f"[Smart import] Duplicate check complete: fetched {len(games_data)} games, found {len(new_games)} new games, {len(games_data) - len(new_games)} already exist")
 
@@ -4937,8 +5472,10 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
     if not payload.user_id or not payload.platform:
         raise HTTPException(status_code=400, detail="user_id and platform are required")
 
-    rate_key = f"import:{payload.user_id}:{payload.platform}:bulk"
-    _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
+    # REMOVED rate limiting - this is an internal endpoint called by large imports in batches
+    # Rate limiting is enforced at the parent level (/api/v1/import-more-games, etc.)
+    # rate_key = f"import:{payload.user_id}:{payload.platform}:bulk"
+    # _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
 
     canonical_user_id = _canonical_user_id(payload.user_id, payload.platform)
     errors: List[str] = []
@@ -4965,7 +5502,8 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
         # Normalize opening name to family for efficient filtering and grouping
         # This consolidates variations (e.g., "Sicilian Defense, Najdorf") into families ("Sicilian Defense")
         # matching frontend expectations and enabling proper match history filtering
-        raw_opening = game.opening_family or game.opening or 'Unknown'
+        # IMPORTANT: Prioritize actual opening name over ECO code to avoid "Uncommon Opening" for A00
+        raw_opening = game.opening or game.opening_family or 'Unknown'
         opening_normalized = normalize_opening_name(raw_opening)
 
         games_rows.append({
@@ -5329,34 +5867,63 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
 
             print(f"[large_import] Starting import for {user_id}, existing games: {len(existing_ids)}")
 
-            # Smart pagination: Resume from oldest imported game instead of most recent
-            # This allows subsequent imports to continue from where previous import ended
+            # Smart pagination with TWO-PHASE approach:
+            # PHASE 1: Check for NEW games (after newest imported game)
+            # PHASE 2: If no new games, backfill OLD games (before oldest imported game)
+            # This ensures we don't miss recently played games
+            import_phase = "new_games"  # Start by checking for new games
+            since_timestamp = None  # For Lichess: fetch games AFTER this time
+            newest_game_month = None  # For Chess.com: fetch games from this month onwards
+
             try:
+                # Get both oldest AND newest game from database
                 oldest_game_query = supabase_service.table('games').select('played_at').eq(
                     'user_id', canonical_user_id
                 ).eq('platform', platform).order('played_at', desc=False).limit(1).execute()
 
-                if oldest_game_query.data and len(oldest_game_query.data) > 0:
-                    # Resume from 1 day before oldest game (safety margin)
+                newest_game_query = supabase_service.table('games').select('played_at').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).order('played_at', desc=True).limit(1).execute()
+
+                has_existing_games = (oldest_game_query.data and len(oldest_game_query.data) > 0 and
+                                     newest_game_query.data and len(newest_game_query.data) > 0)
+
+                if has_existing_games:
                     from datetime import datetime, timedelta
                     oldest_played_at = oldest_game_query.data[0]['played_at']
-                    print(f"[large_import] Found oldest game: {oldest_played_at}")
+                    newest_played_at = newest_game_query.data[0]['played_at']
+                    print(f"[large_import] Found existing games:")
+                    print(f"[large_import]   Oldest: {oldest_played_at}")
+                    print(f"[large_import]   Newest: {newest_played_at}")
 
-                    # Parse timestamp and subtract 1 day
-                    oldest_dt = datetime.fromisoformat(oldest_played_at.replace('Z', '+00:00'))
-                    resume_dt = oldest_dt - timedelta(days=1)
+                    # PHASE 1: Check for new games first (after newest game)
+                    newest_dt = datetime.fromisoformat(newest_played_at.replace('Z', '+00:00'))
+                    check_new_from = newest_dt + timedelta(seconds=1)  # Start from 1 second after newest
 
                     if platform == 'lichess':
-                        until_timestamp = int(resume_dt.timestamp() * 1000)  # Convert to milliseconds
-                        print(f"[large_import] SMART RESUME: Starting from timestamp {until_timestamp} (oldest game - 1 day)")
+                        since_timestamp = int(check_new_from.timestamp() * 1000)  # milliseconds
+                        print(f"[large_import] PHASE 1: Checking for NEW games after {check_new_from.isoformat()}")
+                        print(f"[large_import]   Using since_timestamp: {since_timestamp}")
                     elif platform == 'chess.com':
-                        # For Chess.com, set the starting month to resume from
-                        oldest_game_month = (resume_dt.year, resume_dt.month)
-                        print(f"[large_import] SMART RESUME: Starting from {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
+                        newest_game_month = (newest_dt.year, newest_dt.month)
+                        print(f"[large_import] PHASE 1: Checking for NEW games from {newest_game_month[0]}/{newest_game_month[1]:02d} onwards")
+
+                    import_phase = "new_games"
+
+                    # Store backfill info for PHASE 2 if needed
+                    oldest_dt = datetime.fromisoformat(oldest_played_at.replace('Z', '+00:00'))
+                    backfill_dt = oldest_dt - timedelta(days=1)
+
+                    if platform == 'lichess':
+                        backfill_until_timestamp = int(backfill_dt.timestamp() * 1000)
+                    elif platform == 'chess.com':
+                        backfill_oldest_month = (backfill_dt.year, backfill_dt.month)
                 else:
                     print(f"[large_import] No existing games found - starting from most recent")
+                    import_phase = "first_import"
             except Exception as resume_error:
                 print(f"[large_import] WARNING: Could not determine resume point: {resume_error}")
+                import_phase = "first_import"
                 # Continue with default (most recent)
 
             # Import in batches
@@ -5366,6 +5933,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
             max_consecutive_no_new = 100
             total_games_checked = 0  # Track total games fetched from platform
             skip_count = 0  # Track how many times we've skipped ahead
+            phase_switched = False  # Track if we've switched from phase 1 to phase 2
             print(f"[large_import] Will stop after {max_consecutive_no_new} consecutive batches with no new games")
 
             # For Chess.com, use larger batches to get all games from multiple months at once
@@ -5380,6 +5948,23 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     })
                     print("[large_import] Import cancelled by user")
                     return
+
+                # Phase switching logic: If PHASE 1 (new games) found nothing, switch to PHASE 2 (backfill old games)
+                if import_phase == "new_games" and consecutive_no_new_games >= 3 and not phase_switched:
+                    print(f"[large_import] PHASE 1 complete - No new games found after 3 batches")
+                    print(f"[large_import] Switching to PHASE 2: Backfilling OLD games...")
+
+                    if platform == 'lichess' and 'backfill_until_timestamp' in locals():
+                        until_timestamp = backfill_until_timestamp
+                        since_timestamp = None  # Clear since for backfill
+                        print(f"[large_import] PHASE 2: Backfilling from timestamp {until_timestamp}")
+                    elif platform == 'chess.com' and 'backfill_oldest_month' in locals():
+                        oldest_game_month = backfill_oldest_month
+                        print(f"[large_import] PHASE 2: Backfilling from {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
+
+                    import_phase = "backfill_old"
+                    consecutive_no_new_games = 0  # Reset counter for phase 2
+                    phase_switched = True
 
                 # Adaptive batch sizing: reduce batch size for large imports to prevent timeouts
                 if total_imported >= 800:
@@ -5399,7 +5984,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                 if current_batch_size != batch_size:
                     print(f"[large_import] Using adaptive batch size: {current_batch_size} (reduced from {batch_size}) due to large import ({total_imported} games already imported)")
                 print(f"[large_import] Fetching games (batch limit: {batch_limit}, offset: {batch_start}/{limit})")
-                print(f"[large_import] Pagination state - until_timestamp: {until_timestamp}, oldest_game_month: {oldest_game_month}")
+                print(f"[large_import] Pagination state - until_timestamp: {until_timestamp}, since_timestamp: {since_timestamp if 'since_timestamp' in locals() else None}, oldest_game_month: {oldest_game_month}")
 
                 # Stagger requests when multiple imports are running to prevent resource contention
                 active_imports = MAX_CONCURRENT_IMPORTS - import_semaphore._value
@@ -5407,9 +5992,15 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     await asyncio.sleep(0.5)  # 500ms delay reduces CPU/memory spikes and prevents connection pool exhaustion
                     print(f"[large_import] {active_imports} concurrent imports active - added 0.5s delay for stability")
 
+                # ALWAYS add a small delay between batches to avoid Lichess rate limiting (429 errors)
+                # Lichess allows roughly 50-60 requests per minute for authenticated users
+                if platform == 'lichess':
+                    await asyncio.sleep(1.2)  # 1.2 seconds = ~50 requests/minute (safe rate)
+                    print(f"[large_import] Added 1.2s delay to respect Lichess API rate limits")
+
                 try:
                     games_data = await _fetch_games_from_platform(
-                        user_id, platform, batch_limit, until_timestamp, from_date, to_date, oldest_game_month
+                        user_id, platform, batch_limit, until_timestamp, from_date, to_date, oldest_game_month, since_timestamp
                     )
                     print(f"[large_import] Fetch completed. Received {len(games_data) if games_data else 0} games")
                 except Exception as e:
@@ -5423,6 +6014,32 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     return
 
                 if not games_data:
+                    print(f"[large_import] No games fetched in this batch")
+
+                    # Don't break immediately - allow phase switching if in Phase 1
+                    if import_phase == "new_games" and not phase_switched:
+                        consecutive_no_new_games += 1
+                        print(f"[large_import] PHASE 1: Empty batch #{consecutive_no_new_games} - will check for phase switch")
+
+                        # If we've had 1 empty batch in Phase 1, switch to Phase 2
+                        if consecutive_no_new_games >= 1:
+                            print(f"[large_import] PHASE 1 complete - No new games found")
+                            print(f"[large_import] Switching to PHASE 2: Backfilling OLD games...")
+
+                            if platform == 'lichess' and 'backfill_until_timestamp' in locals():
+                                until_timestamp = backfill_until_timestamp
+                                since_timestamp = None  # Clear since for backfill
+                                print(f"[large_import] PHASE 2: Backfilling from timestamp {until_timestamp}")
+                            elif platform == 'chess.com' and 'backfill_oldest_month' in locals():
+                                oldest_game_month = backfill_oldest_month
+                                print(f"[large_import] PHASE 2: Backfilling from {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
+
+                            import_phase = "backfill_old"
+                            consecutive_no_new_games = 0  # Reset counter for phase 2
+                            phase_switched = True
+                            continue  # Continue to next batch with Phase 2 settings
+
+                    # If in Phase 2 or first_import and no games, stop
                     print(f"[large_import] No more games to fetch, stopping")
                     break
 
@@ -5526,10 +6143,9 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                         existing_ids.update({g.get('id') for g in new_games})
                         print(f"[large_import] Imported {len(new_games)} games, total: {total_imported}")
 
-                        # Hard limit: Stop at 1000 games per import session (Railway Hobby tier safe limit)
-                        # Reduced from 5000 to prevent memory exhaustion and ensure reliable imports
-                        if total_imported >= 1000:
-                            print(f"[large_import] Reached maximum import limit of 1000 games. Stopping.")
+                        # Hard limit: Stop at 5000 games per import session
+                        if total_imported >= 5000:
+                            print(f"[large_import] Reached maximum import limit of 5000 games. Stopping.")
                             large_import_progress[key].update({
                                 "status": "completed",
                                 "imported_games": total_imported,

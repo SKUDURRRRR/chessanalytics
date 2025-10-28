@@ -32,13 +32,13 @@ class PositionContext:
 
 class EnhancedCommentGenerator:
     """Generates insightful, position-specific comments for chess moves."""
-    
+
     def __init__(self):
         self.position_analyzer = None  # Will be injected
         self._setup_comment_templates()
         self._setup_positional_insights()
         self._setup_tactical_insights()
-    
+
     def _setup_comment_templates(self):
         """Setup diverse comment templates to avoid repetition."""
         self.comment_templates = {
@@ -201,7 +201,7 @@ class EnhancedCommentGenerator:
                 ]
             }
         }
-    
+
     def _setup_positional_insights(self):
         """Setup positional insight templates."""
         self.positional_insights = {
@@ -231,7 +231,7 @@ class EnhancedCommentGenerator:
                 "By {action} piece coordination, you create stronger attacks and defenses"
             ]
         }
-    
+
     def _setup_tactical_insights(self):
         """Setup tactical insight templates."""
         self.tactical_insights = {
@@ -276,36 +276,36 @@ class EnhancedCommentGenerator:
                 "This tactical shot is a masterful combination that creates winning chances"
             ]
         }
-    
-    def generate_enhanced_comment(self, move_analysis: Dict[str, Any], board: chess.Board, 
+
+    def generate_enhanced_comment(self, move_analysis: Dict[str, Any], board: chess.Board,
                                 move: chess.Move, is_user_move: bool = True) -> str:
         """Generate an enhanced, position-specific comment."""
-        
+
         # Extract context from move analysis
         context = self._extract_position_context(move_analysis, board, move)
-        
+
         # Determine move quality
         move_quality = self._determine_move_quality(move_analysis)
-        
+
         # Generate specific details based on the position
         specific_details = self._generate_specific_details(move_analysis, context, move, board)
-        
+
         # Select appropriate template category
         template_category = self._select_template_category(move_quality, context, specific_details)
-        
+
         # Get template and fill it with specific details
         template = random.choice(self.comment_templates[move_quality][template_category])
-        
+
         # Fill template with specific details
         comment = self._fill_template(template, move_analysis, context, specific_details, move, board)
-        
+
         return comment
-    
-    def _extract_position_context(self, move_analysis: Dict[str, Any], board: chess.Board, 
+
+    def _extract_position_context(self, move_analysis: Dict[str, Any], board: chess.Board,
                                 move: chess.Move) -> PositionContext:
         """Extract context about the current position."""
         heuristic_details = move_analysis.get('heuristic_details', {})
-        
+
         return PositionContext(
             material_balance=heuristic_details.get('material_balance', 0),
             king_safety_score=heuristic_details.get('king_safety_score', 0),
@@ -319,7 +319,7 @@ class EnhancedCommentGenerator:
             game_phase=move_analysis.get('game_phase', 'middlegame'),
             move_number=move_analysis.get('fullmove_number', 0)
         )
-    
+
     def _determine_move_quality(self, move_analysis: Dict[str, Any]) -> MoveQuality:
         """Determine the quality of the move based on analysis data."""
         if move_analysis.get('is_brilliant', False):
@@ -342,18 +342,18 @@ class EnhancedCommentGenerator:
             return MoveQuality.BLUNDER
         else:
             return MoveQuality.ACCEPTABLE
-    
-    def _generate_specific_details(self, move_analysis: Dict[str, Any], context: PositionContext, 
+
+    def _generate_specific_details(self, move_analysis: Dict[str, Any], context: PositionContext,
                                  move: chess.Move, board: chess.Board) -> Dict[str, str]:
         """Generate specific details about the move and position."""
         details = {}
-        
+
         # Tactical details with specific explanations
         if context.tactical_patterns:
             pattern = context.tactical_patterns[0]
             if pattern in self.tactical_insights:
                 details['tactical_detail'] = random.choice(self.tactical_insights[pattern])
-        
+
         # Positional details with specific explanations
         if context.positional_factors:
             factor = context.positional_factors[0]
@@ -363,11 +363,11 @@ class EnhancedCommentGenerator:
                 details['positional_detail'] = random.choice(self.positional_insights[factor]).format(
                     action=action, benefit=benefit
                 )
-        
+
         # Specific impact details with more descriptive explanations
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         evaluation_change = context.evaluation_change
-        
+
         if centipawn_loss > 0:
             if centipawn_loss < 10:
                 details['specific_detail'] = "Loses only a tiny amount compared to the best move; this is nearly perfect play"
@@ -383,11 +383,11 @@ class EnhancedCommentGenerator:
             details['specific_detail'] = "This improves your position and gives you better piece coordination"
         else:
             details['specific_detail'] = "This maintains your position well and keeps your pieces active"
-        
+
         # Opening principles
         if context.game_phase == 'opening' and context.move_number <= 15:
             details['opening_principle'] = self._get_opening_principle(move, context.move_number)
-        
+
         # Improvement suggestions with specific moves
         if centipawn_loss > 50:
             best_move = move_analysis.get('best_move')
@@ -398,13 +398,13 @@ class EnhancedCommentGenerator:
                     details['improvement_suggestion'] = f"Consider {best_move_san} instead."
                 except:
                     details['improvement_suggestion'] = "Consider a more accurate move that improves your position."
-        
+
         return details
-    
-    def _select_template_category(self, move_quality: MoveQuality, context: PositionContext, 
+
+    def _select_template_category(self, move_quality: MoveQuality, context: PositionContext,
                                 details: Dict[str, str]) -> str:
         """Select the most appropriate template category based on context."""
-        
+
         if move_quality == MoveQuality.BRILLIANT:
             if 'tactical_detail' in details and 'sacrifice' in details['tactical_detail'].lower():
                 return 'tactical_sacrifice'
@@ -412,7 +412,7 @@ class EnhancedCommentGenerator:
                 return 'positional_brilliance'
             else:
                 return 'general'
-        
+
         elif move_quality == MoveQuality.BEST:
             if context.game_phase == 'opening' and context.move_number <= 15:
                 return 'opening'
@@ -422,7 +422,7 @@ class EnhancedCommentGenerator:
                 return 'positional'
             else:
                 return 'balanced'
-        
+
         elif move_quality in [MoveQuality.GREAT, MoveQuality.EXCELLENT, MoveQuality.GOOD]:
             if 'tactical_detail' in details:
                 return 'tactical'
@@ -430,7 +430,7 @@ class EnhancedCommentGenerator:
                 return 'positional'
             else:
                 return 'general'
-        
+
         elif move_quality == MoveQuality.ACCEPTABLE:
             if context.game_phase == 'opening' and context.move_number <= 15:
                 return 'opening'
@@ -438,7 +438,7 @@ class EnhancedCommentGenerator:
                 return 'suboptimal'
             else:
                 return 'general'
-        
+
         elif move_quality in [MoveQuality.INACCURACY, MoveQuality.MISTAKE, MoveQuality.BLUNDER]:
             if 'tactical_detail' in details:
                 return 'tactical'
@@ -446,14 +446,14 @@ class EnhancedCommentGenerator:
                 return 'positional'
             else:
                 return 'general'
-        
+
         return 'general'
-    
+
     def _fill_template(self, template: str, move_analysis: Dict[str, Any], context: PositionContext,
                       details: Dict[str, str], move: chess.Move, board: chess.Board) -> str:
         """Fill the template with specific details."""
         move_san = move_analysis.get('move_san', '')
-        
+
         # Replace placeholders with actual values
         filled = template.format(
             move_san=move_san,
@@ -466,12 +466,12 @@ class EnhancedCommentGenerator:
             positional_problem=self._get_positional_problem(move_analysis, context),
             specific_problem=self._get_specific_problem(move_analysis, context)
         )
-        
+
         # Clean up any double spaces or formatting issues
         filled = ' '.join(filled.split())
-        
+
         return filled
-    
+
     def _get_opening_principle(self, move: chess.Move, move_number: int) -> str:
         """Get opening principle explanation for the move."""
         # Get piece type from the move
@@ -483,39 +483,39 @@ class EnhancedCommentGenerator:
             if move.from_square is not None:
                 # This is a simplified approach - in practice you'd need the board
                 piece_type = chess.PAWN  # Default fallback
-        
+
         if piece_type == chess.PAWN:
             if move_number <= 3:
                 return "This pawn move helps control the center, which is fundamental in the opening."
             else:
                 return "This pawn move supports your central control and piece development."
-        
+
         elif piece_type in [chess.KNIGHT, chess.BISHOP]:
             if move_number <= 8:
                 return "This develops a piece to an active square, following opening principles."
             else:
                 return "This completes your development and improves piece coordination."
-        
+
         elif piece_type == chess.QUEEN:
             return "This queen move supports your central control, but be careful not to bring it out too early."
-        
+
         elif piece_type == chess.KING:
             if move.from_square in [chess.E1, chess.E8] and abs(move.to_square - move.from_square) == 2:
                 return "This is castling, which brings your king to safety and connects your rooks."
             else:
                 return "This king move improves safety, which is crucial in the opening."
-        
+
         else:
             return "This move follows sound opening principles and helps develop your position."
-    
+
     def _get_tactical_problem(self, move_analysis: Dict[str, Any], context: PositionContext) -> str:
         """Get description of tactical problems with the move."""
         problems = []
-        
+
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         best_move = move_analysis.get('best_move', '')
         move_san = move_analysis.get('move_san', '')
-        
+
         # Generate specific tactical explanations based on centipawn loss
         if centipawn_loss > 300:
             problems.append("This is a catastrophic blunder; you likely hung a major piece or allowed mate in a few moves")
@@ -525,7 +525,7 @@ class EnhancedCommentGenerator:
             problems.append("This is a serious mistake; you likely lost material or created significant tactical problems")
         elif centipawn_loss > 50:
             problems.append("Loses material compared to the best move")
-        
+
         # Add specific tactical problems based on context
         if context.weaknesses_created:
             for weakness in context.weaknesses_created[:2]:
@@ -535,7 +535,7 @@ class EnhancedCommentGenerator:
                     problems.append("You created pawn weaknesses; this gives your opponent targets to attack")
                 elif 'piece' in weakness.lower():
                     problems.append("You left pieces unprotected; this allows tactical shots")
-        
+
         if context.threats_created:
             for threat in context.threats_created[:2]:
                 if 'mate' in threat.lower():
@@ -544,16 +544,16 @@ class EnhancedCommentGenerator:
                     problems.append("You allowed a fork; this will lose material")
                 elif 'pin' in threat.lower():
                     problems.append("You created a pin; this restricts your piece movement")
-        
+
         return ", ".join(problems) if problems else "This weakens your position tactically"
-    
+
     def _get_positional_problem(self, move_analysis: Dict[str, Any], context: PositionContext) -> str:
         """Get description of positional problems with the move."""
         problems = []
-        
+
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         best_move = move_analysis.get('best_move', '')
-        
+
         # Generate specific positional explanations based on centipawn loss
         if centipawn_loss > 200:
             problems.append("This is a major positional blunder; you likely lost the initiative or created fatal weaknesses")
@@ -561,17 +561,17 @@ class EnhancedCommentGenerator:
             problems.append("This is a serious positional mistake; you probably lost control of key squares or piece coordination")
         elif centipawn_loss > 50:
             problems.append("This weakens your position")
-        
+
         # Add specific positional problems based on context
         if context.king_safety_score < -50:
             problems.append("You compromised your king safety; this creates serious vulnerabilities and tactical threats")
-        
+
         if context.piece_activity_score < -20:
             problems.append("You reduced piece activity; this makes your pieces passive and less effective")
-        
+
         if context.center_control < -10:
             problems.append("You lost central control; this gives your opponent more space and attacking chances")
-        
+
         # Add specific positional weaknesses
         if context.weaknesses_created:
             for weakness in context.weaknesses_created[:2]:
@@ -581,22 +581,26 @@ class EnhancedCommentGenerator:
                     problems.append("You weakened diagonal control; this allows bishop attacks")
                 elif 'file' in weakness.lower():
                     problems.append("You lost file control; this allows rook infiltration")
-        
+
         return ", ".join(problems) if problems else "This weakens your position positionally"
-    
+
     def _get_specific_problem(self, move_analysis: Dict[str, Any], context: PositionContext) -> str:
         """Get specific problem description for the move."""
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         best_move = move_analysis.get('best_move', '')
+        best_move_san = move_analysis.get('best_move_san', '')
         move_san = move_analysis.get('move_san', '')
-        
+
+        # Build suggestion text if we have the best move
+        best_move_text = f" {best_move_san} was the best move here." if best_move_san else ""
+
         if centipawn_loss > 300:
-            return "This is a catastrophic blunder; you likely hung your queen or allowed mate in a few moves."
+            return f"This is a catastrophic blunder; you likely hung your queen or allowed mate in a few moves.{best_move_text}"
         elif centipawn_loss > 200:
-            return "This is a major blunder; you probably lost a piece or created fatal weaknesses that severely damage your position."
+            return f"This is a major blunder; you probably lost a piece or created fatal weaknesses that severely damage your position.{best_move_text}"
         elif centipawn_loss > 100:
-            return "This is a serious mistake; you likely lost material or created significant tactical problems that give your opponent a major advantage."
+            return f"This is a serious mistake; you likely lost material or created significant tactical problems that give your opponent a major advantage.{best_move_text}"
         elif centipawn_loss > 50:
-            return "This loses material compared to the best move and weakens your position."
+            return f"This loses material compared to the best move and weakens your position.{best_move_text}"
         else:
-            return "This isn't the most accurate choice in this position."
+            return f"This isn't the most accurate choice in this position.{best_move_text}"

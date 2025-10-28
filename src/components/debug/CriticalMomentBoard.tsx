@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Chessboard } from 'react-chessboard'
 import { Chess } from 'chess.js'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
-import { generateMoveArrows, generateModernMoveArrows } from '../../utils/chessArrows'
+import { generateModernMoveArrows } from '../../utils/chessArrows'
 import { ModernChessArrows } from '../chess/ModernChessArrows'
 
 const MoveClassificationBadge = ({ classification }: { classification: string }) => {
@@ -83,7 +83,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
         setBoardWidth(180) // 2XL screens and up
       }
     }
-    
+
     updateBoardWidth()
     window.addEventListener('resize', updateBoardWidth)
     return () => window.removeEventListener('resize', updateBoardWidth)
@@ -111,7 +111,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
 
   const getBestMoveFen = () => {
     if (!move.bestMoveSan || !move.fenBefore) return null
-    
+
     try {
       const game = new Chess(move.fenBefore)
       game.move(move.bestMoveSan)
@@ -131,11 +131,11 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
 
   const getEvaluationColor = (evaluation: { type: 'cp' | 'mate'; value: number } | null) => {
     if (!evaluation) return 'text-slate-400'
-    
+
     if (evaluation.type === 'mate') {
       return evaluation.value > 0 ? 'text-green-400' : 'text-red-400'
     }
-    
+
     const score = evaluation.value
     if (score > 200) return 'text-green-400'
     if (score > 50) return 'text-green-300'
@@ -146,7 +146,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
 
   const getEvaluationBarData = (evaluation: { type: 'cp' | 'mate'; value: number } | null) => {
     if (!evaluation) return { percentage: 50, color: 'bg-slate-500', text: '0.0' }
-    
+
     if (evaluation.type === 'mate') {
       const isWhiteWinning = evaluation.value > 0
       return {
@@ -155,19 +155,19 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
         text: evaluation.value > 0 ? `+M${evaluation.value}` : `-M${Math.abs(evaluation.value)}`
       }
     }
-    
+
     const score = evaluation.value
     const maxScore = 1000 // Cap at 1000 points for bar display
     const clampedScore = Math.max(-maxScore, Math.min(maxScore, score))
     const percentage = 50 + (clampedScore / maxScore) * 50
-    
+
     let color = 'bg-slate-500'
     if (score > 200) color = 'bg-green-500'
     else if (score > 50) color = 'bg-green-400'
     else if (score > -50) color = 'bg-slate-500'
     else if (score > -200) color = 'bg-red-400'
     else color = 'bg-red-500'
-    
+
     return {
       percentage: Math.max(0, Math.min(100, percentage)),
       color,
@@ -177,11 +177,11 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
 
   const getMoveHighlight = () => {
     if (currentMoveIndex !== move.index) return {}
-    
+
     try {
       const currentMove = allMoves[currentMoveIndex]
       if (!currentMove) return {}
-      
+
       const game = new Chess()
       // Replay moves up to (but not including) the current move
       for (let i = 0; i < currentMoveIndex; i++) {
@@ -193,7 +193,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
           }
         }
       }
-      
+
       // Now apply the current move to get highlight squares
       const moveObj = game.move(currentMove.san)
       if (moveObj) {
@@ -210,7 +210,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
 
   const getBestMoveHighlight = () => {
     if (!move.bestMoveSan || currentMoveIndex !== move.index) return {}
-    
+
     try {
       const game = new Chess()
       // Replay moves up to (but not including) the critical move
@@ -223,7 +223,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
           }
         }
       }
-      
+
       // Now apply the best move to get highlight squares
       const moveObj = game.move(move.bestMoveSan)
       if (moveObj) {
@@ -258,7 +258,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
 
     // Create a chess instance to replay moves up to (but not including) the current move
     const chess = new Chess()
-    
+
     // Replay all moves up to (but not including) the current move
     // This sets up the position BEFORE the current move is made
     for (let i = 0; i < currentMoveIndex; i++) {
@@ -319,22 +319,47 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
           }
         `}</style>
         <div className="flex justify-center">
-          <div className="relative">
+          <div className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
             <Chessboard
               id={`critical-moment-${move.index}`}
               position={getDisplayFen()}
               arePiecesDraggable={false}
               boardOrientation={playerColor}
               boardWidth={boardWidth}
-              showNotation={true}
-              customSquareStyles={getSquareStyles()}
+              showBoardNotation={true}
+              customSquareStyles={getMoveHighlight()}
               {...getDarkChessBoardTheme('default')}
             />
-            <ModernChessArrows
-              arrows={currentMoveArrows}
-              boardWidth={boardWidth}
-              boardOrientation={playerColor}
-            />
+            {/* Test: Simple SVG overlay */}
+            <svg
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: 20
+              }}
+            >
+              <rect x="20" y="20" width="60" height="60" fill="red" opacity="0.8" />
+              <text x="30" y="50" fill="white" fontSize="12">TEST</text>
+            </svg>
+            {(() => {
+              try {
+                return (
+                  <ModernChessArrows
+                    arrows={currentMoveArrows}
+                    boardWidth={boardWidth}
+                    boardOrientation={playerColor}
+                    boardId={`critical-${move.index}`}
+                  />
+                )
+              } catch (error) {
+                console.error('[CriticalMomentBoard] ModernChessArrows error:', error)
+                return <div style={{ color: 'red', position: 'absolute', top: 0 }}>Arrow Error</div>
+              }
+            })()}
           </div>
         </div>
       </div>
@@ -378,8 +403,8 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
         <button
           onClick={() => navigateToMove('critical')}
           className={`rounded p-1 text-[10px] transition ${
-            isAtCriticalMove 
-              ? 'bg-amber-500/30 text-amber-200' 
+            isAtCriticalMove
+              ? 'bg-amber-500/30 text-amber-200'
               : 'bg-amber-600/20 text-slate-300 hover:bg-amber-600/40'
           }`}
           title="Go to critical moment"

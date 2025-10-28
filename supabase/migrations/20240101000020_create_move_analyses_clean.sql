@@ -6,10 +6,10 @@ CREATE TABLE move_analyses (
     user_id TEXT NOT NULL,
     platform TEXT NOT NULL CHECK (platform IN ('lichess', 'chess.com')),
     game_id TEXT NOT NULL,
-    
+
     -- Reference to basic analysis in game_analyses table
     game_analysis_id UUID REFERENCES game_analyses(id) ON DELETE CASCADE,
-    
+
     -- Advanced accuracy metrics from Stockfish
     average_centipawn_loss FLOAT DEFAULT 0,
     opponent_average_centipawn_loss FLOAT DEFAULT 0,
@@ -19,18 +19,18 @@ CREATE TABLE move_analyses (
     opponent_accuracy FLOAT DEFAULT 0,
     good_moves INTEGER DEFAULT 0,
     acceptable_moves INTEGER DEFAULT 0,
-    
+
     -- Detailed phase analysis from Stockfish
     middle_game_accuracy FLOAT CHECK (middle_game_accuracy >= 0 AND middle_game_accuracy <= 100),
     endgame_accuracy FLOAT CHECK (endgame_accuracy >= 0 AND endgame_accuracy <= 100),
-    
+
     -- Advanced metrics
     time_management_score FLOAT CHECK (time_management_score >= 0 AND time_management_score <= 100),
     opponent_time_management_score FLOAT DEFAULT 0,
     material_sacrifices INTEGER DEFAULT 0,
     aggressiveness_index FLOAT DEFAULT 0,
     average_evaluation FLOAT,
-    
+
     -- Detailed personality scores from Stockfish analysis (0-100 scale)
     tactical_score FLOAT CHECK (tactical_score >= 0 AND tactical_score <= 100),
     positional_score FLOAT CHECK (positional_score >= 0 AND positional_score <= 100),
@@ -38,25 +38,25 @@ CREATE TABLE move_analyses (
     patient_score FLOAT CHECK (patient_score >= 0 AND patient_score <= 100),
     endgame_score FLOAT CHECK (endgame_score >= 0 AND endgame_score <= 100),
     opening_score FLOAT CHECK (opening_score >= 0 AND opening_score <= 100),
-    
+
     -- Pattern analysis from Stockfish (JSONB for flexibility)
     tactical_patterns JSONB DEFAULT '[]',
     positional_patterns JSONB DEFAULT '[]',
     strategic_themes JSONB DEFAULT '[]',
-    
+
     -- Move-by-move analysis from Stockfish (JSONB)
     moves_analysis JSONB DEFAULT '[]',
-    
+
     -- Processing metadata
     analysis_method TEXT DEFAULT 'stockfish',
     stockfish_depth INTEGER DEFAULT 15,
     analysis_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     processing_time_ms INTEGER,
-    
+
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
+
     -- Constraints
     UNIQUE(user_id, platform, game_id)
 );
@@ -96,4 +96,4 @@ GRANT ALL ON move_analyses TO service_role;
 GRANT ALL ON FUNCTION update_move_analyses_updated_at() TO authenticated;
 GRANT ALL ON FUNCTION update_move_analyses_updated_at() TO service_role;
 -- Note: combined_game_analysis view was removed in migration 20241220000005
--- The unified_analyses view provides better functionality and is actively used
+-- The unified_analyses view provides better functionality and is actively used;

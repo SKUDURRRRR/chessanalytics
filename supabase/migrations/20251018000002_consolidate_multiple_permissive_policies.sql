@@ -21,7 +21,6 @@
 -- This is safer and follows principle of least privilege
 
 DROP POLICY IF EXISTS "Allow all for anon and service_role on game_analyses" ON public.game_analyses;
-
 -- ============================================================================
 -- PART 2: Consolidate game_features policies
 -- ============================================================================
@@ -30,11 +29,11 @@ DROP POLICY IF EXISTS "Allow all for anon and service_role on game_analyses" ON 
 -- if game_features_select_all already provides sufficient access
 DROP POLICY IF EXISTS "Users can view own game features" ON public.game_features;
 DROP POLICY IF EXISTS "game_features_select_all" ON public.game_features;
-
 -- Recreate it as a single comprehensive policy if needed
 CREATE POLICY "game_features_select_all" ON public.game_features
     FOR SELECT
-    USING (true);  -- Adjust based on your security requirements
+    USING (true);
+-- Adjust based on your security requirements
 
 -- ============================================================================
 -- PART 3: Consolidate games policies
@@ -49,7 +48,6 @@ CREATE POLICY "game_features_select_all" ON public.game_features
 -- Strategy: Remove the overly broad "Allow all" policy and keep specific policies
 
 DROP POLICY IF EXISTS "Allow all access to games" ON public.games;
-
 -- The remaining policies (games_select_own, games_public_read, games_insert_own, etc.)
 -- plus the no_client_* policies provide granular control
 
@@ -59,7 +57,6 @@ DROP POLICY IF EXISTS "Allow all access to games" ON public.games;
 
 -- Remove the broad "games_pgn_anon_all" policy if it exists
 DROP POLICY IF EXISTS "games_pgn_anon_all" ON public.games_pgn;
-
 -- Keep specific policies:
 -- - games_pgn_select_all / games_pgn_public_read / games_pgn_owner_read
 -- - games_pgn_insert_own, games_pgn_update_own, games_pgn_delete_own
@@ -69,15 +66,21 @@ DROP POLICY IF EXISTS "games_pgn_anon_all" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_select_all" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_public_read" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_owner_read" ON public.games_pgn;
-
 CREATE POLICY "games_pgn_select" ON public.games_pgn
     FOR SELECT
     USING (
-        is_public = true  -- Public games can be viewed by anyone
+        -- Note: games_pgn table doesn't have is_public column
+        -- Check if corresponding game is public by joining with games table
+        EXISTS (
+            SELECT 1 FROM games
+            WHERE games.user_id = games_pgn.user_id
+            AND games.platform = games_pgn.platform
+            AND games.provider_game_id = games_pgn.provider_game_id
+            AND games.is_public = true
+        )
         OR user_id = (select auth.uid())::text  -- Owner can view their own games
         OR auth.role() = 'service_role'  -- Service role can view all
     );
-
 -- Consolidate INSERT policies (keep the restrictive no_client_write, remove duplicates)
 DROP POLICY IF EXISTS "games_pgn_no_client_write_ins" ON public.games_pgn;
 -- Keep games_pgn_insert_own and games_pgn_no_client_write
@@ -92,7 +95,6 @@ DROP POLICY IF EXISTS "games_pgn_no_client_write_upd" ON public.games_pgn;
 
 -- Remove the "Anon can read import sessions" policy as it's too broad
 DROP POLICY IF EXISTS "Anon can read import sessions" ON public.import_sessions;
-
 -- Keep "Users can read own import sessions" policy
 
 -- ============================================================================
@@ -107,10 +109,10 @@ DROP POLICY IF EXISTS "Allow all users to view profiles" ON public.user_profiles
 DROP POLICY IF EXISTS "Users can view all profiles" ON public.user_profiles;
 DROP POLICY IF EXISTS "user_profiles_public_read" ON public.user_profiles;
 DROP POLICY IF EXISTS "user_profiles_select_all" ON public.user_profiles;
-
 CREATE POLICY "user_profiles_select" ON public.user_profiles
     FOR SELECT
-    USING (true);  -- All profiles are publicly readable
+    USING (true);
+-- All profiles are publicly readable
 
 -- For INSERT: consolidate multiple insert policies
 DROP POLICY IF EXISTS "Allow all users to insert profiles" ON public.user_profiles;
@@ -129,11 +131,9 @@ DROP POLICY IF EXISTS "Users can update own profile" ON public.user_profiles;
 -- ============================================================================
 
 COMMENT ON POLICY "games_pgn_select" ON public.games_pgn IS
-'Consolidated SELECT policy: allows public games to be viewed by anyone, private games only by owner';
-
+'Consolidated SELECT policy: allows public games to be viewed by anyone (by checking games table), private games only by owner';
 COMMENT ON POLICY "user_profiles_select" ON public.user_profiles IS
 'Consolidated SELECT policy: all user profiles are publicly readable';
-
 -- ============================================================================
 -- Notes on remaining policies:
 --
@@ -145,4 +145,4 @@ COMMENT ON POLICY "user_profiles_select" ON public.user_profiles IS
 --
 -- These serve as multiple layers of security and access control, which is
 -- sometimes necessary for complex authorization requirements.
--- ============================================================================
+-- ============================================================================;

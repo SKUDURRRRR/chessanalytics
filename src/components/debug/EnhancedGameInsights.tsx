@@ -29,6 +29,7 @@ interface EnhancedGameInsightsProps {
   playerColor: 'white' | 'black'
   currentMove: ProcessedMove | null
   gameRecord: any
+  analysisRecord?: any
 }
 
 interface TacticalPattern {
@@ -60,20 +61,22 @@ interface CriticalMomentCardProps {
   gamePhase: string
 }
 
-function CriticalMomentCard({ 
-  move, 
-  index, 
-  allMoves, 
-  playerColor, 
-  isBlunder, 
-  isBrilliant, 
+function CriticalMomentCard({
+  move,
+  index,
+  allMoves,
+  playerColor,
+  isBlunder,
+  isBrilliant,
   isMistake,
   gamePhase
 }: CriticalMomentCardProps) {
   const [showDetails, setShowDetails] = useState(false)
-  
-  const impactSeverity = move.centipawnLoss ? 
-    (move.centipawnLoss > 500 ? 'Severe Impact' : 
+  const [showExplanation, setShowExplanation] = useState(false)
+  const [showBoard, setShowBoard] = useState(false)
+
+  const impactSeverity = move.centipawnLoss ?
+    (move.centipawnLoss > 500 ? 'Severe Impact' :
      move.centipawnLoss > 200 ? 'Significant Impact' : 'Moderate Impact') : null
 
   const getBorderColor = () => {
@@ -109,134 +112,158 @@ function CriticalMomentCard({
   }
 
   return (
-    <div className={`rounded-2xl border ${getBorderColor()} ${getBgColor()} overflow-hidden transition-all duration-200`}>
-      {/* Compact Header */}
-      <div className="p-4">
-        <div className="flex flex-col lg:flex-row items-start gap-4">
-          {/* Left: Move Info */}
-          <div className="flex-1 w-full lg:w-auto min-w-0 order-1 lg:order-1">
-            <div className="flex items-center gap-3 mb-2">
-              <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${getNumberBadgeClass()}`}>
-                #{index + 1}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-lg font-bold text-white">Move {move.moveNumber}: {move.san}</span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase ${getMoveClassificationBgColor(move.classification)}`}>
-                    {move.classification}
-                  </span>
-                  <span className="text-xs text-slate-400 px-2 py-0.5 rounded-full bg-slate-700/50">{gamePhase}</span>
-                </div>
-                {move.centipawnLoss && (
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className={`h-2 w-2 rounded-full ${
-                      move.centipawnLoss > 500 ? 'bg-red-500' : 
-                      move.centipawnLoss > 200 ? 'bg-orange-500' : 
-                      'bg-yellow-500'
-                    }`}></div>
-                    <span className="text-sm text-slate-300">
-                      {move.centipawnLoss > 0 ? 'Lost' : 'Gained'} {Math.round(Math.abs(move.centipawnLoss))} points
-                    </span>
-                    {impactSeverity && (
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${getImpactBadgeClass()}`}>
-                        {impactSeverity}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
+    <div className={`rounded-2xl border ${getBorderColor()} ${getBgColor()} p-3 overflow-hidden transition-all duration-200 hover:bg-opacity-80`}>
+      {/* Header Row: Everything on one line */}
+      <div className="flex items-center gap-3 mb-2">
+        <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold flex-shrink-0 ${getNumberBadgeClass()}`}>
+          #{index + 1}
+        </div>
+        <span className="text-base font-bold text-white whitespace-nowrap">Move {move.moveNumber}: {move.san}</span>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase whitespace-nowrap ${getMoveClassificationBgColor(move.classification)}`}>
+          {move.classification}
+        </span>
+        <span className="text-xs text-slate-400 px-2 py-0.5 rounded-full bg-slate-700/50 whitespace-nowrap">{gamePhase}</span>
+        {move.centipawnLoss && (
+          <>
+            <span className="text-slate-400 text-xs">•</span>
+            <div className="flex items-center gap-2">
+              <div className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                move.centipawnLoss > 500 ? 'bg-red-500' :
+                move.centipawnLoss > 200 ? 'bg-orange-500' :
+                'bg-yellow-500'
+              }`}></div>
+              <span className="text-xs text-slate-300 whitespace-nowrap">
+                {move.centipawnLoss > 0 ? 'Lost' : 'Gained'} {Math.round(Math.abs(move.centipawnLoss))} pts
+              </span>
+              {impactSeverity && (
+                <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${getImpactBadgeClass()}`}>
+                  {impactSeverity}
+                </span>
+              )}
             </div>
+          </>
+        )}
+      </div>
 
-            {/* Explanation - Always Visible */}
-            <div className="mt-3 rounded-lg bg-slate-800/40 border border-slate-700/50 p-3">
-              <p className="text-sm text-slate-200 leading-relaxed">{move.explanation}</p>
-            </div>
+      {/* Actions Row: Better move and all actions on one line */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {move.bestMoveSan && (
+          <>
+            <span className="text-xs text-slate-400 whitespace-nowrap">Better:</span>
+            <span className="font-mono font-semibold text-xs text-emerald-300 px-2 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded whitespace-nowrap">
+              {move.bestMoveSan}
+            </span>
+            <span className="text-slate-400 text-xs">•</span>
+          </>
+        )}
+        <button
+          onClick={() => setShowExplanation(!showExplanation)}
+          className="text-xs text-slate-400 hover:text-slate-200 transition-colors duration-200 whitespace-nowrap"
+        >
+          {showExplanation ? '▲ Hide' : '▼ Read'} Explanation
+        </button>
+        <button
+          onClick={() => setShowDetails(!showDetails)}
+          className="text-xs text-slate-400 hover:text-slate-200 transition-colors duration-200 whitespace-nowrap"
+        >
+          {showDetails ? '▲ Hide' : '▼ Show'} Learning Points
+        </button>
+        <button
+          onClick={() => setShowBoard(!showBoard)}
+          className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 whitespace-nowrap ${
+            showBoard
+              ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'
+              : 'bg-slate-700/50 text-slate-300 border border-white/10 hover:bg-slate-600/70'
+          }`}
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          {showBoard ? 'Hide' : 'View'}
+        </button>
+      </div>
 
-            {/* Best Move Suggestion */}
-            {move.bestMoveSan && (
-              <div className="mt-2 flex items-center gap-2 text-sm">
-                <span className="text-slate-400">Better:</span>
-                <span className="font-mono font-semibold text-emerald-300">{move.bestMoveSan}</span>
-              </div>
-            )}
-
-            {/* Expandable Details Toggle */}
-            <button
-              onClick={() => setShowDetails(!showDetails)}
-              className="mt-3 w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm text-slate-300 hover:text-white"
-            >
-              <span>{showDetails ? 'Hide' : 'Show'} Learning Points</span>
-              <span className="text-xs">{showDetails ? '▲' : '▼'}</span>
-            </button>
+      {/* Collapsible Explanation */}
+      {showExplanation && (
+        <div className="mt-2">
+          <div className="rounded-lg bg-slate-800/40 border border-slate-700/50 p-2">
+            <p className="text-xs text-slate-200 leading-relaxed">{move.explanation}</p>
           </div>
+        </div>
+      )}
 
-          {/* Right: Chess Board */}
-          <div className="flex-shrink-0 w-full lg:w-auto order-2 lg:order-2">
+      {/* Collapsible Chess Board */}
+      {showBoard && (
+        <div className="mt-3">
+          <div className="flex justify-center">
             <CriticalMomentBoard
               move={move}
               allMoves={allMoves}
               playerColor={playerColor}
-              className="lg:sticky lg:top-4"
             />
           </div>
         </div>
-      </div>
+      )}
 
       {/* Expandable Learning Details */}
-      {showDetails && (
+      <div
+        className={`overflow-hidden transition-all duration-300 ease-in-out ${
+          showDetails ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+        }`}
+      >
         <div className="border-t border-white/10 bg-black/20 p-4">
           <div className="space-y-3">
             <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Key Learning Points</h4>
-            
+
             {isBlunder && (
               <div className="space-y-2">
-                <LearningPoint 
-                  icon="⚠️" 
+                <LearningPoint
+                  icon="⚠️"
                   text="This move significantly weakened your position. Focus on calculating candidate moves more thoroughly."
                   color="rose"
                 />
-                <LearningPoint 
-                  icon="🔍" 
+                <LearningPoint
+                  icon="🔍"
                   text='Before moving, ask: "What are all the forcing moves? What does my opponent threaten?"'
                   color="rose"
                 />
               </div>
             )}
-            
+
             {isBrilliant && (
               <div className="space-y-2">
-                <LearningPoint 
-                  icon="✨" 
+                <LearningPoint
+                  icon="✨"
                   text="Excellent tactical awareness! This type of resourceful play can turn games around."
                   color="purple"
                 />
-                <LearningPoint 
-                  icon="🎯" 
+                <LearningPoint
+                  icon="🎯"
                   text="Look for similar tactical patterns in future games - this shows strong calculation skills."
                   color="purple"
                 />
               </div>
             )}
-            
+
             {isMistake && (
               <div className="space-y-2">
-                <LearningPoint 
-                  icon="💡" 
+                <LearningPoint
+                  icon="💡"
                   text="Consider the engine's suggestion next time. This position required more precise calculation."
                   color="amber"
                 />
-                <LearningPoint 
-                  icon="⚖️" 
+                <LearningPoint
+                  icon="⚖️"
                   text="Practice evaluating candidate moves systematically - pros and cons of each option."
                   color="amber"
                 />
               </div>
             )}
-            
-            <LearningPoint 
-              icon="📚" 
+
+            <LearningPoint
+              icon="📚"
               text={
-                gamePhase === 'Opening' 
+                gamePhase === 'Opening'
                   ? 'Study opening principles and common patterns in this line. Focus on development and center control.'
                   : gamePhase === 'Middlegame'
                   ? 'Focus on tactical patterns and positional understanding. Practice calculation in complex positions.'
@@ -250,8 +277,8 @@ function CriticalMomentCard({
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-slate-400">Position Evaluation:</span>
                   <span className={`font-semibold ${
-                    move.scoreForPlayer > 100 ? 'text-green-400' : 
-                    move.scoreForPlayer > 0 ? 'text-slate-300' : 
+                    move.scoreForPlayer > 100 ? 'text-green-400' :
+                    move.scoreForPlayer > 0 ? 'text-slate-300' :
                     'text-red-400'
                   }`}>
                     {move.displayEvaluation}
@@ -261,7 +288,7 @@ function CriticalMomentCard({
             )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -290,17 +317,17 @@ function LearningPoint({ icon, text, color }: { icon: string; text: string; colo
   )
 }
 
-export function EnhancedGameInsights({ moves, playerColor, currentMove, gameRecord }: EnhancedGameInsightsProps) {
+export function EnhancedGameInsights({ moves, playerColor, currentMove, gameRecord, analysisRecord }: EnhancedGameInsightsProps) {
   const userMoves = moves.filter(move => move.isUserMove)
   const opponentMoves = moves.filter(move => !move.isUserMove)
-  
+
   // Track whether to show all critical moments or just the first one
   const [showAllCriticalMoments, setShowAllCriticalMoments] = useState(false)
-  
+
 
   const tacticalPatterns = useMemo(() => {
     const patterns: TacticalPattern[] = []
-    
+
     // Detect blunder sequences
     const blunderSequence = userMoves.filter(move => move.classification === 'blunder')
     if (blunderSequence.length >= 2) {
@@ -327,7 +354,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
 
     // Detect opening deviations
     const openingMoves = userMoves.slice(0, 10)
-    const openingInaccuracies = openingMoves.filter(move => 
+    const openingInaccuracies = openingMoves.filter(move =>
       move.classification === 'inaccuracy' || move.classification === 'mistake'
     )
     if (openingInaccuracies.length > 0) {
@@ -342,7 +369,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
 
     // Detect time pressure patterns (moves with high centipawn loss in later game)
     const lateGameMoves = userMoves.slice(-10)
-    const timePressureMoves = lateGameMoves.filter(move => 
+    const timePressureMoves = lateGameMoves.filter(move =>
       move.centipawnLoss && move.centipawnLoss > 200
     )
     if (timePressureMoves.length >= 2) {
@@ -362,13 +389,13 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
     const totalMoves = userMoves.length
     const openingEnd = Math.min(10, Math.floor(totalMoves * 0.2))
     const middlegameEnd = Math.floor(totalMoves * 0.8)
-    
+
     const phases: PhaseAnalysis[] = []
 
     // Opening phase
     const openingMoves = userMoves.slice(0, openingEnd)
     const openingAccuracy = calculateOpeningAccuracyChessCom(openingMoves)
-    
+
     phases.push({
       phase: 'opening',
       startMove: 1,
@@ -376,7 +403,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
       accuracy: openingAccuracy,
       keyMoments: openingMoves.filter(m => m.classification !== 'best' && m.classification !== 'acceptable'),
       patterns: tacticalPatterns.filter(p => p.type === 'opening'),
-      summary: openingAccuracy > 80 
+      summary: openingAccuracy > 80
         ? 'Solid opening play with good theoretical knowledge'
         : openingAccuracy > 60
         ? 'Decent opening play with some inaccuracies'
@@ -388,7 +415,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
     const middlegameAccuracy = middlegameMoves.length > 0
       ? (middlegameMoves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length / middlegameMoves.length) * 100
       : 0
-    
+
     phases.push({
       phase: 'middlegame',
       startMove: openingEnd + 1,
@@ -408,7 +435,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
     const endgameAccuracy = endgameMoves.length > 0
       ? (endgameMoves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length / endgameMoves.length) * 100
       : 0
-    
+
     phases.push({
       phase: 'endgame',
       startMove: middlegameEnd + 1,
@@ -427,8 +454,9 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
   }, [userMoves, tacticalPatterns])
 
   const criticalMoments = useMemo(() => {
-    return userMoves.filter(move => 
-      move.classification === 'blunder' || 
+    return userMoves.filter(move =>
+      move.classification === 'blunder' ||
+      move.classification === 'mistake' ||
       move.classification === 'brilliant' ||
       (move.centipawnLoss && move.centipawnLoss > 300)
     ).sort((a, b) => Math.abs(b.centipawnLoss || 0) - Math.abs(a.centipawnLoss || 0))
@@ -436,7 +464,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
 
   const learningRecommendations = useMemo(() => {
     const recommendations: string[] = []
-    
+
     // Analyze patterns to generate recommendations
     const blunderCount = userMoves.filter(m => m.classification === 'blunder').length
     const tacticalCount = userMoves.filter(m => m.classification === 'brilliant').length
@@ -446,24 +474,24 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
     if (blunderCount > 2) {
       recommendations.push('Focus on blunder prevention - take time to double-check moves')
     }
-    
+
     if (tacticalCount === 0 && userMoves.length > 20) {
       recommendations.push('Work on tactical vision - solve puzzles to improve pattern recognition')
     }
-    
+
     if (openingIssues > 0) {
       recommendations.push('Study opening theory for the openings you play most frequently')
     }
-    
+
     if (timePressureIssues > 0) {
       recommendations.push('Improve time management - allocate more time for critical positions')
     }
 
     // Phase-specific recommendations
-    const weakestPhase = phaseAnalysis.reduce((weakest, phase) => 
+    const weakestPhase = phaseAnalysis.reduce((weakest, phase) =>
       phase.accuracy < weakest.accuracy ? phase : weakest
     )
-    
+
     if (weakestPhase.accuracy < 60) {
       recommendations.push(`Focus on ${weakestPhase.phase} play - this is your weakest phase`)
     }
@@ -474,103 +502,66 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
   return (
     <div className="space-y-6">
       {/* Opening Theory Analysis */}
-      <OpeningTheoryAnalysis 
+      <OpeningTheoryAnalysis
         moves={moves}
         playerColor={playerColor}
         gameRecord={gameRecord}
+        analysisRecord={analysisRecord}
       />
 
-      {/* Positional Analysis */}
-      <PositionalAnalysis 
+      {/* Positional Analysis - REMOVED */}
+      {/* <PositionalAnalysis
         moves={moves}
         playerColor={playerColor}
         currentMove={currentMove}
-      />
-
-      {/* Tactical Patterns */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
-        <h3 className="mb-4 text-lg font-semibold text-white">Tactical Patterns</h3>
-        {tacticalPatterns.length > 0 ? (
-          <div className="space-y-3">
-            {tacticalPatterns.map((pattern, index) => (
-              <div
-                key={index}
-                className={`rounded-2xl border-l-4 p-4 ${
-                  pattern.severity === 'high'
-                    ? 'border-rose-500 bg-rose-500/10'
-                    : pattern.severity === 'medium'
-                      ? 'border-amber-400 bg-amber-500/10'
-                      : 'border-sky-400 bg-sky-500/10'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <h4 className="font-medium text-white">{pattern.name}</h4>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ${
-                    pattern.severity === 'high'
-                      ? 'bg-rose-500/20 text-rose-200'
-                      : pattern.severity === 'medium'
-                        ? 'bg-amber-500/20 text-amber-200'
-                        : 'bg-sky-500/20 text-sky-200'
-                  }`}>
-                    {pattern.severity}
-                  </span>
-                </div>
-                <p className="mt-1 text-sm text-slate-200">{pattern.description}</p>
-                <div className="mt-2 text-xs text-slate-400">
-                  Moves: {pattern.moves.map(m => `#${m + 1}`).join(', ')}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-slate-300">No significant tactical patterns detected in this game.</p>
-        )}
-      </div>
+      /> */}
 
       {/* Phase Analysis */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-4 text-slate-200 shadow-xl shadow-black/40">
         <h3 className="mb-4 text-lg font-semibold text-white">Phase-by-Phase Analysis</h3>
-        <div className="space-y-4">
+        <div className="space-y-3">
           {phaseAnalysis.map((phase, index) => (
-            <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h4 className="font-medium text-white capitalize">{phase.phase}</h4>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-slate-400">Moves {phase.startMove}-{phase.endMove}</span>
-                  <span className={`rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide ${
-                    phase.accuracy > 80
-                      ? 'bg-emerald-500/20 text-emerald-200'
-                      : phase.accuracy > 60
-                        ? 'bg-amber-500/20 text-amber-200'
-                        : 'bg-rose-500/20 text-rose-200'
-                  }`}>
-                    {phase.accuracy.toFixed(1)}%
-                  </span>
-                </div>
+            <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              {/* Header Row: Everything on one line */}
+              <div className="flex items-center gap-3 mb-2">
+                <h4 className="font-bold text-white capitalize text-base whitespace-nowrap">{phase.phase}</h4>
+                <span className="text-xs text-slate-400 whitespace-nowrap">Moves {phase.startMove}-{phase.endMove}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap ${
+                  phase.accuracy > 80
+                    ? 'bg-emerald-500/20 text-emerald-200'
+                    : phase.accuracy > 60
+                      ? 'bg-amber-500/20 text-amber-200'
+                      : 'bg-rose-500/20 text-rose-200'
+                }`}>
+                  {phase.accuracy.toFixed(1)}%
+                </span>
+                <span className="text-slate-400 text-xs">•</span>
+                <p className="text-sm text-slate-200 flex-1 truncate">{phase.summary}</p>
               </div>
-              <p className="mb-3 text-sm text-slate-200">{phase.summary}</p>
-              
+
+              {/* Key Moments Row: All inline */}
               {phase.keyMoments.length > 0 && (
-                <div className="mt-3">
-                  <h5 className="mb-2 text-sm font-medium text-slate-300">Key Moments:</h5>
-                  <div className="space-y-1">
-                    {phase.keyMoments.slice(0, 3).map((move, moveIndex) => (
-                      <div key={moveIndex} className="flex items-center justify-between text-xs text-slate-200">
-                        <span>Move {move.moveNumber}: {move.san}</span>
-                        <span className={`rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide ${
-                          move.classification === 'blunder'
-                            ? 'bg-rose-500/20 text-rose-200'
-                            : move.classification === 'mistake'
-                              ? 'bg-amber-500/20 text-amber-200'
-                              : move.classification === 'brilliant'
-                                ? 'bg-purple-500/20 text-purple-200'
-                                : 'bg-sky-500/20 text-sky-200'
-                        }`}>
-                          {move.classification}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium text-slate-400 uppercase tracking-wide whitespace-nowrap">Key Moments:</span>
+                  {phase.keyMoments.slice(0, 5).map((move, moveIndex) => (
+                    <div key={moveIndex} className="flex items-center gap-1.5">
+                      <span className="text-xs text-slate-300 whitespace-nowrap">Move {move.moveNumber}: {move.san}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap ${
+                        move.classification === 'blunder'
+                          ? 'bg-rose-500/20 text-rose-200'
+                          : move.classification === 'mistake'
+                            ? 'bg-amber-500/20 text-amber-200'
+                            : move.classification === 'brilliant'
+                              ? 'bg-purple-500/20 text-purple-200'
+                              : 'bg-sky-500/20 text-sky-200'
+                      }`}>
+                        {move.classification}
+                      </span>
+                    </div>
+                  ))}
+                  {phase.keyMoments.length > 5 && (
+                    <span className="text-xs text-slate-400 whitespace-nowrap">+{phase.keyMoments.length - 5} more</span>
+                  )}
                 </div>
               )}
             </div>
@@ -578,8 +569,8 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
         </div>
       </div>
 
-      {/* Critical Moments */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      {/* Critical Moments - REMOVED */}
+      {/* <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
         <div className="mb-6">
           <h3 className="mb-2 text-lg font-semibold text-white">Critical Moments</h3>
           <p className="text-sm text-slate-400">Key turning points that shaped the game's outcome</p>
@@ -611,7 +602,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
               const isBrilliant = move.classification === 'brilliant'
               const isMistake = move.classification === 'mistake'
               const gamePhase = move.moveNumber <= 10 ? 'Opening' : move.moveNumber <= 30 ? 'Middlegame' : 'Endgame'
-              
+
               return (
                 <CriticalMomentCard
                   key={index}
@@ -626,8 +617,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
                 />
               )
             })}
-            
-            {/* See All / See Less Button for Critical Moments */}
+
             {criticalMoments.length > 1 && (
               <div className="flex justify-center pt-4">
                 <button
@@ -646,24 +636,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
             <p className="text-xs text-slate-400 mt-1">This suggests consistent, solid play throughout!</p>
           </div>
         )}
-      </div>
-
-      {/* Learning Recommendations */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
-        <h3 className="mb-4 text-lg font-semibold text-white">Learning Recommendations</h3>
-        {learningRecommendations.length > 0 ? (
-          <div className="space-y-2">
-            {learningRecommendations.map((recommendation, index) => (
-              <div key={index} className="flex items-center gap-3 rounded-2xl border border-sky-400/30 bg-sky-500/10 p-3">
-                <span className="text-lg">💡</span>
-                <p className="text-sm text-slate-200">{recommendation}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-slate-300">Great game! Continue practicing to maintain your current level.</p>
-        )}
-      </div>
+      </div> */}
 
     </div>
   )

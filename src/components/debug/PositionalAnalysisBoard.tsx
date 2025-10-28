@@ -1,9 +1,8 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
-import { generateMoveArrows, generateModernMoveArrows } from '../../utils/chessArrows'
-import { ModernChessArrows } from '../chess/ModernChessArrows'
+import { generateModernMoveArrows } from '../../utils/chessArrows'
 
 const MoveClassificationBadge = ({ classification }: { classification: string }) => {
   const classificationColors = {
@@ -106,7 +105,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
     if (lastNotifiedIndex.current === currentMoveIndex) {
       return // Skip if we already notified for this index
     }
-    
+
     const currentMove = allMoves[currentMoveIndex]
     const isElementMove = currentMove && element.moves.includes(currentMove.index)
     if (onMoveChange && currentMove) {
@@ -129,7 +128,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
         setBoardWidth(320) // 2XL screens and up
       }
     }
-    
+
     updateBoardWidth()
     window.addEventListener('resize', updateBoardWidth)
     return () => window.removeEventListener('resize', updateBoardWidth)
@@ -157,11 +156,11 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
 
   const getMoveHighlight = () => {
     if (currentMoveIndex >= allMoves.length) return {}
-    
+
     try {
       const currentMove = allMoves[currentMoveIndex]
       if (!currentMove) return {}
-      
+
       const game = new Chess()
       // Replay moves up to (but not including) the current move
       for (let i = 0; i < currentMoveIndex; i++) {
@@ -173,7 +172,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
           }
         }
       }
-      
+
       // Now apply the current move to get highlight squares
       const moveObj = game.move(currentMove.san)
       if (moveObj) {
@@ -191,7 +190,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
   const getElementMoveHighlight = () => {
     const currentMove = allMoves[currentMoveIndex]
     if (!currentMove || !element.moves.includes(currentMove.index)) return {}
-    
+
     try {
       const game = new Chess()
       // Replay moves up to (but not including) the current move
@@ -204,7 +203,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
           }
         }
       }
-      
+
       // Now apply the current move to get highlight squares
       const moveObj = game.move(currentMove.san)
       if (moveObj) {
@@ -234,7 +233,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
 
     // Create a chess instance to replay moves up to (but not including) the current move
     const chess = new Chess()
-    
+
     // Replay all moves up to (but not including) the current move
     // This sets up the position BEFORE the current move is made
     for (let i = 0; i < currentMoveIndex; i++) {
@@ -266,7 +265,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
   const navigateToMove = (direction: 'prev' | 'next' | 'first' | 'last' | 'element') => {
     // Only allow navigation if we're not using an external selectedMoveIndex
     if (selectedMoveIndex !== undefined) return
-    
+
     switch (direction) {
       case 'prev':
         if (canGoBack) setInternalMoveIndex(currentMoveIndex - 1)
@@ -329,17 +328,13 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
               arePiecesDraggable={false}
               boardOrientation={playerColor}
               boardWidth={boardWidth}
-              showNotation={true}
+              showBoardNotation={true}
               customSquareStyles={{
                 ...getMoveHighlight(),
                 ...getElementMoveHighlight()
               }}
+              customArrows={currentMoveArrows.map(({ from, to, color }) => [from, to, color])}
               {...getDarkChessBoardTheme('default')}
-            />
-            <ModernChessArrows
-              arrows={currentMoveArrows}
-              boardWidth={boardWidth}
-              boardOrientation={playerColor}
             />
           </div>
         </div>
@@ -386,8 +381,8 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
         <button
           onClick={() => navigateToMove('element')}
           className={`rounded p-1.5 text-sm transition ${
-            isElementMove 
-              ? 'bg-green-500/30 text-green-200' 
+            isElementMove
+              ? 'bg-green-500/30 text-green-200'
               : 'bg-green-600/20 text-slate-300 hover:bg-green-600/40'
           }`}
           title={`Go to ${element.name} move`}
@@ -417,25 +412,25 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
         <div className="space-y-1">
           <div className="text-center text-xs text-slate-400">Position Evaluation</div>
           <div className="relative h-3 w-full rounded-full bg-slate-700 overflow-hidden">
-            <div 
+            <div
               className={`h-full transition-all duration-300 ${
-                currentMove.evaluation.type === 'mate' 
+                currentMove.evaluation.type === 'mate'
                   ? currentMove.evaluation.value > 0 ? 'bg-green-500' : 'bg-red-500'
                   : currentMove.evaluation.value > 200 ? 'bg-green-500' :
                     currentMove.evaluation.value > 50 ? 'bg-green-400' :
                     currentMove.evaluation.value > -50 ? 'bg-slate-500' :
                     currentMove.evaluation.value > -200 ? 'bg-red-400' : 'bg-red-500'
               }`}
-              style={{ 
-                width: `${currentMove.evaluation.type === 'mate' 
+              style={{
+                width: `${currentMove.evaluation.type === 'mate'
                   ? (currentMove.evaluation.value > 0 ? 100 : 0)
                   : Math.max(0, Math.min(100, 50 + (currentMove.evaluation.value / 10)))
-                }%` 
+                }%`
               }}
             />
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-xs font-bold text-white drop-shadow-lg">
-                {currentMove.evaluation.type === 'mate' 
+                {currentMove.evaluation.type === 'mate'
                   ? (currentMove.evaluation.value > 0 ? `+M${currentMove.evaluation.value}` : `-M${Math.abs(currentMove.evaluation.value)}`)
                   : currentMove.evaluation.value > 0 ? `+${(currentMove.evaluation.value / 100).toFixed(1)}` : `${(currentMove.evaluation.value / 100).toFixed(1)}`
                 }
@@ -454,8 +449,8 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
       {currentMove?.centipawnLoss && Math.abs(currentMove.centipawnLoss) > 0 && (
         <div className="flex items-center justify-center gap-2 text-xs bg-slate-800/30 rounded-lg px-2 py-1.5">
           <div className={`h-3 w-3 rounded-full flex-shrink-0 ${
-            currentMove.centipawnLoss > 500 ? 'bg-red-500' : 
-            currentMove.centipawnLoss > 200 ? 'bg-orange-500' : 
+            currentMove.centipawnLoss > 500 ? 'bg-red-500' :
+            currentMove.centipawnLoss > 200 ? 'bg-orange-500' :
             currentMove.centipawnLoss > 50 ? 'bg-yellow-500' : 'bg-green-500'
           }`}></div>
           <span className="text-slate-200 font-medium">

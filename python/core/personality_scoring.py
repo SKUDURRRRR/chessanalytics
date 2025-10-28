@@ -214,6 +214,31 @@ class PersonalityScorer:
                 try:
                     eval_before_cp = float(eval_before)
                     eval_after_cp = float(eval_after)
+
+                    # CRITICAL FIX: Normalize evaluations to player perspective
+                    # Heuristic analysis stores white-centric evals (positive = white advantage)
+                    # Stockfish analysis stores player-centric evals (already normalized via .pov())
+                    # We need to detect and normalize ONLY heuristic evaluations for Black moves
+
+                    # Detect analysis path: heuristic_details is populated for heuristic analysis,
+                    # empty dict for Stockfish analysis
+                    heuristic_details = move.get('heuristic_details', {})
+                    is_heuristic_analysis = bool(heuristic_details and
+                                                 heuristic_details.get('before_score') is not None)
+
+                    # Only normalize if this is heuristic analysis (white-centric evals)
+                    if is_heuristic_analysis:
+                        # Determine player color: use player_color field if available, else infer from ply_index
+                        player_color = move.get('player_color', '')
+                        if not player_color:
+                            # Ply 1 = White, Ply 2 = Black, etc.
+                            player_color = 'white' if (ply_index % 2 == 1) else 'black'
+
+                        # For Black moves, negate evaluations to convert to player perspective
+                        if player_color == 'black':
+                            eval_before_cp = -eval_before_cp
+                            eval_after_cp = -eval_after_cp
+
                 except (TypeError, ValueError):
                     eval_available = False
 
@@ -242,6 +267,8 @@ class PersonalityScorer:
                     metrics.initiative_gain += eval_change
                     metrics.initiative_streak_max = max(metrics.initiative_streak_max, initiative_streak)
                 else:
+                    if initiative_streak >= 2:
+                        metrics.initiative_bursts += 1
                     initiative_streak = 0
 
             # Forcing vs quiet moves
@@ -317,6 +344,9 @@ class PersonalityScorer:
         # Finalize streaks
         if forcing_streak >= 3:
             metrics.forcing_streaks += 1
+        # Finalize any trailing initiative streak as a burst
+        if initiative_streak >= 2:
+            metrics.initiative_bursts += 1
 
         # Calculate statistics
         if total > 0:
@@ -409,7 +439,7 @@ class PersonalityScorer:
         quiet_ratio = metrics.quiet_moves / total
         forcing_accuracy = (metrics.forcing_best / metrics.forcing_moves) if metrics.forcing_moves > 0 else forcing_ratio
         check_density = metrics.checks / total
-        capture_density = metrics.captures / total
+        _capture_density = metrics.captures / total  # Calculated but not currently used in scoring
 
         # New signals
         pressure_density = metrics.pressure_gain  # average eval gain per move
@@ -455,25 +485,25 @@ class PersonalityScorer:
         grind_ratio = metrics.endgame_grind_moves / max(1, metrics.endgame_moves or 1)
         liquidation_ratio = metrics.endgame_liquidation_moves / max(1, metrics.endgame_moves or 1)
 
-        # Cap quiet play impact using logistic curve centered at 60%
-        quiet_curve = 1.0 / (1.0 + math.exp(-12.0 * (quiet_ratio - 0.6)))
+        # Cap quiet play impact using logistic curve centered at 68% (calibrated for better distribution)
+        quiet_curve = 1.0 / (1.0 + math.exp(-12.0 * (quiet_ratio - 0.68)))
 
-        base = 15.0  # Reduced from 25.0
-        quiet_component = quiet_curve * 40.0 + quiet_accuracy * 18.0 + quiet_safety * 20.0  # Reduced from 70+28+32
+        base = 25.0  # Balanced base score
+        quiet_component = quiet_curve * 22.0 + quiet_accuracy * 16.0 + quiet_safety * 13.0  # Significantly reduced from 40+18+20
 
         advantage_density = metrics.pressure_advantage_sum
         endgame_component = (
-            endgame_accuracy * 25.0  # Reduced from 45.0
-            + grind_ratio * quiet_safety * 35.0  # Reduced from 60.0
+            endgame_accuracy * 18.0  # Reduced from 25.0
+            + grind_ratio * quiet_safety * 22.0  # Reduced from 35.0
         )
-        liquidation_penalty = liquidation_ratio * (25.0 + max(0.0, advantage_density * 0.2))  # Reduced from 40
+        liquidation_penalty = liquidation_ratio * (25.0 + max(0.0, advantage_density * 0.2))  # Keep same
 
-        time_component = time_factor * 20.0  # Reduced from 35.0
+        time_component = time_factor * 18.0  # Reduced from 20.0
 
         # Risk penalties (quadratic scaling so repeated risk matters)
-        risk_penalty = (risk_ratio ** 2) * 250.0 + severe_risk_ratio * 80.0 + metrics.risk_loss * 0.15  # Reduced
+        risk_penalty = (risk_ratio ** 2) * 250.0 + severe_risk_ratio * 80.0 + metrics.risk_loss * 0.15  # Keep same
 
-        forcing_penalty = forcing_ratio * 55.0  # Reduced from 95.0
+        forcing_penalty = forcing_ratio * 75.0  # Increased from 55.0 to create stronger opposition with Aggressive
 
         score = base + quiet_component + endgame_component + time_component - liquidation_penalty - risk_penalty - forcing_penalty
         return self.clamp_score(score)

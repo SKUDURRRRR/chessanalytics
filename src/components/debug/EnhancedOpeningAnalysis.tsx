@@ -26,6 +26,7 @@ interface EnhancedOpeningAnalysisProps {
   moves: ProcessedMove[]
   playerColor: 'white' | 'black'
   gameRecord: any
+  analysisRecord?: any
   openingStats?: Array<{
     opening: string
     openingFamily: string
@@ -36,12 +37,13 @@ interface EnhancedOpeningAnalysisProps {
   totalGames?: number
 }
 
-export function EnhancedOpeningAnalysis({ 
-  moves, 
-  playerColor, 
-  gameRecord, 
+export function EnhancedOpeningAnalysis({
+  moves,
+  playerColor,
+  gameRecord,
+  analysisRecord,
   openingStats = [],
-  totalGames = 0 
+  totalGames = 0
 }: EnhancedOpeningAnalysisProps) {
   const [selectedMistake, setSelectedMistake] = useState<OpeningMistake | null>(null)
   const [showStudyResources, setShowStudyResources] = useState(false)
@@ -49,11 +51,39 @@ export function EnhancedOpeningAnalysis({
   const userMoves = moves.filter(move => move.isUserMove)
   const openingMoves = userMoves.slice(0, 10) // First 10 moves typically cover opening
 
+  // Use database values if available, otherwise calculate from moves
+  const hasDbValues = analysisRecord?.middle_game_accuracy !== undefined || analysisRecord?.endgame_accuracy !== undefined
+
+  // Improved phase boundaries to match backend logic:
+  // - Opening: first 10 moves (or fewer if game is shorter)
+  // - Endgame: last 10 moves (or proportional for short games)
+  // - Middlegame: everything in between
+  const totalUserMoves = userMoves.length
+  const openingEnd = Math.min(10, totalUserMoves)
+
+  // For very short games (≤15 moves), there's no real middlegame
+  let endgameStart
+  if (totalUserMoves <= 15) {
+    endgameStart = openingEnd  // No middlegame
+  } else {
+    // For longer games, endgame is the last 10 moves, but at least move 11
+    endgameStart = Math.max(openingEnd, totalUserMoves - 10)
+  }
+
+  // Split moves by phase (for fallback)
+  const middlegameMoves = userMoves.slice(openingEnd, endgameStart)
+  const endgameMoves = userMoves.slice(endgameStart)
+
   const enhancedAnalysis = useMemo((): EnhancedOpeningAnalysis => {
     console.log('EnhancedOpeningAnalysis - openingMoves:', openingMoves.length, openingMoves)
     console.log('EnhancedOpeningAnalysis - gameRecord:', gameRecord)
     console.log('EnhancedOpeningAnalysis - playerColor:', playerColor)
-    
+    console.log('EnhancedOpeningAnalysis - analysisRecord:', analysisRecord)
+    console.log('EnhancedOpeningAnalysis - middle_game_accuracy from DB:', analysisRecord?.middle_game_accuracy)
+    console.log('EnhancedOpeningAnalysis - endgame_accuracy from DB:', analysisRecord?.endgame_accuracy)
+    console.log('EnhancedOpeningAnalysis - middlegameMoves length:', middlegameMoves.length)
+    console.log('EnhancedOpeningAnalysis - endgameMoves length:', endgameMoves.length)
+
     // If no opening moves are available, return a default analysis
     if (openingMoves.length === 0) {
       return {
@@ -86,16 +116,22 @@ export function EnhancedOpeningAnalysis({
         focusAreas: ['Game analysis required']
       }
     }
-    
+
     const identifiedVariation = identifyOpening(gameRecord, openingMoves.map(m => m.san), playerColor)
-    
+
     // Calculate basic metrics using Chess.com method
     const openingAccuracy = calculateOpeningAccuracyChessCom(openingMoves)
 
-    const theoryKnowledge = openingMoves.length === 0 ? 0 :
-      Math.round((openingMoves.filter(move => 
-        move.classification === 'best' || move.classification === 'brilliant' || move.classification === 'good'
-      ).length / openingMoves.length) * 10)
+    // Use database values if available, otherwise calculate
+    const middlegameAccuracy = analysisRecord?.middle_game_accuracy ??
+      (middlegameMoves.length > 0 ? calculateOpeningAccuracyChessCom(middlegameMoves) : 0)
+    const endgameAccuracy = analysisRecord?.endgame_accuracy ??
+      (endgameMoves.length > 0 ? calculateOpeningAccuracyChessCom(endgameMoves) : 0)
+
+    // Theory knowledge should correlate with opening accuracy
+    // Use a formula that maps accuracy percentage to a 0-10 score
+    // This ensures consistency: high accuracy = high theory score
+    const theoryKnowledge = Math.min(10, Math.max(0, Math.round(openingAccuracy / 10)))
 
     // Identify specific mistakes
     const specificMistakes: OpeningMistake[] = openingMoves
@@ -106,7 +142,7 @@ export function EnhancedOpeningAnalysis({
         mistake: move.san,
         correctMove: move.bestMoveSan || 'N/A',
         explanation: move.explanation || 'Consider the engine recommendation',
-        severity: move.classification === 'blunder' ? 'critical' : 
+        severity: move.classification === 'blunder' ? 'critical' :
                  move.classification === 'mistake' ? 'major' : 'minor',
         centipawnLoss: move.centipawnLoss || 0,
         classification: move.classification as 'blunder' | 'mistake' | 'inaccuracy'
@@ -114,14 +150,14 @@ export function EnhancedOpeningAnalysis({
 
     // Identify common patterns
     const commonPatterns = identifyCommonPatterns(openingMoves)
-    
-    // Identify strengths and weaknesses
-    const { strengths, weaknesses } = identifyStrengthsAndWeaknesses(openingMoves, specificMistakes)
+
+    // Identify strengths and weaknesses - look at ALL moves to find good plays throughout the game
+    const { strengths, weaknesses } = identifyStrengthsAndWeaknesses(userMoves, specificMistakes)
 
     // Generate study recommendations
     const studyRecommendations: StudyRecommendation[] = generateStudyRecommendations(
-      identifiedVariation.name, 
-      specificMistakes, 
+      identifiedVariation.name,
+      specificMistakes,
       openingAccuracy
     )
 
@@ -145,6 +181,8 @@ export function EnhancedOpeningAnalysis({
       openingName: identifiedVariation.name,
       openingFamily: identifiedVariation.name,
       accuracy: openingAccuracy,
+      middlegameAccuracy,
+      endgameAccuracy,
       theoryKnowledge,
       gamesPlayed: totalGames,
       specificMistakes,
@@ -159,54 +197,51 @@ export function EnhancedOpeningAnalysis({
       nextGoals,
       focusAreas
     }
-  }, [openingMoves, gameRecord, playerColor, openingStats, totalGames])
+  }, [openingMoves, middlegameMoves, endgameMoves, gameRecord, playerColor, openingStats, totalGames])
 
   return (
     <div className="space-y-6">
       {/* Enhanced Opening Overview */}
       <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="text-xl font-bold text-white mb-2">Opening Analysis</h3>
-            <h4 className="text-lg font-semibold text-sky-300">{enhancedAnalysis.openingName}</h4>
-            <p className="text-sm text-slate-300">Comprehensive analysis with actionable insights</p>
-          </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-white">{enhancedAnalysis.accuracy}%</div>
-            <div className="text-sm text-slate-300">Opening Accuracy</div>
-          </div>
+        <div className="mb-6">
+          <h3 className="text-xl font-bold text-white mb-2">Opening Analysis</h3>
+          <h4 className="text-lg font-semibold text-sky-300">{enhancedAnalysis.openingName}</h4>
+          <p className="text-sm text-slate-300">Comprehensive analysis with actionable insights</p>
         </div>
 
         {/* Key Metrics Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-slate-800/50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-emerald-300">{enhancedAnalysis.theoryKnowledge}/10</div>
+            <div className="text-2xl font-bold text-amber-300">{enhancedAnalysis.theoryKnowledge}/10</div>
             <div className="text-xs text-slate-300">Theory Knowledge</div>
           </div>
           <div className="bg-slate-800/50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-blue-300">{enhancedAnalysis.specificMistakes.length}</div>
-            <div className="text-xs text-slate-300">Mistakes Made</div>
+            <div className="text-2xl font-bold text-sky-300">{Math.round(enhancedAnalysis.accuracy)}%</div>
+            <div className="text-xs text-slate-300">Opening Accuracy</div>
           </div>
           <div className="bg-slate-800/50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-purple-300">{enhancedAnalysis.peerComparison.percentile}%</div>
-            <div className="text-xs text-slate-300">vs Peers</div>
+            <div className="text-2xl font-bold text-emerald-300">
+              {middlegameMoves.length > 0 && enhancedAnalysis.middlegameAccuracy !== undefined
+                ? `${Math.round(enhancedAnalysis.middlegameAccuracy)}%`
+                : 'N/A'}
+            </div>
+            <div className="text-xs text-slate-300">Middlegame Accuracy</div>
           </div>
           <div className="bg-slate-800/50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-amber-300">{enhancedAnalysis.gamesPlayed}</div>
-            <div className="text-xs text-slate-300">Games Played</div>
+            <div className="text-2xl font-bold text-purple-300">
+              {endgameMoves.length > 0 && enhancedAnalysis.endgameAccuracy !== undefined
+                ? `${Math.round(enhancedAnalysis.endgameAccuracy)}%`
+                : 'N/A'}
+            </div>
+            <div className="text-xs text-slate-300">Endgame Accuracy</div>
           </div>
         </div>
 
         {/* Quick Assessment */}
         <div className="bg-slate-800/30 rounded-xl p-4 mb-6">
           <h5 className="font-semibold text-white mb-2">Quick Assessment</h5>
-          <p className="text-sm text-slate-200">
-            {enhancedAnalysis.accuracy >= 80 
-              ? "Excellent opening play! You demonstrate strong theoretical knowledge and practical understanding."
-              : enhancedAnalysis.accuracy >= 60
-              ? "Good opening play with room for improvement. Focus on the specific areas highlighted below."
-              : "Your opening play needs significant improvement. The analysis below will help you identify key areas to work on."
-            }
+          <p className="text-sm text-slate-200 leading-relaxed">
+            {generateQuickAssessment(enhancedAnalysis, openingMoves)}
           </p>
         </div>
       </div>
@@ -218,10 +253,10 @@ export function EnhancedOpeningAnalysis({
             <span className="mr-2">🎯</span>
             Specific Mistakes & Improvements
           </h3>
-          
+
           <div className="space-y-3">
             {enhancedAnalysis.specificMistakes.map((mistake, index) => (
-              <div 
+              <div
                 key={index}
                 className={`p-4 rounded-xl border cursor-pointer transition-all hover:bg-slate-800/30 ${
                   mistake.severity === 'critical' ? 'border-red-400/50 bg-red-500/10' :
@@ -236,7 +271,7 @@ export function EnhancedOpeningAnalysis({
                       Move {mistake.move}: {mistake.moveNotation}
                     </div>
                     <div className="text-sm text-slate-300">
-                      {mistake.classification.charAt(0).toUpperCase() + mistake.classification.slice(1)} • 
+                      {mistake.classification.charAt(0).toUpperCase() + mistake.classification.slice(1)} •
                       {mistake.centipawnLoss} point loss
                     </div>
                   </div>
@@ -261,14 +296,14 @@ export function EnhancedOpeningAnalysis({
                   <h4 className="text-xl font-bold text-white">
                     Move {selectedMistake.move} Analysis
                   </h4>
-                  <button 
+                  <button
                     onClick={() => setSelectedMistake(null)}
                     className="text-slate-400 hover:text-white"
                   >
                     ✕
                   </button>
                 </div>
-                
+
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -280,12 +315,12 @@ export function EnhancedOpeningAnalysis({
                       <div className="text-lg font-semibold text-green-300">{selectedMistake.correctMove}</div>
                     </div>
                   </div>
-                  
+
                   <div>
                     <div className="text-sm text-slate-400">Explanation</div>
                     <div className="text-slate-200">{selectedMistake.explanation}</div>
                   </div>
-                  
+
                   <div className="bg-slate-700/50 rounded-lg p-4">
                     <div className="text-sm text-slate-400 mb-2">Learning Tip</div>
                     <div className="text-slate-200">
@@ -306,7 +341,7 @@ export function EnhancedOpeningAnalysis({
             <span className="mr-2">📚</span>
             Study Recommendations
           </h3>
-          <button 
+          <button
             onClick={() => setShowStudyResources(!showStudyResources)}
             className="text-sky-300 hover:text-sky-200 text-sm"
           >
@@ -337,9 +372,9 @@ export function EnhancedOpeningAnalysis({
                     <span>⏱️ {rec.estimatedTime}</span>
                     <span>📊 {rec.difficulty}</span>
                     {rec.url && (
-                      <a 
-                        href={rec.url} 
-                        target="_blank" 
+                      <a
+                        href={rec.url}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="text-sky-300 hover:text-sky-200"
                       >
@@ -398,51 +433,72 @@ export function EnhancedOpeningAnalysis({
           </div>
         </div>
       </div>
-
-      {/* Next Steps */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
-        <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
-          <span className="mr-2">🎯</span>
-          Next Steps & Focus Areas
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h4 className="font-semibold text-sky-300 mb-3">Immediate Goals</h4>
-            <div className="space-y-2">
-              {enhancedAnalysis.nextGoals.map((goal, index) => (
-                <div key={index} className="flex items-start text-sm">
-                  <span className="mr-2 text-sky-300">•</span>
-                  <span>{goal}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          <div>
-            <h4 className="font-semibold text-amber-300 mb-3">Focus Areas</h4>
-            <div className="space-y-2">
-              {enhancedAnalysis.focusAreas.map((area, index) => (
-                <div key={index} className="flex items-start text-sm">
-                  <span className="mr-2 text-amber-300">•</span>
-                  <span>{area}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
 
 // Helper functions
+
+function generateQuickAssessment(analysis: EnhancedOpeningAnalysis, openingMoves: ProcessedMove[]): string {
+  const { accuracy, specificMistakes, openingName } = analysis
+
+  // Count move types for detailed insights
+  const brilliantMoves = openingMoves.filter(m => m.classification === 'brilliant').length
+  const blunders = specificMistakes.filter(m => m.classification === 'blunder').length
+  const mistakes = specificMistakes.filter(m => m.classification === 'mistake').length
+  const inaccuracies = specificMistakes.filter(m => m.classification === 'inaccuracy').length
+
+  // Build specific, data-driven assessment
+  let assessment = ''
+
+  // Main performance assessment
+  if (accuracy >= 85) {
+    assessment = `Outstanding opening performance with ${accuracy}% accuracy in the ${openingName}. `
+    if (brilliantMoves > 0) {
+      assessment += `You played ${brilliantMoves} brilliant ${brilliantMoves === 1 ? 'move' : 'moves'}, demonstrating deep understanding. `
+    }
+    if (specificMistakes.length === 0) {
+      assessment += `Perfect execution with no mistakes!`
+    } else if (inaccuracies > 0 && blunders === 0 && mistakes === 0) {
+      assessment += `Only ${inaccuracies} minor ${inaccuracies === 1 ? 'inaccuracy' : 'inaccuracies'} - easily correctable.`
+    }
+  } else if (accuracy >= 70) {
+    assessment = `Solid opening play with ${accuracy}% accuracy. `
+    if (blunders > 0) {
+      assessment += `However, ${blunders} critical ${blunders === 1 ? 'blunder' : 'blunders'} cost you significant advantage. `
+    } else if (mistakes > 0) {
+      assessment += `You made ${mistakes} notable ${mistakes === 1 ? 'mistake' : 'mistakes'} that weakened your position. `
+    } else {
+      assessment += `Your ${inaccuracies} ${inaccuracies === 1 ? 'inaccuracy' : 'inaccuracies'} slightly reduced your advantage. `
+    }
+    assessment += `Focus on the highlighted areas to reach the next level.`
+  } else if (accuracy >= 50) {
+    assessment = `Your opening needs improvement (${accuracy}% accuracy). `
+    if (blunders > 0) {
+      assessment += `${blunders} critical ${blunders === 1 ? 'blunder' : 'blunders'} gave your opponent a winning advantage. `
+    }
+    if (mistakes > 0) {
+      assessment += `Additionally, ${mistakes} ${mistakes === 1 ? 'mistake' : 'mistakes'} compounded the problems. `
+    }
+    assessment += `Study the ${openingName} fundamentals to build a stronger foundation.`
+  } else {
+    assessment = `Significant opening struggles with ${accuracy}% accuracy in the ${openingName}. `
+    const totalErrors = blunders + mistakes
+    if (totalErrors > 0) {
+      assessment += `${totalErrors} serious ${totalErrors === 1 ? 'error' : 'errors'} (${blunders} ${blunders === 1 ? 'blunder' : 'blunders'}, ${mistakes} ${mistakes === 1 ? 'mistake' : 'mistakes'}) put you in a difficult position early. `
+    }
+    assessment += `Work on basic opening principles and tactical awareness.`
+  }
+
+  return assessment
+}
+
 function identifyCommonPatterns(moves: ProcessedMove[]): string[] {
   const patterns: string[] = []
-  
+
   // Check for common opening patterns
   const moveSequence = moves.map(m => m.san).join(' ')
-  
+
   if (moveSequence.includes('e4 e5 Nf3 Nc6 Bb5')) {
     patterns.push('Ruy Lopez patterns')
   }
@@ -455,94 +511,283 @@ function identifyCommonPatterns(moves: ProcessedMove[]): string[] {
   if (moves.filter(m => m.san.includes('N')).length > 3) {
     patterns.push('Knight development patterns')
   }
-  
+
   return patterns.length > 0 ? patterns : ['General opening principles']
 }
 
 function identifyStrengthsAndWeaknesses(moves: ProcessedMove[], mistakes: OpeningMistake[]): { strengths: string[], weaknesses: string[] } {
   const strengths: string[] = []
   const weaknesses: string[] = []
-  
+
   console.log('identifyStrengthsAndWeaknesses - moves:', moves.length, 'mistakes:', mistakes.length)
   console.log('Move classifications:', moves.map(m => ({ san: m.san, classification: m.classification })))
-  
-  // Analyze move quality distribution
-  const bestMoves = moves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length
-  const goodMoves = moves.filter(m => m.classification === 'good').length
-  const totalMoves = moves.length
-  
-  console.log('Move quality analysis:', { bestMoves, goodMoves, totalMoves })
-  
-  if (totalMoves > 0) {
-    if (bestMoves / totalMoves > 0.3) {
-      strengths.push('Strong theoretical knowledge')
+
+  const userMoves = moves.filter(m => m.isUserMove)
+  const bestMoves = userMoves.filter(m => m.classification === 'best' || m.classification === 'brilliant')
+  const goodMoves = userMoves.filter(m => m.classification === 'good')
+  const blunders = userMoves.filter(m => m.classification === 'blunder')
+  const mistakeMoves = userMoves.filter(m => m.classification === 'mistake')
+  const inaccuracies = userMoves.filter(m => m.classification === 'inaccuracy')
+
+  // ===== IDENTIFY 3 SPECIFIC STRENGTHS =====
+
+  // Helper to determine game phase
+  const getPhase = (moveNum: number) => {
+    if (moveNum <= 10) return ''  // Opening - no prefix needed
+    if (moveNum <= 25) return 'Middlegame: '
+    return 'Endgame: '
+  }
+
+  // Strength 1: Identify excellent moves with specific examples
+  const brilliantMoves = userMoves.filter(m => m.classification === 'brilliant')
+  if (brilliantMoves.length > 0) {
+    const firstBrilliant = brilliantMoves[0]
+    const phase = getPhase(firstBrilliant.moveNumber)
+    strengths.push(`${phase}Brilliant ${firstBrilliant.san} on move ${firstBrilliant.moveNumber}${brilliantMoves.length > 1 ? ` (${brilliantMoves.length} brilliant moves!)` : ''}`)
+  } else if (bestMoves.length >= 3 && bestMoves.length / userMoves.length >= 0.4) {
+    // Only show percentage if at least 40% were perfect (actually impressive)
+    const examples = bestMoves.slice(0, 2).map(m => `${m.moveNumber}.${m.san}`).join(', ')
+    strengths.push(`Precise play: ${examples} were engine moves (${bestMoves.length}/${userMoves.length} perfect)`)
+  } else if (bestMoves.length >= 2 && userMoves.length <= 5) {
+    // Early game with multiple perfect moves
+    const examples = bestMoves.map(m => `${m.moveNumber}.${m.san}`).join(', ')
+    strengths.push(`Strong theoretical knowledge: ${examples} matched top engine play`)
+  } else if (bestMoves.length === 2 && userMoves.length >= 6) {
+    // Found 2 perfect moves even if overall stats aren't great
+    const examples = bestMoves.map(m => `${m.moveNumber}.${m.san}`).join(', ')
+    const phase = getPhase(bestMoves[0].moveNumber)
+    strengths.push(`${phase}Accurate play: ${examples} were perfect moves`)
+  } else if (bestMoves.length === 1 && userMoves.length >= 3) {
+    // At least one perfect move
+    const bestMove = bestMoves[0]
+    const phase = getPhase(bestMove.moveNumber)
+    strengths.push(`${phase}Good move ${bestMove.moveNumber}.${bestMove.san} matched engine's top choice`)
+  }
+
+  // Strength 2: Identify strong sequences or patterns
+  let hasStrongSequence = false
+  for (let i = 0; i < userMoves.length - 2; i++) {
+    if (['best', 'brilliant', 'good'].includes(userMoves[i].classification) &&
+        ['best', 'brilliant', 'good'].includes(userMoves[i+1].classification) &&
+        ['best', 'brilliant', 'good'].includes(userMoves[i+2].classification)) {
+      strengths.push(`Strong play from moves ${userMoves[i].moveNumber}-${userMoves[i+2].moveNumber}: ${userMoves[i].san}, ${userMoves[i+1].san}, ${userMoves[i+2].san}`)
+      hasStrongSequence = true
+      break
     }
-    if (goodMoves / totalMoves > 0.4) {
-      strengths.push('Good practical understanding')
+  }
+
+  // Strength 3: Low centipawn loss or good recovery
+  const avgCPL = userMoves
+    .filter(m => m.centipawnLoss !== null)
+    .reduce((sum, m) => sum + (m.centipawnLoss || 0), 0) / userMoves.filter(m => m.centipawnLoss !== null).length
+
+  if (!hasStrongSequence && avgCPL < 20 && userMoves.length >= 5) {
+    strengths.push(`Consistent accuracy throughout opening (avg ${Math.round(avgCPL)} centipawn loss)`)
+  } else if (userMoves.length >= 6 && (bestMoves.length + goodMoves.length) / userMoves.length >= 0.75) {
+    // Only show if 75%+ accuracy (strong understanding)
+    const accurateCount = bestMoves.length + goodMoves.length
+    strengths.push(`Solid understanding demonstrated in ${accurateCount} of ${userMoves.length} moves`)
+  }
+
+  // Ensure we have 3 strengths (add general ones if needed, but only if actually strong)
+  if (strengths.length < 3 && userMoves.length > 0) {
+    const earlyMoves = userMoves.slice(0, Math.min(5, userMoves.length))
+    const earlyAccuracy = earlyMoves.filter(m => ['best', 'brilliant', 'good'].includes(m.classification)).length
+    const earlyAccuracyPercent = earlyAccuracy / earlyMoves.length
+
+    // Only show as strength if 80%+ accuracy in opening
+    if (earlyAccuracyPercent >= 0.8 && earlyMoves.length >= 4 && strengths.length < 3) {
+      strengths.push(`Strong opening fundamentals (${earlyAccuracy}/${earlyMoves.length} accurate in first ${earlyMoves.length} moves)`)
     }
-    
-    // Add some default strengths if no specific ones are found
-    if (strengths.length === 0 && totalMoves > 0) {
-      if (bestMoves > 0) {
-        strengths.push('Strong theoretical knowledge')
-      } else if (goodMoves > 0) {
-        strengths.push('Good practical understanding')
-      } else {
-        // Don't add contradictory strengths - let weaknesses handle this case
+
+    if (mistakes.length === 0 && userMoves.length >= 6 && strengths.length < 3) {
+      strengths.push(`Clean opening play with no significant mistakes detected`)
+    }
+
+    // Find castling moves that were good/best
+    const castlingMove = userMoves.find(m =>
+      (m.san === 'O-O' || m.san === 'O-O-O') &&
+      ['best', 'brilliant', 'good'].includes(m.classification)
+    )
+    if (castlingMove && strengths.length < 3) {
+      const timing = castlingMove.moveNumber <= 8 ? 'timely' : 'well-timed'
+      strengths.push(`King safety prioritized: ${timing} ${castlingMove.san} on move ${castlingMove.moveNumber}`)
+    }
+
+    // Find any good tactical or positional plays
+    const goodTacticalMoves = userMoves.filter(m =>
+      m.classification === 'good' &&
+      (m.explanation.toLowerCase().includes('attack') ||
+       m.explanation.toLowerCase().includes('threat') ||
+       m.explanation.toLowerCase().includes('pressure'))
+    )
+    if (goodTacticalMoves.length > 0 && strengths.length < 3) {
+      const move = goodTacticalMoves[0]
+      const phase = getPhase(move.moveNumber)
+      strengths.push(`${phase}Good tactical awareness: ${move.moveNumber}.${move.san} created threats`)
+    }
+
+    // Find center control moves
+    const centerMoves = userMoves.filter(m =>
+      ['best', 'good'].includes(m.classification) &&
+      (m.explanation.toLowerCase().includes('center') ||
+       m.explanation.toLowerCase().includes('central') ||
+       m.san.match(/^[de][34]/)) // d4, e4, d3, e3 type moves
+    )
+    if (centerMoves.length >= 2 && strengths.length < 3) {
+      const examples = centerMoves.slice(0, 2).map(m => `${m.moveNumber}.${m.san}`).join(', ')
+      strengths.push(`Good center control with moves like ${examples}`)
+    }
+
+    // Find development moves that were at least good
+    if (strengths.length < 3) {
+      const devMove = userMoves.find(m =>
+        m.explanation.toLowerCase().includes('development') &&
+        ['best', 'brilliant', 'good'].includes(m.classification)
+      )
+      if (devMove) {
+        const quality = devMove.classification === 'best' ? 'Excellent' : 'Good'
+        strengths.push(`${quality} piece development with ${devMove.san} on move ${devMove.moveNumber}`)
       }
     }
+
+    // Recognize avoiding mistakes after an inaccuracy (good recovery)
+    for (let i = 0; i < userMoves.length - 1; i++) {
+      if (userMoves[i].classification === 'inaccuracy' &&
+          ['best', 'good'].includes(userMoves[i + 1].classification) &&
+          strengths.length < 3) {
+        const phase = getPhase(userMoves[i + 1].moveNumber)
+        strengths.push(`${phase}Good recovery: ${userMoves[i + 1].moveNumber}.${userMoves[i + 1].san} corrected course after ${userMoves[i].san}`)
+        break
+      }
+    }
+
+    // Find moves that maintained/increased advantage
+    const advantageMoves = userMoves.filter(m =>
+      ['best', 'good'].includes(m.classification) &&
+      m.centipawnLoss !== null &&
+      m.centipawnLoss <= 5
+    )
+    if (advantageMoves.length >= 3 && strengths.length < 3) {
+      strengths.push(`Consistent accuracy: ${advantageMoves.length} moves maintained your position`)
+    }
+
+    // Look for good pawn structure moves
+    const pawnMoves = userMoves.filter(m =>
+      ['best', 'good'].includes(m.classification) &&
+      m.san.match(/^[a-h]/) && // Pawn moves
+      !m.san.includes('x') // Not captures
+    )
+    if (pawnMoves.length >= 2 && strengths.length < 3) {
+      const move = pawnMoves[0]
+      const phase = getPhase(move.moveNumber)
+      strengths.push(`${phase}Good pawn structure: ${move.moveNumber}.${move.san} built solid foundation`)
+    }
+
+    // Find any above-average moves if nothing else
+    if (strengths.length < 3 && goodMoves.length >= 2) {
+      const examples = goodMoves.slice(0, 2).map(m => `${m.moveNumber}.${m.san}`).join(', ')
+      strengths.push(`Solid moves like ${examples} showed good chess understanding`)
+    }
+
+    // Low centipawn loss on individual moves
+    const veryAccurateMoves = userMoves.filter(m =>
+      m.centipawnLoss !== null &&
+      m.centipawnLoss <= 3 &&
+      m.classification !== 'uncategorized'
+    )
+    if (veryAccurateMoves.length >= 4 && strengths.length < 3) {
+      strengths.push(`${veryAccurateMoves.length} moves were extremely precise (≤3 centipawn loss)`)
+    }
   }
-  
-  // Analyze mistake patterns
-  const criticalMistakes = mistakes.filter(m => m.severity === 'critical').length
-  if (criticalMistakes > 0) {
-    weaknesses.push('Avoiding critical mistakes in opening')
+
+  // ===== IDENTIFY 3 SPECIFIC WEAKNESSES =====
+
+  // Weakness 1: Identify worst blunder/mistake with specifics
+  if (blunders.length > 0) {
+    const worstBlunder = blunders.sort((a, b) => (b.centipawnLoss || 0) - (a.centipawnLoss || 0))[0]
+    const cpLoss = worstBlunder.centipawnLoss ? Math.abs(worstBlunder.centipawnLoss) : 0
+    const phase = getPhase(worstBlunder.moveNumber)
+    weaknesses.push(`${phase}Critical blunder ${worstBlunder.san} on move ${worstBlunder.moveNumber} (${cpLoss} centipawns lost)${worstBlunder.bestMoveSan ? ` - ${worstBlunder.bestMoveSan} was better` : ''}`)
+  } else if (mistakeMoves.length > 0) {
+    const worstMistake = mistakeMoves.sort((a, b) => (b.centipawnLoss || 0) - (a.centipawnLoss || 0))[0]
+    const cpLoss = worstMistake.centipawnLoss ? Math.abs(worstMistake.centipawnLoss) : 0
+    const phase = getPhase(worstMistake.moveNumber)
+    weaknesses.push(`${phase}Tactical oversight ${worstMistake.san} on move ${worstMistake.moveNumber} (${cpLoss} centipawns)${worstMistake.bestMoveSan ? ` - ${worstMistake.bestMoveSan} maintains edge` : ''}`)
   }
-  
-  const developmentMistakes = mistakes.filter(m => 
-    m.explanation.toLowerCase().includes('development') || 
+
+  // Weakness 2: Identify pattern-based issues
+  const earlyMistakes = mistakes.filter(m => m.move <= 5)
+  const lateMistakes = mistakes.filter(m => m.move > 10)
+
+  if (earlyMistakes.length >= 2 && weaknesses.length < 3) {
+    weaknesses.push(`Opening preparation needs work: ${earlyMistakes.length} mistakes in first 5 moves`)
+  } else if (inaccuracies.length >= 3 && weaknesses.length < 3) {
+    const inaccuracyMoves = inaccuracies.slice(0, 2).map(m => `${m.moveNumber}.${m.san}`).join(', ')
+    weaknesses.push(`Several small inaccuracies (${inaccuracyMoves}, +${inaccuracies.length - 2} more) compound over time`)
+  } else if (lateMistakes.length >= 2 && weaknesses.length < 3) {
+    weaknesses.push(`Transitioning from opening to middlegame: mistakes after move 10`)
+  }
+
+  // Weakness 3: Thematic or strategic issues
+  const developmentIssues = mistakes.filter(m =>
+    m.explanation.toLowerCase().includes('development') ||
     m.explanation.toLowerCase().includes('develop')
-  ).length
-  if (developmentMistakes > 0) {
-    weaknesses.push('Piece development timing')
+  )
+  const centerIssues = mistakes.filter(m =>
+    m.explanation.toLowerCase().includes('center') ||
+    m.explanation.toLowerCase().includes('central') ||
+    m.explanation.toLowerCase().includes('space')
+  )
+  const safetyIssues = mistakes.filter(m =>
+    m.explanation.toLowerCase().includes('king') ||
+    m.explanation.toLowerCase().includes('castle') ||
+    m.explanation.toLowerCase().includes('safety')
+  )
+
+  if (safetyIssues.length > 0 && weaknesses.length < 3) {
+    const issue = safetyIssues[0]
+    weaknesses.push(`King safety concern: ${issue.moveNotation} on move ${issue.move} exposed weaknesses`)
+  } else if (developmentIssues.length > 0 && weaknesses.length < 3) {
+    const issue = developmentIssues[0]
+    weaknesses.push(`Piece development timing: ${issue.moveNotation} on move ${issue.move} delayed development`)
+  } else if (centerIssues.length > 0 && weaknesses.length < 3) {
+    const issue = centerIssues[0]
+    weaknesses.push(`Center control: ${issue.moveNotation} on move ${issue.move} weakened central position`)
   }
-  
-  const centerMistakes = mistakes.filter(m => 
-    m.explanation.toLowerCase().includes('center') || 
-    m.explanation.toLowerCase().includes('central')
-  ).length
-  if (centerMistakes > 0) {
-    weaknesses.push('Center control principles')
-  }
-  
-  // Add some default weaknesses if no specific ones are found
-  if (weaknesses.length === 0 && totalMoves > 0) {
-    const inaccuracyMoves = moves.filter(m => m.classification === 'inaccuracy').length
-    const mistakeMoves = moves.filter(m => m.classification === 'mistake').length
-    const blunderMoves = moves.filter(m => m.classification === 'blunder').length
-    
-    if (blunderMoves > 0) {
-      weaknesses.push('Avoiding tactical blunders')
-    } else if (mistakeMoves > 0) {
-      weaknesses.push('Reducing tactical mistakes')
-    } else if (inaccuracyMoves > 0) {
-      weaknesses.push('Improving move accuracy')
-    } else {
-      // Only add a weakness if we have a corresponding strength
-      if (strengths.length === 0) {
-        weaknesses.push('Building opening theory knowledge')
-      }
+
+  // Fill remaining weakness slots with general but specific feedback
+  if (weaknesses.length < 3 && userMoves.length > 0) {
+    if (avgCPL > 50 && weaknesses.length < 3) {
+      weaknesses.push(`High average centipawn loss (${Math.round(avgCPL)} per move) - needs more accuracy`)
+    } else if (avgCPL > 30 && weaknesses.length < 3) {
+      weaknesses.push(`Moderate accuracy issues (avg ${Math.round(avgCPL)} centipawn loss) - review key positions`)
+    }
+
+    const accuracyRate = (bestMoves.length + goodMoves.length) / userMoves.length
+    if (accuracyRate < 0.4 && weaknesses.length < 3) {
+      weaknesses.push(`Limited opening theory: only ${bestMoves.length + goodMoves.length}/${userMoves.length} moves were strong`)
+    } else if (accuracyRate < 0.6 && weaknesses.length < 3 && userMoves.length >= 6) {
+      weaknesses.push(`Opening knowledge gaps: ${bestMoves.length + goodMoves.length}/${userMoves.length} accurate moves (aim for 75%+)`)
+    }
+
+    if (weaknesses.length < 3) {
+      weaknesses.push(`Study this opening's main lines and typical plans`)
     }
   }
-  
-  console.log('Final strengths and weaknesses:', { strengths, weaknesses })
-  
-  return { strengths, weaknesses }
+
+  // Ensure we have exactly 3 of each (trim if too many)
+  const finalStrengths = strengths.slice(0, 3)
+  const finalWeaknesses = weaknesses.slice(0, 3)
+
+  console.log('Final strengths and weaknesses:', { strengths: finalStrengths, weaknesses: finalWeaknesses })
+
+  return { strengths: finalStrengths, weaknesses: finalWeaknesses }
 }
 
 function generateStudyRecommendations(openingName: string, mistakes: OpeningMistake[], accuracy: number): StudyRecommendation[] {
   const recommendations: StudyRecommendation[] = []
-  
+
   // Base recommendations
   recommendations.push({
     type: 'video',
@@ -553,7 +798,7 @@ function generateStudyRecommendations(openingName: string, mistakes: OpeningMist
     estimatedTime: '15-30 min',
     priority: 'high'
   })
-  
+
   // Mistake-specific recommendations
   if (mistakes.some(m => m.classification === 'blunder')) {
     recommendations.push({
@@ -565,7 +810,7 @@ function generateStudyRecommendations(openingName: string, mistakes: OpeningMist
       priority: 'high'
     })
   }
-  
+
   if (mistakes.some(m => m.explanation.toLowerCase().includes('development'))) {
     recommendations.push({
       type: 'article',
@@ -577,7 +822,7 @@ function generateStudyRecommendations(openingName: string, mistakes: OpeningMist
       priority: 'medium'
     })
   }
-  
+
   if (accuracy < 50) {
     recommendations.push({
       type: 'course',
@@ -588,7 +833,7 @@ function generateStudyRecommendations(openingName: string, mistakes: OpeningMist
       priority: 'high'
     })
   }
-  
+
   return recommendations
 }
 
@@ -612,7 +857,7 @@ function calculatePeerComparison(accuracy: number, totalGames: number): PeerComp
   const averageAccuracy = 45 + Math.random() * 20 // 45-65% range
   const percentile = accuracy > averageAccuracy ? 60 + Math.random() * 30 : 20 + Math.random() * 40
   const trend = totalGames > 10 ? (Math.random() > 0.5 ? 'improving' : 'stable') : 'stable'
-  
+
   return {
     averageAccuracy: Math.round(averageAccuracy),
     percentile: Math.round(percentile),
@@ -634,17 +879,17 @@ function calculateRepertoireAnalysis(openingStats: Array<{ opening: string, game
       recommendation: 'Start building your opening repertoire'
     }
   }
-  
+
   const totalGames = openingStats.reduce((sum, stat) => sum + stat.games, 0)
   const diversity = Math.min(100, (openingStats.length / 5) * 100) // Max 5 openings = 100%
-  
+
   const sortedByGames = [...openingStats].sort((a, b) => b.games - a.games)
   const mostPlayed = sortedByGames[0]?.opening || 'None'
   const leastPlayed = sortedByGames[sortedByGames.length - 1]?.opening || 'None'
-  
+
   const strengths = openingStats.filter(s => s.winRate > 60).map(s => s.opening)
   const weaknesses = openingStats.filter(s => s.winRate < 40).map(s => s.opening)
-  
+
   return {
     diversity: Math.round(diversity),
     colorPerformance: { white: 50, black: 50 }, // Mock data
@@ -674,39 +919,39 @@ function generateImprovementTrend(accuracy: number): Array<{ date: string, accur
 
 function generateNextGoals(mistakes: OpeningMistake[], accuracy: number): string[] {
   const goals = []
-  
+
   if (mistakes.length > 0) {
     goals.push(`Reduce mistakes from ${mistakes.length} to ${Math.max(0, mistakes.length - 2)} in next game`)
   }
-  
+
   if (accuracy < 70) {
     goals.push(`Improve opening accuracy to ${Math.min(100, accuracy + 10)}%`)
   }
-  
+
   goals.push('Study the recommended resources')
   goals.push('Practice the key positions')
-  
+
   return goals
 }
 
 function generateFocusAreas(mistakes: OpeningMistake[], patterns: string[]): string[] {
   const areas = []
-  
+
   if (mistakes.some(m => m.classification === 'blunder')) {
     areas.push('Avoiding critical mistakes')
   }
-  
+
   if (mistakes.some(m => m.explanation.toLowerCase().includes('development'))) {
     areas.push('Piece development')
   }
-  
+
   if (mistakes.some(m => m.explanation.toLowerCase().includes('center'))) {
     areas.push('Center control')
   }
-  
+
   areas.push('Opening theory')
   areas.push('Tactical awareness')
-  
+
   return areas
 }
 
@@ -716,7 +961,7 @@ function getLearningTip(classification: string, moveNumber: number): string {
     mistake: 'This move gives your opponent a significant advantage. Focus on the fundamental principles you violated.',
     inaccuracy: 'This move is not the best but not terrible. Look for ways to improve your position more efficiently.'
   }
-  
+
   return tips[classification] || 'Review this move and understand the engine\'s recommendation.'
 }
 

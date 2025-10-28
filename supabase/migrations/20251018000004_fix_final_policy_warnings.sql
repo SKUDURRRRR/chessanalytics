@@ -12,14 +12,20 @@
 
 -- Drop and recreate games_pgn_select with proper (select auth.uid()) syntax
 DROP POLICY IF EXISTS "games_pgn_select" ON public.games_pgn;
-
 CREATE POLICY "games_pgn_select" ON public.games_pgn
     FOR SELECT
     USING (
-        is_public = true  -- Public games can be viewed by anyone
+        -- Note: games_pgn table doesn't have is_public column
+        -- Check if corresponding game is public by joining with games table
+        EXISTS (
+            SELECT 1 FROM games
+            WHERE games.user_id = games_pgn.user_id
+            AND games.platform = games_pgn.platform
+            AND games.provider_game_id = games_pgn.provider_game_id
+            AND games.is_public = true
+        )
         OR user_id = (select auth.uid())::text  -- Owner can view their own games
     );
-
 -- ============================================================================
 -- PART 2: Consolidate games SELECT Policies
 -- ============================================================================
@@ -30,7 +36,6 @@ CREATE POLICY "games_pgn_select" ON public.games_pgn
 
 DROP POLICY IF EXISTS "games_select_own" ON public.games;
 DROP POLICY IF EXISTS "games_public_read" ON public.games;
-
 -- Create a single SELECT policy that covers both use cases
 CREATE POLICY "games_select" ON public.games
     FOR SELECT
@@ -38,7 +43,6 @@ CREATE POLICY "games_select" ON public.games
         user_id = (select auth.uid())::text  -- Owner can see their own games
         -- Note: Add OR is_public = true if games table has is_public column
     );
-
 -- ============================================================================
 -- PART 3: Remove games_no_client_* Policies
 -- ============================================================================
@@ -51,7 +55,6 @@ CREATE POLICY "games_select" ON public.games
 DROP POLICY IF EXISTS "games_no_client_write" ON public.games;
 DROP POLICY IF EXISTS "games_no_client_update" ON public.games;
 DROP POLICY IF EXISTS "games_no_client_delete" ON public.games;
-
 -- ============================================================================
 -- PART 4: Remove games_pgn_no_client_* Policies
 -- ============================================================================
@@ -60,7 +63,6 @@ DROP POLICY IF EXISTS "games_no_client_delete" ON public.games;
 DROP POLICY IF EXISTS "games_pgn_no_client_write" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_no_client_update" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_no_client_delete" ON public.games_pgn;
-
 -- ============================================================================
 -- PART 5: Fix Duplicate Constraint on user_profiles (Final Attempt)
 -- ============================================================================
@@ -101,17 +103,14 @@ EXCEPTION
         -- If any error occurs, just continue
         NULL;
 END $$;
-
 -- ============================================================================
 -- PART 6: Add Documentation Comments
 -- ============================================================================
 
 COMMENT ON POLICY "games_pgn_select" ON public.games_pgn IS
-'Consolidated SELECT policy with optimized auth.uid() call: allows public games to be viewed by anyone, private games only by owner';
-
+'Consolidated SELECT policy with optimized auth.uid() call: allows public games to be viewed by anyone (by checking games table), private games only by owner';
 COMMENT ON POLICY "games_select" ON public.games IS
 'Consolidated SELECT policy: users can only view their own games';
-
 -- ============================================================================
 -- Summary of Changes
 -- ============================================================================
@@ -129,4 +128,4 @@ COMMENT ON POLICY "games_select" ON public.games IS
 -- - 1 INSERT/UPDATE/DELETE policy per table (ownership-based)
 -- - No duplicate indexes
 -- - Optimized auth.uid() calls wrapped in (select ...)
--- ============================================================================
+-- ============================================================================;

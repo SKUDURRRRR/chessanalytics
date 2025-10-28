@@ -521,15 +521,15 @@ def get_opening_name_from_eco_code(eco_code: str) -> str:
     """Convert ECO code to opening name"""
     if not eco_code or not isinstance(eco_code, str):
         return 'Unknown'
-    
+
     # Clean the ECO code (remove any extra characters)
     clean_eco_code = eco_code.strip().upper()
-    
+
     # Check if it's a valid ECO code format (A00-E99)
     import re
     if not re.match(r'^[A-E]\d{2}$', clean_eco_code):
         return eco_code  # Return original if not a valid ECO code
-    
+
     return ECO_CODE_MAPPING.get(clean_eco_code, eco_code)
 
 
@@ -537,7 +537,7 @@ def normalize_opening_name(opening: str) -> str:
     """
     Normalize opening name to family name for consistent grouping.
     This is the critical function that consolidates variations into families.
-    
+
     Examples:
     - "Sicilian Defense, Najdorf Variation" -> "Sicilian Defense"
     - "Italian Game, Classical Variation" -> "Italian Game"
@@ -545,12 +545,12 @@ def normalize_opening_name(opening: str) -> str:
     """
     if not opening or opening == 'Unknown':
         return 'Unknown'
-    
+
     # First check if it's an ECO code
     eco_name = get_opening_name_from_eco_code(opening)
     if eco_name != opening:
         return eco_name
-    
+
     # Common opening family mappings
     opening_families = {
         # King's Pawn Openings
@@ -568,7 +568,7 @@ def normalize_opening_name(opening: str) -> str:
         'Pirc': 'Pirc Defense',
         'Modern Defense': 'Modern Defense',
         'Modern': 'Modern Defense',
-        
+
         # Queen's Pawn Openings
         "Queen's Gambit": "Queen's Gambit",
         "Queen's Gambit Declined": "Queen's Gambit Declined",
@@ -591,15 +591,15 @@ def normalize_opening_name(opening: str) -> str:
         'Budapest': 'Budapest Defense',
         'Dutch Defense': 'Dutch Defense',
         'Dutch': 'Dutch Defense',
-        
+
         # English Opening
         'English Opening': 'English Opening',
         'English': 'English Opening',
-        
+
         # Reti Opening
         'Reti Opening': 'Reti Opening',
         'Reti': 'Reti Opening',
-        
+
         # Other Openings
         'Ruy Lopez': 'Ruy Lopez',
         'Italian Game': 'Italian Game',
@@ -638,11 +638,11 @@ def normalize_opening_name(opening: str) -> str:
         'Trompowsky Attack': 'Trompowsky Attack',
         'Trompowsky': 'Trompowsky Attack',
     }
-    
+
     # Try to find exact match first
     if opening in opening_families:
         return opening_families[opening]
-    
+
     # Try to find partial match - this handles variations
     # e.g., "Sicilian Defense, Najdorf Variation" contains "Sicilian Defense"
     opening_lower = opening.lower()
@@ -650,7 +650,7 @@ def normalize_opening_name(opening: str) -> str:
         key_lower = key.lower()
         if key_lower in opening_lower or opening_lower.startswith(key_lower):
             return value
-    
+
     # If no match found, try to extract the base opening name before comma or colon
     # This handles cases like "Opening Name: Variation" or "Opening Name, Variation"
     if ',' in opening:
@@ -662,7 +662,7 @@ def normalize_opening_name(opening: str) -> str:
             if key.lower() in base_opening.lower():
                 return value
         return base_opening
-    
+
     if ':' in opening:
         base_opening = opening.split(':')[0].strip()
         if base_opening in opening_families:
@@ -671,7 +671,68 @@ def normalize_opening_name(opening: str) -> str:
             if key.lower() in base_opening.lower():
                 return value
         return base_opening
-    
+
     # If no match found, return the original opening name
     return opening
 
+
+def identify_a00_opening_from_moves(pgn: str) -> str:
+    """
+    Identify specific A00 opening from PGN moves.
+    A00 is a catch-all ECO code for irregular first moves.
+    This function identifies the specific opening based on White's first move.
+
+    Returns the specific opening name, or 'Uncommon Opening' if unidentified.
+    """
+    if not pgn:
+        return 'Uncommon Opening'
+
+    # Extract first move from PGN
+    # PGN format: "1. e4 e5 2. Nf3..." or with headers "[Event "..."]\n\n1. e4..."
+    lines = pgn.split('\n')
+    moves_started = False
+    first_move = None
+
+    for line in lines:
+        line = line.strip()
+        # Skip headers and empty lines
+        if not line or line.startswith('['):
+            continue
+        # Found the moves section
+        if line and not line.startswith('['):
+            moves_started = True
+            # Extract first move (e.g., "1. b4" or "1. Nc3")
+            # Handle formats: "1. b4" or "1.b4" or just "b4"
+            import re
+            # Match pattern: optional "1." or "1 " followed by the move
+            match = re.search(r'(?:1\.\s*|1\s+)?([a-hNBRQK][a-h1-8x+#=NBRQ-]+)', line)
+            if match:
+                first_move = match.group(1)
+                break
+
+    if not first_move:
+        return 'Uncommon Opening'
+
+    # Map first moves to specific A00 openings
+    first_move_clean = first_move.replace('x', '').replace('+', '').replace('#', '')
+
+    a00_openings = {
+        'b4': 'Polish Opening',      # 1.b4 (also called Sokolsky Opening)
+        'Nc3': 'Van Geet Opening',   # 1.Nc3
+        'a3': "Anderssen's Opening", # 1.a3
+        'a4': 'Ware Opening',        # 1.a4
+        'g3': 'Hungarian Opening',   # 1.g3 (also called Benko Opening)
+        'g4': 'Grob Opening',        # 1.g4 (also called Spike Opening)
+        'Nh3': 'Amar Opening',       # 1.Nh3 (also called Paris Opening)
+        'Na3': 'Durkin Opening',     # 1.Na3 (also called Sodium Attack)
+        'e3': "Van't Kruijs Opening", # 1.e3
+        'h3': 'Clemenz Opening',     # 1.h3
+        'h4': 'Desprez Opening',     # 1.h4
+        'f3': 'Barnes Opening',      # 1.f3
+        'c3': 'Saragossa Opening',   # 1.c3
+        'd3': 'Mieses Opening',      # 1.d3
+        'b3': 'Nimzowitsch-Larsen Attack', # 1.b3
+        'Nf3': 'Zukertort Opening',  # 1.Nf3 (if not followed by standard continuations)
+    }
+
+    return a00_openings.get(first_move_clean, 'Uncommon Opening')

@@ -1,2 +1,2 @@
 -- 20250102000004_production_fixes_clean.sql superseded by 20250102000005_schema_consolidation.sql
--- Intentionally left blank.
+-- Intentionally left blank.;

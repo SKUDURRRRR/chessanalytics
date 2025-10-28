@@ -836,8 +836,13 @@ export function EnhancedOpeningPlayerCard({
 
                 // Extract userId and platform from location
                 const pathParts = location.pathname.split('/')
-                const userId = pathParts[pathParts.indexOf('analytics') + 1]
-                const platform = pathParts[pathParts.indexOf('analytics') + 2]
+                const analyticsIndex = pathParts.indexOf('analytics')
+                const userId = (analyticsIndex >= 0 && analyticsIndex + 1 < pathParts.length)
+                  ? pathParts[analyticsIndex + 1]
+                  : ''
+                const platform = (analyticsIndex >= 0 && analyticsIndex + 2 < pathParts.length)
+                  ? pathParts[analyticsIndex + 2]
+                  : ''
 
                 // Convert UCI moves to SAN if FEN is available
                 const yourMove = blunder.moveNotation || blunder.move_notation || '?'

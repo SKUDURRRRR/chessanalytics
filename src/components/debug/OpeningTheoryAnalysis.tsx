@@ -26,6 +26,7 @@ interface OpeningTheoryAnalysisProps {
   moves: ProcessedMove[]
   playerColor: 'white' | 'black'
   gameRecord: any
+  analysisRecord?: any
   openingStats?: Array<{
     opening: string
     openingFamily: string
@@ -45,7 +46,7 @@ interface OpeningVariation {
   evaluation: 'equal' | 'slight-advantage' | 'advantage' | 'disadvantage'
 }
 
-export function OpeningTheoryAnalysis({ moves, playerColor, gameRecord, openingStats, totalGames }: OpeningTheoryAnalysisProps) {
+export function OpeningTheoryAnalysis({ moves, playerColor, gameRecord, analysisRecord, openingStats, totalGames }: OpeningTheoryAnalysisProps) {
   const userMoves = moves.filter(move => move.isUserMove)
   const openingMoves = userMoves.slice(0, 10) // First 10 moves typically cover opening
 
@@ -54,7 +55,7 @@ export function OpeningTheoryAnalysis({ moves, playerColor, gameRecord, openingS
   const identifiedVariation = useMemo(() => {
     const firstMoves = openingMoves.map(m => m.san)
     const openingResult = identifyOpening(gameRecord, firstMoves, playerColor)
-    
+
     // Convert the result to the expected format
     return {
       name: openingResult.name,
@@ -65,16 +66,16 @@ export function OpeningTheoryAnalysis({ moves, playerColor, gameRecord, openingS
     }
   }, [openingMoves, gameRecord, playerColor])
 
-  const openingAccuracy = useMemo(() => 
+  const openingAccuracy = useMemo(() =>
     calculateOpeningAccuracyChessCom(openingMoves)
   , [openingMoves])
 
   const theoryKnowledge = useMemo(() => {
     const totalMoves = openingMoves.length
-    const inaccuracyMoves = openingMoves.filter(move => 
+    const inaccuracyMoves = openingMoves.filter(move =>
       move.classification === 'inaccuracy' || move.classification === 'mistake'
     ).length
-    
+
     if (inaccuracyMoves === 0) return 'excellent'
     if (inaccuracyMoves <= totalMoves * 0.1) return 'good'
     if (inaccuracyMoves <= totalMoves * 0.2) return 'fair'
@@ -93,10 +94,11 @@ export function OpeningTheoryAnalysis({ moves, playerColor, gameRecord, openingS
   const scoreInfo = getTheoryScore(theoryKnowledge)
 
   return (
-    <EnhancedOpeningAnalysis 
+    <EnhancedOpeningAnalysis
       moves={moves}
       playerColor={playerColor}
       gameRecord={gameRecord}
+      analysisRecord={analysisRecord}
       openingStats={openingStats}
       totalGames={totalGames}
     />

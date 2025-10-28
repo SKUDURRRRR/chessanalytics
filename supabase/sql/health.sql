@@ -132,7 +132,7 @@ WHERE total_moves IS NULL
    OR total_moves <= 0;
 
 -- L) Ensure we have corresponding analysis rows for move-based insights
--- L) Ensure we have corresponding analysis rows for move-based insights
+-- Updated to handle both internal UUID and provider_game_id in game_analyses.game_id
 SELECT
   'ANALYSIS_MISSING' as check_type,
   g.user_id,
@@ -141,7 +141,7 @@ FROM public.games g
 LEFT JOIN public.game_analyses ga
   ON ga.user_id = g.user_id
  AND ga.platform = g.platform
- AND ga.game_id = g.provider_game_id
+ AND (ga.game_id = g.provider_game_id OR ga.game_id = g.id::text)
 WHERE ga.id IS NULL
   AND g.result IN ('win','loss','draw')
 LIMIT 50;

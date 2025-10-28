@@ -6,27 +6,26 @@
 
 -- Insert a test game to verify the table is accessible
 INSERT INTO games (
-  user_id, 
-  platform, 
-  result, 
-  opening, 
-  accuracy, 
-  opponent_rating, 
-  my_rating, 
-  time_control, 
+  user_id,
+  platform,
+  result,
+  opening,
+  accuracy,
+  opponent_rating,
+  my_rating,
+  time_control,
   played_at
 ) VALUES (
-  'skudurrrrr', 
-  'chess.com', 
-  'win', 
-  'Sicilian Defense', 
-  85.5, 
-  1200, 
-  1250, 
-  '600+0', 
+  'skudurrrrr',
+  'chess.com',
+  'win',
+  'Sicilian Defense',
+  85.5,
+  1200,
+  1250,
+  '600+0',
   NOW() - INTERVAL '1 day'
 ) ON CONFLICT DO NOTHING;
-
 -- Verify the game was inserted
 -- (This will show in the logs)
 SELECT COUNT(*) as total_games FROM games WHERE user_id = 'skudurrrrr';

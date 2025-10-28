@@ -1,12 +1,14 @@
 # Start Backend with Supabase Credentials from .env file
 # Run this script to start your backend with the right environment variables
-# 
+#
 # IMPORTANT: Make sure you have a .env file with your credentials!
 # See START_BACKEND_LOCAL.ps1.example for the required variables
 
-# Load environment variables from .env file
-if (Test-Path .env) {
-    Get-Content .env | ForEach-Object {
+# Load environment variables from .env or .env.local file
+$envFile = if (Test-Path .env) { ".env" } elseif (Test-Path .env.local) { ".env.local" } else { $null }
+
+if ($envFile) {
+    Get-Content $envFile | ForEach-Object {
         if ($_ -match '^\s*([^#][^=]*)\s*=\s*(.*)$') {
             $name = $matches[1].Trim()
             $value = $matches[2].Trim()
@@ -15,10 +17,10 @@ if (Test-Path .env) {
             [Environment]::SetEnvironmentVariable($name, $value, 'Process')
         }
     }
-    Write-Host "Loaded environment variables from .env file" -ForegroundColor Green
+    Write-Host "Loaded environment variables from $envFile file" -ForegroundColor Green
 } else {
-    Write-Host "ERROR: .env file not found!" -ForegroundColor Red
-    Write-Host "Please create a .env file with your Supabase credentials." -ForegroundColor Yellow
+    Write-Host "ERROR: .env or .env.local file not found!" -ForegroundColor Red
+    Write-Host "Please create a .env or .env.local file with your Supabase credentials." -ForegroundColor Yellow
     Write-Host "See START_BACKEND_LOCAL.ps1.example for required variables." -ForegroundColor Yellow
     exit 1
 }
@@ -38,4 +40,3 @@ Write-Host "Starting backend..." -ForegroundColor Yellow
 
 # Start backend
 python python/main.py
-

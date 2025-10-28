@@ -181,6 +181,7 @@ class MoveAnalysis:
     evaluation: Dict
     best_move: str
     best_move_san: str = ""  # SAN notation for best move
+    best_move_pv: List[str] = field(default_factory=list)  # PV for the best move line (UCI)
     is_best: bool = False
     is_blunder: bool = False
     is_mistake: bool = False
@@ -683,7 +684,8 @@ class ChessAnalysisEngine:
                 score = primary.get('score', chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
                 perspective = score.pov(chess.WHITE)
                 pv_moves = primary.get('pv', []) or []
-                pv_uci = [mv.uci() for mv in pv_moves[:3]]
+                # Store complete PV line for follow-up feature (not just first 3 moves)
+                pv_uci = [mv.uci() for mv in pv_moves]
                 best_move = pv_uci[0] if pv_uci else None
                 if perspective.is_mate():
                     return {'type': 'mate', 'value': perspective.mate(), 'best_move': best_move, 'pv': pv_uci}
@@ -1008,6 +1010,8 @@ class ChessAnalysisEngine:
 
         board.push(move)
         after_score, after_features = self._evaluate_board_basic(board)
+        # Capture FEN after move is applied (before popping)
+        fen_after = board.fen()
         board.pop()
 
         color_key = 'white' if color_to_move == chess.WHITE else 'black'
@@ -1233,10 +1237,8 @@ class ChessAnalysisEngine:
 
         accuracy_score = 100.0 if is_best else 100.0 - min(100.0, centipawn_loss)
 
-        # Get FEN position after the move (board state already has the move applied)
-        fen_after = board.fen()
-
         # Create basic move analysis
+        # Note: fen_after was captured earlier while the move was still applied
         move_analysis = MoveAnalysis(
             move=move.uci(),
             move_san=move_san,
@@ -1397,11 +1399,17 @@ class ChessAnalysisEngine:
 
                     # Use configured time limit from environment variables
                     time_limit = self.config.time_limit
+                    depth = self.config.depth
 
                     # Get evaluation before move
-                    info_before = engine.analyse(board, chess.engine.Limit(time=time_limit))
+                    # Use depth for better PV line (time limit gives shallow PV)
+                    info_before = engine.analyse(board, chess.engine.Limit(depth=depth))
                     eval_before = info_before.get("score", chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
                     best_move_before = info_before.get("pv", [None])[0]
+                    # Capture the full PV for the best move line
+                    best_move_pv_moves = info_before.get("pv", [])
+                    best_move_pv = [mv.uci() for mv in best_move_pv_moves] if best_move_pv_moves else []
+                    print(f"[PV DEBUG] Captured {len(best_move_pv)} moves in best_move_pv for position")
                     player_color = board.turn
 
                     # Validate move is legal before proceeding
@@ -1492,21 +1500,70 @@ class ChessAnalysisEngine:
                                 captured_value = piece_values.get(captured_piece.symbol().upper(), 0)
                                 moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
 
-                                # Calculate net material sacrificed
-                                # Positive = sacrificing material (e.g., Queen for Rook = 9-5 = 4)
-                                # Negative = winning material (e.g., Rook for Pawn = 5-1 = 4... wait, that's also positive)
-                                # Actually: moving_value - captured_value
-                                # If we give up Queen (9) for Rook (5): 9-5 = 4 (sacrificed 4 points)
-                                # If we give up Rook (5) for Pawn (1): 5-1 = 4 (sacrificed 4 points)
-                                # If we capture Queen (9) with Knight (3): 3-9 = -6 (won 6 points)
-                                net_material_sacrificed = moving_value - captured_value
+                                # BRILLIANT MOVE SACRIFICE DETECTION (Fixed Logic)
+                                #
+                                # Understanding "Sacrifice" in chess:
+                                # - A REAL sacrifice = giving up material with NO immediate compensation
+                                # - Example: Rxe6 (Rook takes pawn) where the Rook will be captured next
+                                # - NOT a sacrifice: Rxe6 where the Rook safely captures and stays protected
+                                #
+                                # The KEY insight: The engine evaluation ALREADY includes whether pieces are hanging!
+                                # - If Rxa7 leaves the Rook hanging, the evaluation will DROP significantly
+                                # - If Rxa7 is safe, the evaluation will IMPROVE (we gained a pawn)
+                                #
+                                # CORRECT LOGIC:
+                                # A capture is a "spectacular sacrifice" IF:
+                                # 1. Moving piece is more valuable than captured piece (Q×P, R×P, etc.)
+                                # 2. Position evaluation DROPS materially (piece is hanging/will be captured)
+                                # 3. BUT it's still the best move (tactical brilliance - sacrifice for compensation)
+                                # 4. AND position remains winning overall (not just drawing)
+                                #
+                                # Examples:
+                                # - Rxe6! (Brilliant): Rook takes pawn, rook hangs, but leads to forced mate
+                                #   → moving_value=5 > captured_value=1 ✓
+                                #   → evaluation drops ~400cp (rook value) but is best move ✓
+                                #   → position winning after (+300cp) ✓
+                                #
+                                # - Rxa7 (Best Move, NOT Brilliant): Rook safely takes pawn
+                                #   → moving_value=5 > captured_value=1 ✓
+                                #   → evaluation IMPROVES ~100cp (gained pawn) ✗
+                                #   → Not a sacrifice, just winning material
+                                #
+                                # - Qxh7+ (Brilliant Greek Gift): Queen takes pawn with check, Queen trapped but mate follows
+                                #   → moving_value=9 > captured_value=1 ✓
+                                #   → evaluation drops ~800cp (Queen lost) but is best move ✓
+                                #   → position winning after (mate threat) ✓
 
-                                # STRICTER sacrifice criteria (aligned with Chess.com):
-                                # 1. Must sacrifice at least 3 points net (e.g., Queen for Knight, Rook for Bishop)
-                                # 2. Position must be WINNING after sacrifice (not just equal)
-                                # 3. Player must not already be completely winning (not just converting)
-                                # 4. Move must be engine's top choice
-                                significant_sacrifice = net_material_sacrificed >= 3  # Stricter: 3+ points, not 2+
+                                # Check if this COULD be a material sacrifice (piece more valuable than capture)
+                                is_potential_sacrifice = moving_value > captured_value
+                                sacrifice_value = moving_value - captured_value if is_potential_sacrifice else 0
+
+                                # TRUE sacrifice detection: Did the evaluation DROP significantly?
+                                # (This means the piece is likely hanging or will be lost)
+                                #
+                                # CRITICAL: Compare BEFORE and AFTER position evaluations
+                                # If evaluation drops by ~piece value, it's a real sacrifice
+                                #
+                                # For a Rook "sacrifice" (value 5 = 500cp):
+                                # - Evaluation should drop by ~400-500cp (rook will be lost)
+                                # - But move is still "best" (tactical compensation)
+                                #
+                                # For normal winning captures (Rxa7 safely):
+                                # - Evaluation IMPROVES by ~100cp (gained pawn)
+                                # - This is NOT a sacrifice!
+                                evaluation_dropped = optimal_cp - actual_cp  # Positive if position got worse
+
+                                # Significant evaluation drop indicates real sacrifice:
+                                # - Must drop by at least 200cp (2 pawns worth)
+                                # - This ensures we're truly giving up material, not just winning it
+                                evaluation_drop_significant = evaluation_dropped >= 200
+
+                                # Final sacrifice criteria (MUCH stricter):
+                                significant_sacrifice = (
+                                    is_potential_sacrifice and  # Capturing with more valuable piece
+                                    sacrifice_value >= 3 and  # At least 3 points difference (Q/R sacrifice)
+                                    evaluation_drop_significant  # Evaluation drops significantly (piece is actually sacrificed)
+                                )
 
                                 # Position must be WINNING after sacrifice (not just equal)
                                 # This prevents labeling equal trades as brilliant
@@ -1550,6 +1607,7 @@ class ChessAnalysisEngine:
                         move_san=move_san,
                         evaluation=evaluation,
                         best_move=best_move_before.uci() if best_move_before else None,
+                        best_move_pv=best_move_pv,  # Full PV for the best move line
                         is_best=is_best,
                         is_brilliant=is_brilliant,
                         is_great=is_great,
@@ -1666,10 +1724,19 @@ class ChessAnalysisEngine:
         user_move_count = len(user_moves)
         opponent_move_count = len(opponent_moves)
 
-        # Chess.com typically uses first 10-12 moves for opening analysis
-        # We'll use 10 moves maximum (20 ply) for more realistic opening accuracy
+        # Improved phase boundaries:
+        # - Opening: first 10 moves (or fewer if game is shorter)
+        # - Endgame: last 10 moves (or proportional for short games)
+        # - Middlegame: everything in between
+
         opening_end = min(10, user_move_count)
-        endgame_start = max(user_move_count - 10, user_move_count // 2)
+
+        # For very short games (≤15 moves), there's no real middlegame
+        if user_move_count <= 15:
+            endgame_start = opening_end  # No middlegame
+        else:
+            # For longer games, endgame is the last 10 moves, but at least move 11
+            endgame_start = max(opening_end, user_move_count - 10)
 
         # Filter opening moves - first 10 moves (20 plies)
         opening_moves = user_moves[:opening_end]
@@ -1740,7 +1807,11 @@ class ChessAnalysisEngine:
         )
 
     def _calculate_phase_accuracy(self, moves: List[MoveAnalysis]) -> float:
-        """Calculate accuracy for a game phase using Chess.com-style graduated accuracy."""
+        """Calculate accuracy for a game phase using Chess.com-style graduated accuracy.
+
+        Returns 0.0 if no moves are available in the phase.
+        Frontend should check move count to distinguish between "no data" and "0% accuracy".
+        """
         if not moves:
             return 0.0
 
@@ -1797,35 +1868,15 @@ class ChessAnalysisEngine:
 
     def _calculate_opening_accuracy_chesscom_style(self, opening_moves: List[MoveAnalysis]) -> float:
         """
-        Calculate opening accuracy using a more conservative approach that matches Chess.com.
-        This provides realistic accuracy scores that don't inflate to 100%.
+        Calculate opening accuracy using Chess.com's CAPS2 algorithm (same as other phases).
+        This ensures consistency across all game phases.
         """
         if not opening_moves:
             return 0.0
 
-        total_accuracy = 0.0
-        for move in opening_moves:
-            # Use centipawn loss directly - this is more reliable than trying to reconstruct evaluations
-            centipawn_loss = move.centipawn_loss
-
-            # Much more conservative accuracy calculation to avoid 100% scores
-            # Only truly perfect moves get 100%, everything else is penalized more heavily
-            if centipawn_loss <= 2:
-                move_accuracy = 100.0  # Only truly perfect moves (0-2 CPL)
-            elif centipawn_loss <= 8:
-                move_accuracy = 90.0 - (centipawn_loss - 2) * 2.5  # 90% to 75%
-            elif centipawn_loss <= 20:
-                move_accuracy = 75.0 - (centipawn_loss - 8) * 1.5  # 75% to 57%
-            elif centipawn_loss <= 40:
-                move_accuracy = 57.0 - (centipawn_loss - 20) * 1.0  # 57% to 37%
-            elif centipawn_loss <= 80:
-                move_accuracy = 37.0 - (centipawn_loss - 40) * 0.5  # 37% to 17%
-            else:
-                move_accuracy = max(5.0, 17.0 - (centipawn_loss - 80) * 0.1)  # 17% to 5%
-
-            total_accuracy += move_accuracy
-
-        return total_accuracy / len(opening_moves)
+        # Use the same Chess.com CAPS2 algorithm as middlegame/endgame for consistency
+        centipawn_losses = [move.centipawn_loss for move in opening_moves]
+        return self._calculate_accuracy_from_cpl(centipawn_losses)
 
     def _calculate_time_management_score(self, moves: List[MoveAnalysis]) -> float:
         """Calculate time management score based on move timing patterns and quality.
@@ -1899,6 +1950,8 @@ class ChessAnalysisEngine:
                 'is_blunder': move.is_blunder,
                 'is_mistake': move.is_mistake,
                 'is_inaccuracy': move.is_inaccuracy,
+                'evaluation_before': move.evaluation_before,
+                'evaluation_after': move.evaluation_after,
             })
 
         scorer = PersonalityScorer()

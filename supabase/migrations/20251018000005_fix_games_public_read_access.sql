@@ -13,14 +13,14 @@
 
 -- Drop the overly restrictive policy
 DROP POLICY IF EXISTS "games_select" ON public.games;
-
 -- Create a more permissive SELECT policy that allows:
 -- 1. All authenticated users to view all games (for analytics)
 -- 2. Anonymous users to view all games (for public analytics)
 -- This matches the original games_public_read behavior
 CREATE POLICY "games_select_public" ON public.games
     FOR SELECT
-    USING (true);  -- Allow all users to read games for analytics
+    USING (true);
+-- Allow all users to read games for analytics
 
 -- Note: Write operations (INSERT, UPDATE, DELETE) remain restricted to owners
 -- via games_insert_own, games_update_own, games_delete_own policies
@@ -31,7 +31,6 @@ CREATE POLICY "games_select_public" ON public.games
 
 COMMENT ON POLICY "games_select_public" ON public.games IS
 'Allows all users (authenticated and anonymous) to view games for analytics purposes. Write operations remain restricted to game owners.';
-
 -- ============================================================================
 -- Summary
 -- ============================================================================
@@ -50,4 +49,4 @@ COMMENT ON POLICY "games_select_public" ON public.games IS
 -- - Only owners can UPDATE their own games (games_update_own)
 -- - Only owners can DELETE their own games (games_delete_own)
 -- - Service role maintains full access (games_service_role_all)
--- ============================================================================
+-- ============================================================================;

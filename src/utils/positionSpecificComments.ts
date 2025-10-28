@@ -1,6 +1,6 @@
 /**
  * Position-Specific Comment Generator
- * 
+ *
  * Generates specific, contextual comments based on actual board analysis.
  * Uses chess.js to analyze positions and detect specific tactical patterns.
  */
@@ -56,15 +56,15 @@ export function analyzePositionAfterMove(fenBefore: string, move: string): Posit
 
     // Check for hanging pieces (pieces that are attacked and not defended)
     result.hangingPieces = detectHangingPieces(chess)
-    
+
     // Check for threatened pieces (pieces under attack)
     result.threatenedPieces = detectThreatenedPieces(chess)
-    
+
     // Check if king is in check
     if (chess.inCheck()) {
       result.checks.push(`King in check`)
     }
-    
+
     // Check for mate threats
     if (chess.isCheckmate()) {
       result.mateThreats.push(`Checkmate!`)
@@ -90,7 +90,7 @@ function detectHangingPieces(chess: Chess): Array<{ square: string; piece: strin
       const piece = board[row][col]
       if (piece && piece.color === turn) {
         const square = String.fromCharCode(97 + col) + (8 - row)
-        
+
         // Check if piece is attacked
         if (isSquareAttacked(chess, square, turn === 'w' ? 'b' : 'w')) {
           // Check if piece is defended
@@ -122,12 +122,12 @@ function detectThreatenedPieces(chess: Chess): Array<{ square: string; piece: st
       const piece = board[row][col]
       if (piece && piece.color === turn) {
         const square = String.fromCharCode(97 + col) + (8 - row)
-        
+
         // Check if piece is attacked
         const attackers = getAttackers(chess, square, turn === 'w' ? 'b' : 'w')
         if (attackers.length > 0) {
           const defenders = getAttackers(chess, square, turn)
-          
+
           // If more attackers than defenders, it's threatened
           if (attackers.length > defenders.length) {
             threatened.push({
@@ -174,7 +174,7 @@ function getAttackers(chess: Chess, square: string, byColor: 'w' | 'b'): string[
       const piece = board[row][col]
       if (piece && piece.color === byColor) {
         const fromSquare = String.fromCharCode(97 + col) + (8 - row)
-        
+
         // Check if this piece can move to the target square
         const moves = chess.moves({ square: fromSquare, verbose: true })
         if (moves.some(m => m.to === square)) {
@@ -206,41 +206,41 @@ export function generateSpecificBlunderComment(
       const maxValue = PIECE_VALUES[max.piece.toLowerCase()]
       return pieceValue > maxValue ? piece : max
     })
-    details.push(`Your ${mostValuable.pieceType} on ${mostValuable.square} is now hanging`)
+    details.push(`${mostValuable.pieceType} on ${mostValuable.square} is hanging`)
   }
 
   // Check for threatened pieces
   if (analysis.threatenedPieces.length > 0 && analysis.hangingPieces.length === 0) {
     const piece = analysis.threatenedPieces[0]
-    details.push(`Your ${piece.pieceType} on ${piece.square} is under attack`)
+    details.push(`${piece.pieceType} on ${piece.square} under attack`)
   }
 
   // Check for checks
   if (analysis.checks.length > 0) {
-    details.push(`This move exposes your king to check`)
+    details.push(`exposes king to check`)
   }
 
-  // Build the comment
+  // Build the comment - shorter version
   if (details.length > 0) {
     const specific = details.slice(0, 2).join(', ')
     if (centipawnLoss > 300) {
-      return `This is a catastrophic blunder. ${specific.charAt(0).toUpperCase() + specific.slice(1)}. Consider ${bestMoveSan} instead to avoid this disaster.`
+      return `Catastrophic blunder! ${specific.charAt(0).toUpperCase() + specific.slice(1)}. ${bestMoveSan} avoids this.`
     } else if (centipawnLoss > 200) {
-      return `This is a major blunder. ${specific.charAt(0).toUpperCase() + specific.slice(1)}. Consider ${bestMoveSan} instead to keep your pieces safe.`
+      return `Major blunder! ${specific.charAt(0).toUpperCase() + specific.slice(1)}. ${bestMoveSan} keeps pieces safe.`
     } else if (centipawnLoss > 100) {
-      return `This is a serious mistake. ${specific.charAt(0).toUpperCase() + specific.slice(1)}. Consider ${bestMoveSan} instead to avoid these issues.`
+      return `Serious mistake. ${specific.charAt(0).toUpperCase() + specific.slice(1)}. ${bestMoveSan} avoids this.`
     } else {
-      return `This creates problems. ${specific.charAt(0).toUpperCase() + specific.slice(1)}. Consider ${bestMoveSan} instead.`
+      return `This creates problems. ${specific.charAt(0).toUpperCase() + specific.slice(1)}. Try ${bestMoveSan}.`
     }
   }
 
   // Fallback to generic comment
   if (centipawnLoss > 300) {
-    return `This is a catastrophic blunder - you likely hung a major piece or allowed mate. Consider ${bestMoveSan} instead.`
+    return `Catastrophic blunder! You hung material or allowed mate. ${bestMoveSan} avoids this.`
   } else if (centipawnLoss > 200) {
-    return `This is a major blunder - you probably lost a piece or created fatal weaknesses. Consider ${bestMoveSan} instead.`
+    return `Major blunder! You lost a piece or created fatal weaknesses. ${bestMoveSan} is better.`
   } else {
-    return `This creates serious problems for your position. Consider ${bestMoveSan} instead.`
+    return `This creates serious problems. ${bestMoveSan} is much stronger.`
   }
 }
 
@@ -269,7 +269,7 @@ export function generateSpecificBrilliantComment(
     // Check for check/checkmate
     if (chess.inCheck()) {
       details.push(`This delivers check to the king`)
-      
+
       if (chess.isCheckmate()) {
         details.push(`It's checkmate`)
       }
@@ -302,22 +302,22 @@ export function generateSpecificMistakeComment(
   // Check for hanging pieces
   if (analysis.hangingPieces.length > 0) {
     const piece = analysis.hangingPieces[0]
-    details.push(`Your ${piece.pieceType} on ${piece.square} is now unprotected`)
+    details.push(`${piece.pieceType} on ${piece.square} is unprotected`)
   }
 
   // Check for threatened pieces
   if (analysis.threatenedPieces.length > 0 && analysis.hangingPieces.length === 0) {
     const piece = analysis.threatenedPieces[0]
-    details.push(`Your ${piece.pieceType} on ${piece.square} is under attack`)
+    details.push(`${piece.pieceType} on ${piece.square} is under attack`)
   }
 
-  // Build the comment
+  // Build the comment - shorter version
   if (details.length > 0) {
     const specific = details.slice(0, 1).join('; ')
-    return `This isn't right. ${specific.charAt(0).toUpperCase() + specific.slice(1)}. Consider ${bestMoveSan} instead, which would avoid these issues.`
+    return `This isn't right. ${specific.charAt(0).toUpperCase() + specific.slice(1)}. ${bestMoveSan} avoids this.`
   }
 
-  // Fallback to generic comment
-  return `This isn't right. This creates serious problems for your position. Consider ${bestMoveSan} instead, which would be much better.`
+  // Fallback to generic comment - include best move
+  const bestMoveText = bestMoveSan ? ` ${bestMoveSan} was the best move here.` : ''
+  return `This isn't right. This is a serious mistake; you likely lost material or created significant tactical problems that give your opponent a major advantage.${bestMoveText}`
 }
-

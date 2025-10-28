@@ -27,7 +27,7 @@ export function parseTimeControl(timeControl: string): TimeControlInfo {
   if (['bullet', 'blitz', 'rapid', 'classical', 'correspondence'].includes(lowerTimeControl)) {
     const category = lowerTimeControl as 'bullet' | 'blitz' | 'rapid' | 'classical' | 'correspondence'
     const displayName = category.charAt(0).toUpperCase() + category.slice(1)
-    
+
     // Set approximate total times for pre-categorized controls
     let totalTime = 0
     switch (category) {
@@ -47,7 +47,7 @@ export function parseTimeControl(timeControl: string): TimeControlInfo {
         totalTime = 86400 // 1 day
         break
     }
-    
+
     return {
       category,
       displayName,
@@ -58,7 +58,7 @@ export function parseTimeControl(timeControl: string): TimeControlInfo {
   let totalTime = 0
 
   if (timeControl.includes('+')) {
-    // Format: "base+increment" 
+    // Format: "base+increment"
     const [base, increment] = timeControl
       .split('+')
       .map(value => Number(value))
@@ -152,17 +152,17 @@ export function getTimeControlCategory(timeControl: string): string {
 export function getTimeControlIcon(category: string): string {
   switch (category.toLowerCase()) {
     case 'bullet':
-      return '⚡'
+      return ''
     case 'blitz':
-      return '🔥'
+      return ''
     case 'rapid':
-      return '⏱️'
+      return ''
     case 'classical':
-      return '♔'
+      return ''
     case 'correspondence':
-      return '✉️'
+      return ''
     default:
-      return '❓'
+      return ''
   }
 }
 

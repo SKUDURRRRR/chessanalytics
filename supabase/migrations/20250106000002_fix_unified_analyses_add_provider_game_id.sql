@@ -2,9 +2,8 @@
 -- This allows frontend to match analyzed games with games in the UI
 
 DROP VIEW IF EXISTS public.unified_analyses;
-
 CREATE VIEW public.unified_analyses AS
-SELECT 
+SELECT
     ga.game_id,
     ga.game_id AS provider_game_id,  -- Alias for frontend compatibility
     ga.user_id,
@@ -43,11 +42,8 @@ SELECT
     ga.processing_time_ms,
     ga.stockfish_depth
 FROM public.game_analyses ga;
-
 -- Grant permissions
 GRANT SELECT ON public.unified_analyses TO authenticated;
 GRANT SELECT ON public.unified_analyses TO service_role;
 GRANT SELECT ON public.unified_analyses TO anon;
-
 COMMENT ON VIEW public.unified_analyses IS 'Canonical analysis view from game_analyses with provider_game_id alias for frontend matching.';
-

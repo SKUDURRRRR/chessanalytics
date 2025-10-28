@@ -8,18 +8,15 @@
 
 -- Drop the overly broad "Allow all" policy that causes duplicate warnings
 DROP POLICY IF EXISTS "Allow all for anon and service_role on game_analyses" ON public.game_analyses;
-
 -- Keep the specific ownership-based policies for better security
 -- These should already exist from 20251018000001, but ensure they're properly defined
 
 -- For SELECT: Create single policy allowing users to see their own analyses
 DROP POLICY IF EXISTS "game_analyses_select_all" ON public.game_analyses;
 DROP POLICY IF EXISTS "game_analyses_select_own" ON public.game_analyses;
-
 CREATE POLICY "game_analyses_select_own" ON public.game_analyses
     FOR SELECT
     USING (user_id = (select auth.uid())::text);
-
 -- The INSERT, UPDATE, DELETE policies should already be properly defined
 -- Verify they exist with correct naming (from previous migration)
 
@@ -40,7 +37,6 @@ DROP POLICY IF EXISTS "Users can view own game features" ON public.game_features
 
 -- Drop the overly broad "Allow all access to games" policy
 DROP POLICY IF EXISTS "Allow all access to games" ON public.games;
-
 -- Consolidate SELECT policies - merge games_select_own and games_public_read
 -- The games table needs to allow users to:
 -- 1. See their own games
@@ -61,7 +57,6 @@ DROP POLICY IF EXISTS "games_public_read" ON public.games;
 DROP POLICY IF EXISTS "games_no_client_write" ON public.games;
 DROP POLICY IF EXISTS "games_no_client_update" ON public.games;
 DROP POLICY IF EXISTS "games_no_client_delete" ON public.games;
-
 -- ============================================================================
 -- PART 4: Consolidate games_pgn Policies
 -- ============================================================================
@@ -74,7 +69,6 @@ DROP POLICY IF EXISTS "games_pgn_select_all" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_public_read" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_owner_read" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_select_own_or_public" ON public.games_pgn;
-
 -- Ensure the consolidated policy exists (from previous migration)
 -- If it doesn't exist, create it
 DO $$
@@ -88,26 +82,31 @@ BEGIN
         CREATE POLICY "games_pgn_select" ON public.games_pgn
             FOR SELECT
             USING (
-                is_public = true  -- Public games can be viewed by anyone
+                -- Note: games_pgn table doesn't have is_public column
+                -- Check if corresponding game is public by joining with games table
+                EXISTS (
+                    SELECT 1 FROM games
+                    WHERE games.user_id = games_pgn.user_id
+                    AND games.platform = games_pgn.platform
+                    AND games.provider_game_id = games_pgn.provider_game_id
+                    AND games.is_public = true
+                )
                 OR user_id = (select auth.uid())::text  -- Owner can view their own games
             );
     END IF;
 END $$;
-
 -- Drop duplicate no_client write policies
 DROP POLICY IF EXISTS "games_pgn_no_client_write" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_no_client_write_ins" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_no_client_write_upd" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_no_client_update" ON public.games_pgn;
 DROP POLICY IF EXISTS "games_pgn_no_client_delete" ON public.games_pgn;
-
 -- ============================================================================
 -- PART 5: Consolidate import_sessions Policies
 -- ============================================================================
 
 -- Drop the overly permissive "Anon can read import sessions" policy
 DROP POLICY IF EXISTS "Anon can read import sessions" ON public.import_sessions;
-
 -- Keep "Users can read own import sessions" which should exist from previous migrations
 
 -- ============================================================================
@@ -120,7 +119,6 @@ DROP POLICY IF EXISTS "Allow all users to view profiles" ON public.user_profiles
 DROP POLICY IF EXISTS "Users can view all profiles" ON public.user_profiles;
 DROP POLICY IF EXISTS "user_profiles_public_read" ON public.user_profiles;
 DROP POLICY IF EXISTS "user_profiles_select_all" ON public.user_profiles;
-
 -- Ensure the consolidated SELECT policy exists
 DO $$
 BEGIN
@@ -135,11 +133,9 @@ BEGIN
             USING (true);  -- All profiles are publicly readable
     END IF;
 END $$;
-
 -- For INSERT: Keep only user_profiles_insert_own
 DROP POLICY IF EXISTS "Allow all users to insert profiles" ON public.user_profiles;
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.user_profiles;
-
 -- Verify user_profiles_insert_own exists (should be from previous migration)
 -- If not, create it
 DO $$
@@ -155,11 +151,9 @@ BEGIN
             WITH CHECK (user_id = (select auth.uid())::text);
     END IF;
 END $$;
-
 -- For UPDATE: Keep only user_profiles_update_own
 DROP POLICY IF EXISTS "Allow all users to update profiles" ON public.user_profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.user_profiles;
-
 -- Verify user_profiles_update_own exists
 DO $$
 BEGIN
@@ -175,7 +169,6 @@ BEGIN
             WITH CHECK (user_id = (select auth.uid())::text);
     END IF;
 END $$;
-
 -- ============================================================================
 -- PART 7: Fix Duplicate Index
 -- ============================================================================
@@ -189,26 +182,20 @@ END $$;
 
 ALTER TABLE public.user_profiles
 DROP CONSTRAINT IF EXISTS user_profiles_user_id_platform_key;
-
 -- ============================================================================
 -- PART 8: Add Documentation Comments
 -- ============================================================================
 
 COMMENT ON POLICY "game_analyses_select_own" ON public.game_analyses IS
 'Consolidated SELECT policy: Users can only view their own game analyses';
-
 COMMENT ON POLICY "games_pgn_select" ON public.games_pgn IS
-'Consolidated SELECT policy: Allows public games to be viewed by anyone, private games only by owner';
-
+'Consolidated SELECT policy: Allows public games to be viewed by anyone (by checking games table), private games only by owner';
 COMMENT ON POLICY "user_profiles_select" ON public.user_profiles IS
 'Consolidated SELECT policy: All user profiles are publicly readable';
-
 COMMENT ON POLICY "user_profiles_insert_own" ON public.user_profiles IS
 'Users can only insert their own profile';
-
 COMMENT ON POLICY "user_profiles_update_own" ON public.user_profiles IS
 'Users can only update their own profile';
-
 -- ============================================================================
 -- Summary of Changes
 -- ============================================================================
@@ -230,4 +217,4 @@ COMMENT ON POLICY "user_profiles_update_own" ON public.user_profiles IS
 -- - Eliminates 63 "multiple permissive policies" warnings
 -- - Eliminates 1 "duplicate index" warning
 -- - Reduces policy evaluation overhead on every query
--- ============================================================================
+-- ============================================================================;

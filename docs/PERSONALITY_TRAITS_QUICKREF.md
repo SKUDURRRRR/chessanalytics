@@ -194,7 +194,7 @@ LIMIT 20;
 📖 **Full Documentation:**
 - `docs/PERSONALITY_TRAITS_CHANGELOG.md` - Complete evolution history
 - `docs/PERSONALITY_MODEL.md` - Trait semantics and formulas
-- `PERSONALITY_SCORING_AUDIT_2025.md` - System audit report
+- `docs/PERSONALITY_SCORING_AUDIT_2025.md` - System audit report
 
 💻 **Source Code:**
 - `python/core/personality_scoring.py` - All formulas

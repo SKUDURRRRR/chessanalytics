@@ -5,4 +5,4 @@
 -- Original migration granted blanket access with USING (true)
 -- and gave ALL permissions to anonymous users, which is a critical security vulnerability
 --
--- To restore secure RLS policies, run: RESTORE_SECURE_RLS_POLICIES.sql
+-- To restore secure RLS policies, run: RESTORE_SECURE_RLS_POLICIES.sql;

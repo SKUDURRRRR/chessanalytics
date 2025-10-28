@@ -1,204 +1,392 @@
-import React from 'react'
-import { Square } from 'react-chessboard'
+import React, { useRef } from 'react'
+import type { Square } from 'chess.js'
+import type { ModernArrow } from '../../utils/chessArrows'
 
-export interface ModernArrow {
-  from: Square
-  to: Square
-  color: string
-  classification: string
-  isBestMove?: boolean
-}
+export type { ModernArrow }
 
 interface ModernChessArrowsProps {
   arrows: ModernArrow[]
   boardWidth: number
   boardOrientation: 'white' | 'black'
+  boardId?: string
 }
 
-export function ModernChessArrows({ arrows, boardWidth, boardOrientation }: ModernChessArrowsProps) {
-  const squareSize = boardWidth / 8
+/**
+ * Convert chess square to pixel coordinates using measured square size and actual board offset
+ */
+function squareToPixels(
+  square: Square,
+  boardOrientation: 'white' | 'black',
+  squareSize: number,
+  boardOffset: { x: number; y: number }
+): { x: number; y: number } {
+  const file = square.charCodeAt(0) - 'a'.charCodeAt(0) // 0-7 (a-h)
+  const rank = parseInt(square[1]) - 1 // 0-7 (1-8)
 
-  // Convert square to pixel coordinates
-  const squareToPixels = (square: Square) => {
-    const file = square.charCodeAt(0) - 97 // 'a' = 0, 'b' = 1, etc.
-    const rank = parseInt(square[1]) - 1 // '1' = 0, '2' = 1, etc.
-    
-    // Calculate base coordinates (center of square)
-    let x = file * squareSize + squareSize / 2
-    let y = rank * squareSize + squareSize / 2
-    
-    // Adjust for board orientation
-    if (boardOrientation === 'black') {
-      x = (7 - file) * squareSize + squareSize / 2
-      y = (7 - rank) * squareSize + squareSize / 2
-    }
-    
-    return { x, y }
+  let x: number, y: number
+
+  if (boardOrientation === 'white') {
+    // White view: a1 is at bottom-left
+    // In pixel coordinates: x increases left-to-right, y increases top-to-bottom
+    // So rank 1 should be at bottom (high y), rank 8 at top (low y)
+    x = file * squareSize + squareSize / 2
+    y = (7 - rank) * squareSize + squareSize / 2
+  } else {
+    // Black view: board is flipped
+    // h1 is at bottom-left, a8 at top-right
+    x = (7 - file) * squareSize + squareSize / 2
+    y = rank * squareSize + squareSize / 2
   }
 
-  // Calculate arrow head base point for straight arrows
-  const getArrowHeadBase = (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    const dx = to.x - from.x
-    const dy = to.y - from.y
-    const distance = Math.sqrt(dx * dx + dy * dy)
-    
-    // Calculate the base point of the arrow head (where the line ends)
-    const headLength = squareSize * 0.4
-    const ratio = headLength / distance
-    
-    const baseX = to.x - dx * ratio
-    const baseY = to.y - dy * ratio
-    
-    return { baseX, baseY }
+  return { x, y }
+}
+
+/**
+ * Calculate shortened arrow body endpoint to prevent overlap with arrowhead
+ */
+function getShortenedEndpoint(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  shortenBy: number
+): { x: number; y: number } {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const length = Math.sqrt(dx * dx + dy * dy)
+
+  if (length === 0) return { x: x2, y: y2 }
+
+  // Move back from endpoint by shortenBy pixels
+  const ratio = (length - shortenBy) / length
+  return {
+    x: x1 + dx * ratio,
+    y: y1 + dy * ratio
+  }
+}
+
+/**
+ * Calculate arrow head points
+ * Size is proportional to board width for consistent appearance
+ */
+function getArrowHead(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  boardWidth: number
+): { points: string; tipOffset: number } {
+  const angle = Math.atan2(y2 - y1, x2 - x1)
+
+  // Arrow head size scales with board size - larger and wider for better visibility
+  const headLength = boardWidth / 25 // Length of arrow head
+  const headWidth = boardWidth / 35 // Half-width at the base
+
+  // Calculate the tip point (slightly inset from destination)
+  const tipInset = boardWidth / 120 // Small inset to prevent overlap
+  const tipX = x2 - tipInset * Math.cos(angle)
+  const tipY = y2 - tipInset * Math.sin(angle)
+
+  // Arrow head points forming a triangle
+  const point1 = {
+    x: tipX - headLength * Math.cos(angle) - headWidth * Math.sin(angle),
+    y: tipY - headLength * Math.sin(angle) + headWidth * Math.cos(angle)
   }
 
-  // Get arrow head points for a filled triangle
-  const getArrowHead = (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    const dx = to.x - from.x
-    const dy = to.y - from.y
-    const angle = Math.atan2(dy, dx)
-    
-    const headLength = squareSize * 0.4
-    const headWidth = squareSize * 0.25 // Slightly smaller for more professional look
-    
-    // Arrow tip point
-    const tipX = to.x
-    const tipY = to.y
-    
-    // Base of arrow head - calculated from the new function
-    const { baseX, baseY } = getArrowHeadBase(from, to)
-    
-    // Left and right points of arrow head
-    const leftX = baseX - headWidth * Math.cos(angle + Math.PI / 2)
-    const leftY = baseY - headWidth * Math.sin(angle + Math.PI / 2)
-    
-    const rightX = baseX - headWidth * Math.cos(angle - Math.PI / 2)
-    const rightY = baseY - headWidth * Math.sin(angle - Math.PI / 2)
-    
-    return { tipX, tipY, leftX, leftY, rightX, rightY, baseX, baseY }
+  const point2 = {
+    x: tipX - headLength * Math.cos(angle) + headWidth * Math.sin(angle),
+    y: tipY - headLength * Math.sin(angle) - headWidth * Math.cos(angle)
   }
 
-  // Get gradient colors based on classification
-  const getGradientColors = (classification: string, isBestMove: boolean = false) => {
-    if (isBestMove) {
-      return {
-        start: '#10b981', // Bright green for best move suggestion
-        end: '#059669',
-        strokeWidth: 4 // More professional thickness
+  return {
+    points: `${tipX},${tipY} ${point1.x},${point1.y} ${point2.x},${point2.y}`,
+    tipOffset: headLength + tipInset
+  }
+}
+
+/**
+ * ModernChessArrows component
+ * Renders straight SVG arrows on top of the chess board (like chess.com)
+ */
+export function ModernChessArrows({
+  arrows,
+  boardWidth,
+  boardOrientation,
+  boardId = 'default'
+}: ModernChessArrowsProps) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [squareSize, setSquareSize] = React.useState(boardWidth / 8)
+  const [boardOffset, setBoardOffset] = React.useState({ x: 0, y: 0 })
+
+  // Measure actual board squares for perfect alignment
+  React.useEffect(() => {
+    const measure = () => {
+      if (!svgRef.current) return
+
+      const container = svgRef.current.parentElement
+      if (!container) return
+
+      // Try to find actual square elements to measure
+      const a1Square = container.querySelector('[data-square="a1"]') as HTMLElement
+      const h8Square = container.querySelector('[data-square="h8"]') as HTMLElement
+
+      if (a1Square && h8Square) {
+        const a1Rect = a1Square.getBoundingClientRect()
+
+        // Calculate actual square size from measured square element
+        const actualSquareSize = a1Rect.width
+
+        setSquareSize(actualSquareSize)
+        setBoardOffset({ x: 0, y: 0 })
+      } else {
+        // Fallback: use boardWidth prop
+        const actualSquareSize = boardWidth / 8
+        setSquareSize(actualSquareSize)
+        setBoardOffset({ x: 0, y: 0 })
       }
     }
 
-    switch (classification) {
-      case 'brilliant':
-        return { start: '#8b5cf6', end: '#7c3aed', strokeWidth: 3 } // Purple gradient
-      case 'best':
-        return { start: '#10b981', end: '#059669', strokeWidth: 3 } // Green gradient
-      case 'great':
-      case 'excellent':
-        return { start: '#3b82f6', end: '#2563eb', strokeWidth: 3 } // Blue gradient
-      case 'good':
-        return { start: '#06b6d4', end: '#0891b2', strokeWidth: 3 } // Cyan gradient
-      case 'acceptable':
-        return { start: '#f59e0b', end: '#d97706', strokeWidth: 3 } // Yellow gradient
-      case 'inaccuracy':
-        return { start: '#f97316', end: '#ea580c', strokeWidth: 3 } // Orange gradient
-      case 'mistake':
-        return { start: '#ef4444', end: '#dc2626', strokeWidth: 3 } // Red gradient
-      case 'blunder':
-        return { start: '#dc2626', end: '#991b1b', strokeWidth: 4 } // Dark red gradient - slightly thicker for emphasis
-      default:
-        return { start: '#6b7280', end: '#4b5563', strokeWidth: 3 } // Gray gradient
+    // Delay measurement to ensure board is rendered
+    const timer = setTimeout(measure, 150)
+    window.addEventListener('resize', measure)
+
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', measure)
     }
-  }
+  }, [boardWidth, boardOrientation, boardId])
+
+  // Debug mode - can be enabled for troubleshooting
+  const debugMode = false
 
   if (arrows.length === 0) {
     return null
   }
 
   return (
-    <div 
-      className="absolute inset-0 pointer-events-none"
-      style={{ 
-        width: boardWidth, 
-        height: boardWidth
+    <svg
+      ref={svgRef}
+      width={boardWidth}
+      height={boardWidth}
+      viewBox={`0 0 ${boardWidth} ${boardWidth}`}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        pointerEvents: 'none',
+        zIndex: 10,
+        overflow: 'visible'
       }}
     >
-      <svg
-        width={boardWidth}
-        height={boardWidth}
-        className="absolute inset-0"
-        style={{ zIndex: 10 }}
-      >
-        
-        {arrows.map((arrow, index) => {
-          const from = squareToPixels(arrow.from)
-          const to = squareToPixels(arrow.to)
-          const { baseX, baseY } = getArrowHeadBase(from, to)
-          const { tipX, tipY, leftX, leftY, rightX, rightY } = getArrowHead(from, to)
-          const gradientColors = getGradientColors(arrow.classification, arrow.isBestMove)
-          
-          const gradientId = `arrow-gradient-${index}`
-          
-          return (
-            <g key={index}>
-              {/* Gradient definition */}
-              <defs>
-                <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor={gradientColors.start} stopOpacity="0.9" />
-                  <stop offset="100%" stopColor={gradientColors.end} stopOpacity="0.8" />
-                </linearGradient>
-                
-                {/* Arrow shadow filter - more subtle */}
-                <filter id={`shadow-${index}`} x="-50%" y="-50%" width="200%" height="200%">
-                  <feDropShadow dx="0.5" dy="1" stdDeviation="1.5" floodColor="rgba(0,0,0,0.3)" />
-                </filter>
-              </defs>
-              
-              {/* Glow effect for best moves (behind everything) */}
-              {arrow.isBestMove && (
-                <>
-                  <line
-                    x1={from.x}
-                    y1={from.y}
-                    x2={baseX}
-                    y2={baseY}
-                    stroke={gradientColors.start}
-                    strokeWidth={gradientColors.strokeWidth * 1.5}
-                    strokeLinecap="round"
-                    opacity="0.4"
-                    className="animate-pulse"
-                  />
-                  <polygon
-                    points={`${tipX},${tipY} ${leftX},${leftY} ${rightX},${rightY}`}
-                    fill={gradientColors.start}
-                    opacity="0.4"
-                    className="animate-pulse"
-                  />
-                </>
-              )}
-              
-              {/* Straight arrow body */}
-              <line
-                x1={from.x}
-                y1={from.y}
-                x2={baseX}
-                y2={baseY}
-                stroke={`url(#${gradientId})`}
-                strokeWidth={gradientColors.strokeWidth}
+      <defs>
+        {/* Define gradients for different classifications */}
+        <linearGradient id="best-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#10b981" stopOpacity="0.8" />
+          <stop offset="100%" stopColor="#10b981" stopOpacity="1" />
+        </linearGradient>
+
+        {/* Filter for drop shadow */}
+        <filter id="arrow-shadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+          <feOffset dx="0" dy="1" result="offsetblur" />
+          <feComponentTransfer>
+            <feFuncA type="linear" slope="0.3" />
+          </feComponentTransfer>
+          <feMerge>
+            <feMergeNode />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+
+        {/* Filter for glow effect on best moves */}
+        <filter id="arrow-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      {arrows.map((arrow, index) => {
+        const from = squareToPixels(arrow.from, boardOrientation, squareSize, boardOffset)
+        const to = squareToPixels(arrow.to, boardOrientation, squareSize, boardOffset)
+
+        // Debug: log first arrow position
+        if (index === 0) {
+          console.log(`[Arrow ${boardId}] ${arrow.from}→${arrow.to}:`, {
+            from: `(${from.x.toFixed(1)}, ${from.y.toFixed(1)})`,
+            to: `(${to.x.toFixed(1)}, ${to.y.toFixed(1)})`
+          })
+        }
+
+        // Calculate arrow head pointing at the destination square center
+        const arrowHead = getArrowHead(from.x, from.y, to.x, to.y, boardWidth)
+
+        // Shorten the arrow body to end before the arrowhead begins
+        const shortenedEnd = getShortenedEndpoint(from.x, from.y, to.x, to.y, arrowHead.tipOffset)
+
+        // Determine stroke width based on classification (scales with board size)
+        // Increased base width to be thicker like chess.com
+        const baseStrokeWidth = boardWidth / 50 // 2% of board width (was 1%)
+        const strokeWidth = arrow.isBestMove ? baseStrokeWidth * 1.3 :
+                           arrow.classification === 'blunder' ? baseStrokeWidth * 1.1 :
+                           baseStrokeWidth
+
+        // Apply glow to best move suggestions
+        const filter = arrow.isBestMove ? 'url(#arrow-glow)' : 'url(#arrow-shadow)'
+
+        const pathId = `arrow-${boardId}-${index}`
+
+        return (
+          <g key={pathId}>
+            {/* Straight arrow path (like chess.com) - stops before arrowhead */}
+            <path
+              d={`M ${from.x},${from.y} L ${shortenedEnd.x},${shortenedEnd.y}`}
+              stroke={arrow.color}
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              fill="none"
+              opacity={0.85}
+              filter={filter}
+            />
+
+            {/* Arrow head */}
+            <polygon
+              points={arrowHead.points}
+              fill={arrow.color}
+              opacity={0.9}
+              filter={filter}
+            />
+
+            {/* Pulsing glow animation for best moves */}
+            {arrow.isBestMove && (
+              <path
+                d={`M ${from.x},${from.y} L ${shortenedEnd.x},${shortenedEnd.y}`}
+                stroke={arrow.color}
+                strokeWidth={strokeWidth * 1.8}
                 strokeLinecap="round"
-                filter={`url(#shadow-${index})`}
-              />
-              
-              {/* Filled triangular arrow head */}
-              <polygon
-                points={`${tipX},${tipY} ${leftX},${leftY} ${rightX},${rightY}`}
-                fill={`url(#${gradientId})`}
-                filter={`url(#shadow-${index})`}
-              />
-            </g>
-          )
-        })}
-      </svg>
-    </div>
+                fill="none"
+                opacity={0.3}
+              >
+                <animate
+                  attributeName="opacity"
+                  values="0.3;0.6;0.3"
+                  dur="2s"
+                  repeatCount="indefinite"
+                />
+              </path>
+            )}
+          </g>
+        )
+      })}
+
+      {/* Debug visualization */}
+      {debugMode && (
+        <g opacity="1.0">
+          {/* Draw grid lines to match the SVG viewBox */}
+          {Array.from({ length: 9 }).map((_, i) => {
+            return (
+              <g key={`grid-${i}`}>
+                {/* Vertical lines */}
+                <line
+                  x1={i * squareSize}
+                  y1={0}
+                  x2={i * squareSize}
+                  y2={boardWidth}
+                  stroke="red"
+                  strokeWidth="2"
+                />
+                {/* Horizontal lines */}
+                <line
+                  x1={0}
+                  y1={i * squareSize}
+                  x2={boardWidth}
+                  y2={i * squareSize}
+                  stroke="red"
+                  strokeWidth="2"
+                />
+              </g>
+            )
+          })}
+
+          {/* Draw center dots for each square */}
+          {Array.from({ length: 8 }).map((_, rank) =>
+            Array.from({ length: 8 }).map((_, file) => {
+              const square = `${String.fromCharCode(97 + file)}${rank + 1}` as Square
+              const pos = squareToPixels(square, boardOrientation, squareSize, boardOffset)
+              return (
+                <g key={square}>
+                  {/* Center dot */}
+                  <circle
+                    cx={pos.x}
+                    cy={pos.y}
+                    r="3"
+                    fill="lime"
+                  />
+                  {/* Square label */}
+                  <text
+                    x={pos.x}
+                    y={pos.y - 8}
+                    fontSize="10"
+                    fill="yellow"
+                    textAnchor="middle"
+                  >
+                    {square}
+                  </text>
+                </g>
+              )
+            })
+          )}
+
+          {/* Show grid origin point */}
+          {(() => {
+            return (
+              <>
+                <circle
+                  cx={0}
+                  cy={0}
+                  r="8"
+                  fill="magenta"
+                />
+                <text
+                  x={10}
+                  y={15}
+                  fontSize="14"
+                  fill="magenta"
+                  fontWeight="bold"
+                >
+                  GRID ORIGIN
+                </text>
+              </>
+            )
+          })()}
+
+          {/* Show arrow endpoints */}
+          {arrows.map((arrow, idx) => {
+            const from = squareToPixels(arrow.from, boardOrientation, squareSize, boardOffset)
+            const to = squareToPixels(arrow.to, boardOrientation, squareSize, boardOffset)
+            return (
+              <g key={`debug-arrow-${idx}`}>
+                {/* From point */}
+                <circle cx={from.x} cy={from.y} r="6" fill="cyan" />
+                {/* To point */}
+                <circle cx={to.x} cy={to.y} r="6" fill="orange" />
+                {/* Straight line showing what we think the arrow should be */}
+                <line
+                  x1={from.x}
+                  y1={from.y}
+                  x2={to.x}
+                  y2={to.y}
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeDasharray="4 2"
+                />
+              </g>
+            )
+          })}
+        </g>
+      )}
+    </svg>
   )
 }

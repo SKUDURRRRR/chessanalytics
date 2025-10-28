@@ -2,19 +2,16 @@
 -- Unifies analysis data model, removes legacy artifacts, and tightens permissions
 
 BEGIN;
-
 -- Remove deprecated diagnostic helpers in favour of consolidated schema
 DROP FUNCTION IF EXISTS public.validate_rls_policies();
 DROP FUNCTION IF EXISTS public.test_rls_policies(TEXT);
 DROP FUNCTION IF EXISTS public.test_rls_policies();
 DROP FUNCTION IF EXISTS public.validate_data_consistency();
 DROP FUNCTION IF EXISTS public.validate_rls_security();
-
 -- 1. Remove legacy seed data
 DELETE FROM public.games
 WHERE provider_game_id LIKE 'testgame%'
    OR provider_game_id LIKE 'skudurelis_game_%';
-
 -- 2. Drop legacy analysis columns from games
 ALTER TABLE public.games DROP COLUMN IF EXISTS analysis_date;
 ALTER TABLE public.games DROP COLUMN IF EXISTS blunders;
@@ -26,7 +23,6 @@ ALTER TABLE public.games DROP COLUMN IF EXISTS middle_game_accuracy;
 ALTER TABLE public.games DROP COLUMN IF EXISTS endgame_accuracy;
 ALTER TABLE public.games DROP COLUMN IF EXISTS material_sacrifices;
 ALTER TABLE public.games DROP COLUMN IF EXISTS aggressiveness_index;
-
 -- 3. Standardise game_analyses structure
 ALTER TABLE public.game_analyses ADD COLUMN IF NOT EXISTS accuracy REAL DEFAULT 0;
 ALTER TABLE public.game_analyses ADD COLUMN IF NOT EXISTS blunders INTEGER DEFAULT 0;
@@ -91,10 +87,8 @@ ALTER TABLE public.game_analyses ALTER COLUMN moves_analysis SET DEFAULT '[]'::j
 ALTER TABLE public.game_analyses ALTER COLUMN tactical_patterns SET DEFAULT '[]'::jsonb;
 ALTER TABLE public.game_analyses ALTER COLUMN positional_patterns SET DEFAULT '[]'::jsonb;
 ALTER TABLE public.game_analyses ALTER COLUMN strategic_themes SET DEFAULT '[]'::jsonb;
-
 ALTER TABLE public.game_analyses DROP CONSTRAINT IF EXISTS game_analyses_user_id_platform_game_id_key;
 ALTER TABLE public.game_analyses ADD CONSTRAINT game_analyses_user_platform_game_id_analysis_type_key UNIQUE (user_id, platform, game_id, analysis_type);
-
 DO $$
 BEGIN
     IF EXISTS (
@@ -106,12 +100,10 @@ BEGIN
         ALTER TABLE public.game_analyses DROP CONSTRAINT fk_game_analyses_game;
     END IF;
 END $$;
-
 ALTER TABLE public.game_analyses
 ADD CONSTRAINT fk_game_analyses_game FOREIGN KEY (user_id, platform, game_id)
 REFERENCES public.games(user_id, platform, provider_game_id)
 ON DELETE CASCADE;
-
 -- Accuracy-range constraints
 DO $$
 BEGIN
@@ -123,7 +115,6 @@ BEGIN
         ADD CONSTRAINT game_analyses_accuracy_check CHECK (accuracy BETWEEN 0 AND 100);
     END IF;
 END $$;
-
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -134,7 +125,6 @@ BEGIN
         ADD CONSTRAINT game_analyses_opening_accuracy_check CHECK (opening_accuracy BETWEEN 0 AND 100);
     END IF;
 END $$;
-
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -145,7 +135,6 @@ BEGIN
         ADD CONSTRAINT game_analyses_middle_game_accuracy_check CHECK (middle_game_accuracy BETWEEN 0 AND 100);
     END IF;
 END $$;
-
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -156,10 +145,8 @@ BEGIN
         ADD CONSTRAINT game_analyses_endgame_accuracy_check CHECK (endgame_accuracy BETWEEN 0 AND 100);
     END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS idx_game_analyses_user_platform_type ON public.game_analyses (user_id, platform, analysis_type);
 CREATE INDEX IF NOT EXISTS idx_game_analyses_analysis_date ON public.game_analyses (analysis_date DESC);
-
 -- 4. Ensure analysis_jobs tracking
 CREATE TABLE IF NOT EXISTS public.analysis_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -194,7 +181,6 @@ CREATE POLICY "analysis_jobs_delete_own" ON public.analysis_jobs FOR DELETE USIN
 CREATE POLICY "analysis_jobs_service_role_all" ON public.analysis_jobs FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON public.analysis_jobs TO service_role;
 GRANT ALL ON public.analysis_jobs TO authenticated;
-
 -- 4. Standardise move_analyses structure
 DO $$
 BEGIN
@@ -207,7 +193,6 @@ BEGIN
         EXECUTE 'ALTER TABLE public.move_analyses RENAME COLUMN best_move_percentage TO accuracy';
     END IF;
 END $$;
-
 ALTER TABLE public.move_analyses ADD COLUMN IF NOT EXISTS accuracy REAL DEFAULT 0;
 ALTER TABLE public.move_analyses ADD COLUMN IF NOT EXISTS average_centipawn_loss REAL DEFAULT 0;
 ALTER TABLE public.move_analyses ADD COLUMN IF NOT EXISTS worst_blunder_centipawn_loss REAL DEFAULT 0;
@@ -261,17 +246,14 @@ ALTER TABLE public.move_analyses ALTER COLUMN tactical_patterns SET DEFAULT '[]'
 ALTER TABLE public.move_analyses ALTER COLUMN positional_patterns SET DEFAULT '[]'::jsonb;
 ALTER TABLE public.move_analyses ALTER COLUMN strategic_themes SET DEFAULT '[]'::jsonb;
 ALTER TABLE public.move_analyses ALTER COLUMN moves_analysis SET DEFAULT '[]'::jsonb;
-
 ALTER TABLE public.move_analyses DROP CONSTRAINT IF EXISTS move_analyses_user_id_platform_game_id_key;
 ALTER TABLE public.move_analyses ADD CONSTRAINT move_analyses_user_platform_game_analysis_method_key UNIQUE (user_id, platform, game_id, analysis_method);
-
 ALTER TABLE public.move_analyses DROP CONSTRAINT IF EXISTS fk_move_analyses_game_analysis;
 ALTER TABLE public.move_analyses
   ADD CONSTRAINT fk_move_analyses_game_analysis
   FOREIGN KEY (game_analysis_id)
   REFERENCES public.game_analyses(id)
   ON DELETE CASCADE;
-
 -- Backfill game_analysis_id where possible
 UPDATE public.move_analyses ma
 SET game_analysis_id = ga.id
@@ -281,7 +263,6 @@ WHERE ma.game_analysis_id IS NULL
   AND ga.platform = ma.platform
   AND ga.game_id = ma.game_id
   AND lower(ga.analysis_type) = lower(ma.analysis_method);
-
 -- Ensure accuracy within range
 DO $$
 BEGIN
@@ -292,7 +273,6 @@ BEGIN
         ADD CONSTRAINT move_analyses_accuracy_check CHECK (accuracy BETWEEN 0 AND 100);
     END IF;
 END $$;
-
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -302,7 +282,6 @@ BEGIN
         ADD CONSTRAINT move_analyses_middle_game_accuracy_check CHECK (middle_game_accuracy BETWEEN 0 AND 100);
     END IF;
 END $$;
-
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -312,17 +291,13 @@ BEGIN
         ADD CONSTRAINT move_analyses_endgame_accuracy_check CHECK (endgame_accuracy BETWEEN 0 AND 100);
     END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS idx_move_analyses_user_platform_method ON public.move_analyses (user_id, platform, analysis_method);
 CREATE INDEX IF NOT EXISTS idx_move_analyses_game_analysis_id ON public.move_analyses (game_analysis_id);
-
 -- 5. Fix game_features platform constraint
 ALTER TABLE public.game_features DROP CONSTRAINT IF EXISTS game_features_platform_check;
 ALTER TABLE public.game_features ADD CONSTRAINT game_features_platform_check CHECK (platform IN ('lichess', 'chess.com'));
-
 -- 6. Recreate unified_analyses view with canonical column set
 DROP VIEW IF EXISTS public.unified_analyses;
-
 CREATE VIEW public.unified_analyses AS
 SELECT
     ga.game_id,
@@ -375,23 +350,18 @@ LEFT JOIN LATERAL (
     ORDER BY ma.updated_at DESC NULLS LAST
     LIMIT 1
 ) ma ON TRUE;
-
 GRANT SELECT ON public.unified_analyses TO authenticated;
 GRANT SELECT ON public.unified_analyses TO service_role;
 GRANT SELECT ON public.unified_analyses TO anon;
-
 COMMENT ON VIEW public.unified_analyses IS 'Canonical analysis view combining game_analyses and move_analyses with consistent naming.';
-
 -- 7. Harden games_pgn permissions
 REVOKE ALL ON public.games_pgn FROM anon;
 GRANT SELECT ON public.games_pgn TO anon;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.games_pgn TO authenticated;
 GRANT ALL ON public.games_pgn TO service_role;
-
 -- 8. Consolidate validation helper functions
 DROP FUNCTION IF EXISTS public.validate_data_consistency();
 DROP FUNCTION IF EXISTS public.validate_rls_security();
-
 CREATE OR REPLACE FUNCTION public.validate_data_consistency()
 RETURNS TABLE (
     table_name TEXT,
@@ -435,7 +405,6 @@ BEGIN
     WHERE analysis_method IS NULL;
 END;
 $$ LANGUAGE plpgsql;
-
 CREATE OR REPLACE FUNCTION public.validate_rls_security()
 RETURNS TABLE (
     table_name TEXT,
@@ -496,13 +465,10 @@ BEGIN
       AND c.relname IN ('games','game_analyses','move_analyses','game_features','games_pgn','analysis_jobs');
 END;
 $$ LANGUAGE plpgsql;
-
 GRANT EXECUTE ON FUNCTION public.validate_data_consistency() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.validate_data_consistency() TO service_role;
 GRANT EXECUTE ON FUNCTION public.validate_rls_security() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.validate_rls_security() TO service_role;
-
 COMMENT ON FUNCTION public.validate_data_consistency() IS 'Runs integrity checks across analysis tables.';
 COMMENT ON FUNCTION public.validate_rls_security() IS 'Reports on RLS posture for critical tables.';
-
 COMMIT;

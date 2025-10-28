@@ -1,0 +1,33 @@
+PATIENT TRAIT FIX - QUICK REFERENCE
+===================================
+
+PROBLEM: Most users scored 70+ on Patient (too high!)
+
+FIX APPLIED: Reduced quiet bonuses, increased quiet threshold
+
+FILE CHANGED: python/core/personality_scoring.py (lines 488-506)
+
+KEY CHANGES:
+  • Quiet curve: 60% → 68% center (more selective)
+  • Quiet multipliers: 40+18+20 → 22+16+13 (reduced 34%)
+  • Forcing penalty: 55 → 75 (increased 36%)
+
+RESULTS:
+  Before → After
+  ------   -----
+  Intermediate: 73.7 → 48.1 ✓
+  Advanced: 90.2 → 62.1 ✓
+  GM: 100.0 → 75.7 ✓
+  Very Patient GM: 100.0 → 82.5 ✓
+
+NEW SCORE RANGES:
+  0-30:  Very Low (aggressive players)
+  30-45: Low (beginners, average)
+  45-60: Medium (intermediate)
+  60-75: Medium-High (advanced)
+  75-85: High (GM-level)
+  85-95: Exceptional (Carlsen, Caruana)
+
+VALIDATION: ✅ All tests pass
+
+ACTION NEEDED: Users should re-analyze games for updated scores

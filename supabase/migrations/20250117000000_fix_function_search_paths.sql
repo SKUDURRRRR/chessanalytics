@@ -13,7 +13,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 -- 2. cleanup_old_parity_logs
 CREATE OR REPLACE FUNCTION public.cleanup_old_parity_logs()
 RETURNS void
@@ -24,7 +23,6 @@ AS $$
   DELETE FROM public.parity_logs
   WHERE checked_at < now() - interval '30 days';
 $$;
-
 -- 3. update_game_analyses_updated_at
 CREATE OR REPLACE FUNCTION public.update_game_analyses_updated_at()
 RETURNS TRIGGER
@@ -36,7 +34,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 -- 4. update_user_profile_updated_at
 CREATE OR REPLACE FUNCTION public.update_user_profile_updated_at()
 RETURNS TRIGGER
@@ -48,7 +45,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 -- 5. upsert_games_batch
 CREATE OR REPLACE FUNCTION public.upsert_games_batch(games_data jsonb[])
 RETURNS integer
@@ -98,7 +94,6 @@ BEGIN
   RETURN inserted_count;
 END;
 $$;
-
 -- 6. update_move_analyses_updated_at
 CREATE OR REPLACE FUNCTION public.update_move_analyses_updated_at()
 RETURNS TRIGGER
@@ -110,7 +105,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 -- 7. set_updated_at
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER
@@ -122,7 +116,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 -- 8. validate_data_consistency
 CREATE OR REPLACE FUNCTION public.validate_data_consistency()
 RETURNS TABLE (
@@ -170,7 +163,6 @@ BEGIN
     WHERE analysis_method IS NULL;
 END;
 $$;
-
 -- 9. validate_rls_security
 CREATE OR REPLACE FUNCTION public.validate_rls_security()
 RETURNS TABLE (
@@ -235,7 +227,6 @@ BEGIN
       AND c.relname IN ('games','game_analyses','move_analyses','game_features','games_pgn','analysis_jobs');
 END;
 $$;
-
 -- 10. eco_to_opening_name (if it exists in the database)
 -- Note: This function might not exist in the database yet, as it was in a standalone SQL file
 -- We'll create it with proper search_path if it doesn't exist
@@ -281,9 +272,7 @@ BEGIN
     END;
 END;
 $$;
-
 COMMENT ON FUNCTION public.eco_to_opening_name(TEXT) IS 'Converts ECO codes to opening names. Search path set to public for security.';
-
 -- Ensure permissions are maintained
 GRANT EXECUTE ON FUNCTION public.update_game_features_updated_at() TO authenticated, service_role, anon;
 GRANT EXECUTE ON FUNCTION public.cleanup_old_parity_logs() TO authenticated, service_role, anon;

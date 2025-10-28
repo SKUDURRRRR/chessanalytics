@@ -3,7 +3,7 @@
 
 CREATE OR REPLACE VIEW public.unified_analyses AS
 -- First, get data from game_analyses table
-SELECT 
+SELECT
     ga.game_id,
     ga.game_id AS provider_game_id,  -- Alias for frontend compatibility
     ga.user_id,
@@ -46,7 +46,7 @@ FROM public.game_analyses ga
 UNION ALL
 
 -- Then, get data from move_analyses table for games not in game_analyses
-SELECT 
+SELECT
     ma.game_id,
     ma.game_id AS provider_game_id,  -- Alias for frontend compatibility
     ma.user_id,
@@ -86,15 +86,13 @@ SELECT
     NULL AS stockfish_depth  -- Not available in move_analyses
 FROM public.move_analyses ma
 WHERE NOT EXISTS (
-    SELECT 1 FROM public.game_analyses ga2 
-    WHERE ga2.game_id = ma.game_id 
-    AND ga2.user_id = ma.user_id 
+    SELECT 1 FROM public.game_analyses ga2
+    WHERE ga2.game_id = ma.game_id
+    AND ga2.user_id = ma.user_id
     AND ga2.platform = ma.platform
 );
-
 -- Grant permissions
 GRANT SELECT ON public.unified_analyses TO authenticated;
 GRANT SELECT ON public.unified_analyses TO service_role;
 GRANT SELECT ON public.unified_analyses TO anon;
-
 COMMENT ON VIEW public.unified_analyses IS 'Unified analysis view combining game_analyses and move_analyses tables to show all analyzed games.';

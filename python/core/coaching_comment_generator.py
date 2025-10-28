@@ -40,32 +40,32 @@ class CoachingComment:
     """Comprehensive coaching comment for a move."""
     # Main coaching message
     main_comment: str
-    
+
     # Detailed explanations
     what_went_right: Optional[str] = None
     what_went_wrong: Optional[str] = None
     how_to_improve: Optional[str] = None
-    
+
     # Tactical and positional insights
     tactical_insights: List[str] = None
     positional_insights: List[str] = None
-    
+
     # Risk and benefit analysis
     risks: List[str] = None
     benefits: List[str] = None
-    
+
     # Learning opportunities
     learning_points: List[str] = None
-    
+
     # Encouragement level (1-5, where 5 is most encouraging)
     encouragement_level: int = 3
-    
+
     # Move quality classification
     move_quality: MoveQuality = MoveQuality.ACCEPTABLE
-    
+
     # Game phase context
     game_phase: GamePhase = GamePhase.MIDDLEGAME
-    
+
     def __post_init__(self):
         if self.tactical_insights is None:
             self.tactical_insights = []
@@ -81,7 +81,7 @@ class CoachingComment:
 
 class ChessCoachingGenerator:
     """Generates comprehensive coaching comments for chess moves."""
-    
+
     def __init__(self):
         self.advanced_analyzer = AdvancedChessAnalyzer()
         self.contextual_generator = ContextualExplanationGenerator()
@@ -150,7 +150,7 @@ class ChessCoachingGenerator:
                 "This move has serious consequences. Here's how to improve your play."
             ]
         }
-        
+
         self.tactical_patterns = {
             "pin": "This move creates/breaks a pin, which is a fundamental tactical pattern.",
             "fork": "This move sets up/prevents a fork, a powerful tactical weapon.",
@@ -163,7 +163,7 @@ class ChessCoachingGenerator:
             "interference": "This move interferes with piece coordination, a tactical concept.",
             "zwischenzug": "This move is an in-between move, a subtle tactical resource."
         }
-        
+
         self.positional_concepts = {
             "center_control": "This move affects central control, a fundamental positional principle.",
             "piece_activity": "This move improves/weakens piece activity, crucial for good play.",
@@ -187,32 +187,32 @@ class ChessCoachingGenerator:
         is_user_move: bool = True
     ) -> CoachingComment:
         """Generate comprehensive coaching comment for a move."""
-        
+
         # Determine move quality
         move_quality = self._determine_move_quality(move_analysis)
-        
+
         # Generate main comment (different for user vs opponent moves)
         main_comment = self._generate_main_comment(move_quality, move_analysis, is_user_move)
-        
+
         # Generate detailed explanations (different perspective for opponent moves)
         what_went_right = self._analyze_what_went_right(move_analysis, board, move, move_quality, is_user_move)
         what_went_wrong = self._analyze_what_went_wrong(move_analysis, board, move, move_quality, is_user_move)
         how_to_improve = self._suggest_improvements(move_analysis, board, move, move_quality, player_skill_level, is_user_move)
-        
+
         # Generate tactical and positional insights
         tactical_insights = self._generate_tactical_insights(move_analysis, board, move, game_phase)
         positional_insights = self._generate_positional_insights(move_analysis, board, move, game_phase)
-        
+
         # Generate risk and benefit analysis
         risks = self._analyze_risks(move_analysis, board, move, move_quality)
         benefits = self._analyze_benefits(move_analysis, board, move, move_quality)
-        
+
         # Generate learning points
         learning_points = self._generate_learning_points(move_analysis, board, move, move_quality, game_phase)
-        
+
         # Determine encouragement level
         encouragement_level = self._determine_encouragement_level(move_quality, move_analysis)
-        
+
         return CoachingComment(
             main_comment=main_comment,
             what_went_right=what_went_right,
@@ -257,7 +257,7 @@ class ChessCoachingGenerator:
         game_phase = move_analysis.get('game_phase', 'middlegame')
         if game_phase == 'opening' and self._is_opening_book_move(move_analysis):
             return self._generate_opening_explanation(move_analysis, is_user_move)
-        
+
         if move_quality == MoveQuality.BRILLIANT:
             comment = self._generate_brilliant_move_explanation(move_analysis, is_user_move)
         elif move_quality == MoveQuality.BLUNDER:
@@ -268,7 +268,15 @@ class ChessCoachingGenerator:
         else:
             # Opponent move analysis
             comment = self._generate_opponent_move_comment(move_quality, move_analysis)
-        
+
+        # Add positional context for non-brilliant, non-best moves
+        if move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST]:
+            board_after = move_analysis.get('board_after')
+            if board_after:
+                positional_context = self._generate_positional_context(move_analysis, board_after, game_phase)
+                if positional_context:
+                    comment = f"{comment} {positional_context}"
+
         # Limit to 2-3 sentences maximum
         return self._limit_comment_length(comment)
 
@@ -276,33 +284,33 @@ class ChessCoachingGenerator:
         """Limit comment to 2-3 sentences maximum for consistent UI display."""
         if not comment:
             return comment
-        
+
         # Split by sentence endings
         sentences = []
         current_sentence = ""
-        
+
         for char in comment:
             current_sentence += char
             if char in '.!?':
                 sentences.append(current_sentence.strip())
                 current_sentence = ""
-        
+
         # Add any remaining text as a sentence
         if current_sentence.strip():
             sentences.append(current_sentence.strip())
-        
+
         # Limit to 3 sentences maximum
         if len(sentences) <= 3:
             return comment
-        
+
         # Take first 2-3 sentences and add ellipsis if truncated
         limited_sentences = sentences[:3]
         result = " ".join(limited_sentences)
-        
+
         # Ensure it ends with proper punctuation
         if not result.endswith(('.', '!', '?')):
             result += "."
-        
+
         return result
 
     def _generate_opponent_move_comment(self, move_quality: MoveQuality, move_analysis: Dict[str, Any]) -> str:
@@ -363,7 +371,7 @@ class ChessCoachingGenerator:
                 "Your opponent's move is a significant error. Find the refutation."
             ]
         }
-        
+
         templates = opponent_templates[move_quality]
         return random.choice(templates)
 
@@ -377,65 +385,65 @@ class ChessCoachingGenerator:
         evaluation_before = move_analysis.get('evaluation_before', 0)
         evaluation_after = move_analysis.get('evaluation_after', 0)
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
-        
+
         # If we have the necessary data, use contextual analysis
         if board_before and board_after and move:
             try:
                 contextual_explanation = self.contextual_generator.generate_explanation(
-                    board_before, board_after, move, move_san, 
-                    evaluation_before, evaluation_after, 
+                    board_before, board_after, move, move_san,
+                    evaluation_before, evaluation_after,
                     is_brilliant=True, centipawn_loss=centipawn_loss
                 )
                 return contextual_explanation.main_explanation
             except Exception as e:
                 print(f"Error in contextual analysis: {e}")
                 # Fall back to enhanced explanation
-        
+
         # Fallback to enhanced explanation if contextual analysis fails
         explanations = []
-        
+
         # Check for material sacrifice
         # Avoid centipawn jargon in explanations; describe conceptually
         if centipawn_loss > 0:
             explanations.append("This move is a calculated material sacrifice")
-        
+
         # Check for tactical patterns
         heuristic_details = move_analysis.get('heuristic_details', {})
         see_score = heuristic_details.get('see', 0)
-        
+
         if see_score < -100:  # Significant material sacrifice
             explanations.append("in a brilliant tactical sacrifice")
             explanations.append("that creates devastating threats")
         elif see_score < 0:
             explanations.append("in a calculated sacrifice")
             explanations.append("that gains significant positional advantages")
-        
+
         # Check for king safety improvements
         king_safety_drop = heuristic_details.get('king_safety_drop', 0)
         if king_safety_drop < -50:  # Negative means improvement
             explanations.append("while dramatically improving king safety")
-        
+
         # Check for mobility improvements
         mobility_change = heuristic_details.get('mobility_change', 0)
         if mobility_change > 20:
             explanations.append("and significantly increases piece mobility")
-        
+
         # Check for hanging pieces created
         new_hanging = heuristic_details.get('new_hanging_pieces', [])
         if new_hanging:
             explanations.append("by creating tactical threats that force the opponent into difficult positions")
-        
+
         # Check for evaluation swing
         delta = heuristic_details.get('delta', 0)
         if delta > 200:
             explanations.append("resulting in a massive evaluation swing in your favor")
         elif delta > 100:
             explanations.append("creating a significant advantage")
-        
+
         # Check for check delivery
         if move_analysis.get('gives_check', False):
             explanations.append("while delivering a powerful check")
-        
+
         # Build the explanation
         if explanations:
             base = "🌟 Outstanding! This move demonstrates exceptional tactical vision. "
@@ -443,14 +451,14 @@ class ChessCoachingGenerator:
                 base += "You've found a brilliant resource that "
             else:
                 base += "Your opponent found a brilliant resource that "
-            
+
             base += " ".join(explanations) + ". "
-            
+
             if is_user_move:
                 base += "This is the kind of move that wins games and shows real chess mastery!"
             else:
                 base += "Study this position to understand the advanced tactics involved."
-            
+
             return base
         else:
             # Enhanced fallback for brilliant moves without specific indicators
@@ -459,7 +467,7 @@ class ChessCoachingGenerator:
                 base += "You've found a brilliant resource that even strong players might miss. "
             else:
                 base += "Your opponent found a brilliant resource that shows advanced tactical vision. "
-            
+
             # Add context based on available data
             if move_analysis.get('gives_check', False):
                 base += "This move delivers a powerful check while creating tactical threats. "
@@ -467,18 +475,18 @@ class ChessCoachingGenerator:
                 base += "This move is not only the best available but demonstrates sophisticated positional understanding. "
             else:
                 base += "This move involves complex tactical or positional concepts that create significant advantages. "
-            
+
             if is_user_move:
                 base += "This is the kind of move that wins games and shows real chess mastery!"
             else:
                 base += "Study this position carefully to understand the advanced tactics involved."
-            
+
             return base
 
     def _generate_blunder_explanation(self, move_analysis: Dict[str, Any], is_user_move: bool = True) -> str:
         """Generate detailed explanation for blunders."""
         problems = []
-        
+
         # Avoid centipawn numbers; describe the impact plainly
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         if centipawn_loss > 500:
@@ -487,36 +495,36 @@ class ChessCoachingGenerator:
             problems.append("loses significant material")
         elif centipawn_loss > 100:
             problems.append("loses material")
-        
+
         # Check for specific tactical problems
         heuristic_details = move_analysis.get('heuristic_details', {})
         see_score = heuristic_details.get('see', 0)
-        
+
         if see_score < -200:
             problems.append("involves a terrible material exchange that loses significant value")
         elif see_score < -100:
             problems.append("involves a poor material exchange that loses material")
-        
+
         # Check for hanging pieces
         new_hanging = heuristic_details.get('new_hanging_pieces', [])
         if new_hanging:
             hanging_list = [f"{entry['piece']} on {entry['square']}" for entry in new_hanging]
             problems.append(f"hangs {', '.join(hanging_list)} - a critical tactical error")
-        
+
         # Check for king safety issues
         king_safety_drop = heuristic_details.get('king_safety_drop', 0)
         if king_safety_drop > 100:
             problems.append("severely compromises king safety, making the king vulnerable to attack")
         elif king_safety_drop > 50:
             problems.append("weakens king safety significantly")
-        
+
         # Check for mobility loss
         mobility_change = heuristic_details.get('mobility_change', 0)
         if mobility_change < -20:
             problems.append("dramatically reduces piece mobility and coordination")
         elif mobility_change < -10:
             problems.append("reduces piece mobility and limits tactical options")
-        
+
         # Check for evaluation swing
         delta = heuristic_details.get('delta', 0)
         if delta < -300:
@@ -525,22 +533,22 @@ class ChessCoachingGenerator:
             problems.append("causes a massive evaluation swing in the opponent's favor")
         elif delta < -100:
             problems.append("causes a significant evaluation swing that severely weakens the position")
-        
+
         # Check for missed opportunities
         best_alternative = heuristic_details.get('best_alternative')
         if best_alternative and best_alternative.get('score', 0) > 200:
             problems.append(f"misses the much stronger {best_alternative.get('san', 'move')} that would have maintained the advantage")
-        
+
         # Build the explanation
         if problems:
             base = "❌ This is a serious blunder that "
             base += ", ".join(problems) + ". "
-            
+
             if is_user_move:
                 base += "Don't worry - we all make blunders. Take more time to calculate before moving and always check for hanging pieces."
             else:
                 base += "This gives you a major opportunity to exploit the mistake and gain a significant advantage."
-            
+
             return base
         else:
             # Fallback to generic blunder explanation
@@ -549,70 +557,70 @@ class ChessCoachingGenerator:
             else:
                 return "❌ Your opponent made a serious mistake. This could be game-changing - look for winning tactics."
 
-    def _analyze_what_went_right(self, move_analysis: Dict[str, Any], board: chess.Board, 
+    def _analyze_what_went_right(self, move_analysis: Dict[str, Any], board: chess.Board,
                                 move: chess.Move, move_quality: MoveQuality, is_user_move: bool = True) -> Optional[str]:
         """Analyze what went right with the move."""
         if move_quality in [MoveQuality.BLUNDER, MoveQuality.MISTAKE]:
             return None
-            
+
         positive_aspects = []
-        
+
         if not is_user_move:
             # For opponent moves, focus on what they did well
             if move_analysis.get('is_best', False):
                 positive_aspects.append("Your opponent found the strongest move available.")
-            
+
             if move_analysis.get('is_brilliant', False):
                 positive_aspects.append("Your opponent demonstrated exceptional tactical vision.")
-            
+
             if self._is_developing_move(move, board):
                 positive_aspects.append("Your opponent developed a piece, which is generally good.")
-            
+
             if self._improves_king_safety(move, board):
                 positive_aspects.append("Your opponent improved their king's safety.")
-            
+
             if self._controls_center(move, board):
                 positive_aspects.append("Your opponent helped control the center of the board.")
-            
+
             if self._creates_threats(move, board):
                 positive_aspects.append("Your opponent created threats against your position.")
-            
+
             if positive_aspects:
                 return " ".join(positive_aspects)
             return None
-        
+
         # Check for tactical strengths
         if move_analysis.get('is_best', False):
             positive_aspects.append("This is the strongest move available in this position.")
-        
+
         if move_analysis.get('is_brilliant', False):
             positive_aspects.append("This move demonstrates exceptional tactical vision.")
-        
+
         # Check for positional strengths
         if self._is_developing_move(move, board):
             positive_aspects.append("This move develops a piece, which is generally good.")
-        
+
         if self._improves_king_safety(move, board):
             positive_aspects.append("This move improves your king's safety.")
-        
+
         if self._controls_center(move, board):
             positive_aspects.append("This move helps control the center of the board.")
-        
+
         if self._creates_threats(move, board):
             positive_aspects.append("This move creates threats against your opponent.")
-        
+
         if positive_aspects:
             return " ".join(positive_aspects)
         return None
 
-    def _analyze_what_went_wrong(self, move_analysis: Dict[str, Any], board: chess.Board, 
+    def _analyze_what_went_wrong(self, move_analysis: Dict[str, Any], board: chess.Board,
                                 move: chess.Move, move_quality: MoveQuality, is_user_move: bool = True) -> Optional[str]:
         """Analyze what went wrong with the move."""
         if move_quality in [MoveQuality.BRILLIANT, MoveQuality.BEST]:
             return None
-            
+
         problems = []
-        
+
         if not is_user_move:
             # For opponent moves, focus on what they did wrong and opportunities for you
             centipawn_loss = move_analysis.get('centipawn_loss', 0)
@@ -622,26 +630,26 @@ class ChessCoachingGenerator:
                 problems.append("Your opponent's move weakens their position noticeably.")
             elif centipawn_loss > 10:
                 problems.append("Your opponent missed a stronger option; look to improve your position.")
-            
+
             if self._hangs_piece(move, board):
                 problems.append("Your opponent's move hangs a piece - look for tactics to win material.")
-            
+
             if self._weakens_king_safety(move, board):
                 problems.append("Your opponent's move weakens their king's safety - consider attacking.")
-            
+
             if self._loses_material(move, board):
                 problems.append("Your opponent's move loses material without sufficient compensation.")
-            
+
             if self._blocks_development(move, board):
                 problems.append("Your opponent's move blocks the development of other pieces.")
-            
+
             if self._creates_weaknesses(move, board):
                 problems.append("Your opponent's move creates weaknesses that you can exploit.")
-            
+
             if problems:
                 return " ".join(problems)
             return None
-        
+
         # Avoid centipawn loss phrasing; speak plainly
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         if centipawn_loss > 100:
@@ -650,36 +658,36 @@ class ChessCoachingGenerator:
             problems.append("This move weakens your position and hands the initiative to your opponent.")
         elif centipawn_loss > 10:
             problems.append("This move lets your opponent equalize or improve easily.")
-        
+
         # Check for specific tactical problems
         if self._hangs_piece(move, board):
             problems.append("This move hangs a piece, which is a serious tactical error.")
-        
+
         if self._weakens_king_safety(move, board):
             problems.append("This move weakens your king's safety.")
-        
+
         if self._loses_material(move, board):
             problems.append("This move loses material without sufficient compensation.")
-        
+
         if self._blocks_development(move, board):
             problems.append("This move blocks the development of other pieces.")
-        
+
         if self._creates_weaknesses(move, board):
             problems.append("This move creates weaknesses in your position.")
-        
+
         if problems:
             return " ".join(problems)
         return None
 
-    def _suggest_improvements(self, move_analysis: Dict[str, Any], board: chess.Board, 
-                            move: chess.Move, move_quality: MoveQuality, 
+    def _suggest_improvements(self, move_analysis: Dict[str, Any], board: chess.Board,
+                            move: chess.Move, move_quality: MoveQuality,
                             player_skill_level: str, is_user_move: bool = True) -> Optional[str]:
         """Suggest how to improve the move."""
         if move_quality in [MoveQuality.BRILLIANT, MoveQuality.BEST]:
             return None
-            
+
         suggestions = []
-        
+
         if not is_user_move:
             # For opponent moves, suggest how you can take advantage
             if move_quality == MoveQuality.BLUNDER:
@@ -688,7 +696,7 @@ class ChessCoachingGenerator:
                 suggestions.append("Look for tactical patterns like pins, forks, or discovered attacks.")
             elif move_quality == MoveQuality.INACCURACY:
                 suggestions.append("Look for ways to improve your position and create threats.")
-            
+
             # Suggest the best move if available
             best_move = move_analysis.get('best_move')
             if best_move:
@@ -698,11 +706,11 @@ class ChessCoachingGenerator:
                     suggestions.append(f"Your opponent should have played {best_move_san} instead.")
                 except:
                     pass
-            
+
             if suggestions:
                 return " ".join(suggestions)
             return None
-        
+
         # Suggest the best move if available
         best_move = move_analysis.get('best_move')
         if best_move:
@@ -712,7 +720,7 @@ class ChessCoachingGenerator:
                 suggestions.append(f"Consider {best_move_san} instead.")
             except:
                 pass
-        
+
         # General improvement suggestions based on move quality
         if move_quality == MoveQuality.BLUNDER:
             suggestions.append("Take more time to calculate before moving. Look for tactics and check for hanging pieces.")
@@ -720,7 +728,7 @@ class ChessCoachingGenerator:
             suggestions.append("Before moving, consider all your opponent's possible responses and threats.")
         elif move_quality == MoveQuality.INACCURACY:
             suggestions.append("Look for moves that improve your position more significantly.")
-        
+
         # Skill-level specific suggestions
         if player_skill_level == "beginner":
             suggestions.append("Focus on basic principles: develop pieces, control the center, and keep your king safe.")
@@ -728,136 +736,136 @@ class ChessCoachingGenerator:
             suggestions.append("Look for tactical opportunities and consider the long-term consequences of your moves.")
         elif player_skill_level == "advanced":
             suggestions.append("Calculate deeper variations and consider subtle positional nuances.")
-        
+
         if suggestions:
             return " ".join(suggestions)
         return None
 
-    def _generate_tactical_insights(self, move_analysis: Dict[str, Any], board: chess.Board, 
+    def _generate_tactical_insights(self, move_analysis: Dict[str, Any], board: chess.Board,
                                   move: chess.Move, game_phase: GamePhase) -> List[str]:
         """Generate tactical insights about the move."""
         insights = []
-        
+
         # Use advanced analyzer for tactical patterns
         tactical_analysis = self.advanced_analyzer.analyze_tactical_patterns(board, move)
-        
+
         # Add insights for found patterns
         for pattern in tactical_analysis.patterns_found:
             pattern_name = pattern.value.replace('_', ' ').title()
             insights.append(f"This move demonstrates {pattern_name} - a fundamental tactical pattern in chess.")
-        
+
         # Add tactical opportunities
         insights.extend(tactical_analysis.tactical_opportunities)
-        
+
         # Add insights for missed patterns
         for pattern in tactical_analysis.patterns_missed:
             pattern_name = pattern.value.replace('_', ' ').title()
             insights.append(f"Consider looking for {pattern_name} opportunities in similar positions.")
-        
+
         # Enhanced analysis for brilliant moves
         if move_analysis.get('is_brilliant', False):
             heuristic_details = move_analysis.get('heuristic_details', {})
-            
+
             # Analyze sacrifice patterns
             see_score = heuristic_details.get('see', 0)
             if see_score < -200:
                 insights.append("This is a brilliant sacrifice that gives up significant material for devastating tactical compensation.")
             elif see_score < -100:
                 insights.append("This is a calculated sacrifice that trades material for powerful positional advantages.")
-            
+
             # Analyze forcing moves
             if move_analysis.get('gives_check', False):
                 insights.append("The check creates immediate threats and forces the opponent to respond defensively.")
-            
+
             # Analyze piece coordination
             mobility_change = heuristic_details.get('mobility_change', 0)
             if mobility_change > 15:
                 insights.append("This move dramatically improves piece coordination and creates multiple tactical threats.")
-            
+
             # Analyze king safety
             king_safety_drop = heuristic_details.get('king_safety_drop', 0)
             if king_safety_drop < -30:
                 insights.append("This move significantly improves king safety while maintaining attacking potential.")
-        
+
         # Enhanced analysis for blunders
         if move_analysis.get('is_blunder', False):
             heuristic_details = move_analysis.get('heuristic_details', {})
-            
+
             # Analyze hanging pieces
             new_hanging = heuristic_details.get('new_hanging_pieces', [])
             if new_hanging:
                 for entry in new_hanging:
                     insights.append(f"The {entry['piece']} on {entry['square']} is now undefended and vulnerable to capture.")
-            
+
             # Analyze material loss
             see_score = heuristic_details.get('see', 0)
             if see_score < -200:
                 insights.append("This move involves a terrible material exchange that loses significant value.")
             elif see_score < -100:
                 insights.append("This move involves a poor material exchange that loses material without compensation.")
-            
+
             # Analyze king safety issues
             king_safety_drop = heuristic_details.get('king_safety_drop', 0)
             if king_safety_drop > 50:
                 insights.append("This move severely compromises king safety, making the king vulnerable to tactical attacks.")
-        
+
         # Add material balance insights
         if abs(tactical_analysis.material_balance) > 3:
             if tactical_analysis.material_balance > 0:
                 insights.append("You have a material advantage. Look for ways to convert this into a winning position.")
             else:
                 insights.append("You're behind in material. Look for tactical opportunities to equalize or create counterplay.")
-        
+
         # Add piece activity insights
         if tactical_analysis.piece_activity_score > 20:
             insights.append("Your pieces are very active. This gives you many tactical opportunities.")
         elif tactical_analysis.piece_activity_score < 10:
             insights.append("Your pieces could be more active. Look for ways to improve their mobility.")
-        
+
         return insights
 
-    def _generate_positional_insights(self, move_analysis: Dict[str, Any], board: chess.Board, 
+    def _generate_positional_insights(self, move_analysis: Dict[str, Any], board: chess.Board,
                                     move: chess.Move, game_phase: GamePhase) -> List[str]:
         """Generate positional insights about the move."""
         insights = []
-        
+
         # Use advanced analyzer for positional concepts
         positional_analysis = self.advanced_analyzer.analyze_positional_concepts(board, move)
-        
+
         # Add insights for improved concepts
         for concept in positional_analysis.concepts_improved:
             concept_name = concept.value.replace('_', ' ').title()
             insights.append(f"This move improves {concept_name} - an important positional principle.")
-        
+
         # Add insights for weakened concepts
         for concept in positional_analysis.concepts_weakened:
             concept_name = concept.value.replace('_', ' ').title()
             insights.append(f"This move weakens {concept_name} - be careful about this in future positions.")
-        
+
         # Add positional advantages
         insights.extend(positional_analysis.positional_advantages)
-        
+
         # Add positional weaknesses
         insights.extend(positional_analysis.positional_weaknesses)
-        
+
         # Add space advantage insights
         if positional_analysis.space_advantage > 5:
             insights.append("You have a space advantage. Use it to restrict your opponent's pieces and create threats.")
         elif positional_analysis.space_advantage < -5:
             insights.append("Your opponent has more space. Look for ways to break through or create counterplay.")
-        
+
         # Add piece coordination insights
         if positional_analysis.piece_coordination_score > 60:
             insights.append("Your pieces are well coordinated. This creates powerful attacking and defensive possibilities.")
         elif positional_analysis.piece_coordination_score < 40:
             insights.append("Your pieces could work together better. Look for ways to improve their coordination.")
-        
+
         # Add pawn structure insights
         if positional_analysis.pawn_structure_score > 60:
             insights.append("Your pawn structure is solid. This provides a strong foundation for your pieces.")
         elif positional_analysis.pawn_structure_score < 40:
             insights.append("Your pawn structure has weaknesses. Be careful about pawn moves and consider pawn breaks.")
-        
+
         # Game phase specific insights
         if game_phase == GamePhase.OPENING:
             insights.append("In the opening, focus on rapid development and controlling the center.")
@@ -865,59 +873,59 @@ class ChessCoachingGenerator:
             insights.append("In the middlegame, look for tactical opportunities and improve your piece placement.")
         elif game_phase == GamePhase.ENDGAME:
             insights.append("In the endgame, king activity and pawn promotion become crucial.")
-        
+
         return insights
 
-    def _analyze_risks(self, move_analysis: Dict[str, Any], board: chess.Board, 
+    def _analyze_risks(self, move_analysis: Dict[str, Any], board: chess.Board,
                       move: chess.Move, move_quality: MoveQuality) -> List[str]:
         """Analyze the risks associated with the move."""
         risks = []
-        
+
         if self._hangs_piece(move, board):
             risks.append("This move hangs a piece, which could lead to material loss.")
-        
+
         if self._weakens_king_safety(move, board):
             risks.append("This move weakens king safety, making your king vulnerable to attack.")
-        
+
         if self._creates_weaknesses(move, board):
             risks.append("This move creates weaknesses that your opponent can exploit.")
-        
+
         if self._loses_material(move, board):
             risks.append("This move loses material without sufficient compensation.")
-        
+
         if self._blocks_development(move, board):
             risks.append("This move blocks the development of other pieces, slowing your progress.")
-        
+
         return risks
 
-    def _analyze_benefits(self, move_analysis: Dict[str, Any], board: chess.Board, 
+    def _analyze_benefits(self, move_analysis: Dict[str, Any], board: chess.Board,
                         move: chess.Move, move_quality: MoveQuality) -> List[str]:
         """Analyze the benefits of the move."""
         benefits = []
-        
+
         if self._improves_king_safety(move, board):
             benefits.append("This move improves your king's safety.")
-        
+
         if self._controls_center(move, board):
             benefits.append("This move helps control the center of the board.")
-        
+
         if self._develops_piece(move, board):
             benefits.append("This move develops a piece, bringing it into active play.")
-        
+
         if self._creates_threats(move, board):
             benefits.append("This move creates threats against your opponent.")
-        
+
         if self._improves_piece_coordination(move, board):
             benefits.append("This move improves the coordination between your pieces.")
-        
+
         return benefits
 
-    def _generate_learning_points(self, move_analysis: Dict[str, Any], board: chess.Board, 
-                                move: chess.Move, move_quality: MoveQuality, 
+    def _generate_learning_points(self, move_analysis: Dict[str, Any], board: chess.Board,
+                                move: chess.Move, move_quality: MoveQuality,
                                 game_phase: GamePhase) -> List[str]:
         """Generate learning points from the move."""
         learning_points = []
-        
+
         # General learning points based on move quality
         if move_quality == MoveQuality.BRILLIANT:
             learning_points.append("Study this position to understand what made this move brilliant.")
@@ -928,7 +936,7 @@ class ChessCoachingGenerator:
         elif move_quality == MoveQuality.MISTAKE:
             learning_points.append("Consider all your opponent's possible responses before moving.")
             learning_points.append("Look for tactical patterns you might have missed.")
-        
+
         # Game phase specific learning points
         if game_phase == GamePhase.OPENING:
             learning_points.append("In the opening, prioritize rapid development and center control.")
@@ -936,10 +944,10 @@ class ChessCoachingGenerator:
             learning_points.append("In the middlegame, look for tactical opportunities and improve piece placement.")
         elif game_phase == GamePhase.ENDGAME:
             learning_points.append("In the endgame, king activity and pawn promotion are crucial.")
-        
+
         return learning_points
 
-    def _determine_encouragement_level(self, move_quality: MoveQuality, 
+    def _determine_encouragement_level(self, move_quality: MoveQuality,
                                      move_analysis: Dict[str, Any]) -> int:
         """Determine the encouragement level (1-5) for the move."""
         if move_quality == MoveQuality.BRILLIANT:
@@ -965,10 +973,10 @@ class ChessCoachingGenerator:
         piece = board.piece_at(move.from_square)
         if not piece:
             return False
-        
+
         # Check if it's moving a piece from its starting position
         if piece.piece_type == chess.PAWN:
-            return move.from_square in [chess.A2, chess.B2, chess.C2, chess.D2, 
+            return move.from_square in [chess.A2, chess.B2, chess.C2, chess.D2,
                                       chess.E2, chess.F2, chess.G2, chess.H2,
                                       chess.A7, chess.B7, chess.C7, chess.D7,
                                       chess.E7, chess.F7, chess.G7, chess.H7]
@@ -1086,52 +1094,52 @@ class ChessCoachingGenerator:
         move_number = move_analysis.get('fullmove_number', 0)
         if move_number > 15:
             return False
-        
+
         # Check if it's a standard opening move (best move with low centipawn loss)
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         is_best = move_analysis.get('is_best', False)
         is_great = move_analysis.get('is_great', False)
         is_excellent = move_analysis.get('is_excellent', False)
         is_good = move_analysis.get('is_good', False)
-        
+
         # If it's the best move with minimal loss, it's likely a book move
         if is_best and centipawn_loss <= 10:
             return True
-        
+
         # Also consider great/excellent/good moves in opening as potential book moves
         if (is_great or is_excellent or is_good) and centipawn_loss <= 25:
             return True
-        
+
         return False
 
     def _generate_evaluation_aware_comment(self, move_quality: MoveQuality, move_analysis: Dict[str, Any], is_user_move: bool = True) -> str:
         """Generate evaluation-aware coaching comments that match the actual position evaluation."""
         # Import the enhanced comment generator
         from .enhanced_comment_generator import EnhancedCommentGenerator
-        
+
         # Create enhanced generator instance
         enhanced_generator = EnhancedCommentGenerator()
-        
+
         # Get board and move objects
         board = move_analysis.get('board_before')
         move = move_analysis.get('move')
-        
+
         if board and move:
             # Use enhanced comment generation
             return enhanced_generator.generate_enhanced_comment(move_analysis, board, move, is_user_move)
-        
+
         # Fallback to original logic if enhanced generation fails
         evaluation_before = move_analysis.get('evaluation_before', 0)
         evaluation_after = move_analysis.get('evaluation_after', 0)
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
-        
+
         # Calculate evaluation change
         evaluation_change = evaluation_after - evaluation_before
-        
+
         # Determine if this is an opening move
         move_number = move_analysis.get('fullmove_number', 0)
         is_opening = move_number <= 15
-        
+
         if move_quality == MoveQuality.BEST:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
@@ -1139,7 +1147,7 @@ class ChessCoachingGenerator:
                 return "Best move. Keeps the position balanced and safe."
             else:
                 return "Best move. Improves your position and follows sound principles."
-        
+
         elif move_quality == MoveQuality.GREAT:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
@@ -1149,7 +1157,7 @@ class ChessCoachingGenerator:
                 return "Great move that clearly improves your position."
             else:
                 return "Great move that keeps your position solid."
-        
+
         elif move_quality == MoveQuality.EXCELLENT:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
@@ -1159,7 +1167,7 @@ class ChessCoachingGenerator:
                 return "Excellent move that strengthens your position."
             else:
                 return "Excellent move that holds the balance."
-        
+
         elif move_quality == MoveQuality.GOOD:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
@@ -1169,7 +1177,7 @@ class ChessCoachingGenerator:
                 return "Good move that improves your position."
             else:
                 return "Good move that keeps the position safe."
-        
+
         elif move_quality == MoveQuality.ACCEPTABLE:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
@@ -1177,7 +1185,7 @@ class ChessCoachingGenerator:
                 return "Playable, but a stronger option was available."
             else:
                 return "Acceptable move, though not the most accurate."
-        
+
         else:
             # Fall back to original templates for other qualities
             templates = self.encouragement_templates[move_quality]
@@ -1187,7 +1195,7 @@ class ChessCoachingGenerator:
         """Generate educational opening move explanations."""
         move_number = move_analysis.get('fullmove_number', 0)
         move_san = move_analysis.get('move_san', '')
-        
+
         if move_number <= 3:
             return f"Book move. {move_san} is a fundamental opening move that helps control the center and develop your position."
         elif move_number <= 6:
@@ -1203,12 +1211,12 @@ class ChessCoachingGenerator:
         opening_info = move_analysis.get('opening_info', {})
         if opening_info and opening_info.get('name'):
             return opening_info['name']
-        
+
         # Get the move sequence context if available
         move_sequence = move_analysis.get('move_sequence', [])
         if not move_sequence:
             return ""
-        
+
         # Basic opening identification based on common patterns
         if len(move_sequence) >= 2:
             first_two = move_sequence[:2]
@@ -1228,7 +1236,7 @@ class ChessCoachingGenerator:
                 return "Scandinavian Defense"
             elif first_two == ['e4', 'Nf6']:
                 return "Alekhine Defense"
-        
+
         # Try to identify from longer sequences
         if len(move_sequence) >= 3:
             first_three = move_sequence[:3]
@@ -1244,7 +1252,7 @@ class ChessCoachingGenerator:
                 return "French Defense"
             elif first_three == ['e4', 'c6', 'd4']:
                 return "Caro-Kann Defense"
-        
+
         return ""
 
     def _get_opening_educational_context(self, opening_name: str, move_san: str, move_number: int) -> str:
@@ -1261,7 +1269,7 @@ class ChessCoachingGenerator:
             "Bishop's Opening": "This classical opening develops the bishop to an active square early. It can transpose into other openings or lead to independent lines with rapid development.",
             "Vienna Game": "This opening combines central control with piece development. It often leads to tactical positions where both sides have active piece play."
         }
-        
+
         return educational_contexts.get(opening_name, "This move follows established opening theory and helps develop your position according to sound chess principles.")
 
     def _get_generic_opening_principle(self, move_san: str, move_number: int) -> str:
@@ -1272,3 +1280,74 @@ class ChessCoachingGenerator:
             return "Continue developing pieces to active squares while maintaining control of the center and preparing for castling. Connect your rooks and avoid creating pawn weaknesses. The goal is to complete development before launching attacks."
         else:
             return "Complete your development, castle your king to safety, and prepare for the middlegame by connecting your rooks and improving piece coordination. Look for tactical opportunities while maintaining a solid position."
+
+    def _generate_positional_context(self, move_analysis: Dict[str, Any], board: chess.Board, game_phase: str) -> str:
+        """Generate rich positional context based on material balance, game phase, and position evaluation."""
+        context_parts = []
+
+        # Get material balance from heuristic details
+        heuristic_details = move_analysis.get('heuristic_details', {})
+        material_balance = heuristic_details.get('material_balance', 0)
+        evaluation_after = move_analysis.get('evaluation_after', 0)
+        move_number = move_analysis.get('fullmove_number', 0)
+
+        # Convert evaluation to material perspective (positive = white better, negative = black better)
+        # evaluation_after is already in centipawns from white's perspective
+
+        # Add game phase specific advice
+        if game_phase == 'opening' or move_number <= 15:
+            development_advice = [
+                "Look to develop knights and bishops toward the center.",
+                "Focus on developing pieces and controlling the center.",
+                "Consider castling to ensure king safety.",
+                "Control central squares with pawns and pieces.",
+                "Develop pieces before moving the same piece twice."
+            ]
+            # Use move number for consistency
+            context_parts.append(development_advice[move_number % len(development_advice)])
+
+        elif game_phase == 'middlegame' or (move_number > 15 and move_number <= 40):
+            middlegame_advice = [
+                "Look for tactical opportunities and threats.",
+                "Consider piece coordination and activity.",
+                "Evaluate pawn structure and weak squares.",
+                "Look for ways to improve piece placement.",
+                "Search for tactical motifs like pins, forks, or skewers."
+            ]
+            context_parts.append(middlegame_advice[move_number % len(middlegame_advice)])
+
+        elif game_phase == 'endgame' or move_number > 40:
+            endgame_advice = [
+                "Activate your king - it's a strong piece in the endgame.",
+                "Push passed pawns and restrict opponent's pawns.",
+                "Look for opportunities to create passed pawns.",
+                "Coordinate pieces to support pawn advancement.",
+                "Calculate carefully - precision matters in the endgame."
+            ]
+            context_parts.append(endgame_advice[move_number % len(endgame_advice)])
+
+        # Add material balance context
+        # Material balance is in centipawns (100 = 1 pawn)
+        if abs(material_balance) >= 300:  # 3 or more pawns
+            if material_balance > 0:
+                context_parts.append("White is up material and should look to convert the advantage.")
+            else:
+                context_parts.append("Black is up material. White needs to create counterplay.")
+        elif abs(material_balance) >= 100:  # 1-3 pawns
+            if material_balance > 0:
+                context_parts.append("White is up material. Black needs to create counterplay.")
+            else:
+                context_parts.append("Black is up material. White needs to create counterplay.")
+
+        # Add evaluation-based context (only if significantly different from material)
+        # evaluation_after is in centipawns from white's perspective
+        if abs(evaluation_after) >= 200 and abs(evaluation_after - material_balance) >= 100:
+            # Significant positional imbalance
+            if evaluation_after > 0:
+                if evaluation_after > material_balance + 100:
+                    context_parts.append("White has strong positional compensation.")
+            else:
+                if evaluation_after < material_balance - 100:
+                    context_parts.append("Black has strong positional compensation.")
+
+        return " ".join(context_parts) if context_parts else ""

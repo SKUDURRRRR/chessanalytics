@@ -2,13 +2,19 @@
  * Utility functions for generating chess arrows from move analysis data
  */
 
-import { Square } from 'react-chessboard'
-import { Chess } from 'chess.js'
-import { ModernArrow } from '../components/chess/ModernChessArrows'
+import { Chess, Square } from 'chess.js'
 
 export type Arrow = [Square, Square, string?]
 
-export type MoveClassification = 
+export interface ModernArrow {
+  from: Square
+  to: Square
+  color: string
+  classification: string
+  isBestMove: boolean
+}
+
+export type MoveClassification =
   | 'brilliant'
   | 'best'
   | 'great'
@@ -31,7 +37,7 @@ export interface MoveAnalysis {
  * Color mapping for different move classifications
  * Following chess.com conventions:
  * - Green: Best moves
- * - Blue: Good moves  
+ * - Blue: Good moves
  * - Purple: Brilliant moves
  * - Yellow: Acceptable moves
  * - Red: Mistakes/blunders
@@ -56,12 +62,12 @@ export function sanToUci(san: string, chess: Chess): { from: Square; to: Square 
   try {
     // Clone the chess instance to avoid modifying the original
     const testChess = new Chess(chess.fen())
-    
+
     // Log the position we're trying to make the move from (debug only)
     if (process.env.NODE_ENV === 'development') {
       console.debug('[sanToUci] Converting move:', san, 'from position:', chess.fen().split(' ')[0])
     }
-    
+
     // Try to make the move on the cloned instance
     const move = testChess.move(san)
     if (move) {
@@ -93,19 +99,15 @@ export function generateMoveArrows(
   moveAnalysis: MoveAnalysis,
   chess: Chess
 ): Arrow[] {
-  // TEMPORARILY DISABLED: Return empty array to hide all arrows
-  return []
-  
-  /* DISABLED CODE - Uncomment to re-enable arrows
   const arrows: Arrow[] = []
-  
+
   // Add arrow for the actual move played
   const actualMove = sanToUci(moveAnalysis.san, chess)
   if (actualMove) {
     const color = ARROW_COLORS[moveAnalysis.classification]
     arrows.push([actualMove.from, actualMove.to, color])
   }
-  
+
   // Add arrow for best move if different from actual move
   if (moveAnalysis.bestMoveSan && moveAnalysis.bestMoveSan !== moveAnalysis.san) {
     const bestMove = sanToUci(moveAnalysis.bestMoveSan, chess)
@@ -114,9 +116,8 @@ export function generateMoveArrows(
       arrows.push([bestMove.from, bestMove.to, '#10b981'])
     }
   }
-  
+
   return arrows
-  */
 }
 
 /**
@@ -127,12 +128,12 @@ export function generateMultipleMoveArrows(
   chess: Chess
 ): Arrow[] {
   const allArrows: Arrow[] = []
-  
+
   for (const move of moves) {
     const moveArrows = generateMoveArrows(move, chess)
     allArrows.push(...moveArrows)
   }
-  
+
   return allArrows
 }
 
@@ -150,22 +151,26 @@ export function generateModernMoveArrows(
   moveAnalysis: MoveAnalysis,
   chess: Chess
 ): ModernArrow[] {
-  // TEMPORARILY DISABLED: Return empty array to hide all arrows
-  return []
-  
-  /* DISABLED CODE - Uncomment to re-enable arrows
+  console.log('[generateModernMoveArrows] Called with:', {
+    san: moveAnalysis.san,
+    classification: moveAnalysis.classification,
+    bestMoveSan: moveAnalysis.bestMoveSan,
+    fen: chess.fen()
+  })
+
   const arrows: ModernArrow[] = []
-  
+
   // Determine if we should show the best move suggestion
-  const shouldShowBestMove = 
-    moveAnalysis.bestMoveSan && 
+  const shouldShowBestMove =
+    moveAnalysis.bestMoveSan &&
     moveAnalysis.bestMoveSan !== moveAnalysis.san &&
     ['inaccuracy', 'mistake', 'blunder'].includes(moveAnalysis.classification)
-  
+
   // Add arrow for the actual move played
   const actualMove = sanToUci(moveAnalysis.san, chess)
-  
+
   if (actualMove) {
+    console.log('[generateModernMoveArrows] Adding arrow for actual move:', actualMove)
     arrows.push({
       from: actualMove.from,
       to: actualMove.to,
@@ -173,13 +178,16 @@ export function generateModernMoveArrows(
       classification: moveAnalysis.classification,
       isBestMove: false
     })
+  } else {
+    console.warn('[generateModernMoveArrows] Failed to convert SAN to UCI:', moveAnalysis.san)
   }
-  
+
   // Add arrow for best move suggestion when move was suboptimal
   if (shouldShowBestMove) {
     const bestMove = sanToUci(moveAnalysis.bestMoveSan!, chess)
-    
+
     if (bestMove) {
+      console.log('[generateModernMoveArrows] Adding arrow for best move:', bestMove)
       arrows.push({
         from: bestMove.from,
         to: bestMove.to,
@@ -189,9 +197,9 @@ export function generateModernMoveArrows(
       })
     }
   }
-  
+
+  console.log('[generateModernMoveArrows] Returning', arrows.length, 'arrows:', arrows)
   return arrows
-  */
 }
 
 /**
@@ -202,12 +210,12 @@ export function generateMultipleModernMoveArrows(
   chess: Chess
 ): ModernArrow[] {
   const allArrows: ModernArrow[] = []
-  
+
   for (const move of moves) {
     const moveArrows = generateModernMoveArrows(move, chess)
     allArrows.push(...moveArrows)
   }
-  
+
   return allArrows
 }
 
@@ -221,13 +229,13 @@ export function generateBetterOptionsArrows(
   chess: Chess
 ): Arrow[] {
   const arrows: Arrow[] = []
-  
+
   // Add the actual move in red (mistake)
   const actualMove = sanToUci(currentMove.san, chess)
   if (actualMove) {
     arrows.push([actualMove.from, actualMove.to, '#ef4444']) // Red for mistake
   }
-  
+
   // Add better moves in green
   for (const betterMove of betterMoves) {
     const betterMoveUci = sanToUci(betterMove, chess)
@@ -235,7 +243,7 @@ export function generateBetterOptionsArrows(
       arrows.push([betterMoveUci.from, betterMoveUci.to, '#10b981']) // Green for better
     }
   }
-  
+
   return arrows
 }
 
@@ -248,7 +256,7 @@ export function generateModernBetterOptionsArrows(
   chess: Chess
 ): ModernArrow[] {
   const arrows: ModernArrow[] = []
-  
+
   // Add the actual move in red (mistake)
   const actualMove = sanToUci(currentMove.san, chess)
   if (actualMove) {
@@ -260,7 +268,7 @@ export function generateModernBetterOptionsArrows(
       isBestMove: false
     })
   }
-  
+
   // Add better moves in green
   for (const betterMove of betterMoves) {
     const betterMoveUci = sanToUci(betterMove, chess)
@@ -274,6 +282,6 @@ export function generateModernBetterOptionsArrows(
       })
     }
   }
-  
+
   return arrows
 }

@@ -1,5 +1,6 @@
 // Simple Analytics Component - One component, everything you need
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { UnifiedAnalysisService, AnalysisStats, DeepAnalysisData } from '../../services/unifiedAnalysisService'
 import {
   getComprehensiveGameAnalytics,
@@ -19,6 +20,7 @@ import { EnhancedOpeningPlayerCard } from '../deep/EnhancedOpeningPlayerCard'
 import { ScoreCards } from '../deep/ScoreCards'
 import { EloTrendGraph } from './EloTrendGraph'
 import { EnhancedOpponentAnalysis } from './EnhancedOpponentAnalysis'
+import { TimeSpentSummary } from './TimeSpentAnalysis'
 import { OpeningFilter, OpeningIdentifierSets } from '../../types'
 
 interface SimpleAnalyticsProps {
@@ -31,6 +33,7 @@ interface SimpleAnalyticsProps {
 }
 
 export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningClick, onOpponentClick }: SimpleAnalyticsProps) {
+  const navigate = useNavigate()
   const [data, setData] = useState<AnalysisStats | null>(null)
   const [comprehensiveData, setComprehensiveData] = useState<any>(null)
   const [deepAnalysisData, setDeepAnalysisData] = useState<DeepAnalysisData | null>(null)
@@ -941,6 +944,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 />
               </div>
             </div>
+
+            {/* Time Spent Summary - Full Width */}
+            {comprehensiveData?.games && userId && platform && (
+              <div className="mt-6">
+                <TimeSpentSummary
+                  userId={userId}
+                  platform={platform as 'lichess' | 'chess.com'}
+                  fallbackGames={comprehensiveData.games}
+                />
+              </div>
+            )}
           </div>
 
           {/* Enhanced Opponent Analysis */}
@@ -954,51 +968,46 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           )}
 
           {/* NEW: Enhanced Game Length Insights & Performance Highlights - Combined Block */}
-          {(comprehensiveData?.game_length_distribution || comprehensiveData?.quick_victory_breakdown || comprehensiveData?.marathon_performance || comprehensiveData?.recent_trend || comprehensiveData?.personal_records || comprehensiveData?.patience_rating !== null || comprehensiveData?.comeback_potential || comprehensiveData?.resignation_timing) && (
+          {(comprehensiveData?.game_length_distribution || comprehensiveData?.quick_victory_breakdown || comprehensiveData?.marathon_performance || comprehensiveData?.recent_trend || comprehensiveData?.personal_records || comprehensiveData?.patience_rating != null || comprehensiveData?.comeback_potential || comprehensiveData?.resignation_timing) && (
             <div className={cardClass}>
-              <h3 className="mb-4 text-lg font-semibold text-white">📊 Enhanced Game Length Insights</h3>
+              <h3 className="mb-4 text-lg font-semibold text-white">Enhanced Game Length Insights</h3>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Quick Victory Breakdown */}
-                {comprehensiveData?.quick_victory_breakdown && Object.keys(comprehensiveData.quick_victory_breakdown).length > 0 && (
-                  <div>
-                    <h4 className="mb-3 text-sm font-semibold text-purple-200">⚡ Quick Victory Analysis</h4>
-                    <div className="grid grid-cols-2 gap-2">
-                      {Object.entries(comprehensiveData.quick_victory_breakdown).map(([type, count]: [string, any]) => (
-                        <div key={type} className={subtleCardClass}>
-                          <span className="text-xs text-slate-400">{type}</span>
-                          <div className="text-xl font-semibold text-purple-300">{count}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Marathon Performance */}
                 {comprehensiveData?.marathon_performance && comprehensiveData.marathon_performance.count > 0 && (
-                  <div>
-                    <h4 className="mb-3 text-sm font-semibold text-amber-200">🏃 Marathon Performance (80+ moves)</h4>
-                    <div className="grid grid-cols-2 gap-2">
+                  <div className="lg:col-span-2">
+                    <h4 className="mb-3 text-sm font-semibold text-amber-200">Marathon Performance (80+ moves)</h4>
+                    <div className="grid grid-cols-3 gap-2">
                       <div className={subtleCardClass}>
-                        <span className="text-xs text-slate-400">Games</span>
-                        <div className="text-xl font-semibold text-sky-300">{comprehensiveData.marathon_performance.count}</div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-400">Games</span>
+                          <span className="text-lg font-semibold text-sky-300">{comprehensiveData.marathon_performance.count}</span>
+                        </div>
                       </div>
                       {comprehensiveData.marathon_performance.average_accuracy !== null && comprehensiveData.marathon_performance.average_accuracy !== undefined && (
                         <div className={subtleCardClass}>
-                          <span className="text-xs text-slate-400">Avg Accuracy</span>
-                          <div className="text-xl font-semibold text-emerald-300">{formatPercent(comprehensiveData.marathon_performance.average_accuracy, 1)}%</div>
-                          {comprehensiveData.marathon_performance.analyzed_count && comprehensiveData.marathon_performance.analyzed_count < comprehensiveData.marathon_performance.count && (
-                            <span className="text-xs text-slate-500">({comprehensiveData.marathon_performance.analyzed_count} analyzed)</span>
-                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-slate-400">Avg Accuracy</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-semibold text-emerald-300">{formatPercent(comprehensiveData.marathon_performance.average_accuracy, 1)}%</span>
+                              {comprehensiveData.marathon_performance.analyzed_count && comprehensiveData.marathon_performance.analyzed_count < comprehensiveData.marathon_performance.count && (
+                                <span className="text-xs text-slate-500">({comprehensiveData.marathon_performance.analyzed_count} analyzed)</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       )}
                       {comprehensiveData.marathon_performance.average_blunders !== null && comprehensiveData.marathon_performance.average_blunders !== undefined && (
                         <div className={subtleCardClass}>
-                          <span className="text-xs text-slate-400">Avg Blunders</span>
-                          <div className="text-xl font-semibold text-rose-300">{formatPercent(comprehensiveData.marathon_performance.average_blunders, 1)}</div>
-                          {comprehensiveData.marathon_performance.analyzed_count && comprehensiveData.marathon_performance.analyzed_count < comprehensiveData.marathon_performance.count && (
-                            <span className="text-xs text-slate-500">({comprehensiveData.marathon_performance.analyzed_count} analyzed)</span>
-                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-slate-400">Avg Blunders</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-semibold text-rose-300">{formatPercent(comprehensiveData.marathon_performance.average_blunders, 1)}</span>
+                              {comprehensiveData.marathon_performance.analyzed_count && comprehensiveData.marathon_performance.analyzed_count < comprehensiveData.marathon_performance.count && (
+                                <span className="text-xs text-slate-500">({comprehensiveData.marathon_performance.analyzed_count} analyzed)</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1009,7 +1018,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               {/* Recent Trend - Full Width */}
               {comprehensiveData?.recent_trend && comprehensiveData.recent_trend.recent_average_moves && (
                 <div className="mt-6 pt-6 border-t border-white/10">
-                  <h4 className="mb-3 text-sm font-semibold text-sky-200">📈 Recent Trend</h4>
+                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Recent Trend</h4>
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <span className="text-xs text-slate-400">Last 50 Games</span>
@@ -1029,8 +1038,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   {comprehensiveData.recent_trend.difference !== 0 && (
                     <p className="mt-2 text-xs text-slate-400">
                       {comprehensiveData.recent_trend.difference > 0
-                        ? `📊 Your recent games are ${Math.abs(comprehensiveData.recent_trend.difference).toFixed(1)} moves longer than usual`
-                        : `⚡ Your recent games are ${Math.abs(comprehensiveData.recent_trend.difference).toFixed(1)} moves shorter than usual`
+                        ? `Your recent games are ${Math.abs(comprehensiveData.recent_trend.difference).toFixed(1)} moves longer than usual`
+                        : `Your recent games are ${Math.abs(comprehensiveData.recent_trend.difference).toFixed(1)} moves shorter than usual`
                       }
                     </p>
                   )}
@@ -1038,82 +1047,65 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               )}
 
               {/* Performance Highlights Section */}
-              {(comprehensiveData?.personal_records || comprehensiveData?.patience_rating !== null || comprehensiveData?.comeback_potential) && (
+              {(comprehensiveData?.personal_records || comprehensiveData?.comeback_potential) && (
                 <div className="mt-6 pt-6 border-t border-white/10">
-                  <h4 className="mb-4 text-base font-semibold text-white">🏆 Performance Highlights</h4>
-
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Personal Records */}
                     {comprehensiveData?.personal_records && (
-                      <div>
-                        <h5 className="mb-3 text-sm font-semibold text-emerald-200">🏆 Personal Records</h5>
-                        <div className="space-y-2">
+                      <div className="lg:col-span-2">
+                        <h5 className="mb-3 text-sm font-semibold text-emerald-200">Personal Records</h5>
+                        <div className="grid grid-cols-3 gap-2">
                           {comprehensiveData.personal_records.fastest_win && (
-                            <div className={subtleCardClass}>
+                            <div
+                              className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
+                              onClick={() => {
+                                const gameId = comprehensiveData.personal_records.fastest_win.game_id
+                                if (gameId) {
+                                  navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}`)
+                                }
+                              }}
+                            >
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-slate-400">⚡ Fastest Win</span>
-                                <span className="font-semibold text-emerald-300">{comprehensiveData.personal_records.fastest_win.moves} moves</span>
+                                <span className="text-sm text-slate-400">Fastest Win</span>
+                                <span className="text-lg font-semibold text-emerald-300">{comprehensiveData.personal_records.fastest_win.moves} moves</span>
                               </div>
                             </div>
                           )}
                           {comprehensiveData.personal_records.highest_accuracy_win && (
-                            <div className={subtleCardClass}>
+                            <div
+                              className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
+                              onClick={() => {
+                                const gameId = comprehensiveData.personal_records.highest_accuracy_win.game_id
+                                if (gameId) {
+                                  navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}`)
+                                }
+                              }}
+                            >
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-slate-400">🎯 Most Accurate Win</span>
-                                <span className="font-semibold text-sky-300">{formatPercent(comprehensiveData.personal_records.highest_accuracy_win.accuracy, 1)}%</span>
+                                <span className="text-sm text-slate-400">Most Accurate Win</span>
+                                <span className="text-lg font-semibold text-sky-300">{formatPercent(comprehensiveData.personal_records.highest_accuracy_win.accuracy, 1)}%</span>
                               </div>
                             </div>
                           )}
                           {comprehensiveData.personal_records.longest_game && (
-                            <div className={subtleCardClass}>
+                            <div
+                              className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
+                              onClick={() => {
+                                const gameId = comprehensiveData.personal_records.longest_game.game_id
+                                if (gameId) {
+                                  navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}`)
+                                }
+                              }}
+                            >
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-slate-400">🏃 Longest Game</span>
-                                <span className="font-semibold text-purple-300">{comprehensiveData.personal_records.longest_game.moves} moves</span>
+                                <span className="text-sm text-slate-400">Longest Game</span>
+                                <span className="text-lg font-semibold text-purple-300">{comprehensiveData.personal_records.longest_game.moves} moves</span>
                               </div>
                             </div>
                           )}
                         </div>
                       </div>
                     )}
-
-                    {/* Patience & Comeback */}
-                    <div className="space-y-4">
-                      {/* Patience Rating */}
-                      {comprehensiveData?.patience_rating !== null && comprehensiveData?.patience_rating !== undefined && (
-                        <div>
-                          <h5 className="mb-3 text-sm font-semibold text-purple-200">🧘 Patience Rating</h5>
-                          <div className={subtleCardClass}>
-                            <div className="text-center">
-                              <div className="text-3xl font-bold text-purple-300">{formatPercent(comprehensiveData.patience_rating, 1)}</div>
-                              <p className="text-xs text-slate-400 mt-1">
-                                {comprehensiveData.patience_rating > 75
-                                  ? "Endgame specialist"
-                                  : comprehensiveData.patience_rating > 50
-                                  ? "Tactical player"
-                                  : "Quick finisher"}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Comeback Potential */}
-                      {comprehensiveData?.comeback_potential && (
-                        <div>
-                          <h5 className="mb-3 text-sm font-semibold text-amber-200">💪 Comeback Ability</h5>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className={subtleCardClass}>
-                              <span className="text-xs text-slate-400">Games</span>
-                              <div className="text-xl font-semibold text-amber-300">{comprehensiveData.comeback_potential.games}</div>
-                            </div>
-                            <div className={subtleCardClass}>
-                              <span className="text-xs text-slate-400">Avg Swing</span>
-                              <div className="text-xl font-semibold text-emerald-300">{formatPercent(comprehensiveData.comeback_potential.average_largest_swing, 1)}%</div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </div>
               )}
@@ -1121,54 +1113,38 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               {/* Resignation Timing - Full Width */}
               {comprehensiveData?.resignation_timing && (
                 <div className="mt-6 pt-6 border-t border-white/10">
-                  <h4 className="mb-3 text-sm font-semibold text-rose-200">🏳️ Resignation Timing</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    {comprehensiveData.resignation_timing.my_average_resignation_move && (
-                      <div className={subtleCardClass}>
-                        <span className="text-xs text-slate-400">You Resign At</span>
-                        <div className="text-xl font-semibold text-rose-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} moves</div>
-                        <span className="text-xs text-slate-500">({comprehensiveData.resignation_timing.my_resignations} games)</span>
+                  <h4 className="mb-3 text-sm font-semibold text-rose-200">Resignation Timing</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <span className="text-xs text-slate-400">Last 50 Games</span>
+                      <div className="text-xl font-semibold text-sky-300">{formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move || 0, 1)} moves</div>
+                      {comprehensiveData.resignation_timing.insight && (
+                        <div className="text-sm text-slate-400 mt-2 flex items-center gap-1">
+                          <span>{comprehensiveData.resignation_timing.insight}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-400">Baseline</span>
+                      <div className="text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move || 0, 1)} moves</div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-400">Change</span>
+                      <div className={`text-xl font-semibold ${
+                        comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change > 0
+                          ? 'text-amber-300'
+                          : comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change < 0
+                            ? 'text-emerald-300'
+                            : 'text-slate-300'
+                      }`}>
+                        {comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change > 0 ? '+' : ''}{comprehensiveData.resignation_timing.change || 0}
                       </div>
-                    )}
-                    {comprehensiveData.resignation_timing.opponent_average_resignation_move && (
-                      <div className={subtleCardClass}>
-                        <span className="text-xs text-slate-400">Opponents Resign At</span>
-                        <div className="text-xl font-semibold text-emerald-300">{formatPercent(comprehensiveData.resignation_timing.opponent_average_resignation_move, 1)} moves</div>
-                        <span className="text-xs text-slate-500">({comprehensiveData.resignation_timing.opponent_resignations} games)</span>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           )}
-
-          {/* Temporal Analysis */}
-          <div className={cardClass}>
-            <h3 className="mb-4 text-lg font-semibold text-white">Temporal Analysis</h3>
-            <div className="grid-responsive text-sm text-slate-200">
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">First Game</span>
-                <div className="text-sm font-medium text-white">{safeTemporalStats.firstGame ? new Date(safeTemporalStats.firstGame).toLocaleDateString() : 'N/A'}</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Last Game</span>
-                <div className="text-sm font-medium text-white">{safeTemporalStats.lastGame ? new Date(safeTemporalStats.lastGame).toLocaleDateString() : 'N/A'}</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">This Month</span>
-                <div className="text-lg font-semibold text-sky-300">{safeTemporalStats.gamesThisMonth} games</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">This Week</span>
-                <div className="text-lg font-semibold text-emerald-300">{safeTemporalStats.gamesThisWeek} games</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Avg / Day</span>
-                <div className="text-lg font-semibold text-purple-300">{formatPercent(safeTemporalStats.averageGamesPerDay, 2)}</div>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 

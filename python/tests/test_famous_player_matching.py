@@ -35,9 +35,10 @@ class TestFamousPlayerMatching(unittest.TestCase):
         self.assertIn('primary', result)
         primary = result['primary']
 
-        # Should match an aggressive tactical player
+        # Should match an aggressive tactical player (expanded list)
         expected_names = ['Mikhail Tal', 'Garry Kasparov', 'Alexander Alekhine',
-                         'Paul Morphy', 'Judit Polgar', 'Alireza Firouzja']
+                         'Paul Morphy', 'Judit Polgar', 'Alireza Firouzja',
+                         'Ian Nepomniachtchi', 'Shakhriyar Mamedyarov']
         self.assertIn(primary['name'], expected_names)
 
         # Check that new fields are present
@@ -69,9 +70,10 @@ class TestFamousPlayerMatching(unittest.TestCase):
         self.assertIn('primary', result)
         primary = result['primary']
 
-        # Should match a positional/patient player
+        # Should match a positional/patient player (expanded list)
         expected_names = ['Anatoly Karpov', 'Tigran Petrosian', 'Akiba Rubinstein',
-                         'José Raúl Capablanca', 'Vasily Smyslov', 'Ding Liren']
+                         'José Raúl Capablanca', 'Vasily Smyslov', 'Ding Liren',
+                         'Wesley So', 'Anish Giri', 'Peter Leko', 'Teimour Radjabov']
         self.assertIn(primary['name'], expected_names)
 
     def test_creative_player_matches_innovators(self):
@@ -93,9 +95,10 @@ class TestFamousPlayerMatching(unittest.TestCase):
         self.assertIn('primary', result)
         primary = result['primary']
 
-        # Should match creative/innovative players
+        # Should match creative/innovative players (expanded list)
         expected_names = ['Aron Nimzowitsch', 'David Bronstein', 'Bent Larsen',
-                         'Mikhail Tal', 'Levon Aronian']
+                         'Mikhail Tal', 'Levon Aronian', 'Richard Rapport',
+                         'Daniil Dubov', 'Vassily Ivanchuk']
         self.assertIn(primary['name'], expected_names)
 
     def test_balanced_player_matches_universal(self):
@@ -117,9 +120,10 @@ class TestFamousPlayerMatching(unittest.TestCase):
         self.assertIn('primary', result)
         primary = result['primary']
 
-        # Should match universal players
+        # Should match universal players (expanded list)
         expected_names = ['Magnus Carlsen', 'Garry Kasparov', 'Bobby Fischer',
-                         'Viswanathan Anand', 'Fabiano Caruana']
+                         'Viswanathan Anand', 'Fabiano Caruana', 'Maxime Vachier-Lagrave',
+                         'Alexander Grischuk']
         self.assertIn(primary['name'], expected_names)
 
     def test_returns_three_matches(self):

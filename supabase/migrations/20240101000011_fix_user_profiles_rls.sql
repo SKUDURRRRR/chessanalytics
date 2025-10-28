@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     UNIQUE(user_id, platform)
 );
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
-
 -- Fix RLS policy for user_profiles to allow anonymous access for development
 -- This allows the frontend to create user profiles without authentication
 

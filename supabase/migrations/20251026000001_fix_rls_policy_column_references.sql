@@ -15,13 +15,11 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_games_is_public ON games(is_public) WHERE is_public = true;
   END IF;
 END $$;
-
 -- ============================================================================
 -- Fix GAME_ANALYSES policies
 -- ============================================================================
 
 DROP POLICY IF EXISTS "game_analyses_select_own" ON game_analyses;
-
 CREATE POLICY "game_analyses_select_own" ON game_analyses
     FOR SELECT
     USING (
@@ -32,13 +30,11 @@ CREATE POLICY "game_analyses_select_own" ON game_analyses
             AND games.is_public = true
         )
     );
-
 -- ============================================================================
 -- Fix MOVE_ANALYSES policies
 -- ============================================================================
 
 DROP POLICY IF EXISTS "move_analyses_select_own" ON move_analyses;
-
 CREATE POLICY "move_analyses_select_own" ON move_analyses
     FOR SELECT
     USING (
@@ -49,13 +45,11 @@ CREATE POLICY "move_analyses_select_own" ON move_analyses
             AND games.is_public = true
         )
     );
-
 -- ============================================================================
 -- Fix GAME_FEATURES policies
 -- ============================================================================
 
 DROP POLICY IF EXISTS "game_features_select_own" ON game_features;
-
 CREATE POLICY "game_features_select_own" ON game_features
     FOR SELECT
     USING (

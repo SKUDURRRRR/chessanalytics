@@ -317,18 +317,18 @@ export default function SimpleAnalyticsPage() {
       }
 
       importStuckTimeoutRef.current = setTimeout(() => {
-        console.error('Import appears stuck - no progress in 60 seconds')
+        console.error('Import appears stuck - no progress in 5 minutes')
         setLargeImportProgress(prev => prev ? {
           ...prev,
           status: 'error',
-          message: 'Import timed out - no response from server in 60 seconds. Please refresh the page.'
+          message: 'Import timed out - no response from server in 5 minutes. Please refresh the page.'
         } : null)
 
         if (largeImportIntervalRef.current) {
           clearInterval(largeImportIntervalRef.current)
           largeImportIntervalRef.current = null
         }
-      }, 60000) // 60 seconds timeout (longer to allow checking empty months)
+      }, 300000) // 5 minutes timeout (300 seconds) - allows for rate-limited imports
     }
 
     checkStuckImport()

@@ -42,7 +42,6 @@ SELECT
     ga.stockfish_depth,
     1 as data_source_priority
 FROM public.game_analyses ga;
-
 -- Grant appropriate permissions on the view
 GRANT SELECT ON public.unified_analyses TO anon;
 GRANT SELECT ON public.unified_analyses TO authenticated;

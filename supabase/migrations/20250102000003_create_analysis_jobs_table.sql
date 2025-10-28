@@ -1,2 +1,2 @@
 -- 20250102000003_create_analysis_jobs_table.sql superseded by 20250102000005_schema_consolidation.sql
--- Intentionally left blank.
+-- Intentionally left blank.;
