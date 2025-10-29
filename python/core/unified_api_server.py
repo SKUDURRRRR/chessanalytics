@@ -6467,63 +6467,117 @@ async def proxy_chess_com_user(username: str):
 
 @app.post("/api/v1/validate-user")
 async def validate_user(request: dict):
-    """Validate that a user exists on the specified platform."""
+    """Validate that a user exists on the specified platform.
+
+    Returns proper HTTP status codes:
+    - 200: User validated successfully (check 'exists' field in response)
+    - 400: Invalid request parameters
+    - 503: External API (Lichess/Chess.com) error
+    - 504: External API timeout
+    - 500: Unexpected server error
+    """
     try:
         user_id = request.get("user_id")
         platform = request.get("platform")
 
         if not user_id or not platform:
-            return {
-                "exists": False,
-                "message": "Missing user_id or platform parameter"
-            }
+            raise HTTPException(
+                status_code=400,
+                detail="Missing user_id or platform parameter"
+            )
 
         if platform not in ["lichess", "chess.com"]:
-            return {
-                "exists": False,
-                "message": "Platform must be 'lichess' or 'chess.com'"
-            }
+            raise HTTPException(
+                status_code=400,
+                detail="Platform must be 'lichess' or 'chess.com'"
+            )
 
         # Validate user exists on the platform
         if platform == "lichess":
             # Check Lichess user exists
             import aiohttp
-            async with aiohttp.ClientSession() as session:
-                url = f"https://lichess.org/api/user/{user_id}"
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        return {"exists": True, "message": "User found on Lichess"}
-                    else:
-                        return {
-                            "exists": False,
-                            "message": f"User '{user_id}' not found on Lichess"
-                        }
+            try:
+                async with aiohttp.ClientSession() as session:
+                    url = f"https://lichess.org/api/user/{user_id}"
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        if response.status == 200:
+                            return {"exists": True, "message": "User found on Lichess"}
+                        elif response.status == 404:
+                            return {
+                                "exists": False,
+                                "message": f"User '{user_id}' not found on Lichess"
+                            }
+                        elif response.status == 429:
+                            raise HTTPException(
+                                status_code=503,
+                                detail="Lichess API rate limit exceeded. Please try again in a moment."
+                            )
+                        else:
+                            raise HTTPException(
+                                status_code=503,
+                                detail=f"Lichess API returned status {response.status}"
+                            )
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=504,
+                    detail="Lichess API timeout. Please try again."
+                )
+            except aiohttp.ClientError as e:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Cannot connect to Lichess: {str(e)}"
+                )
         else:  # chess.com
             # Check Chess.com user exists
             import httpx
-            # Chess.com API requires User-Agent header
             headers = {
                 'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
             }
-            async with httpx.AsyncClient() as client:
-                canonical_username = user_id.strip().lower()
-                url = f"https://api.chess.com/pub/player/{canonical_username}"
-                response = await client.get(url, headers=headers, timeout=10.0)
+            try:
+                async with httpx.AsyncClient() as client:
+                    canonical_username = user_id.strip().lower()
+                    url = f"https://api.chess.com/pub/player/{canonical_username}"
+                    response = await client.get(url, headers=headers, timeout=10.0)
 
-                if response.status_code == 200:
-                    return {"exists": True, "message": "User found on Chess.com"}
-                else:
-                    return {
-                        "exists": False,
-                        "message": f"User '{user_id}' not found on Chess.com"
-                    }
+                    if response.status_code == 200:
+                        return {"exists": True, "message": "User found on Chess.com"}
+                    elif response.status_code == 404:
+                        return {
+                            "exists": False,
+                            "message": f"User '{user_id}' not found on Chess.com"
+                        }
+                    elif response.status_code == 429:
+                        raise HTTPException(
+                            status_code=503,
+                            detail="Chess.com API rate limit exceeded. Please try again in a moment."
+                        )
+                    else:
+                        raise HTTPException(
+                            status_code=503,
+                            detail=f"Chess.com API returned status {response.status_code}"
+                        )
+            except httpx.TimeoutException:
+                raise HTTPException(
+                    status_code=504,
+                    detail="Chess.com API timeout. Please try again."
+                )
+            except httpx.RequestError as e:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Cannot connect to Chess.com: {str(e)}"
+                )
 
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        print(f"Error validating user: {e}")
-        return {
-            "exists": False,
-            "message": f"Error validating user: {str(e)}"
-        }
+        print(f"Unexpected error validating user: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Server error: {str(e)}"
+        )
 
 @app.post("/api/v1/check-user-exists")
 async def check_user_exists(request: dict):
