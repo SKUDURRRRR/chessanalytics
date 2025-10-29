@@ -173,12 +173,22 @@ if config.database.url and config.database.anon_key:
     # Initialize reliable persistence system with cache invalidation callback
     persistence = ReliableAnalysisPersistence(supabase, supabase_service, on_save_callback=_invalidate_cache)
     print("Reliable analysis persistence system initialized with cache invalidation")
+
+    # Initialize usage tracker and payment services
+    from .usage_tracker import UsageTracker
+    from .stripe_service import StripeService
+
+    usage_tracker = UsageTracker(supabase_service)
+    stripe_service = StripeService(supabase_service)
+    print("Usage tracking and payment services initialized")
 else:
     print("[warn]  Database configuration not found. Using mock clients for development.")
     # Create mock clients for development
     supabase = None
     supabase_service = None
     persistence = None
+    usage_tracker = None
+    stripe_service = None
 
 # Authentication utilities
 async def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]) -> dict:
@@ -313,7 +323,7 @@ async def startup_event():
                 'Hash': 96
             }
         )
-        await _engine_pool_instance.start_cleanup_task()
+        _engine_pool_instance.start_cleanup_task()
         print(f"[STARTUP] ✅ Engine pool initialized: {_engine_pool_instance}")
     else:
         print("[STARTUP] ⚠️  Stockfish path not configured - engine pool disabled")
@@ -856,7 +866,7 @@ async def get_memory_metrics():
     except Exception as e:
         return {
             "success": False,
-            "error": str(e),
+            "message": str(e),
             "timestamp": datetime.now().isoformat()
         }
 
@@ -6660,7 +6670,7 @@ async def get_import_status(user_id: str, platform: str):
             "can_import_more": True,
             "platform": platform,
             "user_id": user_id,
-            "error": str(e)
+            "message": str(e)
         }
 
 
@@ -6716,7 +6726,7 @@ async def debug_db_state(user_id: str, platform: str):
         }
 
     except Exception as e:
-        return {"error": str(e)}
+        return {"success": False, "message": str(e)}
 @app.get("/proxy/chess-com/{username}")
 async def proxy_chess_com_user(username: str):
     """Proxy endpoint for Chess.com user info to avoid CORS issues."""
@@ -6738,11 +6748,11 @@ async def proxy_chess_com_user(username: str):
                 return response.json()
             else:
                 print(f"Chess.com API returned status {response.status_code}")
-                return {"error": f"User not found or API returned status {response.status_code}"}
+                return {"success": False, "message": f"User not found or API returned status {response.status_code}"}
 
     except Exception as e:
         print(f"Error proxying Chess.com user request: {e}")
-        return {"error": str(e)}
+        return {"success": False, "message": str(e)}
 
 @app.post("/api/v1/validate-user")
 async def validate_user(request: dict):
@@ -8190,6 +8200,282 @@ def _get_mock_analysis_results() -> List[GameAnalysisSummary]:
 
     return mock_results
 
+# ============================================================================
+# AUTHENTICATION & USER PROFILE ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/auth/check-usage")
+async def check_usage(request: Dict[str, Any]):
+    """
+    Check user's current usage limits and stats.
+    Returns usage information for import and analysis limits.
+    """
+    if not usage_tracker:
+        raise HTTPException(status_code=503, detail="Usage tracking not configured")
+
+    user_id = request.get('user_id')
+
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+
+    try:
+        stats = await usage_tracker.get_usage_stats(user_id)
+        return stats
+    except Exception as e:
+        logger.error(f"Error checking usage for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/auth/link-anonymous-data")
+async def link_anonymous_data(request: Dict[str, Any]):
+    """
+    Link anonymous user data to authenticated user after registration.
+    Allows users to claim their game history and analyses after signing up.
+    """
+    if not usage_tracker:
+        raise HTTPException(status_code=503, detail="Usage tracking not configured")
+
+    auth_user_id = request.get('auth_user_id')
+    platform = request.get('platform')
+    anonymous_user_id = request.get('anonymous_user_id')
+
+    if not all([auth_user_id, platform, anonymous_user_id]):
+        raise HTTPException(
+            status_code=400,
+            detail="auth_user_id, platform, and anonymous_user_id are required"
+        )
+
+    try:
+        result = await usage_tracker.claim_anonymous_data(
+            auth_user_id=auth_user_id,
+            platform=platform,
+            anonymous_user_id=anonymous_user_id
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error linking anonymous data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/auth/profile")
+async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
+    """
+    Get authenticated user's profile information.
+    """
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        # Get user profile
+        result = supabase.table('authenticated_users').select('*').eq(
+            'id', user_id
+        ).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="User profile not found")
+
+        user_profile = result.data[0]
+
+        # Get usage stats
+        usage_stats = {}
+        if usage_tracker:
+            usage_stats = await usage_tracker.get_usage_stats(user_id)
+
+        # Get subscription info if Stripe is configured
+        subscription_info = {}
+        if stripe_service and stripe_service.enabled:
+            subscription_info = await stripe_service.get_subscription_status(user_id)
+
+        return {
+            'profile': user_profile,
+            'usage': usage_stats,
+            'subscription': subscription_info
+        }
+    except Exception as e:
+        logger.error(f"Error getting user profile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/v1/auth/profile")
+async def update_user_profile(
+    request: Dict[str, Any],
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Update authenticated user's profile (username, etc.).
+    Email and password changes are handled by Supabase Auth directly.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Only allow updating specific fields
+    allowed_fields = ['username']
+    update_data = {k: v for k, v in request.items() if k in allowed_fields}
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+
+    try:
+        result = supabase_service.table('authenticated_users').update(update_data).eq(
+            'id', user_id
+        ).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="User profile not found")
+
+        return {'success': True, 'profile': result.data[0]}
+    except Exception as e:
+        logger.error(f"Error updating user profile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# PAYMENT ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/payments/create-checkout")
+async def create_checkout_session(
+    request: Dict[str, Any],
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Create a Stripe checkout session for subscription or credit purchase.
+    """
+    if not stripe_service or not stripe_service.enabled:
+        raise HTTPException(status_code=503, detail="Payment system not configured")
+
+    user_id = token_data.get('sub')
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    tier_id = request.get('tier_id')
+    credit_amount = request.get('credit_amount')
+    success_url = request.get('success_url')
+    cancel_url = request.get('cancel_url')
+
+    if not tier_id and not credit_amount:
+        raise HTTPException(
+            status_code=400,
+            detail="Either tier_id or credit_amount is required"
+        )
+
+    try:
+        result = await stripe_service.create_checkout_session(
+            user_id=user_id,
+            tier_id=tier_id,
+            credit_amount=credit_amount,
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+
+        if 'error' in result:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+    except Exception as e:
+        logger.error(f"Error creating checkout session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/payments/webhook")
+async def stripe_webhook(request: Request):
+    """
+    Handle Stripe webhook events.
+    This endpoint processes payment confirmations, subscription updates, etc.
+    """
+    if not stripe_service or not stripe_service.enabled:
+        raise HTTPException(status_code=503, detail="Payment system not configured")
+
+    # Get raw body
+    payload = await request.body()
+    sig_header = request.headers.get('stripe-signature')
+
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing stripe-signature header")
+
+    try:
+        result = await stripe_service.handle_webhook(payload, sig_header)
+
+        if 'error' in result:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/payments/subscription")
+async def get_subscription(token_data: Annotated[dict, Depends(verify_token)]):
+    """
+    Get user's current subscription status.
+    """
+    if not stripe_service or not stripe_service.enabled:
+        return {'message': 'Payment system not configured'}
+
+    user_id = token_data.get('sub')
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        result = await stripe_service.get_subscription_status(user_id)
+
+        if 'error' in result:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+    except Exception as e:
+        logger.error(f"Error getting subscription: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/payments/cancel")
+async def cancel_subscription(token_data: Annotated[dict, Depends(verify_token)]):
+    """
+    Cancel user's subscription (at end of billing period).
+    """
+    if not stripe_service or not stripe_service.enabled:
+        raise HTTPException(status_code=503, detail="Payment system not configured")
+
+    user_id = token_data.get('sub')
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        result = await stripe_service.cancel_subscription(user_id)
+
+        if 'error' in result:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+    except Exception as e:
+        logger.error(f"Error cancelling subscription: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/payment-tiers")
+async def get_payment_tiers():
+    """
+    Get available payment tiers (public endpoint, no auth required).
+    """
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        result = supabase.table('payment_tiers').select('*').eq(
+            'is_active', True
+        ).order('display_order').execute()
+
+        return {'tiers': result.data or []}
+    except Exception as e:
+        logger.error(f"Error getting payment tiers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import argparse
 
@@ -8210,5 +8496,7 @@ if __name__ == "__main__":
     print("  - GET /api/v1/analyses/{user_id}/{platform}")
     print("  - GET /api/v1/progress/{user_id}/{platform}")
     print("  - GET /api/v1/deep-analysis/{user_id}/{platform}")
+    print("  - POST /api/v1/auth/* (authentication endpoints)")
+    print("  - POST /api/v1/payments/* (payment endpoints)")
 
     uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)

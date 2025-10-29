@@ -94,6 +94,12 @@ class MemoryMonitor:
         if self._task is not None:
             return
 
+        # Reset monitoring state for a fresh start
+        self._snapshots.clear()
+        self._warning_count = 0
+        self._critical_count = 0
+        self._peak = None
+
         # Take baseline snapshot
         self._baseline = self._take_snapshot()
         print(f"[MEMORY] Baseline: {self._baseline}")
