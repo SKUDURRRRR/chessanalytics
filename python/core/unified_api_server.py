@@ -5192,7 +5192,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
         # If ECO code is A00 but no opening name, identify from moves
         # A00 is a catch-all for many different irregular openings
         if opening_family == 'A00' and (opening == 'Unknown' or opening == 'Uncommon Opening'):
-            from opening_utils import identify_a00_opening_from_moves
+            from .opening_utils import identify_a00_opening_from_moves
             identified_opening = identify_a00_opening_from_moves(pgn)
             if identified_opening != 'Uncommon Opening':
                 opening = identified_opening
