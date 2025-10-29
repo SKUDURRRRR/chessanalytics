@@ -44,38 +44,63 @@ function clearUserCacheFixed(
 ): string[] {
   const keysToDelete: string[] = []
 
-  const normalizedUserId = platform === 'chess.com' ? userId.toLowerCase() : userId
-  const normalizedUserIdLower = normalizedUserId.toLowerCase()
+  // Normalize userId for matching (case-insensitive for both platforms)
+  // Both Chess.com and Lichess don't allow duplicate usernames with different cases
+  const normalizedUserId = userId.toLowerCase()
 
+  // Normalize platform for matching (handle both "chess.com" and "chesscom" variants)
   const normalizedPlatform = platform.toLowerCase()
   const platformNoDots = normalizedPlatform.replace(/\./g, '')
 
   for (const key of cache.keys()) {
-    const parts = key.split('_')
+    // Cache keys follow format: {endpoint}_{userId}_{platform}{optional}
+    // We can't use split('_') because usernames can contain underscores
+    // Instead, we'll use a more robust pattern matching approach
 
-    if (parts.length < 3) {
-      continue
+    // Extract the platform portion first (from the end or before optional params)
+    let keyPlatform = ''
+    let remainingKey = key
+
+    // Try to match common platform patterns
+    const platformPatterns = ['lichess', 'chess.com', 'chesscom', 'chess_com']
+    for (const pattern of platformPatterns) {
+      if (key.toLowerCase().includes(`_${pattern}`)) {
+        const platformIndex = key.toLowerCase().lastIndexOf(`_${pattern}`)
+        // Extract just the platform portion (not including any trailing params)
+        const afterPlatform = key.substring(platformIndex + 1)
+        const nextUnderscore = afterPlatform.indexOf('_')
+        keyPlatform = nextUnderscore === -1 ? afterPlatform : afterPlatform.substring(0, nextUnderscore)
+        remainingKey = key.substring(0, platformIndex)
+        break
+      }
     }
 
-    const keyUserId = parts[1]?.toLowerCase() || ''
-    let keyPlatform = parts[2]?.toLowerCase() || ''
-
-    if (parts.length > 3 && parts[2] === 'chess' && parts[3]?.startsWith('com')) {
-      keyPlatform = 'chess.com'
+    if (!keyPlatform) {
+      continue // No platform found in key
     }
 
-    const userIdMatches = keyUserId === normalizedUserIdLower
+    // Now extract userId from remaining key (everything after first underscore)
+    const firstUnderscoreIndex = remainingKey.indexOf('_')
+    if (firstUnderscoreIndex === -1) {
+      continue // No endpoint separator found
+    }
+
+    const keyUserId = remainingKey.substring(firstUnderscoreIndex + 1)
+
+    // Match userId (case-insensitive for both platforms)
+    const userIdMatches = keyUserId.toLowerCase() === normalizedUserId
 
     if (!userIdMatches) {
       continue
     }
 
-    const keyPlatformNoDots = keyPlatform.replace(/\./g, '')
+    // Platform match (handle both dotted and non-dotted variants)
+    const keyPlatformLower = keyPlatform.toLowerCase().replace(/\./g, '')
     const platformMatches =
-      keyPlatform === normalizedPlatform ||
-      keyPlatformNoDots === platformNoDots ||
-      keyPlatform === platformNoDots ||
-      keyPlatformNoDots === normalizedPlatform
+      keyPlatform.toLowerCase() === normalizedPlatform ||
+      keyPlatformLower === platformNoDots ||
+      keyPlatform.toLowerCase() === platformNoDots ||
+      keyPlatformLower === normalizedPlatform
 
     if (platformMatches) {
       keysToDelete.push(key)
@@ -162,26 +187,23 @@ describe('Frontend Cache Security - clearUserCache', () => {
     expect(cache.size()).toBe(0)
   })
 
-  it('should handle case sensitivity for Lichess', () => {
+  it('should handle case insensitivity for both platforms', () => {
+    // Both Chess.com and Lichess don't allow duplicate usernames with different cases
+    // So cache clearing should be case-insensitive for both
     cache.set('stats_Alice_lichess', { data: 'uppercase' })
-    cache.set('stats_alice_lichess', { data: 'lowercase' })
-
-    const deleted = clearUserCacheFixed(cache, 'alice', 'lichess')
-
-    // Should only match lowercase alice (case-sensitive for Lichess)
-    expect(deleted).toHaveLength(1)
-    expect(deleted).toContain('stats_alice_lichess')
-    expect(cache.keys()).toContain('stats_Alice_lichess')
-  })
-
-  it('should handle case insensitivity for Chess.com', () => {
-    cache.set('stats_Alice_chess.com', { data: 'uppercase' })
     cache.set('stats_alice_chess.com', { data: 'lowercase' })
+    cache.set('stats_BOB_lichess', { data: 'other_user' })
 
-    const deleted = clearUserCacheFixed(cache, 'Alice', 'chess.com')
+    const deletedLichess = clearUserCacheFixed(cache, 'alice', 'lichess')
+    expect(deletedLichess).toHaveLength(1)
+    expect(deletedLichess).toContain('stats_Alice_lichess')
 
-    // Should match both (case-insensitive for chess.com)
-    expect(deleted).toHaveLength(2)
+    const deletedChesscom = clearUserCacheFixed(cache, 'Alice', 'chess.com')
+    expect(deletedChesscom).toHaveLength(1)
+    expect(deletedChesscom).toContain('stats_alice_chess.com')
+
+    // Other user should remain untouched
+    expect(cache.keys()).toContain('stats_BOB_lichess')
   })
 
   it('should handle empty cache gracefully', () => {

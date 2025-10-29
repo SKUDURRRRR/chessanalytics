@@ -111,9 +111,9 @@ export function generateCacheKey(
 export function clearUserCache(userId: string, platform: string): void {
   const keysToDelete: string[] = []
 
-  // Normalize userId for matching (case-insensitive for chess.com)
-  const normalizedUserId = platform === 'chess.com' ? userId.toLowerCase() : userId
-  const normalizedUserIdLower = normalizedUserId.toLowerCase()
+  // Normalize userId for matching (case-insensitive for both platforms)
+  // Both Chess.com and Lichess don't allow duplicate usernames with different cases
+  const normalizedUserId = userId.toLowerCase()
 
   // Normalize platform for matching (handle both "chess.com" and "chesscom" variants)
   const normalizedPlatform = platform.toLowerCase()
@@ -121,42 +121,53 @@ export function clearUserCache(userId: string, platform: string): void {
 
   for (const key of apiCache.getStats().keys) {
     // Cache keys follow format: {endpoint}_{userId}_{platform}{optional}
-    // Split by underscore to get segments for exact matching
-    const parts = key.split('_')
+    // We can't use split('_') because usernames can contain underscores
+    // Instead, we'll use a more robust pattern matching approach
 
-    if (parts.length < 3) {
-      continue // Malformed key, skip
+    // Extract the platform portion first (from the end or before optional params)
+    let keyPlatform = ''
+    let remainingKey = key
+
+    // Try to match common platform patterns
+    const platformPatterns = ['lichess', 'chess.com', 'chesscom', 'chess_com']
+    for (const pattern of platformPatterns) {
+      if (key.toLowerCase().includes(`_${pattern}`)) {
+        const platformIndex = key.toLowerCase().lastIndexOf(`_${pattern}`)
+        // Extract just the platform portion (not including any trailing params)
+        const afterPlatform = key.substring(platformIndex + 1)
+        const nextUnderscore = afterPlatform.indexOf('_')
+        keyPlatform = nextUnderscore === -1 ? afterPlatform : afterPlatform.substring(0, nextUnderscore)
+        remainingKey = key.substring(0, platformIndex)
+        break
+      }
     }
 
-    // Extract userId and platform segments
-    // parts[0] = endpoint, parts[1] = userId, parts[2] = platform (or platform.com)
-    const keyUserId = parts[1]?.toLowerCase() || ''
-
-    // Platform might be split if it contains dots, so we need to reconstruct it
-    // For "stats_alice_chess.com" -> parts = ["stats", "alice", "chess.com"]
-    // For "stats_alice_chesscom" -> parts = ["stats", "alice", "chesscom"]
-    let keyPlatform = parts[2]?.toLowerCase() || ''
-
-    // If there are more parts and the third part is short (like "chess"),
-    // it might be the first part of "chess.com", so check if next part is "com"
-    if (parts.length > 3 && parts[2] === 'chess' && parts[3]?.startsWith('com')) {
-      keyPlatform = 'chess.com'
+    if (!keyPlatform) {
+      continue // No platform found in key
     }
 
-    // Exact userId match (prevents "alice" from matching "malice")
-    const userIdMatches = keyUserId === normalizedUserIdLower
+    // Now extract userId from remaining key (everything after first underscore)
+    const firstUnderscoreIndex = remainingKey.indexOf('_')
+    if (firstUnderscoreIndex === -1) {
+      continue // No endpoint separator found
+    }
+
+    const keyUserId = remainingKey.substring(firstUnderscoreIndex + 1)
+
+    // Match userId (case-insensitive for both platforms)
+    const userIdMatches = keyUserId.toLowerCase() === normalizedUserId
 
     if (!userIdMatches) {
       continue
     }
 
     // Platform match (handle both dotted and non-dotted variants)
-    const keyPlatformNoDots = keyPlatform.replace(/\./g, '')
+    const keyPlatformLower = keyPlatform.toLowerCase().replace(/\./g, '')
     const platformMatches =
-      keyPlatform === normalizedPlatform ||
-      keyPlatformNoDots === platformNoDots ||
-      keyPlatform === platformNoDots ||
-      keyPlatformNoDots === normalizedPlatform
+      keyPlatform.toLowerCase() === normalizedPlatform ||
+      keyPlatformLower === platformNoDots ||
+      keyPlatform.toLowerCase() === platformNoDots ||
+      keyPlatformLower === normalizedPlatform
 
     if (platformMatches) {
       keysToDelete.push(key)
