@@ -498,7 +498,7 @@ def delete_import_progress(key: str) -> None:
 
 def is_import_cancelled(key: str) -> bool:
     """Check if import is cancelled."""
-    return is_import_cancelled(key)
+    return large_import_cancel_flags.get(key, False)
 
 def set_import_cancelled(key: str, cancelled: bool = True) -> None:
     """Set import cancelled flag."""
@@ -6142,7 +6142,7 @@ async def import_more_games(request: Dict[str, Any], _auth: Optional[bool] = get
         "progress_percentage": 0,
         "current_phase": "starting",
         "message": f"Starting import of up to {limit} games..."
-    }
+    })
     set_import_cancelled(key, False)
 
     # Start background task with error callback
@@ -6206,7 +6206,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     "progress_percentage": 0,
                     "current_phase": "error",
                     "message": error_msg
-                }
+                })
                 print(f"[large_import] ERROR: {error_msg}")
                 return
 
