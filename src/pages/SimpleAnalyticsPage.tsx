@@ -93,6 +93,9 @@ export default function SimpleAnalyticsPage() {
   const [importing, setImporting] = useState(false)
   const [analyzedGameIds, setAnalyzedGameIds] = useState<Set<string>>(new Set())
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const statusTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const forceRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [hasGames, setHasGames] = useState(false)
   const [gameCount, setGameCount] = useState(0)
   const [largeImportProgress, setLargeImportProgress] = useState<LargeImportProgress | null>(null)
@@ -197,6 +200,23 @@ export default function SimpleAnalyticsPage() {
 
     checkGamesExist()
   }, [userId, platform, refreshKey])
+
+  // Cleanup effect for timeouts and intervals
+  useEffect(() => {
+    return () => {
+      // Clear all timeouts
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
+      if (forceRefreshTimeoutRef.current) clearTimeout(forceRefreshTimeoutRef.current)
+
+      // Clear intervals
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+      if (largeImportIntervalRef.current) clearInterval(largeImportIntervalRef.current)
+      if (importStuckTimeoutRef.current) clearTimeout(importStuckTimeoutRef.current)
+      if (largeImportDismissTimeoutRef.current) clearTimeout(largeImportDismissTimeoutRef.current)
+      if (autoSyncTimeoutRef.current) clearTimeout(autoSyncTimeoutRef.current)
+    }
+  }, [])
 
   const checkApiHealth = async () => {
     console.log('🔍 Checking API health...')
@@ -532,17 +552,23 @@ export default function SimpleAnalyticsPage() {
             progressIntervalRef.current = null
           }
           setAnalyzing(false)
-          setTimeout(() => setProgressStatus(null), 2500)
+
+          // Clear any existing timeouts before setting new ones
+          if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+          if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
+          if (forceRefreshTimeoutRef.current) clearTimeout(forceRefreshTimeoutRef.current)
+
+          statusTimeoutRef.current = setTimeout(() => setProgressStatus(null), 2500)
           // Clear cache to force fresh data load after analysis
           clearUserCache(userId, platform)
           // Set force refresh flag to bypass cache on next load
           setForceDataRefresh(true)
           // Add small delay to ensure database has finished writing analysis results
-          setTimeout(() => {
+          refreshTimeoutRef.current = setTimeout(() => {
             console.log('[SimpleAnalytics] Refreshing data after analysis completion with force refresh')
             handleRefresh()
             // Reset force refresh flag after a brief moment
-            setTimeout(() => setForceDataRefresh(false), 2000)
+            forceRefreshTimeoutRef.current = setTimeout(() => setForceDataRefresh(false), 2000)
           }, 1500)
         } else if (isNoAnalysisRunning) {
           console.log('[SimpleAnalytics] No analysis running, stopping progress polling')
@@ -572,9 +598,14 @@ export default function SimpleAnalyticsPage() {
             }
             setAnalyzing(false)
             setProgressStatus('Analysis complete! Refreshing your insights...')
-            setTimeout(() => setProgressStatus(null), 2500)
+
+            // Clear any existing timeouts before setting new ones
+            if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
+
+            statusTimeoutRef.current = setTimeout(() => setProgressStatus(null), 2500)
             // Add small delay to ensure database has finished writing analysis results
-            setTimeout(() => {
+            refreshTimeoutRef.current = setTimeout(() => {
               console.log('[SimpleAnalytics] Refreshing data after fallback detection')
               handleRefresh()
             }, 1500)

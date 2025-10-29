@@ -357,9 +357,11 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                 </div>
               ) : showImportPrompt ? (
                 <div className="space-y-4">
-                  <p className="text-lg font-medium text-slate-200">Please import games</p>
-                  <p className="mb-4 text-sm text-slate-400">
+                  <p className="text-lg font-medium text-slate-200 mb-2">
                     Player "{searchQuery}" is not in our database yet.
+                  </p>
+                  <p className="text-sm text-slate-400 mb-4">
+                    Please import games
                   </p>
                   <div className="flex flex-col gap-3 sm:flex-row sm:justify-center sm:gap-6">
                     <button

@@ -2218,8 +2218,15 @@ async def clear_user_cache(
     _: Optional[bool] = get_optional_auth()
 ):
     """Clear all cached data for a specific user and platform."""
+    # Validate and canonicalize user ID
     try:
         canonical_user_id = _canonical_user_id(user_id, platform)
+    except ValueError as e:
+        if DEBUG:
+            print(f"[ERROR] Invalid user_id or platform: {e}")
+        return JSONResponse(status_code=400, content={"success": False, "message": str(e)})
+
+    try:
         if DEBUG:
             print(f"[INFO] Clearing cache for user_id={canonical_user_id}, platform={platform}")
 
