@@ -41,7 +41,7 @@ class StockfishEnginePool:
     def __init__(
         self,
         stockfish_path: str,
-        max_size: int = 3,
+        max_size: int = 4,  # Increased from 3 to 4 for Railway Pro
         ttl: float = 300.0,  # 5 minutes
         config: Optional[dict] = None
     ):
