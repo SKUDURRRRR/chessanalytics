@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""
+Stockfish Engine Pool with TTL Management
+Manages a pool of Stockfish engines with automatic cleanup of idle engines.
+"""
+
+import asyncio
+import time
+import chess.engine
+from typing import Optional
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+
+
+@dataclass
+class EngineInfo:
+    """Information about a pooled engine."""
+    engine: chess.engine.SimpleEngine
+    last_used: float
+    in_use: bool = False
+
+
+class StockfishEnginePool:
+    """
+    Thread-safe pool of Stockfish engines with TTL-based cleanup.
+
+    Features:
+    - Pool size limit (2-3 engines)
+    - TTL-based eviction (5 minutes idle)
+    - Async context manager for safe acquisition
+    - Automatic cleanup of unused engines
+    - Memory efficient
+
+    Usage:
+        pool = StockfishEnginePool(stockfish_path, max_size=3, ttl=300)
+
+        async with pool.acquire() as engine:
+            result = await engine.analyze(board, limit)
+    """
+
+    def __init__(
+        self,
+        stockfish_path: str,
+        max_size: int = 3,
+        ttl: float = 300.0,  # 5 minutes
+        config: Optional[dict] = None
+    ):
+        """
+        Initialize engine pool.
+
+        Args:
+            stockfish_path: Path to Stockfish binary
+            max_size: Maximum number of engines in pool
+            ttl: Time-to-live for idle engines (seconds)
+            config: Engine configuration dict
+        """
+        self.stockfish_path = stockfish_path
+        self.max_size = max_size
+        self.ttl = ttl
+        self.config = config or {
+            'Skill Level': 20,
+            'UCI_LimitStrength': False,
+            'Threads': 1,
+            'Hash': 96
+        }
+
+        self._pool: list[EngineInfo] = []
+        self._lock = asyncio.Lock()
+        self._total_created = 0
+        self._total_destroyed = 0
+        self._cleanup_task: Optional[asyncio.Task] = None
+
+    async def _create_engine(self) -> chess.engine.SimpleEngine:
+        """Create a new Stockfish engine instance."""
+        try:
+            engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
+
+            # Configure engine
+            try:
+                engine.configure(self.config)
+            except Exception as e:
+                print(f"[ENGINE_POOL] Warning: Could not configure engine: {e}")
+
+            self._total_created += 1
+            print(f"[ENGINE_POOL] Created new engine (total created: {self._total_created})")
+            return engine
+
+        except Exception as e:
+            print(f"[ENGINE_POOL] Error creating engine: {e}")
+            raise
+
+    async def _destroy_engine(self, engine_info: EngineInfo) -> None:
+        """Safely destroy an engine instance."""
+        try:
+            if engine_info.engine:
+                engine_info.engine.quit()
+                self._total_destroyed += 1
+                print(f"[ENGINE_POOL] Destroyed idle engine (total destroyed: {self._total_destroyed})")
+        except Exception as e:
+            print(f"[ENGINE_POOL] Error destroying engine: {e}")
+
+    @asynccontextmanager
+    async def acquire(self):
+        """
+        Acquire an engine from the pool.
+
+        Usage:
+            async with pool.acquire() as engine:
+                result = await engine.analyze(board, limit)
+
+        Yields:
+            chess.engine.SimpleEngine: Engine instance
+        """
+        engine_info = None
+
+        async with self._lock:
+            # Try to find an available engine
+            for info in self._pool:
+                if not info.in_use:
+                    info.in_use = True
+                    info.last_used = time.time()
+                    engine_info = info
+                    break
+
+            # Create new engine if none available and under limit
+            if engine_info is None and len(self._pool) < self.max_size:
+                engine = await self._create_engine()
+                engine_info = EngineInfo(
+                    engine=engine,
+                    last_used=time.time(),
+                    in_use=True
+                )
+                self._pool.append(engine_info)
+
+            # Wait for available engine if at capacity
+            if engine_info is None:
+                print(f"[ENGINE_POOL] Pool at capacity ({self.max_size}), waiting for engine...")
+
+        # Wait loop if no engine available
+        while engine_info is None:
+            await asyncio.sleep(0.1)
+            async with self._lock:
+                for info in self._pool:
+                    if not info.in_use:
+                        info.in_use = True
+                        info.last_used = time.time()
+                        engine_info = info
+                        break
+
+        try:
+            yield engine_info.engine
+        finally:
+            # Release engine back to pool
+            async with self._lock:
+                engine_info.in_use = False
+                engine_info.last_used = time.time()
+
+    async def cleanup_idle_engines(self) -> int:
+        """
+        Remove engines that have been idle longer than TTL.
+
+        Returns:
+            Number of engines destroyed
+        """
+        destroyed_count = 0
+        now = time.time()
+
+        async with self._lock:
+            # Find idle engines past TTL
+            engines_to_remove = []
+            for info in self._pool:
+                if not info.in_use and (now - info.last_used) > self.ttl:
+                    engines_to_remove.append(info)
+
+            # Destroy and remove them
+            for info in engines_to_remove:
+                await self._destroy_engine(info)
+                self._pool.remove(info)
+                destroyed_count += 1
+
+        if destroyed_count > 0:
+            print(f"[ENGINE_POOL] Cleaned up {destroyed_count} idle engines")
+
+        return destroyed_count
+
+    async def start_cleanup_task(self) -> None:
+        """Start background task for periodic cleanup."""
+        if self._cleanup_task is not None:
+            return
+
+        async def cleanup_loop():
+            print(f"[ENGINE_POOL] Starting cleanup task (interval: 60s, TTL: {self.ttl}s)")
+            while True:
+                try:
+                    await asyncio.sleep(60)  # Check every 60 seconds
+                    await self.cleanup_idle_engines()
+                except asyncio.CancelledError:
+                    print("[ENGINE_POOL] Cleanup task cancelled")
+                    break
+                except Exception as e:
+                    print(f"[ENGINE_POOL] Error in cleanup task: {e}")
+
+        self._cleanup_task = asyncio.create_task(cleanup_loop())
+
+    async def stop_cleanup_task(self) -> None:
+        """Stop background cleanup task."""
+        if self._cleanup_task is not None:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self._cleanup_task = None
+
+    async def close_all(self) -> None:
+        """Close all engines in the pool."""
+        async with self._lock:
+            for info in self._pool:
+                await self._destroy_engine(info)
+            self._pool.clear()
+
+        print(f"[ENGINE_POOL] Closed all engines (created: {self._total_created}, destroyed: {self._total_destroyed})")
+
+    def stats(self) -> dict:
+        """
+        Get pool statistics.
+
+        Returns:
+            Dictionary with pool stats
+        """
+        return {
+            "pool_size": len(self._pool),
+            "max_size": self.max_size,
+            "in_use": sum(1 for info in self._pool if info.in_use),
+            "available": sum(1 for info in self._pool if not info.in_use),
+            "total_created": self._total_created,
+            "total_destroyed": self._total_destroyed,
+            "ttl": self.ttl
+        }
+
+    def __repr__(self) -> str:
+        stats = self.stats()
+        return (
+            f"StockfishEnginePool(size={stats['pool_size']}/{stats['max_size']}, "
+            f"in_use={stats['in_use']}, available={stats['available']})"
+        )
+
+
+# Global engine pool instance
+_engine_pool: Optional[StockfishEnginePool] = None
+
+
+def get_engine_pool(
+    stockfish_path: str,
+    max_size: int = 3,
+    ttl: float = 300.0,
+    config: Optional[dict] = None
+) -> StockfishEnginePool:
+    """
+    Get or create global engine pool.
+
+    Args:
+        stockfish_path: Path to Stockfish binary
+        max_size: Maximum pool size
+        ttl: Engine idle TTL
+        config: Engine configuration
+
+    Returns:
+        StockfishEnginePool instance
+    """
+    global _engine_pool
+
+    if _engine_pool is None:
+        _engine_pool = StockfishEnginePool(
+            stockfish_path=stockfish_path,
+            max_size=max_size,
+            ttl=ttl,
+            config=config
+        )
+        print(f"[ENGINE_POOL] Initialized global pool (max_size={max_size}, ttl={ttl}s)")
+
+    return _engine_pool
+
+
+async def close_global_engine_pool() -> None:
+    """Close the global engine pool."""
+    global _engine_pool
+
+    if _engine_pool is not None:
+        await _engine_pool.stop_cleanup_task()
+        await _engine_pool.close_all()
+        _engine_pool = None
+        print("[ENGINE_POOL] Closed global pool")

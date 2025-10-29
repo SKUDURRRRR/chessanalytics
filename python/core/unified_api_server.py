@@ -26,6 +26,11 @@ from jose import jwt as jose_jwt
 # Import our unified analysis engine
 from .analysis_engine import ChessAnalysisEngine, AnalysisConfig, AnalysisType, GameAnalysis
 
+# Import memory optimization modules
+from .cache_manager import LRUCache, TTLDict, register_cache, cleanup_all_caches, get_all_cache_stats
+from .engine_pool import StockfishEnginePool, get_engine_pool, close_global_engine_pool
+from .memory_monitor import MemoryMonitor, get_memory_monitor, stop_memory_monitor
+
 # Import reliable persistence system
 from .reliable_analysis_persistence import ReliableAnalysisPersistence, PersistenceResult
 
@@ -279,21 +284,136 @@ app = FastAPI(
     description="Single, comprehensive chess analysis API with all functionality consolidated"
 )
 
-# @app.on_event("startup")
-# async def startup_event():
-#     """Initialize services on startup."""
-#     print("Starting Chess Analytics API Server...")
-#
-#     # Initialize the analysis queue
-#     from .analysis_queue import get_analysis_queue
-#     queue = get_analysis_queue()
-#
-#     # Start the queue processor if it's not already running
-#     if queue._queue_processor_task is None or queue._queue_processor_task.done():
-#         queue._queue_processor_task = asyncio.create_task(queue._process_queue())
-#         print("Analysis queue processor started")
-#
-#     print("Server startup complete!")
+# Global instances for memory optimization
+_engine_pool_instance = None
+_memory_monitor_instance = None
+_cache_cleanup_task = None
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup with memory optimization."""
+    global _engine_pool_instance, _memory_monitor_instance, _cache_cleanup_task
+
+    print("=" * 80)
+    print("🚀 Starting Chess Analytics API Server with Memory Optimizations")
+    print("=" * 80)
+
+    # Initialize Stockfish engine pool
+    stockfish_path = config.stockfish.path
+    if stockfish_path:
+        print(f"[STARTUP] Initializing Stockfish engine pool...")
+        _engine_pool_instance = get_engine_pool(
+            stockfish_path=stockfish_path,
+            max_size=3,  # 3 engines max
+            ttl=300.0,   # 5-minute TTL
+            config={
+                'Skill Level': 20,
+                'UCI_LimitStrength': False,
+                'Threads': 1,
+                'Hash': 96
+            }
+        )
+        await _engine_pool_instance.start_cleanup_task()
+        print(f"[STARTUP] ✅ Engine pool initialized: {_engine_pool_instance}")
+    else:
+        print("[STARTUP] ⚠️  Stockfish path not configured - engine pool disabled")
+
+    # Initialize memory monitor
+    print("[STARTUP] Initializing memory monitor...")
+    _memory_monitor_instance = get_memory_monitor(
+        interval=60.0,         # Check every 60 seconds
+        warning_threshold=0.70, # Warn at 70%
+        critical_threshold=0.85 # Critical at 85%
+    )
+    await _memory_monitor_instance.start()
+    print(f"[STARTUP] ✅ Memory monitor started")
+
+    # Start cache cleanup background task
+    async def cache_cleanup_loop():
+        print("[STARTUP] Starting cache cleanup task (interval: 5 minutes)")
+        while True:
+            try:
+                await asyncio.sleep(300)  # Every 5 minutes
+
+                # Cleanup expired entries in all caches
+                results = cleanup_all_caches()
+                total_cleaned = sum(results.values())
+                if total_cleaned > 0:
+                    print(f"[CACHE_CLEANUP] Cleaned {total_cleaned} expired entries: {results}")
+
+            except asyncio.CancelledError:
+                print("[CACHE_CLEANUP] Cleanup task cancelled")
+                break
+            except Exception as e:
+                print(f"[CACHE_CLEANUP] Error in cleanup: {e}")
+
+    _cache_cleanup_task = asyncio.create_task(cache_cleanup_loop())
+
+    # Initialize the analysis queue (if using queue system)
+    try:
+        from .analysis_queue import get_analysis_queue
+        queue = get_analysis_queue()
+        if queue._queue_processor_task is None or queue._queue_processor_task.done():
+            queue._queue_processor_task = asyncio.create_task(queue._process_queue())
+            print("[STARTUP] ✅ Analysis queue processor started")
+    except ImportError:
+        print("[STARTUP] ℹ️  Analysis queue not available")
+
+    print("=" * 80)
+    print("✅ Server startup complete!")
+    print("=" * 80)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup resources on shutdown."""
+    global _engine_pool_instance, _memory_monitor_instance, _cache_cleanup_task
+
+    print("\n" + "=" * 80)
+    print("🛑 Shutting down Chess Analytics API Server")
+    print("=" * 80)
+
+    # Stop cache cleanup task
+    if _cache_cleanup_task:
+        print("[SHUTDOWN] Stopping cache cleanup task...")
+        _cache_cleanup_task.cancel()
+        try:
+            await _cache_cleanup_task
+        except asyncio.CancelledError:
+            pass
+        print("[SHUTDOWN] ✅ Cache cleanup task stopped")
+
+    # Stop memory monitor
+    if _memory_monitor_instance:
+        print("[SHUTDOWN] Stopping memory monitor...")
+        await stop_memory_monitor()
+        print("[SHUTDOWN] ✅ Memory monitor stopped")
+
+    # Close engine pool
+    if _engine_pool_instance:
+        print("[SHUTDOWN] Closing engine pool...")
+        await close_global_engine_pool()
+        print("[SHUTDOWN] ✅ Engine pool closed")
+
+    # Close HTTP client
+    global _shared_http_client
+    if _shared_http_client:
+        print("[SHUTDOWN] Closing HTTP client...")
+        await _shared_http_client.close()
+        print("[SHUTDOWN] ✅ HTTP client closed")
+
+    # Clear all caches
+    print("[SHUTDOWN] Clearing all caches...")
+    cache_results = {}
+    cache_results['user_rate_limits'] = user_rate_limits.clear()
+    cache_results['import_progress'] = large_import_progress.clear()
+    cache_results['import_cancel_flags'] = large_import_cancel_flags.clear()
+    total_cleared = sum(cache_results.values())
+    print(f"[SHUTDOWN] ✅ Cleared {total_cleared} cache entries: {cache_results}")
+
+    print("=" * 80)
+    print("✅ Shutdown complete")
+    print("=" * 80)
 
 # Add global exception handler
 app.add_exception_handler(Exception, global_exception_handler)
@@ -332,24 +452,61 @@ ANALYSIS_RATE_LIMIT = int(os.getenv("ANALYSIS_RATE_LIMIT", "5"))  # requests per
 IMPORT_RATE_LIMIT = int(os.getenv("IMPORT_RATE_LIMIT", "3"))      # requests per minute
 
 # Track timestamps of requests by user for rate limiting
-user_rate_limits: Dict[str, List[float]] = {}
+# Use TTLDict with 5-minute TTL for automatic cleanup
+user_rate_limits = TTLDict(ttl=300, name="user_rate_limits")
+register_cache(user_rate_limits)
 
 # Helper for rate limiting
 def _enforce_rate_limit(user_key: str, limit: int, window_seconds: int = 60) -> None:
     now = time.time()
-    requests = user_rate_limits.setdefault(user_key, [])
+    requests = user_rate_limits.get(user_key, [])
 
     # Remove timestamps outside the window
-    user_rate_limits[user_key] = [ts for ts in requests if now - ts < window_seconds]
+    requests = [ts for ts in requests if now - ts < window_seconds]
 
-    if len(user_rate_limits[user_key]) >= limit:
+    if len(requests) >= limit:
         raise RateLimitError("Rate limit exceeded. Please wait before retrying.")
 
-    user_rate_limits[user_key].append(now)
+    requests.append(now)
+    user_rate_limits.set(user_key, requests)
 
 # Track import progress for large imports
-large_import_progress = {}
-large_import_cancel_flags = {}
+# Use LRU cache with 500 max entries, 1-hour TTL
+large_import_progress = LRUCache(maxsize=500, ttl=3600, name="import_progress")
+large_import_cancel_flags = LRUCache(maxsize=500, ttl=3600, name="import_cancel_flags")
+register_cache(large_import_progress)
+register_cache(large_import_cancel_flags)
+
+# Helper functions for progress tracking with LRU cache
+def get_import_progress(key: str) -> dict:
+    """Get import progress for a key, returning empty dict if not found."""
+    return large_import_progress.get(key, {})
+
+def update_import_progress(key: str, updates: dict) -> None:
+    """Update import progress by merging updates into existing progress."""
+    current = get_import_progress(key)
+    current.update(updates)
+    large_import_progress.set(key, current)
+
+def set_import_progress(key: str, progress: dict) -> None:
+    """Set import progress directly."""
+    large_import_progress.set(key, progress)
+
+def delete_import_progress(key: str) -> None:
+    """Delete import progress."""
+    large_import_progress.delete(key)
+
+def is_import_cancelled(key: str) -> bool:
+    """Check if import is cancelled."""
+    return is_import_cancelled(key)
+
+def set_import_cancelled(key: str, cancelled: bool = True) -> None:
+    """Set import cancelled flag."""
+    large_import_cancel_flags.set(key, cancelled)
+
+def clear_import_cancelled(key: str) -> None:
+    """Clear import cancelled flag."""
+    large_import_cancel_flags.delete(key)
 
 # Concurrency control for imports - limit concurrent imports to prevent resource exhaustion
 # With optimizations, Railway Hobby tier can handle 2 concurrent imports safely
@@ -667,6 +824,42 @@ async def health_check():
         "database_connected": True,
         "timestamp": datetime.now().isoformat()
     }
+
+
+@app.get("/api/v1/metrics/memory")
+async def get_memory_metrics():
+    """
+    Get memory usage metrics and cache statistics.
+    Useful for monitoring memory optimization effectiveness.
+    """
+    try:
+        # Get memory monitor stats
+        memory_stats = {}
+        if _memory_monitor_instance:
+            memory_stats = _memory_monitor_instance.get_stats()
+
+        # Get cache statistics
+        cache_stats = get_all_cache_stats()
+
+        # Get engine pool statistics
+        engine_stats = {}
+        if _engine_pool_instance:
+            engine_stats = _engine_pool_instance.stats()
+
+        return {
+            "success": True,
+            "memory": memory_stats,
+            "caches": cache_stats,
+            "engine_pool": engine_stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 
 @app.post("/api/v1/analyze-position-quick", response_model=QuickPositionAnalysisResponse)
 async def analyze_position_quick(request: QuickPositionAnalysisRequest):
@@ -5937,11 +6130,12 @@ async def import_more_games(request: Dict[str, Any], _auth: Optional[bool] = get
     key = f"{canonical_user_id}_{platform.lower()}"
 
     # Check if import already running
-    if key in large_import_progress and large_import_progress[key].get('status') == 'importing':
+    existing_progress = get_import_progress(key)
+    if existing_progress and existing_progress.get('status') == 'importing':
         raise HTTPException(status_code=409, detail="Import already in progress")
 
     # Initialize progress tracking
-    large_import_progress[key] = {
+    set_import_progress(key, {
         "status": "importing",
         "imported_games": 0,
         "total_to_import": limit,
@@ -5949,7 +6143,7 @@ async def import_more_games(request: Dict[str, Any], _auth: Optional[bool] = get
         "current_phase": "starting",
         "message": f"Starting import of up to {limit} games..."
     }
-    large_import_cancel_flags[key] = False
+    set_import_cancelled(key, False)
 
     # Start background task with error callback
     task = asyncio.create_task(_perform_large_import(user_id, platform, limit, from_date, to_date))
@@ -5964,8 +6158,8 @@ def _log_task_error(task: asyncio.Task, key: str) -> None:
         task.result()
     except Exception as e:
         print(f"[large_import] Background task error for {key}: {e}")
-        if key in large_import_progress:
-            large_import_progress[key].update({
+        if get_import_progress(key):
+            update_import_progress(key, {
                 "status": "error",
                 "message": f"Import failed: {str(e)}"
             })
@@ -5987,7 +6181,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
     if import_semaphore.locked():
         # Semaphore is at capacity - inform user they're queued
         print(f"[large_import] Import semaphore at capacity, waiting for slot...")
-        large_import_progress[key].update({
+        update_import_progress(key, {
             "status": "queued",
             "message": f"Import queued - {import_semaphore._value} of {MAX_CONCURRENT_IMPORTS} import slots available"
         })
@@ -5996,7 +6190,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
     async with import_semaphore:
         semaphore_acquired = True
         print(f"[large_import] Semaphore acquired - starting import (available slots: {import_semaphore._value}/{MAX_CONCURRENT_IMPORTS})")
-        large_import_progress[key].update({
+        update_import_progress(key, {
             "status": "importing",
             "message": "Import slot acquired - starting..."
         })
@@ -6005,7 +6199,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
             # Check if database is configured
             if not (supabase_service or supabase):
                 error_msg = "Database not configured"
-                large_import_progress[key] = {
+                set_import_progress(key, {
                     "status": "error",
                     "imported_games": 0,
                     "total_to_import": 0,
@@ -6051,7 +6245,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
             except Exception as e:
                 error_msg = f"Failed to query existing games: {str(e)}"
                 print(f"[large_import] ERROR: {error_msg}")
-                large_import_progress[key].update({
+                update_import_progress(key, {
                     "status": "error",
                     "message": error_msg
                 })
@@ -6133,8 +6327,8 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
 
             for batch_start in range(0, limit, batch_size):
                 # Check cancel flag
-                if large_import_cancel_flags.get(key, False):
-                    large_import_progress[key].update({
+                if is_import_cancelled(key):
+                    update_import_progress(key, {
                         "status": "cancelled",
                         "message": f"Import cancelled. {total_imported} games imported."
                     })
@@ -6198,7 +6392,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                 except Exception as e:
                     error_msg = f"Failed to fetch games (batch {batch_num}): {str(e)}"
                     print(f"[large_import] ERROR: {error_msg}")
-                    large_import_progress[key].update({
+                    update_import_progress(key, {
                         "status": "error",
                         "message": error_msg,
                         "imported_games": total_imported
@@ -6338,7 +6532,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                         # Hard limit: Stop at 5000 games per import session
                         if total_imported >= 5000:
                             print(f"[large_import] Reached maximum import limit of 5000 games. Stopping.")
-                            large_import_progress[key].update({
+                            update_import_progress(key, {
                                 "status": "completed",
                                 "imported_games": total_imported,
                                 "progress_percentage": 100,
@@ -6348,7 +6542,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     except Exception as e:
                         error_msg = f"Failed to import batch: {str(e)}"
                         print(f"[large_import] ERROR: {error_msg}")
-                        large_import_progress[key].update({
+                        update_import_progress(key, {
                             "status": "error",
                             "message": error_msg,
                             "imported_games": total_imported
@@ -6360,7 +6554,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                 trigger_refresh = total_imported % 500 == 0 and total_imported > 0
                 duplicates_skipped = total_games_checked - total_imported
 
-                large_import_progress[key].update({
+                update_import_progress(key, {
                     "imported_games": total_imported,
                     "progress_percentage": progress_pct,
                     "current_phase": "importing",
@@ -6401,7 +6595,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
             else:
                 message = f"Import complete! {total_imported} new games imported (checked {total_games_checked} total)."
 
-            large_import_progress[key].update({
+            update_import_progress(key, {
                 "status": "completed",
                 "progress_percentage": 100,
                 "message": message,
@@ -6411,7 +6605,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
 
         except Exception as e:
             print(f"[large_import] Error during import: {e}")
-            large_import_progress[key].update({
+            update_import_progress(key, {
                 "status": "error",
                 "message": f"Import failed: {str(e)}"
             })
@@ -6482,7 +6676,7 @@ async def cancel_import(request: Dict[str, Any], _auth: Optional[bool] = get_opt
     canonical_user_id = _canonical_user_id(user_id, platform)
     key = f"{canonical_user_id}_{platform.lower()}"
 
-    large_import_cancel_flags[key] = True
+    set_import_cancelled(key, True)
 
     return {"success": True, "message": "Cancel requested"}
 

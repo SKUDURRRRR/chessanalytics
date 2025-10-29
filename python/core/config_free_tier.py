@@ -21,11 +21,11 @@ class TierConfig:
     max_concurrent_analyses: int
     enable_deep_mode: bool
     max_batch_size: int
-    
+
     # API settings
     timeout_seconds: int
     rate_limit_per_hour: int
-    
+
     # Feature flags
     enable_caching: bool
     enable_progress_updates: bool
@@ -42,11 +42,11 @@ FREE_TIER_CONFIG = TierConfig(
     max_concurrent_analyses=1,  # Prevent memory exhaustion
     enable_deep_mode=False,     # Disable deep analysis on free tier
     max_batch_size=3,           # Limit batch analyses
-    
+
     # API settings
     timeout_seconds=180,        # 3 minutes max per analysis
     rate_limit_per_hour=20,     # Prevent abuse
-    
+
     # Feature flags
     enable_caching=True,        # Cache results to reduce load
     enable_progress_updates=True,  # Show progress for long analyses
@@ -64,11 +64,11 @@ STARTER_TIER_CONFIG = TierConfig(
     max_concurrent_analyses=2,
     enable_deep_mode=True,
     max_batch_size=5,
-    
+
     # API settings
     timeout_seconds=240,        # 4 minutes
     rate_limit_per_hour=50,
-    
+
     # Feature flags
     enable_caching=True,
     enable_progress_updates=True,
@@ -87,11 +87,34 @@ RAILWAY_HOBBY_CONFIG = TierConfig(
     max_concurrent_analyses=4,  # Conservative for vCPU (not 6)
     enable_deep_mode=True,      # Enable deep analysis
     max_batch_size=10,          # Larger batches
-    
+
     # API settings
     timeout_seconds=300,        # 5 minutes
     rate_limit_per_hour=200,    # Higher rate limit
-    
+
+    # Feature flags
+    enable_caching=True,
+    enable_progress_updates=True,
+)
+
+# Railway Pro Tier Configuration (Railway Pro: Unlimited hours, scalable resources)
+# Optimized configuration with memory-efficient engine pooling and caching
+# After memory optimizations: baseline ~400 MB (down from 1.4 GB)
+RAILWAY_PRO_CONFIG = TierConfig(
+    # Analysis settings - optimized for Railway Pro with memory efficiency
+    analysis_depth=14,          # High accuracy
+    skill_level=20,             # Maximum strength
+    time_limit=0.8,             # Fast analysis
+    threads=1,                  # Deterministic results
+    hash_size=96,               # Balanced for pooled engines
+    max_concurrent_analyses=4,  # Conservative start (can increase to 6-8 after monitoring)
+    enable_deep_mode=True,      # Full deep analysis support
+    max_batch_size=10,          # Can increase to 15-20 after monitoring
+
+    # API settings
+    timeout_seconds=300,        # 5 minutes
+    rate_limit_per_hour=500,    # Higher rate limit for Pro tier
+
     # Feature flags
     enable_caching=True,
     enable_progress_updates=True,
@@ -108,11 +131,11 @@ PRODUCTION_TIER_CONFIG = TierConfig(
     max_concurrent_analyses=4,
     enable_deep_mode=True,
     max_batch_size=10,
-    
+
     # API settings
     timeout_seconds=300,        # 5 minutes
     rate_limit_per_hour=100,
-    
+
     # Feature flags
     enable_caching=True,
     enable_progress_updates=True,
@@ -122,28 +145,32 @@ PRODUCTION_TIER_CONFIG = TierConfig(
 def get_deployment_tier() -> str:
     """
     Determine the deployment tier from environment variables.
-    
+
     Returns:
-        str: 'free', 'starter', 'production', or 'railway_hobby'
+        str: 'free', 'starter', 'production', 'railway_hobby', or 'railway_pro'
     """
     # Check explicit tier setting
     tier = os.getenv("DEPLOYMENT_TIER", "").lower()
-    if tier in ["free", "starter", "production", "railway_hobby"]:
+    if tier in ["free", "starter", "production", "railway_hobby", "railway_pro"]:
         return tier
-    
-    # Check for Railway Hobby tier
-    if os.getenv("RAILWAY_ENVIRONMENT") and os.getenv("RAILWAY_TIER", "").lower() == "hobby":
-        return "railway_hobby"
-    
+
+    # Check for Railway Pro tier
+    if os.getenv("RAILWAY_ENVIRONMENT"):
+        railway_tier = os.getenv("RAILWAY_TIER", "").lower()
+        if railway_tier == "pro":
+            return "railway_pro"
+        elif railway_tier == "hobby":
+            return "railway_hobby"
+
     # Auto-detect based on Render environment
     if os.getenv("RENDER_FREE_TIER", "false").lower() == "true":
         return "free"
-    
+
     # Check if running on Render at all
     if os.getenv("RENDER"):
         # Assume starter if not explicitly free
         return "starter"
-    
+
     # Default to production for local/other deployments
     return "production"
 
@@ -151,27 +178,28 @@ def get_deployment_tier() -> str:
 def get_config() -> TierConfig:
     """
     Get the appropriate configuration for the current deployment tier.
-    
+
     Returns:
         TierConfig: Configuration object for the current tier
     """
     tier = get_deployment_tier()
-    
+
     config_map = {
         "free": FREE_TIER_CONFIG,
         "starter": STARTER_TIER_CONFIG,
         "production": PRODUCTION_TIER_CONFIG,
         "railway_hobby": RAILWAY_HOBBY_CONFIG,
+        "railway_pro": RAILWAY_PRO_CONFIG,
     }
-    
+
     selected_config = config_map.get(tier, PRODUCTION_TIER_CONFIG)
-    
+
     print(f"[Config] Using {tier.upper()} tier configuration:")
     print(f"  - Analysis depth: {selected_config.analysis_depth}")
     print(f"  - Time limit: {selected_config.time_limit}s")
     print(f"  - Max concurrent: {selected_config.max_concurrent_analyses}")
     print(f"  - Deep mode: {selected_config.enable_deep_mode}")
-    
+
     return selected_config
 
 
@@ -198,87 +226,86 @@ def get_current_config() -> TierConfig:
 def get_estimated_analysis_time(num_moves: int) -> float:
     """
     Estimate analysis time for a game based on current tier.
-    
+
     Args:
         num_moves: Number of moves in the game
-        
+
     Returns:
         float: Estimated time in seconds
     """
     config = get_current_config()
     tier = get_deployment_tier()
-    
+
     # Base time per move
     time_per_move = config.time_limit
-    
+
     # CPU multiplier based on tier
     cpu_multiplier = {
         "free": 10.0,      # 0.1 CPU = 10x slower
         "starter": 2.0,    # 0.5 CPU = 2x slower
         "production": 1.0, # 1+ CPU = baseline
     }
-    
+
     multiplier = cpu_multiplier.get(tier, 1.0)
-    
+
     # Estimate total time (with some overhead)
     estimated_time = num_moves * time_per_move * multiplier * 1.2
-    
+
     return estimated_time
 
 
 def can_analyze_game(num_moves: int) -> tuple[bool, str]:
     """
     Check if a game can be analyzed within timeout limits.
-    
+
     Args:
         num_moves: Number of moves in the game
-        
+
     Returns:
         tuple: (can_analyze, reason)
     """
     config = get_current_config()
     estimated_time = get_estimated_analysis_time(num_moves)
-    
+
     if estimated_time > config.timeout_seconds:
         return False, f"Game too long ({num_moves} moves). Estimated time: {estimated_time:.0f}s exceeds timeout: {config.timeout_seconds}s"
-    
+
     return True, "OK"
 
 
 def can_analyze_batch(num_games: int) -> tuple[bool, str]:
     """
     Check if a batch can be analyzed.
-    
+
     Args:
         num_games: Number of games in batch
-        
+
     Returns:
         tuple: (can_analyze, reason)
     """
     config = get_current_config()
-    
+
     if num_games > config.max_batch_size:
         return False, f"Batch size ({num_games}) exceeds maximum ({config.max_batch_size})"
-    
+
     return True, "OK"
 
 
 if __name__ == "__main__":
     # Test configuration
     print("\n=== Configuration Test ===\n")
-    
+
     config = get_current_config()
-    
+
     print(f"\nEstimated analysis times:")
     for moves in [20, 40, 60, 80]:
         time = get_estimated_analysis_time(moves)
         can_analyze, reason = can_analyze_game(moves)
         status = "✓" if can_analyze else "✗"
         print(f"  {status} {moves} moves: {time:.1f}s - {reason}")
-    
+
     print(f"\nBatch analysis limits:")
     for batch_size in [1, 3, 5, 10]:
         can_analyze, reason = can_analyze_batch(batch_size)
         status = "✓" if can_analyze else "✗"
         print(f"  {status} {batch_size} games: {reason}")
-

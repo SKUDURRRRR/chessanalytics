@@ -19,6 +19,7 @@ import chess.pgn
 import chess.engine
 import io
 from .coaching_comment_generator import ChessCoachingGenerator, GamePhase
+from .cache_manager import LRUCache, register_cache
 
 # Try to import stockfish package, fall back to engine if not available
 try:
@@ -349,9 +350,17 @@ class ChessAnalysisEngine:
         self.stockfish_path = self._find_stockfish_path(stockfish_path)
         self._engine_pool = []
         self._opening_database = self._load_opening_database()
-        self._basic_eval_cache: Dict[str, Tuple[int, Dict[str, Any]]] = {}
-        self._basic_move_cache: Dict[str, List[Dict[str, Any]]] = {}
-        self._basic_probe_cache: Dict[str, Dict[str, Any]] = {}
+
+        # Use LRU caches with size limits (1000 entries each, 5-min TTL)
+        self._basic_eval_cache = LRUCache(maxsize=1000, ttl=300, name="eval_cache")
+        self._basic_move_cache = LRUCache(maxsize=1000, ttl=300, name="move_cache")
+        self._basic_probe_cache = LRUCache(maxsize=1000, ttl=300, name="probe_cache")
+
+        # Register caches for monitoring
+        register_cache(self._basic_eval_cache)
+        register_cache(self._basic_move_cache)
+        register_cache(self._basic_probe_cache)
+
         self.coaching_generator = ChessCoachingGenerator()
 
     def _find_stockfish_path(self, custom_path: Optional[str]) -> Optional[str]:
@@ -415,6 +424,32 @@ class ChessAnalysisEngine:
             return True
         except:
             return False
+
+    def clear_caches(self) -> dict:
+        """
+        Clear all internal caches.
+
+        Returns:
+            dict: Number of entries cleared per cache
+        """
+        return {
+            "eval_cache": self._basic_eval_cache.clear(),
+            "move_cache": self._basic_move_cache.clear(),
+            "probe_cache": self._basic_probe_cache.clear()
+        }
+
+    def get_cache_stats(self) -> dict:
+        """
+        Get statistics for all caches.
+
+        Returns:
+            dict: Cache statistics
+        """
+        return {
+            "eval_cache": self._basic_eval_cache.stats(),
+            "move_cache": self._basic_move_cache.stats(),
+            "probe_cache": self._basic_probe_cache.stats()
+        }
 
     def _load_opening_database(self) -> Dict:
         """Load opening database for heuristic analysis."""
@@ -658,10 +693,8 @@ class ChessAnalysisEngine:
         }
 
         result = (total_score, features)
-        self._basic_eval_cache[cache_key] = result
-        if len(self._basic_eval_cache) > 5000:
-            oldest_key = next(iter(self._basic_eval_cache))
-            del self._basic_eval_cache[oldest_key]
+        # Use LRU cache set method
+        self._basic_eval_cache.set(cache_key, result)
         return result
 
     def _basic_move_candidates(self, board: chess.Board):
@@ -685,10 +718,8 @@ class ChessAnalysisEngine:
             })
         reverse = color_to_move == chess.WHITE
         candidates.sort(key=lambda item: item['score'], reverse=reverse)
-        self._basic_move_cache[cache_key] = candidates
-        if len(self._basic_move_cache) > 2000:
-            oldest_key = next(iter(self._basic_move_cache))
-            del self._basic_move_cache[oldest_key]
+        # Use LRU cache set method
+        self._basic_move_cache.set(cache_key, candidates)
         return candidates
 
     async def _maybe_probe_stockfish_basic(self, board: chess.Board, move: chess.Move, color_to_move: chess.Color) -> Optional[Dict[str, Any]]:
@@ -698,22 +729,22 @@ class ChessAnalysisEngine:
 
         before_key = f"{self._basic_cache_key(board)}|sf"
         before_eval = self._basic_probe_cache.get(before_key)
-        if before_eval is None and len(self._basic_probe_cache) < BASIC_ENGINE_PROBE_LIMIT:
+        if before_eval is None and self._basic_probe_cache.size() < BASIC_ENGINE_PROBE_LIMIT:
             before_eval = await asyncio.to_thread(self._run_stockfish_probe, board.fen())
             if before_eval:
-                self._basic_probe_cache[before_key] = before_eval
-                self._trim_basic_probe_cache()
+                # Use LRU cache set method (auto-trimming handled by LRU)
+                self._basic_probe_cache.set(before_key, before_eval)
 
         board.push(move)
         try:
             after_key = f"{self._basic_cache_key(board)}|sf"
             after_fen = board.fen()
             after_eval = self._basic_probe_cache.get(after_key)
-            if after_eval is None and len(self._basic_probe_cache) < BASIC_ENGINE_PROBE_LIMIT:
+            if after_eval is None and self._basic_probe_cache.size() < BASIC_ENGINE_PROBE_LIMIT:
                 after_eval = await asyncio.to_thread(self._run_stockfish_probe, after_fen)
                 if after_eval:
-                    self._basic_probe_cache[after_key] = after_eval
-                    self._trim_basic_probe_cache()
+                    # Use LRU cache set method (auto-trimming handled by LRU)
+                    self._basic_probe_cache.set(after_key, after_eval)
         finally:
             board.pop()
 
@@ -758,12 +789,6 @@ class ChessAnalysisEngine:
                 return {'type': 'cp', 'value': perspective.score(), 'best_move': best_move, 'pv': pv_uci}
         except Exception:
             return None
-
-    def _trim_basic_probe_cache(self) -> None:
-        """Keep the probe cache within the configured limit."""
-        while len(self._basic_probe_cache) > BASIC_ENGINE_PROBE_LIMIT:
-            oldest_key = next(iter(self._basic_probe_cache))
-            del self._basic_probe_cache[oldest_key]
 
     def _static_exchange_evaluation(self, board: chess.Board, move: chess.Move) -> int:
         """Compatibility wrapper around python-chess SEE helpers."""
