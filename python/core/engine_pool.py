@@ -213,11 +213,44 @@ class StockfishEnginePool:
             self._cleanup_task = None
 
     async def close_all(self) -> None:
-        """Close all engines in the pool."""
+        """
+        Close all engines in the pool.
+
+        Waits for engines that are currently in use to be released before destroying them.
+        This prevents EngineTerminatedError and corrupted results.
+        """
+        engines: list[EngineInfo] = []
+
         async with self._lock:
-            for info in self._pool:
-                await self._destroy_engine(info)
-            self._pool.clear()
+            # Collect all engines to close
+            engines = list(self._pool)
+
+        # Wait for active engines to be released (with timeout)
+        max_wait = 30.0  # 30 seconds timeout
+        start_time = time.time()
+
+        while True:
+            async with self._lock:
+                busy = [info for info in engines if info.in_use]
+
+                if not busy:
+                    # All engines are free, destroy them
+                    for info in engines:
+                        await self._destroy_engine(info)
+                    self._pool.clear()
+                    break
+
+                # Check timeout
+                if time.time() - start_time > max_wait:
+                    print(f"[ENGINE_POOL] Warning: Timeout waiting for {len(busy)} engines to be released")
+                    # Force destroy remaining engines
+                    for info in engines:
+                        await self._destroy_engine(info)
+                    self._pool.clear()
+                    break
+
+            # Wait a bit before checking again
+            await asyncio.sleep(0.1)
 
         print(f"[ENGINE_POOL] Closed all engines (created: {self._total_created}, destroyed: {self._total_destroyed})")
 

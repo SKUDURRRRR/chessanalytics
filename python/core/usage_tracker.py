@@ -111,9 +111,10 @@ class UsageTracker:
                 # Check if we need to reset (24 hours passed)
                 record_reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
                 if datetime.now() - record_reset_at > timedelta(hours=24):
-                    # Reset the counter
+                    # Reset both counters when window expires
                     update_data = {
-                        field_name: count,
+                        'games_imported': count if action_type == 'import' else 0,
+                        'games_analyzed': count if action_type == 'analyze' else 0,
                         'reset_at': reset_at.isoformat()
                     }
                 else:

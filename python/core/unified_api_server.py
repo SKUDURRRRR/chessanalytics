@@ -22,6 +22,10 @@ from datetime import datetime, timezone
 import time
 from supabase import create_client, Client
 from jose import jwt as jose_jwt
+import logging
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Import our unified analysis engine
 from .analysis_engine import ChessAnalysisEngine, AnalysisConfig, AnalysisType, GameAnalysis
@@ -323,7 +327,7 @@ async def startup_event():
                 'Hash': 96
             }
         )
-        _engine_pool_instance.start_cleanup_task()
+        await _engine_pool_instance.start_cleanup_task()
         print(f"[STARTUP] ✅ Engine pool initialized: {_engine_pool_instance}")
     else:
         print("[STARTUP] ⚠️  Stockfish path not configured - engine pool disabled")

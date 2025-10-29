@@ -5,6 +5,7 @@ Handles Stripe integration for subscriptions and credit purchases
 
 import os
 import logging
+import asyncio
 from typing import Dict, Optional
 from decimal import Decimal
 
@@ -135,7 +136,8 @@ class StripeService:
                 return {'error': 'Must specify either tier_id or credit_amount'}
 
             # Create checkout session
-            session = stripe.checkout.Session.create(
+            session = await asyncio.to_thread(
+                stripe.checkout.Session.create,
                 customer=customer_id,
                 payment_method_types=['card'],
                 line_items=line_items,
@@ -185,7 +187,8 @@ class StripeService:
                 return user['stripe_customer_id']
 
             # Create new Stripe customer
-            customer = stripe.Customer.create(
+            customer = await asyncio.to_thread(
+                stripe.Customer.create,
                 metadata={'user_id': user_id},
                 name=user.get('username', f'User {user_id[:8]}')
             )
@@ -456,7 +459,8 @@ class StripeService:
                 return {'error': 'No active subscription'}
 
             # Cancel at period end (let them use until billing cycle ends)
-            subscription = stripe.Subscription.modify(
+            subscription = await asyncio.to_thread(
+                stripe.Subscription.modify,
                 subscription_id,
                 cancel_at_period_end=True
             )
