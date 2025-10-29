@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react'
 import { ProfileService } from '../../services/profileService'
 import { AutoImportService, ImportProgress } from '../../services/autoImportService'
 import { getRecentPlayers, addRecentPlayer, clearRecentPlayers, RecentPlayer } from '../../utils/recentPlayers'
+import { retryWithBackoff } from '../../lib/errorHandling'
 
 // Add custom pulse animation style
 const customPulseStyle = `
@@ -18,38 +19,6 @@ const customPulseStyle = `
     animation: customPulse 3s ease-in-out infinite;
   }
 `
-
-// Retry utility with exponential backoff
-const retryWithBackoff = async <T,>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3,
-  initialDelay: number = 1000
-): Promise<T> => {
-  let lastError: Error;
-
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error as Error;
-
-      // Don't retry on validation errors or 404s
-      if (lastError.message.includes('not found') ||
-          lastError.message.includes('404') ||
-          lastError.message.includes('Invalid')) {
-        throw lastError;
-      }
-
-      if (i < maxRetries - 1) {
-        const delay = initialDelay * Math.pow(2, i);
-        console.log(`Retry ${i + 1}/${maxRetries} after ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  }
-
-  throw lastError!;
-};
 
 interface PlayerSearchProps {
   onPlayerSelect: (userId: string, platform: 'lichess' | 'chess.com') => void
@@ -134,10 +103,23 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   const handlePlayerSelect = async (userId: string, platform: 'lichess' | 'chess.com', displayName?: string, rating?: number) => {
     try {
       // Use retry logic for ProfileService with exponential backoff
+      // Don't retry on validation errors or 404s
       const profile = await retryWithBackoff(
         () => ProfileService.getOrCreateProfile(userId, platform),
-        3, // 3 retries
-        1000 // 1 second initial delay
+        {
+          maxRetries: 3,
+          baseDelay: 1000,
+          context: 'PlayerSearch.handlePlayerSelect',
+          shouldRetry: (error: Error) => {
+            const msg = error.message.toLowerCase()
+            // Don't retry on validation errors or 404s
+            return !(
+              msg.includes('not found') ||
+              msg.includes('404') ||
+              msg.includes('invalid')
+            )
+          }
+        }
       );
 
       // Add to recent players
@@ -375,9 +357,11 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                 </div>
               ) : showImportPrompt ? (
                 <div className="space-y-4">
-                  <p className="text-lg font-medium text-slate-200">Please import games</p>
-                  <p className="mb-4 text-sm text-slate-400">
+                  <p className="text-lg font-medium text-slate-200 mb-2">
                     Player "{searchQuery}" is not in our database yet.
+                  </p>
+                  <p className="text-sm text-slate-400 mb-4">
+                    Please import games
                   </p>
                   <div className="flex flex-col gap-3 sm:flex-row sm:justify-center sm:gap-6">
                     <button

@@ -14,7 +14,7 @@ import {
   PersonalityScores
 } from '../types'
 import { config } from '../lib/config'
-import { withCache, generateCacheKey } from '../utils/apiCache'
+import { withCache, generateCacheKey, apiCache } from '../utils/apiCache'
 
 const UNIFIED_API_URL = config.getApi().baseUrl
 console.log('🔧 UNIFIED_API_URL configured as:', UNIFIED_API_URL)
@@ -46,13 +46,13 @@ function validatePersonalityScores(scores: any): PersonalityScores | null {
     return null
   }
 
-  const requiredTraits = ['tactical', 'positional', 'aggressive', 'patient', 'novelty', 'staleness']
+  const requiredTraits: (keyof PersonalityScores)[] = ['tactical', 'positional', 'aggressive', 'patient', 'novelty', 'staleness']
   const validatedScores: Partial<PersonalityScores> = {}
 
   for (const trait of requiredTraits) {
     const value = scores[trait]
     if (typeof value === 'number' && !isNaN(value) && value >= 0 && value <= 100) {
-      validatedScores[trait] = value
+      (validatedScores as any)[trait] = value
     } else {
       return null // Invalid data
     }
@@ -506,7 +506,8 @@ export class UnifiedAnalysisService {
    */
   static async getDeepAnalysis(
     userId: string,
-    platform: Platform
+    platform: Platform,
+    forceRefresh = false
   ): Promise<DeepAnalysisData> {
     // Input validation
     if (!validateUserId(userId)) {
@@ -524,9 +525,21 @@ export class UnifiedAnalysisService {
       return data && typeof data.total_games === 'number' && data.personality_scores !== undefined
     }
 
+    // If forceRefresh is true, skip cache and fetch directly
+    if (forceRefresh) {
+      if (import.meta.env.DEV) {
+        console.log('[DeepAnalysis] Force refresh - bypassing cache')
+      }
+      apiCache.delete(cacheKey)
+    }
+
     return withCache(cacheKey, async () => {
       try {
-        const response = await fetch(`${UNIFIED_API_URL}/api/v1/deep-analysis/${userId}/${platform}`, {
+        const url = forceRefresh
+          ? `${UNIFIED_API_URL}/api/v1/deep-analysis/${userId}/${platform}?force_refresh=true`
+          : `${UNIFIED_API_URL}/api/v1/deep-analysis/${userId}/${platform}`
+
+        const response = await fetch(url, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -573,7 +586,7 @@ export class UnifiedAnalysisService {
           secondary: 'Play a fresh set of games to refresh recent patterns.',
           leverage: 'Review your most accurate games once analysis is ready.',
         },
-        famous_players: null,
+        famous_players: undefined,
       }
     }
     }, 60 * 60 * 1000, deepAnalysisValidator) // 60 minute cache for deep analysis (was 30 min - backend is very slow, cache aggressively)
@@ -585,9 +598,37 @@ export class UnifiedAnalysisService {
    */
   static async fetchDeepAnalysis(
     userId: string,
-    platform: 'lichess' | 'chess.com'
+    platform: 'lichess' | 'chess.com',
+    forceRefresh = false
   ): Promise<DeepAnalysisData> {
-    return this.getDeepAnalysis(userId, platform)
+    return this.getDeepAnalysis(userId, platform, forceRefresh)
+  }
+
+  /**
+   * Clear all backend cache for a user
+   */
+  static async clearBackendCache(
+    userId: string,
+    platform: Platform
+  ): Promise<void> {
+    try {
+      const response = await fetch(`${UNIFIED_API_URL}/api/v1/clear-cache/${userId}/${platform}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        console.error(`Failed to clear backend cache: ${response.status}`)
+        return
+      }
+
+      const data = await response.json()
+      console.log('[Cache] Backend cache cleared:', data)
+    } catch (error) {
+      console.error('Error clearing backend cache:', error)
+    }
   }
 
   /**

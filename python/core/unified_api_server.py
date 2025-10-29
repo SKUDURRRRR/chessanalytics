@@ -6,6 +6,7 @@ Replaces multiple redundant endpoints with a clean, unified interface.
 """
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Depends
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
@@ -126,9 +127,27 @@ def _set_in_cache(cache_key: str, data: Dict[str, Any]) -> None:
     if DEBUG:
         print(f"[CACHE] Set for key: {cache_key}")
 
+def _delete_from_cache(cache_key: str) -> None:
+    """Delete a specific cache entry."""
+    if cache_key in _analytics_cache:
+        del _analytics_cache[cache_key]
+        if DEBUG:
+            print(f"[CACHE] Deleted key: {cache_key}")
+
 def _invalidate_cache(user_id: str, platform: str) -> None:
-    """Invalidate all cache entries for a specific user/platform."""
-    keys_to_delete = [k for k in _analytics_cache.keys() if f"{user_id}:{platform}" in k]
+    """Invalidate all cache entries for a specific user/platform.
+
+    Uses exact segment matching to avoid over-deleting keys for similar user IDs
+    (e.g., "alice:lichess" should not match "malice:lichess:*" patterns).
+    """
+    keys_to_delete = []
+    for key in list(_analytics_cache.keys()):
+        parts = key.split(":")
+        # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
+        # Match exact user_id and platform segments (parts[1] and parts[2])
+        if len(parts) >= 3 and parts[1] == user_id and parts[2] == platform:
+            keys_to_delete.append(key)
+
     for key in keys_to_delete:
         del _analytics_cache[key]
     if DEBUG and keys_to_delete:
@@ -525,6 +544,12 @@ class BulkGameImportResponse(BaseModel):
     new_games_count: Optional[int] = None
     had_existing_games: Optional[bool] = None
     message: Optional[str] = None
+
+class ClearCacheResponse(BaseModel):
+    """Response model for cache clearing operations."""
+    success: bool
+    message: str
+    cleared_keys: int
 
 class OpeningMistake(BaseModel):
     """Represents a specific opening mistake."""
@@ -2196,26 +2221,86 @@ async def get_match_history(
         print(f"Error fetching match history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/v1/clear-cache/{user_id}/{platform}", response_model=ClearCacheResponse)
+async def clear_user_cache(
+    user_id: str,
+    platform: str,
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """Clear all cached data for a specific user and platform."""
+    # Validate platform first
+    if not _validate_platform(platform):
+        if DEBUG:
+            print(f"[ERROR] Invalid platform: {platform}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": f"Invalid platform: {platform}. Must be one of {VALID_PLATFORMS}"}
+        )
+
+    # Validate and canonicalize user ID
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+    except ValueError as e:
+        if DEBUG:
+            print(f"[ERROR] Invalid user_id or platform: {e}")
+        return JSONResponse(status_code=400, content={"success": False, "message": str(e)})
+
+    try:
+        if DEBUG:
+            print(f"[INFO] Clearing cache for user_id={canonical_user_id}, platform={platform}")
+
+        # Sweep all keys matching this user/platform (handles analysis_type/limit variants)
+        # Match exact segments to avoid clearing other users' cache (e.g., "alice" vs "malice")
+        keys_to_delete = []
+        for key in list(_analytics_cache.keys()):
+            parts = key.split(":")
+            # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
+            # Match exact user_id and platform segments (parts[1] and parts[2])
+            if len(parts) >= 3 and parts[1] == canonical_user_id and parts[2] == platform:
+                keys_to_delete.append(key)
+
+        for key in keys_to_delete:
+            _delete_from_cache(key)
+            if DEBUG:
+                print(f"[INFO] Cleared cache key: {key}")
+        return ClearCacheResponse(
+            success=True,
+            message=f"Cache cleared for user {user_id} on {platform}",
+            cleared_keys=len(keys_to_delete),
+        )
+    except Exception as e:
+        if DEBUG:
+            print(f"[ERROR] Failed to clear cache: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
+
 @app.get("/api/v1/deep-analysis/{user_id}/{platform}", response_model=DeepAnalysisData)
 async def get_deep_analysis(
     user_id: str,
     platform: str,
+    force_refresh: bool = Query(False, description="Force refresh bypassing cache"),
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
 ):
     """Get deep analysis with personality insights."""
     try:
         if DEBUG:
-            print(f"[INFO] Deep analysis request for user_id={user_id}, platform={platform}")
+            print(f"[INFO] Deep analysis request for user_id={user_id}, platform={platform}, force_refresh={force_refresh}")
         canonical_user_id = _canonical_user_id(user_id, platform)
         if DEBUG:
             print(f"[INFO] Canonical user_id={canonical_user_id}")
 
-        # Check cache first
+        # Check cache first (unless force_refresh is True)
         cache_key = f"deep_analysis:{canonical_user_id}:{platform}"
-        cached_data = _get_from_cache(cache_key)
-        if cached_data is not None:
-            return cached_data
+        if not force_refresh:
+            cached_data = _get_from_cache(cache_key)
+            if cached_data is not None:
+                if DEBUG:
+                    print(f"[INFO] Returning cached deep analysis data")
+                return cached_data
+        else:
+            if DEBUG:
+                print(f"[INFO] Force refresh requested, bypassing cache")
 
         db_client = supabase_service or supabase
         if not db_client:
@@ -6641,12 +6726,19 @@ async def get_or_create_profile(request: dict):
             "user_id", canonical_user_id
         ).eq("platform", platform).maybe_single().execute()
 
+        if DEBUG:
+            print(f"[get_or_create_profile] Query result: has_result={result is not None}, has_data={bool(result.data if result else False)}")
+
         # If profile exists, update last_accessed and return it
-        if result.data:
+        if result and result.data:
             updated = supabase_service.table("user_profiles").update({
                 "last_accessed": datetime.utcnow().isoformat()
             }).eq("user_id", canonical_user_id).eq("platform", platform).execute()
-            return updated.data[0] if updated.data else result.data
+
+            # Return the updated profile or the original if update failed
+            if updated and updated.data and len(updated.data) > 0:
+                return updated.data[0]
+            return result.data
 
         # Create new profile with service role
         profile_data = {
@@ -6661,7 +6753,10 @@ async def get_or_create_profile(request: dict):
 
         create_result = supabase_service.table("user_profiles").insert(profile_data).execute()
 
-        if not create_result.data:
+        if DEBUG:
+            print(f"[get_or_create_profile] Create result: has_result={create_result is not None}, has_data={bool(create_result.data if create_result else False)}")
+
+        if not create_result or not create_result.data:
             raise HTTPException(status_code=500, detail="Failed to create profile")
 
         return create_result.data[0]
@@ -6688,6 +6783,13 @@ def _normalize_played_at(value: Optional[str]) -> str:
     except Exception:
         return value
 
+# Valid platforms for validation
+VALID_PLATFORMS = ["chess.com", "lichess"]
+
+def _validate_platform(platform: str) -> bool:
+    """Validate that platform is one of the allowed values."""
+    return platform in VALID_PLATFORMS
+
 def _canonical_user_id(user_id: str, platform: str) -> str:
     """Canonicalize user ID for database operations.
 
@@ -6696,6 +6798,9 @@ def _canonical_user_id(user_id: str, platform: str) -> str:
     """
     if not user_id or not platform:
         raise ValueError("user_id and platform cannot be empty")
+
+    if not _validate_platform(platform):
+        raise ValueError(f"Invalid platform: {platform}. Must be one of {VALID_PLATFORMS}")
 
     if platform == "chess.com":
         return user_id.strip().lower()
