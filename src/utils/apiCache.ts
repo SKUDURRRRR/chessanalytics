@@ -102,28 +102,67 @@ export function generateCacheKey(
 
 /**
  * Clear cache for a specific user
+ * Uses exact segment matching to avoid over-deleting keys for similar user IDs
+ * (e.g., "alice" should not match "malice" cache keys).
+ *
+ * Cache keys follow format: {endpoint}_{userId}_{platform}{optional_params}
+ * Example: "stats_alice_chess.com" or "deep-analysis_magnus_lichess_{"limit":100}"
  */
 export function clearUserCache(userId: string, platform: string): void {
   const keysToDelete: string[] = []
+
   // Normalize userId for matching (case-insensitive for chess.com)
   const normalizedUserId = platform === 'chess.com' ? userId.toLowerCase() : userId
+  const normalizedUserIdLower = normalizedUserId.toLowerCase()
 
-  // Match both dotted and dotless platform variants since generateCacheKey stores raw platform
+  // Normalize platform for matching (handle both "chess.com" and "chesscom" variants)
   const normalizedPlatform = platform.toLowerCase()
-  const normalizedPlatformNoDots = normalizedPlatform.replace(/\./g, '')
+  const platformNoDots = normalizedPlatform.replace(/\./g, '')
 
   for (const key of apiCache.getStats().keys) {
-    // More robust matching - check if the key contains both the normalized userId and platform
-    const keyLower = key.toLowerCase()
-    const keyLowerNoDots = keyLower.replace(/\./g, '')
-    const userIdInKey = keyLower.includes(normalizedUserId.toLowerCase())
-    // Match either dotted or dotless platform variant
-    const platformInKey = keyLower.includes(normalizedPlatform) || keyLowerNoDots.includes(normalizedPlatformNoDots)
+    // Cache keys follow format: {endpoint}_{userId}_{platform}{optional}
+    // Split by underscore to get segments for exact matching
+    const parts = key.split('_')
 
-    if (userIdInKey && platformInKey) {
+    if (parts.length < 3) {
+      continue // Malformed key, skip
+    }
+
+    // Extract userId and platform segments
+    // parts[0] = endpoint, parts[1] = userId, parts[2] = platform (or platform.com)
+    const keyUserId = parts[1]?.toLowerCase() || ''
+
+    // Platform might be split if it contains dots, so we need to reconstruct it
+    // For "stats_alice_chess.com" -> parts = ["stats", "alice", "chess.com"]
+    // For "stats_alice_chesscom" -> parts = ["stats", "alice", "chesscom"]
+    let keyPlatform = parts[2]?.toLowerCase() || ''
+
+    // If there are more parts and the third part is short (like "chess"),
+    // it might be the first part of "chess.com", so check if next part is "com"
+    if (parts.length > 3 && parts[2] === 'chess' && parts[3]?.startsWith('com')) {
+      keyPlatform = 'chess.com'
+    }
+
+    // Exact userId match (prevents "alice" from matching "malice")
+    const userIdMatches = keyUserId === normalizedUserIdLower
+
+    if (!userIdMatches) {
+      continue
+    }
+
+    // Platform match (handle both dotted and non-dotted variants)
+    const keyPlatformNoDots = keyPlatform.replace(/\./g, '')
+    const platformMatches =
+      keyPlatform === normalizedPlatform ||
+      keyPlatformNoDots === platformNoDots ||
+      keyPlatform === platformNoDots ||
+      keyPlatformNoDots === normalizedPlatform
+
+    if (platformMatches) {
       keysToDelete.push(key)
     }
   }
+
   keysToDelete.forEach(key => apiCache.delete(key))
   console.log(`[Cache] Cleared ${keysToDelete.length} cache entries for user ${userId} on ${platform}`)
   if (keysToDelete.length > 0 && import.meta.env.DEV) {

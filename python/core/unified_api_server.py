@@ -135,8 +135,19 @@ def _delete_from_cache(cache_key: str) -> None:
             print(f"[CACHE] Deleted key: {cache_key}")
 
 def _invalidate_cache(user_id: str, platform: str) -> None:
-    """Invalidate all cache entries for a specific user/platform."""
-    keys_to_delete = [k for k in _analytics_cache.keys() if f"{user_id}:{platform}" in k]
+    """Invalidate all cache entries for a specific user/platform.
+
+    Uses exact segment matching to avoid over-deleting keys for similar user IDs
+    (e.g., "alice:lichess" should not match "malice:lichess:*" patterns).
+    """
+    keys_to_delete = []
+    for key in list(_analytics_cache.keys()):
+        parts = key.split(":")
+        # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
+        # Match exact user_id and platform segments (parts[1] and parts[2])
+        if len(parts) >= 3 and parts[1] == user_id and parts[2] == platform:
+            keys_to_delete.append(key)
+
     for key in keys_to_delete:
         del _analytics_cache[key]
     if DEBUG and keys_to_delete:
@@ -2218,6 +2229,15 @@ async def clear_user_cache(
     _: Optional[bool] = get_optional_auth()
 ):
     """Clear all cached data for a specific user and platform."""
+    # Validate platform first
+    if not _validate_platform(platform):
+        if DEBUG:
+            print(f"[ERROR] Invalid platform: {platform}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": f"Invalid platform: {platform}. Must be one of {VALID_PLATFORMS}"}
+        )
+
     # Validate and canonicalize user ID
     try:
         canonical_user_id = _canonical_user_id(user_id, platform)
@@ -6763,6 +6783,13 @@ def _normalize_played_at(value: Optional[str]) -> str:
     except Exception:
         return value
 
+# Valid platforms for validation
+VALID_PLATFORMS = ["chess.com", "lichess"]
+
+def _validate_platform(platform: str) -> bool:
+    """Validate that platform is one of the allowed values."""
+    return platform in VALID_PLATFORMS
+
 def _canonical_user_id(user_id: str, platform: str) -> str:
     """Canonicalize user ID for database operations.
 
@@ -6771,6 +6798,9 @@ def _canonical_user_id(user_id: str, platform: str) -> str:
     """
     if not user_id or not platform:
         raise ValueError("user_id and platform cannot be empty")
+
+    if not _validate_platform(platform):
+        raise ValueError(f"Invalid platform: {platform}. Must be one of {VALID_PLATFORMS}")
 
     if platform == "chess.com":
         return user_id.strip().lower()
