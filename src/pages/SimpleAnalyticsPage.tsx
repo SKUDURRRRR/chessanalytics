@@ -690,7 +690,7 @@ export default function SimpleAnalyticsPage() {
                 {/* Logo in top left */}
                 <div className="flex items-center gap-3">
                   <img
-                    src="/chesdata.app.svg"
+                    src="/chesdata.svg"
                     alt="Chess Analytics"
                     className="h-8 w-auto sm:h-10 opacity-90 hover:opacity-100 transition-opacity cursor-pointer"
                     onClick={() => navigate('/')}

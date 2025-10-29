@@ -14,7 +14,7 @@ export default function HomePage() {
         {/* Logo in top left */}
         <div className="absolute top-4 left-4 sm:top-6 sm:left-6">
           <img
-            src="/chesdata.app.svg"
+            src="/chesdata.svg"
             alt="Chess Analytics"
             className="h-10 w-auto sm:h-12 opacity-90 hover:opacity-100 transition-opacity"
           />
