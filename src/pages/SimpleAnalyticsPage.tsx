@@ -73,6 +73,7 @@ export default function SimpleAnalyticsPage() {
     'analytics'
   )
   const [refreshKey, setRefreshKey] = useState(0)
+  const [forceDataRefresh, setForceDataRefresh] = useState(false)
   const [openingFilter, setOpeningFilter] = useState<OpeningFilter | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
@@ -534,10 +535,14 @@ export default function SimpleAnalyticsPage() {
           setTimeout(() => setProgressStatus(null), 2500)
           // Clear cache to force fresh data load after analysis
           clearUserCache(userId, platform)
+          // Set force refresh flag to bypass cache on next load
+          setForceDataRefresh(true)
           // Add small delay to ensure database has finished writing analysis results
           setTimeout(() => {
-            console.log('[SimpleAnalytics] Refreshing data after analysis completion')
+            console.log('[SimpleAnalytics] Refreshing data after analysis completion with force refresh')
             handleRefresh()
+            // Reset force refresh flag after a brief moment
+            setTimeout(() => setForceDataRefresh(false), 2000)
           }, 1500)
         } else if (isNoAnalysisRunning) {
           console.log('[SimpleAnalytics] No analysis running, stopping progress polling')
@@ -910,6 +915,7 @@ export default function SimpleAnalyticsPage() {
             userId={userId}
             platform={platform}
             onOpeningClick={handleOpeningClick}
+            forceRefresh={forceDataRefresh}
           />
         )}
 

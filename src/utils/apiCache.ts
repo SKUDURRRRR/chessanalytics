@@ -105,13 +105,40 @@ export function generateCacheKey(
  */
 export function clearUserCache(userId: string, platform: string): void {
   const keysToDelete: string[] = []
+  // Normalize userId for matching (case-insensitive for chess.com)
+  const normalizedUserId = platform === 'chess.com' ? userId.toLowerCase() : userId
+
   for (const key of apiCache.getStats().keys) {
-    if (key.includes(userId) && key.includes(platform)) {
+    // More robust matching - check if the key contains both the normalized userId and platform
+    const keyLower = key.toLowerCase()
+    const userIdInKey = keyLower.includes(normalizedUserId.toLowerCase())
+    const platformInKey = keyLower.includes(platform.toLowerCase().replace('.', ''))
+
+    if (userIdInKey && platformInKey) {
       keysToDelete.push(key)
     }
   }
   keysToDelete.forEach(key => apiCache.delete(key))
-  console.log(`Cleared ${keysToDelete.length} cache entries for user ${userId} on ${platform}`)
+  console.log(`[Cache] Cleared ${keysToDelete.length} cache entries for user ${userId} on ${platform}`)
+  if (keysToDelete.length > 0 && import.meta.env.DEV) {
+    console.log('[Cache] Keys cleared:', keysToDelete)
+  }
+
+  // Also clear backend cache via API call
+  clearBackendCache(userId, platform)
+}
+
+/**
+ * Clear backend cache via API call
+ */
+async function clearBackendCache(userId: string, platform: string): Promise<void> {
+  try {
+    // Import UnifiedAnalysisService dynamically to avoid circular dependency
+    const { UnifiedAnalysisService } = await import('../services/unifiedAnalysisService')
+    await UnifiedAnalysisService.clearBackendCache(userId, platform as 'lichess' | 'chess.com')
+  } catch (error) {
+    console.error('[Cache] Failed to clear backend cache:', error)
+  }
 }
 
 /**

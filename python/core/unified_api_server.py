@@ -126,6 +126,13 @@ def _set_in_cache(cache_key: str, data: Dict[str, Any]) -> None:
     if DEBUG:
         print(f"[CACHE] Set for key: {cache_key}")
 
+def _delete_from_cache(cache_key: str) -> None:
+    """Delete a specific cache entry."""
+    if cache_key in _analytics_cache:
+        del _analytics_cache[cache_key]
+        if DEBUG:
+            print(f"[CACHE] Deleted key: {cache_key}")
+
 def _invalidate_cache(user_id: str, platform: str) -> None:
     """Invalidate all cache entries for a specific user/platform."""
     keys_to_delete = [k for k in _analytics_cache.keys() if f"{user_id}:{platform}" in k]
@@ -2196,26 +2203,68 @@ async def get_match_history(
         print(f"Error fetching match history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/v1/clear-cache/{user_id}/{platform}")
+async def clear_user_cache(
+    user_id: str,
+    platform: str,
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """Clear all cached data for a specific user and platform."""
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        if DEBUG:
+            print(f"[INFO] Clearing cache for user_id={canonical_user_id}, platform={platform}")
+
+        # Clear all cache keys for this user
+        cache_keys_to_clear = [
+            f"deep_analysis:{canonical_user_id}:{platform}",
+            f"stats:{canonical_user_id}:{platform}",
+            f"comprehensive_analytics:{canonical_user_id}:{platform}",
+        ]
+
+        for cache_key in cache_keys_to_clear:
+            _delete_from_cache(cache_key)
+            if DEBUG:
+                print(f"[INFO] Cleared cache key: {cache_key}")
+
+        return {
+            "success": True,
+            "message": f"Cache cleared for user {user_id} on {platform}",
+            "cleared_keys": len(cache_keys_to_clear)
+        }
+    except Exception as e:
+        if DEBUG:
+            print(f"[ERROR] Failed to clear cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/v1/deep-analysis/{user_id}/{platform}", response_model=DeepAnalysisData)
 async def get_deep_analysis(
     user_id: str,
     platform: str,
+    force_refresh: bool = Query(False, description="Force refresh bypassing cache"),
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
 ):
     """Get deep analysis with personality insights."""
     try:
         if DEBUG:
-            print(f"[INFO] Deep analysis request for user_id={user_id}, platform={platform}")
+            print(f"[INFO] Deep analysis request for user_id={user_id}, platform={platform}, force_refresh={force_refresh}")
         canonical_user_id = _canonical_user_id(user_id, platform)
         if DEBUG:
             print(f"[INFO] Canonical user_id={canonical_user_id}")
 
-        # Check cache first
+        # Check cache first (unless force_refresh is True)
         cache_key = f"deep_analysis:{canonical_user_id}:{platform}"
-        cached_data = _get_from_cache(cache_key)
-        if cached_data is not None:
-            return cached_data
+        if not force_refresh:
+            cached_data = _get_from_cache(cache_key)
+            if cached_data is not None:
+                if DEBUG:
+                    print(f"[INFO] Returning cached deep analysis data")
+                return cached_data
+        else:
+            if DEBUG:
+                print(f"[INFO] Force refresh requested, bypassing cache")
 
         db_client = supabase_service or supabase
         if not db_client:
@@ -6641,12 +6690,18 @@ async def get_or_create_profile(request: dict):
             "user_id", canonical_user_id
         ).eq("platform", platform).maybe_single().execute()
 
+        print(f"[get_or_create_profile] Query result for {canonical_user_id}: {result is not None}, has data: {result.data if result else 'No result'}")
+
         # If profile exists, update last_accessed and return it
-        if result.data:
+        if result and result.data:
             updated = supabase_service.table("user_profiles").update({
                 "last_accessed": datetime.utcnow().isoformat()
             }).eq("user_id", canonical_user_id).eq("platform", platform).execute()
-            return updated.data[0] if updated.data else result.data
+
+            # Return the updated profile or the original if update failed
+            if updated and updated.data and len(updated.data) > 0:
+                return updated.data[0]
+            return result.data if isinstance(result.data, dict) else result.data
 
         # Create new profile with service role
         profile_data = {
@@ -6661,7 +6716,9 @@ async def get_or_create_profile(request: dict):
 
         create_result = supabase_service.table("user_profiles").insert(profile_data).execute()
 
-        if not create_result.data:
+        print(f"[get_or_create_profile] Create result: {create_result is not None}, has data: {create_result.data if create_result else 'No result'}")
+
+        if not create_result or not create_result.data:
             raise HTTPException(status_code=500, detail="Failed to create profile")
 
         return create_result.data[0]
