@@ -977,19 +977,19 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 {comprehensiveData?.marathon_performance && comprehensiveData.marathon_performance.count > 0 && (
                   <div className="lg:col-span-2">
                     <h4 className="mb-3 text-sm font-semibold text-amber-200">Marathon Performance (80+ moves)</h4>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-2">
                       <div className={subtleCardClass}>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-slate-400">Games</span>
-                          <span className="text-lg font-semibold text-sky-300">{comprehensiveData.marathon_performance.count}</span>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-h-[60px] sm:min-h-0">
+                          <span className="text-sm sm:text-xs text-slate-400">Games</span>
+                          <span className="text-2xl sm:text-lg font-semibold text-sky-300">{comprehensiveData.marathon_performance.count}</span>
                         </div>
                       </div>
                       {comprehensiveData.marathon_performance.average_accuracy !== null && comprehensiveData.marathon_performance.average_accuracy !== undefined && (
                         <div className={subtleCardClass}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-slate-400">Avg Accuracy</span>
-                            <div className="flex items-center gap-3">
-                              <span className="text-lg font-semibold text-emerald-300">{formatPercent(comprehensiveData.marathon_performance.average_accuracy, 1)}%</span>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-h-[60px] sm:min-h-0">
+                            <span className="text-sm sm:text-xs text-slate-400">Avg Accuracy</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-2xl sm:text-lg font-semibold text-emerald-300">{formatPercent(comprehensiveData.marathon_performance.average_accuracy, 1)}%</span>
                               {comprehensiveData.marathon_performance.analyzed_count && comprehensiveData.marathon_performance.analyzed_count < comprehensiveData.marathon_performance.count && (
                                 <span className="text-xs text-slate-500">({comprehensiveData.marathon_performance.analyzed_count} analyzed)</span>
                               )}
@@ -999,10 +999,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       )}
                       {comprehensiveData.marathon_performance.average_blunders !== null && comprehensiveData.marathon_performance.average_blunders !== undefined && (
                         <div className={subtleCardClass}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-slate-400">Avg Blunders</span>
-                            <div className="flex items-center gap-3">
-                              <span className="text-lg font-semibold text-rose-300">{formatPercent(comprehensiveData.marathon_performance.average_blunders, 1)}</span>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-h-[60px] sm:min-h-0">
+                            <span className="text-sm sm:text-xs text-slate-400">Avg Blunders</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-2xl sm:text-lg font-semibold text-rose-300">{formatPercent(comprehensiveData.marathon_performance.average_blunders, 1)}</span>
                               {comprehensiveData.marathon_performance.analyzed_count && comprehensiveData.marathon_performance.analyzed_count < comprehensiveData.marathon_performance.count && (
                                 <span className="text-xs text-slate-500">({comprehensiveData.marathon_performance.analyzed_count} analyzed)</span>
                               )}
@@ -1019,24 +1019,24 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               {comprehensiveData?.recent_trend && comprehensiveData.recent_trend.recent_average_moves && (
                 <div className="mt-6 pt-6 border-t border-white/10">
                   <h4 className="mb-3 text-sm font-semibold text-sky-200">Recent Trend</h4>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <span className="text-xs text-slate-400">Last 50 Games</span>
-                      <div className="text-xl font-semibold text-sky-300">{formatPercent(comprehensiveData.recent_trend.recent_average_moves, 1)} moves</div>
+                      <span className="block text-xs text-slate-400 mb-1">Last 50 Games</span>
+                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">{formatPercent(comprehensiveData.recent_trend.recent_average_moves, 1)} <span className="text-base sm:text-sm">moves</span></div>
                     </div>
                     <div>
-                      <span className="text-xs text-slate-400">Baseline</span>
-                      <div className="text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.recent_trend.baseline_average_moves, 1)} moves</div>
+                      <span className="block text-xs text-slate-400 mb-1">Baseline</span>
+                      <div className="text-2xl sm:text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.recent_trend.baseline_average_moves, 1)} <span className="text-base sm:text-sm">moves</span></div>
                     </div>
                     <div>
-                      <span className="text-xs text-slate-400">Change</span>
-                      <div className={`text-xl font-semibold ${comprehensiveData.recent_trend.difference > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
+                      <span className="block text-xs text-slate-400 mb-1">Change</span>
+                      <div className={`text-2xl sm:text-xl font-semibold ${comprehensiveData.recent_trend.difference > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
                         {comprehensiveData.recent_trend.difference > 0 ? '+' : ''}{formatPercent(comprehensiveData.recent_trend.difference, 1)}
                       </div>
                     </div>
                   </div>
                   {comprehensiveData.recent_trend.difference !== 0 && (
-                    <p className="mt-2 text-xs text-slate-400">
+                    <p className="mt-3 text-sm sm:text-xs text-slate-400">
                       {comprehensiveData.recent_trend.difference > 0
                         ? `Your recent games are ${Math.abs(comprehensiveData.recent_trend.difference).toFixed(1)} moves longer than usual`
                         : `Your recent games are ${Math.abs(comprehensiveData.recent_trend.difference).toFixed(1)} moves shorter than usual`
@@ -1054,7 +1054,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     {comprehensiveData?.personal_records && (
                       <div className="lg:col-span-2">
                         <h5 className="mb-3 text-sm font-semibold text-emerald-200">Personal Records</h5>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-2">
                           {comprehensiveData.personal_records.fastest_win && (
                             <div
                               className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
@@ -1065,9 +1065,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                                 }
                               }}
                             >
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-slate-400">Fastest Win</span>
-                                <span className="text-lg font-semibold text-emerald-300">{comprehensiveData.personal_records.fastest_win.moves} moves</span>
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                <span className="text-sm sm:text-xs text-slate-400">Fastest Win</span>
+                                <span className="text-2xl sm:text-lg font-semibold text-emerald-300">{comprehensiveData.personal_records.fastest_win.moves} <span className="text-base sm:text-sm">moves</span></span>
                               </div>
                             </div>
                           )}
@@ -1081,9 +1081,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                                 }
                               }}
                             >
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-slate-400">Most Accurate Win</span>
-                                <span className="text-lg font-semibold text-sky-300">{formatPercent(comprehensiveData.personal_records.highest_accuracy_win.accuracy, 1)}%</span>
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                <span className="text-sm sm:text-xs text-slate-400">Most Accurate Win</span>
+                                <span className="text-2xl sm:text-lg font-semibold text-sky-300">{formatPercent(comprehensiveData.personal_records.highest_accuracy_win.accuracy, 1)}%</span>
                               </div>
                             </div>
                           )}
@@ -1097,9 +1097,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                                 }
                               }}
                             >
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-slate-400">Longest Game</span>
-                                <span className="text-lg font-semibold text-purple-300">{comprehensiveData.personal_records.longest_game.moves} moves</span>
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                <span className="text-sm sm:text-xs text-slate-400">Longest Game</span>
+                                <span className="text-2xl sm:text-lg font-semibold text-purple-300">{comprehensiveData.personal_records.longest_game.moves} <span className="text-base sm:text-sm">moves</span></span>
                               </div>
                             </div>
                           )}
@@ -1114,10 +1114,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               {comprehensiveData?.resignation_timing && (
                 <div className="mt-6 pt-6 border-t border-white/10">
                   <h4 className="mb-3 text-sm font-semibold text-rose-200">Resignation Timing</h4>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <span className="text-xs text-slate-400">Last 50 Games</span>
-                      <div className="text-xl font-semibold text-sky-300">{formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move || 0, 1)} moves</div>
+                      <span className="block text-xs text-slate-400 mb-1">Last 50 Games</span>
+                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">{formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move || 0, 1)} <span className="text-base sm:text-sm">moves</span></div>
                       {comprehensiveData.resignation_timing.insight && (
                         <div className="text-sm text-slate-400 mt-2 flex items-center gap-1">
                           <span>{comprehensiveData.resignation_timing.insight}</span>
@@ -1125,12 +1125,12 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       )}
                     </div>
                     <div>
-                      <span className="text-xs text-slate-400">Baseline</span>
-                      <div className="text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move || 0, 1)} moves</div>
+                      <span className="block text-xs text-slate-400 mb-1">Baseline</span>
+                      <div className="text-2xl sm:text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move || 0, 1)} <span className="text-base sm:text-sm">moves</span></div>
                     </div>
                     <div>
-                      <span className="text-xs text-slate-400">Change</span>
-                      <div className={`text-xl font-semibold ${
+                      <span className="block text-xs text-slate-400 mb-1">Change</span>
+                      <div className={`text-2xl sm:text-xl font-semibold ${
                         comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change > 0
                           ? 'text-amber-300'
                           : comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change < 0

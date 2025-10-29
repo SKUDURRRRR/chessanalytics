@@ -1832,14 +1832,21 @@ class ChessAnalysisEngine:
                     best_move_san = ""
                     if best_move_before:
                         try:
-                            # Temporarily undo the actual move to get back to "before" state
+                            # Method 1: Try using board.pop() to get back to "before" state
                             board.pop()
                             best_move_san = board.san(best_move_before)
-                            # Restore the actual move
                             board.push(move)
                         except Exception as e:
-                            logger.warning(f"Failed to convert best move to SAN: {e}")
-                            best_move_san = best_move_before.uci()
+                            # Method 2: If pop fails, try reconstructing from FEN
+                            try:
+                                fen_before = board.fen().rsplit(' ', 2)[0] + ' ' + ('w' if player_color == chess.WHITE else 'b') + ' ' + board.fen().rsplit(' ', 2)[1]
+                                temp_board = chess.Board(fen_before)
+                                best_move_san = temp_board.san(best_move_before)
+                                logger.info(f"Successfully converted best move using FEN reconstruction: {best_move_before.uci()} -> {best_move_san}")
+                            except Exception as e2:
+                                logger.warning(f"Failed to convert best move to SAN (both methods): pop error={e}, fen error={e2}, move={best_move_before.uci()}")
+                                # Leave best_move_san empty if both methods fail
+                                best_move_san = ""
 
                     # Create basic move analysis
                     move_analysis = MoveAnalysis(

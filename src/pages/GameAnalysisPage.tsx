@@ -684,7 +684,9 @@ export default function GameAnalysisPage() {
     const userIsWhite = playerColor === 'white'
 
     rawMoves.forEach((move, idx) => {
-      const fenBefore = positions[idx]
+      // Prefer fen_before from backend data if available (more reliable)
+      // Fall back to calculated positions if not available
+      const fenBefore = move.fen_before || positions[idx]
       const moveNumber = Math.floor(idx / 2) + 1
       const player = idx % 2 === 0 ? 'white' : 'black'
       const moveIsUserFlag = typeof move.is_user_move === 'boolean' ? move.is_user_move : undefined
@@ -695,8 +697,9 @@ export default function GameAnalysisPage() {
         ? evaluationToScoreForPlayer(evaluation, playerColor)
         : evaluationToScoreForPlayer(evaluation, player === 'white' ? 'black' : 'white')
 
-      // Use best_move_san from backend if available, otherwise convert UCI to SAN
-      const bestMoveSan = move.best_move_san || convertUciToSan(fenBefore, move.best_move) || move.best_move || null
+      // Use best_move_san from backend if available, otherwise convert UCI to SAN using the correct FEN
+      // Don't fall back to UCI notation - if SAN conversion fails, use null
+      const bestMoveSan = move.best_move_san || convertUciToSan(fenBefore, move.best_move) || null
       const classification = determineClassification(move)
 
       // Convert UCI move to SAN if move_san is not available or looks incorrect
