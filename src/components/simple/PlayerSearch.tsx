@@ -103,10 +103,23 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   const handlePlayerSelect = async (userId: string, platform: 'lichess' | 'chess.com', displayName?: string, rating?: number) => {
     try {
       // Use retry logic for ProfileService with exponential backoff
+      // Don't retry on validation errors or 404s
       const profile = await retryWithBackoff(
         () => ProfileService.getOrCreateProfile(userId, platform),
-        3, // 3 retries
-        1000 // 1 second initial delay
+        {
+          maxRetries: 3,
+          baseDelay: 1000,
+          context: 'PlayerSearch.handlePlayerSelect',
+          shouldRetry: (error: Error) => {
+            const msg = error.message.toLowerCase()
+            // Don't retry on validation errors or 404s
+            return !(
+              msg.includes('not found') ||
+              msg.includes('404') ||
+              msg.includes('invalid')
+            )
+          }
+        }
       );
 
       // Add to recent players

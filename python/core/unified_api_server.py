@@ -6,6 +6,7 @@ Replaces multiple redundant endpoints with a clean, unified interface.
 """
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Depends
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
@@ -532,6 +533,12 @@ class BulkGameImportResponse(BaseModel):
     new_games_count: Optional[int] = None
     had_existing_games: Optional[bool] = None
     message: Optional[str] = None
+
+class ClearCacheResponse(BaseModel):
+    """Response model for cache clearing operations."""
+    success: bool
+    message: str
+    cleared_keys: int
 
 class OpeningMistake(BaseModel):
     """Represents a specific opening mistake."""
@@ -2203,7 +2210,7 @@ async def get_match_history(
         print(f"Error fetching match history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/api/v1/clear-cache/{user_id}/{platform}")
+@app.delete("/api/v1/clear-cache/{user_id}/{platform}", response_model=ClearCacheResponse)
 async def clear_user_cache(
     user_id: str,
     platform: str,
@@ -2216,27 +2223,22 @@ async def clear_user_cache(
         if DEBUG:
             print(f"[INFO] Clearing cache for user_id={canonical_user_id}, platform={platform}")
 
-        # Clear all cache keys for this user
-        cache_keys_to_clear = [
-            f"deep_analysis:{canonical_user_id}:{platform}",
-            f"stats:{canonical_user_id}:{platform}",
-            f"comprehensive_analytics:{canonical_user_id}:{platform}",
-        ]
-
-        for cache_key in cache_keys_to_clear:
-            _delete_from_cache(cache_key)
+        # Sweep all keys matching this user/platform (handles analysis_type/limit variants)
+        signature = f"{canonical_user_id}:{platform}"
+        keys_to_delete = [k for k in _analytics_cache.keys() if signature in k]
+        for k in keys_to_delete:
+            _analytics_cache.pop(k, None)
             if DEBUG:
-                print(f"[INFO] Cleared cache key: {cache_key}")
-
-        return {
-            "success": True,
-            "message": f"Cache cleared for user {user_id} on {platform}",
-            "cleared_keys": len(cache_keys_to_clear)
-        }
+                print(f"[INFO] Cleared cache key: {k}")
+        return ClearCacheResponse(
+            success=True,
+            message=f"Cache cleared for user {user_id} on {platform}",
+            cleared_keys=len(keys_to_delete),
+        )
     except Exception as e:
         if DEBUG:
             print(f"[ERROR] Failed to clear cache: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
 @app.get("/api/v1/deep-analysis/{user_id}/{platform}", response_model=DeepAnalysisData)
 async def get_deep_analysis(
@@ -6690,7 +6692,8 @@ async def get_or_create_profile(request: dict):
             "user_id", canonical_user_id
         ).eq("platform", platform).maybe_single().execute()
 
-        print(f"[get_or_create_profile] Query result for {canonical_user_id}: {result is not None}, has data: {result.data if result else 'No result'}")
+        if DEBUG:
+            print(f"[get_or_create_profile] Query result: has_result={result is not None}, has_data={bool(result.data if result else False)}")
 
         # If profile exists, update last_accessed and return it
         if result and result.data:
@@ -6701,7 +6704,7 @@ async def get_or_create_profile(request: dict):
             # Return the updated profile or the original if update failed
             if updated and updated.data and len(updated.data) > 0:
                 return updated.data[0]
-            return result.data if isinstance(result.data, dict) else result.data
+            return result.data
 
         # Create new profile with service role
         profile_data = {
@@ -6716,7 +6719,8 @@ async def get_or_create_profile(request: dict):
 
         create_result = supabase_service.table("user_profiles").insert(profile_data).execute()
 
-        print(f"[get_or_create_profile] Create result: {create_result is not None}, has data: {create_result.data if create_result else 'No result'}")
+        if DEBUG:
+            print(f"[get_or_create_profile] Create result: has_result={create_result is not None}, has_data={bool(create_result.data if create_result else False)}")
 
         if not create_result or not create_result.data:
             raise HTTPException(status_code=500, detail="Failed to create profile")
