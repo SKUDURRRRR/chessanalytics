@@ -2224,12 +2224,19 @@ async def clear_user_cache(
             print(f"[INFO] Clearing cache for user_id={canonical_user_id}, platform={platform}")
 
         # Sweep all keys matching this user/platform (handles analysis_type/limit variants)
-        signature = f"{canonical_user_id}:{platform}"
-        keys_to_delete = [k for k in _analytics_cache.keys() if signature in k]
-        for k in keys_to_delete:
-            _analytics_cache.pop(k, None)
+        # Match exact segments to avoid clearing other users' cache (e.g., "alice" vs "malice")
+        keys_to_delete = []
+        for key in list(_analytics_cache.keys()):
+            parts = key.split(":")
+            # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
+            # Match exact user_id and platform segments (parts[1] and parts[2])
+            if len(parts) >= 3 and parts[1] == canonical_user_id and parts[2] == platform:
+                keys_to_delete.append(key)
+
+        for key in keys_to_delete:
+            _delete_from_cache(key)
             if DEBUG:
-                print(f"[INFO] Cleared cache key: {k}")
+                print(f"[INFO] Cleared cache key: {key}")
         return ClearCacheResponse(
             success=True,
             message=f"Cache cleared for user {user_id} on {platform}",

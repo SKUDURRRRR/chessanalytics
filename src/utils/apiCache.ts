@@ -108,11 +108,17 @@ export function clearUserCache(userId: string, platform: string): void {
   // Normalize userId for matching (case-insensitive for chess.com)
   const normalizedUserId = platform === 'chess.com' ? userId.toLowerCase() : userId
 
+  // Match both dotted and dotless platform variants since generateCacheKey stores raw platform
+  const normalizedPlatform = platform.toLowerCase()
+  const normalizedPlatformNoDots = normalizedPlatform.replace(/\./g, '')
+
   for (const key of apiCache.getStats().keys) {
     // More robust matching - check if the key contains both the normalized userId and platform
     const keyLower = key.toLowerCase()
+    const keyLowerNoDots = keyLower.replace(/\./g, '')
     const userIdInKey = keyLower.includes(normalizedUserId.toLowerCase())
-    const platformInKey = keyLower.includes(platform.toLowerCase().replace('.', ''))
+    // Match either dotted or dotless platform variant
+    const platformInKey = keyLower.includes(normalizedPlatform) || keyLowerNoDots.includes(normalizedPlatformNoDots)
 
     if (userIdInKey && platformInKey) {
       keysToDelete.push(key)
