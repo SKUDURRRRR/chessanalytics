@@ -4,6 +4,14 @@
   "framework": "vite",
   "routes": [
     {
+      "src": "/logo.png",
+      "dest": "/logo.png"
+    },
+    {
+      "src": "/sounds/(.*)",
+      "dest": "/sounds/$1"
+    },
+    {
       "handle": "filesystem"
     },
     {

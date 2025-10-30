@@ -30,7 +30,7 @@ export default function PricingPage() {
 
   const fetchTiers = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
+      const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
 
       const response = await fetchWithTimeout(
         `${API_URL}/api/v1/payment-tiers`,
@@ -103,7 +103,7 @@ export default function PricingPage() {
 
     setUpgrading(tierId)
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
+      const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
 
       // Get the auth token from Supabase
       const { data: { session } } = await supabase.auth.getSession()
