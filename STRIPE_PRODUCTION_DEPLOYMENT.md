@@ -44,9 +44,9 @@ If you deploy to production right now with current config:
 
 - [ ] In Stripe Dashboard (LIVE MODE) → Developers → Webhooks
 - [ ] Click "Add endpoint"
-- [ ] Enter endpoint URL: `https://YOUR_PRODUCTION_API_URL/api/v1/stripe/webhook`
+- [ ] Enter endpoint URL: `https://YOUR_PRODUCTION_API_URL/api/v1/payments/webhook`
   - Replace `YOUR_PRODUCTION_API_URL` with your actual backend URL
-  - Example: `https://chess-analytics-api.railway.app/api/v1/stripe/webhook`
+  - Example: `https://chess-analytics-api.railway.app/api/v1/payments/webhook`
 - [ ] Click "Select events" and choose:
   - [ ] `customer.subscription.created`
   - [ ] `customer.subscription.updated`
@@ -267,7 +267,7 @@ You'll know it's working when:
 ### Webhook Not Receiving Events
 - Verify webhook URL is correct and accessible
 - Check webhook signing secret matches environment variable
-- Test webhook with Stripe CLI: `stripe listen --forward-to https://your-api.com/api/v1/stripe/webhook`
+- Test webhook with Stripe CLI: `stripe listen --forward-to https://your-api.com/api/v1/payments/webhook`
 
 ### Payment Succeeds but User Not Upgraded
 - Check backend logs for webhook processing errors

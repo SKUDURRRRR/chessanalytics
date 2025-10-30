@@ -157,7 +157,7 @@ See `docs/STRIPE_SETUP.md` for detailed webhook configuration.
 
 **Quick Steps:**
 1. Stripe Dashboard → Developers → Webhooks
-2. Add endpoint: `https://your-api-domain.com/api/v1/stripe/webhook`
+2. Add endpoint: `https://your-api-domain.com/api/v1/payments/webhook`
 3. Select events:
    - `customer.subscription.created`
    - `customer.subscription.updated`
