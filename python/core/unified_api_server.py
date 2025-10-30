@@ -8691,9 +8691,11 @@ async def create_checkout_session(
         )
     except Exception as e:
         logger.error(f"Error creating checkout session: {e}")
+        import traceback
+        traceback.print_exc()  # Print full stack trace
         return JSONResponse(
             status_code=500,
-            content={"success": False, "message": "Failed to create checkout session"}
+            content={"success": False, "message": f"Failed to create checkout session: {str(e)}"}
         )
 
 @app.post("/api/v1/payments/webhook")
