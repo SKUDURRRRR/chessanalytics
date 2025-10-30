@@ -30,9 +30,10 @@ interface SimpleAnalyticsProps {
   toDate?: string
   onOpeningClick?: (filter: OpeningFilter) => void
   onOpponentClick?: (opponentName: string) => void
+  forceRefresh?: boolean
 }
 
-export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningClick, onOpponentClick }: SimpleAnalyticsProps) {
+export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningClick, onOpponentClick, forceRefresh = false }: SimpleAnalyticsProps) {
   const navigate = useNavigate()
   const [data, setData] = useState<AnalysisStats | null>(null)
   const [comprehensiveData, setComprehensiveData] = useState<any>(null)
@@ -114,7 +115,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         })(),
         UnifiedAnalysisService.fetchDeepAnalysis(
           userId,
-          (platform as 'lichess' | 'chess.com') || 'lichess'
+          (platform as 'lichess' | 'chess.com') || 'lichess',
+          forceRefresh  // Pass forceRefresh to bypass cache after analysis
         ),
         UnifiedAnalysisService.getEloStats(
           userId,

@@ -73,6 +73,7 @@ export default function SimpleAnalyticsPage() {
     'analytics'
   )
   const [refreshKey, setRefreshKey] = useState(0)
+  const [forceDataRefresh, setForceDataRefresh] = useState(false)
   const [openingFilter, setOpeningFilter] = useState<OpeningFilter | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
@@ -92,6 +93,9 @@ export default function SimpleAnalyticsPage() {
   const [importing, setImporting] = useState(false)
   const [analyzedGameIds, setAnalyzedGameIds] = useState<Set<string>>(new Set())
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const statusTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const forceRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [hasGames, setHasGames] = useState(false)
   const [gameCount, setGameCount] = useState(0)
   const [largeImportProgress, setLargeImportProgress] = useState<LargeImportProgress | null>(null)
@@ -196,6 +200,23 @@ export default function SimpleAnalyticsPage() {
 
     checkGamesExist()
   }, [userId, platform, refreshKey])
+
+  // Cleanup effect for timeouts and intervals
+  useEffect(() => {
+    return () => {
+      // Clear all timeouts
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
+      if (forceRefreshTimeoutRef.current) clearTimeout(forceRefreshTimeoutRef.current)
+
+      // Clear intervals
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+      if (largeImportIntervalRef.current) clearInterval(largeImportIntervalRef.current)
+      if (importStuckTimeoutRef.current) clearTimeout(importStuckTimeoutRef.current)
+      if (largeImportDismissTimeoutRef.current) clearTimeout(largeImportDismissTimeoutRef.current)
+      if (autoSyncTimeoutRef.current) clearTimeout(autoSyncTimeoutRef.current)
+    }
+  }, [])
 
   const checkApiHealth = async () => {
     console.log('🔍 Checking API health...')
@@ -531,13 +552,23 @@ export default function SimpleAnalyticsPage() {
             progressIntervalRef.current = null
           }
           setAnalyzing(false)
-          setTimeout(() => setProgressStatus(null), 2500)
+
+          // Clear any existing timeouts before setting new ones
+          if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+          if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
+          if (forceRefreshTimeoutRef.current) clearTimeout(forceRefreshTimeoutRef.current)
+
+          statusTimeoutRef.current = setTimeout(() => setProgressStatus(null), 2500)
           // Clear cache to force fresh data load after analysis
           clearUserCache(userId, platform)
+          // Set force refresh flag to bypass cache on next load
+          setForceDataRefresh(true)
           // Add small delay to ensure database has finished writing analysis results
-          setTimeout(() => {
-            console.log('[SimpleAnalytics] Refreshing data after analysis completion')
+          refreshTimeoutRef.current = setTimeout(() => {
+            console.log('[SimpleAnalytics] Refreshing data after analysis completion with force refresh')
             handleRefresh()
+            // Reset force refresh flag after a brief moment
+            forceRefreshTimeoutRef.current = setTimeout(() => setForceDataRefresh(false), 2000)
           }, 1500)
         } else if (isNoAnalysisRunning) {
           console.log('[SimpleAnalytics] No analysis running, stopping progress polling')
@@ -567,9 +598,14 @@ export default function SimpleAnalyticsPage() {
             }
             setAnalyzing(false)
             setProgressStatus('Analysis complete! Refreshing your insights...')
-            setTimeout(() => setProgressStatus(null), 2500)
+
+            // Clear any existing timeouts before setting new ones
+            if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
+
+            statusTimeoutRef.current = setTimeout(() => setProgressStatus(null), 2500)
             // Add small delay to ensure database has finished writing analysis results
-            setTimeout(() => {
+            refreshTimeoutRef.current = setTimeout(() => {
               console.log('[SimpleAnalytics] Refreshing data after fallback detection')
               handleRefresh()
             }, 1500)
@@ -687,6 +723,17 @@ export default function SimpleAnalyticsPage() {
             <div className="absolute inset-x-10 top-0 h-40 rounded-full bg-sky-400/10 blur-3xl" />
             <div className="relative flex flex-col gap-6">
               <div className="flex items-center justify-between">
+                {/* Logo in top left */}
+                <div className="flex items-center gap-3">
+                  <img
+                    src="/chesdata.svg"
+                    alt="Chess Analytics"
+                    className="h-8 w-auto sm:h-10 opacity-90 hover:opacity-100 transition-opacity cursor-pointer"
+                    onClick={() => navigate('/')}
+                    title="Back to home"
+                  />
+                </div>
+
                 <button
                   onClick={() => navigate('/')}
                   className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-200 transition hover:border-white/30 hover:bg-white/20"
@@ -899,6 +946,7 @@ export default function SimpleAnalyticsPage() {
             userId={userId}
             platform={platform}
             onOpeningClick={handleOpeningClick}
+            forceRefresh={forceDataRefresh}
           />
         )}
 

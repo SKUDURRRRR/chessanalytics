@@ -3,6 +3,22 @@ import React, { useState, useEffect } from 'react'
 import { ProfileService } from '../../services/profileService'
 import { AutoImportService, ImportProgress } from '../../services/autoImportService'
 import { getRecentPlayers, addRecentPlayer, clearRecentPlayers, RecentPlayer } from '../../utils/recentPlayers'
+import { retryWithBackoff } from '../../lib/errorHandling'
+
+// Add custom pulse animation style
+const customPulseStyle = `
+  @keyframes customPulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.70;
+    }
+  }
+  .animate-custom-pulse {
+    animation: customPulse 3s ease-in-out infinite;
+  }
+`
 
 interface PlayerSearchProps {
   onPlayerSelect: (userId: string, platform: 'lichess' | 'chess.com') => void
@@ -86,8 +102,25 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
   const handlePlayerSelect = async (userId: string, platform: 'lichess' | 'chess.com', displayName?: string, rating?: number) => {
     try {
-      // Create or get profile
-      const profile = await ProfileService.getOrCreateProfile(userId, platform)
+      // Use retry logic for ProfileService with exponential backoff
+      // Don't retry on validation errors or 404s
+      const profile = await retryWithBackoff(
+        () => ProfileService.getOrCreateProfile(userId, platform),
+        {
+          maxRetries: 3,
+          baseDelay: 1000,
+          context: 'PlayerSearch.handlePlayerSelect',
+          shouldRetry: (error: Error) => {
+            const msg = error.message.toLowerCase()
+            // Don't retry on validation errors or 404s
+            return !(
+              msg.includes('not found') ||
+              msg.includes('404') ||
+              msg.includes('invalid')
+            )
+          }
+        }
+      );
 
       // Add to recent players
       addRecentPlayer({
@@ -110,7 +143,29 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       setImportProgress(null)
     } catch (error) {
       console.error('Error selecting player:', error)
-      alert('Failed to select player. Please try again.')
+
+      // Provide specific, helpful error messages
+      let errorMessage = 'Failed to select player. Please try again.';
+
+      if (error instanceof Error) {
+        const msg = error.message.toLowerCase();
+
+        if (msg.includes('timeout') || msg.includes('etimedout')) {
+          errorMessage = `Connection timeout while loading profile for "${userId}". The server is taking too long to respond. Please try again.`;
+        } else if (msg.includes('network') || msg.includes('fetch failed') || msg.includes('failed to fetch')) {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (msg.includes('not found') || msg.includes('404')) {
+          errorMessage = `Profile for "${userId}" could not be found or created. Please verify the username is correct.`;
+        } else if (msg.includes('503') || msg.includes('service unavailable')) {
+          errorMessage = 'The server is temporarily unavailable. Please try again in a moment.';
+        } else if (msg.includes('500') || msg.includes('server error')) {
+          errorMessage = `Server error: ${error.message}. Please try again or contact support if the problem persists.`;
+        } else {
+          errorMessage = `Error loading profile: ${error.message}`;
+        }
+      }
+
+      alert(errorMessage);
     }
   }
 
@@ -128,15 +183,28 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
     try {
       // First validate that the user exists on the platform
-      const validation = await AutoImportService.validateUserOnPlatform(
-        searchQuery,
-        selectedPlatform
-      )
-
-      if (!validation.exists) {
+      let validation
+      try {
+        validation = await AutoImportService.validateUserOnPlatform(
+          searchQuery,
+          selectedPlatform
+        )
+      } catch (validationError) {
+        // Handle validation errors (timeouts, connectivity issues)
         setImportProgress({
           status: 'error',
-          message: `User "${searchQuery}" not found on ${selectedPlatform === 'chess.com' ? 'Chess.com' : 'Lichess'}. Please check the username and try again.`,
+          message: validationError instanceof Error ? validationError.message : 'Validation failed',
+          progress: 0,
+          importedGames: 0,
+        })
+        return
+      }
+
+      if (!validation.exists) {
+        const otherPlatform = selectedPlatform === 'chess.com' ? 'Lichess' : 'Chess.com'
+        setImportProgress({
+          status: 'error',
+          message: `${validation.message || `User "${searchQuery}" not found on ${selectedPlatform === 'chess.com' ? 'Chess.com' : 'Lichess'}`}. Try searching on ${otherPlatform} instead, or check the username spelling.`,
           progress: 0,
           importedGames: 0,
         })
@@ -192,11 +260,13 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   }
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
-      <div className="mb-6 text-center">
-        <h2 className="text-2xl font-semibold text-white">Search Player</h2>
-        <p className="mt-2 text-sm text-slate-300">Find and analyze any chess player's games</p>
-      </div>
+    <>
+      <style>{customPulseStyle}</style>
+      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
+        <div className="mb-6 text-center">
+          <h2 className="text-2xl font-semibold text-white">Search Player</h2>
+          <p className="mt-2 text-sm text-slate-300">Find and analyze any chess player's games</p>
+        </div>
 
       <form onSubmit={handleSearch} className="space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
@@ -210,13 +280,13 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               required
             />
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full gap-2 md:w-auto">
             <button
               type="button"
               onClick={() => setSelectedPlatform('lichess')}
-              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+              className={`flex-1 md:w-32 rounded-2xl px-6 py-3 text-sm font-semibold transition ${
                 selectedPlatform === 'lichess'
-                  ? 'border border-sky-400/40 bg-sky-500/20 text-sky-200 shadow-inner shadow-sky-900/40'
+                  ? 'border border-yellow-400/40 bg-yellow-500/20 text-yellow-200 shadow-[0_0_8px_rgba(250,204,21,0.15),inset_0_2px_4px_rgba(161,98,7,0.15)] animate-custom-pulse'
                   : 'border border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10'
               }`}
               title="Lichess"
@@ -226,9 +296,9 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
             <button
               type="button"
               onClick={() => setSelectedPlatform('chess.com')}
-              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+              className={`flex-1 md:w-32 rounded-2xl px-6 py-3 text-sm font-semibold transition ${
                 selectedPlatform === 'chess.com'
-                  ? 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200 shadow-inner shadow-emerald-900/40'
+                  ? 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200 shadow-[0_0_8px_rgba(52,211,153,0.15),inset_0_2px_4px_rgba(5,150,105,0.15)] animate-custom-pulse'
                   : 'border border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10'
               }`}
               title="Chess.com"
@@ -238,11 +308,11 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 md:flex-row">
+        <div className="flex flex-col gap-3 md:flex-row md:justify-center">
           <button
             type="submit"
             disabled={isSearching || isAutoImporting || !searchQuery.trim()}
-            className="flex-1 rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full md:w-44 rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSearching || isAutoImporting ? (
               <div className="flex items-center justify-center space-x-2">
@@ -263,7 +333,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               setImportProgress(null)
               setShowImportPrompt(false)
             }}
-            className="rounded-2xl border border-white/10 bg-white/10 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20"
+            className="w-full md:w-44 rounded-2xl border border-white/10 bg-white/10 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20"
           >
             Clear
           </button>
@@ -287,15 +357,17 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                 </div>
               ) : showImportPrompt ? (
                 <div className="space-y-4">
-                  <p className="text-lg font-medium text-slate-200">No players found in database</p>
-                  <p className="mb-4 text-sm text-slate-400">
+                  <p className="text-lg font-medium text-slate-200 mb-2">
                     Player "{searchQuery}" is not in our database yet.
                   </p>
-                  <div className="space-x-3">
+                  <p className="text-sm text-slate-400 mb-4">
+                    Please import games
+                  </p>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:justify-center sm:gap-6">
                     <button
                       onClick={handleManualImport}
                       disabled={isAutoImporting}
-                      className="rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="w-full md:w-44 rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-2 text-sm font-semibold text-sky-100 shadow-[0_0_8px_rgba(56,189,248,0.15),inset_0_2px_4px_rgba(14,165,233,0.15)] animate-custom-pulse transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:animate-none"
                     >
                       Import 100 Games
                     </button>
@@ -306,7 +378,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                         setSearchResults([])
                         setShowResults(false)
                       }}
-                      className="rounded-2xl border border-white/10 bg-white/10 px-6 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20"
+                      className="w-full md:w-44 rounded-2xl border border-white/10 bg-white/10 px-6 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20"
                     >
                       Cancel
                     </button>
@@ -476,6 +548,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           </>
         )}
       </div>
-    </div>
+      </div>
+    </>
   )
 }

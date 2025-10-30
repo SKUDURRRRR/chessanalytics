@@ -196,7 +196,7 @@ export function createErrorResponse(
   includeStack: boolean = false
 ): ErrorResponse {
   const timestamp = new Date().toISOString()
-  
+
   if (error instanceof ChessAnalyticsError) {
     return {
       success: false,
@@ -257,7 +257,7 @@ export function withErrorHandling<T extends any[], R>(
       if (error instanceof ChessAnalyticsError) {
         throw error
       }
-      
+
       // Wrap unknown errors
       throw new ChessAnalyticsError(
         error instanceof Error ? error.message : 'Unknown error occurred',
@@ -279,36 +279,75 @@ export function validateInput<T>(
   field?: string
 ): void {
   const result = validator(data)
-  
+
   if (result === false) {
     throw new ValidationError(
       `Invalid input for field '${field || 'unknown'}'`,
       field
     )
   }
-  
+
   if (typeof result === 'string') {
     throw new ValidationError(result, field)
   }
 }
 
 /**
+ * Options for retryWithBackoff
+ */
+export interface RetryOptions {
+  maxRetries?: number
+  baseDelay?: number
+  context?: string
+  shouldRetry?: (error: Error) => boolean
+}
+
+/**
  * Retries an operation with exponential backoff
+ *
+ * @param operation - The async operation to retry
+ * @param options - Retry configuration options
+ * @returns The result of the operation
+ *
+ * @example
+ * // Basic usage
+ * await retryWithBackoff(() => fetchData(), { maxRetries: 3 })
+ *
+ * @example
+ * // With custom retry logic
+ * await retryWithBackoff(
+ *   () => api.call(),
+ *   {
+ *     maxRetries: 3,
+ *     baseDelay: 1000,
+ *     shouldRetry: (error) => !error.message.includes('404')
+ *   }
+ * )
  */
 export async function retryWithBackoff<T>(
   operation: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelay: number = 1000,
-  context?: string
+  options: RetryOptions = {}
 ): Promise<T> {
+  const {
+    maxRetries = 3,
+    baseDelay = 1000,
+    context,
+    shouldRetry
+  } = options
+
   let lastError: Error
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await operation()
     } catch (error) {
       lastError = error as Error
-      
+
+      // Check if we should retry this error
+      if (shouldRetry && !shouldRetry(lastError)) {
+        throw lastError
+      }
+
       if (attempt === maxRetries) {
         throw new ChessAnalyticsError(
           `Operation failed after ${maxRetries + 1} attempts`,
@@ -318,13 +357,13 @@ export async function retryWithBackoff<T>(
           false
         )
       }
-      
+
       // Wait before retrying (exponential backoff)
       const delay = baseDelay * Math.pow(2, attempt)
       await new Promise(resolve => setTimeout(resolve, delay))
     }
   }
-  
+
   throw lastError!
 }
 
@@ -365,7 +404,7 @@ export function logError(
     },
     context
   }
-  
+
   console[LOG_LEVELS[level]](JSON.stringify(logData, null, 2))
 }
 
@@ -417,28 +456,28 @@ export function createErrorBoundary(
 ) {
   return function ErrorBoundaryComponent({ children, fallback }: Omit<ErrorBoundaryProps, 'context' | 'onError'>) {
     const [error, setError] = React.useState<Error | null>(null)
-    
+
     React.useEffect(() => {
       const handleError = (event: ErrorEvent) => {
         const error = new Error(event.message)
         error.stack = event.error?.stack
-        
+
         setError(error)
-        
+
         if (onError) {
           onError(error, {
             componentStack: event.filename || 'Unknown',
             errorBoundary: context
           } as React.ErrorInfo)
         }
-        
+
         logError(error, { context, component: context })
       }
-      
+
       window.addEventListener('error', handleError)
       return () => window.removeEventListener('error', handleError)
     }, [onError])
-    
+
     if (error) {
       if (fallback) {
         return React.createElement(fallback, {
@@ -446,7 +485,7 @@ export function createErrorBoundary(
           resetError: () => setError(null)
         })
       }
-      
+
       return React.createElement('div', { className: 'bg-red-50 border border-red-200 rounded-lg p-6 m-4' },
         React.createElement('div', { className: 'flex items-center space-x-2' },
           React.createElement('div', { className: 'text-red-500 text-2xl' }, '!'),
@@ -461,7 +500,7 @@ export function createErrorBoundary(
         )
       )
     }
-    
+
     return React.createElement(React.Fragment, {}, children)
   }
 }
@@ -480,12 +519,12 @@ export function handleApiError(
   if (error instanceof ChessAnalyticsError) {
     return error
   }
-  
+
   // Handle fetch errors
   if (error instanceof TypeError && error.message.includes('fetch')) {
     return new NetworkError('API endpoint', error, { context })
   }
-  
+
   // Handle HTTP errors
   if (error.status) {
     switch (error.status) {
@@ -512,7 +551,7 @@ export function handleApiError(
         )
     }
   }
-  
+
   // Handle unknown errors
   return new ChessAnalyticsError(
     error.message || 'Unknown API error',

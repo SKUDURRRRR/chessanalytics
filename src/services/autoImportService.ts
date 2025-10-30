@@ -63,18 +63,51 @@ export class AutoImportService {
         }),
       })
 
+      // Handle HTTP errors properly
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        let errorMessage
+
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorMessage = errorJson.detail || errorJson.message || errorText
+        } catch {
+          errorMessage = errorText
+        }
+
+        if (response.status === 404) {
+          // User not found
+          return {
+            exists: false,
+            message: `User "${userId}" not found on ${platform === 'chess.com' ? 'Chess.com' : 'Lichess'}.`
+          }
+        } else if (response.status === 503) {
+          // External API error - throw to let user know it's a connectivity issue
+          throw new Error(`Cannot connect to ${platform === 'chess.com' ? 'Chess.com' : 'Lichess'} right now. Please try again. (${errorMessage})`)
+        } else if (response.status === 504) {
+          // Timeout
+          throw new Error(`${platform === 'chess.com' ? 'Chess.com' : 'Lichess'} is taking too long to respond. Please try again.`)
+        } else if (response.status >= 500) {
+          // Server error
+          throw new Error(`Server error: ${errorMessage}`)
+        } else {
+          throw new Error(errorMessage || `HTTP error! status: ${response.status}`)
+        }
       }
 
       const data = await response.json()
       return data
     } catch (error) {
+      // Log the error for debugging
       console.error('Error validating user:', error)
-      return {
-        exists: false,
-        message: 'Failed to validate user. Please check your connection and try again.',
+
+      // If it's already a structured error, re-throw it
+      if (error instanceof Error) {
+        throw error
       }
+
+      // Network/fetch errors
+      throw new Error('Cannot connect to server. Please check your internet connection and try again.')
     }
   }
 
@@ -135,7 +168,7 @@ export class AutoImportService {
       }
 
       const data = await response.json()
-      
+
       if (onProgress) {
         onProgress({
           status: 'complete',
@@ -153,7 +186,7 @@ export class AutoImportService {
     } catch (error) {
       console.error('Error importing games:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-      
+
       if (onProgress) {
         onProgress({
           status: 'error',
@@ -195,22 +228,22 @@ export class AutoImportService {
       }
 
       const data = await response.json()
-      
+
       if (onProgress) {
         // Use the detailed message from the backend if available
         let message
         if (data.message) {
           message = data.message
         } else if (data.imported_games > 0) {
-          message = data.new_games_count > 0 
+          message = data.new_games_count > 0
             ? `Imported ${data.imported_games} new games`
             : `Imported ${data.imported_games} additional games (no new games found)`
         } else {
-          message = data.had_existing_games 
+          message = data.had_existing_games
             ? "No new games found. You already have all recent games imported."
             : "No games found to import."
         }
-        
+
         onProgress({
           status: 'complete',
           message: message,
@@ -223,11 +256,11 @@ export class AutoImportService {
       if (data.message) {
         returnMessage = data.message
       } else if (data.imported_games > 0) {
-        returnMessage = data.new_games_count > 0 
+        returnMessage = data.new_games_count > 0
           ? `Imported ${data.imported_games} new games`
           : `Imported ${data.imported_games} additional games (no new games found)`
       } else {
-        returnMessage = data.had_existing_games 
+        returnMessage = data.had_existing_games
           ? "No new games found. You already have all recent games imported."
           : "No games found to import."
       }
@@ -241,7 +274,7 @@ export class AutoImportService {
     } catch (error) {
       console.error('Error importing games:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-      
+
       if (onProgress) {
         onProgress({
           status: 'error',
@@ -277,11 +310,11 @@ export class AutoImportService {
           to_date: dateRange?.toDate
         })
       })
-      
+
       if (!response.ok) {
         throw new Error(`Discovery failed: ${response.status}`)
       }
-      
+
       return await response.json()
     } catch (error) {
       console.error('Error discovering games:', error)
@@ -310,11 +343,11 @@ export class AutoImportService {
           to_date: dateRange?.toDate
         })
       })
-      
+
       if (!response.ok) {
         throw new Error(`Import failed: ${response.status}`)
       }
-      
+
       return await response.json()
     } catch (error) {
       console.error('Error importing more games:', error)
@@ -331,11 +364,11 @@ export class AutoImportService {
   ): Promise<LargeImportProgress> {
     try {
       const response = await fetch(`${API_URL}/api/v1/import-progress/${userId}/${platform}`)
-      
+
       if (!response.ok) {
         throw new Error(`Failed to get progress: ${response.status}`)
       }
-      
+
       return await response.json()
     } catch (error) {
       console.error('Error getting import progress:', error)
@@ -356,11 +389,11 @@ export class AutoImportService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, platform: platform })
       })
-      
+
       if (!response.ok) {
         throw new Error(`Failed to cancel import: ${response.status}`)
       }
-      
+
       return await response.json()
     } catch (error) {
       console.error('Error cancelling import:', error)

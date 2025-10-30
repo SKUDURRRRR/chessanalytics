@@ -102,16 +102,99 @@ export function generateCacheKey(
 
 /**
  * Clear cache for a specific user
+ * Uses exact segment matching to avoid over-deleting keys for similar user IDs
+ * (e.g., "alice" should not match "malice" cache keys).
+ *
+ * Cache keys follow format: {endpoint}_{userId}_{platform}{optional_params}
+ * Example: "stats_alice_chess.com" or "deep-analysis_magnus_lichess_{"limit":100}"
  */
 export function clearUserCache(userId: string, platform: string): void {
   const keysToDelete: string[] = []
+
+  // Normalize userId for matching (case-insensitive for both platforms)
+  // Both Chess.com and Lichess don't allow duplicate usernames with different cases
+  const normalizedUserId = userId.toLowerCase()
+
+  // Normalize platform for matching (handle both "chess.com" and "chesscom" variants)
+  const normalizedPlatform = platform.toLowerCase()
+  const platformNoDots = normalizedPlatform.replace(/\./g, '')
+
   for (const key of apiCache.getStats().keys) {
-    if (key.includes(userId) && key.includes(platform)) {
+    // Cache keys follow format: {endpoint}_{userId}_{platform}{optional}
+    // We can't use split('_') because usernames can contain underscores
+    // Instead, we'll use a more robust pattern matching approach
+
+    // Extract the platform portion first (from the end or before optional params)
+    let keyPlatform = ''
+    let remainingKey = key
+
+    // Try to match common platform patterns
+    const platformPatterns = ['lichess', 'chess.com', 'chesscom', 'chess_com']
+    for (const pattern of platformPatterns) {
+      if (key.toLowerCase().includes(`_${pattern}`)) {
+        const platformIndex = key.toLowerCase().lastIndexOf(`_${pattern}`)
+        // Extract just the platform portion (not including any trailing params)
+        const afterPlatform = key.substring(platformIndex + 1)
+        const nextUnderscore = afterPlatform.indexOf('_')
+        keyPlatform = nextUnderscore === -1 ? afterPlatform : afterPlatform.substring(0, nextUnderscore)
+        remainingKey = key.substring(0, platformIndex)
+        break
+      }
+    }
+
+    if (!keyPlatform) {
+      continue // No platform found in key
+    }
+
+    // Now extract userId from remaining key (everything after first underscore)
+    const firstUnderscoreIndex = remainingKey.indexOf('_')
+    if (firstUnderscoreIndex === -1) {
+      continue // No endpoint separator found
+    }
+
+    const keyUserId = remainingKey.substring(firstUnderscoreIndex + 1)
+
+    // Match userId (case-insensitive for both platforms)
+    const userIdMatches = keyUserId.toLowerCase() === normalizedUserId
+
+    if (!userIdMatches) {
+      continue
+    }
+
+    // Platform match (handle both dotted and non-dotted variants)
+    const keyPlatformLower = keyPlatform.toLowerCase().replace(/\./g, '')
+    const platformMatches =
+      keyPlatform.toLowerCase() === normalizedPlatform ||
+      keyPlatformLower === platformNoDots ||
+      keyPlatform.toLowerCase() === platformNoDots ||
+      keyPlatformLower === normalizedPlatform
+
+    if (platformMatches) {
       keysToDelete.push(key)
     }
   }
+
   keysToDelete.forEach(key => apiCache.delete(key))
-  console.log(`Cleared ${keysToDelete.length} cache entries for user ${userId} on ${platform}`)
+  console.log(`[Cache] Cleared ${keysToDelete.length} cache entries for user ${userId} on ${platform}`)
+  if (keysToDelete.length > 0 && import.meta.env.DEV) {
+    console.log('[Cache] Keys cleared:', keysToDelete)
+  }
+
+  // Also clear backend cache via API call
+  clearBackendCache(userId, platform)
+}
+
+/**
+ * Clear backend cache via API call
+ */
+async function clearBackendCache(userId: string, platform: string): Promise<void> {
+  try {
+    // Import UnifiedAnalysisService dynamically to avoid circular dependency
+    const { UnifiedAnalysisService } = await import('../services/unifiedAnalysisService')
+    await UnifiedAnalysisService.clearBackendCache(userId, platform as 'lichess' | 'chess.com')
+  } catch (error) {
+    console.error('[Cache] Failed to clear backend cache:', error)
+  }
 }
 
 /**
