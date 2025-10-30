@@ -14,14 +14,14 @@ CodeRabbit identified hardcoded production user IDs in SQL files committed to ve
 - **Action**: File deleted entirely
 - **Reason**: Ad-hoc script that should never have been committed
 - **Contained**: 2 production user UUIDs
-  - `2c002b04-2389-42b1-9d66-2f8d521861a9`
-  - `194590d4-8d56-44b2-872a-e3e514a7eed6`
+  - `[REDACTED]`
+  - `[REDACTED]`
 
 ### 2. `supabase/migrations/20251030000005_fix_account_tier_constraint.sql`
 - **Action**: Removed manual user upgrade section
 - **Before**: Contained hardcoded UPDATE and SELECT statements with production user ID
 - **After**: Clean migration file with only schema changes
-- **Removed**: Manual upgrade section referencing `194590d4-8d56-44b2-872a-e3e514a7eed6`
+- **Removed**: Manual upgrade section referencing production user UUID
 
 ## Prevention Measures
 
@@ -51,7 +51,7 @@ WHERE u.email = :user_email;
 
 ❌ **Incorrect** - Hardcoded IDs:
 ```sql
-WHERE id = '194590d4-8d56-44b2-872a-e3e514a7eed6';
+WHERE id = '[REDACTED]';
 ```
 
 ## Impact
