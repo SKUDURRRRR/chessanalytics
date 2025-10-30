@@ -147,7 +147,12 @@ async def fix_user_subscription(user_email: str):
                     print(f"\n{i+1}. Session ID: {session.id}")
                     print(f"   Payment Status: {session.payment_status}")
                     print(f"   Status: {session.status}")
-                    print(f"   Amount: ${session.amount_total/100:.2f} {session.currency.upper()}")
+                    # Handle None values for incomplete/open sessions
+                    if session.amount_total is not None and session.currency:
+                        amount_display = f"${session.amount_total/100:.2f} {session.currency.upper()}"
+                    else:
+                        amount_display = "N/A"
+                    print(f"   Amount: {amount_display}")
                     print(f"   Created: {session.created}")
 
                     if session.subscription:
@@ -162,6 +167,10 @@ async def fix_user_subscription(user_email: str):
                         if session.payment_status == 'paid' and session.subscription:
                             # Sync this subscription
                             subscription_id = session.subscription
+
+                            # Fetch the subscription to get its actual status
+                            subscription = stripe.Subscription.retrieve(subscription_id)
+
                             metadata_obj = session.get('metadata', {})
                             if hasattr(metadata_obj, 'to_dict'):
                                 metadata = metadata_obj.to_dict()
@@ -178,20 +187,21 @@ async def fix_user_subscription(user_email: str):
 
                             print(f"\n[OK] Syncing subscription: {subscription_id}")
                             print(f"   Tier: {tier_id}")
+                            print(f"   Status: {subscription.status}")
 
                             supabase.table('authenticated_users').update({
                                 'account_tier': tier_id,
-                                'subscription_status': 'active',
+                                'subscription_status': subscription.status,
                                 'stripe_subscription_id': subscription_id
                             }).eq('id', user_id).execute()
 
-                            # Record transaction
-                            amount = session.amount_total / 100
+                            # Record transaction - safe handling with defaults like production code
+                            amount = (session.amount_total or 0) / 100
                             supabase.table('payment_transactions').insert({
                                 'user_id': user_id,
                                 'stripe_payment_id': session.payment_intent,
                                 'amount': str(amount),
-                                'currency': session.currency,
+                                'currency': session.currency or 'usd',
                                 'status': 'succeeded',
                                 'transaction_type': 'subscription',
                                 'tier_id': tier_id,
@@ -237,9 +247,10 @@ async def fix_user_subscription(user_email: str):
 
         # Update user in database
         print(f"\n[*] Updating database...")
+        print(f"   Setting subscription status to: {subscription.status}")
         supabase.table('authenticated_users').update({
             'account_tier': tier_id,
-            'subscription_status': 'active',
+            'subscription_status': subscription.status,
             'stripe_subscription_id': subscription.id
         }).eq('id', user_id).execute()
 
