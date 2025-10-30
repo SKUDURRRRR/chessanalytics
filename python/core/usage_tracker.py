@@ -62,10 +62,12 @@ class UsageTracker:
         """
         try:
             # Call database function to check limits
-            result = self.supabase.rpc(
-                'check_usage_limits',
-                {'p_user_id': user_id, 'p_action_type': action_type}
-            ).execute()
+            result = await asyncio.to_thread(
+                lambda: self.supabase.rpc(
+                    'check_usage_limits',
+                    {'p_user_id': user_id, 'p_action_type': action_type}
+                ).execute()
+            )
 
             if result.data:
                 return result.data.get('can_proceed', False), result.data
@@ -99,9 +101,11 @@ class UsageTracker:
             field_name = 'games_imported' if action_type == 'import' else 'games_analyzed'
 
             # Try to get existing record
-            existing = self.supabase.table('usage_tracking').select('*').eq(
-                'user_id', user_id
-            ).eq('date', str(today)).execute()
+            existing = await asyncio.to_thread(
+                lambda: self.supabase.table('usage_tracking').select('*').eq(
+                    'user_id', user_id
+                ).eq('date', str(today)).execute()
+            )
 
             if existing.data and len(existing.data) > 0:
                 # Update existing record
@@ -123,9 +127,11 @@ class UsageTracker:
                         field_name: current_value + count
                     }
 
-                self.supabase.table('usage_tracking').update(update_data).eq(
-                    'id', record['id']
-                ).execute()
+                await asyncio.to_thread(
+                    lambda: self.supabase.table('usage_tracking').update(update_data).eq(
+                        'id', record['id']
+                    ).execute()
+                )
             else:
                 # Create new record
                 insert_data = {
@@ -136,7 +142,9 @@ class UsageTracker:
                     'reset_at': reset_at.isoformat()
                 }
 
-                self.supabase.table('usage_tracking').insert(insert_data).execute()
+                await asyncio.to_thread(
+                    lambda: self.supabase.table('usage_tracking').insert(insert_data).execute()
+                )
 
             logger.info(f"Incremented {action_type} usage for user {user_id} by {count}")
             return True
@@ -157,9 +165,11 @@ class UsageTracker:
         """
         try:
             # Get user's account tier
-            user_result = self.supabase.table('authenticated_users').select(
-                'account_tier, subscription_status, subscription_end_date'
-            ).eq('id', user_id).execute()
+            user_result = await asyncio.to_thread(
+                lambda: self.supabase.table('authenticated_users').select(
+                    'account_tier, subscription_status, subscription_end_date'
+                ).eq('id', user_id).execute()
+            )
 
             if not user_result.data:
                 return {
@@ -176,12 +186,14 @@ class UsageTracker:
             logger.info(f"[USAGE_STATS] subscription_end_date from DB: {subscription_end_date}, type: {type(subscription_end_date)}")
 
             # Get tier limits
-            tier_result = self.supabase.table('payment_tiers').select(
-                'import_limit, analysis_limit, name'
-            ).eq('id', account_tier).execute()
+            tier_result = await asyncio.to_thread(
+                lambda: self.supabase.table('payment_tiers').select(
+                    'import_limit, analysis_limit, name'
+                ).eq('id', account_tier).execute()
+            )
 
             if not tier_result.data:
-                return {'error': 'Tier not found'}
+                return {'success': False, 'message': 'Tier not found'}
 
             tier = tier_result.data[0]
             import_limit = tier['import_limit']
@@ -193,9 +205,11 @@ class UsageTracker:
 
             # Get current usage (within 24-hour window)
             today = datetime.now().date()
-            usage_result = self.supabase.table('usage_tracking').select('*').eq(
-                'user_id', user_id
-            ).eq('date', str(today)).execute()
+            usage_result = await asyncio.to_thread(
+                lambda: self.supabase.table('usage_tracking').select('*').eq(
+                    'user_id', user_id
+                ).eq('date', str(today)).execute()
+            )
 
             current_imports = 0
             current_analyses = 0
@@ -243,11 +257,11 @@ class UsageTracker:
             }
 
             logger.info(f"[USAGE_STATS] Returning subscription_end_date: {result.get('subscription_end_date')}")
-            return result
+            return {'success': True, **result}
 
         except Exception as e:
             logger.error(f"Error getting usage stats for user {user_id}: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}
 
     async def claim_anonymous_data(
         self,
@@ -267,14 +281,16 @@ class UsageTracker:
             Dictionary with claim results
         """
         try:
-            result = self.supabase.rpc(
-                'claim_anonymous_data',
-                {
-                    'p_auth_user_id': auth_user_id,
-                    'p_platform': platform,
-                    'p_anonymous_user_id': anonymous_user_id
-                }
-            ).execute()
+            result = await asyncio.to_thread(
+                lambda: self.supabase.rpc(
+                    'claim_anonymous_data',
+                    {
+                        'p_auth_user_id': auth_user_id,
+                        'p_platform': platform,
+                        'p_anonymous_user_id': anonymous_user_id
+                    }
+                ).execute()
+            )
 
             if result.data:
                 logger.info(

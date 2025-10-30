@@ -1,5 +1,6 @@
 // Comprehensive Error Boundary System
 import { Component, ErrorInfo, ReactNode } from 'react'
+import { logger } from '../utils/logger'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -25,8 +26,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
-    
+    logger.error('ErrorBoundary caught an error:', error, errorInfo)
+
     // Call custom error handler if provided
     if (this.props.onError) {
       this.props.onError(error, errorInfo)
@@ -137,15 +138,15 @@ export function SectionErrorBoundary({ children }: { children: ReactNode }) {
 }
 
 // Error boundary for async operations
-export function AsyncErrorBoundary({ 
-  children, 
-  fallback 
-}: { 
+export function AsyncErrorBoundary({
+  children,
+  fallback
+}: {
   children: ReactNode
-  fallback?: ReactNode 
+  fallback?: ReactNode
 }) {
   return (
-    <ErrorBoundary 
+    <ErrorBoundary
       level="component"
       fallback={fallback || (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 m-2">

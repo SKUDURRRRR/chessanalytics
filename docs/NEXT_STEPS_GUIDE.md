@@ -65,12 +65,18 @@ Go to **Supabase Dashboard → Authentication → Providers**
 #### B. Google OAuth
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select existing
-3. Enable Google+ API
-4. Create OAuth 2.0 credentials:
+3. Configure OAuth consent screen:
+   - Select External user type (or Internal if using Google Workspace)
+   - Fill in required fields (app name, user support email, developer contact)
+   - Add scopes if needed (email, profile, openid are included by default)
+   - Add test users if in testing mode
+4. Enable Google Identity Services API (if required by your project)
+5. Create OAuth 2.0 credentials:
+   - Go to Credentials → Create Credentials → OAuth 2.0 Client ID
    - Application type: Web application
    - Authorized redirect URIs: `https://YOUR_PROJECT_ID.supabase.co/auth/v1/callback`
-5. Copy Client ID and Client Secret
-6. In Supabase Dashboard:
+6. Copy Client ID and Client Secret
+7. In Supabase Dashboard:
    - Paste Client ID
    - Paste Client Secret
    - Enable Google provider
@@ -117,13 +123,13 @@ In Stripe Dashboard → Products:
 
 1. **Pro Monthly**
    - Name: "Pro Monthly"
-   - Price: $19.99/month
+   - Price: $5.45/month
    - Recurring: Monthly
    - Copy the Price ID (starts with `price_`)
 
 2. **Pro Yearly**
    - Name: "Pro Yearly"
-   - Price: $159.99/year
+   - Price: $49.50/year
    - Recurring: Yearly
    - Copy the Price ID (starts with `price_`)
 

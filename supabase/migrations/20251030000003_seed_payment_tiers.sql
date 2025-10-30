@@ -89,12 +89,12 @@ INSERT INTO payment_tiers (
 ) VALUES (
     'pro_yearly',
     'Pro Yearly',
-    'Save 33% with annual billing',
+    'Save 25% with annual billing',
     NULL,
-    49.50, -- ~$4.13/month (24% discount from $5.45)
+    49.50, -- ~$4.13/month (25% discount from $5.45)
     NULL, -- Unlimited imports
     NULL, -- Unlimited analyses
-    '["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Opponent preparation", "Personality insights", "33% savings vs monthly"]'::jsonb,
+    '["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Opponent preparation", "Personality insights", "25% savings vs monthly"]'::jsonb,
     NULL, -- To be filled in after Stripe setup
     3,
     true
@@ -134,7 +134,7 @@ END $$;
 -- Created 3 payment tiers:
 -- 1. Free: 100 imports/day, 5 analyses/day, $0
 -- 2. Pro Monthly: Unlimited, $5.45/month
--- 3. Pro Yearly: Unlimited, $49.50/year (~$4.13/month, 33% savings)
+-- 3. Pro Yearly: Unlimited, $49.50/year (~$4.13/month, 25% savings)
 --
 -- Stripe price IDs need to be updated after creating products in Stripe Dashboard
 -- Update with: UPDATE payment_tiers SET stripe_price_id_monthly = 'price_xxx' WHERE id = 'pro_monthly';

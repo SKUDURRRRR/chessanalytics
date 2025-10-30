@@ -74,14 +74,14 @@ class StripeService:
             Dictionary with checkout session info
         """
         if not self.enabled:
-            return {'error': 'Stripe not configured'}
+            return {'success': False, 'message': 'Stripe not configured'}
 
         try:
             # Get or create Stripe customer
             customer_id = await self._get_or_create_customer(user_id)
 
             if not customer_id:
-                return {'error': 'Failed to create Stripe customer'}
+                return {'success': False, 'message': 'Failed to create Stripe customer'}
 
             # Determine what to purchase
             line_items = []
@@ -90,12 +90,14 @@ class StripeService:
 
             if tier_id:
                 # Subscription purchase
-                tier_result = self.supabase.table('payment_tiers').select(
-                    'stripe_price_id_monthly, stripe_price_id_yearly, name'
-                ).eq('id', tier_id).execute()
+                tier_result = await asyncio.to_thread(
+                    lambda: self.supabase.table('payment_tiers').select(
+                        'stripe_price_id_monthly, stripe_price_id_yearly, name'
+                    ).eq('id', tier_id).execute()
+                )
 
                 if not tier_result.data:
-                    return {'error': 'Invalid tier ID'}
+                    return {'success': False, 'message': 'Invalid tier ID'}
 
                 tier = tier_result.data[0]
 
@@ -108,7 +110,7 @@ class StripeService:
                     subscription_type = 'monthly'
 
                 if not price_id:
-                    return {'error': f'Stripe price not configured for tier {tier_id}'}
+                    return {'success': False, 'message': f'Stripe price not configured for tier {tier_id}'}
 
                 line_items.append({
                     'price': price_id,
@@ -137,7 +139,7 @@ class StripeService:
                 })
                 metadata['credits_purchased'] = str(credit_amount)
             else:
-                return {'error': 'Must specify either tier_id or credit_amount'}
+                return {'success': False, 'message': 'Must specify either tier_id or credit_amount'}
 
             # Create checkout session
             session = await asyncio.to_thread(
@@ -160,10 +162,10 @@ class StripeService:
 
         except stripe.error.StripeError as e:
             logger.error(f"Stripe error creating checkout session: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}
         except Exception as e:
             logger.error(f"Error creating checkout session: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}
 
     async def _get_or_create_customer(self, user_id: str) -> Optional[str]:
         """
@@ -191,9 +193,11 @@ class StripeService:
 
             # Using Supabase, we need to use rpc or direct query
             # Let's try with a direct select and get email from Supabase auth
-            user_result = self.supabase.table('authenticated_users').select(
-                'stripe_customer_id, username'
-            ).eq('id', user_id).execute()
+            user_result = await asyncio.to_thread(
+                lambda: self.supabase.table('authenticated_users').select(
+                    'stripe_customer_id, username'
+                ).eq('id', user_id).execute()
+            )
 
             if not user_result.data:
                 logger.error(f"User {user_id} not found")
@@ -238,9 +242,11 @@ class StripeService:
             )
 
             # Save customer ID to database
-            self.supabase.table('authenticated_users').update({
-                'stripe_customer_id': customer.id
-            }).eq('id', user_id).execute()
+            await asyncio.to_thread(
+                lambda: self.supabase.table('authenticated_users').update({
+                    'stripe_customer_id': customer.id
+                }).eq('id', user_id).execute()
+            )
 
             logger.info(f"Created Stripe customer {customer.id} for user {user_id} with email {customer_data.get('email', 'N/A')}")
             return customer.id
@@ -261,11 +267,11 @@ class StripeService:
             Dictionary with processing result
         """
         if not self.enabled:
-            return {'error': 'Stripe not configured'}
+            return {'success': False, 'message': 'Stripe not configured'}
 
         if not self.webhook_secret:
             logger.error("Stripe webhook secret not configured")
-            return {'error': 'Webhook secret not configured'}
+            return {'success': False, 'message': 'Webhook secret not configured'}
 
         try:
             event = stripe.Webhook.construct_event(
@@ -273,10 +279,10 @@ class StripeService:
             )
         except ValueError as e:
             logger.error(f"Invalid webhook payload: {e}")
-            return {'error': 'Invalid payload'}
+            return {'success': False, 'message': 'Invalid payload'}
         except stripe.error.SignatureVerificationError as e:
             logger.error(f"Invalid webhook signature: {e}")
-            return {'error': 'Invalid signature'}
+            return {'success': False, 'message': 'Invalid signature'}
 
         # Handle the event
         event_type = event['type']
@@ -307,7 +313,7 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error processing webhook {event_type}: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}
 
     async def _handle_checkout_completed(self, session):
         """Handle successful checkout session completion."""
@@ -349,7 +355,9 @@ class StripeService:
             await self._add_user_credits(user_id, int(metadata['credits_purchased']))
 
         # Save transaction
-        self.supabase.table('payment_transactions').insert(transaction_data).execute()
+        await asyncio.to_thread(
+            lambda: self.supabase.table('payment_transactions').insert(transaction_data).execute()
+        )
 
         logger.info(f"Checkout completed for user {user_id}")
 
@@ -359,9 +367,11 @@ class StripeService:
         subscription_id = invoice.get('subscription')
 
         # Get user from customer ID
-        user_result = self.supabase.table('authenticated_users').select('id').eq(
-            'stripe_customer_id', customer_id
-        ).execute()
+        user_result = await asyncio.to_thread(
+            lambda: self.supabase.table('authenticated_users').select('id').eq(
+                'stripe_customer_id', customer_id
+            ).execute()
+        )
 
         if not user_result.data:
             logger.error(f"User not found for Stripe customer {customer_id}")
@@ -372,15 +382,17 @@ class StripeService:
         # Record transaction
         amount = invoice.get('amount_paid', 0) / 100
 
-        self.supabase.table('payment_transactions').insert({
-            'user_id': user_id,
-            'stripe_payment_id': invoice.get('payment_intent'),
-            'stripe_invoice_id': invoice.get('id'),
-            'amount': str(amount),
-            'currency': invoice.get('currency', 'usd'),
-            'status': 'succeeded',
-            'transaction_type': 'subscription'
-        }).execute()
+        await asyncio.to_thread(
+            lambda: self.supabase.table('payment_transactions').insert({
+                'user_id': user_id,
+                'stripe_payment_id': invoice.get('payment_intent'),
+                'stripe_invoice_id': invoice.get('id'),
+                'amount': str(amount),
+                'currency': invoice.get('currency', 'usd'),
+                'status': 'succeeded',
+                'transaction_type': 'subscription'
+            }).execute()
+        )
 
         logger.info(f"Invoice paid for user {user_id}")
 
@@ -388,9 +400,11 @@ class StripeService:
         """Handle failed payment."""
         customer_id = invoice.get('customer')
 
-        user_result = self.supabase.table('authenticated_users').select('id').eq(
-            'stripe_customer_id', customer_id
-        ).execute()
+        user_result = await asyncio.to_thread(
+            lambda: self.supabase.table('authenticated_users').select('id').eq(
+                'stripe_customer_id', customer_id
+            ).execute()
+        )
 
         if user_result.data:
             user_id = user_result.data[0]['id']
@@ -404,9 +418,11 @@ class StripeService:
         status = subscription.get('status')
         cancel_at_period_end = subscription.get('cancel_at_period_end', False)
 
-        user_result = self.supabase.table('authenticated_users').select('id').eq(
-            'stripe_customer_id', customer_id
-        ).execute()
+        user_result = await asyncio.to_thread(
+            lambda: self.supabase.table('authenticated_users').select('id').eq(
+                'stripe_customer_id', customer_id
+            ).execute()
+        )
 
         if user_result.data:
             user_id = user_result.data[0]['id']
@@ -426,7 +442,9 @@ class StripeService:
                     update_data['subscription_end_date'] = end_date.isoformat()
 
             # Update subscription status and end date
-            self.supabase.table('authenticated_users').update(update_data).eq('id', user_id).execute()
+            await asyncio.to_thread(
+                lambda: self.supabase.table('authenticated_users').update(update_data).eq('id', user_id).execute()
+            )
 
             logger.info(f"Subscription updated for user {user_id}: {status}, cancel_at_period_end={cancel_at_period_end}")
 
@@ -434,38 +452,46 @@ class StripeService:
         """Handle subscription cancellation."""
         customer_id = subscription.get('customer')
 
-        user_result = self.supabase.table('authenticated_users').select('id').eq(
-            'stripe_customer_id', customer_id
-        ).execute()
+        user_result = await asyncio.to_thread(
+            lambda: self.supabase.table('authenticated_users').select('id').eq(
+                'stripe_customer_id', customer_id
+            ).execute()
+        )
 
         if user_result.data:
             user_id = user_result.data[0]['id']
 
             # Downgrade to free tier
-            self.supabase.table('authenticated_users').update({
-                'account_tier': 'free',
-                'subscription_status': 'cancelled',
-                'stripe_subscription_id': None
-            }).eq('id', user_id).execute()
+            await asyncio.to_thread(
+                lambda: self.supabase.table('authenticated_users').update({
+                    'account_tier': 'free',
+                    'subscription_status': 'cancelled',
+                    'stripe_subscription_id': None
+                }).eq('id', user_id).execute()
+            )
 
             logger.info(f"Subscription cancelled for user {user_id}, downgraded to free")
 
     async def _update_user_subscription(self, user_id: str, tier_id: str, subscription_id: str):
         """Update user's subscription tier."""
-        self.supabase.table('authenticated_users').update({
-            'account_tier': tier_id,  # Keep tier_id as-is (e.g., 'pro_monthly', 'pro_yearly')
-            'subscription_status': 'active',
-            'stripe_subscription_id': subscription_id
-        }).eq('id', user_id).execute()
+        await asyncio.to_thread(
+            lambda: self.supabase.table('authenticated_users').update({
+                'account_tier': tier_id,  # Keep tier_id as-is (e.g., 'pro_monthly', 'pro_yearly')
+                'subscription_status': 'active',
+                'stripe_subscription_id': subscription_id
+            }).eq('id', user_id).execute()
+        )
 
         logger.info(f"Updated subscription for user {user_id} to tier {tier_id}")
 
     async def _add_user_credits(self, user_id: str, credits: int):
         """Add credits to user account."""
         # Check if user has existing credits
-        existing = self.supabase.table('user_credits').select('*').eq(
-            'user_id', user_id
-        ).execute()
+        existing = await asyncio.to_thread(
+            lambda: self.supabase.table('user_credits').select('*').eq(
+                'user_id', user_id
+            ).execute()
+        )
 
         if existing.data:
             # Update existing
@@ -473,17 +499,21 @@ class StripeService:
             new_remaining = credit_record['credits_remaining'] + credits
             new_total = credit_record['credits_total'] + credits
 
-            self.supabase.table('user_credits').update({
-                'credits_remaining': new_remaining,
-                'credits_total': new_total
-            }).eq('id', credit_record['id']).execute()
+            await asyncio.to_thread(
+                lambda: self.supabase.table('user_credits').update({
+                    'credits_remaining': new_remaining,
+                    'credits_total': new_total
+                }).eq('id', credit_record['id']).execute()
+            )
         else:
             # Create new
-            self.supabase.table('user_credits').insert({
-                'user_id': user_id,
-                'credits_remaining': credits,
-                'credits_total': credits
-            }).execute()
+            await asyncio.to_thread(
+                lambda: self.supabase.table('user_credits').insert({
+                    'user_id': user_id,
+                    'credits_remaining': credits,
+                    'credits_total': credits
+                }).execute()
+            )
 
         logger.info(f"Added {credits} credits to user {user_id}")
 
@@ -498,16 +528,18 @@ class StripeService:
             Dictionary with cancellation result
         """
         if not self.enabled:
-            return {'error': 'Stripe not configured'}
+            return {'success': False, 'message': 'Stripe not configured'}
 
         try:
             # Get user's subscription info
-            user_result = self.supabase.table('authenticated_users').select(
-                'stripe_subscription_id, stripe_customer_id, account_tier'
-            ).eq('id', user_id).execute()
+            user_result = await asyncio.to_thread(
+                lambda: self.supabase.table('authenticated_users').select(
+                    'stripe_subscription_id, stripe_customer_id, account_tier'
+                ).eq('id', user_id).execute()
+            )
 
             if not user_result.data:
-                return {'error': 'User not found'}
+                return {'success': False, 'message': 'User not found'}
 
             user = user_result.data[0]
             subscription_id = user.get('stripe_subscription_id')
@@ -529,9 +561,11 @@ class StripeService:
                         if subscriptions.data:
                             subscription_id = subscriptions.data[0].id
                             # Update the database with the found subscription_id
-                            self.supabase.table('authenticated_users').update({
-                                'stripe_subscription_id': subscription_id
-                            }).eq('id', user_id).execute()
+                            await asyncio.to_thread(
+                                lambda: self.supabase.table('authenticated_users').update({
+                                    'stripe_subscription_id': subscription_id
+                                }).eq('id', user_id).execute()
+                            )
                             logger.info(f"Found and stored subscription_id {subscription_id} for user {user_id}")
                     except Exception as e:
                         logger.warning(f"Could not find subscription from Stripe: {e}")
@@ -539,11 +573,13 @@ class StripeService:
             if not subscription_id:
                 # If still no subscription_id, user might have been manually upgraded
                 # Just downgrade them to free tier
-                self.supabase.table('authenticated_users').update({
-                    'account_tier': 'free',
-                    'subscription_status': 'cancelled',
-                    'subscription_end_date': None
-                }).eq('id', user_id).execute()
+                await asyncio.to_thread(
+                    lambda: self.supabase.table('authenticated_users').update({
+                        'account_tier': 'free',
+                        'subscription_status': 'cancelled',
+                        'subscription_end_date': None
+                    }).eq('id', user_id).execute()
+                )
 
                 return {
                     'success': True,
@@ -568,7 +604,9 @@ class StripeService:
                 end_date = datetime.fromtimestamp(subscription.current_period_end)
                 update_data['subscription_end_date'] = end_date.isoformat()
 
-            self.supabase.table('authenticated_users').update(update_data).eq('id', user_id).execute()
+            await asyncio.to_thread(
+                lambda: self.supabase.table('authenticated_users').update(update_data).eq('id', user_id).execute()
+            )
 
             return {
                 'success': True,
@@ -578,10 +616,10 @@ class StripeService:
 
         except stripe.error.StripeError as e:
             logger.error(f"Stripe error cancelling subscription: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}
         except Exception as e:
             logger.error(f"Error cancelling subscription: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}
 
     async def get_subscription_status(self, user_id: str) -> Dict:
         """
@@ -594,16 +632,19 @@ class StripeService:
             Dictionary with subscription details
         """
         try:
-            user_result = self.supabase.table('authenticated_users').select(
-                'account_tier, subscription_status, stripe_subscription_id, subscription_end_date'
-            ).eq('id', user_id).execute()
+            user_result = await asyncio.to_thread(
+                lambda: self.supabase.table('authenticated_users').select(
+                    'account_tier, subscription_status, stripe_subscription_id, subscription_end_date'
+                ).eq('id', user_id).execute()
+            )
 
             if not user_result.data:
-                return {'error': 'User not found'}
+                return {'success': False, 'message': 'User not found'}
 
             user = user_result.data[0]
 
             return {
+                'success': True,
                 'account_tier': user['account_tier'],
                 'subscription_status': user['subscription_status'],
                 'subscription_id': user.get('stripe_subscription_id'),
@@ -612,7 +653,7 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error getting subscription status: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}
 
     async def verify_and_sync_session(self, user_id: str, session_id: str) -> Dict:
         """
@@ -628,7 +669,7 @@ class StripeService:
             Dictionary with verification result
         """
         if not self.enabled:
-            return {'error': 'Stripe not configured'}
+            return {'success': False, 'message': 'Stripe not configured'}
 
         try:
             # Retrieve the session from Stripe
@@ -644,7 +685,7 @@ class StripeService:
 
             if session_user_id != user_id:
                 logger.error(f"Session user mismatch: expected {user_id}, got {session_user_id}")
-                return {'error': 'Session does not belong to this user'}
+                return {'success': False, 'message': 'Session does not belong to this user'}
 
             # Check payment status
             payment_status = session.get('payment_status')
@@ -667,22 +708,26 @@ class StripeService:
                 await self._update_user_subscription(user_id, tier_id, subscription_id)
 
                 # Record transaction if not already recorded
-                existing = self.supabase.table('payment_transactions').select('id').eq(
-                    'stripe_payment_id', session.get('payment_intent')
-                ).execute()
+                existing = await asyncio.to_thread(
+                    lambda: self.supabase.table('payment_transactions').select('id').eq(
+                        'stripe_payment_id', session.get('payment_intent')
+                    ).execute()
+                )
 
                 if not existing.data:
                     amount = session.get('amount_total', 0) / 100
-                    self.supabase.table('payment_transactions').insert({
-                        'user_id': user_id,
-                        'stripe_payment_id': session.get('payment_intent'),
-                        'amount': str(amount),
-                        'currency': session.get('currency', 'usd'),
-                        'status': 'succeeded',
-                        'transaction_type': 'subscription',
-                        'tier_id': tier_id,
-                        'metadata': metadata
-                    }).execute()
+                    await asyncio.to_thread(
+                        lambda: self.supabase.table('payment_transactions').insert({
+                            'user_id': user_id,
+                            'stripe_payment_id': session.get('payment_intent'),
+                            'amount': str(amount),
+                            'currency': session.get('currency', 'usd'),
+                            'status': 'succeeded',
+                            'transaction_type': 'subscription',
+                            'tier_id': tier_id,
+                            'metadata': metadata
+                        }).execute()
+                    )
 
                 logger.info(f"Verified and synced subscription for user {user_id}, tier {tier_id}")
                 return {
@@ -696,22 +741,26 @@ class StripeService:
                 await self._add_user_credits(user_id, int(credits_purchased))
 
                 # Record transaction if not already recorded
-                existing = self.supabase.table('payment_transactions').select('id').eq(
-                    'stripe_payment_id', session.get('payment_intent')
-                ).execute()
+                existing = await asyncio.to_thread(
+                    lambda: self.supabase.table('payment_transactions').select('id').eq(
+                        'stripe_payment_id', session.get('payment_intent')
+                    ).execute()
+                )
 
                 if not existing.data:
                     amount = session.get('amount_total', 0) / 100
-                    self.supabase.table('payment_transactions').insert({
-                        'user_id': user_id,
-                        'stripe_payment_id': session.get('payment_intent'),
-                        'amount': str(amount),
-                        'currency': session.get('currency', 'usd'),
-                        'status': 'succeeded',
-                        'transaction_type': 'credits',
-                        'credits_purchased': int(credits_purchased),
-                        'metadata': metadata
-                    }).execute()
+                    await asyncio.to_thread(
+                        lambda: self.supabase.table('payment_transactions').insert({
+                            'user_id': user_id,
+                            'stripe_payment_id': session.get('payment_intent'),
+                            'amount': str(amount),
+                            'currency': session.get('currency', 'usd'),
+                            'status': 'succeeded',
+                            'transaction_type': 'credits',
+                            'credits_purchased': int(credits_purchased),
+                            'metadata': metadata
+                        }).execute()
+                    )
 
                 logger.info(f"Verified and synced credits for user {user_id}, amount {credits_purchased}")
                 return {
@@ -721,11 +770,11 @@ class StripeService:
                 }
 
             else:
-                return {'error': 'Unknown purchase type'}
+                return {'success': False, 'message': 'Unknown purchase type'}
 
         except stripe.error.StripeError as e:
             logger.error(f"Stripe error verifying session: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}
         except Exception as e:
             logger.error(f"Error verifying session: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}

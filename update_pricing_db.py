@@ -5,9 +5,15 @@ Update pricing in the database
 import os
 from supabase import create_client, Client
 
-# Connect to local Supabase
-url = "http://127.0.0.1:54321"
-key = "sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"  # Service role key from supabase start output
+# Read credentials from environment variables
+url = os.environ.get("SUPABASE_URL")
+key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+# Validate that both env vars are present
+if not url:
+    raise ValueError("SUPABASE_URL environment variable is required but not set")
+if not key:
+    raise ValueError("SUPABASE_SERVICE_ROLE_KEY environment variable is required but not set")
 
 supabase: Client = create_client(url, key)
 

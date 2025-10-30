@@ -3,6 +3,8 @@
  * and improve performance for frequently accessed data
  */
 
+import { logger } from './logger'
+
 interface CacheEntry<T> {
   data: T
   timestamp: number
@@ -12,6 +14,7 @@ interface CacheEntry<T> {
 class ApiCache {
   private cache = new Map<string, CacheEntry<any>>()
   private readonly DEFAULT_TTL = 5 * 60 * 1000 // 5 minutes
+  private readonly MAX_CACHE_SIZE = 1000 // Maximum number of cache entries
 
   /**
    * Get data from cache if it exists and hasn't expired
@@ -33,8 +36,19 @@ class ApiCache {
 
   /**
    * Store data in cache with optional TTL
+   * Implements LRU-like eviction when cache is full
    */
   set<T>(key: string, data: T, ttl: number = this.DEFAULT_TTL): void {
+    // Before adding new entry, check if cache is at capacity
+    if (this.cache.size >= this.MAX_CACHE_SIZE && !this.cache.has(key)) {
+      // Remove oldest entry (first entry in Map)
+      const firstKey = this.cache.keys().next().value
+      if (firstKey) {
+        this.cache.delete(firstKey)
+        logger.log(`[Cache] Evicted oldest entry due to size limit: ${firstKey}`)
+      }
+    }
+
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
@@ -175,9 +189,9 @@ export function clearUserCache(userId: string, platform: string): void {
   }
 
   keysToDelete.forEach(key => apiCache.delete(key))
-  console.log(`[Cache] Cleared ${keysToDelete.length} cache entries for user ${userId} on ${platform}`)
+  logger.log(`[Cache] Cleared ${keysToDelete.length} cache entries for user ${userId} on ${platform}`)
   if (keysToDelete.length > 0 && import.meta.env.DEV) {
-    console.log('[Cache] Keys cleared:', keysToDelete)
+    logger.log('[Cache] Keys cleared:', keysToDelete)
   }
 
   // Also clear backend cache via API call

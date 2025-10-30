@@ -274,7 +274,9 @@ class ParallelAnalysisEngine:
             print(f"[PARALLEL ENGINE] Fetching {limit} most recent games for {user_id} on {platform}")
 
             # First get game IDs from games table ordered by played_at (most recent first)
-            games_list_response = self.supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(limit).execute()
+            games_list_response = await asyncio.to_thread(
+                lambda: self.supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(limit).execute()
+            )
 
             if not games_list_response.data:
                 print(f"[PARALLEL ENGINE] No games found in games table")
@@ -286,7 +288,9 @@ class ParallelAnalysisEngine:
             print(f"[PARALLEL ENGINE] Found {len(provider_game_ids)} games in database (ordered by most recent)")
 
             # Now fetch PGN data for these games
-            pgn_response = self.supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+            pgn_response = await asyncio.to_thread(
+                lambda: self.supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+            )
 
             if not pgn_response.data:
                 print(f"[PARALLEL ENGINE] No PGN data found for games")

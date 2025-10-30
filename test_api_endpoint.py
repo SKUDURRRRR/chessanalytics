@@ -13,7 +13,7 @@ load_dotenv('python/.env.local')
 
 async def test_api_endpoint():
     """Test the /api/v1/auth/check-usage endpoint"""
-    email = "baisustipas@gmail.com"
+    email = os.getenv('TEST_USER_EMAIL', 'test@example.com')
 
     # Initialize Supabase client
     supabase_url = os.getenv('SUPABASE_URL')

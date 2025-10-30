@@ -33,7 +33,10 @@ export default function UsageLimitModal({
         {isAuthenticated ? (
           <>
             <p className="text-slate-300 mb-4">
-              You've used {currentUsage?.used || 0} of your {currentUsage?.limit || 0} daily {actionPastTense}.
+              {currentUsage?.unlimited
+                ? `You've used ${currentUsage?.used ?? 0} ${actionPastTense} today. Your plan is unlimited.`
+                : `You've used ${currentUsage?.used || 0} of your ${currentUsage?.limit || 0} daily ${actionPastTense}.`
+              }
             </p>
             <p className="text-slate-300 mb-6">
               Upgrade to Pro for unlimited access to all features, or wait for your limits to reset.

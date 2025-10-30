@@ -267,6 +267,13 @@ export default function SimpleAnalyticsPage() {
       return
     }
 
+    // Check usage limits before importing
+    if (user && usageStats?.imports && !usageStats.imports.unlimited && usageStats.imports.remaining === 0) {
+      setLimitType('import')
+      setShowLimitModal(true)
+      return
+    }
+
     try {
       setImporting(true)
       setImportError(null)
@@ -282,6 +289,8 @@ export default function SimpleAnalyticsPage() {
           // Clear cache to force fresh data load after import
           clearUserCache(userId, platform)
           handleRefresh()
+          // Refresh usage stats after import
+          refreshUsageStats()
         } else {
           setImportStatus(`Import complete! No new games found. You already have all recent games imported.`)
         }
@@ -568,6 +577,8 @@ export default function SimpleAnalyticsPage() {
           statusTimeoutRef.current = setTimeout(() => setProgressStatus(null), 2500)
           // Clear cache to force fresh data load after analysis
           clearUserCache(userId, platform)
+          // Refresh usage stats after analysis
+          refreshUsageStats()
           // Set force refresh flag to bypass cache on next load
           setForceDataRefresh(true)
           // Add small delay to ensure database has finished writing analysis results
@@ -630,6 +641,13 @@ export default function SimpleAnalyticsPage() {
   }
 
   const startAnalysis = async () => {
+    // Check usage limits before analyzing
+    if (user && usageStats?.analyses && !usageStats.analyses.unlimited && usageStats.analyses.remaining === 0) {
+      setLimitType('analyze')
+      setShowLimitModal(true)
+      return
+    }
+
     try {
       console.log('Analyze My Games button clicked! SimpleAnalyticsPage.')
       console.log('Starting analysis for:', { userId, platform, limit: ANALYSIS_TEST_LIMIT })

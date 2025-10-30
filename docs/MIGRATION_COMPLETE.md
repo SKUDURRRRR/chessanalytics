@@ -34,8 +34,8 @@ All tables have:
 ### 4. Seed Payment Tiers (20251030000003)
 Created 4 tiers:
 - **Free:** 100 imports/day, 5 analyses/day, $0
-- **Pro Monthly:** Unlimited, $19.99/month
-- **Pro Yearly:** Unlimited, $159.99/year (33% savings)
+- **Pro Monthly:** Unlimited, $5.45/month
+- **Pro Yearly:** Unlimited, $49.50/year (25% savings)
 - **Enterprise:** Unlimited, Custom pricing
 
 ## Database Schema Summary

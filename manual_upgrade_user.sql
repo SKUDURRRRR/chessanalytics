@@ -1,7 +1,15 @@
--- Manual SQL script to upgrade a user to Pro tier
+-- ============================================================================
+-- WARNING: SET THE USER EMAIL PARAMETER BEFORE RUNNING THIS SCRIPT
+-- ============================================================================
+-- This script upgrades a user to Pro tier manually.
+--
+-- REQUIRED: Replace :user_email with the actual user's email address
+-- throughout this entire script before executing any queries.
+--
+-- Example: Change :user_email to 'actual.user@example.com'
+--
 -- Run this in your Supabase SQL editor or psql
-
--- Replace 'baisustipas@gmail.com' with the actual user email
+-- ============================================================================
 
 -- First, let's find the user
 SELECT
@@ -12,7 +20,7 @@ SELECT
     u.email
 FROM authenticated_users au
 JOIN auth.users u ON u.id = au.id
-WHERE u.email = 'baisustipas@gmail.com';
+WHERE u.email = :user_email;
 
 -- If user is found, update their tier to pro_monthly
 -- UNCOMMENT the lines below after verifying the user exists:
@@ -26,7 +34,7 @@ WHERE u.email = 'baisustipas@gmail.com';
 --     SELECT au.id
 --     FROM authenticated_users au
 --     JOIN auth.users u ON u.id = au.id
---     WHERE u.email = 'baisustipas@gmail.com'
+--     WHERE u.email = :user_email
 -- );
 
 -- Verify the update
@@ -38,4 +46,4 @@ WHERE u.email = 'baisustipas@gmail.com';
 --     u.email
 -- FROM authenticated_users au
 -- JOIN auth.users u ON u.id = au.id
--- WHERE u.email = 'baisustipas@gmail.com';
+-- WHERE u.email = :user_email;

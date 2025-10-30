@@ -16,7 +16,16 @@ SUPABASE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 if not SUPABASE_URL or not SUPABASE_KEY:
     print("[ERROR] Could not load Supabase credentials")
     print("Please run these SQL commands in Supabase SQL Editor:")
-    print("https://supabase.com/dashboard/project/eqeodgabrshqkxufvshf/sql/new")
+    # Use generic placeholder instead of hardcoded project ID
+    project_url = "https://supabase.com/dashboard/project/<YOUR_PROJECT_ID>/sql/new"
+    if SUPABASE_URL:
+        # Try to extract project ID from SUPABASE_URL (format: https://<project-id>.supabase.co)
+        try:
+            project_id = SUPABASE_URL.split('//')[1].split('.')[0]
+            project_url = f"https://supabase.com/dashboard/project/{project_id}/sql/new"
+        except:
+            pass
+    print(project_url)
     print()
     print("UPDATE payment_tiers SET stripe_price_id_monthly = 'price_1SNk0Q0CDBdO3EY30yDl3NMQ' WHERE id = 'pro_monthly';")
     print("UPDATE payment_tiers SET stripe_price_id_yearly = 'price_1SNk2o0CDBdO3EY3LDSUOkzK' WHERE id = 'pro_yearly';")
@@ -44,7 +53,16 @@ try:
 except Exception as e:
     print(f"\n[ERROR] {e}")
     print("\nPlease run these SQL commands manually in Supabase SQL Editor:")
-    print("https://supabase.com/dashboard/project/eqeodgabrshqkxufvshf/sql/new")
+    # Use generic placeholder instead of hardcoded project ID
+    project_url = "https://supabase.com/dashboard/project/<YOUR_PROJECT_ID>/sql/new"
+    if SUPABASE_URL:
+        # Try to extract project ID from SUPABASE_URL (format: https://<project-id>.supabase.co)
+        try:
+            project_id = SUPABASE_URL.split('//')[1].split('.')[0]
+            project_url = f"https://supabase.com/dashboard/project/{project_id}/sql/new"
+        except:
+            pass
+    print(project_url)
     print()
     print("UPDATE payment_tiers SET stripe_price_id_monthly = 'price_1SNk0Q0CDBdO3EY30yDl3NMQ' WHERE id = 'pro_monthly';")
     print("UPDATE payment_tiers SET stripe_price_id_yearly = 'price_1SNk2o0CDBdO3EY3LDSUOkzK' WHERE id = 'pro_yearly';")

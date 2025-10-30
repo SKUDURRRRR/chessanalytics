@@ -35,7 +35,7 @@ This guide walks through setting up Stripe for the Chess Analytics platform, inc
 2. Fill in details:
    - **Name:** Pro Monthly
    - **Description:** Unlimited chess game imports and analyses
-   - **Pricing:** Recurring, $19.99 USD, Monthly
+   - **Pricing:** Recurring, $5.45 USD, Monthly
 3. Click "Save product"
 4. Copy the Price ID (starts with `price_`)
 5. Update database:
@@ -50,8 +50,8 @@ This guide walks through setting up Stripe for the Chess Analytics platform, inc
 1. Go to Products → Add product
 2. Fill in details:
    - **Name:** Pro Yearly
-   - **Description:** Unlimited chess game imports and analyses (save 33%)
-   - **Pricing:** Recurring, $159.99 USD, Yearly
+   - **Description:** Unlimited chess game imports and analyses (save 25%)
+   - **Pricing:** Recurring, $49.50 USD, Yearly
 3. Click "Save product"
 4. Copy the Price ID
 5. Update database:
@@ -226,15 +226,15 @@ WHERE id IN ('pro_monthly', 'pro_yearly');
 ### Suggested Pricing Structure
 
 - **Free:** $0 - 100 imports/day, 5 analyses/day
-- **Pro Monthly:** $19.99 - Unlimited
-- **Pro Yearly:** $159.99 - Unlimited (save 33%)
+- **Pro Monthly:** $5.45 - Unlimited
+- **Pro Yearly:** $49.50 - Unlimited (save 25%)
 - **Credits:** $10 per 100 analysis credits (one-time purchase)
 
 ### A/B Testing
 
 Consider testing different price points:
-- Monthly: $14.99, $19.99, or $24.99
-- Yearly: $149.99, $159.99, or $179.99
+- Monthly: $4.99, $5.45, or $6.99
+- Yearly: $44.99, $49.50, or $54.99
 
 ## Support
 

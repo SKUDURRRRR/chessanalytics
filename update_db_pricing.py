@@ -1,15 +1,19 @@
-import requests
-
 # Update via the production database connection
 # The backend is already connected to the database
 
-# We need to update the database directly. Let's use SQL via the backend
-# Or we can just run SQL against the backend's database
+import os
+from dotenv import load_dotenv
+from supabase import create_client
 
-import sys
-sys.path.insert(0, 'python/core')
+# Load environment variables
+load_dotenv('python/.env.local')  # Try .env.local first
+load_dotenv()  # Fallback to .env
 
-from python.core.unified_api_server import supabase
+# Create Supabase client directly using environment variables
+supabase = create_client(
+    os.getenv('SUPABASE_URL'),
+    os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+)
 
 print("Updating pricing in the database...")
 

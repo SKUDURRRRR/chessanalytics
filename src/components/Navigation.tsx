@@ -6,9 +6,16 @@ export function Navigation() {
   const location = useLocation()
 
   const handleSignOut = async () => {
-    await signOut()
-    // Redirect to home page after sign out
-    window.location.href = '/'
+    try {
+      await signOut()
+      // Redirect to home page after sign out
+      window.location.href = '/'
+    } catch (error) {
+      console.error('Sign out failed:', error)
+      // Show error to user - you might want to use a toast notification here
+      alert('Failed to sign out. Please try again.')
+      // Don't redirect on error to prevent confusion about auth state
+    }
   }
 
   // Generate login/signup links with returnTo query param

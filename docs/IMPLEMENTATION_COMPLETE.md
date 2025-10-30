@@ -86,8 +86,8 @@ Follow `docs/STRIPE_SETUP.md`:
 
 1. Create Stripe account
 2. Get API keys (test mode first)
-3. Create Pro Monthly product ($19.99/month)
-4. Create Pro Yearly product ($159.99/year)
+3. Create Pro Monthly product ($5.45/month)
+4. Create Pro Yearly product ($49.50/year)
 5. Copy price IDs and update database:
    ```sql
    UPDATE payment_tiers
@@ -318,8 +318,8 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
 ## 📊 Pricing Structure
 
 - **Free:** $0/month - 100 imports/day, 5 analyses/day
-- **Pro Monthly:** $19.99/month - Unlimited
-- **Pro Yearly:** $159.99/year - Unlimited (save 33%)
+- **Pro Monthly:** $5.45/month - Unlimited
+- **Pro Yearly:** $49.50/year - Unlimited (save 25%)
 - **Enterprise:** Custom - Contact sales
 
 ## 🔒 Security Notes

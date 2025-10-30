@@ -174,11 +174,13 @@ class ReliableAnalysisPersistence:
         try:
             # First verify that the game exists in the games table
             try:
-                game_check = self.supabase_service.table('games').select('id').eq(
-                    'user_id', analysis_data['user_id']
-                ).eq('platform', analysis_data['platform']).eq(
-                    'provider_game_id', analysis_data['game_id']
-                ).limit(1).execute()
+                game_check = await asyncio.to_thread(
+                    lambda: self.supabase_service.table('games').select('id').eq(
+                        'user_id', analysis_data['user_id']
+                    ).eq('platform', analysis_data['platform']).eq(
+                        'provider_game_id', analysis_data['game_id']
+                    ).limit(1).execute()
+                )
 
                 if not game_check.data:
                     print(f"[PERSISTENCE] ❌ Game not found in games table:")
@@ -234,10 +236,12 @@ class ReliableAnalysisPersistence:
             print(f"[PERSISTENCE] Saving to game_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, type={analysis_data['analysis_type']}")
 
             try:
-                game_response = self.supabase_service.table('game_analyses').upsert(
-                    game_analyses_data,
-                    on_conflict='user_id,platform,game_id,analysis_type'
-                ).execute()
+                game_response = await asyncio.to_thread(
+                    lambda: self.supabase_service.table('game_analyses').upsert(
+                        game_analyses_data,
+                        on_conflict='user_id,platform,game_id,analysis_type'
+                    ).execute()
+                )
 
                 print(f"[PERSISTENCE] game_analyses response: data={getattr(game_response, 'data', None)}, error={getattr(game_response, 'error', None)}")
 
@@ -289,7 +293,9 @@ class ReliableAnalysisPersistence:
                 print(f"[PERSISTENCE] game_analyses record ID: {game_analysis_id}")
 
             if game_analysis_id is None:
-                fetch_response = self.supabase_service.table('game_analyses').select('id').eq('user_id', analysis_data['user_id']).eq('platform', analysis_data['platform']).eq('game_id', analysis_data['game_id']).eq('analysis_type', analysis_data['analysis_type']).limit(1).execute()
+                fetch_response = await asyncio.to_thread(
+                    lambda: self.supabase_service.table('game_analyses').select('id').eq('user_id', analysis_data['user_id']).eq('platform', analysis_data['platform']).eq('game_id', analysis_data['game_id']).eq('analysis_type', analysis_data['analysis_type']).limit(1).execute()
+                )
                 fetch_data = getattr(fetch_response, 'data', None)
                 if fetch_data:
                     game_analysis_id = fetch_data[0].get('id')
@@ -341,10 +347,12 @@ class ReliableAnalysisPersistence:
 
             print(f"[PERSISTENCE] Saving to move_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, method={analysis_data['analysis_type']}")
 
-            move_response = self.supabase_service.table('move_analyses').upsert(
-                move_analyses_data,
-                on_conflict='user_id,platform,game_id,analysis_method'
-            ).execute()
+            move_response = await asyncio.to_thread(
+                lambda: self.supabase_service.table('move_analyses').upsert(
+                    move_analyses_data,
+                    on_conflict='user_id,platform,game_id,analysis_method'
+                ).execute()
+            )
 
             move_data = getattr(move_response, 'data', None)
             move_error = getattr(move_response, 'error', None)
@@ -375,11 +383,13 @@ class ReliableAnalysisPersistence:
         try:
             # First verify that the game exists in the games table
             try:
-                game_check = self.supabase_service.table('games').select('id').eq(
-                    'user_id', analysis_data['user_id']
-                ).eq('platform', analysis_data['platform']).eq(
-                    'provider_game_id', analysis_data['game_id']
-                ).limit(1).execute()
+                game_check = await asyncio.to_thread(
+                    lambda: self.supabase_service.table('games').select('id').eq(
+                        'user_id', analysis_data['user_id']
+                    ).eq('platform', analysis_data['platform']).eq(
+                        'provider_game_id', analysis_data['game_id']
+                    ).limit(1).execute()
+                )
 
                 if not game_check.data:
                     print(f"[PERSISTENCE] ❌ Game not found in games table:")
@@ -432,10 +442,12 @@ class ReliableAnalysisPersistence:
                 'stockfish_depth': analysis_data['stockfish_depth']
             }
 
-            response = self.supabase_service.table('game_analyses').upsert(
-                game_analyses_data,
-                on_conflict='user_id,platform,game_id,analysis_type'
-            ).execute()
+            response = await asyncio.to_thread(
+                lambda: self.supabase_service.table('game_analyses').upsert(
+                    game_analyses_data,
+                    on_conflict='user_id,platform,game_id,analysis_type'
+                ).execute()
+            )
 
             record_id = None
             response_data = getattr(response, 'data', None)
@@ -443,7 +455,9 @@ class ReliableAnalysisPersistence:
                 record_id = response_data[0].get('id')
 
             if record_id is None:
-                fetch_response = self.supabase_service.table('game_analyses').select('id').eq('user_id', analysis_data['user_id']).eq('platform', analysis_data['platform']).eq('game_id', analysis_data['game_id']).eq('analysis_type', analysis_data['analysis_type']).limit(1).execute()
+                fetch_response = await asyncio.to_thread(
+                    lambda: self.supabase_service.table('game_analyses').select('id').eq('user_id', analysis_data['user_id']).eq('platform', analysis_data['platform']).eq('game_id', analysis_data['game_id']).eq('analysis_type', analysis_data['analysis_type']).limit(1).execute()
+                )
                 fetch_data = getattr(fetch_response, 'data', None)
                 if fetch_data:
                     record_id = fetch_data[0].get('id')
@@ -624,10 +638,12 @@ class ReliableAnalysisPersistence:
                 'analysis_data': job.analysis_data
             }
 
-            self.supabase_service.table('analysis_jobs').upsert(
-                job_data,
-                on_conflict='job_id'
-            ).execute()
+            await asyncio.to_thread(
+                lambda: self.supabase_service.table('analysis_jobs').upsert(
+                    job_data,
+                    on_conflict='job_id'
+                ).execute()
+            )
 
         except Exception as e:
             logger.warning(f"Could not store job tracking: {str(e)}")
@@ -654,7 +670,9 @@ class ReliableAnalysisPersistence:
             if extra_fields:
                 payload.update({k: v for k, v in extra_fields.items() if v is not None})
 
-            self.supabase_service.table('analysis_jobs').update(payload).eq('job_id', job_id).execute()
+            await asyncio.to_thread(
+                lambda: self.supabase_service.table('analysis_jobs').update(payload).eq('job_id', job_id).execute()
+            )
         except Exception as e:
             logger.warning(f"Could not update job status: {str(e)}")
 
@@ -662,19 +680,23 @@ class ReliableAnalysisPersistence:
         """Handle persistence failure and update job status."""
         try:
             # Get current job
-            response = self.supabase_service.table('analysis_jobs').select('*').eq('job_id', job_id).execute()
+            response = await asyncio.to_thread(
+                lambda: self.supabase_service.table('analysis_jobs').select('*').eq('job_id', job_id).execute()
+            )
 
             if response.data:
                 job_data = response.data[0]
                 retry_count = job_data.get('retry_count', 0) + 1
 
                 # Update retry count and status
-                self.supabase_service.table('analysis_jobs').update({
-                    'retry_count': retry_count,
-                    'status': PersistenceStatus.RETRYING.value if retry_count < self.max_retries else PersistenceStatus.FAILED.value,
-                    'updated_at': datetime.now(timezone.utc).isoformat(),
-                    'error_message': error_message
-                }).eq('job_id', job_id).execute()
+                await asyncio.to_thread(
+                    lambda: self.supabase_service.table('analysis_jobs').update({
+                        'retry_count': retry_count,
+                        'status': PersistenceStatus.RETRYING.value if retry_count < self.max_retries else PersistenceStatus.FAILED.value,
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
+                        'error_message': error_message
+                    }).eq('job_id', job_id).execute()
+                )
 
         except Exception as e:
             logger.warning(f"Could not handle persistence failure: {str(e)}")
@@ -683,7 +705,9 @@ class ReliableAnalysisPersistence:
         """Retry analysis persistence if retries are available."""
         try:
             # Get current job status
-            response = self.supabase_service.table('analysis_jobs').select('*').eq('job_id', job_id).execute()
+            response = await asyncio.to_thread(
+                lambda: self.supabase_service.table('analysis_jobs').select('*').eq('job_id', job_id).execute()
+            )
 
             if response.data:
                 job_data = response.data[0]
@@ -753,7 +777,9 @@ class ReliableAnalysisPersistence:
     async def get_analysis_progress(self, user_id: str, platform: str) -> Dict[str, Any]:
         """Get analysis progress for a user."""
         try:
-            response = self.supabase_service.table('analysis_jobs').select('*').eq('user_id', user_id).eq('platform', platform).execute()
+            response = await asyncio.to_thread(
+                lambda: self.supabase_service.table('analysis_jobs').select('*').eq('user_id', user_id).eq('platform', platform).execute()
+            )
 
             if response.data:
                 jobs = response.data
