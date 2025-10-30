@@ -1,6 +1,14 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { initializeClarity } from './lib/clarity'
+
+// Initialize Microsoft Clarity
+// Replace 'YOUR_PROJECT_ID' with your actual Clarity project ID from https://clarity.microsoft.com
+const CLARITY_PROJECT_ID = import.meta.env.VITE_CLARITY_PROJECT_ID
+if (CLARITY_PROJECT_ID) {
+  initializeClarity(CLARITY_PROJECT_ID)
+}
 
 // Suppress external script errors (browser extensions, etc.)
 window.addEventListener('error', (event: ErrorEvent) => {

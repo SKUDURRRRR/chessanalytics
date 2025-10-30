@@ -2,6 +2,7 @@
 import { supabase } from '../lib/supabase'
 import { normalizeUserId } from '../lib/security'
 import { quickCache, getUserExistsCacheKey } from '../utils/quickCache'
+import { logger } from '../utils/logger'
 
 export interface UserProfile {
   id: string
@@ -76,7 +77,7 @@ export class ProfileService {
     // Check cache first (2 minute TTL)
     const cached = quickCache.get<boolean>(cacheKey, 2 * 60 * 1000)
     if (cached !== null) {
-      console.log(`User exists check (cached): ${cached}`)
+      logger.log(`User exists check (cached): ${cached}`)
       return cached
     }
 
@@ -89,17 +90,17 @@ export class ProfileService {
         .maybeSingle()
 
       if (error && error.code !== 'PGRST116') {
-        console.error('Error checking user exists:', error)
+        logger.error('Error checking user exists:', error)
         return false
       }
 
       const exists = !!data
       // Cache the result
       quickCache.set(cacheKey, exists)
-      console.log(`User exists check (fresh): ${exists}`)
+      logger.log(`User exists check (fresh): ${exists}`)
       return exists
     } catch (error) {
-      console.error('Error checking user exists:', error)
+      logger.error('Error checking user exists:', error)
       return false
     }
   }
@@ -155,7 +156,7 @@ export class ProfileService {
   // Get recent users (last 10)
   static async getRecentUsers(): Promise<RecentUser[]> {
     try {
-      console.log('Fetching recent users...')
+      logger.log('Fetching recent users...')
       const { data, error } = await supabase
         .from('user_profiles')
         .select('user_id, platform, display_name, last_accessed, total_games, current_rating')

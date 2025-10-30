@@ -49,11 +49,11 @@ class AnalysisQueue:
     Thread-safe analysis queue that manages analysis jobs and prevents
     resource exhaustion by limiting concurrent analysis processes.
     """
-    
+
     def __init__(self, max_concurrent_jobs: int = 2, max_workers_per_job: int = 4):
         """
         Initialize the analysis queue.
-        
+
         Args:
             max_concurrent_jobs: Maximum number of analysis jobs running simultaneously
             max_workers_per_job: Maximum workers per job (reduced from 8 to 4)
@@ -67,7 +67,7 @@ class AnalysisQueue:
         self.executor = ThreadPoolExecutor(max_workers=max_concurrent_jobs)
         self._queue_processor_task: Optional[asyncio.Task] = None
         self._start_queue_processor()
-    
+
     def _start_queue_processor(self):
         """Start the background queue processor."""
         if self._queue_processor_task is None or self._queue_processor_task.done():
@@ -80,28 +80,33 @@ class AnalysisQueue:
                 # No event loop running, start one
                 print("No event loop running, queue processor will start when server starts")
                 self._queue_processor_task = None
-    
+
     async def _process_queue(self):
         """Background task that processes the analysis queue."""
         while True:
             try:
                 # Wait for a job to be available
                 job = await self.queue.get()
-                
+
                 # Check if we can start this job (respect max concurrent limit)
                 if len(self.running_jobs) >= self.max_concurrent_jobs:
                     # Put the job back and wait
                     await self.queue.put(job)
                     await asyncio.sleep(1)  # Wait 1 second before checking again
                     continue
-                
+
+                # Skip cancelled jobs
+                if job.status == AnalysisStatus.CANCELLED:
+                    print(f"[QUEUE] Skipping cancelled job {job.job_id}")
+                    continue
+
                 # Start the job
                 await self._start_job(job)
-                
+
             except Exception as e:
                 print(f"Error in queue processor: {e}")
                 await asyncio.sleep(1)
-    
+
     async def _start_job(self, job: AnalysisJob):
         """Start a single analysis job."""
         with self.lock:
@@ -109,7 +114,7 @@ class AnalysisQueue:
             job.started_at = datetime.now()
             job.current_phase = "starting"
             self.running_jobs[job.job_id] = job
-            
+
             # Update in-memory progress to starting
             try:
                 print(f"[QUEUE] Job {job.job_id} starting for user {job.user_id} on {job.platform}")
@@ -129,7 +134,7 @@ class AnalysisQueue:
                 print(f"[QUEUE] Initialized progress for key '{progress_key}'")
             except Exception as e:
                 print(f"Warning: Could not update in-memory progress on start: {e}")
-        
+
         try:
             # Run the analysis in a thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -138,7 +143,7 @@ class AnalysisQueue:
                 self._run_analysis_job,
                 job
             )
-            
+
             # Mark job as completed
             with self.lock:
                 job.status = AnalysisStatus.COMPLETED
@@ -148,7 +153,7 @@ class AnalysisQueue:
                 job.result = result
                 if job.job_id in self.running_jobs:
                     del self.running_jobs[job.job_id]
-                
+
             # Update in-memory progress to completed
             try:
                 from .unified_api_server import analysis_progress, _canonical_user_id
@@ -168,7 +173,7 @@ class AnalysisQueue:
                 print(f"[QUEUE] Job {job.job_id} complete. Stored progress for key '{progress_key}': {progress_snapshot}")
             except Exception as e:
                 print(f"Warning: Could not update in-memory progress on completion: {e}")
-                    
+
         except Exception as e:
             # Mark job as failed
             with self.lock:
@@ -179,7 +184,7 @@ class AnalysisQueue:
                 if job.job_id in self.running_jobs:
                     del self.running_jobs[job.job_id]
             print(f"Analysis job {job.job_id} failed: {e}")
-    
+
     def _run_analysis_job(self, job: AnalysisJob) -> Dict[str, Any]:
         """
         Run the actual analysis job.
@@ -188,10 +193,10 @@ class AnalysisQueue:
         try:
             # Import here to avoid circular imports
             from .parallel_analysis_engine import ParallelAnalysisEngine
-            
+
             # Create analysis engine with reduced worker count
             parallel_engine = ParallelAnalysisEngine(max_workers=self.max_workers_per_job)
-            
+
             # Create progress callback
             def update_progress(completed: int, total: int, percentage: int):
                 with self.lock:
@@ -200,7 +205,7 @@ class AnalysisQueue:
                         job.total_games = total
                         job.progress_percentage = percentage
                         job.current_phase = "analyzing"
-                        
+
                         # Also update the in-memory progress for realtime endpoint
                         try:
                             from .unified_api_server import analysis_progress, _canonical_user_id
@@ -220,11 +225,11 @@ class AnalysisQueue:
                             print(f"[QUEUE] Progress update for job {job.job_id} -> key '{progress_key}': {progress_data}")
                         except Exception as e:
                             print(f"Warning: Could not update in-memory progress: {e}")
-            
+
             # Run analysis (this is synchronous within the thread)
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             result = loop.run_until_complete(
                 parallel_engine.analyze_games_parallel(
                     user_id=job.user_id,
@@ -236,14 +241,14 @@ class AnalysisQueue:
                     progress_callback=update_progress
                 )
             )
-            
+
             loop.close()
             return result
-            
+
         except Exception as e:
             print(f"Error in analysis job {job.job_id}: {e}")
             raise
-    
+
     async def submit_job(
         self,
         user_id: str,
@@ -255,7 +260,7 @@ class AnalysisQueue:
     ) -> str:
         """
         Submit a new analysis job to the queue.
-        
+
         Returns:
             job_id: Unique identifier for the job
         """
@@ -269,26 +274,26 @@ class AnalysisQueue:
             depth=depth,
             skill_level=skill_level
         )
-        
+
         with self.lock:
             self.jobs[job_id] = job
-        
+
         # Add to queue
         await self.queue.put(job)
-        
+
         print(f"[QUEUE] Analysis job {job_id} submitted for {user_id} on {platform}")
         return job_id
-    
+
     def get_job_status(self, job_id: str) -> Optional[AnalysisJob]:
         """Get the status of a specific job."""
         with self.lock:
             return self.jobs.get(job_id)
-    
+
     def get_all_jobs(self) -> Dict[str, AnalysisJob]:
         """Get all jobs (for admin/debugging purposes)."""
         with self.lock:
             return self.jobs.copy()
-    
+
     def cancel_job(self, job_id: str) -> bool:
         """Cancel a pending job."""
         with self.lock:
@@ -300,7 +305,7 @@ class AnalysisQueue:
                     job.current_phase = "cancelled"
                     return True
         return False
-    
+
     def get_queue_stats(self) -> Dict[str, Any]:
         """Get queue statistics."""
         with self.lock:
@@ -308,7 +313,7 @@ class AnalysisQueue:
             running = len(self.running_jobs)
             completed = sum(1 for job in self.jobs.values() if job.status == AnalysisStatus.COMPLETED)
             failed = sum(1 for job in self.jobs.values() if job.status == AnalysisStatus.FAILED)
-            
+
             return {
                 "pending_jobs": pending,
                 "running_jobs": running,
@@ -327,7 +332,7 @@ def get_analysis_queue() -> AnalysisQueue:
     global _analysis_queue
     if _analysis_queue is None:
         _analysis_queue = AnalysisQueue(
-            max_concurrent_jobs=2,  # Only 2 concurrent analysis jobs
-            max_workers_per_job=4   # Only 4 workers per job (reduced from 8)
+            max_concurrent_jobs=4,  # Increased from 2 to 4 for Railway Pro (8 GB RAM)
+            max_workers_per_job=8   # Increased from 4 to 8 (Railway Pro has 8 vCPU)
         )
     return _analysis_queue
