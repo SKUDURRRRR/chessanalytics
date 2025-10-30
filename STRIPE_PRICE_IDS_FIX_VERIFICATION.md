@@ -111,7 +111,7 @@ grep -r "price_1SNk0Q0CDBdO3EY30yDl3NMQ" .
 # - Unsaved files (not in repository) ✅
 ```
 
-**No hardcoded IDs found in actual code! ✅**
+### No hardcoded IDs found in actual code! ✅
 
 ---
 
@@ -173,7 +173,7 @@ Scripts now provide helpful guidance when environment variables are missing:
 ### For Developers
 
 1. Copy `env.example` to `python/.env`
-2. Get your Stripe price IDs from: https://dashboard.stripe.com/products
+2. Get your Stripe price IDs from: [Stripe Dashboard](https://dashboard.stripe.com/products)
 3. Update the environment variables:
    ```bash
    STRIPE_PRICE_ID_PRO_MONTHLY=price_your_monthly_id
@@ -226,7 +226,7 @@ Set the environment variables in your deployment platform:
 
 ## 🎉 Conclusion
 
-**Status: ✅ COMPLETE AND VERIFIED**
+### Status: ✅ COMPLETE AND VERIFIED
 
 The CodeRabbit issue has been fully addressed. All hardcoded Stripe price IDs have been replaced with environment variables in utility scripts, while the main application code was already correctly implemented to fetch price IDs from the database.
 

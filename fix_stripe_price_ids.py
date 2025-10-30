@@ -2,13 +2,11 @@
 Quick script to update Stripe price IDs in the payment_tiers table
 """
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 from supabase import create_client
 
-# Load environment variables from python/.env
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / 'python' / '.env')
+# Load environment variables from .env in root directory
+load_dotenv()
 
 # Get Supabase credentials from environment
 SUPABASE_URL = os.getenv('SUPABASE_URL')
@@ -19,13 +17,13 @@ STRIPE_PRICE_ID_PRO_MONTHLY = os.getenv('STRIPE_PRICE_ID_PRO_MONTHLY')
 STRIPE_PRICE_ID_PRO_YEARLY = os.getenv('STRIPE_PRICE_ID_PRO_YEARLY')
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    print("[ERROR] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in python/.env")
+    print("[ERROR] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env")
     print(f"  SUPABASE_URL: {'SET' if SUPABASE_URL else 'NOT SET'}")
     print(f"  SUPABASE_SERVICE_ROLE_KEY: {'SET' if SUPABASE_SERVICE_KEY else 'NOT SET'}")
     exit(1)
 
 if not STRIPE_PRICE_ID_PRO_MONTHLY or not STRIPE_PRICE_ID_PRO_YEARLY:
-    print("[ERROR] STRIPE_PRICE_ID_PRO_MONTHLY and STRIPE_PRICE_ID_PRO_YEARLY must be set in python/.env")
+    print("[ERROR] STRIPE_PRICE_ID_PRO_MONTHLY and STRIPE_PRICE_ID_PRO_YEARLY must be set in .env")
     print(f"  STRIPE_PRICE_ID_PRO_MONTHLY: {'SET' if STRIPE_PRICE_ID_PRO_MONTHLY else 'NOT SET'}")
     print(f"  STRIPE_PRICE_ID_PRO_YEARLY: {'SET' if STRIPE_PRICE_ID_PRO_YEARLY else 'NOT SET'}")
     exit(1)

@@ -2,12 +2,10 @@
 Simple script to update Stripe Price IDs
 """
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / 'python' / '.env')
+# Load environment from .env in root directory
+load_dotenv()
 
 
 def get_project_sql_url(supabase_url: str | None = None) -> str:
@@ -54,7 +52,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     exit(1)
 
 if not STRIPE_PRICE_ID_PRO_MONTHLY or not STRIPE_PRICE_ID_PRO_YEARLY:
-    print("[ERROR] STRIPE_PRICE_ID_PRO_MONTHLY and STRIPE_PRICE_ID_PRO_YEARLY must be set in python/.env")
+    print("[ERROR] STRIPE_PRICE_ID_PRO_MONTHLY and STRIPE_PRICE_ID_PRO_YEARLY must be set in .env")
     print(f"  STRIPE_PRICE_ID_PRO_MONTHLY: {'SET' if STRIPE_PRICE_ID_PRO_MONTHLY else 'NOT SET'}")
     print(f"  STRIPE_PRICE_ID_PRO_YEARLY: {'SET' if STRIPE_PRICE_ID_PRO_YEARLY else 'NOT SET'}")
     exit(1)

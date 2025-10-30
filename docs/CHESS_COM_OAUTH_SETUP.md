@@ -2,7 +2,9 @@
 
 ## Overview
 
-Chess.com OAuth authentication has been added to the application, allowing users to sign in with their Chess.com accounts. This guide will walk you through the complete setup process.
+Chess.com authentication support has been added to the application frontend. **However, Chess.com does NOT provide public OAuth endpoints** like Google or Lichess do. This guide documents the current implementation status and recommended alternatives.
+
+**⚠️ IMPORTANT:** The Chess.com OAuth button in the UI will not work without special OAuth access from Chess.com (which is not publicly available). See the "Alternative Implementation" section below for the recommended approach.
 
 ## Frontend Implementation ✅
 
@@ -20,30 +22,27 @@ The frontend has been updated with Chess.com authentication support:
 
 ## Backend Configuration Required
 
-### Step 1: Register OAuth Application with Chess.com
+### Step 1: Apply for OAuth Access with Chess.com
 
-**Important:** Chess.com's OAuth system may have specific requirements or limitations. Check their current API documentation.
+**⚠️ CRITICAL:** Unlike Google or Lichess, Chess.com does **NOT** have a public OAuth application registration process available to all developers.
 
-1. Visit the Chess.com Developer Portal or API documentation
-2. Look for OAuth application registration (typically at https://www.chess.com/clubs/forum/view/developer-api)
-3. Register a new OAuth application with the following settings:
+**What you need to know:**
+- Chess.com's OAuth system is **not publicly documented**
+- There is **no public developer portal** for OAuth registration
+- You must **contact Chess.com directly** and request OAuth access
+- Approval is **not guaranteed** and depends on Chess.com's evaluation of your use case
 
-   **Application Name:** Your App Name (e.g., "ChessData Analytics")
+**How to request access:**
+1. Contact Chess.com through their support channels or developer community
+2. Provide detailed information about:
+   - Your application/website
+   - Your use case for OAuth
+   - Expected user volume
+   - Why username-based linking is insufficient
+3. Wait for Chess.com's response (timeline varies)
+4. If approved, they will provide OAuth credentials and endpoint documentation
 
-   **Redirect URI:**
-   ```
-   https://YOUR_PROJECT_ID.supabase.co/auth/v1/callback
-   ```
-
-   **Scopes Required:**
-   - User profile information (email, username)
-   - Basic account access
-
-4. After registration, you'll receive:
-   - **Client ID**
-   - **Client Secret**
-
-   **Save these credentials securely - you'll need them for Supabase configuration.**
+**Most developers should use username-based linking instead** (see recommended alternative section above).
 
 ### Step 2: Configure Supabase Custom OAuth Provider
 
@@ -65,17 +64,22 @@ If Chess.com is not natively supported by Supabase, you may need to:
 2. Or implement a custom OAuth flow using Chess.com's OAuth2 endpoints
 3. Use Supabase Edge Functions as a proxy for the OAuth flow
 
-### Chess.com OAuth2 Endpoints (Verify with Current Documentation)
+### Chess.com OAuth2 Endpoints
 
-Based on typical OAuth2 implementation, Chess.com likely uses:
+**⚠️ CRITICAL LIMITATION:** Chess.com does **NOT** publish public OAuth endpoints. Unlike Google or Lichess, Chess.com's OAuth system is not publicly documented or available for general third-party applications.
 
-```
-Authorization URL: https://oauth.chess.com/oauth/authorize
-Token URL: https://oauth.chess.com/oauth/token
-User Info URL: https://api.chess.com/pub/player/{username}
-```
+**What this means:**
+- There are **no public OAuth URLs** like `oauth.chess.com` that you can use
+- The Chess.com Published Data API (https://api.chess.com/pub/player/{username}) is a simple REST API that does **NOT** use OAuth
+- To implement OAuth with Chess.com, you must apply directly to Chess.com and request special access
+- Most third-party applications cannot use Chess.com OAuth
 
-**⚠️ Important:** These URLs may have changed. Always refer to Chess.com's official API documentation.
+**If you need Chess.com OAuth:**
+1. Contact Chess.com directly through their developer support channels
+2. Explain your use case and request OAuth access
+3. If approved, they will provide you with the necessary OAuth endpoints and credentials
+
+**Recommended Alternative:** Use username-based linking instead (see below for details)
 
 ### Step 3: Configure in Supabase
 
@@ -107,34 +111,63 @@ Once you have the OAuth credentials from Chess.com:
 - Login and signup pages updated with Chess.com buttons
 - UI styled consistently with green Chess.com branding
 
-### 🔧 Configuration Required
-- Register OAuth application with Chess.com
-- Configure Chess.com as OAuth provider in Supabase
-- Test the complete OAuth flow
+### ⚠️ Known Limitation
+- **Chess.com OAuth button will not work** - Chess.com does not provide public OAuth endpoints
+- The button is implemented but non-functional without special Chess.com OAuth access
 
-## Alternative: Using Chess.com API Without OAuth
+### 🔧 Recommended Next Steps
+1. **Implement username-based linking** (recommended - see section below)
+2. Consider hiding the Chess.com OAuth button in the UI until OAuth access is obtained
+3. OR apply to Chess.com for OAuth access (approval not guaranteed)
 
-If Chess.com OAuth is not available or feasible, consider these alternatives:
+## ⭐ Recommended Alternative: Username-Based Linking
 
-### Option 1: Username-Based Linking
-Instead of OAuth, allow users to:
-1. Sign up with email/password or Google/Lichess OAuth
-2. Link their Chess.com username in their profile
-3. Fetch their Chess.com data using the public API
+**This is the practical approach for most applications.**
 
-**Benefits:**
-- Easier to implement
-- No OAuth registration required
-- Still provides access to Chess.com data
+Since Chess.com OAuth is not publicly available, the recommended implementation is username-based linking:
 
-**Limitations:**
-- Can't verify Chess.com account ownership
-- Users must manually enter their username
+### How It Works
+1. Users sign up with email/password, Google OAuth, or Lichess OAuth
+2. Users link their Chess.com username in their profile settings
+3. Your application fetches Chess.com data using the public Published Data API
 
-### Option 2: Hybrid Approach
-1. Use OAuth for Google and Lichess
-2. Use username linking for Chess.com
-3. Optionally add Chess.com OAuth later when/if available
+### Implementation Steps
+1. Add a "Chess.com Username" field to user profiles
+2. Use the Chess.com Published Data API to fetch user data:
+   - API endpoint: `https://api.chess.com/pub/player/{username}`
+   - No authentication required
+   - Rate limits apply (check Chess.com's documentation)
+3. Optionally verify the username exists by making an API call
+4. Store the username in your database linked to the user's account
+
+### Benefits
+- ✅ **Actually works** - No special access needed
+- ✅ **Easy to implement** - Simple API calls
+- ✅ **No OAuth complexity** - Direct API integration
+- ✅ **Still provides Chess.com data** - Access to games, stats, etc.
+
+### Limitations
+- ❌ Can't verify Chess.com account ownership (user could enter any username)
+- ❌ Users must manually enter their username
+- ❌ Not a true "Sign in with Chess.com" experience
+
+### Code Example
+```typescript
+// Fetch Chess.com player data
+async function getChessComPlayerData(username: string) {
+  const response = await fetch(`https://api.chess.com/pub/player/${username}`)
+  if (!response.ok) {
+    throw new Error('Chess.com username not found')
+  }
+  return await response.json()
+}
+```
+
+---
+
+## Alternative: Using Chess.com OAuth (Advanced)
+
+**Note:** This section documents the OAuth approach, but it requires special access from Chess.com that is not publicly available.
 
 ## Implementation Notes
 
@@ -191,8 +224,9 @@ If Supabase doesn't natively support Chess.com OAuth:
 
 ## Resources
 
-- Chess.com API Documentation: https://www.chess.com/news/view/published-data-api
-- Chess.com Developer Portal: [Check Chess.com website for current URL]
+- Chess.com Published-Data API Documentation: https://support.chess.com/en/articles/9650547-published-data-api
+- Chess.com OAuth/Login Documentation: https://www.chess.com/blog/CHESScom/chess-com-oauth-login-connected-board-application
+- Chess.com Public API Base Endpoint: https://api.chess.com/pub/ (reference resource)
 - Supabase OAuth Documentation: https://supabase.com/docs/guides/auth/social-login
 - Supabase Custom OAuth: https://supabase.com/docs/guides/auth/social-login/auth-custom
 
@@ -215,4 +249,8 @@ If you encounter issues:
 
 ---
 
-**Note:** Chess.com's OAuth implementation may have changed since this documentation was written. Always refer to Chess.com's official API documentation for the most current information.
+**⚠️ IMPORTANT DISCLAIMER:**
+
+Chess.com does **NOT** provide public OAuth endpoints. The OAuth implementation described in this document requires special access from Chess.com that is not publicly available.
+
+**For most developers, the recommended approach is username-based linking** using Chess.com's Published Data API (`https://api.chess.com/pub/player/{username}`), which is free, public, and does not require OAuth.

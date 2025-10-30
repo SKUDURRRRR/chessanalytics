@@ -25,6 +25,7 @@
     "validate-env": "node validate-env.js"
   },
   "dependencies": {
+    "@microsoft/clarity": "^1.0.0",
     "@supabase/supabase-js": "^2.57.2",
     "@vercel/analytics": "^1.5.0",
     "@vercel/speed-insights": "^1.2.0",
