@@ -9,10 +9,17 @@ export default function HomePage() {
   const { user } = useAuth()
 
   useEffect(() => {
-    // Clean up OAuth hash fragments from URL
-    if (window.location.hash) {
+    // Clean up OAuth hash fragments and wildcards from URL
+    const currentPath = window.location.pathname
+    const hasHash = window.location.hash
+    const isWildcard = currentPath === '/*'
+
+    // If there's a hash or wildcard path, clean up the URL
+    if (hasHash || isWildcard) {
+      // Use clean root path if it's a wildcard, otherwise keep the actual path
+      const cleanPath = isWildcard ? '/' : currentPath
       // Remove the hash from URL without reloading the page
-      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      window.history.replaceState(null, '', cleanPath + window.location.search)
     }
 
     // Check if user just logged in via OAuth and has a return URL
