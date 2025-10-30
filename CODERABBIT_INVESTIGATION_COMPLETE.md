@@ -93,6 +93,7 @@ if tier['stripe_price_id_yearly'] == CORRECT_PRICE_ID and verify_price == CORREC
 Created `test_price_comparison_issue.py` to verify the bug:
 
 **Test Results:**
+
 | Data Type | Without Fix | With Fix |
 |-----------|-------------|----------|
 | `Decimal('49.05')` | ❌ Fails | ✅ Works |

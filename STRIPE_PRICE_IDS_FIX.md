@@ -119,7 +119,7 @@ python update_price_ids_now.py
    - Render: Environment → Environment Variables
 
 2. Add both variables:
-   ```
+   ```bash
    STRIPE_PRICE_ID_PRO_MONTHLY=price_xxxxx
    STRIPE_PRICE_ID_PRO_YEARLY=price_xxxxx
    ```
@@ -128,7 +128,7 @@ python update_price_ids_now.py
 
 If you prefer to update via SQL:
 
-1. Get your price IDs from Stripe Dashboard: https://dashboard.stripe.com/products
+1. Get your price IDs from [Stripe Dashboard](https://dashboard.stripe.com/products)
 2. Replace the placeholders in the SQL files with your actual IDs
 3. Run the SQL in Supabase SQL Editor
 

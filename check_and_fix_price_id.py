@@ -55,7 +55,7 @@ supabase_key = (os.getenv('SUPABASE_SERVICE_ROLE_KEY') or
                 os.getenv('VITE_SUPABASE_SERVICE_ROLE_KEY') or
                 os.getenv('SUPABASE_SERVICE_KEY'))
 
-print(f"\nDebug: SUPABASE_URL = {supabase_url[:30] if supabase_url else 'NOT SET'}...")
+print(f"\nDebug: SUPABASE_URL = {'SET' if supabase_url else 'NOT SET'}")
 print(f"Debug: SUPABASE_SERVICE_ROLE_KEY = {'SET' if supabase_key else 'NOT SET'}")
 
 if not supabase_url or not supabase_key:
@@ -66,7 +66,7 @@ if not supabase_url or not supabase_key:
     print("\n   Available environment variables:")
     for key in sorted(os.environ.keys()):
         if 'SUPABASE' in key:
-            print(f"      {key} = {os.environ[key][:30]}...")
+            print(f"      {key} is set")
     exit(1)
 
 supabase = create_client(supabase_url, supabase_key)
