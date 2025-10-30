@@ -2,7 +2,8 @@
 -- UPDATE STRIPE PRICE IDs FOR $49.05/YEAR PRO YEARLY PLAN
 -- ============================================================================
 -- Run this in Supabase SQL Editor
--- https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn/sql/new
+-- https://supabase.com/dashboard/project/YOUR_PROJECT_ID/sql/new
+-- Replace YOUR_PROJECT_ID with your actual Supabase project ID
 --
 -- This script updates both the pricing and Stripe Price IDs for:
 -- - Pro Monthly: $5.45/month (price_1SNk0Q0CDBdO3EY30yDl3NMQ)

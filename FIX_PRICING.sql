@@ -1,5 +1,6 @@
 -- Fix Pricing: Update to $5.45/month and $49.05/year with 25% savings
--- Run this in Supabase SQL Editor: https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn/sql/new
+-- Run this in Supabase SQL Editor: https://supabase.com/dashboard/project/YOUR_PROJECT_ID/sql/new
+-- Replace YOUR_PROJECT_ID with your actual Supabase project ID
 
 -- Update Pro Monthly to $5.45
 UPDATE payment_tiers

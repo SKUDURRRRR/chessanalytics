@@ -141,7 +141,8 @@ python -c "import os; from dotenv import load_dotenv; load_dotenv('.env.local');
    - Replace `YOUR_YEARLY_PRICE_ID_HERE` with your yearly price ID
 
 3. **Run in Supabase:**
-   - Go to: https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn/sql/new
+   - Go to: https://supabase.com/dashboard/project/YOUR_PROJECT_ID/sql/new
+     (Replace YOUR_PROJECT_ID with your actual Supabase project ID)
    - Paste the contents of `fix_stripe_price_ids.sql`
    - Click **Run**
    - Verify the results show your price IDs

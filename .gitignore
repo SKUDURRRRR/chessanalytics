@@ -63,6 +63,10 @@ fix_user_*.sql
 *_adhoc.sql
 fix_stripe_price_ids.sql
 
+# Local reference files with actual project identifiers
+*.local
+.supabase_urls.local
+
 # Large files
 public/logo.png
 

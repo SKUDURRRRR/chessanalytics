@@ -18,22 +18,43 @@ Both the **"Cancel Subscription"** and **"Upgrade to Yearly"** buttons are faili
 
 ### Step 1: Update Stripe Price IDs in Database
 
-Go to your Supabase SQL Editor and run this:
-```
-https://supabase.com/dashboard/project/eqeodgabrshqkxufvshf/sql/new
+**Option A (Recommended): Use the Automated Script**
+
+Run the automated fix script that reads from your environment variables:
+
+```bash
+python fix_now.py
 ```
 
-Copy and paste this SQL:
+This script will:
+- Read Stripe price IDs from your `python/.env` file
+- Update the payment_tiers table automatically
+- Validate that all required environment variables are set
+- Provide fallback SQL commands if the connection fails
+
+**Option B: Manual SQL Update**
+
+If you prefer to update manually, go to your Supabase SQL Editor:
+```
+https://supabase.com/dashboard/project/YOUR_PROJECT_ID/sql/new
+```
+
+Copy and paste this SQL (replace the placeholders with your actual Stripe price IDs):
 
 ```sql
+-- IMPORTANT: Replace these placeholders with your actual Stripe price IDs
+-- Get them from:
+--   1. Your environment variables (STRIPE_PRICE_ID_PRO_MONTHLY, STRIPE_PRICE_ID_PRO_YEARLY)
+--   2. Or Stripe Dashboard: https://dashboard.stripe.com/products
+
 -- Update Pro Monthly with Stripe price ID
 UPDATE payment_tiers
-SET stripe_price_id_monthly = 'price_1SNk0Q0CDBdO3EY30yDl3NMQ'
+SET stripe_price_id_monthly = '<YOUR_STRIPE_PRICE_ID_PRO_MONTHLY>'
 WHERE id = 'pro_monthly';
 
 -- Update Pro Yearly with Stripe price ID
 UPDATE payment_tiers
-SET stripe_price_id_yearly = 'price_1SNyJt0CDBdO3EY3KWhzm6er'
+SET stripe_price_id_yearly = '<YOUR_STRIPE_PRICE_ID_PRO_YEARLY>'
 WHERE id = 'pro_yearly';
 
 -- Verify the updates

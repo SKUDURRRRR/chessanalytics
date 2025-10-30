@@ -392,12 +392,29 @@ class StripeService:
             logger.error("No user_id in checkout session metadata")
             return
 
+        payment_intent = session.get('payment_intent')
+
+        # IDEMPOTENCY CHECK: Prevent double-crediting on webhook retries
+        # This MUST be done BEFORE granting credits/subscription to prevent duplicate processing
+        existing = await asyncio.to_thread(
+            lambda: self.supabase.table('payment_transactions').select('id').eq(
+                'stripe_payment_id', payment_intent
+            ).execute()
+        )
+
+        if existing.data:
+            logger.info(
+                f"Skipping duplicate checkout.session.completed for payment_intent {payment_intent}, "
+                f"user {user_id} - already processed"
+            )
+            return  # Idempotent - safe to return success
+
         # Record transaction
         amount = session.get('amount_total', 0) / 100  # Convert cents to dollars
 
         transaction_data = {
             'user_id': user_id,
-            'stripe_payment_id': session.get('payment_intent'),
+            'stripe_payment_id': payment_intent,
             'amount': str(amount),
             'currency': session.get('currency', 'usd'),
             'status': 'succeeded',
@@ -432,6 +449,20 @@ class StripeService:
         """Handle successful invoice payment (recurring subscriptions)."""
         customer_id = invoice.get('customer')
         subscription_id = invoice.get('subscription')
+        payment_intent = invoice.get('payment_intent')
+
+        # IDEMPOTENCY CHECK: Prevent duplicate transaction records on webhook retries
+        existing = await asyncio.to_thread(
+            lambda: self.supabase.table('payment_transactions').select('id').eq(
+                'stripe_payment_id', payment_intent
+            ).execute()
+        )
+
+        if existing.data:
+            logger.info(
+                f"Skipping duplicate invoice.paid for payment_intent {payment_intent} - already processed"
+            )
+            return  # Idempotent - safe to return success
 
         # Get user from customer ID
         user_result = await asyncio.to_thread(
@@ -452,7 +483,7 @@ class StripeService:
         await asyncio.to_thread(
             lambda: self.supabase.table('payment_transactions').insert({
                 'user_id': user_id,
-                'stripe_payment_id': invoice.get('payment_intent'),
+                'stripe_payment_id': payment_intent,
                 'stripe_invoice_id': invoice.get('id'),
                 'amount': str(amount),
                 'currency': invoice.get('currency', 'usd'),
@@ -668,8 +699,8 @@ class StripeService:
             # The webhook will update status to 'cancelled' when the actual cancellation happens
             update_data = {}
             if hasattr(subscription, 'current_period_end') and subscription.current_period_end:
-                from datetime import datetime
-                end_date = datetime.fromtimestamp(subscription.current_period_end)
+                from datetime import datetime, timezone
+                end_date = datetime.fromtimestamp(subscription.current_period_end, tz=timezone.utc)
                 update_data['subscription_end_date'] = end_date.isoformat()
 
             await asyncio.to_thread(

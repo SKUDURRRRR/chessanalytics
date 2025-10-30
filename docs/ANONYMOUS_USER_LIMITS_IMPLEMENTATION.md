@@ -3,8 +3,8 @@
 ## Requirements
 
 ### Anonymous User Limitations
-1. **Import Limit:** 100 games total (one-time, not renewable)
-2. **Analysis Limit:** 1 analysis only (one-time, not renewable)
+1. **Import Limit:** 100 games per 24 hours (resets after 24 hours)
+2. **Analysis Limit:** 5 analyses per 24 hours (resets after 24 hours)
 3. **No Auto-Sync:** Automatic game synchronization disabled
 4. **Registration Popup:** When limits reached, show invite to register
 
@@ -44,7 +44,7 @@ Create `src/services/anonymousUsageTracker.ts`:
 interface AnonymousUsage {
   imports: number
   analyses: number
-  firstUsed: string
+  resetAt: string // ISO timestamp when limits reset
 }
 
 const STORAGE_KEY = 'chess_analytics_anonymous_usage'
@@ -53,9 +53,22 @@ export class AnonymousUsageTracker {
   private static getUsage(): AnonymousUsage {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (!stored) {
-      return { imports: 0, analyses: 0, firstUsed: new Date().toISOString() }
+      const resetAt = new Date()
+      resetAt.setHours(resetAt.getHours() + 24)
+      return { imports: 0, analyses: 0, resetAt: resetAt.toISOString() }
     }
-    return JSON.parse(stored)
+    const usage = JSON.parse(stored)
+
+    // Check if 24 hours have passed
+    const resetTime = new Date(usage.resetAt)
+    if (new Date() >= resetTime) {
+      // Reset limits
+      const newResetAt = new Date()
+      newResetAt.setHours(newResetAt.getHours() + 24)
+      return { imports: 0, analyses: 0, resetAt: newResetAt.toISOString() }
+    }
+
+    return usage
   }
 
   private static saveUsage(usage: AnonymousUsage): void {
@@ -69,7 +82,7 @@ export class AnonymousUsageTracker {
 
   static canAnalyze(): boolean {
     const usage = this.getUsage()
-    return usage.analyses < 1
+    return usage.analyses < 5
   }
 
   static incrementImports(count: number): void {
@@ -96,7 +109,7 @@ export class AnonymousUsageTracker {
       },
       analyses: {
         used: usage.analyses,
-        remaining: Math.max(0, 1 - usage.analyses)
+        remaining: Math.max(0, 5 - usage.analyses)
       }
     }
   }
@@ -130,8 +143,8 @@ export default function AnonymousLimitModal({
     : 'Analysis Limit Reached'
 
   const message = limitType === 'import'
-    ? 'You\'ve imported 100 games as a guest user.'
-    : 'You\'ve used your free analysis as a guest user.'
+    ? 'You\'ve reached your guest limit of 100 imports per 24 hours.'
+    : 'You\'ve reached your guest limit of 5 analyses per 24 hours.'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">

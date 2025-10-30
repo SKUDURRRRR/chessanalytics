@@ -74,7 +74,7 @@ STRIPE_WEBHOOK_SECRET=whsec_YOUR_LIVE_WEBHOOK_SECRET_HERE
 CORS_ORIGINS=https://your-production-frontend-domain.com,https://www.your-production-frontend-domain.com
 
 # Verify these are set correctly
-SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 JWT_SECRET=your_jwt_secret
 ```
@@ -106,7 +106,7 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_live_YOUR_LIVE_PUBLISHABLE_KEY_HERE
 
 # Verify these are set correctly
 VITE_API_URL=https://your-production-backend-url.com
-VITE_SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
+VITE_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key
 ```
 
@@ -282,7 +282,7 @@ You'll know it's working when:
 - **Stripe Test Cards:** https://stripe.com/docs/testing
 - **Supabase Docs:** https://supabase.com/docs
 - **Your Stripe Dashboard:** https://dashboard.stripe.com
-- **Your Supabase Dashboard:** https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn
+- **Your Supabase Dashboard:** https://supabase.com/dashboard/project/YOUR_PROJECT_ID (Replace YOUR_PROJECT_ID with your actual Supabase project ID)
 
 ---
 

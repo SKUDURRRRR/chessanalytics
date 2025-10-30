@@ -3,15 +3,15 @@
 ## Overview
 
 This guide provides all the code changes needed to implement anonymous user limitations:
-- **100 game imports** (one-time limit)
-- **1 analysis** (one-time limit)
+- **100 game imports per 24 hours** (resets every 24 hours)
+- **5 analyses per 24 hours** (resets every 24 hours)
 - **No auto-sync** for anonymous users
 - **Registration invitation modal** when limits reached
 
 ## Files Created
 
 ### 1. ✅ `src/services/anonymousUsageTracker.ts` - CREATED
-Tracks anonymous usage in localStorage.
+Tracks anonymous usage in localStorage with 24-hour rolling window.
 
 ### 2. ✅ `src/components/AnonymousLimitModal.tsx` - CREATED
 Modal shown when anonymous user hits limits.
@@ -211,13 +211,15 @@ Or in Supabase Studio:
    - [ ] Try to import 100+ games total
    - [ ] Should see registration modal after 100
    - [ ] Modal should mention "100 imports per 24 hours" for free tier
+   - [ ] Check localStorage - limits should reset after 24 hours
 
 3. **Analysis Testing**
-   - [ ] Click "Analyze games" (should work first time)
-   - [ ] Check console: should see "Anonymous usage: 1/1 analyses used"
-   - [ ] Try to analyze again
-   - [ ] Should see registration modal
+   - [ ] Click "Analyze games" (should work)
+   - [ ] Check console: should see "Anonymous usage: X/5 analyses used"
+   - [ ] Try to analyze 5+ times
+   - [ ] Should see registration modal after 5
    - [ ] Modal should mention "5 analyses per 24 hours" for free tier
+   - [ ] Check localStorage - limits should reset after 24 hours
 
 4. **Auto-Sync Testing**
    - [ ] Look for auto-sync toggle

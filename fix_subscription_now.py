@@ -169,6 +169,11 @@ async def fix_user_subscription(user_email: str):
                                 metadata = metadata_obj
                             else:
                                 metadata = {}
+
+                            # NOTE: This is a manual recovery script, not production code.
+                            # The default 'pro_monthly' is a safe fallback for older sessions that may
+                            # lack metadata. Production webhook handlers in stripe_service.py don't use
+                            # defaults - they only process subscriptions when tier_id is explicitly present.
                             tier_id = metadata.get('tier_id', 'pro_monthly')
 
                             print(f"\n[OK] Syncing subscription: {subscription_id}")

@@ -18,8 +18,8 @@ export default function AnonymousLimitModal({
     : 'Analysis Limit Reached'
 
   const message = limitType === 'import'
-    ? 'You\'ve imported 100 games as a guest user.'
-    : 'You\'ve used your free analysis as a guest user.'
+    ? 'You\'ve reached your guest limit of 100 imports per 24 hours.'
+    : 'You\'ve reached your guest limit of 5 analyses per 24 hours.'
 
   return (
     <div

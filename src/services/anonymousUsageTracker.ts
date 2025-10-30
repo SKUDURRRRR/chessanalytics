@@ -1,10 +1,10 @@
 /**
  * Anonymous Usage Tracker
- * Tracks anonymous user usage in localStorage
+ * Tracks anonymous user usage in localStorage with 24-hour rolling window
  *
- * Limits:
- * - 100 game imports (one-time)
- * - 1 analysis (one-time)
+ * Limits (reset every 24 hours):
+ * - 100 game imports per 24 hours
+ * - 5 analyses per 24 hours
  *
  * Note: Can be bypassed by clearing localStorage, which is acceptable.
  * The goal is to provide friction and encourage registration, not perfect security.
@@ -13,27 +13,49 @@
 interface AnonymousUsage {
   imports: number
   analyses: number
-  firstUsed: string
+  resetAt: string // ISO timestamp when the limits will reset
 }
 
 const STORAGE_KEY = 'chess_analytics_anonymous_usage'
 const IMPORT_LIMIT = 100
-const ANALYSIS_LIMIT = 1
+const ANALYSIS_LIMIT = 5
+const RESET_WINDOW_HOURS = 24
 
 export class AnonymousUsageTracker {
   /**
    * Get current usage stats from localStorage
+   * Automatically resets if 24 hours have passed
    */
   private static getUsage(): AnonymousUsage {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (!stored) {
-        return { imports: 0, analyses: 0, firstUsed: new Date().toISOString() }
+        // First time - create new usage record
+        const resetAt = new Date()
+        resetAt.setHours(resetAt.getHours() + RESET_WINDOW_HOURS)
+        return { imports: 0, analyses: 0, resetAt: resetAt.toISOString() }
       }
-      return JSON.parse(stored)
+
+      const usage = JSON.parse(stored) as AnonymousUsage
+
+      // Check if 24 hours have passed since resetAt
+      const resetTime = new Date(usage.resetAt)
+      const now = new Date()
+
+      if (now >= resetTime) {
+        // Reset the limits
+        console.log('Anonymous usage limits reset (24 hours passed)')
+        const newResetAt = new Date()
+        newResetAt.setHours(newResetAt.getHours() + RESET_WINDOW_HOURS)
+        return { imports: 0, analyses: 0, resetAt: newResetAt.toISOString() }
+      }
+
+      return usage
     } catch (error) {
       console.error('Error reading anonymous usage:', error)
-      return { imports: 0, analyses: 0, firstUsed: new Date().toISOString() }
+      const resetAt = new Date()
+      resetAt.setHours(resetAt.getHours() + RESET_WINDOW_HOURS)
+      return { imports: 0, analyses: 0, resetAt: resetAt.toISOString() }
     }
   }
 
@@ -90,8 +112,14 @@ export class AnonymousUsageTracker {
   static getStats(): {
     imports: { used: number; remaining: number; limit: number }
     analyses: { used: number; remaining: number; limit: number }
+    resetAt: string
+    resetsInHours: number
   } {
     const usage = this.getUsage()
+    const resetTime = new Date(usage.resetAt)
+    const now = new Date()
+    const resetsInHours = Math.max(0, (resetTime.getTime() - now.getTime()) / (1000 * 60 * 60))
+
     return {
       imports: {
         used: usage.imports,
@@ -102,7 +130,9 @@ export class AnonymousUsageTracker {
         used: usage.analyses,
         remaining: Math.max(0, ANALYSIS_LIMIT - usage.analyses),
         limit: ANALYSIS_LIMIT
-      }
+      },
+      resetAt: usage.resetAt,
+      resetsInHours: Math.round(resetsInHours * 10) / 10 // Round to 1 decimal place
     }
   }
 

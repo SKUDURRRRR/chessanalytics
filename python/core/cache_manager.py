@@ -228,9 +228,17 @@ class TTLDict:
         Args:
             ttl: Time-to-live in seconds
             name: Dictionary name for logging
+
+        Raises:
+            ValueError: If parameters are invalid
         """
+        if not isinstance(ttl, (int, float)) or ttl <= 0:
+            raise ValueError("ttl must be a positive number")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("name must be a non-empty string")
+
         self.ttl = ttl
-        self.name = name
+        self.name = name.strip()
         self._data: dict[str, Tuple[Any, float]] = {}
         self._lock = threading.RLock()
 

@@ -29,7 +29,8 @@ Open `fix_stripe_price_ids.sql` and replace:
 
 ### 4. Run in Supabase
 
-1. Go to your [Supabase SQL Editor](https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn/sql/new)
+1. Go to your [Supabase SQL Editor](https://supabase.com/dashboard/project/YOUR_PROJECT_ID/sql/new)
+   - Replace `YOUR_PROJECT_ID` with your actual Supabase project ID
 2. Paste the contents of `fix_stripe_price_ids.sql`
 3. Click **Run**
 4. Verify the results show your price IDs correctly

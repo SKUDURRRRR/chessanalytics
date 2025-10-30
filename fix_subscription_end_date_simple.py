@@ -7,7 +7,7 @@ from supabase import create_client
 import os
 from dotenv import load_dotenv
 import stripe
-from datetime import datetime
+from datetime import datetime, timezone
 import sys
 
 # Fix Windows console encoding
@@ -72,7 +72,7 @@ async def fix_subscription_end_date(email: str):
         print(f"   Current period end: {subscription.current_period_end}")
 
         if subscription.current_period_end:
-            end_date = datetime.fromtimestamp(subscription.current_period_end)
+            end_date = datetime.fromtimestamp(subscription.current_period_end, tz=timezone.utc)
             print(f"   End date: {end_date.strftime('%B %d, %Y')}")
 
             # Update database
