@@ -1,4 +1,4 @@
-import { clarity } from '@microsoft/clarity'
+import * as clarity from '@microsoft/clarity'
 
 /**
  * Initialize Microsoft Clarity analytics
@@ -11,8 +11,10 @@ export function initializeClarity(projectId: string) {
   }
 
   try {
-    clarity.init(projectId)
-    console.log('Microsoft Clarity initialized successfully')
+    if (typeof window !== 'undefined' && clarity && clarity.init) {
+      clarity.init(projectId)
+      console.log('Microsoft Clarity initialized successfully')
+    }
   } catch (error) {
     console.error('Failed to initialize Microsoft Clarity:', error)
   }
@@ -25,7 +27,9 @@ export function initializeClarity(projectId: string) {
  */
 export function setClarityTag(key: string, value: string | string[]) {
   try {
-    clarity.set(key, value)
+    if (typeof window !== 'undefined' && clarity && clarity.set) {
+      clarity.set(key, value)
+    }
   } catch (error) {
     console.error('Failed to set Clarity tag:', error)
   }
@@ -39,7 +43,9 @@ export function setClarityTag(key: string, value: string | string[]) {
  */
 export function identifyUser(userId: string, sessionId?: string, pageId?: string) {
   try {
-    clarity.identify(userId, sessionId, pageId)
+    if (typeof window !== 'undefined' && clarity && clarity.identify) {
+      clarity.identify(userId, sessionId, pageId)
+    }
   } catch (error) {
     console.error('Failed to identify user in Clarity:', error)
   }
@@ -51,7 +57,9 @@ export function identifyUser(userId: string, sessionId?: string, pageId?: string
  */
 export function upgradeSession(reason: string) {
   try {
-    clarity.upgrade(reason)
+    if (typeof window !== 'undefined' && clarity && clarity.upgrade) {
+      clarity.upgrade(reason)
+    }
   } catch (error) {
     console.error('Failed to upgrade Clarity session:', error)
   }
