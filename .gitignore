@@ -68,7 +68,7 @@ fix_stripe_price_ids.sql
 .supabase_urls.local
 
 # Large files
-public/logo.png
+# public/logo.png  # Commented out - logo is needed for production
 
 \n# Local backup archives\nbackups/\nBACKUP 09 20.txt\n\n# Editor configs\n.cursorignore\n
 .vercel
