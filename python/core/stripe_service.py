@@ -767,6 +767,32 @@ class StripeService:
             tier_id = metadata.get('tier_id')
             credits_purchased = metadata.get('credits_purchased')
 
+            # Check if transaction already processed (idempotency check)
+            # This MUST be done BEFORE granting credits/subscription to prevent double-crediting
+            existing = await asyncio.to_thread(
+                lambda: self.supabase.table('payment_transactions').select('id').eq(
+                    'stripe_payment_id', session.get('payment_intent')
+                ).execute()
+            )
+
+            if existing.data:
+                logger.info(
+                    f"Skipping credit grant for user {user_id}; payment_intent %s already processed",
+                    session.get('payment_intent')
+                )
+                if tier_id:
+                    return {
+                        'success': True,
+                        'message': 'Subscription already processed',
+                        'tier_id': tier_id
+                    }
+                else:
+                    return {
+                        'success': True,
+                        'message': 'Payment already processed',
+                        'credits_added': int(credits_purchased)
+                    }
+
             if tier_id:
                 # Subscription purchase - update the user's tier
                 subscription_id = session.get('subscription')
@@ -775,27 +801,20 @@ class StripeService:
 
                 await self._update_user_subscription(user_id, tier_id, subscription_id)
 
-                # Record transaction if not already recorded
-                existing = await asyncio.to_thread(
-                    lambda: self.supabase.table('payment_transactions').select('id').eq(
-                        'stripe_payment_id', session.get('payment_intent')
-                    ).execute()
+                # Record transaction
+                amount = session.get('amount_total', 0) / 100
+                await asyncio.to_thread(
+                    lambda: self.supabase.table('payment_transactions').insert({
+                        'user_id': user_id,
+                        'stripe_payment_id': session.get('payment_intent'),
+                        'amount': str(amount),
+                        'currency': session.get('currency', 'usd'),
+                        'status': 'succeeded',
+                        'transaction_type': 'subscription',
+                        'tier_id': tier_id,
+                        'metadata': metadata
+                    }).execute()
                 )
-
-                if not existing.data:
-                    amount = session.get('amount_total', 0) / 100
-                    await asyncio.to_thread(
-                        lambda: self.supabase.table('payment_transactions').insert({
-                            'user_id': user_id,
-                            'stripe_payment_id': session.get('payment_intent'),
-                            'amount': str(amount),
-                            'currency': session.get('currency', 'usd'),
-                            'status': 'succeeded',
-                            'transaction_type': 'subscription',
-                            'tier_id': tier_id,
-                            'metadata': metadata
-                        }).execute()
-                    )
 
                 logger.info(f"Verified and synced subscription for user {user_id}, tier {tier_id}")
                 return {
@@ -805,30 +824,23 @@ class StripeService:
                 }
 
             elif credits_purchased:
-                # Credit purchase - add credits
+                # Credit purchase - add credits (only after confirming transaction doesn't exist)
                 await self._add_user_credits(user_id, int(credits_purchased))
 
-                # Record transaction if not already recorded
-                existing = await asyncio.to_thread(
-                    lambda: self.supabase.table('payment_transactions').select('id').eq(
-                        'stripe_payment_id', session.get('payment_intent')
-                    ).execute()
+                # Record transaction
+                amount = session.get('amount_total', 0) / 100
+                await asyncio.to_thread(
+                    lambda: self.supabase.table('payment_transactions').insert({
+                        'user_id': user_id,
+                        'stripe_payment_id': session.get('payment_intent'),
+                        'amount': str(amount),
+                        'currency': session.get('currency', 'usd'),
+                        'status': 'succeeded',
+                        'transaction_type': 'credits',
+                        'credits_purchased': int(credits_purchased),
+                        'metadata': metadata
+                    }).execute()
                 )
-
-                if not existing.data:
-                    amount = session.get('amount_total', 0) / 100
-                    await asyncio.to_thread(
-                        lambda: self.supabase.table('payment_transactions').insert({
-                            'user_id': user_id,
-                            'stripe_payment_id': session.get('payment_intent'),
-                            'amount': str(amount),
-                            'currency': session.get('currency', 'usd'),
-                            'status': 'succeeded',
-                            'transaction_type': 'credits',
-                            'credits_purchased': int(credits_purchased),
-                            'metadata': metadata
-                        }).execute()
-                    )
 
                 logger.info(f"Verified and synced credits for user {user_id}, amount {credits_purchased}")
                 return {

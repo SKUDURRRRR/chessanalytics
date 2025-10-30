@@ -34,7 +34,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Dep
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, model_validator
 from typing import List, Optional, Dict, Any, Annotated, Union, Tuple
 from collections import Counter
 from decimal import Decimal

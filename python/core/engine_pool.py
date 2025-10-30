@@ -89,6 +89,7 @@ class StockfishEnginePool:
         self._total_created = 0
         self._total_destroyed = 0
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._is_shutting_down = False  # Flag to prevent new engines during shutdown
 
         logger.info(f"Initialized StockfishEnginePool (max_size={max_size}, ttl={ttl}s)")
 
@@ -135,10 +136,17 @@ class StockfishEnginePool:
 
         Yields:
             chess.engine.SimpleEngine: Engine instance
+
+        Raises:
+            RuntimeError: If pool is shutting down
         """
         engine_info = None
 
         async with self._lock:
+            # Prevent new engine creation during shutdown
+            if self._is_shutting_down:
+                raise RuntimeError("Engine pool is shutting down, cannot acquire new engines")
+
             # Try to find an available engine
             for info in self._pool:
                 if not info.in_use:
@@ -165,6 +173,10 @@ class StockfishEnginePool:
         while engine_info is None:
             await asyncio.sleep(0.1)
             async with self._lock:
+                # Check shutdown flag even while waiting
+                if self._is_shutting_down:
+                    raise RuntimeError("Engine pool is shutting down, cannot acquire new engines")
+
                 for info in self._pool:
                     if not info.in_use:
                         info.in_use = True
@@ -243,12 +255,14 @@ class StockfishEnginePool:
 
         Waits for engines that are currently in use to be released before destroying them.
         This prevents EngineTerminatedError and corrupted results.
-        """
-        engines: list[EngineInfo] = []
 
+        Fixed: Re-computes engine list inside the loop to catch newly created engines
+        during shutdown, preventing resource leaks.
+        """
+        # Set shutdown flag to prevent new engine creation
         async with self._lock:
-            # Collect all engines to close
-            engines = list(self._pool)
+            self._is_shutting_down = True
+            logger.info("Engine pool shutdown initiated - no new engines will be created")
 
         # Wait for active engines to be released (with timeout)
         max_wait = 30.0  # 30 seconds timeout
@@ -256,6 +270,10 @@ class StockfishEnginePool:
 
         while True:
             async with self._lock:
+                # Re-snapshot the pool each iteration to catch newly created engines
+                # This prevents leaking engines that were created while close_all()
+                # was waiting for busy engines to be released
+                engines = list(self._pool)
                 busy = [info for info in engines if info.in_use]
 
                 if not busy:
@@ -268,7 +286,7 @@ class StockfishEnginePool:
                 # Check timeout
                 if time.time() - start_time > max_wait:
                     logger.warning(f"Timeout waiting for {len(busy)} engines to be released")
-                    # Force destroy remaining engines
+                    # Force destroy remaining engines (including any created during shutdown)
                     for info in engines:
                         await self._destroy_engine(info)
                     self._pool.clear()

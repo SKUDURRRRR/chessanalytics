@@ -58,7 +58,11 @@ class MemoryMonitor:
             )
 
             if response.status_code == 200:
-                return response.json()
+                try:
+                    return response.json()
+                except ValueError as exc:
+                    print(f"❌ Invalid metrics payload: {exc}")
+                    return None
             else:
                 print(f"❌ API returned status {response.status_code}")
                 return None

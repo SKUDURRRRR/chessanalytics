@@ -95,6 +95,11 @@ class AnalysisQueue:
                     await asyncio.sleep(1)  # Wait 1 second before checking again
                     continue
 
+                # Skip cancelled jobs
+                if job.status == AnalysisStatus.CANCELLED:
+                    print(f"[QUEUE] Skipping cancelled job {job.job_id}")
+                    continue
+
                 # Start the job
                 await self._start_job(job)
 

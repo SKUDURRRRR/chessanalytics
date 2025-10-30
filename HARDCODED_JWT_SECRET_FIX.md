@@ -8,7 +8,7 @@ CodeRabbit identified a critical security vulnerability in `STRIPE_SETUP_CHECKLI
 
 ### The Problem
 
-The checklist included a hardcoded JWT secret: `nhmd7TXasEq38be2oVYtzWvOJRU5LuAF0kQSGcI6CfBgylZKH9DixNjpPM4r1w`
+The checklist included a hardcoded JWT secret: `[REDACTED]`
 
 This secret was being documented for users to copy-paste into their installations. Since JWT secrets are used to sign authentication tokens, **sharing the same secret across multiple installations is a critical security vulnerability**—anyone with this secret can forge tokens for any installation using it.
 
@@ -57,7 +57,7 @@ Each user/installation now generates their own unique JWT secret, ensuring no tw
 
 ```bash
 # No hardcoded secrets found
-grep -r "nhmd7TXasEq38be2oVYtzWvOJRU5LuAF0kQSGcI6CfBgylZKH9DixNjpPM4r1w" .
+grep -r "[REDACTED_JWT_SECRET]" .
 # Returns: No matches found
 ```
 
