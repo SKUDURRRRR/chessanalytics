@@ -102,6 +102,8 @@ class MemoryMonitor:
 
         # Take baseline snapshot
         self._baseline = self._take_snapshot()
+        self._peak = self._baseline
+        self._snapshots.append(self._baseline)
         print(f"[MEMORY] Baseline: {self._baseline}")
 
         async def monitor_loop():

@@ -70,7 +70,8 @@ STRIPE_SECRET_KEY=sk_live_YOUR_LIVE_SECRET_KEY_HERE
 STRIPE_WEBHOOK_SECRET=whsec_YOUR_LIVE_WEBHOOK_SECRET_HERE
 
 # CORS (update with your production domain)
-CORS_ORIGINS=https://your-production-frontend-domain.com
+# Multiple origins: comma-separated, no spaces
+CORS_ORIGINS=https://your-production-frontend-domain.com,https://www.your-production-frontend-domain.com
 
 # Verify these are set correctly
 SUPABASE_URL=https://nhpsnvhvfscrmyniihdn.supabase.co
@@ -78,10 +79,19 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 JWT_SECRET=your_jwt_secret
 ```
 
+**Format Validation Requirements:**
+- **CORS_ORIGINS**: Multiple origins should be comma-separated (no spaces)
+  - ✅ Correct: `https://example.com,https://www.example.com`
+  - ❌ Wrong: `https://example.com, https://www.example.com` (has spaces)
+- **SUPABASE_URL**: Must start with `https://` (minimum length check)
+- **JWT_SECRET**: Must be at least 32 characters (use `openssl rand -hex 32` to generate)
+
 **Checklist:**
 - [ ] STRIPE_SECRET_KEY starts with `sk_live_` (NOT `sk_test_`)
 - [ ] STRIPE_WEBHOOK_SECRET starts with `whsec_`
-- [ ] CORS_ORIGINS includes your production frontend URL
+- [ ] CORS_ORIGINS includes your production frontend URL(s) - comma-separated, no spaces
+- [ ] SUPABASE_URL starts with `https://`
+- [ ] JWT_SECRET is at least 32 characters long
 - [ ] Click "Save" and redeploy backend
 
 ### Step 5: Update Production Frontend Environment Variables (5 min)

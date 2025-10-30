@@ -244,40 +244,62 @@ export function Navigation() {
 }
 ```
 
-### 7. Backend Usage Limit Enforcement
+### 7. Backend Usage Limit Enforcement ✅
 
-Update import and analysis endpoints in `python/core/unified_api_server.py`:
+**Status:** Already implemented!
+
+See production implementation in `python/core/unified_api_server.py`:
+- `/api/v1/import-games-smart` - lines 5703-5792
+- `/api/v1/import-games` - lines 5964-6082
+- `/api/v1/analyze` - lines 1103-1149
+
+**Correct Implementation Pattern:**
 
 ```python
-# At the start of import_games_smart and import_more_games:
-@app.post("/api/v1/import-games-smart")
-async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = get_optional_auth()):
-    # Get user ID from auth if available
-    user_id = None
+@app.post("/api/v1/import-games-smart", response_model=BulkGameImportResponse)
+async def import_games_smart(
+    request: Dict[str, Any],
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """Smart import endpoint - imports only the most recent 100 games"""
     try:
-        credentials = await security(request)
-        token_data = await verify_token(credentials)
-        user_id = token_data.get('sub')
-    except:
-        pass  # Anonymous user
+        # ... validate request params ...
 
-    # Check usage limits if authenticated
-    if user_id and usage_tracker:
-        can_proceed, stats = await usage_tracker.check_import_limit(user_id)
-        if not can_proceed:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Import limit reached: {stats.get('reason', 'Limit exceeded')}"
-            )
+        # Check usage limits for authenticated users
+        auth_user_id = None
+        try:
+            if credentials:
+                token_data = await verify_token(credentials)
+                auth_user_id = token_data.get('sub')
 
-    # ... existing import logic ...
+                # Check import limit
+                if auth_user_id and usage_tracker:
+                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
+                    if not can_proceed:
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade.')}"
+                        )
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions (limit exceeded, etc.)
+        except Exception as e:
+            # Log but don't fail - allow anonymous/failed auth to proceed
+            print(f"Auth check failed (non-critical): {e}")
 
-    # After successful import, increment usage
-    if user_id and usage_tracker:
-        await usage_tracker.increment_usage(user_id, 'import', count=len(imported_games))
+        # ... existing import logic ...
 
-# Similar for analysis endpoints
+        # After successful import, increment usage
+        if auth_user_id and usage_tracker:
+            await usage_tracker.increment_usage(auth_user_id, 'import', count=len(imported_games))
 ```
+
+**Key Implementation Details:**
+- Uses FastAPI's `Depends(security)` for optional authentication
+- Properly handles exceptions: re-raises HTTPException, logs others
+- Gracefully supports anonymous users
+- Pre-action limit checking via `usage_tracker.check_import_limit()`
+- Post-action usage increment with actual count
+- HTTP 429 response when limit exceeded
 
 ### 8. Testing Checklist
 

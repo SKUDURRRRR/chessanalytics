@@ -91,7 +91,13 @@ try:
     # Check if it needs updating
     needs_update = False
     current_price_id = tier.get('stripe_price_id_yearly')
+
+    # Normalize price for comparison (PostgreSQL numeric returns as Decimal, not float)
     current_price = tier.get('price_yearly')
+    if current_price is not None:
+        current_price = float(current_price)
+    else:
+        current_price = 0.0
 
     if current_price_id != CORRECT_PRICE_ID:
         print(f"\n⚠️  MISMATCH: Database has '{current_price_id}'")
@@ -133,7 +139,14 @@ try:
     print(f"  Stripe Price ID: {tier['stripe_price_id_yearly']}")
     print(f"  Last Updated: {tier['updated_at']}")
 
-    if tier['stripe_price_id_yearly'] == CORRECT_PRICE_ID and tier['price_yearly'] == CORRECT_PRICE:
+    # Normalize price for verification (PostgreSQL numeric returns as Decimal, not float)
+    verify_price = tier.get('price_yearly')
+    if verify_price is not None:
+        verify_price = float(verify_price)
+    else:
+        verify_price = 0.0
+
+    if tier['stripe_price_id_yearly'] == CORRECT_PRICE_ID and verify_price == CORRECT_PRICE:
         print("\n✅ SUCCESS! Database is now correctly configured.")
         print("\nNext steps:")
         print("  1. Restart your backend server if it's running")
