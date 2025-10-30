@@ -30,7 +30,8 @@ async def fix_subscription_end_date(email: str):
 
     # Get user ID from email via auth.admin
     try:
-        users = supabase.auth.admin.list_users()
+        users_response = supabase.auth.admin.list_users()
+        users = getattr(users_response, 'users', [])
         user_id = None
         for user in users:
             if user.email == email:
@@ -90,6 +91,10 @@ async def fix_subscription_end_date(email: str):
         traceback.print_exc()
 
 if __name__ == '__main__':
-    email = "baisustipas@gmail.com"
+    if len(sys.argv) < 2:
+        print("Usage: python fix_subscription_end_date_simple.py <user-email>")
+        sys.exit(1)
+
+    email = sys.argv[1]
     print(f"Fixing subscription end date for {email}...")
     asyncio.run(fix_subscription_end_date(email))

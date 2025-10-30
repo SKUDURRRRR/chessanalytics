@@ -22,9 +22,9 @@ try:
     result = supabase.table('payment_tiers').update({'price_monthly': 5.45}).eq('id', 'pro_monthly').execute()
     print(f"✓ Updated Pro Monthly to $5.45")
 
-    # Update Pro Yearly to $49.50
-    result = supabase.table('payment_tiers').update({'price_yearly': 49.50}).eq('id', 'pro_yearly').execute()
-    print(f"✓ Updated Pro Yearly to $49.50")
+    # Update Pro Yearly to $49.05
+    result = supabase.table('payment_tiers').update({'price_yearly': 49.05}).eq('id', 'pro_yearly').execute()
+    print(f"✓ Updated Pro Yearly to $49.05")
 
     # Deactivate Enterprise
     result = supabase.table('payment_tiers').update({'is_active': False}).eq('id', 'enterprise').execute()

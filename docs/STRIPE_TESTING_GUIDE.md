@@ -39,7 +39,7 @@ npm run dev
 2. You should see 3 tiers:
    - **Free** - 100 imports/day, 5 analyses/day
    - **Pro Monthly** - €5.45/month - Unlimited
-   - **Pro Yearly** - €49.50/year - Unlimited
+   - **Pro Yearly** - €49.05/year - Unlimited
 
 ### Step 4: Test Stripe Checkout
 

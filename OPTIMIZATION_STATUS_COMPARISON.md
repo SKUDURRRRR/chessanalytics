@@ -238,6 +238,7 @@ max_concurrent = 6  # Was 4 (Railway Pro has 8 vCPU)
 ## Updated Capacity with Railway Pro + Your Optimizations
 
 ### Current (With Your Memory Work)
+
 | Metric | Value |
 |--------|-------|
 | Baseline Memory | 400 MB (was 1.4 GB) ✅ |
@@ -247,6 +248,7 @@ max_concurrent = 6  # Was 4 (Railway Pro has 8 vCPU)
 | Cost | $20-30/month (was $68) ✅ |
 
 ### After Phase 1 (Increase Concurrency)
+
 | Metric | Value | Change |
 |--------|-------|--------|
 | Throughput | 1,800 games/hour | **2x** |
@@ -255,6 +257,7 @@ max_concurrent = 6  # Was 4 (Railway Pro has 8 vCPU)
 | Cost | Same $20-30/month | **$0** |
 
 ### After Phase 2 (Speed Optimizations)
+
 | Metric | Value | Change |
 |--------|-------|--------|
 | Game Analysis | 2-3 seconds | **3-4x faster** |

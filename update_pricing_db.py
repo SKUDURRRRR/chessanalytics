@@ -24,10 +24,10 @@ try:
     }).eq('id', 'pro_monthly').execute()
     print(f"✅ Updated Pro Monthly: {result.data}")
 
-    # Update Pro Yearly price to $49.50
+    # Update Pro Yearly price to $49.05
     result = supabase.table('payment_tiers').update({
-        'price_yearly': 49.50,
-        'description': 'Save 20% with annual billing'
+        'price_yearly': 49.05,
+        'description': 'Save 25% with annual billing'
     }).eq('id', 'pro_yearly').execute()
     print(f"✅ Updated Pro Yearly: {result.data}")
 

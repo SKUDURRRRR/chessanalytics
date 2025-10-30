@@ -21,9 +21,9 @@ async def test_api_endpoint():
     supabase = create_client(supabase_url, supabase_key)
 
     # Get user ID
-    users = supabase.auth.admin.list_users()
+    response = supabase.auth.admin.list_users()
     user_id = None
-    for user in users:
+    for user in response.users:
         if user.email == email:
             user_id = user.id
             break
@@ -47,7 +47,8 @@ async def test_api_endpoint():
     response = requests.post(
         api_url,
         json={'user_id': user_id},
-        headers={'Content-Type': 'application/json'}
+        headers={'Content-Type': 'application/json'},
+        timeout=30
     )
 
     print(f"Status Code: {response.status_code}")

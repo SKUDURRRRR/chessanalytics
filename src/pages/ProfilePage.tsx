@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { logger } from '../utils/logger'
+import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
 
@@ -35,25 +37,38 @@ export default function ProfilePage() {
   }, [user]) // Only run when user changes, not refreshUsageStats
 
   const verifyStripeSession = async (sessionId: string) => {
+    // Input validation
+    if (!sessionId || typeof sessionId !== 'string') {
+      logger.error('Invalid sessionId provided to verifyStripeSession')
+      setError('Invalid session ID')
+      return
+    }
+
     setVerifyingPayment(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
+        logger.warn('No session found when verifying payment')
         setError('Please log in to verify payment')
         return
       }
 
-      const response = await fetch(`${API_URL}/api/v1/payments/verify-session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+      const response = await fetchWithTimeout(
+        `${API_URL}/api/v1/payments/verify-session`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ session_id: sessionId })
         },
-        body: JSON.stringify({ session_id: sessionId })
-      })
+        TIMEOUT_CONFIG.LONG // Payment verification might take a while
+      )
 
       if (!response.ok) {
         const errorData = await response.json()
+        logger.warn('Payment verification failed:', errorData.detail)
         setError(errorData.detail || 'Failed to verify payment')
         return
       }
@@ -61,6 +76,7 @@ export default function ProfilePage() {
       const data = await response.json()
 
       if (data.success) {
+        logger.log('Payment verified successfully')
         setNotification({
           message: data.message || 'Payment successful! Your subscription is now active.',
           type: 'success'
@@ -72,10 +88,11 @@ export default function ProfilePage() {
         // Refresh usage stats to show updated tier
         await refreshUsageStats()
       } else {
+        logger.warn('Payment verification unsuccessful:', data.message)
         setError(data.message || 'Payment verification failed')
       }
     } catch (error) {
-      console.error('Error verifying payment:', error)
+      logger.error('Error verifying payment:', error)
       setError('Failed to verify payment. Please refresh the page.')
     } finally {
       setVerifyingPayment(false)
@@ -85,7 +102,7 @@ export default function ProfilePage() {
   // Debug log to see what we're getting
   useEffect(() => {
     if (usageStats) {
-      console.log('🔍 Usage Stats:', {
+      logger.log('🔍 Usage Stats:', {
         subscription_status: usageStats.subscription_status,
         subscription_end_date: usageStats.subscription_end_date,
         account_tier: usageStats.account_tier
@@ -104,25 +121,32 @@ export default function ProfilePage() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
+        logger.warn('No session found when cancelling subscription')
         setError('Please log in to cancel subscription')
         return
       }
 
-      const response = await fetch(`${API_URL}/api/v1/payments/cancel`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
+      const response = await fetchWithTimeout(
+        `${API_URL}/api/v1/payments/cancel`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        },
+        TIMEOUT_CONFIG.LONG
+      )
 
       if (!response.ok) {
         const errorData = await response.json()
+        logger.warn('Subscription cancellation failed:', errorData.detail)
         setError(errorData.detail || 'Failed to cancel subscription')
         return
       }
 
       const data = await response.json()
+      logger.log('Subscription cancelled successfully')
       setNotification({
         message: data.message || 'Subscription cancelled successfully',
         type: 'info'
@@ -132,7 +156,7 @@ export default function ProfilePage() {
       // Auto-dismiss after 5 seconds
       setTimeout(() => setNotification(null), 5000)
     } catch (error) {
-      console.error('Error cancelling subscription:', error)
+      logger.error('Error cancelling subscription:', error)
       setError('Failed to cancel subscription. Please try again.')
     } finally {
       setCancellingSubscription(false)
@@ -141,40 +165,49 @@ export default function ProfilePage() {
 
   const handleUpgradeToYearly = async () => {
     setLoading(true)
+    setError('') // Clear previous errors
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
+        logger.warn('No session found when upgrading to yearly')
         setError('Please log in to upgrade')
         return
       }
 
-      const response = await fetch(`${API_URL}/api/v1/payments/create-checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+      const response = await fetchWithTimeout(
+        `${API_URL}/api/v1/payments/create-checkout`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            tier_id: 'pro_yearly',
+            success_url: `${window.location.origin}/profile?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${window.location.origin}/profile?canceled=true`
+          })
         },
-        body: JSON.stringify({
-          tier_id: 'pro_yearly',
-          success_url: `${window.location.origin}/profile?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${window.location.origin}/profile?canceled=true`
-        })
-      })
+        TIMEOUT_CONFIG.LONG
+      )
 
       if (!response.ok) {
         const errorData = await response.json()
+        logger.warn('Checkout creation failed:', errorData.detail)
         setError(errorData.detail || 'Failed to create checkout session')
         return
       }
 
       const data = await response.json()
       if (data.url) {
+        logger.log('Redirecting to Stripe checkout for yearly upgrade')
         window.location.href = data.url
       } else {
+        logger.error('No checkout URL received')
         setError('Failed to get checkout URL')
       }
     } catch (error) {
-      console.error('Error upgrading to yearly:', error)
+      logger.error('Error upgrading to yearly:', error)
       setError('Failed to upgrade. Please try again.')
     } finally {
       setLoading(false)
@@ -183,40 +216,49 @@ export default function ProfilePage() {
 
   const handleSwitchToMonthly = async () => {
     setLoading(true)
+    setError('') // Clear previous errors
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
+        logger.warn('No session found when switching to monthly')
         setError('Please log in to switch plan')
         return
       }
 
-      const response = await fetch(`${API_URL}/api/v1/payments/create-checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+      const response = await fetchWithTimeout(
+        `${API_URL}/api/v1/payments/create-checkout`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            tier_id: 'pro_monthly',
+            success_url: `${window.location.origin}/profile?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${window.location.origin}/profile?canceled=true`
+          })
         },
-        body: JSON.stringify({
-          tier_id: 'pro_monthly',
-          success_url: `${window.location.origin}/profile?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${window.location.origin}/profile?canceled=true`
-        })
-      })
+        TIMEOUT_CONFIG.LONG
+      )
 
       if (!response.ok) {
         const errorData = await response.json()
+        logger.warn('Checkout creation failed:', errorData.detail)
         setError(errorData.detail || 'Failed to create checkout session')
         return
       }
 
       const data = await response.json()
       if (data.url) {
+        logger.log('Redirecting to Stripe checkout for monthly plan')
         window.location.href = data.url
       } else {
+        logger.error('No checkout URL received')
         setError('Failed to get checkout URL')
       }
     } catch (error) {
-      console.error('Error switching to monthly:', error)
+      logger.error('Error switching to monthly:', error)
       setError('Failed to switch plan. Please try again.')
     } finally {
       setLoading(false)
@@ -435,7 +477,7 @@ export default function ProfilePage() {
                       disabled={loading}
                       className="block w-full text-center rounded-2xl border border-emerald-400/40 bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300/60 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {loading ? 'Loading...' : 'Upgrade to Yearly Pro (Save 20%)'}
+                      {loading ? 'Loading...' : 'Upgrade to Yearly Pro (Save 25%)'}
                     </button>
                   </>
                 )}
@@ -446,7 +488,7 @@ export default function ProfilePage() {
                       disabled={loading}
                       className="block w-full text-center rounded-2xl border border-emerald-400/40 bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300/60 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {loading ? 'Loading...' : 'Upgrade to Yearly Pro (Save 20%)'}
+                      {loading ? 'Loading...' : 'Upgrade to Yearly Pro (Save 25%)'}
                     </button>
                     <button
                       onClick={() => setShowCancelConfirm(true)}

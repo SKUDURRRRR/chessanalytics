@@ -100,7 +100,7 @@ def test_create_checkout_session(user_token=None):
     try:
         headers = {'Authorization': f'Bearer {user_token}'}
         payload = {
-            'price_id': 'pro_monthly',  # or the actual Stripe price ID
+            'tier_id': 'pro_monthly',  # or pass credit_amount for one-time purchases
             'success_url': f'{FRONTEND_URL}/success',
             'cancel_url': f'{FRONTEND_URL}/pricing'
         }

@@ -6,6 +6,8 @@ import { getRecentPlayers, addRecentPlayer, clearRecentPlayers, RecentPlayer } f
 import { retryWithBackoff } from '../../lib/errorHandling'
 import { useAuth } from '../../contexts/AuthContext'
 import UsageLimitModal from '../UsageLimitModal'
+import { AnonymousUsageTracker } from '../../services/anonymousUsageTracker'
+import AnonymousLimitModal from '../AnonymousLimitModal'
 
 // Add custom pulse animation style
 const customPulseStyle = `
@@ -43,6 +45,10 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   // Auth and usage tracking
   const { user, usageStats, refreshUsageStats } = useAuth()
   const [showLimitModal, setShowLimitModal] = useState(false)
+
+  // Anonymous user tracking
+  const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
+  const [anonymousLimitType, setAnonymousLimitType] = useState<'import' | 'analyze'>('import')
 
   // Load recent players on mount
   useEffect(() => {
@@ -181,6 +187,16 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   const handleManualImport = async () => {
     if (!searchQuery.trim()) return
 
+    // Check anonymous user limits first
+    if (!user) {
+      if (!AnonymousUsageTracker.canImport()) {
+        console.log('[PlayerSearch] Anonymous user reached import limit')
+        setAnonymousLimitType('import')
+        setAnonymousLimitModalOpen(true)
+        return
+      }
+    }
+
     // Check usage limits for authenticated users
     if (user && usageStats) {
       // Check if user has remaining imports
@@ -246,7 +262,12 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       )
 
       if (result.success) {
-        // Import successful, refresh usage stats
+        // Increment anonymous usage after successful import
+        if (!user && result.games_imported) {
+          AnonymousUsageTracker.incrementImports(result.games_imported)
+        }
+
+        // Import successful, refresh usage stats for authenticated users
         if (user) {
           await refreshUsageStats()
         }
@@ -628,6 +649,13 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           remaining: usageStats.imports.remaining,
           unlimited: usageStats.imports.unlimited
         } : undefined}
+      />
+
+      {/* Anonymous User Limit Modal */}
+      <AnonymousLimitModal
+        isOpen={anonymousLimitModalOpen}
+        onClose={() => setAnonymousLimitModalOpen(false)}
+        limitType={anonymousLimitType}
       />
     </>
   )

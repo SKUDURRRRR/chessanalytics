@@ -61,6 +61,7 @@ fix_pricing_simple.py
 upgrade_*.sql
 fix_user_*.sql
 *_adhoc.sql
+fix_stripe_price_ids.sql
 
 # Large files
 public/logo.png

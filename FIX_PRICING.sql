@@ -1,4 +1,4 @@
--- Fix Pricing: Update to $5.45/month and $49.50/year with 25% savings
+-- Fix Pricing: Update to $5.45/month and $49.05/year with 25% savings
 -- Run this in Supabase SQL Editor: https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn/sql/new
 
 -- Update Pro Monthly to $5.45
@@ -6,10 +6,10 @@ UPDATE payment_tiers
 SET price_monthly = 5.45
 WHERE id = 'pro_monthly';
 
--- Update Pro Yearly to $49.50 with correct description and features
+-- Update Pro Yearly to $49.05 with correct description and features
 UPDATE payment_tiers
 SET
-    price_yearly = 49.50,
+    price_yearly = 49.05,
     description = 'Save 25% with annual billing',
     features = '["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Opponent preparation", "Personality insights", "25% savings vs monthly"]'::jsonb
 WHERE id = 'pro_yearly';

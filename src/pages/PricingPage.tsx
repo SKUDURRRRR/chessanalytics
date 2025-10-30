@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { logger } from '../utils/logger'
+import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
 
 interface PaymentTier {
   id: string
@@ -29,13 +31,24 @@ export default function PricingPage() {
   const fetchTiers = async () => {
     try {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
-      const response = await fetch(`${API_URL}/api/v1/payment-tiers`)
+
+      const response = await fetchWithTimeout(
+        `${API_URL}/api/v1/payment-tiers`,
+        {},
+        TIMEOUT_CONFIG.DEFAULT
+      )
+
       if (response.ok) {
         const data = await response.json()
         setTiers(data.tiers || [])
+        logger.log('Pricing tiers fetched successfully')
+      } else {
+        logger.warn('Failed to fetch pricing tiers:', response.status)
+        // Fail gracefully - UI will show empty state
       }
     } catch (error) {
-      console.error('Error fetching tiers:', error)
+      logger.error('Error fetching tiers:', error)
+      // Fail gracefully - UI will show empty state
     } finally {
       setLoading(false)
     }
@@ -75,7 +88,15 @@ export default function PricingPage() {
   }
 
   const handleUpgrade = async (tierId: string) => {
+    // Input validation
+    if (!tierId || typeof tierId !== 'string') {
+      logger.error('Invalid tierId provided to handleUpgrade')
+      setNotification({ message: 'Invalid tier selection', type: 'error' })
+      return
+    }
+
     if (!user) {
+      logger.log('Unauthenticated user attempting upgrade, redirecting to signup')
       window.location.href = '/signup'
       return
     }
@@ -87,6 +108,7 @@ export default function PricingPage() {
       // Get the auth token from Supabase
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
+        logger.warn('No session found when attempting upgrade')
         setNotification({ message: 'Please log in to upgrade', type: 'error' })
         setTimeout(() => {
           window.location.href = '/login'
@@ -94,24 +116,34 @@ export default function PricingPage() {
         return
       }
 
-      const response = await fetch(`${API_URL}/api/v1/payments/create-checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+      const response = await fetchWithTimeout(
+        `${API_URL}/api/v1/payments/create-checkout`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            tier_id: tierId,
+            success_url: `${window.location.origin}/profile?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${window.location.origin}/pricing?canceled=true`
+          })
         },
-        body: JSON.stringify({
-          tier_id: tierId,
-          success_url: `${window.location.origin}/profile?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${window.location.origin}/pricing?canceled=true`
-        })
-      })
+        TIMEOUT_CONFIG.LONG
+      )
 
       if (!response.ok) {
         const error = await response.json()
-        console.error('Checkout error:', error)
+        logger.error('Checkout error:', error)
+        const errorMessage =
+          typeof error.message === 'string'
+            ? error.message
+            : typeof error.detail === 'string'
+            ? error.detail
+            : 'Unknown error'
         setNotification({
-          message: `Failed to create checkout session: ${error.detail || 'Unknown error'}`,
+          message: `Failed to create checkout session: ${errorMessage}`,
           type: 'error'
         })
         return
@@ -121,12 +153,14 @@ export default function PricingPage() {
 
       if (data.url) {
         // Redirect to Stripe Checkout
+        logger.log(`Redirecting to Stripe checkout for tier: ${tierId}`)
         window.location.href = data.url
       } else {
+        logger.error('No checkout URL received from API')
         setNotification({ message: 'Failed to get checkout URL', type: 'error' })
       }
     } catch (error) {
-      console.error('Error creating checkout:', error)
+      logger.error('Error creating checkout:', error)
       setNotification({ message: 'Failed to start checkout. Please try again.', type: 'error' })
     } finally {
       setUpgrading(null)
@@ -174,12 +208,12 @@ export default function PricingPage() {
             <div
               key={tier.id}
               className={`bg-slate-900 border ${
-                tier.id === 'pro_monthly' || tier.id === 'pro_yearly'
+                tier.id === 'pro_monthly'
                   ? 'border-blue-500 ring-2 ring-blue-500'
                   : 'border-slate-700'
-              } rounded-lg p-8 relative`}
+              } rounded-lg p-8 relative flex flex-col`}
             >
-              {(tier.id === 'pro_monthly' || tier.id === 'pro_yearly') && (
+              {tier.id === 'pro_monthly' && (
                 <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg rounded-tr-lg">
                   POPULAR
                 </div>
@@ -213,7 +247,7 @@ export default function PricingPage() {
                 )}
               </div>
 
-              <ul className="space-y-3 mb-8">
+              <ul className="space-y-3 mb-8 flex-grow">
                 {tier.features.map((feature, index) => (
                   <li key={index} className="flex items-start text-slate-300 text-sm">
                     <svg
@@ -234,6 +268,7 @@ export default function PricingPage() {
                 ))}
               </ul>
 
+              <div className="mt-auto">
               {tier.id === 'free' ? (
                 user ? (
                   currentTier === 'free' ? (
@@ -282,6 +317,7 @@ export default function PricingPage() {
                   Get Started
                 </a>
               )}
+              </div>
             </div>
           ))}
         </div>

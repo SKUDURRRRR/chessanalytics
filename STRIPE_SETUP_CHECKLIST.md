@@ -6,7 +6,7 @@
 - ✅ Created `.env.local` (main directory) - **NEEDS YOUR KEYS**
 - ✅ Created `python/.env.local` (backend directory) - **NEEDS YOUR KEYS**
 - ✅ Created `STRIPE_ENV_SETUP_GUIDE.md` (detailed instructions)
-- ✅ Generated JWT Secret: `nhmd7TXasEq38be2oVYtzWvOJRU5LuAF0kQSGcI6CfBgylZKH9DixNjpPM4r1w`
+- ✅ See below for instructions to generate your unique JWT Secret
 
 ### 2. Identified the Problem
 - ❌ Environment files didn't exist
@@ -35,7 +35,19 @@
    - **anon public** key
    - **service_role** key (click "Reveal")
 
-### Step 3: Edit `.env.local` (Main Directory) ⏱️ 3 minutes
+### Step 3: Generate Your Unique JWT Secret ⏱️ 1 minute
+
+**⚠️ CRITICAL: Never use a shared JWT secret!**
+
+Run this command to generate a unique JWT secret:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+**Copy the output** - you'll need it for the next steps.
+
+### Step 4: Edit `.env.local` (Main Directory) ⏱️ 3 minutes
 
 **File should be open in Notepad. Replace these:**
 
@@ -50,13 +62,13 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_test_YOUR_PUBLISHABLE_KEY
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.YOUR_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.YOUR_SERVICE_ROLE_KEY
-JWT_SECRET=nhmd7TXasEq38be2oVYtzWvOJRU5LuAF0kQSGcI6CfBgylZKH9DixNjpPM4r1w
+JWT_SECRET=YOUR_GENERATED_JWT_SECRET_FROM_STEP_3
 CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 ```
 
 **Save the file!**
 
-### Step 4: Edit `python/.env.local` (Python Directory) ⏱️ 3 minutes
+### Step 5: Edit `python/.env.local` (Python Directory) ⏱️ 3 minutes
 
 **File should be open in Notepad. Replace these:**
 
@@ -70,8 +82,8 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.YOUR_SERVICE_ROLE
 STRIPE_SECRET_KEY=sk_test_YOUR_SECRET_KEY_HERE
 STRIPE_WEBHOOK_SECRET=whsec_YOUR_WEBHOOK_SECRET_HERE
 
-# JWT
-JWT_SECRET=nhmd7TXasEq38be2oVYtzWvOJRU5LuAF0kQSGcI6CfBgylZKH9DixNjpPM4r1w
+# JWT (use the SAME secret you generated in Step 3)
+JWT_SECRET=YOUR_GENERATED_JWT_SECRET_FROM_STEP_3
 
 # API Config
 API_HOST=127.0.0.1
@@ -88,7 +100,7 @@ MAX_CONCURRENT_ANALYSES=4
 
 **Save the file!**
 
-### Step 5: Verify Setup ⏱️ 1 minute
+### Step 6: Verify Setup ⏱️ 1 minute
 
 Run this in PowerShell:
 ```powershell
@@ -98,7 +110,7 @@ python -c "import os; from dotenv import load_dotenv; load_dotenv('.env.local');
 
 **Expected output:** `✅ STRIPE_SECRET_KEY is SET`
 
-### Step 6: Restart Backend Server ⏱️ 1 minute
+### Step 7: Restart Backend Server ⏱️ 1 minute
 
 1. Stop your current backend (Ctrl+C in terminal)
 2. Start it again:
@@ -114,7 +126,29 @@ python -c "import os; from dotenv import load_dotenv; load_dotenv('.env.local');
    Stripe service initialized successfully
    ```
 
-### Step 7: Test Stripe Checkout ⏱️ 2 minutes
+### Step 8: Configure Stripe Price IDs ⏱️ 5 minutes
+
+**⚠️ Important: You need to link your Stripe product prices to the database**
+
+1. **Get your Stripe Price IDs:**
+   - Go to: https://dashboard.stripe.com/test/products
+   - Find your "Pro Monthly" product and copy its price ID (starts with `price_`)
+   - Find your "Pro Yearly" product and copy its price ID (starts with `price_`)
+
+2. **Create the SQL script:**
+   - Copy `fix_stripe_price_ids.sql.template` to `fix_stripe_price_ids.sql`
+   - Replace `YOUR_MONTHLY_PRICE_ID_HERE` with your monthly price ID
+   - Replace `YOUR_YEARLY_PRICE_ID_HERE` with your yearly price ID
+
+3. **Run in Supabase:**
+   - Go to: https://supabase.com/dashboard/project/nhpsnvhvfscrmyniihdn/sql/new
+   - Paste the contents of `fix_stripe_price_ids.sql`
+   - Click **Run**
+   - Verify the results show your price IDs
+
+**Note:** The `fix_stripe_price_ids.sql` file is gitignored because it contains your environment-specific IDs.
+
+### Step 9: Test Stripe Checkout ⏱️ 2 minutes
 
 1. Open: http://localhost:3000/pricing
 2. Click **"Upgrade Now"** on Pro Monthly or Pro Yearly
@@ -136,6 +170,9 @@ Check these off as you complete them:
 - [ ] Edited `.env.local` (main directory)
 - [ ] Edited `python/.env.local` (backend directory)
 - [ ] Saved both files
+- [ ] Got Stripe price IDs from dashboard
+- [ ] Created and edited `fix_stripe_price_ids.sql` from template
+- [ ] Ran price ID script in Supabase SQL Editor
 - [ ] Verified `STRIPE_SECRET_KEY` is loaded
 - [ ] Restarted backend server
 - [ ] Saw "Stripe service initialized successfully" in logs
@@ -185,14 +222,12 @@ Check these off as you complete them:
 
 ✅ Database migrations applied
 ✅ Payment tiers seeded in database
-✅ Stripe product IDs configured:
-   - Pro Monthly: `price_1SNk0Q0CDBdO3EY30yDl3NMQ`
-   - Pro Yearly: `price_1SNk2o0CDBdO3EY3LDSUOkzK`
+✅ Stripe integration code ready
 ✅ Frontend checkout code working
 ✅ Backend API endpoints configured
 ✅ Authentication system ready
 
-**You ONLY need to add your API keys!**
+**You ONLY need to add your API keys and price IDs to environment variables!**
 
 ---
 
@@ -216,13 +251,22 @@ Once payments are working:
 
 ---
 
-**Generated JWT Secret (already in checklist above):**
+## 🔐 How to Generate Your JWT Secret
+
+Run this command in PowerShell to generate a secure JWT secret:
+```powershell
+-join ((65..90) + (97..122) + (48..57) | Get-Random -Count 64 | ForEach-Object {[char]$_})
 ```
-nhmd7TXasEq38be2oVYtzWvOJRU5LuAF0kQSGcI6CfBgylZKH9DixNjpPM4r1w
+
+Or use this Python command:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
+
+Copy the generated secret and use it for `JWT_SECRET` in both `.env.local` files above.
 
 ---
 
-**Total Time Needed:** ~15 minutes
+**Total Time Needed:** ~17 minutes
 
 **You're almost there! Just need to fill in the API keys and restart!** 🚀

@@ -1,9 +1,24 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useState, useRef, useEffect } from 'react'
 
 export function Navigation() {
   const { user, signOut, usageStats, loading } = useAuth()
   const location = useLocation()
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleSignOut = async () => {
     try {
@@ -27,6 +42,21 @@ export function Navigation() {
     // Include the current path and search params as returnTo
     const fullPath = location.pathname + location.search
     return `${path}?returnTo=${encodeURIComponent(fullPath)}`
+  }
+
+  // Helper function to determine if a nav button is active
+  const isActive = (path: string) => {
+    return location.pathname === path
+  }
+
+  // Get button class based on active state
+  const getButtonClass = (path: string) => {
+    if (isActive(path)) {
+      // Green for active state
+      return "rounded-2xl border border-emerald-400/40 bg-emerald-500/20 px-6 py-2.5 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300/60 hover:bg-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
+    }
+    // Blue for default state
+    return "rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-2.5 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30"
   }
 
   return (
@@ -77,20 +107,26 @@ export function Navigation() {
                 )}
 
                 <Link
+                  to="/"
+                  className={getButtonClass('/')}
+                >
+                  Home
+                </Link>
+                <Link
                   to="/pricing"
-                  className="text-slate-300 hover:text-white transition-colors text-sm font-medium"
+                  className={getButtonClass('/pricing')}
                 >
                   Pricing
                 </Link>
                 <Link
                   to="/profile"
-                  className="text-slate-300 hover:text-white transition-colors text-sm font-medium"
+                  className={getButtonClass('/profile')}
                 >
                   Profile
                 </Link>
                 <button
                   onClick={handleSignOut}
-                  className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 transition-colors text-sm font-medium"
+                  className="rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-2.5 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30"
                 >
                   Sign Out
                 </button>
@@ -98,24 +134,92 @@ export function Navigation() {
             ) : (
               // Anonymous user navigation
               <>
-                <Link
-                  to="/pricing"
-                  className="text-slate-300 hover:text-white transition-colors text-sm font-medium"
-                >
-                  Pricing
-                </Link>
-                <Link
-                  to={getAuthUrl('/login')}
-                  className="px-4 py-2 text-slate-300 hover:text-white transition-colors text-sm font-medium"
-                >
-                  Login
-                </Link>
-                <Link
-                  to={getAuthUrl('/signup')}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
-                >
-                  Sign Up
-                </Link>
+                {/* Mobile dropdown menu */}
+                <div className="relative md:hidden" ref={dropdownRef}>
+                  <button
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/10 flex items-center gap-2"
+                    aria-label="Menu"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 6h16M4 12h16M4 18h16"
+                      />
+                    </svg>
+                    <span>Menu</span>
+                  </button>
+
+                  {isDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-700 bg-slate-800 shadow-xl z-50">
+                      <div className="py-2">
+                        <Link
+                          to="/"
+                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Home
+                        </Link>
+                        <Link
+                          to="/pricing"
+                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Pricing
+                        </Link>
+                        <Link
+                          to={getAuthUrl('/login')}
+                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Login
+                        </Link>
+                        <Link
+                          to={getAuthUrl('/signup')}
+                          className="block px-4 py-2.5 text-sm text-blue-400 hover:bg-slate-700 transition-colors font-semibold"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Sign Up
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Desktop buttons */}
+                <div className="hidden md:flex items-center gap-4">
+                  <Link
+                    to="/"
+                    className={getButtonClass('/')}
+                  >
+                    Home
+                  </Link>
+                  <Link
+                    to="/pricing"
+                    className={getButtonClass('/pricing')}
+                  >
+                    Pricing
+                  </Link>
+                  <Link
+                    to={getAuthUrl('/login')}
+                    className={getButtonClass('/login')}
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    to={getAuthUrl('/signup')}
+                    className={getButtonClass('/signup')}
+                  >
+                    Sign Up
+                  </Link>
+                </div>
               </>
             )}
           </div>

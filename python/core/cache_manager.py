@@ -2,12 +2,20 @@
 """
 LRU Cache Manager with TTL Support
 Provides memory-bounded caches with automatic eviction.
+
+Security Features:
+- Thread-safe operations with RLock
+- Input validation
+- Safe error handling
 """
 
 import time
 import threading
+import logging
 from collections import OrderedDict
 from typing import Any, Optional, Tuple, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class LRUCache:
@@ -29,32 +37,52 @@ class LRUCache:
 
     def __init__(self, maxsize: int = 1000, ttl: Optional[float] = None, name: str = "cache"):
         """
-        Initialize LRU cache.
+        Initialize LRU cache with validation.
 
         Args:
-            maxsize: Maximum number of entries (default 1000)
-            ttl: Time-to-live in seconds (None = no expiration)
+            maxsize: Maximum number of entries (default 1000, min 1, max 1000000)
+            ttl: Time-to-live in seconds (None = no expiration, must be positive if set)
             name: Cache name for logging
+
+        Raises:
+            ValueError: If parameters are invalid
         """
+        if not isinstance(maxsize, int) or maxsize < 1:
+            raise ValueError("maxsize must be a positive integer")
+        if maxsize > 1000000:
+            raise ValueError("maxsize cannot exceed 1,000,000 (memory safety)")
+        if ttl is not None and (not isinstance(ttl, (int, float)) or ttl <= 0):
+            raise ValueError("ttl must be a positive number")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("name must be a non-empty string")
+
         self.maxsize = maxsize
         self.ttl = ttl
-        self.name = name
+        self.name = name.strip()
         self._cache: OrderedDict[str, Tuple[Any, float]] = OrderedDict()
         self._lock = threading.RLock()
         self._hits = 0
         self._misses = 0
 
+        logger.debug(f"Initialized LRU cache '{self.name}' with maxsize={maxsize}, ttl={ttl}")
+
     def get(self, key: str, default: Any = None) -> Any:
         """
-        Get value from cache.
+        Get value from cache with validation.
 
         Args:
-            key: Cache key
+            key: Cache key (must be non-empty string)
             default: Default value if not found
 
         Returns:
             Cached value or default
+
+        Raises:
+            ValueError: If key is invalid
         """
+        if not isinstance(key, str) or not key:
+            raise ValueError("key must be a non-empty string")
+
         with self._lock:
             if key not in self._cache:
                 self._misses += 1
@@ -75,12 +103,18 @@ class LRUCache:
 
     def set(self, key: str, value: Any) -> None:
         """
-        Set value in cache.
+        Set value in cache with validation.
 
         Args:
-            key: Cache key
+            key: Cache key (must be non-empty string)
             value: Value to cache
+
+        Raises:
+            ValueError: If key is invalid
         """
+        if not isinstance(key, str) or not key:
+            raise ValueError("key must be a non-empty string")
+
         with self._lock:
             timestamp = time.time()
 

@@ -73,8 +73,14 @@ class MemoryMonitor:
                 f"{self.api_url}/health",
                 timeout=5
             )
-            return response.json() if response.status_code == 200 else None
-        except:
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except requests.exceptions.RequestException as exc:
+            print(f"❌ Health check request failed: {exc}")
+            return None
+        except ValueError as exc:
+            print(f"❌ Invalid health payload: {exc}")
             return None
 
     def analyze_metrics(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -232,8 +238,8 @@ class MemoryMonitor:
             )
             if response.status_code != 204:
                 print(f"❌ Webhook failed: {response.status_code}")
-        except Exception as e:
-            print(f"❌ Failed to send webhook: {e}")
+        except requests.exceptions.RequestException as exc:
+            print(f"❌ Failed to send webhook: {exc}")
 
     def print_status(self, analysis: Dict[str, Any]):
         """Print current status to console."""
@@ -290,7 +296,7 @@ class MemoryMonitor:
             "\n" + "=" * 80,
             "📊 MONITORING REPORT",
             "=" * 80,
-            f"Total Alerts:",
+            "Total Alerts:",
             f"   High Memory: {self.alert_counts['high_memory']}",
             f"   Low Hit Rate: {self.alert_counts['low_hit_rate']}",
             f"   Engines Stuck: {self.alert_counts['engines_stuck']}",

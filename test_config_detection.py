@@ -79,36 +79,59 @@ def test_with_environment_override():
     print("ENVIRONMENT OVERRIDE TEST")
     print("=" * 60)
 
-    # Set test environment variables
-    print("\nSetting test environment variables:")
-    test_vars = {
-        "DEPLOYMENT_TIER": "railway_pro",
-        "STOCKFISH_DEPTH": "16",
-        "STOCKFISH_SKILL_LEVEL": "18"
+    # Capture original environment variable values
+    original_vars = {
+        "DEPLOYMENT_TIER": os.environ.get("DEPLOYMENT_TIER"),
+        "STOCKFISH_DEPTH": os.environ.get("STOCKFISH_DEPTH"),
+        "STOCKFISH_SKILL_LEVEL": os.environ.get("STOCKFISH_SKILL_LEVEL")
     }
 
-    for key, value in test_vars.items():
-        print(f"  {key} = {value}")
-        os.environ[key] = value
+    try:
+        # Set test environment variables
+        print("\nSetting test environment variables:")
+        test_vars = {
+            "DEPLOYMENT_TIER": "railway_pro",
+            "STOCKFISH_DEPTH": "16",
+            "STOCKFISH_SKILL_LEVEL": "18"
+        }
 
-    # Reload configuration
-    from core.config import reload_config
-    config = reload_config()
+        for key, value in test_vars.items():
+            print(f"  {key} = {value}")
+            os.environ[key] = value
 
-    print("\nConfiguration after override:")
-    print(f"  Tier: {config.stockfish.tier}")
-    print(f"  Depth: {config.stockfish.depth}")
-    print(f"  Skill Level: {config.stockfish.skill_level}")
-    print(f"  Rate Limit: {config.analysis.rate_limit_per_hour}/hour")
+        # Reload configuration
+        from core.config import reload_config
+        config = reload_config()
 
-    # Verify overrides worked
-    assert config.stockfish.depth == 16, "Depth override failed"
-    assert config.stockfish.skill_level == 18, "Skill level override failed"
-    assert config.analysis.rate_limit_per_hour == 500, "Rate limit should be 500 for railway_pro"
+        print("\nConfiguration after override:")
+        print(f"  Tier: {config.stockfish.tier}")
+        print(f"  Depth: {config.stockfish.depth}")
+        print(f"  Skill Level: {config.stockfish.skill_level}")
+        print(f"  Rate Limit: {config.analysis.rate_limit_per_hour}/hour")
 
-    print("\n[OK] All overrides applied correctly!")
+        # Verify overrides worked
+        assert config.stockfish.depth == 16, "Depth override failed"
+        assert config.stockfish.skill_level == 18, "Skill level override failed"
+        assert config.analysis.rate_limit_per_hour == 500, "Rate limit should be 500 for railway_pro"
 
-    return config
+        print("\n[OK] All overrides applied correctly!")
+
+        return config
+    finally:
+        # Restore original environment variables
+        print("\nRestoring original environment variables...")
+        for key, original_value in original_vars.items():
+            if original_value is None:
+                # Variable didn't exist before, remove it
+                os.environ.pop(key, None)
+            else:
+                # Restore original value
+                os.environ[key] = original_value
+
+        # Reload configuration to restore global config state
+        from core.config import reload_config
+        reload_config()
+        print("Environment variables restored.")
 
 def main():
     """Run all tests."""

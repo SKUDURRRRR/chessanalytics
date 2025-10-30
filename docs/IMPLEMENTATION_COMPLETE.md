@@ -87,7 +87,7 @@ Follow `docs/STRIPE_SETUP.md`:
 1. Create Stripe account
 2. Get API keys (test mode first)
 3. Create Pro Monthly product ($5.45/month)
-4. Create Pro Yearly product ($49.50/year)
+4. Create Pro Yearly product ($49.05/year)
 5. Copy price IDs and update database:
    ```sql
    UPDATE payment_tiers
@@ -188,7 +188,7 @@ Create `src/components/Navigation.tsx` or update existing header:
 
 ```typescript
 import { useAuth } from '../contexts/AuthContext'
-import { Link } from 'router-router-dom'
+import { Link } from 'react-router-dom'
 
 export function Navigation() {
   const { user, signOut } = useAuth()
@@ -319,7 +319,7 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
 
 - **Free:** $0/month - 100 imports/day, 5 analyses/day
 - **Pro Monthly:** $5.45/month - Unlimited
-- **Pro Yearly:** $49.50/year - Unlimited (save 25%)
+- **Pro Yearly:** $49.05/year - Unlimited (save 25%)
 - **Enterprise:** Custom - Contact sales
 
 ## 🔒 Security Notes

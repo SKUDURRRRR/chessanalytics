@@ -129,7 +129,7 @@ In Stripe Dashboard → Products:
 
 2. **Pro Yearly**
    - Name: "Pro Yearly"
-   - Price: $49.50/year
+   - Price: $49.05/year
    - Recurring: Yearly
    - Copy the Price ID (starts with `price_`)
 

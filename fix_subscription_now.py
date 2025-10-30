@@ -162,7 +162,13 @@ async def fix_user_subscription(user_email: str):
                         if session.payment_status == 'paid' and session.subscription:
                             # Sync this subscription
                             subscription_id = session.subscription
-                            metadata = session.get('metadata', {})
+                            metadata_obj = session.get('metadata', {})
+                            if hasattr(metadata_obj, 'to_dict'):
+                                metadata = metadata_obj.to_dict()
+                            elif isinstance(metadata_obj, dict):
+                                metadata = metadata_obj
+                            else:
+                                metadata = {}
                             tier_id = metadata.get('tier_id', 'pro_monthly')
 
                             print(f"\n[OK] Syncing subscription: {subscription_id}")

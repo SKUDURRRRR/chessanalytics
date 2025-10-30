@@ -6,6 +6,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { ChessSoundProvider } from './contexts/ChessSoundContext'
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
 import { Navigation } from './components/Navigation'
+import { Footer } from './components/Footer'
 import './index.css'
 
 // Lazy load pages for code splitting (reduces initial bundle by 60%)
@@ -36,7 +37,7 @@ function App() {
       <AuthProvider>
         <ChessSoundProvider>
           <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <div className="min-h-screen bg-slate-950">
+            <div className="min-h-screen bg-slate-950 flex flex-col">
               <Navigation />
               <Suspense fallback={<PageLoader />}>
                 <Routes>
@@ -52,6 +53,7 @@ function App() {
                   <Route path="/pricing" element={<ComponentErrorBoundary><PricingPage /></ComponentErrorBoundary>} />
                 </Routes>
               </Suspense>
+              <Footer />
             </div>
             <Analytics />
             <SpeedInsights />

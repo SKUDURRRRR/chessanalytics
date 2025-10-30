@@ -14,10 +14,20 @@ load_dotenv(BASE_DIR / 'python' / '.env')
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
+# Get Stripe price IDs from environment variables
+STRIPE_PRICE_ID_PRO_MONTHLY = os.getenv('STRIPE_PRICE_ID_PRO_MONTHLY')
+STRIPE_PRICE_ID_PRO_YEARLY = os.getenv('STRIPE_PRICE_ID_PRO_YEARLY')
+
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     print("[ERROR] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in python/.env")
     print(f"  SUPABASE_URL: {'SET' if SUPABASE_URL else 'NOT SET'}")
     print(f"  SUPABASE_SERVICE_ROLE_KEY: {'SET' if SUPABASE_SERVICE_KEY else 'NOT SET'}")
+    exit(1)
+
+if not STRIPE_PRICE_ID_PRO_MONTHLY or not STRIPE_PRICE_ID_PRO_YEARLY:
+    print("[ERROR] STRIPE_PRICE_ID_PRO_MONTHLY and STRIPE_PRICE_ID_PRO_YEARLY must be set in python/.env")
+    print(f"  STRIPE_PRICE_ID_PRO_MONTHLY: {'SET' if STRIPE_PRICE_ID_PRO_MONTHLY else 'NOT SET'}")
+    print(f"  STRIPE_PRICE_ID_PRO_YEARLY: {'SET' if STRIPE_PRICE_ID_PRO_YEARLY else 'NOT SET'}")
     exit(1)
 
 # Create Supabase client
@@ -28,13 +38,13 @@ print("[INFO] Updating Stripe price IDs...")
 try:
     # Update Pro Monthly
     result1 = supabase.table('payment_tiers').update({
-        'stripe_price_id_monthly': 'price_1SNk0Q0CDBdO3EY30yDl3NMQ'
+        'stripe_price_id_monthly': STRIPE_PRICE_ID_PRO_MONTHLY
     }).eq('id', 'pro_monthly').execute()
     print("[OK] Updated Pro Monthly price ID")
 
     # Update Pro Yearly
     result2 = supabase.table('payment_tiers').update({
-        'stripe_price_id_yearly': 'price_1SNk2o0CDBdO3EY3LDSUOkzK'
+        'stripe_price_id_yearly': STRIPE_PRICE_ID_PRO_YEARLY
     }).eq('id', 'pro_yearly').execute()
     print("[OK] Updated Pro Yearly price ID")
 

@@ -7,7 +7,7 @@ CodeRabbit identified a critical security vulnerability where `update_pricing_db
 - **Severity**: Critical 🔴
 - **Impact**: Full database access credentials exposed in source control
 - **File**: `update_pricing_db.py`
-- **Exposed credential**: Service role key `sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz`
+- **Exposed credential**: Service role key `sb_secret_[REDACTED]` (removed local development key)
 
 ## Fix Applied
 
@@ -15,7 +15,7 @@ CodeRabbit identified a critical security vulnerability where `update_pricing_db
 ```python
 # Connect to local Supabase
 url = "http://127.0.0.1:54321"
-key = "sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"  # pragma: allowlist secret - Example of removed local dev key
+key = "sb_secret_[REDACTED]"  # local development key (removed)
 
 supabase: Client = create_client(url, key)
 ```

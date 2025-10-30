@@ -852,12 +852,13 @@ class DeepAnalysisData(BaseModel):
 
 class CreateCheckoutRequest(BaseModel):
     """Request model for creating a Stripe checkout session."""
-    tier_id: Optional[str] = Field(None, description="Subscription tier ID (for subscriptions)")
-    credit_amount: Optional[int] = Field(None, description="Number of credits to purchase (for one-time payments)")
-    success_url: Optional[str] = Field(None, description="URL to redirect to after successful payment")
-    cancel_url: Optional[str] = Field(None, description="URL to redirect to if payment is cancelled")
+    tier_id: Optional[str] = Field(None, min_length=1, max_length=50, description="Subscription tier ID (for subscriptions)")
+    credit_amount: Optional[int] = Field(None, ge=100, le=10000, description="Number of credits to purchase (for one-time payments)")
+    success_url: Optional[str] = Field(None, max_length=500, description="URL to redirect to after successful payment")
+    cancel_url: Optional[str] = Field(None, max_length=500, description="URL to redirect to if payment is cancelled")
 
-    def model_post_init(self, __context):
+    @model_validator(mode='after')
+    def validate_mutually_exclusive(self) -> 'CreateCheckoutRequest':
         """Validate mutually exclusive fields after model initialization."""
         if not self.tier_id and not self.credit_amount:
             raise ValueError('Either tier_id or credit_amount must be provided')
@@ -865,16 +866,30 @@ class CreateCheckoutRequest(BaseModel):
         if self.tier_id and self.credit_amount:
             raise ValueError('Cannot specify both tier_id and credit_amount')
 
+        return self
+
 
 class VerifySessionRequest(BaseModel):
     """Request model for verifying a Stripe checkout session."""
-    session_id: str = Field(..., description="Stripe checkout session ID to verify")
+    session_id: str = Field(..., min_length=1, max_length=200, description="Stripe checkout session ID to verify")
 
 
 class UpdateProfileRequest(BaseModel):
     """Request model for updating user profile."""
     # Currently no fields, but keeping for future extensions
     pass
+
+
+class CheckUsageRequest(BaseModel):
+    """Request model for checking user usage."""
+    user_id: str = Field(..., min_length=1, max_length=100, description="User ID to check usage for")
+
+
+class LinkAnonymousDataRequest(BaseModel):
+    """Request model for linking anonymous data to authenticated user."""
+    auth_user_id: str = Field(..., min_length=1, max_length=100, description="Authenticated user ID")
+    platform: str = Field(..., description="Platform (lichess, chess.com)")
+    anonymous_user_id: str = Field(..., min_length=1, max_length=100, description="Anonymous user ID to link")
 
 # ============================================================================
 # UNIFIED API ENDPOINTS
@@ -8459,68 +8474,96 @@ def _get_mock_analysis_results() -> List[GameAnalysisSummary]:
 # ============================================================================
 
 @app.post("/api/v1/auth/check-usage")
-async def check_usage(request: Dict[str, Any]):
+async def check_usage(
+    request: CheckUsageRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
     """
     Check user's current usage limits and stats.
     Returns usage information for import and analysis limits.
+    Requires authentication to prevent unauthorized usage checks.
     """
     if not usage_tracker:
         raise HTTPException(status_code=503, detail="Usage tracking not configured")
 
-    user_id = request.get('user_id')
-
-    if not user_id:
-        raise HTTPException(status_code=400, detail="user_id is required")
+    # Verify the user is checking their own usage
+    auth_user_id = token_data.get('sub')
+    if not auth_user_id or auth_user_id != request.user_id:
+        raise HTTPException(status_code=403, detail="Cannot check usage for other users")
 
     try:
-        stats = await usage_tracker.get_usage_stats(user_id)
+        stats = await usage_tracker.get_usage_stats(request.user_id)
         return stats
+    except ValueError as e:
+        logger.error(f"Validation error checking usage for user {request.user_id}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error checking usage for user {user_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error checking usage for user {request.user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to check usage")
 
 @app.post("/api/v1/auth/link-anonymous-data")
-async def link_anonymous_data(request: Dict[str, Any]):
+async def link_anonymous_data(
+    request: LinkAnonymousDataRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
     """
     Link anonymous user data to authenticated user after registration.
     Allows users to claim their game history and analyses after signing up.
+    Requires authentication to prevent unauthorized data linking.
     """
     if not usage_tracker:
-        raise HTTPException(status_code=503, detail="Usage tracking not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Usage tracking not configured"}
+        )
 
-    auth_user_id = request.get('auth_user_id')
-    platform = request.get('platform')
-    anonymous_user_id = request.get('anonymous_user_id')
-
-    if not all([auth_user_id, platform, anonymous_user_id]):
-        raise HTTPException(
-            status_code=400,
-            detail="auth_user_id, platform, and anonymous_user_id are required"
+    # Verify the user is linking to their own account
+    auth_user_id = token_data.get('sub')
+    if not auth_user_id or auth_user_id != request.auth_user_id:
+        return JSONResponse(
+            status_code=403,
+            content={"success": False, "message": "Cannot link data to other users"}
         )
 
     try:
         result = await usage_tracker.claim_anonymous_data(
-            auth_user_id=auth_user_id,
-            platform=platform,
-            anonymous_user_id=anonymous_user_id
+            auth_user_id=request.auth_user_id,
+            platform=request.platform,
+            anonymous_user_id=request.anonymous_user_id
         )
         return result
+    except ValueError as e:
+        logger.error(f"Validation error linking anonymous data: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": str(e)}
+        )
     except Exception as e:
         logger.error(f"Error linking anonymous data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to link anonymous data"}
+        )
 
 @app.get("/api/v1/auth/profile")
 async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
     """
     Get authenticated user's profile information.
+    Includes user profile, usage stats, and subscription info.
     """
     if not supabase:
-        raise HTTPException(status_code=503, detail="Database not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Database not configured"}
+        )
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
     try:
         # Get user profile
@@ -8531,19 +8574,30 @@ async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
         )
 
         if not result.data:
-            raise HTTPException(status_code=404, detail="User profile not found")
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "User profile not found"}
+            )
 
         user_profile = result.data[0]
 
         # Get usage stats
         usage_stats = {}
         if usage_tracker:
-            usage_stats = await usage_tracker.get_usage_stats(user_id)
+            try:
+                usage_stats = await usage_tracker.get_usage_stats(user_id)
+            except Exception as e:
+                logger.error(f"Error getting usage stats: {e}")
+                # Continue without usage stats
 
         # Get subscription info if Stripe is configured
         subscription_info = {}
         if stripe_service and stripe_service.enabled:
-            subscription_info = await stripe_service.get_subscription_status(user_id)
+            try:
+                subscription_info = await stripe_service.get_subscription_status(user_id)
+            except Exception as e:
+                logger.error(f"Error getting subscription status: {e}")
+                # Continue without subscription info
 
         return {
             'profile': user_profile,
@@ -8552,7 +8606,10 @@ async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
         }
     except Exception as e:
         logger.error(f"Error getting user profile: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to get profile"}
+        )
 
 @app.put("/api/v1/auth/profile")
 async def update_user_profile(
@@ -8564,15 +8621,24 @@ async def update_user_profile(
     Email and password changes are handled by Supabase Auth directly.
     """
     if not supabase_service:
-        raise HTTPException(status_code=503, detail="Database not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Database not configured"}
+        )
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
     # No fields to update currently, but keeping endpoint for future extensions
-    raise HTTPException(status_code=400, detail="No valid fields to update")
+    return JSONResponse(
+        status_code=400,
+        content={"success": False, "message": "No valid fields to update"}
+    )
 
 # ============================================================================
 # PAYMENT ENDPOINTS
@@ -8585,14 +8651,21 @@ async def create_checkout_session(
 ):
     """
     Create a Stripe checkout session for subscription or credit purchase.
+    Requires authentication to link payment to user account.
     """
     if not stripe_service or not stripe_service.enabled:
-        raise HTTPException(status_code=503, detail="Payment system not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Payment system not configured"}
+        )
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
     try:
         result = await stripe_service.create_checkout_session(
@@ -8604,12 +8677,24 @@ async def create_checkout_session(
         )
 
         if not result.get('success', False):
-            raise HTTPException(status_code=400, detail=result.get('message', 'Unknown error'))
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
 
         return result
+    except ValueError as e:
+        logger.error(f"Validation error creating checkout session: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": str(e)}
+        )
     except Exception as e:
         logger.error(f"Error creating checkout session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to create checkout session"}
+        )
 
 @app.post("/api/v1/payments/webhook")
 async def stripe_webhook(request: Request):
@@ -8618,49 +8703,71 @@ async def stripe_webhook(request: Request):
     This endpoint processes payment confirmations, subscription updates, etc.
     """
     if not stripe_service or not stripe_service.enabled:
-        raise HTTPException(status_code=503, detail="Payment system not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Payment system not configured"}
+        )
 
     # Get raw body
     payload = await request.body()
     sig_header = request.headers.get('stripe-signature')
 
     if not sig_header:
-        raise HTTPException(status_code=400, detail="Missing stripe-signature header")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "Missing stripe-signature header"}
+        )
 
     try:
         result = await stripe_service.handle_webhook(payload, sig_header)
 
         if not result.get('success', False):
-            raise HTTPException(status_code=400, detail=result.get('message', 'Unknown error'))
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
 
         return result
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": str(e)}
+        )
 
 @app.get("/api/v1/payments/subscription")
 async def get_subscription(token_data: Annotated[dict, Depends(verify_token)]):
     """
     Get user's current subscription status.
+    Requires authentication to prevent unauthorized access to subscription info.
     """
     if not stripe_service or not stripe_service.enabled:
-        return {'message': 'Payment system not configured'}
+        return {'success': False, 'message': 'Payment system not configured'}
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
     try:
         result = await stripe_service.get_subscription_status(user_id)
 
         if not result.get('success', False):
-            raise HTTPException(status_code=400, detail=result.get('message', 'Unknown error'))
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
 
         return result
     except Exception as e:
         logger.error(f"Error getting subscription: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to get subscription"}
+        )
 
 @app.post("/api/v1/payments/verify-session")
 async def verify_stripe_session(
@@ -8670,54 +8777,87 @@ async def verify_stripe_session(
     """
     Verify a Stripe checkout session and update user subscription if needed.
     This is used when returning from Stripe checkout to ensure the subscription is synced.
+    Requires authentication to prevent unauthorized access to payment info.
     """
     if not stripe_service or not stripe_service.enabled:
-        raise HTTPException(status_code=503, detail="Payment system not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Payment system not configured"}
+        )
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
     try:
         result = await stripe_service.verify_and_sync_session(user_id, request.session_id)
 
         if not result.get('success', False):
-            raise HTTPException(status_code=400, detail=result.get('message', 'Unknown error'))
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
 
         return result
+    except ValueError as e:
+        logger.error(f"Validation error verifying session: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": str(e)}
+        )
     except Exception as e:
         logger.error(f"Error verifying session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to verify session"}
+        )
 
 @app.post("/api/v1/payments/cancel")
 async def cancel_subscription(token_data: Annotated[dict, Depends(verify_token)]):
     """
     Cancel user's subscription (at end of billing period).
+    Requires authentication to prevent unauthorized cancellations.
     """
     if not stripe_service or not stripe_service.enabled:
-        raise HTTPException(status_code=503, detail="Payment system not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Payment system not configured"}
+        )
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
     try:
         result = await stripe_service.cancel_subscription(user_id)
 
         if not result.get('success', False):
-            raise HTTPException(status_code=400, detail=result.get('message', 'Unknown error'))
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
 
         return result
     except Exception as e:
         logger.error(f"Error cancelling subscription: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to cancel subscription"}
+        )
 
 @app.get("/api/v1/payment-tiers")
 async def get_payment_tiers():
     """
     Get available payment tiers (public endpoint, no auth required).
+    Returns all active payment tiers sorted by display order.
     """
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -8730,7 +8870,7 @@ async def get_payment_tiers():
         return {'tiers': result.data or []}
     except Exception as e:
         logger.error(f"Error getting payment tiers: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to get payment tiers")
 
 if __name__ == "__main__":
     import argparse

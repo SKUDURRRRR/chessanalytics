@@ -2,14 +2,23 @@
 """
 Stockfish Engine Pool with TTL Management
 Manages a pool of Stockfish engines with automatic cleanup of idle engines.
+
+Security Features:
+- Input validation
+- Resource limits
+- Safe error handling
+- Graceful shutdown
 """
 
 import asyncio
 import time
+import logging
 import chess.engine
 from typing import Optional
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -46,15 +55,26 @@ class StockfishEnginePool:
         config: Optional[dict] = None
     ):
         """
-        Initialize engine pool.
+        Initialize engine pool with validation.
 
         Args:
-            stockfish_path: Path to Stockfish binary
-            max_size: Maximum number of engines in pool
-            ttl: Time-to-live for idle engines (seconds)
+            stockfish_path: Path to Stockfish binary (must be non-empty)
+            max_size: Maximum number of engines in pool (1-10)
+            ttl: Time-to-live for idle engines in seconds (must be positive)
             config: Engine configuration dict
+
+        Raises:
+            ValueError: If parameters are invalid
         """
-        self.stockfish_path = stockfish_path
+        # Input validation
+        if not stockfish_path or not isinstance(stockfish_path, str) or not stockfish_path.strip():
+            raise ValueError("stockfish_path must be a non-empty string")
+        if not isinstance(max_size, int) or max_size < 1 or max_size > 10:
+            raise ValueError("max_size must be between 1 and 10")
+        if not isinstance(ttl, (int, float)) or ttl <= 0:
+            raise ValueError("ttl must be a positive number")
+
+        self.stockfish_path = stockfish_path.strip()
         self.max_size = max_size
         self.ttl = ttl
         self.config = config or {
@@ -70,8 +90,10 @@ class StockfishEnginePool:
         self._total_destroyed = 0
         self._cleanup_task: Optional[asyncio.Task] = None
 
+        logger.info(f"Initialized StockfishEnginePool (max_size={max_size}, ttl={ttl}s)")
+
     async def _create_engine(self) -> chess.engine.SimpleEngine:
-        """Create a new Stockfish engine instance."""
+        """Create a new Stockfish engine instance with error handling."""
         try:
             engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
 
@@ -79,14 +101,17 @@ class StockfishEnginePool:
             try:
                 engine.configure(self.config)
             except Exception as e:
-                print(f"[ENGINE_POOL] Warning: Could not configure engine: {e}")
+                logger.warning(f"Could not configure engine: {e}")
 
             self._total_created += 1
-            print(f"[ENGINE_POOL] Created new engine (total created: {self._total_created})")
+            logger.debug(f"Created new engine (total created: {self._total_created})")
             return engine
 
+        except FileNotFoundError:
+            logger.error(f"Stockfish binary not found at: {self.stockfish_path}")
+            raise ValueError(f"Stockfish binary not found: {self.stockfish_path}")
         except Exception as e:
-            print(f"[ENGINE_POOL] Error creating engine: {e}")
+            logger.error(f"Error creating engine: {e}")
             raise
 
     async def _destroy_engine(self, engine_info: EngineInfo) -> None:
@@ -95,9 +120,9 @@ class StockfishEnginePool:
             if engine_info.engine:
                 engine_info.engine.quit()
                 self._total_destroyed += 1
-                print(f"[ENGINE_POOL] Destroyed idle engine (total destroyed: {self._total_destroyed})")
+                logger.debug(f"Destroyed idle engine (total destroyed: {self._total_destroyed})")
         except Exception as e:
-            print(f"[ENGINE_POOL] Error destroying engine: {e}")
+            logger.error(f"Error destroying engine: {e}")
 
     @asynccontextmanager
     async def acquire(self):
@@ -134,7 +159,7 @@ class StockfishEnginePool:
 
             # Wait for available engine if at capacity
             if engine_info is None:
-                print(f"[ENGINE_POOL] Pool at capacity ({self.max_size}), waiting for engine...")
+                logger.warning(f"Pool at capacity ({self.max_size}), waiting for engine...")
 
         # Wait loop if no engine available
         while engine_info is None:
@@ -179,7 +204,7 @@ class StockfishEnginePool:
                 destroyed_count += 1
 
         if destroyed_count > 0:
-            print(f"[ENGINE_POOL] Cleaned up {destroyed_count} idle engines")
+            logger.info(f"Cleaned up {destroyed_count} idle engines")
 
         return destroyed_count
 
@@ -189,16 +214,16 @@ class StockfishEnginePool:
             return
 
         async def cleanup_loop():
-            print(f"[ENGINE_POOL] Starting cleanup task (interval: 60s, TTL: {self.ttl}s)")
+            logger.info(f"Starting cleanup task (interval: 60s, TTL: {self.ttl}s)")
             while True:
                 try:
                     await asyncio.sleep(60)  # Check every 60 seconds
                     await self.cleanup_idle_engines()
                 except asyncio.CancelledError:
-                    print("[ENGINE_POOL] Cleanup task cancelled")
+                    logger.info("Cleanup task cancelled")
                     break
                 except Exception as e:
-                    print(f"[ENGINE_POOL] Error in cleanup task: {e}")
+                    logger.error(f"Error in cleanup task: {e}")
 
         self._cleanup_task = asyncio.create_task(cleanup_loop())
 
@@ -242,7 +267,7 @@ class StockfishEnginePool:
 
                 # Check timeout
                 if time.time() - start_time > max_wait:
-                    print(f"[ENGINE_POOL] Warning: Timeout waiting for {len(busy)} engines to be released")
+                    logger.warning(f"Timeout waiting for {len(busy)} engines to be released")
                     # Force destroy remaining engines
                     for info in engines:
                         await self._destroy_engine(info)
@@ -252,7 +277,7 @@ class StockfishEnginePool:
             # Wait a bit before checking again
             await asyncio.sleep(0.1)
 
-        print(f"[ENGINE_POOL] Closed all engines (created: {self._total_created}, destroyed: {self._total_destroyed})")
+        logger.info(f"Closed all engines (created: {self._total_created}, destroyed: {self._total_destroyed})")
 
     def stats(self) -> dict:
         """
@@ -290,16 +315,19 @@ def get_engine_pool(
     config: Optional[dict] = None
 ) -> StockfishEnginePool:
     """
-    Get or create global engine pool.
+    Get or create global engine pool with validation.
 
     Args:
-        stockfish_path: Path to Stockfish binary
-        max_size: Maximum pool size
-        ttl: Engine idle TTL
+        stockfish_path: Path to Stockfish binary (must be non-empty)
+        max_size: Maximum pool size (1-10)
+        ttl: Engine idle TTL (must be positive)
         config: Engine configuration
 
     Returns:
         StockfishEnginePool instance
+
+    Raises:
+        ValueError: If parameters are invalid
     """
     global _engine_pool
 
@@ -310,7 +338,7 @@ def get_engine_pool(
             ttl=ttl,
             config=config
         )
-        print(f"[ENGINE_POOL] Initialized global pool (max_size={max_size}, ttl={ttl}s)")
+        logger.info(f"Initialized global pool (max_size={max_size}, ttl={ttl}s)")
 
     return _engine_pool
 
@@ -323,4 +351,4 @@ async def close_global_engine_pool() -> None:
         await _engine_pool.stop_cleanup_task()
         await _engine_pool.close_all()
         _engine_pool = None
-        print("[ENGINE_POOL] Closed global pool")
+        logger.info("Closed global pool")

@@ -35,7 +35,7 @@ All tables have:
 Created 4 tiers:
 - **Free:** 100 imports/day, 5 analyses/day, $0
 - **Pro Monthly:** Unlimited, $5.45/month
-- **Pro Yearly:** Unlimited, $49.50/year (25% savings)
+- **Pro Yearly:** Unlimited, $49.05/year (25% savings)
 - **Enterprise:** Unlimited, Custom pricing
 
 ## Database Schema Summary

@@ -19,7 +19,7 @@
 - ✅ Created `supabase/migrations/20251030000003_seed_payment_tiers.sql`
   - Free tier: 100 imports/day, 5 analyses/day, $0
   - Pro Monthly: unlimited, $5.45/month
-  - Pro Yearly: unlimited, $49.50/year (25% savings)
+  - Pro Yearly: unlimited, $49.05/year (25% savings)
   - Enterprise: unlimited, custom pricing
 
 ### Phase 2: Backend Services ✅

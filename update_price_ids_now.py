@@ -13,6 +13,16 @@ from supabase import create_client
 print("[INFO] Loading configuration...")
 config = ChessAnalysisConfig()
 
+# Get Stripe price IDs from environment variables
+STRIPE_PRICE_ID_PRO_MONTHLY = os.getenv('STRIPE_PRICE_ID_PRO_MONTHLY')
+STRIPE_PRICE_ID_PRO_YEARLY = os.getenv('STRIPE_PRICE_ID_PRO_YEARLY')
+
+if not STRIPE_PRICE_ID_PRO_MONTHLY or not STRIPE_PRICE_ID_PRO_YEARLY:
+    print("[ERROR] STRIPE_PRICE_ID_PRO_MONTHLY and STRIPE_PRICE_ID_PRO_YEARLY must be set in environment")
+    print(f"  STRIPE_PRICE_ID_PRO_MONTHLY: {'SET' if STRIPE_PRICE_ID_PRO_MONTHLY else 'NOT SET'}")
+    print(f"  STRIPE_PRICE_ID_PRO_YEARLY: {'SET' if STRIPE_PRICE_ID_PRO_YEARLY else 'NOT SET'}")
+    exit(1)
+
 print("[INFO] Connecting to Supabase...")
 print(f"[INFO] Using Supabase URL: {config.database.url[:50]}...")
 
@@ -27,13 +37,13 @@ print("[INFO] Updating Stripe price IDs...")
 try:
     # Update Pro Monthly
     result1 = supabase.table('payment_tiers').update({
-        'stripe_price_id_monthly': 'price_1SNk0Q0CDBdO3EY30yDl3NMQ'
+        'stripe_price_id_monthly': STRIPE_PRICE_ID_PRO_MONTHLY
     }).eq('id', 'pro_monthly').execute()
     print("[OK] Updated Pro Monthly price ID")
 
     # Update Pro Yearly
     result2 = supabase.table('payment_tiers').update({
-        'stripe_price_id_yearly': 'price_1SNk2o0CDBdO3EY3LDSUOkzK'
+        'stripe_price_id_yearly': STRIPE_PRICE_ID_PRO_YEARLY
     }).eq('id', 'pro_yearly').execute()
     print("[OK] Updated Pro Yearly price ID")
 

@@ -1,121 +1,155 @@
-# API Error Contract Standardization Fix
+# API Error Contract Alignment Fix
 
-## Issue Identified by CodeRabbit
+## Summary
+Fixed all payment and auth API endpoints to align with the documented API error contract: `{"success": false, "message": "..."}` instead of FastAPI's default `{"detail": "..."}` format.
 
-CodeRabbit detected that our backend services were returning inconsistent error response formats, violating our API contract which requires all responses to use a standardized shape: `{ "success": bool, "message": str }`.
-
-### Problem
-
-Multiple service methods were returning error responses in the format:
-```python
-return {'error': 'Error message'}
+## Problem Identified by CodeRabbit
+The Python API guidelines require every error payload to be shaped as:
+```json
+{
+  "success": false,
+  "message": "Error message here"
+}
 ```
 
-This violated our API contract which requires:
-```python
-return {'success': False, 'message': 'Error message'}
+However, the payment and auth handlers were raising `HTTPException`, which FastAPI serializes as:
+```json
+{
+  "detail": "Error message here"
+}
 ```
 
-The issue was that FastAPI handlers would bubble these non-standard dictionaries directly to clients, creating inconsistent API responses.
+This breaks the contract that the frontend (and other API consumers) expect, causing errors to surface immediately whenever:
+- Stripe is misconfigured
+- Authentication fails
+- Service initialization fails
+- Any other error occurs
+
+## Changes Made
+
+### Payment Endpoints Fixed (5 endpoints)
+All payment endpoints now return consistent error responses:
+
+1. **POST `/api/v1/payments/create-checkout`**
+   - Payment system not configured (503)
+   - Invalid token (401)
+   - Validation errors (400)
+   - General failures (500)
+
+2. **POST `/api/v1/payments/webhook`**
+   - Payment system not configured (503)
+   - Missing stripe-signature header (400)
+   - Webhook processing errors (500)
+
+3. **GET `/api/v1/payments/subscription`**
+   - Invalid token (401)
+   - Service errors (400, 500)
+
+4. **POST `/api/v1/payments/verify-session`**
+   - Payment system not configured (503)
+   - Invalid token (401)
+   - Validation errors (400)
+   - Verification failures (500)
+
+5. **POST `/api/v1/payments/cancel`**
+   - Payment system not configured (503)
+   - Invalid token (401)
+   - Cancellation errors (400, 500)
+
+### Auth Endpoints Fixed (3 endpoints)
+
+1. **POST `/api/v1/auth/link-anonymous-data`**
+   - Usage tracking not configured (503)
+   - Unauthorized access (403)
+   - Validation errors (400)
+   - General failures (500)
+
+2. **GET `/api/v1/auth/profile`**
+   - Database not configured (503)
+   - Invalid token (401)
+   - User not found (404)
+   - Profile retrieval errors (500)
+
+3. **PUT `/api/v1/auth/profile`**
+   - Database not configured (503)
+   - Invalid token (401)
+   - No valid fields (400)
+
+## Technical Details
+
+### Before (Incorrect)
+```python
+if not stripe_service or not stripe_service.enabled:
+    raise HTTPException(status_code=503, detail="Payment system not configured")
+```
+
+This returns:
+```json
+{"detail": "Payment system not configured"}
+```
+
+### After (Correct)
+```python
+if not stripe_service or not stripe_service.enabled:
+    return JSONResponse(
+        status_code=503,
+        content={"success": False, "message": "Payment system not configured"}
+    )
+```
+
+This returns:
+```json
+{"success": false, "message": "Payment system not configured"}
+```
+
+## Impact
+
+### ✅ Benefits
+- **Consistent API contract** - All endpoints now follow the same error format
+- **Frontend compatibility** - Frontend code expecting `{"success": false, "message": "..."}` will work correctly
+- **Better error handling** - Clients can reliably check `success` field and display `message`
+- **Prevents production issues** - Errors will be properly handled when Stripe is misconfigured or services fail
+
+### 🔍 No Breaking Changes
+- This fix aligns the API with the documented contract
+- Endpoints that were already working correctly remain unchanged
+- Any client code expecting the documented format will now work properly
+
+## Testing Recommendations
+
+1. **Test payment flow with Stripe disabled**
+   ```bash
+   # Should return {"success": false, "message": "Payment system not configured"}
+   curl -X POST http://localhost:8000/api/v1/payments/create-checkout \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"tier_id": 1}'
+   ```
+
+2. **Test with invalid authentication token**
+   ```bash
+   # Should return {"success": false, "message": "Invalid token"}
+   curl -X GET http://localhost:8000/api/v1/payments/subscription \
+     -H "Authorization: Bearer invalid_token"
+   ```
+
+3. **Test auth endpoints with missing services**
+   ```bash
+   # Should return {"success": false, "message": "Database not configured"}
+   curl -X GET http://localhost:8000/api/v1/auth/profile \
+     -H "Authorization: Bearer $TOKEN"
+   ```
 
 ## Files Modified
-
-### 1. `python/core/stripe_service.py`
-**Fixed 24 error responses** across all methods:
-- ✅ `create_checkout_session()` - 5 error returns
-- ✅ `handle_webhook()` - 5 error returns
-- ✅ `cancel_subscription()` - 3 error returns
-- ✅ `get_subscription_status()` - 2 error returns
-- ✅ `verify_and_sync_session()` - 4 error returns
-
-**Before:**
-```python
-if not self.enabled:
-    return {'error': 'Stripe not configured'}
-```
-
-**After:**
-```python
-if not self.enabled:
-    return {'success': False, 'message': 'Stripe not configured'}
-```
-
-### 2. `python/core/unified_api_server.py`
-**Updated 5 API endpoint error handlers** to check for the new format:
-
-**Before:**
-```python
-if 'error' in result:
-    raise HTTPException(status_code=400, detail=result['error'])
-```
-
-**After:**
-```python
-if not result.get('success', False):
-    raise HTTPException(status_code=400, detail=result.get('message', 'Unknown error'))
-```
-
-Endpoints updated:
-- ✅ `/api/v1/payments/create-checkout`
-- ✅ `/api/v1/payments/webhook`
-- ✅ `/api/v1/payments/subscription`
-- ✅ `/api/v1/payments/verify-session`
-- ✅ `/api/v1/payments/cancel`
-
-### 3. `python/core/usage_tracker.py`
-**Fixed 2 error responses** in `get_usage_stats()`:
-- ✅ Tier not found error
-- ✅ Exception error
-
-Also updated successful response to include `'success': True` for consistency.
-
-### 4. `python/core/api_server.py`
-**Fixed 2 error responses** in chess.com proxy endpoint
-
-## Benefits
-
-1. **Consistent API Contract**: All error responses now follow the standardized format
-2. **Better Error Handling**: Clients can reliably check `success` field for all responses
-3. **Improved Maintainability**: Single, consistent error handling pattern across all services
-4. **Frontend Compatibility**: Frontend code can now handle all API responses uniformly
-
-## Success Response Format
-
-All service methods now return responses with a `success` field:
-
-**Success:**
-```python
-{
-    'success': True,
-    'data_field_1': 'value1',
-    'data_field_2': 'value2'
-}
-```
-
-**Error:**
-```python
-{
-    'success': False,
-    'message': 'Human-readable error message'
-}
-```
+- `python/core/unified_api_server.py` - Fixed all payment and auth endpoint error responses
 
 ## Verification
+✅ No linting errors
+✅ All error responses now use consistent format
+✅ All HTTP status codes preserved
+✅ Error logging maintained
 
-- ✅ No `{'error': ...}` patterns remain in python/core
-- ✅ No `'error' in result` checks remain in API endpoints
-- ✅ All linter checks pass
-- ✅ API contract compliance verified
-
-## Next Steps
-
-1. Update frontend code if needed to check `success` field instead of `error` field
-2. Update API documentation to reflect standardized error format
-3. Consider adding TypeScript types for standardized API responses
-4. Add integration tests to verify error format consistency
-
----
-
-**Fixed by:** Cursor AI Assistant
-**Issue reported by:** CodeRabbit
-**Date:** October 30, 2025
+## Related
+- Issue identified by CodeRabbit code review bot
+- Aligns with Python API guidelines in the codebase
+- Follows FastAPI best practices for error handling

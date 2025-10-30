@@ -26,9 +26,9 @@ async def test_usage_stats():
     email = "baisustipas@gmail.com"
 
     # Get user ID from email
-    users = supabase.auth.admin.list_users()
+    response = supabase.auth.admin.list_users()
     user_id = None
-    for user in users:
+    for user in response.users:
         if user.email == email:
             user_id = user.id
             break

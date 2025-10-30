@@ -33,7 +33,7 @@ WHERE id = 'pro_monthly';
 
 -- Update Pro Yearly with Stripe price ID
 UPDATE payment_tiers
-SET stripe_price_id_yearly = 'price_1SNk2o0CDBdO3EY3LDSUOkzK'
+SET stripe_price_id_yearly = 'price_1SNyJt0CDBdO3EY3KWhzm6er'
 WHERE id = 'pro_yearly';
 
 -- Verify the updates
@@ -65,7 +65,7 @@ SET
     account_tier = 'pro_monthly',
     subscription_status = 'active',
     subscription_end_date = NOW() + INTERVAL '1 month'
-WHERE id = '194590d4-8d56-44b2-872a-e3e514a7eed6';
+WHERE id = '<redacted>';
 ```
 
 But this didn't set:

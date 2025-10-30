@@ -14,7 +14,9 @@ export default function SignUpPage() {
   const navigate = useNavigate()
 
   // Get the return URL from query params, default to home
-  const returnTo = searchParams.get('returnTo') || '/'
+  // Sanitize returnTo to prevent open redirects - only accept relative paths
+  const rawReturnTo = searchParams.get('returnTo')?.trim() ?? '/'
+  const returnTo = rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//') ? rawReturnTo : '/'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

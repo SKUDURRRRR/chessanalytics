@@ -19,7 +19,7 @@ class CapacityMonitor:
         self.api_url = api_url
         self.auth_token = auth_token
         self.interval = interval
-        self.headers = {"Authorization": f"Bearer {auth_token}"}
+        self.headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
 
     async def get_metrics(self, session: aiohttp.ClientSession) -> Optional[dict]:
         """Fetch current metrics from API"""

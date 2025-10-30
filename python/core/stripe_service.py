@@ -1,13 +1,19 @@
 """
 Stripe Payment Service
 Handles Stripe integration for subscriptions and credit purchases
+
+Security Features:
+- Webhook signature verification
+- Input validation
+- Secure error handling
 """
 
 import os
 import logging
 import asyncio
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from decimal import Decimal
+from datetime import datetime
 
 try:
     import stripe
@@ -18,6 +24,11 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Constants for validation
+MAX_CREDITS_PURCHASE = 10000  # Maximum credits in a single purchase
+MIN_CREDITS_PURCHASE = 100    # Minimum credits purchase
+PRICE_PER_100_CREDITS = 1000  # $10.00 in cents
+
 
 class StripeService:
     """
@@ -26,11 +37,17 @@ class StripeService:
 
     def __init__(self, supabase_client):
         """
-        Initialize Stripe service.
+        Initialize Stripe service with security checks.
 
         Args:
             supabase_client: Supabase client instance (service role)
+
+        Raises:
+            ValueError: If supabase_client is None
         """
+        if supabase_client is None:
+            raise ValueError("Supabase client is required")
+
         self.supabase = supabase_client
 
         if not STRIPE_AVAILABLE:
@@ -46,11 +63,38 @@ class StripeService:
             self.enabled = False
             return
 
+        # Validate Stripe key format
+        if not self._validate_stripe_key(stripe_secret_key):
+            logger.error("Invalid STRIPE_SECRET_KEY format")
+            self.enabled = False
+            return
+
         stripe.api_key = stripe_secret_key
         self.webhook_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
+
+        # Warn if webhook secret is missing (critical for production)
+        if not self.webhook_secret:
+            logger.warning("STRIPE_WEBHOOK_SECRET not configured. Webhook verification disabled.")
+
         self.enabled = True
 
         logger.info("Stripe service initialized successfully")
+
+    @staticmethod
+    def _validate_stripe_key(key: str) -> bool:
+        """
+        Validate Stripe API key format.
+
+        Args:
+            key: Stripe secret key
+
+        Returns:
+            True if valid format, False otherwise
+        """
+        if not key or not isinstance(key, str):
+            return False
+        # Stripe keys should start with sk_test_ or sk_live_
+        return key.startswith('sk_test_') or key.startswith('sk_live_')
 
     async def create_checkout_session(
         self,
@@ -61,10 +105,10 @@ class StripeService:
         cancel_url: str = None
     ) -> Dict:
         """
-        Create a Stripe checkout session.
+        Create a Stripe checkout session with input validation.
 
         Args:
-            user_id: User's UUID
+            user_id: User's UUID (required, non-empty)
             tier_id: Payment tier ID (for subscriptions)
             credit_amount: Number of credits to purchase (for one-time payments)
             success_url: URL to redirect after successful payment
@@ -72,9 +116,33 @@ class StripeService:
 
         Returns:
             Dictionary with checkout session info
+
+        Raises:
+            ValueError: If input validation fails
         """
         if not self.enabled:
             return {'success': False, 'message': 'Stripe not configured'}
+
+        # Input validation
+        if not user_id or not isinstance(user_id, str) or not user_id.strip():
+            return {'success': False, 'message': 'Valid user_id is required'}
+
+        if not tier_id and not credit_amount:
+            return {'success': False, 'message': 'Must specify either tier_id or credit_amount'}
+
+        if tier_id and credit_amount:
+            return {'success': False, 'message': 'Cannot specify both tier_id and credit_amount'}
+
+        # Validate credit amount if provided
+        if credit_amount is not None:
+            if not isinstance(credit_amount, int):
+                return {'success': False, 'message': 'credit_amount must be an integer'}
+            if credit_amount < MIN_CREDITS_PURCHASE:
+                return {'success': False, 'message': f'Minimum credit purchase is {MIN_CREDITS_PURCHASE}'}
+            if credit_amount > MAX_CREDITS_PURCHASE:
+                return {'success': False, 'message': f'Maximum credit purchase is {MAX_CREDITS_PURCHASE}'}
+            if credit_amount % 100 != 0:
+                return {'success': False, 'message': 'Credit amount must be a multiple of 100'}
 
         try:
             # Get or create Stripe customer
@@ -122,9 +190,8 @@ class StripeService:
 
             elif credit_amount:
                 # Credit purchase (one-time payment)
-                # Calculate price: $10 per 100 credits
-                price_per_100 = 1000  # $10.00 in cents
-                total_price = int((credit_amount / 100) * price_per_100)
+                # Calculate price using constant
+                total_price = int((credit_amount / 100) * PRICE_PER_100_CREDITS)
 
                 line_items.append({
                     'price_data': {
@@ -428,8 +495,11 @@ class StripeService:
             user_id = user_result.data[0]['id']
 
             # Prepare update data
+            # IMPORTANT: Don't flip to 'cancelled' while subscription is still active
+            # Stripe keeps status as 'active' until billing period ends even when cancel_at_period_end=True
+            # Only mark as cancelled when Stripe actually cancels it (status='canceled')
             update_data = {
-                'subscription_status': 'cancelled' if cancel_at_period_end else status,
+                'subscription_status': status,  # Use actual Stripe status
                 'stripe_subscription_id': subscription.get('id')
             }
 
@@ -437,8 +507,8 @@ class StripeService:
             if cancel_at_period_end or status == 'canceled':
                 current_period_end = subscription.get('current_period_end')
                 if current_period_end:
-                    from datetime import datetime
-                    end_date = datetime.fromtimestamp(current_period_end)
+                    from datetime import datetime, timezone
+                    end_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
                     update_data['subscription_end_date'] = end_date.isoformat()
 
             # Update subscription status and end date
@@ -593,12 +663,10 @@ class StripeService:
                 cancel_at_period_end=True
             )
 
-            # Update database with cancellation status and end date
-            update_data = {
-                'subscription_status': 'cancelled'
-            }
-
             # Set subscription_end_date from Stripe's current_period_end
+            # Keep status as 'active' since Stripe treats it as active until period ends
+            # The webhook will update status to 'cancelled' when the actual cancellation happens
+            update_data = {}
             if hasattr(subscription, 'current_period_end') and subscription.current_period_end:
                 from datetime import datetime
                 end_date = datetime.fromtimestamp(subscription.current_period_end)

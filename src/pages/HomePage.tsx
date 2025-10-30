@@ -42,9 +42,6 @@ export default function HomePage() {
 
         <div className="card-responsive">
           <PlayerSearch onPlayerSelect={handlePlayerSelect} />
-          <p className="mt-3 text-xs text-slate-400">
-            Works for players on Lichess and Chess.com. No account required.
-          </p>
         </div>
 
         {/* Feature blocks centered horizontally */}

@@ -1,5 +1,5 @@
 -- Update Pricing and Remove Enterprise Tier
--- This script updates the pricing to $5.45/month and $49.50/year
+-- This script updates the pricing to $5.45/month and $49.05/year
 -- and ensures the Enterprise tier is deactivated
 
 -- Update Pro Monthly price to $5.45
@@ -8,10 +8,10 @@ SET price_monthly = 5.45,
     updated_at = NOW()
 WHERE id = 'pro_monthly';
 
--- Update Pro Yearly price to $49.50
+-- Update Pro Yearly price to $49.05
 UPDATE payment_tiers
-SET price_yearly = 49.50,
-    description = 'Save 20% with annual billing',
+SET price_yearly = 49.05,
+    description = 'Save 25% with annual billing',
     updated_at = NOW()
 WHERE id = 'pro_yearly';
 
