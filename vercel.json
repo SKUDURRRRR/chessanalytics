@@ -1,11 +1,6 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "framework": "vite",
-  "rewrites": [
-    {
-      "source": "/((?!logo\\.png|sounds/).*)",
-      "destination": "/index.html"
-    }
-  ]
+  "cleanUrls": true,
+  "trailingSlash": false
 }
