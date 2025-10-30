@@ -5,6 +5,28 @@ A single, comprehensive API that consolidates all analysis functionality.
 Replaces multiple redundant endpoints with a clean, unified interface.
 """
 
+# Load environment variables from .env.local in python/ directory
+from dotenv import load_dotenv
+import os
+
+load_dotenv('.env.local')  # Load .env.local from python/ directory
+load_dotenv()  # Also try .env as fallback
+
+# Debug: Check if Stripe key is loaded
+stripe_key = os.getenv('STRIPE_SECRET_KEY')
+if stripe_key:
+    print(f"[OK] STRIPE_SECRET_KEY loaded (starts with: {stripe_key[:15]}...)")
+else:
+    print("[ERROR] STRIPE_SECRET_KEY not found in environment")
+
+# Check if stripe library is available
+try:
+    import stripe as stripe_lib
+    print(f"[OK] Stripe library imported successfully (version: {stripe_lib.VERSION if hasattr(stripe_lib, 'VERSION') else 'unknown'})")
+except ImportError as e:
+    print(f"[ERROR] Stripe library import failed: {e}")
+    print("   Run: pip install stripe>=7.0.0")
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +38,6 @@ from decimal import Decimal
 import re
 import uvicorn
 import asyncio
-import os
 import uuid
 from datetime import datetime, timezone
 import time
@@ -87,7 +108,8 @@ else:
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # Authentication setup - Fail fast if JWT configuration is missing
-security = HTTPBearer()
+# Use auto_error=False to make authentication optional (won't raise 403 if token is missing)
+security = HTTPBearer(auto_error=False)
 
 # Critical security configuration - no defaults allowed
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -462,6 +484,8 @@ progress_tokens: Dict[str, str] = {}
 ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 
 # Rate limiting configuration
+# Note: These are burst protection limits (requests per minute)
+# Tier-based usage quotas (hourly/daily) are handled separately via usage_tracker for authenticated users
 ANALYSIS_RATE_LIMIT = int(os.getenv("ANALYSIS_RATE_LIMIT", "5"))  # requests per minute
 IMPORT_RATE_LIMIT = int(os.getenv("IMPORT_RATE_LIMIT", "3"))      # requests per minute
 
@@ -1008,7 +1032,7 @@ async def unified_analyze(
     background_tasks: BackgroundTasks,
     # Optional parallel analysis flag
     use_parallel: bool = True,
-    _auth: Optional[bool] = get_optional_auth()
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
     Unified analysis endpoint that handles all analysis types.
@@ -1020,6 +1044,27 @@ async def unified_analyze(
     - /analyze-game (single game analysis)
     """
     try:
+        # Check usage limits for authenticated users
+        auth_user_id = None
+        try:
+            if credentials:
+                token_data = await verify_token(credentials)
+                auth_user_id = token_data.get('sub')
+
+                # Check analysis limit
+                if auth_user_id and usage_tracker:
+                    can_proceed, stats = await usage_tracker.check_analysis_limit(auth_user_id)
+                    if not can_proceed:
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"Analysis limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                        )
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions
+        except Exception as e:
+            # Log but don't fail - allow anonymous/failed auth to proceed
+            print(f"Auth check failed (non-critical): {e}")
+
         # Enforce rate limit per user
         user_key = f"analysis:{request.user_id}:{request.platform}"
         _enforce_rate_limit(user_key, ANALYSIS_RATE_LIMIT)
@@ -1041,19 +1086,35 @@ async def unified_analyze(
         # Determine analysis type based on provided parameters
         if request.pgn:
             # Single game analysis with PGN
-            return await _handle_single_game_analysis(request)
+            result = await _handle_single_game_analysis(request)
+            # Increment usage for authenticated users
+            if auth_user_id and usage_tracker:
+                await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            return result
         elif request.game_id or request.provider_game_id:
             # Single game analysis by game_id - fetch PGN from database
-            return await _handle_single_game_by_id(request)
+            result = await _handle_single_game_by_id(request)
+            # Increment usage for authenticated users
+            if auth_user_id and usage_tracker:
+                await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            return result
         elif request.fen:
             if request.move:
                 # Move analysis
-                return await _handle_move_analysis(request)
+                result = await _handle_move_analysis(request)
+                # Increment usage for authenticated users
+                if auth_user_id and usage_tracker:
+                    await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+                return result
             else:
                 # Position analysis
-                return await _handle_position_analysis(request)
+                result = await _handle_position_analysis(request)
+                # Note: Position analysis is typically for exploration, not counted against limits
+                return result
         else:
             # Batch analysis - use the unified handler
+            # TODO: Usage tracking for batch analysis should be done in the queue completion handler
+            # since batch analysis is async and we don't know the count until it completes
             return await _handle_batch_analysis(request, background_tasks, use_parallel)
 
     except ValidationError as e:
@@ -5539,7 +5600,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
 # PROXY ENDPOINTS (for external APIs)
 # ============================================================================
 @app.post("/api/v1/import-games-smart", response_model=BulkGameImportResponse)
-async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = get_optional_auth()):
+async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Smart import endpoint - imports only the most recent 100 games"""
     try:
         user_id = request.get('user_id')
@@ -5547,6 +5608,27 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
 
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
+
+        # Check usage limits for authenticated users
+        auth_user_id = None
+        try:
+            if credentials:
+                token_data = await verify_token(credentials)
+                auth_user_id = token_data.get('sub')
+
+                # Check import limit
+                if auth_user_id and usage_tracker:
+                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
+                    if not can_proceed:
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                        )
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions
+        except Exception as e:
+            # Log but don't fail - allow anonymous/failed auth to proceed
+            print(f"Auth check failed (non-critical): {e}")
 
         user_key = f"import:{user_id}:{platform}:smart"
         _enforce_rate_limit(user_key, IMPORT_RATE_LIMIT)
@@ -5760,6 +5842,10 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
             if result.imported_games > 0:
                 result.message = f"Imported {result.imported_games} new games"
                 print(f"[Smart import] Success: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
+
+                # Increment usage tracking for authenticated users
+                if auth_user_id and usage_tracker:
+                    await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
             else:
                 result.message = "No new games found. You already have all recent games imported."
                 print(f"[Smart import] No new games: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
@@ -5771,7 +5857,7 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/import-games", response_model=BulkGameImportResponse)
-async def import_games_simple(request: Dict[str, Any], _auth: Optional[bool] = get_optional_auth()):
+async def import_games_simple(request: Dict[str, Any], credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Import games endpoint for frontend - handles PGN parsing and move counting"""
     try:
         user_id = request.get('user_id')
@@ -5780,6 +5866,27 @@ async def import_games_simple(request: Dict[str, Any], _auth: Optional[bool] = g
 
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
+
+        # Check usage limits for authenticated users
+        auth_user_id = None
+        try:
+            if credentials:
+                token_data = await verify_token(credentials)
+                auth_user_id = token_data.get('sub')
+
+                # Check import limit
+                if auth_user_id and usage_tracker:
+                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
+                    if not can_proceed:
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                        )
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions
+        except Exception as e:
+            # Log but don't fail - allow anonymous/failed auth to proceed
+            print(f"Auth check failed (non-critical): {e}")
 
         rate_key = f"import:{user_id}:{platform}:simple"
         _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
@@ -5856,6 +5963,11 @@ async def import_games_simple(request: Dict[str, Any], _auth: Optional[bool] = g
 
         # Process the import
         result = await import_games(bulk_request)
+
+        # Increment usage tracking for authenticated users
+        if auth_user_id and usage_tracker and hasattr(result, 'imported_games') and result.imported_games > 0:
+            await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
+
         return result
 
     except Exception as e:
@@ -8308,7 +8420,7 @@ async def update_user_profile(
     token_data: Annotated[dict, Depends(verify_token)]
 ):
     """
-    Update authenticated user's profile (username, etc.).
+    Update authenticated user's profile.
     Email and password changes are handled by Supabase Auth directly.
     """
     if not supabase_service:
@@ -8319,25 +8431,8 @@ async def update_user_profile(
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    # Only allow updating specific fields
-    allowed_fields = ['username']
-    update_data = {k: v for k, v in request.items() if k in allowed_fields}
-
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No valid fields to update")
-
-    try:
-        result = supabase_service.table('authenticated_users').update(update_data).eq(
-            'id', user_id
-        ).execute()
-
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User profile not found")
-
-        return {'success': True, 'profile': result.data[0]}
-    except Exception as e:
-        logger.error(f"Error updating user profile: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # No fields to update currently, but keeping endpoint for future extensions
+    raise HTTPException(status_code=400, detail="No valid fields to update")
 
 # ============================================================================
 # PAYMENT ENDPOINTS
@@ -8436,6 +8531,38 @@ async def get_subscription(token_data: Annotated[dict, Depends(verify_token)]):
         return result
     except Exception as e:
         logger.error(f"Error getting subscription: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/payments/verify-session")
+async def verify_stripe_session(
+    request: Dict[str, Any],
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Verify a Stripe checkout session and update user subscription if needed.
+    This is used when returning from Stripe checkout to ensure the subscription is synced.
+    """
+    if not stripe_service or not stripe_service.enabled:
+        raise HTTPException(status_code=503, detail="Payment system not configured")
+
+    user_id = token_data.get('sub')
+    session_id = request.get('session_id')
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    try:
+        result = await stripe_service.verify_and_sync_session(user_id, session_id)
+
+        if 'error' in result:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        return result
+    except Exception as e:
+        logger.error(f"Error verifying session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/payments/cancel")

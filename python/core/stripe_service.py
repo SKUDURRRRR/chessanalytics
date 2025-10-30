@@ -99,9 +99,13 @@ class StripeService:
 
                 tier = tier_result.data[0]
 
-                # Determine which price ID to use (monthly vs yearly)
-                # For now, default to monthly
-                price_id = tier.get('stripe_price_id_monthly')
+                # Determine which price ID to use based on tier_id
+                if 'yearly' in tier_id.lower():
+                    price_id = tier.get('stripe_price_id_yearly')
+                    subscription_type = 'yearly'
+                else:
+                    price_id = tier.get('stripe_price_id_monthly')
+                    subscription_type = 'monthly'
 
                 if not price_id:
                     return {'error': f'Stripe price not configured for tier {tier_id}'}
@@ -112,7 +116,7 @@ class StripeService:
                 })
                 mode = 'subscription'
                 metadata['tier_id'] = tier_id
-                metadata['subscription_type'] = 'monthly'
+                metadata['subscription_type'] = subscription_type
 
             elif credit_amount:
                 # Credit purchase (one-time payment)
@@ -142,7 +146,7 @@ class StripeService:
                 payment_method_types=['card'],
                 line_items=line_items,
                 mode=mode,
-                success_url=success_url or f"{os.getenv('VITE_API_URL', 'http://localhost:3000')}/profile?payment=success",
+                success_url=success_url or f"{os.getenv('VITE_API_URL', 'http://localhost:3000')}/profile?session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=cancel_url or f"{os.getenv('VITE_API_URL', 'http://localhost:3000')}/pricing?payment=cancelled",
                 metadata=metadata,
                 allow_promotion_codes=True
@@ -173,6 +177,20 @@ class StripeService:
         """
         try:
             # Check if user already has Stripe customer ID
+            # Query to join with auth.users to get email
+            query = """
+                SELECT
+                    au.id,
+                    au.username,
+                    au.stripe_customer_id,
+                    u.email
+                FROM authenticated_users au
+                JOIN auth.users u ON u.id = au.id
+                WHERE au.id = %s
+            """
+
+            # Using Supabase, we need to use rpc or direct query
+            # Let's try with a direct select and get email from Supabase auth
             user_result = self.supabase.table('authenticated_users').select(
                 'stripe_customer_id, username'
             ).eq('id', user_id).execute()
@@ -186,11 +204,37 @@ class StripeService:
             if user.get('stripe_customer_id'):
                 return user['stripe_customer_id']
 
-            # Create new Stripe customer
+            # Get email from Supabase auth.users using service client
+            try:
+                from supabase import create_client
+                import os
+                # Get email from Supabase Admin API
+                auth_result = self.supabase.auth.admin.get_user_by_id(user_id)
+                email = auth_result.user.email if auth_result and auth_result.user else None
+            except Exception as e:
+                logger.warning(f"Could not get email from auth.users: {e}")
+                email = None
+
+            # Create new Stripe customer with email
+            customer_data = {
+                'metadata': {'user_id': user_id}
+            }
+
+            # Add email if available
+            if email:
+                customer_data['email'] = email
+
+            # Add name if available
+            if user.get('username'):
+                customer_data['name'] = user['username']
+            elif email:
+                customer_data['name'] = email
+            else:
+                customer_data['name'] = f'User {user_id[:8]}'
+
             customer = await asyncio.to_thread(
                 stripe.Customer.create,
-                metadata={'user_id': user_id},
-                name=user.get('username', f'User {user_id[:8]}')
+                **customer_data
             )
 
             # Save customer ID to database
@@ -198,7 +242,7 @@ class StripeService:
                 'stripe_customer_id': customer.id
             }).eq('id', user_id).execute()
 
-            logger.info(f"Created Stripe customer {customer.id} for user {user_id}")
+            logger.info(f"Created Stripe customer {customer.id} for user {user_id} with email {customer_data.get('email', 'N/A')}")
             return customer.id
 
         except Exception as e:
@@ -355,9 +399,10 @@ class StripeService:
             # Could send notification email here
 
     async def _handle_subscription_updated(self, subscription):
-        """Handle subscription update (e.g., plan change)."""
+        """Handle subscription update (e.g., plan change, cancellation)."""
         customer_id = subscription.get('customer')
         status = subscription.get('status')
+        cancel_at_period_end = subscription.get('cancel_at_period_end', False)
 
         user_result = self.supabase.table('authenticated_users').select('id').eq(
             'stripe_customer_id', customer_id
@@ -366,13 +411,24 @@ class StripeService:
         if user_result.data:
             user_id = user_result.data[0]['id']
 
-            # Update subscription status
-            self.supabase.table('authenticated_users').update({
-                'subscription_status': status,
+            # Prepare update data
+            update_data = {
+                'subscription_status': 'cancelled' if cancel_at_period_end else status,
                 'stripe_subscription_id': subscription.get('id')
-            }).eq('id', user_id).execute()
+            }
 
-            logger.info(f"Subscription updated for user {user_id}: {status}")
+            # If subscription is cancelled or will be cancelled, set end date
+            if cancel_at_period_end or status == 'canceled':
+                current_period_end = subscription.get('current_period_end')
+                if current_period_end:
+                    from datetime import datetime
+                    end_date = datetime.fromtimestamp(current_period_end)
+                    update_data['subscription_end_date'] = end_date.isoformat()
+
+            # Update subscription status and end date
+            self.supabase.table('authenticated_users').update(update_data).eq('id', user_id).execute()
+
+            logger.info(f"Subscription updated for user {user_id}: {status}, cancel_at_period_end={cancel_at_period_end}")
 
     async def _handle_subscription_deleted(self, subscription):
         """Handle subscription cancellation."""
@@ -397,7 +453,7 @@ class StripeService:
     async def _update_user_subscription(self, user_id: str, tier_id: str, subscription_id: str):
         """Update user's subscription tier."""
         self.supabase.table('authenticated_users').update({
-            'account_tier': tier_id.replace('_monthly', '').replace('_yearly', ''),
+            'account_tier': tier_id,  # Keep tier_id as-is (e.g., 'pro_monthly', 'pro_yearly')
             'subscription_status': 'active',
             'stripe_subscription_id': subscription_id
         }).eq('id', user_id).execute()
@@ -445,18 +501,54 @@ class StripeService:
             return {'error': 'Stripe not configured'}
 
         try:
-            # Get user's subscription ID
+            # Get user's subscription info
             user_result = self.supabase.table('authenticated_users').select(
-                'stripe_subscription_id'
+                'stripe_subscription_id, stripe_customer_id, account_tier'
             ).eq('id', user_id).execute()
 
             if not user_result.data:
                 return {'error': 'User not found'}
 
-            subscription_id = user_result.data[0].get('stripe_subscription_id')
+            user = user_result.data[0]
+            subscription_id = user.get('stripe_subscription_id')
+            customer_id = user.get('stripe_customer_id')
+            account_tier = user.get('account_tier')
+
+            # Check if user has a paid tier but no subscription_id (manually upgraded)
+            if not subscription_id and account_tier in ['pro_monthly', 'pro_yearly', 'pro']:
+                # Try to find subscription from Stripe using customer_id
+                if customer_id:
+                    try:
+                        subscriptions = await asyncio.to_thread(
+                            stripe.Subscription.list,
+                            customer=customer_id,
+                            status='active',
+                            limit=1
+                        )
+
+                        if subscriptions.data:
+                            subscription_id = subscriptions.data[0].id
+                            # Update the database with the found subscription_id
+                            self.supabase.table('authenticated_users').update({
+                                'stripe_subscription_id': subscription_id
+                            }).eq('id', user_id).execute()
+                            logger.info(f"Found and stored subscription_id {subscription_id} for user {user_id}")
+                    except Exception as e:
+                        logger.warning(f"Could not find subscription from Stripe: {e}")
 
             if not subscription_id:
-                return {'error': 'No active subscription'}
+                # If still no subscription_id, user might have been manually upgraded
+                # Just downgrade them to free tier
+                self.supabase.table('authenticated_users').update({
+                    'account_tier': 'free',
+                    'subscription_status': 'cancelled',
+                    'subscription_end_date': None
+                }).eq('id', user_id).execute()
+
+                return {
+                    'success': True,
+                    'message': 'Subscription cancelled and downgraded to free tier'
+                }
 
             # Cancel at period end (let them use until billing cycle ends)
             subscription = await asyncio.to_thread(
@@ -465,10 +557,18 @@ class StripeService:
                 cancel_at_period_end=True
             )
 
-            # Update database
-            self.supabase.table('authenticated_users').update({
+            # Update database with cancellation status and end date
+            update_data = {
                 'subscription_status': 'cancelled'
-            }).eq('id', user_id).execute()
+            }
+
+            # Set subscription_end_date from Stripe's current_period_end
+            if hasattr(subscription, 'current_period_end') and subscription.current_period_end:
+                from datetime import datetime
+                end_date = datetime.fromtimestamp(subscription.current_period_end)
+                update_data['subscription_end_date'] = end_date.isoformat()
+
+            self.supabase.table('authenticated_users').update(update_data).eq('id', user_id).execute()
 
             return {
                 'success': True,
@@ -512,4 +612,120 @@ class StripeService:
 
         except Exception as e:
             logger.error(f"Error getting subscription status: {e}")
+            return {'error': str(e)}
+
+    async def verify_and_sync_session(self, user_id: str, session_id: str) -> Dict:
+        """
+        Verify a Stripe checkout session and sync the user's subscription.
+        This is used when returning from Stripe checkout to ensure the subscription is updated
+        even if webhooks haven't been processed yet (e.g., on localhost).
+
+        Args:
+            user_id: User's UUID
+            session_id: Stripe checkout session ID
+
+        Returns:
+            Dictionary with verification result
+        """
+        if not self.enabled:
+            return {'error': 'Stripe not configured'}
+
+        try:
+            # Retrieve the session from Stripe
+            session = await asyncio.to_thread(
+                stripe.checkout.Session.retrieve,
+                session_id,
+                expand=['subscription']
+            )
+
+            # Verify the session belongs to this user
+            metadata = session.get('metadata', {})
+            session_user_id = metadata.get('user_id')
+
+            if session_user_id != user_id:
+                logger.error(f"Session user mismatch: expected {user_id}, got {session_user_id}")
+                return {'error': 'Session does not belong to this user'}
+
+            # Check payment status
+            payment_status = session.get('payment_status')
+            if payment_status != 'paid':
+                return {
+                    'success': False,
+                    'message': f'Payment not completed. Status: {payment_status}'
+                }
+
+            # Process based on what was purchased
+            tier_id = metadata.get('tier_id')
+            credits_purchased = metadata.get('credits_purchased')
+
+            if tier_id:
+                # Subscription purchase - update the user's tier
+                subscription_id = session.get('subscription')
+                if isinstance(subscription_id, dict):
+                    subscription_id = subscription_id.get('id')
+
+                await self._update_user_subscription(user_id, tier_id, subscription_id)
+
+                # Record transaction if not already recorded
+                existing = self.supabase.table('payment_transactions').select('id').eq(
+                    'stripe_payment_id', session.get('payment_intent')
+                ).execute()
+
+                if not existing.data:
+                    amount = session.get('amount_total', 0) / 100
+                    self.supabase.table('payment_transactions').insert({
+                        'user_id': user_id,
+                        'stripe_payment_id': session.get('payment_intent'),
+                        'amount': str(amount),
+                        'currency': session.get('currency', 'usd'),
+                        'status': 'succeeded',
+                        'transaction_type': 'subscription',
+                        'tier_id': tier_id,
+                        'metadata': metadata
+                    }).execute()
+
+                logger.info(f"Verified and synced subscription for user {user_id}, tier {tier_id}")
+                return {
+                    'success': True,
+                    'message': 'Subscription activated successfully',
+                    'tier_id': tier_id
+                }
+
+            elif credits_purchased:
+                # Credit purchase - add credits
+                await self._add_user_credits(user_id, int(credits_purchased))
+
+                # Record transaction if not already recorded
+                existing = self.supabase.table('payment_transactions').select('id').eq(
+                    'stripe_payment_id', session.get('payment_intent')
+                ).execute()
+
+                if not existing.data:
+                    amount = session.get('amount_total', 0) / 100
+                    self.supabase.table('payment_transactions').insert({
+                        'user_id': user_id,
+                        'stripe_payment_id': session.get('payment_intent'),
+                        'amount': str(amount),
+                        'currency': session.get('currency', 'usd'),
+                        'status': 'succeeded',
+                        'transaction_type': 'credits',
+                        'credits_purchased': int(credits_purchased),
+                        'metadata': metadata
+                    }).execute()
+
+                logger.info(f"Verified and synced credits for user {user_id}, amount {credits_purchased}")
+                return {
+                    'success': True,
+                    'message': f'{credits_purchased} credits added successfully',
+                    'credits_added': int(credits_purchased)
+                }
+
+            else:
+                return {'error': 'Unknown purchase type'}
+
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error verifying session: {e}")
+            return {'error': str(e)}
+        except Exception as e:
+            logger.error(f"Error verifying session: {e}")
             return {'error': str(e)}

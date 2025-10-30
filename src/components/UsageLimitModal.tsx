@@ -5,7 +5,9 @@ interface UsageLimitModalProps {
   isAuthenticated: boolean
   currentUsage?: {
     used: number
-    limit: number
+    limit: number | null
+    remaining?: number | null
+    unlimited?: boolean
   }
 }
 

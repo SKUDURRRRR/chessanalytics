@@ -57,11 +57,11 @@ INSERT INTO payment_tiers (
     'pro_monthly',
     'Pro Monthly',
     'Unlimited access to all chess analytics features',
-    19.99,
+    5.45,
     NULL,
     NULL, -- Unlimited imports
     NULL, -- Unlimited analyses
-    '["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Opponent preparation", "Personality insights", "Priority support"]'::jsonb,
+    '["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Opponent preparation", "Personality insights"]'::jsonb,
     NULL, -- To be filled in after Stripe setup
     2,
     true
@@ -91,10 +91,10 @@ INSERT INTO payment_tiers (
     'Pro Yearly',
     'Save 33% with annual billing',
     NULL,
-    159.99, -- ~$13.33/month (33% discount from $19.99)
+    49.50, -- ~$4.13/month (24% discount from $5.45)
     NULL, -- Unlimited imports
     NULL, -- Unlimited analyses
-    '["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Opponent preparation", "Personality insights", "Priority support", "33% savings vs monthly"]'::jsonb,
+    '["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Opponent preparation", "Personality insights", "33% savings vs monthly"]'::jsonb,
     NULL, -- To be filled in after Stripe setup
     3,
     true
@@ -106,35 +106,14 @@ INSERT INTO payment_tiers (
     display_order = EXCLUDED.display_order,
     is_active = EXCLUDED.is_active;
 
--- Enterprise Tier (contact for pricing)
-INSERT INTO payment_tiers (
-    id,
-    name,
-    description,
-    price_monthly,
-    price_yearly,
-    import_limit,
-    analysis_limit,
-    features,
-    display_order,
-    is_active
-) VALUES (
-    'enterprise',
-    'Enterprise',
-    'Custom solutions for teams and organizations',
-    NULL,
-    NULL,
-    NULL, -- Unlimited imports
-    NULL, -- Unlimited analyses
-    '["Everything in Pro", "Custom integrations", "Team management", "Bulk analysis", "API access", "Dedicated support", "Custom training data", "White-label options"]'::jsonb,
-    4,
-    true
-) ON CONFLICT (id) DO UPDATE SET
-    name = EXCLUDED.name,
-    description = EXCLUDED.description,
-    features = EXCLUDED.features,
-    display_order = EXCLUDED.display_order,
-    is_active = EXCLUDED.is_active;
+-- ============================================================================
+-- DEACTIVATE ENTERPRISE TIER
+-- ============================================================================
+
+-- Deactivate the Enterprise tier since we're not offering it
+UPDATE payment_tiers
+SET is_active = false
+WHERE id = 'enterprise';
 
 -- ============================================================================
 -- VERIFICATION
@@ -152,11 +131,10 @@ END $$;
 -- ============================================================================
 -- SUMMARY
 -- ============================================================================
--- Created 4 payment tiers:
+-- Created 3 payment tiers:
 -- 1. Free: 100 imports/day, 5 analyses/day, $0
--- 2. Pro Monthly: Unlimited, $19.99/month
--- 3. Pro Yearly: Unlimited, $159.99/year (~$13.33/month, 33% savings)
--- 4. Enterprise: Unlimited, Custom pricing
+-- 2. Pro Monthly: Unlimited, $5.45/month
+-- 3. Pro Yearly: Unlimited, $49.50/year (~$4.13/month, 33% savings)
 --
 -- Stripe price IDs need to be updated after creating products in Stripe Dashboard
 -- Update with: UPDATE payment_tiers SET stripe_price_id_monthly = 'price_xxx' WHERE id = 'pro_monthly';

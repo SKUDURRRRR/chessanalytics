@@ -222,6 +222,12 @@ def get_current_config() -> TierConfig:
     return current_config
 
 
+def reset_config() -> None:
+    """Reset the cached configuration. Useful for testing or when environment changes."""
+    global current_config
+    current_config = None
+
+
 # Performance monitoring helpers
 def get_estimated_analysis_time(num_moves: int) -> float:
     """

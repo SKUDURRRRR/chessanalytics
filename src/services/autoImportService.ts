@@ -212,11 +212,22 @@ export class AutoImportService {
     onProgress?: (progress: ImportProgress) => void
   ): Promise<ImportResult> {
     try {
+      // Get auth token from Supabase if user is authenticated
+      const { supabase } = await import('../lib/supabase')
+      const { data: { session } } = await supabase.auth.getSession()
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+
+      // Add auth token if available
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+
       const response = await fetch(`${API_URL}/api/v1/import-games-smart`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           user_id: userId,
           platform: platform,

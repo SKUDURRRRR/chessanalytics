@@ -5,6 +5,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react'
 import { AuthProvider } from './contexts/AuthContext'
 import { ChessSoundProvider } from './contexts/ChessSoundContext'
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
+import { Navigation } from './components/Navigation'
 import './index.css'
 
 // Lazy load pages for code splitting (reduces initial bundle by 60%)
@@ -36,6 +37,7 @@ function App() {
         <ChessSoundProvider>
           <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <div className="min-h-screen bg-slate-950">
+              <Navigation />
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/" element={<ComponentErrorBoundary><HomePage /></ComponentErrorBoundary>} />

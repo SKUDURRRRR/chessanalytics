@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function LoginPage() {
@@ -7,8 +7,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [searchParams] = useSearchParams()
   const { signIn, signInWithOAuth } = useAuth()
   const navigate = useNavigate()
+
+  // Get the return URL from query params, default to home
+  const returnTo = searchParams.get('returnTo') || '/'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,7 +24,7 @@ export default function LoginPage() {
       if (error) {
         setError(error.message || 'Failed to sign in')
       } else {
-        navigate('/profile')
+        navigate(returnTo)
       }
     } catch (err) {
       setError('An unexpected error occurred')
@@ -29,12 +33,12 @@ export default function LoginPage() {
     }
   }
 
-  const handleOAuthLogin = async (provider: 'google' | 'lichess') => {
+  const handleOAuthLogin = async (provider: 'google' | 'lichess' | 'chess_com') => {
     setError('')
     setLoading(true)
 
     try {
-      const { error } = await signInWithOAuth(provider)
+      const { error } = await signInWithOAuth(provider, returnTo)
       if (error) {
         setError(error.message || `Failed to sign in with ${provider}`)
         setLoading(false)
@@ -48,30 +52,31 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
-            Sign in to your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-slate-400">
-            Or{' '}
-            <Link to="/signup" className="font-medium text-blue-500 hover:text-blue-400">
-              create a new account
-            </Link>
-          </p>
-        </div>
+      <div className="max-w-md w-full">
+        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
+          <div className="mb-6 text-center">
+            <h2 className="text-2xl font-semibold text-white">Sign in to your account</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              Or{' '}
+              <Link
+                to={returnTo !== '/' ? `/signup?returnTo=${encodeURIComponent(returnTo)}` : '/signup'}
+                className="font-medium text-sky-300 hover:text-sky-200"
+              >
+                create a new account
+              </Link>
+            </p>
+          </div>
 
-        <div className="mt-8 space-y-6">
           {error && (
-            <div className="bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded">
+            <div className="mb-4 bg-rose-900/50 border border-rose-500 text-rose-200 px-4 py-3 rounded-2xl">
               {error}
             </div>
           )}
 
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-4">
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-slate-300">
+                <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">
                   Email address
                 </label>
                 <input
@@ -82,13 +87,13 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="mt-1 appearance-none block w-full px-3 py-2 border border-slate-700 rounded-md bg-slate-900 text-white placeholder-slate-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
                   placeholder="you@example.com"
                 />
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-slate-300">
+                <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-2">
                   Password
                 </label>
                 <input
@@ -99,45 +104,54 @@ export default function LoginPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="mt-1 appearance-none block w-full px-3 py-2 border border-slate-700 rounded-md bg-slate-900 text-white placeholder-slate-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
                   placeholder="••••••••"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-end">
               <div className="text-sm">
-                <Link to="/forgot-password" className="font-medium text-blue-500 hover:text-blue-400">
+                <Link to="/forgot-password" className="font-medium text-sky-300 hover:text-sky-200">
                   Forgot your password?
                 </Link>
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Signing in...' : 'Sign in'}
-            </button>
+            <div className="flex flex-col gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-sky-200"></div>
+                    <span>Signing in...</span>
+                  </div>
+                ) : (
+                  'Sign in'
+                )}
+              </button>
+            </div>
           </form>
 
           <div className="mt-6">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-700"></div>
+                <div className="w-full border-t border-white/10"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-slate-950 text-slate-400">Or continue with</span>
+                <span className="px-2 bg-slate-900 text-slate-400">Or continue with</span>
               </div>
             </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="mt-6 flex justify-center">
               <button
                 type="button"
                 onClick={() => handleOAuthLogin('google')}
                 disabled={loading}
-                className="w-full inline-flex justify-center py-2 px-4 border border-slate-700 rounded-md shadow-sm bg-slate-900 text-sm font-medium text-slate-300 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full max-w-xs rounded-2xl border border-white/10 bg-white/10 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 inline-flex justify-center items-center"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path
@@ -160,15 +174,29 @@ export default function LoginPage() {
                 <span className="ml-2">Google</span>
               </button>
 
+              {/* Temporarily hidden - Chess.com OAuth
+              <button
+                type="button"
+                onClick={() => handleOAuthLogin('chess_com')}
+                disabled={loading}
+                className="w-full rounded-2xl border border-white/10 bg-white/10 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 inline-flex justify-center items-center"
+              >
+                <span className="font-bold text-green-500">♞</span>
+                <span className="ml-2">Chess.com</span>
+              </button>
+              */}
+
+              {/* Temporarily hidden - Lichess OAuth
               <button
                 type="button"
                 onClick={() => handleOAuthLogin('lichess')}
                 disabled={loading}
-                className="w-full inline-flex justify-center py-2 px-4 border border-slate-700 rounded-md shadow-sm bg-slate-900 text-sm font-medium text-slate-300 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-2xl border border-white/10 bg-white/10 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50 inline-flex justify-center items-center"
               >
                 <span className="font-bold">♞</span>
                 <span className="ml-2">Lichess</span>
               </button>
+              */}
             </div>
           </div>
         </div>

@@ -53,6 +53,11 @@ logs/
 *.temp
 python/.env
 python/.env.local
+fix_*_simple.py
+fix_pricing_simple.py
+
+# Large files
+public/logo.png
 
 \n# Local backup archives\nbackups/\nBACKUP 09 20.txt\n\n# Editor configs\n.cursorignore\n
 .vercel

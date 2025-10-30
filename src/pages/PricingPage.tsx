@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
 
 interface PaymentTier {
   id: string
@@ -13,9 +14,13 @@ interface PaymentTier {
 }
 
 export default function PricingPage() {
-  const { user } = useAuth()
+  const { user, usageStats } = useAuth()
   const [tiers, setTiers] = useState<PaymentTier[]>([])
   const [loading, setLoading] = useState(true)
+  const [upgrading, setUpgrading] = useState<string | null>(null)
+  const [notification, setNotification] = useState<{ message: string; type: 'error' | 'info' } | null>(null)
+
+  const currentTier = usageStats?.account_tier || 'free'
 
   useEffect(() => {
     fetchTiers()
@@ -41,6 +46,93 @@ export default function PricingPage() {
     return `$${amount.toFixed(2)}`
   }
 
+  const getButtonText = (tierId: string) => {
+    if (tierId === currentTier) {
+      return 'Current Plan'
+    }
+    if (currentTier === 'pro_monthly' && tierId === 'pro_yearly') {
+      return 'Upgrade to Yearly'
+    }
+    if (currentTier === 'pro_yearly' && tierId === 'pro_monthly') {
+      return 'Switch to Monthly'
+    }
+    return 'Upgrade Now'
+  }
+
+  const shouldShowButton = (tierId: string) => {
+    // Always show button for non-authenticated users
+    if (!user) {
+      return true
+    }
+
+    // Don't show button if it's the current plan
+    if (tierId === currentTier) {
+      return false
+    }
+
+    // Show button for all other cases (upgrades, downgrades, switches)
+    return true
+  }
+
+  const handleUpgrade = async (tierId: string) => {
+    if (!user) {
+      window.location.href = '/signup'
+      return
+    }
+
+    setUpgrading(tierId)
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
+
+      // Get the auth token from Supabase
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setNotification({ message: 'Please log in to upgrade', type: 'error' })
+        setTimeout(() => {
+          window.location.href = '/login'
+        }, 2000)
+        return
+      }
+
+      const response = await fetch(`${API_URL}/api/v1/payments/create-checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          tier_id: tierId,
+          success_url: `${window.location.origin}/profile?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${window.location.origin}/pricing?canceled=true`
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        console.error('Checkout error:', error)
+        setNotification({
+          message: `Failed to create checkout session: ${error.detail || 'Unknown error'}`,
+          type: 'error'
+        })
+        return
+      }
+
+      const data = await response.json()
+
+      if (data.url) {
+        // Redirect to Stripe Checkout
+        window.location.href = data.url
+      } else {
+        setNotification({ message: 'Failed to get checkout URL', type: 'error' })
+      }
+    } catch (error) {
+      console.error('Error creating checkout:', error)
+      setNotification({ message: 'Failed to start checkout. Please try again.', type: 'error' })
+    } finally {
+      setUpgrading(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -53,13 +145,29 @@ export default function PricingPage() {
     <div className="min-h-screen bg-slate-950 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-extrabold text-white mb-4">
+          <h1 className="text-4xl font-semibold text-white mb-4">
             Choose Your Plan
           </h1>
-          <p className="text-xl text-slate-400">
+          <p className="text-xl text-slate-300">
             Start free, upgrade when you're ready for unlimited access
           </p>
         </div>
+
+        {notification && (
+          <div className={`max-w-2xl mx-auto mb-8 flex items-start justify-between rounded-2xl border px-4 py-3 text-sm ${notification.type === 'error' ? 'border-rose-400/40 bg-rose-500/10 text-rose-100' : 'border-sky-400/40 bg-sky-500/10 text-sky-100'}`}>
+            <div className="flex items-start gap-3">
+              <span className="text-lg leading-none">{notification.type === 'error' ? '⚠' : 'ℹ'}</span>
+              <span>{notification.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNotification(null)}
+              className="ml-3 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              OK
+            </button>
+          </div>
+        )}
 
         <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
           {tiers.map((tier) => (
@@ -77,23 +185,23 @@ export default function PricingPage() {
                 </div>
               )}
 
-              <h2 className="text-2xl font-bold text-white mb-2">{tier.name}</h2>
-              <p className="text-slate-400 text-sm mb-6">{tier.description}</p>
+              <h2 className="text-2xl font-semibold text-white mb-2">{tier.name}</h2>
+              <p className="text-slate-300 text-sm mb-6">{tier.description}</p>
 
               <div className="mb-6">
                 {tier.price_monthly !== null && tier.price_monthly > 0 ? (
                   <>
-                    <span className="text-4xl font-bold text-white">
+                    <span className="text-4xl font-semibold text-white">
                       {formatPrice(tier.price_monthly)}
                     </span>
-                    <span className="text-slate-400">/month</span>
+                    <span className="text-slate-300">/month</span>
                   </>
                 ) : tier.price_yearly !== null && tier.price_yearly > 0 ? (
                   <>
-                    <span className="text-4xl font-bold text-white">
+                    <span className="text-4xl font-semibold text-white">
                       {formatPrice(tier.price_yearly)}
                     </span>
-                    <span className="text-slate-400">/year</span>
+                    <span className="text-slate-300">/year</span>
                     {tier.price_monthly !== null && (
                       <p className="text-sm text-green-400 mt-1">
                         Save ${((tier.price_monthly * 12) - tier.price_yearly).toFixed(2)}/year
@@ -101,7 +209,7 @@ export default function PricingPage() {
                     )}
                   </>
                 ) : (
-                  <span className="text-4xl font-bold text-white">Free</span>
+                  <span className="text-4xl font-semibold text-white">Free</span>
                 )}
               </div>
 
@@ -128,13 +236,19 @@ export default function PricingPage() {
 
               {tier.id === 'free' ? (
                 user ? (
-                  <div className="text-center py-3 text-slate-400 font-semibold">
-                    Current Plan
-                  </div>
+                  currentTier === 'free' ? (
+                    <div className="text-center py-3 text-slate-300 font-medium">
+                      Current Plan
+                    </div>
+                  ) : (
+                    <div className="text-center py-3 text-slate-300 font-medium">
+                      —
+                    </div>
+                  )
                 ) : (
                   <a
                     href="/signup"
-                    className="block w-full text-center px-4 py-3 bg-slate-700 text-white rounded-md hover:bg-slate-600 font-semibold"
+                    className="block w-full text-center px-4 py-3 bg-slate-700 text-white rounded-md hover:bg-slate-600 font-medium"
                   >
                     Sign Up Free
                   </a>
@@ -142,21 +256,28 @@ export default function PricingPage() {
               ) : tier.id === 'enterprise' ? (
                 <a
                   href="mailto:support@chessdata.app"
-                  className="block w-full text-center px-4 py-3 bg-slate-700 text-white rounded-md hover:bg-slate-600 font-semibold"
+                  className="block w-full text-center px-4 py-3 bg-slate-700 text-white rounded-md hover:bg-slate-600 font-medium"
                 >
                   Contact Sales
                 </a>
               ) : user ? (
-                <a
-                  href="/profile"
-                  className="block w-full text-center px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-semibold"
-                >
-                  Upgrade Now
-                </a>
+                shouldShowButton(tier.id) ? (
+                  <button
+                    onClick={() => handleUpgrade(tier.id)}
+                    disabled={upgrading === tier.id}
+                    className="block w-full text-center px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {upgrading === tier.id ? 'Loading...' : getButtonText(tier.id)}
+                  </button>
+                ) : (
+                  <div className="text-center py-3 text-emerald-400 font-medium">
+                    ✓ Current Plan
+                  </div>
+                )
               ) : (
                 <a
                   href="/signup"
-                  className="block w-full text-center px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-semibold"
+                  className="block w-full text-center px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
                 >
                   Get Started
                 </a>

@@ -1,18 +1,19 @@
 // Enhanced Authentication Context with Usage Tracking
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 
 interface User {
   id: string
   email: string
-  username?: string
   accountTier?: string
 }
 
 interface UsageStats {
-  accountTier?: string
-  tierName?: string
-  isUnlimited?: boolean
+  account_tier?: string
+  tier_name?: string
+  subscription_status?: string
+  subscription_end_date?: string
+  is_unlimited?: boolean
   imports?: {
     used: number
     limit: number | null
@@ -25,7 +26,7 @@ interface UsageStats {
     remaining: number | null
     unlimited: boolean
   }
-  resetsInHours?: number
+  resets_in_hours?: number
 }
 
 interface AuthContextType {
@@ -33,12 +34,13 @@ interface AuthContextType {
   loading: boolean
   usageStats: UsageStats | null
   signIn: (email: string, password: string) => Promise<{ error: any }>
-  signUp: (email: string, password: string, username: string) => Promise<{ error: any }>
+  signUp: (email: string, password: string) => Promise<{ error: any }>
   signInWithGoogle: () => Promise<{ error: any }>
-  signInWithOAuth: (provider: 'google' | 'lichess') => Promise<{ error: any }>
+  signInWithChessCom: () => Promise<{ error: any }>
+  signInWithOAuth: (provider: 'google' | 'lichess' | 'chess_com', returnTo?: string) => Promise<{ error: any }>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<{ error: any }>
-  updateProfile: (data: { username?: string }) => Promise<{ error: any }>
+  updateProfile: (data: Record<string, any>) => Promise<{ error: any }>
   refreshUsageStats: () => Promise<void>
 }
 
@@ -57,8 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         setUser({
           id: session.user.id,
-          email: session.user.email!,
-          username: session.user.user_metadata?.username
+          email: session.user.email!
         })
         // Fetch usage stats for authenticated users
         fetchUsageStats(session.user.id)
@@ -73,8 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         setUser({
           id: session.user.id,
-          email: session.user.email!,
-          username: session.user.user_metadata?.username
+          email: session.user.email!
         })
         // Fetch usage stats when user logs in
         fetchUsageStats(session.user.id)
@@ -111,11 +111,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const refreshUsageStats = async () => {
+  const refreshUsageStats = useCallback(async () => {
     if (user) {
       await fetchUsageStats(user.id)
     }
-  }
+  }, [user])
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -125,15 +125,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error }
   }
 
-  const signUp = async (email: string, password: string, username: string) => {
+  const signUp = async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: {
-          username: username
-        },
-        emailRedirectTo: `${window.location.origin}/profile`
+        emailRedirectTo: `${window.location.origin}/`
       }
     })
 
@@ -145,7 +142,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Create authenticated_users record via Supabase client
           await supabase.from('authenticated_users').insert({
             id: session.session.user.id,
-            username: username,
             account_tier: 'free'
           })
         } catch (dbError) {
@@ -162,11 +158,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return signInWithOAuth('google')
   }
 
-  const signInWithOAuth = async (provider: 'google' | 'lichess') => {
+  const signInWithChessCom = async () => {
+    return signInWithOAuth('chess_com')
+  }
+
+  const signInWithOAuth = async (provider: 'google' | 'lichess' | 'chess_com', returnTo: string = '/') => {
+    // Map chess_com to the actual provider name used by Supabase
+    const supabaseProvider = provider === 'chess_com' ? 'chess_com' : provider
+
+    // Store returnTo in sessionStorage so we can use it after OAuth callback
+    sessionStorage.setItem('auth_return_to', returnTo)
+
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: provider,
+      provider: supabaseProvider as any,
       options: {
-        redirectTo: `${window.location.origin}/profile`
+        redirectTo: `${window.location.origin}/`
       }
     })
     return { error }
@@ -184,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error }
   }
 
-  const updateProfile = async (data: { username?: string }) => {
+  const updateProfile = async (data: Record<string, any>) => {
     try {
       const { data: session } = await supabase.auth.getSession()
       if (!session.session) {
@@ -205,11 +211,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: new Error(errorData.detail || 'Failed to update profile') }
       }
 
-      // Update local user state
-      if (data.username && user) {
-        setUser({ ...user, username: data.username })
-      }
-
       return { error: null }
     } catch (error) {
       return { error: error as Error }
@@ -223,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signIn,
     signUp,
     signInWithGoogle,
+    signInWithChessCom,
     signInWithOAuth,
     signOut,
     resetPassword,

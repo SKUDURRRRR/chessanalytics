@@ -4,6 +4,8 @@ import { ProfileService } from '../../services/profileService'
 import { AutoImportService, ImportProgress } from '../../services/autoImportService'
 import { getRecentPlayers, addRecentPlayer, clearRecentPlayers, RecentPlayer } from '../../utils/recentPlayers'
 import { retryWithBackoff } from '../../lib/errorHandling'
+import { useAuth } from '../../contexts/AuthContext'
+import UsageLimitModal from '../UsageLimitModal'
 
 // Add custom pulse animation style
 const customPulseStyle = `
@@ -35,6 +37,12 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   const [showImportPrompt, setShowImportPrompt] = useState(false)
   const [recentPlayers, setRecentPlayers] = useState<RecentPlayer[]>([])
   const [showRecentPlayers, setShowRecentPlayers] = useState(false)
+  const [notification, setNotification] = useState<{ message: string; type: 'error' | 'info' } | null>(null)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+
+  // Auth and usage tracking
+  const { user, usageStats, refreshUsageStats } = useAuth()
+  const [showLimitModal, setShowLimitModal] = useState(false)
 
   // Load recent players on mount
   useEffect(() => {
@@ -165,12 +173,22 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
         }
       }
 
-      alert(errorMessage);
+      setNotification({ message: errorMessage, type: 'error' })
+      setTimeout(() => setNotification(null), 5000)
     }
   }
 
   const handleManualImport = async () => {
     if (!searchQuery.trim()) return
+
+    // Check usage limits for authenticated users
+    if (user && usageStats) {
+      // Check if user has remaining imports
+      if (usageStats.imports && !usageStats.imports.unlimited && usageStats.imports.remaining === 0) {
+        setShowLimitModal(true)
+        return
+      }
+    }
 
     setIsAutoImporting(true)
     setShowImportPrompt(false)
@@ -228,7 +246,12 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       )
 
       if (result.success) {
-        // Import successful, now select the player
+        // Import successful, refresh usage stats
+        if (user) {
+          await refreshUsageStats()
+        }
+
+        // Now select the player
         await handlePlayerSelect(searchQuery, selectedPlatform)
       } else {
         setImportProgress({
@@ -262,6 +285,55 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   return (
     <>
       <style>{customPulseStyle}</style>
+
+      {/* Notification */}
+      {notification && (
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 flex items-start justify-between rounded-2xl border px-4 py-3 text-sm shadow-2xl ${notification.type === 'error' ? 'border-rose-400/40 bg-rose-500/10 text-rose-100' : 'border-sky-400/40 bg-sky-500/10 text-sky-100'}`}>
+          <div className="flex items-start gap-3">
+            <span className="text-lg leading-none">{notification.type === 'error' ? '⚠' : 'ℹ'}</span>
+            <span>{notification.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotification(null)}
+            className="ml-3 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            OK
+          </button>
+        </div>
+      )}
+
+      {/* Clear Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
+          <div className="max-w-md w-full rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-3">Clear Recent Players</h3>
+            <p className="text-slate-300 text-sm mb-6">
+              Are you sure you want to clear all recent players?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="rounded-2xl border border-white/10 bg-white/[0.05] px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.08]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  clearRecentPlayers()
+                  setRecentPlayers([])
+                  setShowRecentPlayers(false)
+                  setShowClearConfirm(false)
+                }}
+                className="rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-2.5 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
         <div className="mb-6 text-center">
           <h2 className="text-2xl font-semibold text-white">Search Player</h2>
@@ -491,13 +563,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           <h3 className="text-lg font-semibold text-white">Quick Access</h3>
           {recentPlayers.length > 0 && (
             <button
-              onClick={() => {
-                if (confirm('Are you sure you want to clear all recent players?')) {
-                  clearRecentPlayers()
-                  setRecentPlayers([])
-                  setShowRecentPlayers(false)
-                }
-              }}
+              onClick={() => setShowClearConfirm(true)}
               className="text-xs text-slate-400 hover:text-slate-200"
             >
               Clear All
@@ -549,6 +615,20 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
         )}
       </div>
       </div>
+
+      {/* Usage Limit Modal */}
+      <UsageLimitModal
+        isOpen={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        limitType="import"
+        isAuthenticated={!!user}
+        currentUsage={usageStats?.imports ? {
+          used: usageStats.imports.used,
+          limit: usageStats.imports.limit,
+          remaining: usageStats.imports.remaining,
+          unlimited: usageStats.imports.unlimited
+        } : undefined}
+      />
     </>
   )
 }

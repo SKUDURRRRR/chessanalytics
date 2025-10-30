@@ -158,7 +158,7 @@ class UsageTracker:
         try:
             # Get user's account tier
             user_result = self.supabase.table('authenticated_users').select(
-                'account_tier, subscription_status'
+                'account_tier, subscription_status, subscription_end_date'
             ).eq('id', user_id).execute()
 
             if not user_result.data:
@@ -170,6 +170,10 @@ class UsageTracker:
             user = user_result.data[0]
             account_tier = user['account_tier']
             subscription_status = user['subscription_status']
+            subscription_end_date = user.get('subscription_end_date')
+
+            # Debug logging for subscription end date
+            logger.info(f"[USAGE_STATS] subscription_end_date from DB: {subscription_end_date}, type: {type(subscription_end_date)}")
 
             # Get tier limits
             tier_result = self.supabase.table('payment_tiers').select(
@@ -183,6 +187,9 @@ class UsageTracker:
             import_limit = tier['import_limit']
             analysis_limit = tier['analysis_limit']
             tier_name = tier['name']
+
+            # Debug logging
+            logger.info(f"[USAGE_STATS] User {user_id}: tier={account_tier}, name={tier_name}, import_limit={import_limit}, analysis_limit={analysis_limit}")
 
             # Get current usage (within 24-hour window)
             today = datetime.now().date()
@@ -210,10 +217,11 @@ class UsageTracker:
             imports_remaining = None if import_limit is None else max(0, import_limit - current_imports)
             analyses_remaining = None if analysis_limit is None else max(0, analysis_limit - current_analyses)
 
-            return {
+            result = {
                 'account_tier': account_tier,
                 'tier_name': tier_name,
                 'subscription_status': subscription_status,
+                'subscription_end_date': subscription_end_date,
                 'is_unlimited': import_limit is None and analysis_limit is None,
                 'imports': {
                     'used': current_imports,
@@ -233,6 +241,9 @@ class UsageTracker:
                     if reset_at else 24.0
                 )
             }
+
+            logger.info(f"[USAGE_STATS] Returning subscription_end_date: {result.get('subscription_end_date')}")
+            return result
 
         except Exception as e:
             logger.error(f"Error getting usage stats for user {user_id}: {e}")

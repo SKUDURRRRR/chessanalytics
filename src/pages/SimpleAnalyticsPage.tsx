@@ -10,6 +10,8 @@ import { UnifiedAnalysisService } from '../services/unifiedAnalysisService'
 import { ProfileService } from '../services/profileService'
 import { supabase } from '../lib/supabase'
 import { clearUserCache } from '../utils/apiCache'
+import { useAuth } from '../contexts/AuthContext'
+import UsageLimitModal from '../components/UsageLimitModal'
 // DatabaseDiagnosticsComponent is development-only, imported conditionally below
 // Debug components removed from production
 // import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
@@ -119,6 +121,11 @@ export default function SimpleAnalyticsPage() {
     importedGames: 0
   })
   const autoSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Auth and usage tracking
+  const { user, usageStats, refreshUsageStats } = useAuth()
+  const [showLimitModal, setShowLimitModal] = useState(false)
+  const [limitType, setLimitType] = useState<'import' | 'analyze'>('analyze')
 
   useEffect(() => {
     // Check for route parameters first, then URL parameters
@@ -722,18 +729,7 @@ export default function SimpleAnalyticsPage() {
           <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-6 py-6 shadow-2xl shadow-black/60 sm:px-8 sm:py-8">
             <div className="absolute inset-x-10 top-0 h-40 rounded-full bg-sky-400/10 blur-3xl" />
             <div className="relative flex flex-col gap-6">
-              <div className="flex items-center justify-between">
-                {/* Logo in top left */}
-                <div className="flex items-center gap-3">
-                  <img
-                    src="/chesdata.svg"
-                    alt="Chess Analytics"
-                    className="h-8 w-auto sm:h-10 opacity-90 hover:opacity-100 transition-opacity cursor-pointer"
-                    onClick={() => navigate('/')}
-                    title="Back to home"
-                  />
-                </div>
-
+              <div className="flex items-center justify-end">
                 <button
                   onClick={() => navigate('/')}
                   className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-200 transition hover:border-white/30 hover:bg-white/20"
@@ -1050,6 +1046,15 @@ export default function SimpleAnalyticsPage() {
           </div>
         </div>
       )}
+
+      {/* Usage Limit Modal */}
+      <UsageLimitModal
+        isOpen={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        limitType={limitType}
+        isAuthenticated={!!user}
+        currentUsage={limitType === 'import' ? usageStats?.imports : usageStats?.analyses}
+      />
     </div>
   )
 }
