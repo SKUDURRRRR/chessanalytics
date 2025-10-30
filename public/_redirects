@@ -1,6 +1,0 @@
-# Serve static files first
-/logo.png  /logo.png  200
-/sounds/*  /sounds/:splat  200
-
-# SPA fallback for all other routes
-/*  /index.html  200

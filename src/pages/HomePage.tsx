@@ -9,6 +9,12 @@ export default function HomePage() {
   const { user } = useAuth()
 
   useEffect(() => {
+    // Clean up OAuth hash fragments from URL
+    if (window.location.hash) {
+      // Remove the hash from URL without reloading the page
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
+
     // Check if user just logged in via OAuth and has a return URL
     const returnTo = sessionStorage.getItem('auth_return_to')
     if (user && returnTo && returnTo !== '/') {

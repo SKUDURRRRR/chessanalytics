@@ -31,6 +31,8 @@ export default function PricingPage() {
   const fetchTiers = async () => {
     try {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
+      console.log('🔍 API URL:', API_URL)
+      console.log('🔍 Full URL:', `${API_URL}/api/v1/payment-tiers`)
 
       const response = await fetchWithTimeout(
         `${API_URL}/api/v1/payment-tiers`,
@@ -38,15 +40,23 @@ export default function PricingPage() {
         TIMEOUT_CONFIG.DEFAULT
       )
 
+      console.log('📡 Response status:', response.status)
+      console.log('📡 Response ok:', response.ok)
+
       if (response.ok) {
         const data = await response.json()
+        console.log('📦 Data received:', data)
+        console.log('📦 Tiers count:', data.tiers?.length || 0)
         setTiers(data.tiers || [])
         logger.log('Pricing tiers fetched successfully')
       } else {
+        const errorText = await response.text()
+        console.error('❌ API Error Response:', errorText)
         logger.warn('Failed to fetch pricing tiers:', response.status)
         // Fail gracefully - UI will show empty state
       }
     } catch (error) {
+      console.error('❌ Fetch error:', error)
       logger.error('Error fetching tiers:', error)
       // Fail gracefully - UI will show empty state
     } finally {
