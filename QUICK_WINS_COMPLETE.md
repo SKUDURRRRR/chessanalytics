@@ -12,7 +12,6 @@
 ### 1. Increased Concurrent Operations ⚡
 **Files**:
 - `python/core/analysis_queue.py` - Max concurrent jobs: 2 → 4, workers: 4 → 8
-- `python/core/analysis_engine.py` - Concurrent moves per game: 4 → 8
 - `python/core/engine_pool.py` - Engine pool size: 3 → 4
 
 **Impact**: **2x throughput** (900 → 1,800 games/hour)
