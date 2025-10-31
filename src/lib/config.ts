@@ -74,6 +74,11 @@ export interface FeatureFlags {
 // DEFAULT CONFIGURATION VALUES
 // ============================================================================
 
+// DEBUG: Log what we're getting from environment
+console.log('[CONFIG] VITE_ANALYSIS_API_URL:', env.VITE_ANALYSIS_API_URL)
+console.log('[CONFIG] import.meta.env.VITE_ANALYSIS_API_URL:', import.meta.env.VITE_ANALYSIS_API_URL)
+console.log('[CONFIG] All env vars:', import.meta.env)
+
 const DEFAULT_API_CONFIG: ApiConfig = {
   baseUrl: (env.VITE_ANALYSIS_API_URL || 'http://localhost:8002').replace(/\/$/, ''), // Remove trailing slash
   timeout: 30000, // 30 seconds
@@ -182,7 +187,7 @@ class ConfigurationManager {
       const stored = localStorage.getItem('chess-analytics-config')
       if (stored) {
         const config = JSON.parse(stored)
-        
+
         // Merge with existing configuration
         this.ui = { ...this.ui, ...config.ui }
         this.features = { ...this.features, ...config.features }
@@ -283,7 +288,7 @@ class ConfigurationManager {
     this.security = { ...DEFAULT_SECURITY_CONFIG }
     this.logging = { ...DEFAULT_LOGGING_CONFIG }
     this.features = { ...DEFAULT_FEATURE_FLAGS }
-    
+
     this.loadFromEnvironment()
     this.saveToLocalStorage()
   }
