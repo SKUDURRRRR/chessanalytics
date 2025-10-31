@@ -66,7 +66,7 @@ export function Navigation() {
           {/* Logo and App Name */}
           <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <img
-              src="/logo.svg"
+              src="/logo.png"
               alt="ChessData"
               className="h-8 w-auto"
             />
