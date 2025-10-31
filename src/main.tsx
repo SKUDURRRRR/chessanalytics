@@ -4,10 +4,11 @@ import App from './App'
 import { initializeClarity } from './lib/clarity'
 
 // Initialize Microsoft Clarity
-const CLARITY_PROJECT_ID = import.meta.env.VITE_CLARITY_PROJECT_ID
+const CLARITY_PROJECT_ID = import.meta.env.VITE_CLARITY_PROJECT_ID || 'tygdbslg22'
 
 // Debug: Log environment variable status
-console.log('Clarity Project ID:', CLARITY_PROJECT_ID ? '✓ Set' : '✗ Not set')
+console.log('Clarity Project ID:', CLARITY_PROJECT_ID)
+console.log('From env var?', import.meta.env.VITE_CLARITY_PROJECT_ID ? 'Yes' : 'No (using fallback)')
 
 if (CLARITY_PROJECT_ID) {
   initializeClarity(CLARITY_PROJECT_ID)
