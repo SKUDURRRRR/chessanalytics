@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_game_analyses_date
 -- Composite index for fetching move analyses for a game
 -- Critical for game analysis page performance
 CREATE INDEX IF NOT EXISTS idx_move_analyses_game
-  ON move_analyses(game_id, move_number);
+  ON move_analyses(game_id);
 
 -- Index for user/platform queries
 CREATE INDEX IF NOT EXISTS idx_move_analyses_user_platform

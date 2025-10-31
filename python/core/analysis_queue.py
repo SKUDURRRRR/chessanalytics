@@ -63,6 +63,7 @@ class AnalysisQueue:
         self.jobs: Dict[str, AnalysisJob] = {}
         self.queue: asyncio.Queue = asyncio.Queue()
         self.running_jobs: Dict[str, AnalysisJob] = {}
+        self.running_tasks: Dict[str, asyncio.Task] = {}  # Track background tasks
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=max_concurrent_jobs)
         self._queue_processor_task: Optional[asyncio.Task] = None
@@ -95,12 +96,36 @@ class AnalysisQueue:
                     await asyncio.sleep(1)  # Wait 1 second before checking again
                     continue
 
-                # Start the job
-                await self._start_job(job)
+                # Skip cancelled jobs
+                if job.status == AnalysisStatus.CANCELLED:
+                    print(f"[QUEUE] Skipping cancelled job {job.job_id}")
+                    continue
+
+                # Start the job in the background (non-blocking)
+                # This allows the queue processor to continue processing other jobs
+                task = asyncio.create_task(self._start_job_wrapper(job))
+                self.running_tasks[job.job_id] = task  # Keep reference to prevent GC
+                print(f"[QUEUE] Started job {job.job_id} in background, continuing queue processing...")
 
             except Exception as e:
                 print(f"Error in queue processor: {e}")
+                import traceback
+                traceback.print_exc()
                 await asyncio.sleep(1)
+
+    async def _start_job_wrapper(self, job: AnalysisJob):
+        """Wrapper for _start_job that handles cleanup."""
+        try:
+            await self._start_job(job)
+        except Exception as e:
+            print(f"[QUEUE] Error in job {job.job_id}: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Clean up task reference
+            if job.job_id in self.running_tasks:
+                del self.running_tasks[job.job_id]
+                print(f"[QUEUE] Cleaned up task reference for job {job.job_id}")
 
     async def _start_job(self, job: AnalysisJob):
         """Start a single analysis job."""
@@ -255,10 +280,21 @@ class AnalysisQueue:
     ) -> str:
         """
         Submit a new analysis job to the queue.
+        Prevents duplicate jobs for the same user+platform combination.
 
         Returns:
             job_id: Unique identifier for the job
         """
+        # Check for existing pending or running jobs for this user+platform
+        with self.lock:
+            for existing_job in self.jobs.values():
+                if (existing_job.user_id == user_id and
+                    existing_job.platform == platform and
+                    existing_job.status in [AnalysisStatus.PENDING, AnalysisStatus.RUNNING]):
+                    print(f"[QUEUE] Job already exists for {user_id} on {platform} (job_id: {existing_job.job_id}, status: {existing_job.status.value})")
+                    print(f"[QUEUE] Returning existing job_id instead of creating duplicate")
+                    return existing_job.job_id
+
         job_id = str(uuid.uuid4())
         job = AnalysisJob(
             job_id=job_id,

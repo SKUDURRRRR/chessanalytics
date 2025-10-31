@@ -9,19 +9,16 @@
 
 CREATE TABLE IF NOT EXISTS authenticated_users (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    username TEXT UNIQUE NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     account_tier TEXT NOT NULL DEFAULT 'free' CHECK (account_tier IN ('free', 'pro', 'enterprise')),
     subscription_status TEXT DEFAULT 'active' CHECK (subscription_status IN ('active', 'cancelled', 'expired', 'trialing')),
     stripe_customer_id TEXT UNIQUE,
     stripe_subscription_id TEXT,
-    subscription_end_date TIMESTAMPTZ,
-    CONSTRAINT username_length CHECK (char_length(username) >= 3 AND char_length(username) <= 30)
+    subscription_end_date TIMESTAMPTZ
 );
 
 -- Create indexes for performance
-CREATE INDEX IF NOT EXISTS idx_authenticated_users_username ON authenticated_users(username);
 CREATE INDEX IF NOT EXISTS idx_authenticated_users_stripe_customer ON authenticated_users(stripe_customer_id);
 CREATE INDEX IF NOT EXISTS idx_authenticated_users_account_tier ON authenticated_users(account_tier);
 

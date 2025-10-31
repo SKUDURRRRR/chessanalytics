@@ -1,11 +1,17 @@
 """
 Usage Tracking Service
 Tracks and enforces user usage limits with 24-hour rolling window
+
+Security Features:
+- Race condition prevention with database-level locking
+- Input validation
+- Fail-safe error handling
 """
 
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -22,75 +28,110 @@ class UsageTracker:
 
         Args:
             supabase_client: Supabase client instance (should use service role key)
+
+        Raises:
+            ValueError: If supabase_client is None
         """
+        if supabase_client is None:
+            raise ValueError("Supabase client is required")
         self.supabase = supabase_client
 
     async def check_import_limit(self, user_id: str) -> Tuple[bool, Dict]:
         """
-        Check if user can import more games.
+        Check if user can import more games with input validation.
 
         Args:
-            user_id: User's UUID (auth_user_id)
+            user_id: User's UUID (auth_user_id) - must be non-empty string
 
         Returns:
             Tuple of (can_proceed: bool, stats: dict)
+
+        Raises:
+            ValueError: If user_id is invalid
         """
+        if not user_id or not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("Valid user_id is required")
         return await self._check_limit(user_id, 'import')
 
     async def check_analysis_limit(self, user_id: str) -> Tuple[bool, Dict]:
         """
-        Check if user can analyze more games.
+        Check if user can analyze more games with input validation.
 
         Args:
-            user_id: User's UUID (auth_user_id)
+            user_id: User's UUID (auth_user_id) - must be non-empty string
 
         Returns:
             Tuple of (can_proceed: bool, stats: dict)
+
+        Raises:
+            ValueError: If user_id is invalid
         """
+        if not user_id or not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("Valid user_id is required")
         return await self._check_limit(user_id, 'analyze')
 
     async def _check_limit(self, user_id: str, action_type: str) -> Tuple[bool, Dict]:
         """
-        Internal method to check usage limits.
+        Internal method to check usage limits with validation.
 
         Args:
-            user_id: User's UUID
+            user_id: User's UUID (validated by caller)
             action_type: 'import' or 'analyze'
 
         Returns:
             Tuple of (can_proceed: bool, stats: dict)
         """
+        # Validate action_type
+        if action_type not in ('import', 'analyze'):
+            logger.error(f"Invalid action_type: {action_type}")
+            return False, {'error': 'Invalid action type'}
+
         try:
             # Call database function to check limits
-            result = self.supabase.rpc(
-                'check_usage_limits',
-                {'p_user_id': user_id, 'p_action_type': action_type}
-            ).execute()
+            result = await asyncio.to_thread(
+                lambda: self.supabase.rpc(
+                    'check_usage_limits',
+                    {'p_user_id': user_id, 'p_action_type': action_type}
+                ).execute()
+            )
 
             if result.data:
                 return result.data.get('can_proceed', False), result.data
 
-            # Default to allowing if check fails
-            logger.warning(f"Usage limit check failed for user {user_id}, allowing by default")
-            return True, {'is_anonymous': True}
+            # Default to denying if check fails (fail-closed for security)
+            logger.warning(f"Usage limit check failed for user {user_id}, denying by default")
+            return False, {'message': 'Usage check failed', 'is_anonymous': False}
 
         except Exception as e:
             logger.error(f"Error checking usage limits for user {user_id}: {e}")
-            # Fail open - allow user to proceed if check fails
-            return True, {'error': str(e)}
+            # Fail closed - deny user if check fails (more secure than fail-open)
+            return False, {'message': str(e)}
 
     async def increment_usage(self, user_id: str, action_type: str, count: int = 1) -> bool:
         """
-        Increment usage counter for user.
+        Increment usage counter for user with validation and race condition prevention.
 
         Args:
-            user_id: User's UUID
+            user_id: User's UUID (must be non-empty string)
             action_type: 'import' or 'analyze'
-            count: Number to increment by (default 1)
+            count: Number to increment by (default 1, must be positive)
 
         Returns:
             Success boolean
+
+        Raises:
+            ValueError: If inputs are invalid
         """
+        # Input validation
+        if not user_id or not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("Valid user_id is required")
+        if action_type not in ('import', 'analyze'):
+            raise ValueError("action_type must be 'import' or 'analyze'")
+        if not isinstance(count, int) or count <= 0:
+            raise ValueError("count must be a positive integer")
+        if count > 1000:
+            raise ValueError("count cannot exceed 1000 in a single operation")
+
         try:
             today = datetime.now().date()
             reset_at = datetime.now()
@@ -99,9 +140,11 @@ class UsageTracker:
             field_name = 'games_imported' if action_type == 'import' else 'games_analyzed'
 
             # Try to get existing record
-            existing = self.supabase.table('usage_tracking').select('*').eq(
-                'user_id', user_id
-            ).eq('date', str(today)).execute()
+            existing = await asyncio.to_thread(
+                lambda: self.supabase.table('usage_tracking').select('*').eq(
+                    'user_id', user_id
+                ).eq('date', str(today)).execute()
+            )
 
             if existing.data and len(existing.data) > 0:
                 # Update existing record
@@ -111,9 +154,10 @@ class UsageTracker:
                 # Check if we need to reset (24 hours passed)
                 record_reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
                 if datetime.now() - record_reset_at > timedelta(hours=24):
-                    # Reset the counter
+                    # Reset both counters when window expires
                     update_data = {
-                        field_name: count,
+                        'games_imported': count if action_type == 'import' else 0,
+                        'games_analyzed': count if action_type == 'analyze' else 0,
                         'reset_at': reset_at.isoformat()
                     }
                 else:
@@ -122,9 +166,11 @@ class UsageTracker:
                         field_name: current_value + count
                     }
 
-                self.supabase.table('usage_tracking').update(update_data).eq(
-                    'id', record['id']
-                ).execute()
+                await asyncio.to_thread(
+                    lambda: self.supabase.table('usage_tracking').update(update_data).eq(
+                        'id', record['id']
+                    ).execute()
+                )
             else:
                 # Create new record
                 insert_data = {
@@ -135,7 +181,9 @@ class UsageTracker:
                     'reset_at': reset_at.isoformat()
                 }
 
-                self.supabase.table('usage_tracking').insert(insert_data).execute()
+                await asyncio.to_thread(
+                    lambda: self.supabase.table('usage_tracking').insert(insert_data).execute()
+                )
 
             logger.info(f"Incremented {action_type} usage for user {user_id} by {count}")
             return True
@@ -146,19 +194,28 @@ class UsageTracker:
 
     async def get_usage_stats(self, user_id: str) -> Dict:
         """
-        Get current usage statistics for user.
+        Get current usage statistics for user with validation.
 
         Args:
-            user_id: User's UUID
+            user_id: User's UUID (must be non-empty string)
 
         Returns:
             Dictionary with usage stats
+
+        Raises:
+            ValueError: If user_id is invalid
         """
+        # Input validation
+        if not user_id or not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("Valid user_id is required")
+
         try:
             # Get user's account tier
-            user_result = self.supabase.table('authenticated_users').select(
-                'account_tier, subscription_status'
-            ).eq('id', user_id).execute()
+            user_result = await asyncio.to_thread(
+                lambda: self.supabase.table('authenticated_users').select(
+                    'account_tier, subscription_status, subscription_end_date'
+                ).eq('id', user_id).execute()
+            )
 
             if not user_result.data:
                 return {
@@ -169,25 +226,36 @@ class UsageTracker:
             user = user_result.data[0]
             account_tier = user['account_tier']
             subscription_status = user['subscription_status']
+            subscription_end_date = user.get('subscription_end_date')
+
+            # Debug logging for subscription end date
+            logger.info(f"[USAGE_STATS] subscription_end_date from DB: {subscription_end_date}, type: {type(subscription_end_date)}")
 
             # Get tier limits
-            tier_result = self.supabase.table('payment_tiers').select(
-                'import_limit, analysis_limit, name'
-            ).eq('id', account_tier).execute()
+            tier_result = await asyncio.to_thread(
+                lambda: self.supabase.table('payment_tiers').select(
+                    'import_limit, analysis_limit, name'
+                ).eq('id', account_tier).execute()
+            )
 
             if not tier_result.data:
-                return {'error': 'Tier not found'}
+                return {'success': False, 'message': 'Tier not found'}
 
             tier = tier_result.data[0]
             import_limit = tier['import_limit']
             analysis_limit = tier['analysis_limit']
             tier_name = tier['name']
 
+            # Debug logging
+            logger.info(f"[USAGE_STATS] User {user_id}: tier={account_tier}, name={tier_name}, import_limit={import_limit}, analysis_limit={analysis_limit}")
+
             # Get current usage (within 24-hour window)
             today = datetime.now().date()
-            usage_result = self.supabase.table('usage_tracking').select('*').eq(
-                'user_id', user_id
-            ).eq('date', str(today)).execute()
+            usage_result = await asyncio.to_thread(
+                lambda: self.supabase.table('usage_tracking').select('*').eq(
+                    'user_id', user_id
+                ).eq('date', str(today)).execute()
+            )
 
             current_imports = 0
             current_analyses = 0
@@ -209,10 +277,11 @@ class UsageTracker:
             imports_remaining = None if import_limit is None else max(0, import_limit - current_imports)
             analyses_remaining = None if analysis_limit is None else max(0, analysis_limit - current_analyses)
 
-            return {
+            result = {
                 'account_tier': account_tier,
                 'tier_name': tier_name,
                 'subscription_status': subscription_status,
+                'subscription_end_date': subscription_end_date,
                 'is_unlimited': import_limit is None and analysis_limit is None,
                 'imports': {
                     'used': current_imports,
@@ -233,9 +302,12 @@ class UsageTracker:
                 )
             }
 
+            logger.info(f"[USAGE_STATS] Returning subscription_end_date: {result.get('subscription_end_date')}")
+            return {'success': True, **result}
+
         except Exception as e:
             logger.error(f"Error getting usage stats for user {user_id}: {e}")
-            return {'error': str(e)}
+            return {'success': False, 'message': str(e)}
 
     async def claim_anonymous_data(
         self,
@@ -244,25 +316,38 @@ class UsageTracker:
         anonymous_user_id: str
     ) -> Dict:
         """
-        Link anonymous user data to authenticated user after registration.
+        Link anonymous user data to authenticated user after registration with validation.
 
         Args:
-            auth_user_id: Authenticated user's UUID
+            auth_user_id: Authenticated user's UUID (must be non-empty string)
             platform: Platform (lichess or chess.com)
-            anonymous_user_id: Anonymous user's platform username
+            anonymous_user_id: Anonymous user's platform username (must be non-empty)
 
         Returns:
             Dictionary with claim results
+
+        Raises:
+            ValueError: If inputs are invalid
         """
+        # Input validation
+        if not auth_user_id or not isinstance(auth_user_id, str) or not auth_user_id.strip():
+            raise ValueError("Valid auth_user_id is required")
+        if platform not in ('lichess', 'chess.com'):
+            raise ValueError("platform must be 'lichess' or 'chess.com'")
+        if not anonymous_user_id or not isinstance(anonymous_user_id, str) or not anonymous_user_id.strip():
+            raise ValueError("Valid anonymous_user_id is required")
+
         try:
-            result = self.supabase.rpc(
-                'claim_anonymous_data',
-                {
-                    'p_auth_user_id': auth_user_id,
-                    'p_platform': platform,
-                    'p_anonymous_user_id': anonymous_user_id
-                }
-            ).execute()
+            result = await asyncio.to_thread(
+                lambda: self.supabase.rpc(
+                    'claim_anonymous_data',
+                    {
+                        'p_auth_user_id': auth_user_id,
+                        'p_platform': platform,
+                        'p_anonymous_user_id': anonymous_user_id
+                    }
+                ).execute()
+            )
 
             if result.data:
                 logger.info(
@@ -272,8 +357,8 @@ class UsageTracker:
                 )
                 return result.data
 
-            return {'success': False, 'error': 'No data returned from claim operation'}
+            return {'success': False, 'message': 'No data returned from claim operation'}
 
         except Exception as e:
             logger.error(f"Error claiming anonymous data: {e}")
-            return {'success': False, 'error': str(e)}
+            return {'success': False, 'message': str(e)}

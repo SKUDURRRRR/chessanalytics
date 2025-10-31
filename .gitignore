@@ -53,6 +53,22 @@ logs/
 *.temp
 python/.env
 python/.env.local
+fix_*_simple.py
+fix_pricing_simple.py
+
+# Ad-hoc SQL scripts (may contain sensitive data)
+# Use manual_upgrade_user.sql or similar template scripts instead
+upgrade_*.sql
+fix_user_*.sql
+*_adhoc.sql
+fix_stripe_price_ids.sql
+
+# Local reference files with actual project identifiers
+*.local
+.supabase_urls.local
+
+# Large files
+# public/logo.png  # Commented out - logo is needed for production
 
 \n# Local backup archives\nbackups/\nBACKUP 09 20.txt\n\n# Editor configs\n.cursorignore\n
 .vercel

@@ -938,10 +938,10 @@ class ChessAnalysisEngine:
                 move_analysis.fullmove_number = data['fullmove_number']
                 return move_analysis
 
-            # Process moves in parallel with Railway Hobby tier optimization
-            # Railway Hobby tier has 8 GB RAM, so we can enable parallel move analysis
-            # for significant performance improvements
-            max_concurrent = 8  # Increased from 4 to 8 concurrent moves for Railway Pro (8 vCPU)
+            # Process moves in parallel with Railway Pro tier optimization
+            # Railway Pro tier has 8 vCPU, but we use 4 concurrent workers to match
+            # the ThreadPoolExecutor capacity and avoid memory pressure
+            max_concurrent = 4  # Matches ThreadPoolExecutor(max_workers=4) at line 1977
             semaphore = asyncio.Semaphore(max_concurrent)
 
             async def analyze_with_semaphore(data):
@@ -1713,7 +1713,7 @@ class ChessAnalysisEngine:
                         optimal_cp = best_cp
 
                         # Get rating-adjusted thresholds (default to 1500 if not available)
-                        # TODO: Pass actual player rating from game analysis context
+                        # NOTE: Player rating context would improve threshold accuracy (future enhancement)
                         rating_thresholds = get_rating_adjusted_brilliant_threshold(player_rating=None)
 
                         # -----------------------------------------------------------------------
@@ -1972,7 +1972,7 @@ class ChessAnalysisEngine:
                     loop.close()
 
         # Run the blocking Stockfish call in a thread pool executor
-        # Use Railway Hobby tier concurrency for better performance
+        # Use 4 workers for Railway Pro tier (matches max_concurrent at line 944)
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                 result = await loop.run_in_executor(executor, run_stockfish_analysis)
