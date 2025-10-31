@@ -77,6 +77,9 @@ from .error_handlers import (
 # Import opening normalization utilities
 from .opening_utils import normalize_opening_name, get_opening_name_from_eco_code
 
+# Import resilient API client
+from .resilient_api_client import get_api_client as get_resilient_api_client
+
 # Load environment configuration
 from .config import get_config
 config = get_config()
@@ -7015,8 +7018,6 @@ async def validate_user(request: dict):
     - 500: Unexpected server error
     """
     try:
-        from resilient_api_client import get_api_client
-
         user_id = request.get("user_id")
         platform = request.get("platform")
 
@@ -7033,7 +7034,7 @@ async def validate_user(request: dict):
             )
 
         # Get resilient API client
-        api_client = get_api_client()
+        api_client = get_resilient_api_client()
 
         # Validate user using resilient client
         try:
@@ -7088,8 +7089,7 @@ async def validate_user(request: dict):
 async def get_api_client_stats():
     """Get statistics about the resilient API client for monitoring."""
     try:
-        from resilient_api_client import get_api_client
-        api_client = get_api_client()
+        api_client = get_resilient_api_client()
         stats = api_client.get_stats()
         return {
             "success": True,
