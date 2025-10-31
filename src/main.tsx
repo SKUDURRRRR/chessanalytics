@@ -4,10 +4,15 @@ import App from './App'
 import { initializeClarity } from './lib/clarity'
 
 // Initialize Microsoft Clarity
-// Replace 'YOUR_PROJECT_ID' with your actual Clarity project ID from https://clarity.microsoft.com
 const CLARITY_PROJECT_ID = import.meta.env.VITE_CLARITY_PROJECT_ID
+
+// Debug: Log environment variable status
+console.log('Clarity Project ID:', CLARITY_PROJECT_ID ? '✓ Set' : '✗ Not set')
+
 if (CLARITY_PROJECT_ID) {
   initializeClarity(CLARITY_PROJECT_ID)
+} else {
+  console.warn('Clarity not initialized: VITE_CLARITY_PROJECT_ID environment variable is missing')
 }
 
 // Suppress external script errors (browser extensions, etc.)
