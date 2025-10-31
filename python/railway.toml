@@ -1,8 +1,6 @@
 [build]
 builder = "dockerfile"
 dockerfilePath = "python/Dockerfile"
-# Set build context to root so Dockerfile can access requirements.txt
-buildContext = "."
 
 [deploy]
 restartPolicyType = "on_failure"
