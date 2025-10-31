@@ -100,8 +100,10 @@ class AnalysisQueue:
                     print(f"[QUEUE] Skipping cancelled job {job.job_id}")
                     continue
 
-                # Start the job
-                await self._start_job(job)
+                # Start the job in the background (non-blocking)
+                # This allows the queue processor to continue processing other jobs
+                asyncio.create_task(self._start_job(job))
+                print(f"[QUEUE] Started job {job.job_id} in background, continuing queue processing...")
 
             except Exception as e:
                 print(f"Error in queue processor: {e}")
@@ -260,10 +262,21 @@ class AnalysisQueue:
     ) -> str:
         """
         Submit a new analysis job to the queue.
+        Prevents duplicate jobs for the same user+platform combination.
 
         Returns:
             job_id: Unique identifier for the job
         """
+        # Check for existing pending or running jobs for this user+platform
+        with self.lock:
+            for existing_job in self.jobs.values():
+                if (existing_job.user_id == user_id and
+                    existing_job.platform == platform and
+                    existing_job.status in [AnalysisStatus.PENDING, AnalysisStatus.RUNNING]):
+                    print(f"[QUEUE] Job already exists for {user_id} on {platform} (job_id: {existing_job.job_id}, status: {existing_job.status.value})")
+                    print(f"[QUEUE] Returning existing job_id instead of creating duplicate")
+                    return existing_job.job_id
+
         job_id = str(uuid.uuid4())
         job = AnalysisJob(
             job_id=job_id,
