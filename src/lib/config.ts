@@ -74,8 +74,10 @@ export interface FeatureFlags {
 // DEFAULT CONFIGURATION VALUES
 // ============================================================================
 
+// FIX: Use import.meta.env directly instead of validated env object
+// The Zod validation in env.ts is stripping the value even though it exists
 const DEFAULT_API_CONFIG: ApiConfig = {
-  baseUrl: (env.VITE_ANALYSIS_API_URL || 'http://localhost:8002').replace(/\/$/, ''), // Remove trailing slash
+  baseUrl: (import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002').replace(/\/$/, ''), // Remove trailing slash
   timeout: 30000, // 30 seconds
   retryAttempts: 3,
   retryDelay: 1000 // 1 second
@@ -182,7 +184,7 @@ class ConfigurationManager {
       const stored = localStorage.getItem('chess-analytics-config')
       if (stored) {
         const config = JSON.parse(stored)
-        
+
         // Merge with existing configuration
         this.ui = { ...this.ui, ...config.ui }
         this.features = { ...this.features, ...config.features }
@@ -283,7 +285,7 @@ class ConfigurationManager {
     this.security = { ...DEFAULT_SECURITY_CONFIG }
     this.logging = { ...DEFAULT_LOGGING_CONFIG }
     this.features = { ...DEFAULT_FEATURE_FLAGS }
-    
+
     this.loadFromEnvironment()
     this.saveToLocalStorage()
   }

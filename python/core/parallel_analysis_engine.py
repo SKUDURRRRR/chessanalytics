@@ -128,7 +128,7 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
         result = {
             'game_id': game_id,
             'success': False,
-            'error': str(e)
+            'message': str(e)
         }
         print(f"[Game {game_id}] Error: {e}")
 
@@ -256,7 +256,7 @@ class ParallelAnalysisEngine:
         return result
 
     async def _fetch_games(self, user_id: str, platform: str, limit: int) -> List[Dict[str, Any]]:
-        """Fetch games from database ordered by played_at (most recent first)."""
+        """Fetch unanalyzed games from database ordered by played_at (most recent first)."""
         try:
             # Canonicalize user ID for database operations
             # Chess.com usernames are case-insensitive (lowercase)
@@ -269,12 +269,17 @@ class ParallelAnalysisEngine:
             # CRITICAL FIX: Use two-step approach to maintain chronological ordering
             # Step 1: Get game IDs from games table ordered by played_at (most recent first)
             # Step 2: Fetch PGN data for those games and maintain the order
-            # This ensures we always get the most recently PLAYED games, not recently UPDATED games
+            # Step 3: Filter out already-analyzed games
+            # This ensures we always get the most recently PLAYED unanalyzed games
 
-            print(f"[PARALLEL ENGINE] Fetching {limit} most recent games for {user_id} on {platform}")
+            # Fetch more games than needed to account for already-analyzed games
+            fetch_limit = max(limit * 10, 100)
+            print(f"[PARALLEL ENGINE] Fetching up to {fetch_limit} most recent games to find {limit} unanalyzed games for {user_id} on {platform}")
 
             # First get game IDs from games table ordered by played_at (most recent first)
-            games_list_response = self.supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(limit).execute()
+            games_list_response = await asyncio.to_thread(
+                lambda: self.supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
+            )
 
             if not games_list_response.data:
                 print(f"[PARALLEL ENGINE] No games found in games table")
@@ -286,7 +291,9 @@ class ParallelAnalysisEngine:
             print(f"[PARALLEL ENGINE] Found {len(provider_game_ids)} games in database (ordered by most recent)")
 
             # Now fetch PGN data for these games
-            pgn_response = self.supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+            pgn_response = await asyncio.to_thread(
+                lambda: self.supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+            )
 
             if not pgn_response.data:
                 print(f"[PARALLEL ENGINE] No PGN data found for games")
@@ -303,12 +310,55 @@ class ParallelAnalysisEngine:
                     all_games.append(pgn_data)
 
             print(f"[PARALLEL ENGINE] Found {len(all_games)} games with PGN data (ordered by most recent played_at)")
-            if all_games:
-                print(f"[PARALLEL ENGINE] First game played_at: {all_games[0].get('played_at')} | provider_game_id: {all_games[0].get('provider_game_id')}")
-                if len(all_games) > 1:
-                    print(f"[PARALLEL ENGINE] Last game played_at: {all_games[-1].get('played_at')} | provider_game_id: {all_games[-1].get('provider_game_id')}")
 
-            return all_games
+            # Filter out already-analyzed games
+            # Get game IDs that are already analyzed (from both move_analyses and game_analyses tables)
+            analyzed_game_ids = set()
+
+            try:
+                # Check move_analyses table
+                move_analyses_response = await asyncio.to_thread(
+                    lambda: self.supabase.table('move_analyses').select('game_id').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_game_ids).execute()
+                )
+                if move_analyses_response.data:
+                    analyzed_game_ids.update(row['game_id'] for row in move_analyses_response.data)
+
+                # Check game_analyses table (unified_analyses might also be used)
+                game_analyses_response = await asyncio.to_thread(
+                    lambda: self.supabase.table('game_analyses').select('game_id').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_game_ids).execute()
+                )
+                if game_analyses_response.data:
+                    analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
+
+            except Exception as e:
+                print(f"[PARALLEL ENGINE] Warning: Could not check analyzed games: {e}")
+                # If we can't check, assume no games are analyzed to be safe
+                analyzed_game_ids = set()
+
+            # Filter out already analyzed games and return only up to limit unanalyzed games
+            unanalyzed_games = []
+            analyzed_count = 0
+            for game in all_games:
+                game_id = game.get('provider_game_id')
+                if game_id:
+                    if game_id in analyzed_game_ids:
+                        analyzed_count += 1
+                    else:
+                        unanalyzed_games.append(game)
+                        if len(unanalyzed_games) >= limit:
+                            break
+
+            print(f"[PARALLEL ENGINE] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
+            print(f"[PARALLEL ENGINE] Skipped {analyzed_count} already-analyzed games from the fetched set")
+
+            if unanalyzed_games:
+                print(f"[PARALLEL ENGINE] First unanalyzed game played_at: {unanalyzed_games[0].get('played_at')} | provider_game_id: {unanalyzed_games[0].get('provider_game_id')}")
+                if len(unanalyzed_games) > 1:
+                    print(f"[PARALLEL ENGINE] Last unanalyzed game played_at: {unanalyzed_games[-1].get('played_at')} | provider_game_id: {unanalyzed_games[-1].get('provider_game_id')}")
+            else:
+                print(f"[PARALLEL ENGINE] No unanalyzed games found - all recent games have been analyzed already!")
+
+            return unanalyzed_games
         except Exception as e:
             print(f"[PARALLEL ENGINE] Error fetching games: {e}")
             import traceback
@@ -373,7 +423,7 @@ class ParallelAnalysisEngine:
                         results.append({
                             'game_id': 'unknown',
                             'success': False,
-                            'error': str(e)
+                            'message': str(e)
                         })
 
                         # Update progress even for failed games
@@ -413,7 +463,7 @@ class ParallelAnalysisEngine:
                     results.append({
                         'game_id': game_data['id'],
                         'success': False,
-                        'error': str(e)
+                        'message': str(e)
                     })
 
         return results

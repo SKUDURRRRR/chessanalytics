@@ -1,0 +1,35 @@
+-- Run this in Supabase SQL Editor to fix the Stripe price IDs
+-- https://supabase.com/dashboard/project/YOUR_PROJECT/sql/new
+--
+-- SETUP INSTRUCTIONS:
+-- 1. Copy this template file to fix_stripe_price_ids.sql
+-- 2. Replace YOUR_MONTHLY_PRICE_ID_HERE with your Stripe monthly price ID
+-- 3. Replace YOUR_YEARLY_PRICE_ID_HERE with your Stripe yearly price ID
+-- 4. Run the SQL in Supabase SQL Editor
+--
+-- To get your Stripe price IDs:
+-- 1. Go to https://dashboard.stripe.com/products
+-- 2. Find your Pro Monthly and Pro Yearly products
+-- 3. Copy the price IDs (they start with price_)
+
+-- Update Pro Monthly with Stripe price ID
+UPDATE payment_tiers
+SET stripe_price_id_monthly = 'YOUR_MONTHLY_PRICE_ID_HERE'
+WHERE id = 'pro_monthly';
+
+-- Update Pro Yearly with Stripe price ID
+UPDATE payment_tiers
+SET stripe_price_id_yearly = 'YOUR_YEARLY_PRICE_ID_HERE'
+WHERE id = 'pro_yearly';
+
+-- Verify the updates
+SELECT
+    id,
+    name,
+    price_monthly,
+    price_yearly,
+    stripe_price_id_monthly,
+    stripe_price_id_yearly,
+    is_active
+FROM payment_tiers
+ORDER BY display_order;

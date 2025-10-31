@@ -14,6 +14,7 @@ RUN /usr/games/stockfish --version || /usr/bin/stockfish --version || /usr/local
 WORKDIR /app
 
 # Copy requirements and install Python dependencies
+# requirements.txt is now in the python/ directory
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

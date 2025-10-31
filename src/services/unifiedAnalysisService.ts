@@ -15,9 +15,11 @@ import {
 } from '../types'
 import { config } from '../lib/config'
 import { withCache, generateCacheKey, apiCache } from '../utils/apiCache'
+import { logger } from '../utils/logger'
+import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
 
 const UNIFIED_API_URL = config.getApi().baseUrl
-console.log('🔧 UNIFIED_API_URL configured as:', UNIFIED_API_URL)
+logger.log('🔧 UNIFIED_API_URL configured as:', UNIFIED_API_URL)
 
 // Re-export types for backward compatibility
 export type { GameAnalysisSummary, AnalysisStats, DeepAnalysisData, PersonalityScores } from '../types'
@@ -162,38 +164,42 @@ export class UnifiedAnalysisService {
         ...(request.move && { move: request.move }),
       }
 
-      console.log('🌐 API Request:', {
+      logger.log('🌐 API Request:', {
         url: `${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`,
         body: requestBody
       })
-      console.log('🌐 Request details:', {
+      logger.log('🌐 Request details:', {
         user_id: requestBody.user_id,
         platform: requestBody.platform,
         analysis_type: requestBody.analysis_type,
         limit: requestBody.limit
       })
 
-      const response = await fetch(`${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetchWithTimeout(
+        `${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
         },
-        body: JSON.stringify(requestBody),
-      })
+        TIMEOUT_CONFIG.LONG // Use long timeout for analysis operations
+      )
 
-      console.log('🌐 API Response status:', response.status)
+      logger.log('🌐 API Response status:', response.status)
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error('🌐 API Error response:', errorText)
+        logger.error('🌐 API Error response:', errorText)
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
       const data = await response.json()
-      console.log('🌐 API Response data:', data)
+      logger.log('🌐 API Response data:', data)
       return data
     } catch (error) {
-      console.error('Error in unified analysis:', error)
+      logger.error('Error in unified analysis:', error)
       throw new Error('Failed to perform analysis')
     }
   }

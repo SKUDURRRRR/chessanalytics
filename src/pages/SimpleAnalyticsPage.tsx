@@ -10,6 +10,10 @@ import { UnifiedAnalysisService } from '../services/unifiedAnalysisService'
 import { ProfileService } from '../services/profileService'
 import { supabase } from '../lib/supabase'
 import { clearUserCache } from '../utils/apiCache'
+import { useAuth } from '../contexts/AuthContext'
+import UsageLimitModal from '../components/UsageLimitModal'
+import { AnonymousUsageTracker } from '../services/anonymousUsageTracker'
+import AnonymousLimitModal from '../components/AnonymousLimitModal'
 // DatabaseDiagnosticsComponent is development-only, imported conditionally below
 // Debug components removed from production
 // import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
@@ -120,6 +124,15 @@ export default function SimpleAnalyticsPage() {
   })
   const autoSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Auth and usage tracking
+  const { user, usageStats, refreshUsageStats } = useAuth()
+  const [showLimitModal, setShowLimitModal] = useState(false)
+  const [limitType, setLimitType] = useState<'import' | 'analyze'>('analyze')
+
+  // Anonymous user tracking
+  const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
+  const [anonymousLimitType, setAnonymousLimitType] = useState<'import' | 'analyze'>('import')
+
   useEffect(() => {
     // Check for route parameters first, then URL parameters
     const routeUser = params.userId
@@ -163,9 +176,10 @@ export default function SimpleAnalyticsPage() {
     checkApiHealth()
   }, [])
 
-  // Auto-sync effect - triggers when userId and platform are set
+  // Auto-sync effect - triggers when userId and platform are set (authenticated users only)
   useEffect(() => {
-    if (userId && platform && !isLoading) {
+    // Only auto-sync for authenticated users
+    if (user && userId && platform && !isLoading) {
       // Small delay to ensure page is fully loaded
       const timeoutId = setTimeout(() => {
         checkAndSyncNewGames()
@@ -173,7 +187,7 @@ export default function SimpleAnalyticsPage() {
 
       return () => clearTimeout(timeoutId)
     }
-  }, [userId, platform, isLoading])
+  }, [user, userId, platform, isLoading])
 
   useEffect(() => {
     const checkGamesExist = async () => {
@@ -260,6 +274,23 @@ export default function SimpleAnalyticsPage() {
       return
     }
 
+    // Check anonymous user limits first
+    if (!user) {
+      if (!AnonymousUsageTracker.canImport()) {
+        console.log('[SimpleAnalytics] Anonymous user reached import limit')
+        setAnonymousLimitType('import')
+        setAnonymousLimitModalOpen(true)
+        return
+      }
+    }
+
+    // Check usage limits before importing (authenticated users)
+    if (user && usageStats?.imports && !usageStats.imports.unlimited && usageStats.imports.remaining === 0) {
+      setLimitType('import')
+      setShowLimitModal(true)
+      return
+    }
+
     try {
       setImporting(true)
       setImportError(null)
@@ -270,11 +301,20 @@ export default function SimpleAnalyticsPage() {
       })
 
       if (result.success) {
+        // Increment anonymous usage after successful import
+        if (!user && result.importedGames) {
+          AnonymousUsageTracker.incrementImports(result.importedGames)
+        }
+
         if (result.importedGames > 0) {
           setImportStatus(`Import complete! ${result.message}. Refreshing analytics...`)
           // Clear cache to force fresh data load after import
           clearUserCache(userId, platform)
           handleRefresh()
+          // Refresh usage stats after import for authenticated users
+          if (user) {
+            refreshUsageStats()
+          }
         } else {
           setImportStatus(`Import complete! No new games found. You already have all recent games imported.`)
         }
@@ -294,6 +334,16 @@ export default function SimpleAnalyticsPage() {
 
   const startLargeImport = async () => {
     if (!userId) return
+
+    // Check anonymous user limits first
+    if (!user) {
+      if (!AnonymousUsageTracker.canImport()) {
+        console.log('[SimpleAnalytics] Anonymous user reached import limit')
+        setAnonymousLimitType('import')
+        setAnonymousLimitModalOpen(true)
+        return
+      }
+    }
 
     try {
       // Start import with default limit of 5000
@@ -561,6 +611,8 @@ export default function SimpleAnalyticsPage() {
           statusTimeoutRef.current = setTimeout(() => setProgressStatus(null), 2500)
           // Clear cache to force fresh data load after analysis
           clearUserCache(userId, platform)
+          // Refresh usage stats after analysis
+          refreshUsageStats()
           // Set force refresh flag to bypass cache on next load
           setForceDataRefresh(true)
           // Add small delay to ensure database has finished writing analysis results
@@ -623,8 +675,25 @@ export default function SimpleAnalyticsPage() {
   }
 
   const startAnalysis = async () => {
+    // Check anonymous user limits first
+    if (!user) {
+      if (!AnonymousUsageTracker.canAnalyze()) {
+        console.log('[SimpleAnalytics] Anonymous user reached analysis limit')
+        setAnonymousLimitType('analyze')
+        setAnonymousLimitModalOpen(true)
+        return
+      }
+    }
+
+    // Check usage limits before analyzing (authenticated users)
+    if (user && usageStats?.analyses && !usageStats.analyses.unlimited && usageStats.analyses.remaining === 0) {
+      setLimitType('analyze')
+      setShowLimitModal(true)
+      return
+    }
+
     try {
-      console.log('Analyze My Games button clicked! SimpleAnalyticsPage.')
+      console.log('Analyze games button clicked! SimpleAnalyticsPage.')
       console.log('Starting analysis for:', { userId, platform, limit: ANALYSIS_TEST_LIMIT })
       console.log('User ID type:', typeof userId, 'Value:', JSON.stringify(userId))
       console.log('API available:', apiAvailable)
@@ -641,6 +710,12 @@ export default function SimpleAnalyticsPage() {
 
       if (result.success) {
         console.log('Analysis started successfully, starting progress monitoring...')
+
+        // Increment anonymous usage after successful start
+        if (!user) {
+          AnonymousUsageTracker.incrementAnalyses()
+        }
+
         setProgressStatus('Waiting for the engine to report progress...')
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current)
@@ -722,18 +797,7 @@ export default function SimpleAnalyticsPage() {
           <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-6 py-6 shadow-2xl shadow-black/60 sm:px-8 sm:py-8">
             <div className="absolute inset-x-10 top-0 h-40 rounded-full bg-sky-400/10 blur-3xl" />
             <div className="relative flex flex-col gap-6">
-              <div className="flex items-center justify-between">
-                {/* Logo in top left */}
-                <div className="flex items-center gap-3">
-                  <img
-                    src="/chesdata.svg"
-                    alt="Chess Analytics"
-                    className="h-8 w-auto sm:h-10 opacity-90 hover:opacity-100 transition-opacity cursor-pointer"
-                    onClick={() => navigate('/')}
-                    title="Back to home"
-                  />
-                </div>
-
+              <div className="flex items-center justify-end">
                 <button
                   onClick={() => navigate('/')}
                   className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-200 transition hover:border-white/30 hover:bg-white/20"
@@ -792,14 +856,14 @@ export default function SimpleAnalyticsPage() {
 
                   <button
                     onClick={() => {
-                      console.log('🔘 Analyze My Games button clicked!')
+                      console.log('🔘 Analyze games button clicked!')
                       console.log('🔘 Button state - analyzing:', analyzing, 'apiAvailable:', apiAvailable)
                       startAnalysis()
                     }}
                     disabled={analyzing || !apiAvailable}
                     className="inline-flex items-center gap-2 rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 font-medium text-sky-200 transition hover:border-sky-300/60 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {analyzing ? 'Analyzing…' : 'Analyze My Games'}
+                    {analyzing ? 'Analyzing…' : 'Analyze games'}
                   </button>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-400">
@@ -1050,6 +1114,22 @@ export default function SimpleAnalyticsPage() {
           </div>
         </div>
       )}
+
+      {/* Usage Limit Modal */}
+      <UsageLimitModal
+        isOpen={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        limitType={limitType}
+        isAuthenticated={!!user}
+        currentUsage={limitType === 'import' ? usageStats?.imports : usageStats?.analyses}
+      />
+
+      {/* Anonymous User Limit Modal */}
+      <AnonymousLimitModal
+        isOpen={anonymousLimitModalOpen}
+        onClose={() => setAnonymousLimitModalOpen(false)}
+        limitType={anonymousLimitType}
+      />
     </div>
   )
 }

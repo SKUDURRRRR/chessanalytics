@@ -1,7 +1,37 @@
 // Home Page - Entry point with player search
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PlayerSearch } from '../components/simple/PlayerSearch'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function HomePage() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+
+  useEffect(() => {
+    // Clean up OAuth hash fragments and wildcards from URL
+    const currentPath = window.location.pathname
+    const hasHash = window.location.hash
+    const isWildcard = currentPath === '/*'
+
+    // If there's a hash or wildcard path, clean up the URL
+    if (hasHash || isWildcard) {
+      // Use clean root path if it's a wildcard, otherwise keep the actual path
+      const cleanPath = isWildcard ? '/' : currentPath
+      // Remove the hash from URL without reloading the page
+      window.history.replaceState(null, '', cleanPath + window.location.search)
+    }
+
+    // Check if user just logged in via OAuth and has a return URL
+    const returnTo = sessionStorage.getItem('auth_return_to')
+    if (user && returnTo && returnTo !== '/') {
+      // Clear the stored return URL
+      sessionStorage.removeItem('auth_return_to')
+      // Redirect to the stored URL
+      navigate(returnTo)
+    }
+  }, [user, navigate])
+
   const handlePlayerSelect = (userId: string, platform: 'lichess' | 'chess.com') => {
     // Redirect directly to the full user profile page
     window.location.href = `/simple-analytics?user=${userId}&platform=${platform}`
@@ -11,15 +41,6 @@ export default function HomePage() {
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_45%),radial-gradient(circle_at_bottom,_rgba(14,116,144,0.2),_transparent_40%)]" />
       <div className="relative container-responsive space-responsive py-8 sm:py-12 md:py-16">
-        {/* Logo in top left */}
-        <div className="absolute top-4 left-4 sm:top-6 sm:left-6">
-          <img
-            src="/chesdata.svg"
-            alt="Chess Analytics"
-            className="h-10 w-auto sm:h-12 opacity-90 hover:opacity-100 transition-opacity"
-          />
-        </div>
-
         <header className="text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-wide text-slate-300 shadow-md shadow-cyan-500/10">
             Precision Chess Insights
@@ -34,9 +55,6 @@ export default function HomePage() {
 
         <div className="card-responsive">
           <PlayerSearch onPlayerSelect={handlePlayerSelect} />
-          <p className="mt-3 text-xs text-slate-400">
-            Works for players on Lichess and Chess.com. No account required.
-          </p>
         </div>
 
         {/* Feature blocks centered horizontally */}
