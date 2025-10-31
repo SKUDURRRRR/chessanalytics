@@ -63,6 +63,7 @@ class AnalysisQueue:
         self.jobs: Dict[str, AnalysisJob] = {}
         self.queue: asyncio.Queue = asyncio.Queue()
         self.running_jobs: Dict[str, AnalysisJob] = {}
+        self.running_tasks: Dict[str, asyncio.Task] = {}  # Track background tasks
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=max_concurrent_jobs)
         self._queue_processor_task: Optional[asyncio.Task] = None
@@ -102,12 +103,29 @@ class AnalysisQueue:
 
                 # Start the job in the background (non-blocking)
                 # This allows the queue processor to continue processing other jobs
-                asyncio.create_task(self._start_job(job))
+                task = asyncio.create_task(self._start_job_wrapper(job))
+                self.running_tasks[job.job_id] = task  # Keep reference to prevent GC
                 print(f"[QUEUE] Started job {job.job_id} in background, continuing queue processing...")
 
             except Exception as e:
                 print(f"Error in queue processor: {e}")
+                import traceback
+                traceback.print_exc()
                 await asyncio.sleep(1)
+
+    async def _start_job_wrapper(self, job: AnalysisJob):
+        """Wrapper for _start_job that handles cleanup."""
+        try:
+            await self._start_job(job)
+        except Exception as e:
+            print(f"[QUEUE] Error in job {job.job_id}: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Clean up task reference
+            if job.job_id in self.running_tasks:
+                del self.running_tasks[job.job_id]
+                print(f"[QUEUE] Cleaned up task reference for job {job.job_id}")
 
     async def _start_job(self, job: AnalysisJob):
         """Start a single analysis job."""
