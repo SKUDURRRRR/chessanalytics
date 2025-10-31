@@ -106,30 +106,94 @@ export function Navigation() {
                   </div>
                 )}
 
-                <Link
-                  to="/"
-                  className={getButtonClass('/')}
-                >
-                  Home
-                </Link>
-                <Link
-                  to="/pricing"
-                  className={getButtonClass('/pricing')}
-                >
-                  Pricing
-                </Link>
-                <Link
-                  to="/profile"
-                  className={getButtonClass('/profile')}
-                >
-                  Profile
-                </Link>
-                <button
-                  onClick={handleSignOut}
-                  className="rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-2.5 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30"
-                >
-                  Sign Out
-                </button>
+                {/* Mobile dropdown menu */}
+                <div className="relative md:hidden" ref={dropdownRef}>
+                  <button
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/10 flex items-center gap-2"
+                    aria-label="Menu"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 6h16M4 12h16M4 18h16"
+                      />
+                    </svg>
+                    <span>Menu</span>
+                  </button>
+
+                  {isDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-700 bg-slate-800 shadow-xl z-50">
+                      <div className="py-2">
+                        <Link
+                          to="/"
+                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Home
+                        </Link>
+                        <Link
+                          to="/pricing"
+                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Pricing
+                        </Link>
+                        <Link
+                          to="/profile"
+                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Profile
+                        </Link>
+                        <button
+                          onClick={() => {
+                            setIsDropdownOpen(false)
+                            handleSignOut()
+                          }}
+                          className="block w-full text-left px-4 py-2.5 text-sm text-rose-100 hover:bg-slate-700 transition-colors"
+                        >
+                          Sign Out
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Desktop buttons */}
+                <div className="hidden md:flex items-center gap-4">
+                  <Link
+                    to="/"
+                    className={getButtonClass('/')}
+                  >
+                    Home
+                  </Link>
+                  <Link
+                    to="/pricing"
+                    className={getButtonClass('/pricing')}
+                  >
+                    Pricing
+                  </Link>
+                  <Link
+                    to="/profile"
+                    className={getButtonClass('/profile')}
+                  >
+                    Profile
+                  </Link>
+                  <button
+                    onClick={handleSignOut}
+                    className="rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-2.5 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30"
+                  >
+                    Sign Out
+                  </button>
+                </div>
               </>
             ) : (
               // Anonymous user navigation
