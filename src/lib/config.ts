@@ -74,20 +74,14 @@ export interface FeatureFlags {
 // DEFAULT CONFIGURATION VALUES
 // ============================================================================
 
-// DEBUG: Log what we're getting from environment (using console.error so it's not stripped)
-console.error('[CONFIG DEBUG] VITE_ANALYSIS_API_URL from env:', env.VITE_ANALYSIS_API_URL)
-console.error('[CONFIG DEBUG] VITE_ANALYSIS_API_URL from import.meta.env:', import.meta.env.VITE_ANALYSIS_API_URL)
-console.error('[CONFIG DEBUG] All import.meta.env keys:', Object.keys(import.meta.env))
-
+// FIX: Use import.meta.env directly instead of validated env object
+// The Zod validation in env.ts is stripping the value even though it exists
 const DEFAULT_API_CONFIG: ApiConfig = {
-  baseUrl: (env.VITE_ANALYSIS_API_URL || 'http://localhost:8002').replace(/\/$/, ''), // Remove trailing slash
+  baseUrl: (import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002').replace(/\/$/, ''), // Remove trailing slash
   timeout: 30000, // 30 seconds
   retryAttempts: 3,
   retryDelay: 1000 // 1 second
 }
-
-// Log the final baseUrl being used
-console.error('[CONFIG DEBUG] Final API baseUrl:', DEFAULT_API_CONFIG.baseUrl)
 
 const DEFAULT_DATABASE_CONFIG: DatabaseConfig = {
   url: env.VITE_SUPABASE_URL,
