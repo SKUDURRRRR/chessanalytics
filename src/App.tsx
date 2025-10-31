@@ -18,6 +18,7 @@ const SignUpPage = lazy(() => import('./pages/SignUpPage'))
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const PricingPage = lazy(() => import('./pages/PricingPage'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 // Loading component shown while pages load
 function PageLoader() {
@@ -51,6 +52,7 @@ function App() {
                   <Route path="/forgot-password" element={<ComponentErrorBoundary><ForgotPasswordPage /></ComponentErrorBoundary>} />
                   <Route path="/profile" element={<ComponentErrorBoundary><ProfilePage /></ComponentErrorBoundary>} />
                   <Route path="/pricing" element={<ComponentErrorBoundary><PricingPage /></ComponentErrorBoundary>} />
+                  <Route path="*" element={<ComponentErrorBoundary><NotFoundPage /></ComponentErrorBoundary>} />
                 </Routes>
               </Suspense>
               <Footer />
