@@ -1,19 +1,8 @@
 {
-  "routes": [
+  "rewrites": [
     {
-      "src": "/logo.png",
-      "dest": "/logo.png"
-    },
-    {
-      "src": "/sounds/(.*)",
-      "dest": "/sounds/$1"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [
