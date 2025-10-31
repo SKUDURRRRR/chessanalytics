@@ -695,9 +695,11 @@ class StripeService:
             )
 
             # Set subscription_end_date from Stripe's current_period_end
-            # Keep status as 'active' since Stripe treats it as active until period ends
-            # The webhook will update status to 'cancelled' when the actual cancellation happens
-            update_data = {}
+            # Set status to 'cancelled' immediately so the UI can reflect the cancellation
+            # User keeps access until the end date, then webhook downgrades to free
+            update_data = {
+                'subscription_status': 'cancelled'
+            }
             if hasattr(subscription, 'current_period_end') and subscription.current_period_end:
                 from datetime import datetime, timezone
                 end_date = datetime.fromtimestamp(subscription.current_period_end, tz=timezone.utc)
