@@ -314,7 +314,7 @@ async def startup_event():
         print(f"[STARTUP] Initializing Stockfish engine pool...")
         _engine_pool_instance = get_engine_pool(
             stockfish_path=stockfish_path,
-            max_size=3,  # 3 engines max
+            max_size=4,  # 4 engines max (Phase 1 - Stage 1: increased from 3)
             ttl=300.0,   # 5-minute TTL
             config={
                 'Skill Level': 20,
@@ -542,8 +542,8 @@ async def get_http_client():
         import aiohttp
         timeout = aiohttp.ClientTimeout(total=120, connect=30)
         connector = aiohttp.TCPConnector(
-            limit=15,  # Total concurrent connections across all hosts
-            limit_per_host=6,  # Increased from 3 to 6 - allows 2 concurrent imports per platform without bottleneck
+            limit=20,  # Total concurrent connections (Phase 1 - Stage 1: increased from 15)
+            limit_per_host=8,  # Per-host limit (Phase 1 - Stage 1: increased from 6)
             ttl_dns_cache=300  # DNS cache TTL
         )
         _shared_http_client = aiohttp.ClientSession(
