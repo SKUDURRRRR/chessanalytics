@@ -1,5 +1,6 @@
 // Comprehensive Error Boundary System
 import { Component, ErrorInfo, ReactNode } from 'react'
+import { logger } from '../utils/logger'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -25,8 +26,20 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
-    
+    logger.error('ErrorBoundary caught an error:', error, errorInfo)
+
+    // Check if this is a chunk loading error and auto-reload
+    const isChunkError = error?.message?.includes('Failed to fetch dynamically imported module') ||
+                        error?.message?.includes('Loading chunk') ||
+                        error?.message?.includes('ChunkLoadError')
+
+    if (isChunkError && this.props.level === 'page') {
+      // Give user a moment to see the message, then reload
+      setTimeout(() => {
+        window.location.reload()
+      }, 2000)
+    }
+
     // Call custom error handler if provided
     if (this.props.onError) {
       this.props.onError(error, errorInfo)
@@ -48,14 +61,21 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const { level = 'component' } = this.props
     const { error } = this.state
 
+    // Check if this is a chunk loading error
+    const isChunkError = error?.message?.includes('Failed to fetch dynamically imported module') ||
+                        error?.message?.includes('Loading chunk') ||
+                        error?.message?.includes('ChunkLoadError')
+
     const errorConfig = {
       page: {
         containerClass: 'min-h-screen flex items-center justify-center bg-gray-50',
         cardClass: 'bg-white border border-red-200 rounded-lg p-8 m-4 max-w-md w-full shadow-lg',
         icon: 'Alert',
-        title: 'Application Error',
-        description: 'Something went wrong with the application. Please refresh the page.',
-        showDetails: true
+        title: isChunkError ? 'Update Available' : 'Application Error',
+        description: isChunkError
+          ? 'A new version is available. The page will reload automatically to get the latest version.'
+          : 'Something went wrong with the application. Please refresh the page.',
+        showDetails: !isChunkError
       },
       component: {
         containerClass: 'bg-red-50 border border-red-200 rounded-lg p-6 m-4',
@@ -137,15 +157,15 @@ export function SectionErrorBoundary({ children }: { children: ReactNode }) {
 }
 
 // Error boundary for async operations
-export function AsyncErrorBoundary({ 
-  children, 
-  fallback 
-}: { 
+export function AsyncErrorBoundary({
+  children,
+  fallback
+}: {
   children: ReactNode
-  fallback?: ReactNode 
+  fallback?: ReactNode
 }) {
   return (
-    <ErrorBoundary 
+    <ErrorBoundary
       level="component"
       fallback={fallback || (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 m-2">

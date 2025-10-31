@@ -537,12 +537,16 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
         if not supabase:
             raise HTTPException(status_code=503, detail="Supabase not configured")
 
-        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_method', analysis_type).in_('game_id', game_ids).execute()
+        move_analyses_response = await asyncio.to_thread(
+            lambda: supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_method', analysis_type).in_('game_id', game_ids).execute()
+        )
         if move_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in move_analyses_response.data)
 
         # Check game_analyses table - filter by analysis_type (stockfish/deep)
-        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_type', analysis_type).in_('game_id', game_ids).execute()
+        game_analyses_response = await asyncio.to_thread(
+            lambda: supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_type', analysis_type).in_('game_id', game_ids).execute()
+        )
         if game_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
 
@@ -625,7 +629,9 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
         if not supabase:
             raise HTTPException(status_code=503, detail="Supabase not configured")
 
-        games_list_response = supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
+        games_list_response = await asyncio.to_thread(
+            lambda: supabase.table('games').select('provider_game_id, played_at').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True).limit(fetch_limit).execute()
+        )
 
         if games_list_response.data:
             # Get provider_game_ids in order with their played_at dates
@@ -637,7 +643,9 @@ async def perform_batch_analysis(user_id: str, platform: str, analysis_type: str
             if not supabase:
                 raise HTTPException(status_code=503, detail="Supabase not configured")
 
-            pgn_response = supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+            pgn_response = await asyncio.to_thread(
+                lambda: supabase.table('games_pgn').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_game_ids).execute()
+            )
 
             # Re-order PGN data to match the games table order and add played_at info
             pgn_map = {g['provider_game_id']: g for g in (pgn_response.data or [])}
@@ -833,8 +841,6 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'positional_score': analysis.positional_score,
             'aggressive_score': analysis.aggressive_score,
             'patient_score': analysis.patient_score,
-            'novelty_score': analysis.novelty_score,
-            'staleness_score': analysis.staleness_score,
             'novelty_score': getattr(analysis, 'novelty_score', 0.0),
             'staleness_score': getattr(analysis, 'staleness_score', 0.0),
             'tactical_patterns': analysis.tactical_patterns,
@@ -848,10 +854,12 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
         }
 
         # Insert or update analysis in move_analyses table using service role
-        response = supabase_service.table('move_analyses').upsert(
-            data,
-            on_conflict='user_id,platform,game_id'
-        ).execute()
+        response = await asyncio.to_thread(
+            lambda: supabase_service.table('move_analyses').upsert(
+                data,
+                on_conflict='user_id,platform,game_id'
+            ).execute()
+        )
 
         if response.data:
             print(f"Successfully saved Stockfish analysis for game {analysis.game_id}")
@@ -930,8 +938,6 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
             'positional_score': analysis.positional_score,
             'aggressive_score': analysis.aggressive_score,
             'patient_score': analysis.patient_score,
-            'novelty_score': analysis.novelty_score,
-            'staleness_score': analysis.staleness_score,
             'novelty_score': getattr(analysis, 'novelty_score', 0.0),
             'staleness_score': getattr(analysis, 'staleness_score', 0.0),
             'tactical_patterns': analysis.tactical_patterns,
@@ -945,10 +951,12 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
         }
 
         # Insert or update analysis in game_analyses table using service role
-        response = supabase_service.table('game_analyses').upsert(
-            data,
-            on_conflict='user_id,platform,game_id'
-        ).execute()
+        response = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses').upsert(
+                data,
+                on_conflict='user_id,platform,game_id'
+            ).execute()
+        )
 
         if response.data:
             print(f"Successfully saved analysis for game {analysis.game_id}")
@@ -1046,11 +1054,11 @@ async def proxy_chess_com_user(username: str):
                 return response.json()
             else:
                 print(f"Chess.com API returned status {response.status_code}")
-                return {"error": f"User not found or API returned status {response.status_code}"}
+                return {"success": False, "message": f"User not found or API returned status {response.status_code}"}
 
     except Exception as e:
         print(f"Error proxying Chess.com user request: {e}")
-        return {"error": str(e)}
+        return {"success": False, "message": str(e)}
 
 @app.post("/analyze-games", response_model=AnalysisResponse, deprecated=True)
 async def analyze_games(
@@ -1269,22 +1277,26 @@ async def get_analysis_results(
         # Use unified view for consistent data access
         if analysis_type in ["stockfish", "deep"]:
             # Filter by analysis type in the unified view
-            response = supabase_service.table('unified_analyses').select('*').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).eq(
-                'analysis_type', analysis_type
-            ).order(
-                'analysis_date', desc=True
-            ).limit(limit).execute()
+            response = await asyncio.to_thread(
+                lambda: supabase_service.table('unified_analyses').select('*').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).eq(
+                    'analysis_type', analysis_type
+                ).order(
+                    'analysis_date', desc=True
+                ).limit(limit).execute()
+            )
         else:
             # Use stockfish analysis type as default
-            response = supabase.table('unified_analyses').select('*').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).eq(
-                'analysis_type', 'stockfish'
-            ).order(
-                'analysis_date', desc=True
-            ).limit(limit).execute()
+            response = await asyncio.to_thread(
+                lambda: supabase.table('unified_analyses').select('*').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).eq(
+                    'analysis_type', 'stockfish'
+                ).order(
+                    'analysis_date', desc=True
+                ).limit(limit).execute()
+            )
 
         if not response.data:
             return []
@@ -1328,17 +1340,21 @@ async def get_analysis_stats(
 
         # Use unified view for consistent data access
         if analysis_type in ["stockfish", "deep"]:
-            response = supabase_service.table('unified_analyses').select('*').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).eq(
-                'analysis_type', analysis_type
-            ).execute()
+            response = await asyncio.to_thread(
+                lambda: supabase_service.table('unified_analyses').select('*').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).eq(
+                    'analysis_type', analysis_type
+                ).execute()
+            )
         else:
-            response = supabase.table('unified_analyses').select('*').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).eq(
-                'analysis_type', 'stockfish'
-            ).execute()
+            response = await asyncio.to_thread(
+                lambda: supabase.table('unified_analyses').select('*').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).eq(
+                    'analysis_type', 'stockfish'
+                ).execute()
+            )
 
         if not response.data:
             return {

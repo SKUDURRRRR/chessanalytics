@@ -5,23 +5,51 @@ A single, comprehensive API that consolidates all analysis functionality.
 Replaces multiple redundant endpoints with a clean, unified interface.
 """
 
+# Load environment variables from .env.local in python/ directory
+from dotenv import load_dotenv
+import os
+
+load_dotenv('.env.local')  # Load .env.local from python/ directory
+load_dotenv()  # Also try .env as fallback
+
+# Debug: Check if Stripe key is loaded (without revealing it)
+stripe_key = os.getenv('STRIPE_SECRET_KEY')
+if stripe_key:
+    # Note: Logger is set up later in the file, but we need to check early
+    # We'll just do a silent check here and proper logging will happen later
+    pass
+else:
+    # Logger not available yet, but avoid printing sensitive info
+    pass
+
+# Check if stripe library is available
+try:
+    import stripe as stripe_lib
+    print(f"[OK] Stripe library imported successfully (version: {stripe_lib.VERSION if hasattr(stripe_lib, 'VERSION') else 'unknown'})")
+except ImportError as e:
+    print(f"[ERROR] Stripe library import failed: {e}")
+    print("   Run: pip install stripe>=7.0.0")
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator, model_validator
 from typing import List, Optional, Dict, Any, Annotated, Union, Tuple
 from collections import Counter
 from decimal import Decimal
 import re
 import uvicorn
 import asyncio
-import os
 import uuid
 from datetime import datetime, timezone
 import time
 from supabase import create_client, Client
 from jose import jwt as jose_jwt
+import logging
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Import our unified analysis engine
 from .analysis_engine import ChessAnalysisEngine, AnalysisConfig, AnalysisType, GameAnalysis
@@ -48,6 +76,9 @@ from .error_handlers import (
 
 # Import opening normalization utilities
 from .opening_utils import normalize_opening_name, get_opening_name_from_eco_code
+
+# Import resilient API client
+from .resilient_api_client import get_api_client as get_resilient_api_client
 
 # Load environment configuration
 from .config import get_config
@@ -83,15 +114,16 @@ else:
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # Authentication setup - Fail fast if JWT configuration is missing
-security = HTTPBearer()
+# Use auto_error=False to make authentication optional (won't raise 403 if token is missing)
+security = HTTPBearer(auto_error=False)
 
 # Critical security configuration - no defaults allowed
 JWT_SECRET = os.getenv("JWT_SECRET")
-if not JWT_SECRET:
+if not JWT_SECRET or len(JWT_SECRET) < 32:
     raise RuntimeError(
-        "CRITICAL SECURITY ERROR: JWT_SECRET environment variable is not set. "
+        "CRITICAL SECURITY ERROR: JWT_SECRET must be at least 32 characters. "
         "The application cannot start without proper JWT configuration. "
-        "Set JWT_SECRET to a secure random string (minimum 32 characters)."
+        "Generate with: openssl rand -hex 32"
     )
 
 # Optional JWT claim validation configuration
@@ -323,7 +355,7 @@ async def startup_event():
                 'Hash': 96
             }
         )
-        _engine_pool_instance.start_cleanup_task()
+        await _engine_pool_instance.start_cleanup_task()
         print(f"[STARTUP] ✅ Engine pool initialized: {_engine_pool_instance}")
     else:
         print("[STARTUP] ⚠️  Stockfish path not configured - engine pool disabled")
@@ -368,6 +400,13 @@ async def startup_event():
             print("[STARTUP] ✅ Analysis queue processor started")
     except ImportError:
         print("[STARTUP] ℹ️  Analysis queue not available")
+
+    # Verify Stripe configuration (without logging sensitive values)
+    stripe_key = os.getenv('STRIPE_SECRET_KEY')
+    if stripe_key:
+        logger.info("STRIPE_SECRET_KEY loaded")
+    else:
+        logger.warning("STRIPE_SECRET_KEY not found in environment")
 
     print("=" * 80)
     print("✅ Server startup complete!")
@@ -458,6 +497,8 @@ progress_tokens: Dict[str, str] = {}
 ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 
 # Rate limiting configuration
+# Note: These are burst protection limits (requests per minute)
+# Tier-based usage quotas (hourly/daily) are handled separately via usage_tracker for authenticated users
 ANALYSIS_RATE_LIMIT = int(os.getenv("ANALYSIS_RATE_LIMIT", "5"))  # requests per minute
 IMPORT_RATE_LIMIT = int(os.getenv("IMPORT_RATE_LIMIT", "3"))      # requests per minute
 
@@ -558,19 +599,37 @@ async def get_http_client():
 
 class UnifiedAnalysisRequest(BaseModel):
     """Unified request model for all analysis types."""
-    user_id: str = Field(..., description="User ID to analyze games for")
+    user_id: str = Field(..., min_length=1, max_length=100, description="User ID to analyze games for")
     platform: str = Field(..., description="Platform (lichess, chess.com, etc.)")
     analysis_type: str = Field("stockfish", description="Type of analysis: stockfish or deep")
-    limit: Optional[int] = Field(5, description="Maximum number of games to analyze")
-    depth: Optional[int] = Field(14, description="Analysis depth for Stockfish")
-    skill_level: Optional[int] = Field(20, description="Stockfish skill level (0-20)")
+    limit: Optional[int] = Field(5, ge=1, le=100, description="Maximum number of games to analyze")
+    depth: Optional[int] = Field(14, ge=1, le=30, description="Analysis depth for Stockfish")
+    skill_level: Optional[int] = Field(20, ge=0, le=20, description="Stockfish skill level (0-20)")
 
     # Optional parameters for different analysis types
-    pgn: Optional[str] = Field(None, description="PGN string for single game analysis")
-    fen: Optional[str] = Field(None, description="FEN string for position analysis")
-    move: Optional[str] = Field(None, description="Move in UCI format for move analysis")
-    game_id: Optional[str] = Field(None, description="Game ID for single game analysis")
-    provider_game_id: Optional[str] = Field(None, description="Provider game ID for single game analysis")
+    pgn: Optional[str] = Field(None, max_length=50000, description="PGN string for single game analysis")
+    fen: Optional[str] = Field(None, max_length=200, description="FEN string for position analysis")
+    move: Optional[str] = Field(None, max_length=10, description="Move in UCI format for move analysis")
+    game_id: Optional[str] = Field(None, max_length=100, description="Game ID for single game analysis")
+    provider_game_id: Optional[str] = Field(None, max_length=100, description="Provider game ID for single game analysis")
+
+    @validator('user_id')
+    def validate_user_id(cls, v):
+        """Validate user_id is not empty and contains only valid characters."""
+        if not v or not v.strip():
+            raise ValueError('user_id cannot be empty or whitespace')
+        # Only allow alphanumeric, underscore, hyphen, and certain special chars
+        if not all(c.isalnum() or c in '_-.' for c in v):
+            raise ValueError('user_id contains invalid characters')
+        return v.strip()
+
+    @validator('platform')
+    def validate_platform(cls, v):
+        """Validate platform is one of the supported values."""
+        valid_platforms = ['lichess', 'chess.com']
+        if v not in valid_platforms:
+            raise ValueError(f'platform must be one of: {", ".join(valid_platforms)}')
+        return v
 
 class UnifiedAnalysisResponse(BaseModel):
     """Unified response model for all analysis types."""
@@ -789,6 +848,52 @@ class DeepAnalysisData(BaseModel):
     is_fallback_data: bool = False  # Indicates if this is fallback/neutral data
     analysis_status: str = "complete"  # Status: "complete", "no_analyses", "insufficient_data"
 
+
+# ============================================================================
+# PAYMENT REQUEST/RESPONSE MODELS
+# ============================================================================
+
+class CreateCheckoutRequest(BaseModel):
+    """Request model for creating a Stripe checkout session."""
+    tier_id: Optional[str] = Field(None, min_length=1, max_length=50, description="Subscription tier ID (for subscriptions)")
+    credit_amount: Optional[int] = Field(None, ge=100, le=10000, description="Number of credits to purchase (for one-time payments)")
+    success_url: Optional[str] = Field(None, max_length=500, description="URL to redirect to after successful payment")
+    cancel_url: Optional[str] = Field(None, max_length=500, description="URL to redirect to if payment is cancelled")
+
+    @model_validator(mode='after')
+    def validate_mutually_exclusive(self) -> 'CreateCheckoutRequest':
+        """Validate mutually exclusive fields after model initialization."""
+        if not self.tier_id and not self.credit_amount:
+            raise ValueError('Either tier_id or credit_amount must be provided')
+
+        if self.tier_id and self.credit_amount:
+            raise ValueError('Cannot specify both tier_id and credit_amount')
+
+        return self
+
+
+class VerifySessionRequest(BaseModel):
+    """Request model for verifying a Stripe checkout session."""
+    session_id: str = Field(..., min_length=1, max_length=200, description="Stripe checkout session ID to verify")
+
+
+class UpdateProfileRequest(BaseModel):
+    """Request model for updating user profile."""
+    # Currently no fields, but keeping for future extensions
+    pass
+
+
+class CheckUsageRequest(BaseModel):
+    """Request model for checking user usage."""
+    user_id: str = Field(..., min_length=1, max_length=100, description="User ID to check usage for")
+
+
+class LinkAnonymousDataRequest(BaseModel):
+    """Request model for linking anonymous data to authenticated user."""
+    auth_user_id: str = Field(..., min_length=1, max_length=100, description="Authenticated user ID")
+    platform: str = Field(..., description="Platform (lichess, chess.com)")
+    anonymous_user_id: str = Field(..., min_length=1, max_length=100, description="Anonymous user ID to link")
+
 # ============================================================================
 # UNIFIED API ENDPOINTS
 # ============================================================================
@@ -1004,7 +1109,7 @@ async def unified_analyze(
     background_tasks: BackgroundTasks,
     # Optional parallel analysis flag
     use_parallel: bool = True,
-    _auth: Optional[bool] = get_optional_auth()
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
     Unified analysis endpoint that handles all analysis types.
@@ -1016,6 +1121,27 @@ async def unified_analyze(
     - /analyze-game (single game analysis)
     """
     try:
+        # Check usage limits for authenticated users
+        auth_user_id = None
+        try:
+            if credentials:
+                token_data = await verify_token(credentials)
+                auth_user_id = token_data.get('sub')
+
+                # Check analysis limit
+                if auth_user_id and usage_tracker:
+                    can_proceed, stats = await usage_tracker.check_analysis_limit(auth_user_id)
+                    if not can_proceed:
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"Analysis limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                        )
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions
+        except Exception as e:
+            # Log but don't fail - allow anonymous/failed auth to proceed
+            print(f"Auth check failed (non-critical): {e}")
+
         # Enforce rate limit per user
         user_key = f"analysis:{request.user_id}:{request.platform}"
         _enforce_rate_limit(user_key, ANALYSIS_RATE_LIMIT)
@@ -1037,19 +1163,35 @@ async def unified_analyze(
         # Determine analysis type based on provided parameters
         if request.pgn:
             # Single game analysis with PGN
-            return await _handle_single_game_analysis(request)
+            result = await _handle_single_game_analysis(request)
+            # Increment usage for authenticated users
+            if auth_user_id and usage_tracker:
+                await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            return result
         elif request.game_id or request.provider_game_id:
             # Single game analysis by game_id - fetch PGN from database
-            return await _handle_single_game_by_id(request)
+            result = await _handle_single_game_by_id(request)
+            # Increment usage for authenticated users
+            if auth_user_id and usage_tracker:
+                await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            return result
         elif request.fen:
             if request.move:
                 # Move analysis
-                return await _handle_move_analysis(request)
+                result = await _handle_move_analysis(request)
+                # Increment usage for authenticated users
+                if auth_user_id and usage_tracker:
+                    await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+                return result
             else:
                 # Position analysis
-                return await _handle_position_analysis(request)
+                result = await _handle_position_analysis(request)
+                # Note: Position analysis is typically for exploration, not counted against limits
+                return result
         else:
             # Batch analysis - use the unified handler
+            # NOTE: Usage tracking for batch analysis is handled in the queue completion handler
+            # since batch analysis is async and the count is determined when it completes
             return await _handle_batch_analysis(request, background_tasks, use_parallel)
 
     except ValidationError as e:
@@ -1081,11 +1223,13 @@ async def get_analysis_results(
 
         # Query move_analyses table directly for Stockfish analysis
         if supabase_service:
-            response = supabase_service.table('move_analyses').select('*').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).order(
-                'analysis_date', desc=True
-            ).limit(limit).execute()
+            response = await asyncio.to_thread(
+                lambda: supabase_service.table('move_analyses').select('*').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).order(
+                    'analysis_date', desc=True
+                ).limit(limit).execute()
+            )
         else:
             response = type('MockResponse', (), {'data': []})()
 
@@ -1135,9 +1279,11 @@ async def get_analysis_stats(
         # Stats are representative with 100 analyses and this is 5-10x faster!
         db_client = supabase_service or supabase
         if db_client:
-            response = db_client.table('unified_analyses').select('*').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+            response = await asyncio.to_thread(
+                lambda: db_client.table('unified_analyses').select('*').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+            )
 
             if os.getenv("DEBUG", "false").lower() == "true":
                 print(f"[DEBUG] Stats query from unified_analyses: {len(response.data or [])} records (limited to 100 for performance)")
@@ -1193,11 +1339,13 @@ async def get_game_analyses(
         # Query unified_analyses view which combines game_analyses and move_analyses
         # This view properly handles data priority and eliminates duplicates
         db_client = supabase_service or supabase
-        response = db_client.table("unified_analyses").select("*").eq(
-            "user_id", canonical_user_id
-        ).eq("platform", platform).order("analysis_date", desc=True).range(
-            offset, offset + limit - 1
-        ).execute()
+        response = await asyncio.to_thread(
+            lambda: db_client.table("unified_analyses").select("*").eq(
+                "user_id", canonical_user_id
+            ).eq("platform", platform).order("analysis_date", desc=True).range(
+                offset, offset + limit - 1
+            ).execute()
+        )
 
         if os.getenv("DEBUG", "false").lower() == "true":
             print(f"[DEBUG] Query response from unified_analyses: {len(response.data) if response.data else 0} records found")
@@ -1274,9 +1422,11 @@ async def get_game_analyses_count(
 
         # Get count from unified_analyses view which handles deduplication
         db_client = supabase_service or supabase
-        response = db_client.table("unified_analyses").select("*", count="exact").eq(
-            "user_id", canonical_user_id
-        ).eq("platform", platform).execute()
+        response = await asyncio.to_thread(
+            lambda: db_client.table("unified_analyses").select("*", count="exact").eq(
+                "user_id", canonical_user_id
+            ).eq("platform", platform).execute()
+        )
 
         total_count = response.count if hasattr(response, 'count') and response.count is not None else 0
 
@@ -1446,11 +1596,13 @@ async def get_elo_stats(
             raise HTTPException(status_code=503, detail="Database not configured for ELO stats")
 
         # Optimized query: get highest ELO in single query
-        highest_response = db_client.table('games').select(
-            'my_rating, time_control, provider_game_id, played_at'
-        ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-            'my_rating', 'null'
-        ).order('my_rating', desc=True).limit(1).execute()
+        highest_response = await asyncio.to_thread(
+            lambda: db_client.table('games').select(
+                'my_rating, time_control, provider_game_id, played_at'
+            ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+                'my_rating', 'null'
+            ).order('my_rating', desc=True).limit(1).execute()
+        )
 
         if not highest_response.data:
             return {
@@ -1464,9 +1616,11 @@ async def get_elo_stats(
         highest_game = highest_response.data[0]
 
         # Get total games count
-        count_response = db_client.table('games').select('id', count='exact', head=True).eq(
-            'user_id', canonical_user_id
-        ).eq('platform', platform).not_.is_('my_rating', 'null').execute()
+        count_response = await asyncio.to_thread(
+            lambda: db_client.table('games').select('id', count='exact', head=True).eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).not_.is_('my_rating', 'null').execute()
+        )
 
         total_games = getattr(count_response, 'count', 0) or 0
 
@@ -1844,7 +1998,9 @@ async def get_comprehensive_analytics(
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Determine total available games (for UI pagination context)
-        count_response = db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()
+        count_response = await asyncio.to_thread(
+            lambda: db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()
+        )
         total_games_count = getattr(count_response, 'count', 0) or 0
 
         # Base games query constrained by requested limit
@@ -1857,10 +2013,14 @@ async def get_comprehensive_analytics(
 
         # Ensure we fetch at least the requested amount or all available games
         if effective_limit > 0:
-            games_response = games_query.limit(effective_limit).execute()
+            games_response = await asyncio.to_thread(
+                lambda: games_query.limit(effective_limit).execute()
+            )
         else:
             # Fallback: use the requested limit if we couldn't determine total
-            games_response = games_query.limit(limit).execute()
+            games_response = await asyncio.to_thread(
+                lambda: games_query.limit(limit).execute()
+            )
 
         games = games_response.data or []
 
@@ -1890,16 +2050,22 @@ async def get_comprehensive_analytics(
 
         if provider_ids:
             # game_analyses
-            analyses_response = db_client.table('game_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+            analyses_response = await asyncio.to_thread(
+                lambda: db_client.table('game_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+            )
             for row in analyses_response.data or []:
                 analyses_map[row['game_id']] = row
 
-            move_response = db_client.table('move_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+            move_response = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+            )
             for row in move_response.data or []:
                 move_analyses_map[row['game_id']] = row
 
         # Quick map of PGN terminations
-        pgn_response = db_client.table('games_pgn').select('provider_game_id, pgn').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_ids).execute()
+        pgn_response = await asyncio.to_thread(
+            lambda: db_client.table('games_pgn').select('provider_game_id, pgn').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_ids).execute()
+        )
         pgn_map = {row['provider_game_id']: row.get('pgn') for row in (pgn_response.data or [])}
 
         # Distribution counters
@@ -2274,13 +2440,15 @@ async def get_elo_history(
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Fetch recent games with ELO data
-        response = db_client.table('games').select(
-            'time_control, my_rating, played_at, provider_game_id'
-        ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-            'my_rating', 'null'
-        ).not_.is_('time_control', 'null').order(
-            'played_at', desc=True
-        ).limit(limit).execute()
+        response = await asyncio.to_thread(
+            lambda: db_client.table('games').select(
+                'time_control, my_rating, played_at, provider_game_id'
+            ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+                'my_rating', 'null'
+            ).not_.is_('time_control', 'null').order(
+                'played_at', desc=True
+            ).limit(limit).execute()
+        )
 
         if not response.data:
             return []
@@ -2328,11 +2496,13 @@ async def get_player_stats(
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get highest ELO game with additional details
-        response = db_client.table('games').select(
-            'my_rating, time_control, provider_game_id, played_at, opponent_rating, color'
-        ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-            'my_rating', 'null'
-        ).order('my_rating', desc=True).limit(1).execute()
+        response = await asyncio.to_thread(
+            lambda: db_client.table('games').select(
+                'my_rating, time_control, provider_game_id, played_at, opponent_rating, color'
+            ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+                'my_rating', 'null'
+            ).order('my_rating', desc=True).limit(1).execute()
+        )
 
         if not response.data or len(response.data) == 0:
             return {
@@ -2606,10 +2776,9 @@ async def get_deep_analysis(
             print(f"[INFO] Building deep analysis from {len(analyses)} analysis records")
             result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile)
 
-        # Cache the result before returning
+        # Cache the result before returning (15 minute TTL via CACHE_TTL_SECONDS)
         _set_in_cache(cache_key, result)
 
-        # TODO: Cache the result for 15 minutes (implement caching functions)
         return result
     except HTTPException:
         raise
@@ -5535,7 +5704,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
 # PROXY ENDPOINTS (for external APIs)
 # ============================================================================
 @app.post("/api/v1/import-games-smart", response_model=BulkGameImportResponse)
-async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = get_optional_auth()):
+async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Smart import endpoint - imports only the most recent 100 games"""
     try:
         user_id = request.get('user_id')
@@ -5543,6 +5712,27 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
 
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
+
+        # Check usage limits for authenticated users
+        auth_user_id = None
+        try:
+            if credentials:
+                token_data = await verify_token(credentials)
+                auth_user_id = token_data.get('sub')
+
+                # Check import limit
+                if auth_user_id and usage_tracker:
+                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
+                    if not can_proceed:
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                        )
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions
+        except Exception as e:
+            # Log but don't fail - allow anonymous/failed auth to proceed
+            print(f"Auth check failed (non-critical): {e}")
 
         user_key = f"import:{user_id}:{platform}:smart"
         _enforce_rate_limit(user_key, IMPORT_RATE_LIMIT)
@@ -5561,9 +5751,11 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
         page_size = 1000
 
         while True:
-            existing_games_response = db_client.table('games').select('provider_game_id').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).range(offset, offset + page_size - 1).execute()
+            existing_games_response = await asyncio.to_thread(
+                lambda: db_client.table('games').select('provider_game_id').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).range(offset, offset + page_size - 1).execute()
+            )
 
             if not existing_games_response.data or len(existing_games_response.data) == 0:
                 break
@@ -5739,7 +5931,9 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
                     'current_rating': highest_rating,
                     'updated_at': datetime.utcnow().isoformat()
                 }
-                db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
+                await asyncio.to_thread(
+                    lambda: db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
+                )
                 print(f"Updated profile for {user_id} with highest rating: {highest_rating}")
             except Exception as e:
                 print(f"Error updating profile with highest rating: {e}")
@@ -5756,6 +5950,10 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
             if result.imported_games > 0:
                 result.message = f"Imported {result.imported_games} new games"
                 print(f"[Smart import] Success: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
+
+                # Increment usage tracking for authenticated users
+                if auth_user_id and usage_tracker:
+                    await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
             else:
                 result.message = "No new games found. You already have all recent games imported."
                 print(f"[Smart import] No new games: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
@@ -5767,7 +5965,7 @@ async def import_games_smart(request: Dict[str, Any], _auth: Optional[bool] = ge
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/import-games", response_model=BulkGameImportResponse)
-async def import_games_simple(request: Dict[str, Any], _auth: Optional[bool] = get_optional_auth()):
+async def import_games_simple(request: Dict[str, Any], credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Import games endpoint for frontend - handles PGN parsing and move counting"""
     try:
         user_id = request.get('user_id')
@@ -5776,6 +5974,27 @@ async def import_games_simple(request: Dict[str, Any], _auth: Optional[bool] = g
 
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
+
+        # Check usage limits for authenticated users
+        auth_user_id = None
+        try:
+            if credentials:
+                token_data = await verify_token(credentials)
+                auth_user_id = token_data.get('sub')
+
+                # Check import limit
+                if auth_user_id and usage_tracker:
+                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
+                    if not can_proceed:
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                        )
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions
+        except Exception as e:
+            # Log but don't fail - allow anonymous/failed auth to proceed
+            print(f"Auth check failed (non-critical): {e}")
 
         rate_key = f"import:{user_id}:{platform}:simple"
         _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
@@ -5845,13 +6064,20 @@ async def import_games_simple(request: Dict[str, Any], _auth: Optional[bool] = g
                         'current_rating': highest_rating,
                         'updated_at': datetime.utcnow().isoformat()
                     }
-                    db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
+                    await asyncio.to_thread(
+                        lambda: db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
+                    )
                     print(f"Updated profile for {user_id} with highest rating: {highest_rating}")
             except Exception as e:
                 print(f"Error updating profile with highest rating: {e}")
 
         # Process the import
         result = await import_games(bulk_request)
+
+        # Increment usage tracking for authenticated users
+        if auth_user_id and usage_tracker and hasattr(result, 'imported_games') and result.imported_games > 0:
+            await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
+
         return result
 
     except Exception as e:
@@ -5953,10 +6179,12 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
             print(f'[import_games] Upserting {len(games_rows)} game rows')
             print(f'[import_games] Sample game row: user_id={games_rows[0]["user_id"]}, platform={games_rows[0]["platform"]}, provider_game_id={games_rows[0]["provider_game_id"]}, result={games_rows[0]["result"]}')
 
-            games_response = supabase_service.table('games').upsert(
-                games_rows,
-                on_conflict='user_id,platform,provider_game_id'
-            ).execute()
+            games_response = await asyncio.to_thread(
+                lambda: supabase_service.table('games').upsert(
+                    games_rows,
+                    on_conflict='user_id,platform,provider_game_id'
+                ).execute()
+            )
 
             print('[import_games] games upsert response: count=', getattr(games_response, 'count', None))
             print(f'[import_games] games upsert response data length: {len(games_response.data) if games_response.data else 0}')
@@ -5977,9 +6205,11 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
             # Double-check: Query the database to verify games were actually inserted
             # This is necessary because upsert can return success even if RLS blocks the insert
             print(f'[import_games] Verifying games were actually inserted...')
-            verification_query = supabase_service.table('games').select('provider_game_id').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', payload.platform).in_('provider_game_id', [g['provider_game_id'] for g in games_rows[:3]]).execute()
+            verification_query = await asyncio.to_thread(
+                lambda: supabase_service.table('games').select('provider_game_id').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', payload.platform).in_('provider_game_id', [g['provider_game_id'] for g in games_rows[:3]]).execute()
+            )
 
             if not verification_query.data or len(verification_query.data) == 0:
                 error_msg = "games upsert reported success but games not found in database - likely RLS blocking insert"
@@ -6018,10 +6248,12 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
             if pgn_rows:
                 print(f'[import_games] Upserting {len(pgn_rows)} PGN rows')
                 print(f'[import_games] Sample PGN row (without pgn text): user_id={pgn_rows[0]["user_id"]}, platform={pgn_rows[0]["platform"]}, provider_game_id={pgn_rows[0]["provider_game_id"]}')
-                pgn_response = supabase_service.table('games_pgn').upsert(
-                    pgn_rows,
-                    on_conflict='user_id,platform,provider_game_id'
-                ).execute()
+                pgn_response = await asyncio.to_thread(
+                    lambda: supabase_service.table('games_pgn').upsert(
+                        pgn_rows,
+                        on_conflict='user_id,platform,provider_game_id'
+                    ).execute()
+                )
                 print('[import_games] pgn upsert response: count=', getattr(pgn_response, 'count', None))
                 if pgn_response.data:
                     print(f'[import_games] pgn upsert successful, {len(pgn_response.data)} rows affected')
@@ -6035,7 +6267,9 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
     total_games = 0
     try:
         total_response = supabase_service.table('games').select('id', count='exact', head=True)
-        total_response = total_response.eq('user_id', canonical_user_id).eq('platform', payload.platform).execute()
+        total_response = await asyncio.to_thread(
+            lambda: total_response.eq('user_id', canonical_user_id).eq('platform', payload.platform).execute()
+        )
         total_games = getattr(total_response, 'count', None) or 0
         profile_payload = {
             "user_id": canonical_user_id,
@@ -6044,10 +6278,12 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
             "total_games": total_games,
             "last_accessed": now_iso,
         }
-        profile_response = supabase_service.table('user_profiles').upsert(
-            profile_payload,
-            on_conflict='user_id,platform'
-        ).execute()
+        profile_response = await asyncio.to_thread(
+            lambda: supabase_service.table('user_profiles').upsert(
+                profile_payload,
+                on_conflict='user_id,platform'
+            ).execute()
+        )
         print('[import_games] profile upsert response:', getattr(profile_response, 'data', None))
     except Exception as exc:
         errors.append(f"profile update failed: {exc}")
@@ -6622,7 +6858,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
 
 
 @app.get("/api/v1/import-progress/{user_id}/{platform}")
-async def get_import_progress(user_id: str, platform: str):
+async def get_import_progress_status(user_id: str, platform: str):
     """Get progress of ongoing import"""
     canonical_user_id = _canonical_user_id(user_id, platform)
     key = f"{canonical_user_id}_{platform.lower()}"
@@ -6643,14 +6879,18 @@ async def get_import_status(user_id: str, platform: str):
         canonical_user_id = _canonical_user_id(user_id, platform)
 
         # Get oldest game
-        oldest_game_query = supabase_service.table('games').select('played_at').eq(
-            'user_id', canonical_user_id
-        ).eq('platform', platform).order('played_at', desc=False).limit(1).execute()
+        oldest_game_query = await asyncio.to_thread(
+            lambda: supabase_service.table('games').select('played_at').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).order('played_at', desc=False).limit(1).execute()
+        )
 
         # Get total game count
-        total_games_query = supabase_service.table('games').select('id', count='exact', head=True).eq(
-            'user_id', canonical_user_id
-        ).eq('platform', platform).execute()
+        total_games_query = await asyncio.to_thread(
+            lambda: supabase_service.table('games').select('id', count='exact', head=True).eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).execute()
+        )
 
         oldest_game = oldest_game_query.data[0]['played_at'] if oldest_game_query.data else None
         total_games = getattr(total_games_query, 'count', 0)
@@ -6702,18 +6942,22 @@ async def debug_db_state(user_id: str, platform: str):
         canonical_user_id = user_id.strip().lower()
 
         # Get the most recent game we have in the database
-        existing_games_response = supabase.table('games').select('provider_game_id, played_at').eq(
-            'user_id', canonical_user_id
-        ).eq('platform', platform).order('played_at', desc=True).limit(1).execute()
+        existing_games_response = await asyncio.to_thread(
+            lambda: supabase.table('games').select('provider_game_id, played_at').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).order('played_at', desc=True).limit(1).execute()
+        )
 
         existing_games = existing_games_response.data or []
         most_recent_game_id = existing_games[0].get('provider_game_id') if existing_games else None
         most_recent_played_at = existing_games[0].get('played_at') if existing_games else None
 
         # Get total count
-        count_response = supabase.table('games').select('id', count='exact').eq(
-            'user_id', canonical_user_id
-        ).eq('platform', platform).execute()
+        count_response = await asyncio.to_thread(
+            lambda: supabase.table('games').select('id', count='exact').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).execute()
+        )
 
         return {
             "user_id": canonical_user_id,
@@ -6758,10 +7002,18 @@ async def proxy_chess_com_user(username: str):
 async def validate_user(request: dict):
     """Validate that a user exists on the specified platform.
 
+    Now uses resilient API client with:
+    - Connection pooling for better performance
+    - Rate limiting to prevent API overload
+    - Response caching to reduce redundant requests
+    - Retry logic with exponential backoff
+    - Request deduplication for concurrent requests
+    - Circuit breaker to fail fast when APIs are down
+
     Returns proper HTTP status codes:
     - 200: User validated successfully (check 'exists' field in response)
     - 400: Invalid request parameters
-    - 503: External API (Lichess/Chess.com) error
+    - 503: External API (Lichess/Chess.com) error or circuit breaker open
     - 504: External API timeout
     - 500: Unexpected server error
     """
@@ -6781,80 +7033,45 @@ async def validate_user(request: dict):
                 detail="Platform must be 'lichess' or 'chess.com'"
             )
 
-        # Validate user exists on the platform
-        if platform == "lichess":
-            # Check Lichess user exists
-            import aiohttp
-            try:
-                async with aiohttp.ClientSession() as session:
-                    url = f"https://lichess.org/api/user/{user_id}"
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                        if response.status == 200:
-                            return {"exists": True, "message": "User found on Lichess"}
-                        elif response.status == 404:
-                            return {
-                                "exists": False,
-                                "message": f"User '{user_id}' not found on Lichess"
-                            }
-                        elif response.status == 429:
-                            raise HTTPException(
-                                status_code=503,
-                                detail="Lichess API rate limit exceeded. Please try again in a moment."
-                            )
-                        else:
-                            raise HTTPException(
-                                status_code=503,
-                                detail=f"Lichess API returned status {response.status}"
-                            )
-            except asyncio.TimeoutError:
-                raise HTTPException(
-                    status_code=504,
-                    detail="Lichess API timeout. Please try again."
-                )
-            except aiohttp.ClientError as e:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Cannot connect to Lichess: {str(e)}"
-                )
-        else:  # chess.com
-            # Check Chess.com user exists
-            import httpx
-            headers = {
-                'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
-            }
-            try:
-                async with httpx.AsyncClient() as client:
-                    canonical_username = user_id.strip().lower()
-                    url = f"https://api.chess.com/pub/player/{canonical_username}"
-                    response = await client.get(url, headers=headers, timeout=10.0)
+        # Get resilient API client
+        api_client = get_resilient_api_client()
 
-                    if response.status_code == 200:
-                        return {"exists": True, "message": "User found on Chess.com"}
-                    elif response.status_code == 404:
-                        return {
-                            "exists": False,
-                            "message": f"User '{user_id}' not found on Chess.com"
-                        }
-                    elif response.status_code == 429:
-                        raise HTTPException(
-                            status_code=503,
-                            detail="Chess.com API rate limit exceeded. Please try again in a moment."
-                        )
-                    else:
-                        raise HTTPException(
-                            status_code=503,
-                            detail=f"Chess.com API returned status {response.status_code}"
-                        )
-            except httpx.TimeoutException:
-                raise HTTPException(
-                    status_code=504,
-                    detail="Chess.com API timeout. Please try again."
-                )
-            except httpx.RequestError as e:
+        # Validate user using resilient client
+        try:
+            if platform == "lichess":
+                exists, message = await api_client.validate_lichess_user(user_id)
+            else:  # chess.com
+                exists, message = await api_client.validate_chesscom_user(user_id)
+
+            return {"exists": exists, "message": message}
+
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail=f"{platform.title()} API timeout. Please try again."
+            )
+        except Exception as e:
+            error_msg = str(e)
+
+            # Check if circuit breaker is open
+            if "Circuit breaker" in error_msg and "unavailable" in error_msg:
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Cannot connect to Chess.com: {str(e)}"
+                    detail=f"{platform.title()} is temporarily unavailable. Please try again in a moment."
                 )
+
+            # Check for rate limit
+            if "rate limit" in error_msg.lower():
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"{platform.title()} API rate limit exceeded. Please try again in a moment."
+                )
+
+            # Generic error
+            raise HTTPException(
+                status_code=503,
+                detail=f"Cannot connect to {platform.title()}: {error_msg}"
+            )
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
@@ -6867,6 +7084,23 @@ async def validate_user(request: dict):
             status_code=500,
             detail=f"Server error: {str(e)}"
         )
+
+@app.get("/api/v1/api-client-stats")
+async def get_api_client_stats():
+    """Get statistics about the resilient API client for monitoring."""
+    try:
+        api_client = get_resilient_api_client()
+        stats = api_client.get_stats()
+        return {
+            "success": True,
+            "stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 @app.post("/api/v1/check-user-exists")
 async def check_user_exists(request: dict):
@@ -6896,7 +7130,9 @@ async def check_user_exists(request: dict):
 
         supabase: Client = create_client(supabase_url, supabase_key)
 
-        result = supabase.table("user_profiles").select("user_id").eq("user_id", canonical_user_id).eq("platform", platform).execute()
+        result = await asyncio.to_thread(
+            lambda: supabase.table("user_profiles").select("user_id").eq("user_id", canonical_user_id).eq("platform", platform).execute()
+        )
 
         return {"exists": len(result.data) > 0}
 
@@ -6926,18 +7162,22 @@ async def get_or_create_profile(request: dict):
             raise HTTPException(status_code=500, detail="Database service not available")
 
         # Try to get existing profile
-        result = supabase_service.table("user_profiles").select("*").eq(
-            "user_id", canonical_user_id
-        ).eq("platform", platform).maybe_single().execute()
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table("user_profiles").select("*").eq(
+                "user_id", canonical_user_id
+            ).eq("platform", platform).maybe_single().execute()
+        )
 
         if DEBUG:
             print(f"[get_or_create_profile] Query result: has_result={result is not None}, has_data={bool(result.data if result else False)}")
 
         # If profile exists, update last_accessed and return it
         if result and result.data:
-            updated = supabase_service.table("user_profiles").update({
-                "last_accessed": datetime.utcnow().isoformat()
-            }).eq("user_id", canonical_user_id).eq("platform", platform).execute()
+            updated = await asyncio.to_thread(
+                lambda: supabase_service.table("user_profiles").update({
+                    "last_accessed": datetime.utcnow().isoformat()
+                }).eq("user_id", canonical_user_id).eq("platform", platform).execute()
+            )
 
             # Return the updated profile or the original if update failed
             if updated and updated.data and len(updated.data) > 0:
@@ -6955,7 +7195,9 @@ async def get_or_create_profile(request: dict):
             "last_accessed": datetime.utcnow().isoformat()
         }
 
-        create_result = supabase_service.table("user_profiles").insert(profile_data).execute()
+        create_result = await asyncio.to_thread(
+            lambda: supabase_service.table("user_profiles").insert(profile_data).execute()
+        )
 
         if DEBUG:
             print(f"[get_or_create_profile] Create result: has_result={create_result is not None}, has_data={bool(create_result.data if create_result else False)}")
@@ -7136,18 +7378,22 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
 
         # First, let's see what's actually in the database for this user
         try:
-            all_games = db_client.table('games_pgn').select('provider_game_id').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', request.platform).limit(5).execute()
+            all_games = await asyncio.to_thread(
+                lambda: db_client.table('games_pgn').select('provider_game_id').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', request.platform).limit(5).execute()
+            )
             print(f"[SINGLE GAME ANALYSIS] Sample games for this user: {all_games.data if all_games else 'None'}")
         except Exception as debug_error:
             if os.getenv("DEBUG", "false").lower() == "true":
                 print(f"[SINGLE GAME ANALYSIS] Debug query failed: {debug_error}")
 
         try:
-            game_response = db_client.table('games_pgn').select('pgn, provider_game_id').eq(
-                'provider_game_id', game_id
-            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            game_response = await asyncio.to_thread(
+                lambda: db_client.table('games_pgn').select('pgn, provider_game_id').eq(
+                    'provider_game_id', game_id
+                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            )
             print(f"[SINGLE GAME ANALYSIS] Query result: {game_response}")
             print(f"[SINGLE GAME ANALYSIS] Has data: {game_response is not None and hasattr(game_response, 'data')}")
             if game_response and hasattr(game_response, 'data'):
@@ -7183,13 +7429,15 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             # Save the PGN to database for future use
             try:
                 from datetime import datetime
-                db_client.table('games_pgn').upsert({
-                    'user_id': canonical_user_id,
-                    'platform': request.platform,
-                    'provider_game_id': game_id,
-                    'pgn': pgn_from_platform,
-                    'created_at': datetime.utcnow().isoformat()
-                }, on_conflict='user_id,platform,provider_game_id').execute()
+                await asyncio.to_thread(
+                    lambda: db_client.table('games_pgn').upsert({
+                        'user_id': canonical_user_id,
+                        'platform': request.platform,
+                        'provider_game_id': game_id,
+                        'pgn': pgn_from_platform,
+                        'created_at': datetime.utcnow().isoformat()
+                    }, on_conflict='user_id,platform,provider_game_id').execute()
+                )
                 print(f"[SINGLE GAME ANALYSIS] OK Saved PGN to database")
             except Exception as save_error:
                 print(f"[SINGLE GAME ANALYSIS] WARNING Warning: Failed to save PGN to database: {save_error}")
@@ -7211,9 +7459,11 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         print(f"[SINGLE GAME ANALYSIS] Checking if game exists in games table: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
         games_check = None
         try:
-            games_check = db_client.table('games').select('id').eq(
-                'provider_game_id', game_id
-            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            games_check = await asyncio.to_thread(
+                lambda: db_client.table('games').select('id').eq(
+                    'provider_game_id', game_id
+                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+            )
             print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data if (games_check and hasattr(games_check, 'data')) else 'None'}")
         except Exception as check_error:
             print(f"[SINGLE GAME ANALYSIS] ERROR Error checking games table: {check_error}")
@@ -7288,10 +7538,12 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
 
                 try:
                     print(f"[SINGLE GAME ANALYSIS] Creating game record with canonical user_id: {canonical_user_id}")
-                    games_response = db_client.table('games').upsert(
-                        game_record,
-                        on_conflict='user_id,platform,provider_game_id'
-                    ).execute()
+                    games_response = await asyncio.to_thread(
+                        lambda: db_client.table('games').upsert(
+                            game_record,
+                            on_conflict='user_id,platform,provider_game_id'
+                        ).execute()
+                    )
                     print(f"[SINGLE GAME ANALYSIS] ✅ Created game record: {game_id}")
                     print(f"[SINGLE GAME ANALYSIS] Game record: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
                 except Exception as e:
@@ -7338,9 +7590,11 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             # Validate foreign key constraint before saving
             print(f"[SINGLE GAME ANALYSIS] Validating foreign key constraint before saving...")
             try:
-                fk_validation = db_client.table('games').select('id').eq(
-                    'provider_game_id', analysis_game_id
-                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                fk_validation = await asyncio.to_thread(
+                    lambda: db_client.table('games').select('id').eq(
+                        'provider_game_id', analysis_game_id
+                    ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                )
             except Exception as fk_error:
                 print(f"[SINGLE GAME ANALYSIS] ERROR Error during FK validation: {fk_error}")
                 fk_validation = None
@@ -7415,18 +7669,22 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         }
 
                         # Force insert the game record
-                        games_response = db_client.table('games').upsert(
-                            game_record,
-                            on_conflict='user_id,platform,provider_game_id'
-                        ).execute()
+                        games_response = await asyncio.to_thread(
+                            lambda: db_client.table('games').upsert(
+                                game_record,
+                                on_conflict='user_id,platform,provider_game_id'
+                            ).execute()
+                        )
 
                         if games_response.data:
                             print(f"[SINGLE GAME ANALYSIS] SUCCESS Successfully created/updated game record: {analysis_game_id}")
 
                             # Re-validate foreign key constraint
-                            fk_validation = db_client.table('games').select('id').eq(
-                                'provider_game_id', analysis_game_id
-                            ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                            fk_validation = await asyncio.to_thread(
+                                lambda: db_client.table('games').select('id').eq(
+                                    'provider_game_id', analysis_game_id
+                                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                            )
 
                             if fk_validation and hasattr(fk_validation, 'data') and fk_validation.data:
                                 print(f"[SINGLE GAME ANALYSIS] SUCCESS Foreign key validation passed after creating game record")
@@ -7706,12 +7964,16 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
 
     try:
         # Check move_analyses table - filter by analysis_method (stockfish/deep)
-        move_analyses_response = supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_method', analysis_type).in_('game_id', game_ids).execute()
+        move_analyses_response = await asyncio.to_thread(
+            lambda: supabase.table('move_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_method', analysis_type).in_('game_id', game_ids).execute()
+        )
         if move_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in move_analyses_response.data)
 
         # Check game_analyses table - filter by analysis_type (stockfish/deep)
-        game_analyses_response = supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_type', analysis_type).in_('game_id', game_ids).execute()
+        game_analyses_response = await asyncio.to_thread(
+            lambda: supabase.table('game_analyses').select('game_id').eq('user_id', user_id).eq('platform', platform).eq('analysis_type', analysis_type).in_('game_id', game_ids).execute()
+        )
         if game_analyses_response.data:
             analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
 
@@ -8205,89 +8467,130 @@ def _get_mock_analysis_results() -> List[GameAnalysisSummary]:
 # ============================================================================
 
 @app.post("/api/v1/auth/check-usage")
-async def check_usage(request: Dict[str, Any]):
+async def check_usage(
+    request: CheckUsageRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
     """
     Check user's current usage limits and stats.
     Returns usage information for import and analysis limits.
+    Requires authentication to prevent unauthorized usage checks.
     """
     if not usage_tracker:
         raise HTTPException(status_code=503, detail="Usage tracking not configured")
 
-    user_id = request.get('user_id')
-
-    if not user_id:
-        raise HTTPException(status_code=400, detail="user_id is required")
+    # Verify the user is checking their own usage
+    auth_user_id = token_data.get('sub')
+    if not auth_user_id or auth_user_id != request.user_id:
+        raise HTTPException(status_code=403, detail="Cannot check usage for other users")
 
     try:
-        stats = await usage_tracker.get_usage_stats(user_id)
+        stats = await usage_tracker.get_usage_stats(request.user_id)
         return stats
+    except ValueError as e:
+        logger.error(f"Validation error checking usage for user {request.user_id}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error checking usage for user {user_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error checking usage for user {request.user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to check usage")
 
 @app.post("/api/v1/auth/link-anonymous-data")
-async def link_anonymous_data(request: Dict[str, Any]):
+async def link_anonymous_data(
+    request: LinkAnonymousDataRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
     """
     Link anonymous user data to authenticated user after registration.
     Allows users to claim their game history and analyses after signing up.
+    Requires authentication to prevent unauthorized data linking.
     """
     if not usage_tracker:
-        raise HTTPException(status_code=503, detail="Usage tracking not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Usage tracking not configured"}
+        )
 
-    auth_user_id = request.get('auth_user_id')
-    platform = request.get('platform')
-    anonymous_user_id = request.get('anonymous_user_id')
-
-    if not all([auth_user_id, platform, anonymous_user_id]):
-        raise HTTPException(
-            status_code=400,
-            detail="auth_user_id, platform, and anonymous_user_id are required"
+    # Verify the user is linking to their own account
+    auth_user_id = token_data.get('sub')
+    if not auth_user_id or auth_user_id != request.auth_user_id:
+        return JSONResponse(
+            status_code=403,
+            content={"success": False, "message": "Cannot link data to other users"}
         )
 
     try:
         result = await usage_tracker.claim_anonymous_data(
-            auth_user_id=auth_user_id,
-            platform=platform,
-            anonymous_user_id=anonymous_user_id
+            auth_user_id=request.auth_user_id,
+            platform=request.platform,
+            anonymous_user_id=request.anonymous_user_id
         )
         return result
+    except ValueError as e:
+        logger.error(f"Validation error linking anonymous data: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": str(e)}
+        )
     except Exception as e:
         logger.error(f"Error linking anonymous data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to link anonymous data"}
+        )
 
 @app.get("/api/v1/auth/profile")
 async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
     """
     Get authenticated user's profile information.
+    Includes user profile, usage stats, and subscription info.
     """
     if not supabase:
-        raise HTTPException(status_code=503, detail="Database not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Database not configured"}
+        )
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
     try:
         # Get user profile
-        result = supabase.table('authenticated_users').select('*').eq(
-            'id', user_id
-        ).execute()
+        result = await asyncio.to_thread(
+            lambda: supabase.table('authenticated_users').select('*').eq(
+                'id', user_id
+            ).execute()
+        )
 
         if not result.data:
-            raise HTTPException(status_code=404, detail="User profile not found")
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "User profile not found"}
+            )
 
         user_profile = result.data[0]
 
         # Get usage stats
         usage_stats = {}
         if usage_tracker:
-            usage_stats = await usage_tracker.get_usage_stats(user_id)
+            try:
+                usage_stats = await usage_tracker.get_usage_stats(user_id)
+            except Exception as e:
+                logger.error(f"Error getting usage stats: {e}")
+                # Continue without usage stats
 
         # Get subscription info if Stripe is configured
         subscription_info = {}
         if stripe_service and stripe_service.enabled:
-            subscription_info = await stripe_service.get_subscription_status(user_id)
+            try:
+                subscription_info = await stripe_service.get_subscription_status(user_id)
+            except Exception as e:
+                logger.error(f"Error getting subscription status: {e}")
+                # Continue without subscription info
 
         return {
             'profile': user_profile,
@@ -8296,44 +8599,39 @@ async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
         }
     except Exception as e:
         logger.error(f"Error getting user profile: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to get profile"}
+        )
 
 @app.put("/api/v1/auth/profile")
 async def update_user_profile(
-    request: Dict[str, Any],
+    request: UpdateProfileRequest,
     token_data: Annotated[dict, Depends(verify_token)]
 ):
     """
-    Update authenticated user's profile (username, etc.).
+    Update authenticated user's profile.
     Email and password changes are handled by Supabase Auth directly.
     """
     if not supabase_service:
-        raise HTTPException(status_code=503, detail="Database not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Database not configured"}
+        )
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
-    # Only allow updating specific fields
-    allowed_fields = ['username']
-    update_data = {k: v for k, v in request.items() if k in allowed_fields}
-
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No valid fields to update")
-
-    try:
-        result = supabase_service.table('authenticated_users').update(update_data).eq(
-            'id', user_id
-        ).execute()
-
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User profile not found")
-
-        return {'success': True, 'profile': result.data[0]}
-    except Exception as e:
-        logger.error(f"Error updating user profile: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # No fields to update currently, but keeping endpoint for future extensions
+    return JSONResponse(
+        status_code=400,
+        content={"success": False, "message": "No valid fields to update"}
+    )
 
 # ============================================================================
 # PAYMENT ENDPOINTS
@@ -8341,47 +8639,57 @@ async def update_user_profile(
 
 @app.post("/api/v1/payments/create-checkout")
 async def create_checkout_session(
-    request: Dict[str, Any],
+    request: CreateCheckoutRequest,
     token_data: Annotated[dict, Depends(verify_token)]
 ):
     """
     Create a Stripe checkout session for subscription or credit purchase.
+    Requires authentication to link payment to user account.
     """
     if not stripe_service or not stripe_service.enabled:
-        raise HTTPException(status_code=503, detail="Payment system not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Payment system not configured"}
+        )
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    tier_id = request.get('tier_id')
-    credit_amount = request.get('credit_amount')
-    success_url = request.get('success_url')
-    cancel_url = request.get('cancel_url')
-
-    if not tier_id and not credit_amount:
-        raise HTTPException(
-            status_code=400,
-            detail="Either tier_id or credit_amount is required"
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
         )
 
     try:
         result = await stripe_service.create_checkout_session(
             user_id=user_id,
-            tier_id=tier_id,
-            credit_amount=credit_amount,
-            success_url=success_url,
-            cancel_url=cancel_url
+            tier_id=request.tier_id,
+            credit_amount=request.credit_amount,
+            success_url=request.success_url,
+            cancel_url=request.cancel_url
         )
 
-        if 'error' in result:
-            raise HTTPException(status_code=400, detail=result['error'])
+        if not result.get('success', False):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
 
         return result
+    except ValueError as e:
+        logger.error(f"Validation error creating checkout session: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": str(e)}
+        )
     except Exception as e:
         logger.error(f"Error creating checkout session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()  # Print full stack trace
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Failed to create checkout session: {str(e)}"}
+        )
 
 @app.post("/api/v1/payments/webhook")
 async def stripe_webhook(request: Request):
@@ -8390,78 +8698,161 @@ async def stripe_webhook(request: Request):
     This endpoint processes payment confirmations, subscription updates, etc.
     """
     if not stripe_service or not stripe_service.enabled:
-        raise HTTPException(status_code=503, detail="Payment system not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Payment system not configured"}
+        )
 
     # Get raw body
     payload = await request.body()
     sig_header = request.headers.get('stripe-signature')
 
     if not sig_header:
-        raise HTTPException(status_code=400, detail="Missing stripe-signature header")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "Missing stripe-signature header"}
+        )
 
     try:
         result = await stripe_service.handle_webhook(payload, sig_header)
 
-        if 'error' in result:
-            raise HTTPException(status_code=400, detail=result['error'])
+        if not result.get('success', False):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
 
         return result
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": str(e)}
+        )
 
 @app.get("/api/v1/payments/subscription")
 async def get_subscription(token_data: Annotated[dict, Depends(verify_token)]):
     """
     Get user's current subscription status.
+    Requires authentication to prevent unauthorized access to subscription info.
     """
     if not stripe_service or not stripe_service.enabled:
-        return {'message': 'Payment system not configured'}
+        return {'success': False, 'message': 'Payment system not configured'}
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
     try:
         result = await stripe_service.get_subscription_status(user_id)
 
-        if 'error' in result:
-            raise HTTPException(status_code=400, detail=result['error'])
+        if not result.get('success', False):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
 
         return result
     except Exception as e:
         logger.error(f"Error getting subscription: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to get subscription"}
+        )
+
+@app.post("/api/v1/payments/verify-session")
+async def verify_stripe_session(
+    request: VerifySessionRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Verify a Stripe checkout session and update user subscription if needed.
+    This is used when returning from Stripe checkout to ensure the subscription is synced.
+    Requires authentication to prevent unauthorized access to payment info.
+    """
+    if not stripe_service or not stripe_service.enabled:
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Payment system not configured"}
+        )
+
+    user_id = token_data.get('sub')
+
+    if not user_id:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
+
+    try:
+        result = await stripe_service.verify_and_sync_session(user_id, request.session_id)
+
+        if not result.get('success', False):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
+
+        return result
+    except ValueError as e:
+        logger.error(f"Validation error verifying session: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": str(e)}
+        )
+    except Exception as e:
+        logger.error(f"Error verifying session: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to verify session"}
+        )
 
 @app.post("/api/v1/payments/cancel")
 async def cancel_subscription(token_data: Annotated[dict, Depends(verify_token)]):
     """
     Cancel user's subscription (at end of billing period).
+    Requires authentication to prevent unauthorized cancellations.
     """
     if not stripe_service or not stripe_service.enabled:
-        raise HTTPException(status_code=503, detail="Payment system not configured")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "message": "Payment system not configured"}
+        )
 
     user_id = token_data.get('sub')
 
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid token"}
+        )
 
     try:
         result = await stripe_service.cancel_subscription(user_id)
 
-        if 'error' in result:
-            raise HTTPException(status_code=400, detail=result['error'])
+        if not result.get('success', False):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": result.get('message', 'Unknown error')}
+            )
 
         return result
     except Exception as e:
         logger.error(f"Error cancelling subscription: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Failed to cancel subscription"}
+        )
 
 @app.get("/api/v1/payment-tiers")
 async def get_payment_tiers():
     """
     Get available payment tiers (public endpoint, no auth required).
+    Returns all active payment tiers sorted by display order.
     """
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -8474,7 +8865,7 @@ async def get_payment_tiers():
         return {'tiers': result.data or []}
     except Exception as e:
         logger.error(f"Error getting payment tiers: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to get payment tiers")
 
 if __name__ == "__main__":
     import argparse

@@ -8,6 +8,9 @@ import { MatchHistoryProps, MatchHistoryGameSummary } from '../../types'
 import UnifiedAnalysisService from '../../services/unifiedAnalysisService'
 import { config } from '../../lib/config'
 import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
+import { useAuth } from '../../contexts/AuthContext'
+import { AnonymousUsageTracker } from '../../services/anonymousUsageTracker'
+import AnonymousLimitModal from '../AnonymousLimitModal'
 
 // Canonicalize user ID to match backend logic
 function canonicalizeUserId(userId: string, platform: string): string {
@@ -67,6 +70,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
   const [queuedGameIds, setQueuedGameIds] = useState<Set<string>>(new Set())
   const [analysisNotification, setAnalysisNotification] = useState<{ id: number; type: 'success' | 'error'; message: string } | null>(null)
   const [gameAnalyses, setGameAnalyses] = useState<Map<string, number>>(new Map())
+
+  // Auth and anonymous user tracking
+  const { user } = useAuth()
+  const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
+
   const gamesPerPage = 20
   const escapeFilterValue = (value: string) => {
     const sanitized = value.replace(/"/g, '\\"')
@@ -218,6 +226,16 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
   const requestAnalysis = async (event: ReactMouseEvent<HTMLButtonElement>, game: Game) => {
     event.stopPropagation()
+
+    // Check anonymous user limits first
+    if (!user) {
+      if (!AnonymousUsageTracker.canAnalyze()) {
+        console.log('[MatchHistory] Anonymous user reached analysis limit')
+        setAnonymousLimitModalOpen(true)
+        return
+      }
+    }
+
     const gameIdentifier = game.provider_game_id || game.id
     if (!gameIdentifier) {
       triggerNotification('error', 'Missing game identifier for analysis request.')
@@ -270,6 +288,12 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       } else {
         markGameAsAnalyzed(gameIdentifier)
         triggerNotification('success', 'Stockfish analysis started successfully.')
+
+        // Increment anonymous usage after successful start
+        if (!user) {
+          AnonymousUsageTracker.incrementAnalyses()
+        }
+
         // Refresh analysis data after a short delay to get the accuracy
         setTimeout(async () => {
           try {
@@ -820,6 +844,13 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           </div>
         )}
       </div>
+
+      {/* Anonymous User Limit Modal */}
+      <AnonymousLimitModal
+        isOpen={anonymousLimitModalOpen}
+        onClose={() => setAnonymousLimitModalOpen(false)}
+        limitType="analyze"
+      />
     </div>
   )
 }

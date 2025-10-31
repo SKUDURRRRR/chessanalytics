@@ -53,10 +53,12 @@ DROP POLICY IF EXISTS "Allow anonymous update to user_profiles" ON user_profiles
 DROP POLICY IF EXISTS "Users can view all profiles" ON user_profiles;
 
 -- Create new policies supporting both modes
+DROP POLICY IF EXISTS "user_profiles_select_all" ON user_profiles;
 CREATE POLICY "user_profiles_select_all" ON user_profiles
     FOR SELECT
     USING (true); -- Public read access for analytics
 
+DROP POLICY IF EXISTS "user_profiles_insert" ON user_profiles;
 CREATE POLICY "user_profiles_insert" ON user_profiles
     FOR INSERT
     WITH CHECK (
@@ -64,6 +66,7 @@ CREATE POLICY "user_profiles_insert" ON user_profiles
         (auth_user_id IS NULL) OR (auth.uid() = auth_user_id)
     );
 
+DROP POLICY IF EXISTS "user_profiles_update" ON user_profiles;
 CREATE POLICY "user_profiles_update" ON user_profiles
     FOR UPDATE
     USING (
@@ -79,6 +82,8 @@ CREATE POLICY "user_profiles_update" ON user_profiles
 -- Drop existing potentially conflicting policies
 DROP POLICY IF EXISTS "games_insert_own" ON games;
 DROP POLICY IF EXISTS "games_update_own" ON games;
+DROP POLICY IF EXISTS "games_insert_hybrid" ON games;
+DROP POLICY IF EXISTS "games_update_hybrid" ON games;
 
 -- Recreate with hybrid support
 CREATE POLICY "games_insert_hybrid" ON games
@@ -100,6 +105,8 @@ CREATE POLICY "games_update_hybrid" ON games
 
 DROP POLICY IF EXISTS "games_pgn_insert_own" ON games_pgn;
 DROP POLICY IF EXISTS "games_pgn_update_own" ON games_pgn;
+DROP POLICY IF EXISTS "games_pgn_insert_hybrid" ON games_pgn;
+DROP POLICY IF EXISTS "games_pgn_update_hybrid" ON games_pgn;
 
 CREATE POLICY "games_pgn_insert_hybrid" ON games_pgn
     FOR INSERT
@@ -120,6 +127,8 @@ CREATE POLICY "games_pgn_update_hybrid" ON games_pgn
 
 DROP POLICY IF EXISTS "game_analyses_insert_own" ON game_analyses;
 DROP POLICY IF EXISTS "game_analyses_update_own" ON game_analyses;
+DROP POLICY IF EXISTS "game_analyses_insert_hybrid" ON game_analyses;
+DROP POLICY IF EXISTS "game_analyses_update_hybrid" ON game_analyses;
 
 CREATE POLICY "game_analyses_insert_hybrid" ON game_analyses
     FOR INSERT
@@ -140,6 +149,8 @@ CREATE POLICY "game_analyses_update_hybrid" ON game_analyses
 
 DROP POLICY IF EXISTS "game_features_insert_own" ON game_features;
 DROP POLICY IF EXISTS "game_features_update_own" ON game_features;
+DROP POLICY IF EXISTS "game_features_insert_hybrid" ON game_features;
+DROP POLICY IF EXISTS "game_features_update_hybrid" ON game_features;
 
 CREATE POLICY "game_features_insert_hybrid" ON game_features
     FOR INSERT

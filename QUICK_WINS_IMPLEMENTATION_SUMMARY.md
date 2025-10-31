@@ -17,16 +17,13 @@
 max_concurrent_jobs=4  # Increased from 2
 max_workers_per_job=8  # Increased from 4
 
-# python/core/analysis_engine.py (line 944)
-max_concurrent = 8  # Increased from 4 concurrent moves per game
-
 # python/core/engine_pool.py (line 44)
 max_size = 4  # Increased from 3 engines in pool
 ```
 
 **Expected Impact**:
 - Analysis throughput: 900 → **1,800 games/hour** (2x)
-- Concurrent moves per game: 4 → 8 (faster per-game analysis)
+- More concurrent game analysis (4 jobs with 8 workers each)
 - Memory usage: 400 MB → 800 MB (still only 10% of 8 GB)
 
 ---
