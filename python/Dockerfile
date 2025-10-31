@@ -14,11 +14,12 @@ RUN /usr/games/stockfish --version || /usr/bin/stockfish --version || /usr/local
 WORKDIR /app
 
 # Copy requirements and install Python dependencies
+# requirements.txt is in root directory
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy application code from python directory
+COPY python/ .
 
 # Detect and set Stockfish path at build time
 RUN if [ -f /usr/games/stockfish ]; then \
