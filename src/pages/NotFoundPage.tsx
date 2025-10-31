@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Home, Search, ChartBar } from 'lucide-react'
+import { Home, Search, BarChart } from 'lucide-react'
 
 export default function NotFoundPage() {
   return (
@@ -50,7 +50,7 @@ export default function NotFoundPage() {
             to="/pricing"
             className="flex flex-col items-center gap-2 p-6 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors group"
           >
-            <ChartBar className="w-8 h-8 text-blue-500 group-hover:scale-110 transition-transform" />
+            <BarChart className="w-8 h-8 text-blue-500 group-hover:scale-110 transition-transform" />
             <span className="text-white font-medium">Pricing</span>
             <span className="text-slate-400 text-sm">View plans</span>
           </Link>
