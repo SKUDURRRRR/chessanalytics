@@ -100,15 +100,6 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
         </div>
       )}
 
-      {/* Move Quality */}
-      <div className="flex gap-2 flex-wrap">
-        {move.moveQuality && (
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getMoveQualityColor(move.moveQuality)}`}>
-            {move.moveQuality.charAt(0).toUpperCase() + move.moveQuality.slice(1)}
-          </span>
-        )}
-      </div>
-
       {/* Enhanced Fallback for moves without coaching data */}
       {!move.coachingComment && move.explanation && (
         <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400 lg:h-48 flex flex-col">

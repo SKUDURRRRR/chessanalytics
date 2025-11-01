@@ -21,7 +21,8 @@ export interface HumanReasonContext extends CommentContext {
   risks?: string[];
   benefits?: string[];
   fenBefore?: string;
-  move?: string;
+  move?: string;  // The actual move played in SAN notation
+  moveSan?: string;  // Alias for move (for clarity)
 }
 
 export const commentTemplates = {
@@ -232,7 +233,9 @@ export function buildHumanComment(context: HumanReasonContext): string {
     } else if (classification === 'mistake' && centipawnLoss && centipawnLoss > 30) {
       try {
         const { generateSpecificMistakeComment } = require('./positionSpecificComments')
-        const specificComment = generateSpecificMistakeComment(fenBefore, move, safeBestMove, centipawnLoss)
+        // Pass moveSan from context to prevent contradictory comments
+        const moveSan = (context as HumanReasonContext).move || (context as HumanReasonContext).moveSan
+        const specificComment = generateSpecificMistakeComment(fenBefore, move, safeBestMove, centipawnLoss, moveSan)
         console.log('Generated specific mistake comment:', specificComment)
         if (specificComment && specificComment.length > 10) {
           return specificComment

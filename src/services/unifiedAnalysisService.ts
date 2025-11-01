@@ -671,7 +671,21 @@ export class UnifiedAnalysisService {
       })
 
       if (!response.ok) {
-        console.error(`Failed to fetch ELO stats: ${response.status}`)
+        // Handle different error types with user-friendly messages
+        if (response.status === 503) {
+          console.warn('Database temporarily unavailable, retrying ELO stats...')
+          // Retry once after a short delay
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          const retryResponse = await fetch(`${UNIFIED_API_URL}/api/v1/elo-stats/${userId}/${platform}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          })
+          if (retryResponse.ok) {
+            return await retryResponse.json()
+          }
+        }
+
+        console.error(`Failed to fetch ELO stats: ${response.status} - Returning empty data`)
         return {
           highest_elo: null,
           time_control: null,
@@ -728,7 +742,24 @@ export class UnifiedAnalysisService {
       )
 
       if (!response.ok) {
-        console.error(`Failed to fetch comprehensive analytics: ${response.status}`)
+        // Handle different error types with user-friendly messages
+        if (response.status === 503) {
+          console.warn('Database temporarily unavailable, retrying comprehensive analytics...')
+          // Retry once after a short delay
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          const retryResponse = await fetch(
+            `${UNIFIED_API_URL}/api/v1/comprehensive-analytics/${userId}/${platform}?limit=${limit}`,
+            {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+          if (retryResponse.ok) {
+            return await retryResponse.json()
+          }
+        }
+
+        console.error(`Failed to fetch comprehensive analytics: ${response.status} - Returning empty data`)
         return {
           total_games: 0,
           games: [],

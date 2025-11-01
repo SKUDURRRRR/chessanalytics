@@ -591,8 +591,12 @@ class EnhancedCommentGenerator:
         best_move_san = move_analysis.get('best_move_san', '')
         move_san = move_analysis.get('move_san', '')
 
-        # Build suggestion text if we have the best move
-        best_move_text = f" {best_move_san} was the best move here." if best_move_san else ""
+        # CRITICAL FIX: Only suggest best move if it's DIFFERENT from the played move
+        # This prevents contradictory messages like "Mistake! Nxe5 was the best move here"
+        # when Nxe5 WAS the move played
+        best_move_text = ""
+        if best_move_san and best_move_san != move_san:
+            best_move_text = f" {best_move_san} was the best move here."
 
         if centipawn_loss > 300:
             return f"This is a catastrophic blunder; you likely hung your queen or allowed mate in a few moves.{best_move_text}"

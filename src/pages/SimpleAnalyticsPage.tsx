@@ -313,7 +313,7 @@ export default function SimpleAnalyticsPage() {
           handleRefresh()
           // Refresh usage stats after import for authenticated users
           if (user) {
-            refreshUsageStats()
+            await refreshUsageStats()
           }
         } else {
           setImportStatus(`Import complete! No new games found. You already have all recent games imported.`)
@@ -404,6 +404,8 @@ export default function SimpleAnalyticsPage() {
 
     checkStuckImport()
 
+    // DISK I/O OPTIMIZATION: Increased polling interval from 2s to 5s
+    // Rationale: Import progress doesn't need sub-second updates, reduces DB polling by 60%
     largeImportIntervalRef.current = setInterval(async () => {
       try {
         const progress = await AutoImportService.getImportProgress(userId, platform)
@@ -445,7 +447,7 @@ export default function SimpleAnalyticsPage() {
       } catch (error) {
         console.error('Polling error:', error)
       }
-    }, 2000)
+    }, 5000)  // Increased from 2000ms to 5000ms (5 seconds)
   }
 
   const cancelLargeImport = async () => {
@@ -612,7 +614,7 @@ export default function SimpleAnalyticsPage() {
           // Clear cache to force fresh data load after analysis
           clearUserCache(userId, platform)
           // Refresh usage stats after analysis
-          refreshUsageStats()
+          await refreshUsageStats()
           // Set force refresh flag to bypass cache on next load
           setForceDataRefresh(true)
           // Add small delay to ensure database has finished writing analysis results

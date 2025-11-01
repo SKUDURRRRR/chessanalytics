@@ -294,7 +294,8 @@ export function generateSpecificMistakeComment(
   fenBefore: string,
   move: string,
   bestMoveSan: string,
-  centipawnLoss: number
+  centipawnLoss: number,
+  moveSan?: string  // Optional: the actual move played in SAN notation
 ): string {
   const analysis = analyzePositionAfterMove(fenBefore, move)
   const details: string[] = []
@@ -317,7 +318,14 @@ export function generateSpecificMistakeComment(
     return `This isn't right. ${specific.charAt(0).toUpperCase() + specific.slice(1)}. ${bestMoveSan} avoids this.`
   }
 
-  // Fallback to generic comment - include best move
-  const bestMoveText = bestMoveSan ? ` ${bestMoveSan} was the best move here.` : ''
+  // CRITICAL FIX: Only suggest best move if it's DIFFERENT from the played move
+  // This prevents contradictory messages like "Mistake! Nxe5 was the best move here"
+  // when Nxe5 WAS the move played
+  let bestMoveText = ''
+  if (bestMoveSan && (!moveSan || bestMoveSan !== moveSan)) {
+    bestMoveText = ` ${bestMoveSan} was the best move here.`
+  }
+
+  // Fallback to generic comment - include best move only if different
   return `This isn't right. This is a serious mistake; you likely lost material or created significant tactical problems that give your opponent a major advantage.${bestMoveText}`
 }

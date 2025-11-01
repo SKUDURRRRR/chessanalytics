@@ -33,6 +33,7 @@ class AnalysisJob:
     limit: int
     depth: int
     skill_level: int
+    auth_user_id: Optional[str] = None  # Authenticated user ID for usage tracking
     status: AnalysisStatus = AnalysisStatus.PENDING
     created_at: datetime = field(default_factory=datetime.now)
     started_at: Optional[datetime] = None
@@ -63,6 +64,7 @@ class AnalysisQueue:
         self.jobs: Dict[str, AnalysisJob] = {}
         self.queue: asyncio.Queue = asyncio.Queue()
         self.running_jobs: Dict[str, AnalysisJob] = {}
+        self.running_tasks: Dict[str, asyncio.Task] = {}  # Track background tasks
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=max_concurrent_jobs)
         self._queue_processor_task: Optional[asyncio.Task] = None
@@ -100,12 +102,31 @@ class AnalysisQueue:
                     print(f"[QUEUE] Skipping cancelled job {job.job_id}")
                     continue
 
-                # Start the job
-                await self._start_job(job)
+                # Start the job in the background (non-blocking)
+                # This allows the queue processor to continue processing other jobs
+                task = asyncio.create_task(self._start_job_wrapper(job))
+                self.running_tasks[job.job_id] = task  # Keep reference to prevent GC
+                print(f"[QUEUE] Started job {job.job_id} in background, continuing queue processing...")
 
             except Exception as e:
                 print(f"Error in queue processor: {e}")
+                import traceback
+                traceback.print_exc()
                 await asyncio.sleep(1)
+
+    async def _start_job_wrapper(self, job: AnalysisJob):
+        """Wrapper for _start_job that handles cleanup."""
+        try:
+            await self._start_job(job)
+        except Exception as e:
+            print(f"[QUEUE] Error in job {job.job_id}: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Clean up task reference
+            if job.job_id in self.running_tasks:
+                del self.running_tasks[job.job_id]
+                print(f"[QUEUE] Cleaned up task reference for job {job.job_id}")
 
     async def _start_job(self, job: AnalysisJob):
         """Start a single analysis job."""
@@ -153,6 +174,30 @@ class AnalysisQueue:
                 job.result = result
                 if job.job_id in self.running_jobs:
                     del self.running_jobs[job.job_id]
+
+            # Increment usage for authenticated users
+            if job.auth_user_id:
+                try:
+                    from .unified_api_server import usage_tracker
+                    if usage_tracker:
+                        # Increment by the number of games actually analyzed
+                        games_analyzed = job.analyzed_games
+                        if games_analyzed > 0:
+                            success = await usage_tracker.increment_usage(
+                                job.auth_user_id,
+                                'analyze',
+                                count=games_analyzed
+                            )
+                            if success:
+                                print(f"[QUEUE] Incremented usage for user {job.auth_user_id}: {games_analyzed} analyses")
+                            else:
+                                print(f"[QUEUE] Warning: Failed to increment usage for user {job.auth_user_id}")
+                        else:
+                            print(f"[QUEUE] No games analyzed, skipping usage increment")
+                except Exception as e:
+                    print(f"[QUEUE] Warning: Could not increment usage tracking: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             # Update in-memory progress to completed
             try:
@@ -256,14 +301,29 @@ class AnalysisQueue:
         analysis_type: str = "stockfish",
         limit: int = 5,
         depth: int = 14,
-        skill_level: int = 20
+        skill_level: int = 20,
+        auth_user_id: Optional[str] = None
     ) -> str:
         """
         Submit a new analysis job to the queue.
+        Prevents duplicate jobs for the same user+platform combination.
+
+        Args:
+            auth_user_id: Optional authenticated user ID for usage tracking
 
         Returns:
             job_id: Unique identifier for the job
         """
+        # Check for existing pending or running jobs for this user+platform
+        with self.lock:
+            for existing_job in self.jobs.values():
+                if (existing_job.user_id == user_id and
+                    existing_job.platform == platform and
+                    existing_job.status in [AnalysisStatus.PENDING, AnalysisStatus.RUNNING]):
+                    print(f"[QUEUE] Job already exists for {user_id} on {platform} (job_id: {existing_job.job_id}, status: {existing_job.status.value})")
+                    print(f"[QUEUE] Returning existing job_id instead of creating duplicate")
+                    return existing_job.job_id
+
         job_id = str(uuid.uuid4())
         job = AnalysisJob(
             job_id=job_id,
@@ -272,7 +332,8 @@ class AnalysisQueue:
             analysis_type=analysis_type,
             limit=limit,
             depth=depth,
-            skill_level=skill_level
+            skill_level=skill_level,
+            auth_user_id=auth_user_id
         )
 
         with self.lock:
@@ -281,7 +342,7 @@ class AnalysisQueue:
         # Add to queue
         await self.queue.put(job)
 
-        print(f"[QUEUE] Analysis job {job_id} submitted for {user_id} on {platform}")
+        print(f"[QUEUE] Analysis job {job_id} submitted for {user_id} on {platform} (auth_user_id: {auth_user_id})")
         return job_id
 
     def get_job_status(self, job_id: str) -> Optional[AnalysisJob]:

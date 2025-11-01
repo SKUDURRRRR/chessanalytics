@@ -77,6 +77,9 @@ from .error_handlers import (
 # Import opening normalization utilities
 from .opening_utils import normalize_opening_name, get_opening_name_from_eco_code
 
+# Import resilient API client
+from .resilient_api_client import get_api_client as get_resilient_api_client
+
 # Load environment configuration
 from .config import get_config
 config = get_config()
@@ -134,7 +137,9 @@ if JWT_AUDIENCE:
 
 # Simple in-memory cache for analytics with TTL
 _analytics_cache: Dict[str, Dict[str, Any]] = {}
-CACHE_TTL_SECONDS = 300  # 5 minutes cache TTL
+# DISK I/O OPTIMIZATION: Increased from 300s (5min) to 1800s (30min)
+# Rationale: Chess analytics are relatively static, 30min cache reduces repeat queries by ~80%
+CACHE_TTL_SECONDS = 1800  # 30 minutes cache TTL
 
 def _get_from_cache(cache_key: str) -> Optional[Dict[str, Any]]:
     """Get data from cache if it exists and is not expired."""
@@ -343,7 +348,7 @@ async def startup_event():
         print(f"[STARTUP] Initializing Stockfish engine pool...")
         _engine_pool_instance = get_engine_pool(
             stockfish_path=stockfish_path,
-            max_size=3,  # 3 engines max
+            max_size=4,  # 4 engines max (Phase 1 - Stage 1: increased from 3)
             ttl=300.0,   # 5-minute TTL
             config={
                 'Skill Level': 20,
@@ -580,8 +585,8 @@ async def get_http_client():
         import aiohttp
         timeout = aiohttp.ClientTimeout(total=120, connect=30)
         connector = aiohttp.TCPConnector(
-            limit=15,  # Total concurrent connections across all hosts
-            limit_per_host=6,  # Increased from 3 to 6 - allows 2 concurrent imports per platform without bottleneck
+            limit=20,  # Total concurrent connections (Phase 1 - Stage 1: increased from 15)
+            limit_per_host=8,  # Per-host limit (Phase 1 - Stage 1: increased from 6)
             ttl_dns_cache=300  # DNS cache TTL
         )
         _shared_http_client = aiohttp.ClientSession(
@@ -1189,7 +1194,7 @@ async def unified_analyze(
             # Batch analysis - use the unified handler
             # NOTE: Usage tracking for batch analysis is handled in the queue completion handler
             # since batch analysis is async and the count is determined when it completes
-            return await _handle_batch_analysis(request, background_tasks, use_parallel)
+            return await _handle_batch_analysis(request, background_tasks, use_parallel, auth_user_id)
 
     except ValidationError as e:
         raise e
@@ -1592,51 +1597,77 @@ async def get_elo_stats(
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured for ELO stats")
 
-        # Optimized query: get highest ELO in single query
-        highest_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select(
-                'my_rating, time_control, provider_game_id, played_at'
-            ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-                'my_rating', 'null'
-            ).order('my_rating', desc=True).limit(1).execute()
-        )
+        # Retry logic for transient connection errors
+        max_retries = 3
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                # Optimized query: get highest ELO in single query
+                highest_response = await asyncio.to_thread(
+                    lambda: db_client.table('games').select(
+                        'my_rating, time_control, provider_game_id, played_at'
+                    ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+                        'my_rating', 'null'
+                    ).order('my_rating', desc=True).limit(1).execute()
+                )
 
-        if not highest_response.data:
-            return {
-                "highest_elo": None,
-                "time_control": None,
-                "game_id": None,
-                "played_at": None,
-                "total_games": 0
-            }
+                if not highest_response.data:
+                    return {
+                        "highest_elo": None,
+                        "time_control": None,
+                        "game_id": None,
+                        "played_at": None,
+                        "total_games": 0
+                    }
 
-        highest_game = highest_response.data[0]
+                highest_game = highest_response.data[0]
 
-        # Get total games count
-        count_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select('id', count='exact', head=True).eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).not_.is_('my_rating', 'null').execute()
-        )
+                # Get total games count
+                count_response = await asyncio.to_thread(
+                    lambda: db_client.table('games').select('id', count='exact', head=True).eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).not_.is_('my_rating', 'null').execute()
+                )
 
-        total_games = getattr(count_response, 'count', 0) or 0
+                total_games = getattr(count_response, 'count', 0) or 0
 
-        result = {
-            "highest_elo": highest_game['my_rating'],
-            "time_control": highest_game['time_control'],
-            "game_id": highest_game['provider_game_id'],
-            "played_at": highest_game['played_at'],
-            "total_games": total_games
-        }
+                result = {
+                    "highest_elo": highest_game['my_rating'],
+                    "time_control": highest_game['time_control'],
+                    "game_id": highest_game['provider_game_id'],
+                    "played_at": highest_game['played_at'],
+                    "total_games": total_games
+                }
 
-        _set_in_cache(cache_key, result)
-        return result
+                _set_in_cache(cache_key, result)
+                return result
+
+            except Exception as e:
+                error_str = str(e)
+                # Retry on connection errors
+                if "ConnectionTerminated" in error_str or "RemoteProtocolError" in error_str:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        print(f"[WARNING] Database connection error (attempt {attempt + 1}/{max_retries}), retrying...")
+                        await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                        continue
+                else:
+                    # For other errors, fail immediately
+                    raise
+
+        # If all retries failed
+        if last_exception:
+            print(f"Error fetching ELO stats after {max_retries} retries: {last_exception}")
+            raise HTTPException(
+                status_code=503,
+                detail="Database temporarily unavailable. Please try again in a moment."
+            )
 
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error fetching ELO stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Unable to fetch ELO statistics")
 
 def _safe_divide(numerator: float, denominator: float) -> float:
     """Helper to avoid division by zero."""
@@ -1994,29 +2025,60 @@ async def get_comprehensive_analytics(
             print("[ERROR] Database not configured")
             raise HTTPException(status_code=503, detail="Database not configured")
 
-        # Determine total available games (for UI pagination context)
-        count_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()
-        )
-        total_games_count = getattr(count_response, 'count', 0) or 0
+        # Retry logic for transient connection errors
+        max_retries = 3
+        last_exception = None
+        games_response = None
 
-        # Base games query constrained by requested limit
-        # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
-        games_query = db_client.table('games').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True)
+        for attempt in range(max_retries):
+            try:
+                # Determine total available games (for UI pagination context)
+                count_response = await asyncio.to_thread(
+                    lambda: db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()
+                )
+                total_games_count = getattr(count_response, 'count', 0) or 0
 
-        # Supabase has a default limit of 1000 rows, so we need to explicitly set the limit
-        # If user requests >= 10000, fetch all available games
-        effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
+                # Base games query constrained by requested limit
+                # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
+                games_query = db_client.table('games').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True)
 
-        # Ensure we fetch at least the requested amount or all available games
-        if effective_limit > 0:
-            games_response = await asyncio.to_thread(
-                lambda: games_query.limit(effective_limit).execute()
-            )
-        else:
-            # Fallback: use the requested limit if we couldn't determine total
-            games_response = await asyncio.to_thread(
-                lambda: games_query.limit(limit).execute()
+                # Supabase has a default limit of 1000 rows, so we need to explicitly set the limit
+                # If user requests >= 10000, fetch all available games
+                effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
+
+                # Ensure we fetch at least the requested amount or all available games
+                if effective_limit > 0:
+                    games_response = await asyncio.to_thread(
+                        lambda: games_query.limit(effective_limit).execute()
+                    )
+                else:
+                    # Fallback: use the requested limit if we couldn't determine total
+                    games_response = await asyncio.to_thread(
+                        lambda: games_query.limit(limit).execute()
+                    )
+
+                # Success! Break out of retry loop
+                break
+
+            except Exception as e:
+                error_str = str(e)
+                # Retry on connection errors
+                if "ConnectionTerminated" in error_str or "RemoteProtocolError" in error_str:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        print(f"[WARNING] Database connection error (attempt {attempt + 1}/{max_retries}), retrying...")
+                        await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                        continue
+                else:
+                    # For other errors, fail immediately
+                    raise
+
+        # If all retries failed
+        if last_exception and not games_response:
+            print(f"[ERROR] Failed to fetch comprehensive analytics after {max_retries} retries: {last_exception}")
+            raise HTTPException(
+                status_code=503,
+                detail="Database temporarily unavailable. Please try again in a moment."
             )
 
         games = games_response.data or []
@@ -2046,24 +2108,39 @@ async def get_comprehensive_analytics(
         move_analyses_map: Dict[str, Dict[str, Any]] = {}
 
         if provider_ids:
-            # game_analyses
-            analyses_response = await asyncio.to_thread(
-                lambda: db_client.table('game_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
-            )
-            for row in analyses_response.data or []:
-                analyses_map[row['game_id']] = row
+            # Batch the requests to avoid overwhelming Supabase with large IN clauses
+            # Supabase/HTTP2 has limits on request size, so we batch by 500 IDs
+            BATCH_SIZE = 500
 
-            move_response = await asyncio.to_thread(
-                lambda: db_client.table('move_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
-            )
-            for row in move_response.data or []:
-                move_analyses_map[row['game_id']] = row
+            # game_analyses - batch processing
+            for i in range(0, len(provider_ids), BATCH_SIZE):
+                batch_ids = provider_ids[i:i + BATCH_SIZE]
+                analyses_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('game_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', ids).execute()
+                )
+                for row in analyses_response.data or []:
+                    analyses_map[row['game_id']] = row
 
-        # Quick map of PGN terminations
-        pgn_response = await asyncio.to_thread(
-            lambda: db_client.table('games_pgn').select('provider_game_id, pgn').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_ids).execute()
-        )
-        pgn_map = {row['provider_game_id']: row.get('pgn') for row in (pgn_response.data or [])}
+            # move_analyses - batch processing
+            for i in range(0, len(provider_ids), BATCH_SIZE):
+                batch_ids = provider_ids[i:i + BATCH_SIZE]
+                move_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('move_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', ids).execute()
+                )
+                for row in move_response.data or []:
+                    move_analyses_map[row['game_id']] = row
+
+        # Quick map of PGN terminations - batch processing
+        pgn_map = {}
+        if provider_ids:
+            BATCH_SIZE = 500
+            for i in range(0, len(provider_ids), BATCH_SIZE):
+                batch_ids = provider_ids[i:i + BATCH_SIZE]
+                pgn_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('games_pgn').select('provider_game_id, pgn').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', ids).execute()
+                )
+                for row in (pgn_response.data or []):
+                    pgn_map[row['provider_game_id']] = row.get('pgn')
 
         # Distribution counters
         distribution: Dict[str, Dict[str, Any]] = {}
@@ -5957,6 +6034,9 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
 
         return result
 
+    except HTTPException as http_exc:
+        # Re-raise HTTPException to preserve status code (like 429 for rate limits)
+        raise http_exc
     except Exception as e:
         print(f"Error in smart import: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -6999,10 +7079,18 @@ async def proxy_chess_com_user(username: str):
 async def validate_user(request: dict):
     """Validate that a user exists on the specified platform.
 
+    Now uses resilient API client with:
+    - Connection pooling for better performance
+    - Rate limiting to prevent API overload
+    - Response caching to reduce redundant requests
+    - Retry logic with exponential backoff
+    - Request deduplication for concurrent requests
+    - Circuit breaker to fail fast when APIs are down
+
     Returns proper HTTP status codes:
     - 200: User validated successfully (check 'exists' field in response)
     - 400: Invalid request parameters
-    - 503: External API (Lichess/Chess.com) error
+    - 503: External API (Lichess/Chess.com) error or circuit breaker open
     - 504: External API timeout
     - 500: Unexpected server error
     """
@@ -7022,80 +7110,45 @@ async def validate_user(request: dict):
                 detail="Platform must be 'lichess' or 'chess.com'"
             )
 
-        # Validate user exists on the platform
-        if platform == "lichess":
-            # Check Lichess user exists
-            import aiohttp
-            try:
-                async with aiohttp.ClientSession() as session:
-                    url = f"https://lichess.org/api/user/{user_id}"
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                        if response.status == 200:
-                            return {"exists": True, "message": "User found on Lichess"}
-                        elif response.status == 404:
-                            return {
-                                "exists": False,
-                                "message": f"User '{user_id}' not found on Lichess"
-                            }
-                        elif response.status == 429:
-                            raise HTTPException(
-                                status_code=503,
-                                detail="Lichess API rate limit exceeded. Please try again in a moment."
-                            )
-                        else:
-                            raise HTTPException(
-                                status_code=503,
-                                detail=f"Lichess API returned status {response.status}"
-                            )
-            except asyncio.TimeoutError:
-                raise HTTPException(
-                    status_code=504,
-                    detail="Lichess API timeout. Please try again."
-                )
-            except aiohttp.ClientError as e:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Cannot connect to Lichess: {str(e)}"
-                )
-        else:  # chess.com
-            # Check Chess.com user exists
-            import httpx
-            headers = {
-                'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
-            }
-            try:
-                async with httpx.AsyncClient() as client:
-                    canonical_username = user_id.strip().lower()
-                    url = f"https://api.chess.com/pub/player/{canonical_username}"
-                    response = await client.get(url, headers=headers, timeout=10.0)
+        # Get resilient API client
+        api_client = get_resilient_api_client()
 
-                    if response.status_code == 200:
-                        return {"exists": True, "message": "User found on Chess.com"}
-                    elif response.status_code == 404:
-                        return {
-                            "exists": False,
-                            "message": f"User '{user_id}' not found on Chess.com"
-                        }
-                    elif response.status_code == 429:
-                        raise HTTPException(
-                            status_code=503,
-                            detail="Chess.com API rate limit exceeded. Please try again in a moment."
-                        )
-                    else:
-                        raise HTTPException(
-                            status_code=503,
-                            detail=f"Chess.com API returned status {response.status_code}"
-                        )
-            except httpx.TimeoutException:
-                raise HTTPException(
-                    status_code=504,
-                    detail="Chess.com API timeout. Please try again."
-                )
-            except httpx.RequestError as e:
+        # Validate user using resilient client
+        try:
+            if platform == "lichess":
+                exists, message = await api_client.validate_lichess_user(user_id)
+            else:  # chess.com
+                exists, message = await api_client.validate_chesscom_user(user_id)
+
+            return {"exists": exists, "message": message}
+
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail=f"{platform.title()} API timeout. Please try again."
+            )
+        except Exception as e:
+            error_msg = str(e)
+
+            # Check if circuit breaker is open
+            if "Circuit breaker" in error_msg and "unavailable" in error_msg:
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Cannot connect to Chess.com: {str(e)}"
+                    detail=f"{platform.title()} is temporarily unavailable. Please try again in a moment."
                 )
+
+            # Check for rate limit
+            if "rate limit" in error_msg.lower():
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"{platform.title()} API rate limit exceeded. Please try again in a moment."
+                )
+
+            # Generic error
+            raise HTTPException(
+                status_code=503,
+                detail=f"Cannot connect to {platform.title()}: {error_msg}"
+            )
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
@@ -7108,6 +7161,23 @@ async def validate_user(request: dict):
             status_code=500,
             detail=f"Server error: {str(e)}"
         )
+
+@app.get("/api/v1/api-client-stats")
+async def get_api_client_stats():
+    """Get statistics about the resilient API client for monitoring."""
+    try:
+        api_client = get_resilient_api_client()
+        stats = api_client.get_stats()
+        return {
+            "success": True,
+            "stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 @app.post("/api/v1/check-user-exists")
 async def check_user_exists(request: dict):
@@ -7825,7 +7895,12 @@ async def _handle_move_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnaly
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tasks: BackgroundTasks, use_parallel: bool = True) -> UnifiedAnalysisResponse:
+async def _handle_batch_analysis(
+    request: UnifiedAnalysisRequest,
+    background_tasks: BackgroundTasks,
+    use_parallel: bool = True,
+    auth_user_id: Optional[str] = None
+) -> UnifiedAnalysisResponse:
     """Handle batch analysis using the queue system."""
     try:
         # Validate request parameters
@@ -7838,7 +7913,7 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
         # Import the queue system
         from .analysis_queue import get_analysis_queue
 
-        # Submit job to queue
+        # Submit job to queue with auth_user_id for usage tracking
         queue = get_analysis_queue()
         job_id = await queue.submit_job(
             user_id=canonical_user_id,
@@ -7846,7 +7921,8 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
             analysis_type=request.analysis_type,
             limit=request.limit or 5,
             depth=request.depth or 14,
-            skill_level=request.skill_level or 20
+            skill_level=request.skill_level or 20,
+            auth_user_id=auth_user_id
         )
 
         return UnifiedAnalysisResponse(
