@@ -1675,7 +1675,15 @@ class ChessAnalysisEngine:
                     mate_score = 1000  # treat forced mates as a 10-pawn swing
                     best_cp = best_eval.score(mate_score=mate_score)
                     actual_cp = actual_eval.score(mate_score=mate_score)
-                    centipawn_loss = max(0, best_cp - actual_cp)
+
+                    # CRITICAL FIX: If the played move IS the best move, centipawn loss should be 0
+                    # This prevents classifying the best available move as a mistake
+                    if best_move_before and move == best_move_before:
+                        # Player played the engine's best move - this is optimal
+                        centipawn_loss = 0
+                    else:
+                        # Player played a different move - calculate loss
+                        centipawn_loss = max(0, best_cp - actual_cp)
 
                     # Chess.com EXACT standards (Expected Points Model)
                     # Reference: https://support.chess.com/en/articles/8572705

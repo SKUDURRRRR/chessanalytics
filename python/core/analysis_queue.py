@@ -33,6 +33,7 @@ class AnalysisJob:
     limit: int
     depth: int
     skill_level: int
+    auth_user_id: Optional[str] = None  # Authenticated user ID for usage tracking
     status: AnalysisStatus = AnalysisStatus.PENDING
     created_at: datetime = field(default_factory=datetime.now)
     started_at: Optional[datetime] = None
@@ -174,6 +175,30 @@ class AnalysisQueue:
                 if job.job_id in self.running_jobs:
                     del self.running_jobs[job.job_id]
 
+            # Increment usage for authenticated users
+            if job.auth_user_id:
+                try:
+                    from .unified_api_server import usage_tracker
+                    if usage_tracker:
+                        # Increment by the number of games actually analyzed
+                        games_analyzed = job.analyzed_games
+                        if games_analyzed > 0:
+                            success = await usage_tracker.increment_usage(
+                                job.auth_user_id,
+                                'analyze',
+                                count=games_analyzed
+                            )
+                            if success:
+                                print(f"[QUEUE] Incremented usage for user {job.auth_user_id}: {games_analyzed} analyses")
+                            else:
+                                print(f"[QUEUE] Warning: Failed to increment usage for user {job.auth_user_id}")
+                        else:
+                            print(f"[QUEUE] No games analyzed, skipping usage increment")
+                except Exception as e:
+                    print(f"[QUEUE] Warning: Could not increment usage tracking: {e}")
+                    import traceback
+                    traceback.print_exc()
+
             # Update in-memory progress to completed
             try:
                 from .unified_api_server import analysis_progress, _canonical_user_id
@@ -276,11 +301,15 @@ class AnalysisQueue:
         analysis_type: str = "stockfish",
         limit: int = 5,
         depth: int = 14,
-        skill_level: int = 20
+        skill_level: int = 20,
+        auth_user_id: Optional[str] = None
     ) -> str:
         """
         Submit a new analysis job to the queue.
         Prevents duplicate jobs for the same user+platform combination.
+
+        Args:
+            auth_user_id: Optional authenticated user ID for usage tracking
 
         Returns:
             job_id: Unique identifier for the job
@@ -303,7 +332,8 @@ class AnalysisQueue:
             analysis_type=analysis_type,
             limit=limit,
             depth=depth,
-            skill_level=skill_level
+            skill_level=skill_level,
+            auth_user_id=auth_user_id
         )
 
         with self.lock:
@@ -312,7 +342,7 @@ class AnalysisQueue:
         # Add to queue
         await self.queue.put(job)
 
-        print(f"[QUEUE] Analysis job {job_id} submitted for {user_id} on {platform}")
+        print(f"[QUEUE] Analysis job {job_id} submitted for {user_id} on {platform} (auth_user_id: {auth_user_id})")
         return job_id
 
     def get_job_status(self, job_id: str) -> Optional[AnalysisJob]:

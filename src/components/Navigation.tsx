@@ -91,7 +91,7 @@ export function Navigation() {
                       <div className="flex flex-col items-end">
                         <span className="text-slate-500">Imports</span>
                         <span className={usageStats.imports.remaining === 0 ? 'text-red-400 font-semibold' : 'text-slate-300'}>
-                          {usageStats.imports.remaining}/{usageStats.imports.limit}
+                          {usageStats.imports.used || 0}/{usageStats.imports.limit}
                         </span>
                       </div>
                     )}
@@ -99,7 +99,7 @@ export function Navigation() {
                       <div className="flex flex-col items-end">
                         <span className="text-slate-500">Analyses</span>
                         <span className={usageStats.analyses.remaining === 0 ? 'text-red-400 font-semibold' : 'text-slate-300'}>
-                          {usageStats.analyses.remaining}/{usageStats.analyses.limit}
+                          {usageStats.analyses.used || 0}/{usageStats.analyses.limit}
                         </span>
                       </div>
                     )}
