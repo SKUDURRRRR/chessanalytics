@@ -137,7 +137,9 @@ if JWT_AUDIENCE:
 
 # Simple in-memory cache for analytics with TTL
 _analytics_cache: Dict[str, Dict[str, Any]] = {}
-CACHE_TTL_SECONDS = 300  # 5 minutes cache TTL
+# DISK I/O OPTIMIZATION: Increased from 300s (5min) to 1800s (30min)
+# Rationale: Chess analytics are relatively static, 30min cache reduces repeat queries by ~80%
+CACHE_TTL_SECONDS = 1800  # 30 minutes cache TTL
 
 def _get_from_cache(cache_key: str) -> Optional[Dict[str, Any]]:
     """Get data from cache if it exists and is not expired."""

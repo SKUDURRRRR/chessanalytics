@@ -404,6 +404,8 @@ export default function SimpleAnalyticsPage() {
 
     checkStuckImport()
 
+    // DISK I/O OPTIMIZATION: Increased polling interval from 2s to 5s
+    // Rationale: Import progress doesn't need sub-second updates, reduces DB polling by 60%
     largeImportIntervalRef.current = setInterval(async () => {
       try {
         const progress = await AutoImportService.getImportProgress(userId, platform)
@@ -445,7 +447,7 @@ export default function SimpleAnalyticsPage() {
       } catch (error) {
         console.error('Polling error:', error)
       }
-    }, 2000)
+    }, 5000)  // Increased from 2000ms to 5000ms (5 seconds)
   }
 
   const cancelLargeImport = async () => {

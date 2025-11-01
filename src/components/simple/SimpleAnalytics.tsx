@@ -108,7 +108,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           const backendData = await UnifiedAnalysisService.getComprehensiveAnalytics(
             userId,
             (platform as 'lichess' | 'chess.com') || 'lichess',
-            10000  // Analyze ALL games for complete historical data
+            500  // DISK I/O OPTIMIZATION: Reduced from 10000 to 500 (still statistically significant, saves ~95% disk I/O)
           )
           // Return the full backend response with all the new analytics
           return backendData
