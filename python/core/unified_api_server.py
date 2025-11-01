@@ -1595,51 +1595,77 @@ async def get_elo_stats(
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured for ELO stats")
 
-        # Optimized query: get highest ELO in single query
-        highest_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select(
-                'my_rating, time_control, provider_game_id, played_at'
-            ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-                'my_rating', 'null'
-            ).order('my_rating', desc=True).limit(1).execute()
-        )
+        # Retry logic for transient connection errors
+        max_retries = 3
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                # Optimized query: get highest ELO in single query
+                highest_response = await asyncio.to_thread(
+                    lambda: db_client.table('games').select(
+                        'my_rating, time_control, provider_game_id, played_at'
+                    ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+                        'my_rating', 'null'
+                    ).order('my_rating', desc=True).limit(1).execute()
+                )
 
-        if not highest_response.data:
-            return {
-                "highest_elo": None,
-                "time_control": None,
-                "game_id": None,
-                "played_at": None,
-                "total_games": 0
-            }
+                if not highest_response.data:
+                    return {
+                        "highest_elo": None,
+                        "time_control": None,
+                        "game_id": None,
+                        "played_at": None,
+                        "total_games": 0
+                    }
 
-        highest_game = highest_response.data[0]
+                highest_game = highest_response.data[0]
 
-        # Get total games count
-        count_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select('id', count='exact', head=True).eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).not_.is_('my_rating', 'null').execute()
-        )
+                # Get total games count
+                count_response = await asyncio.to_thread(
+                    lambda: db_client.table('games').select('id', count='exact', head=True).eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).not_.is_('my_rating', 'null').execute()
+                )
 
-        total_games = getattr(count_response, 'count', 0) or 0
+                total_games = getattr(count_response, 'count', 0) or 0
 
-        result = {
-            "highest_elo": highest_game['my_rating'],
-            "time_control": highest_game['time_control'],
-            "game_id": highest_game['provider_game_id'],
-            "played_at": highest_game['played_at'],
-            "total_games": total_games
-        }
+                result = {
+                    "highest_elo": highest_game['my_rating'],
+                    "time_control": highest_game['time_control'],
+                    "game_id": highest_game['provider_game_id'],
+                    "played_at": highest_game['played_at'],
+                    "total_games": total_games
+                }
 
-        _set_in_cache(cache_key, result)
-        return result
+                _set_in_cache(cache_key, result)
+                return result
+
+            except Exception as e:
+                error_str = str(e)
+                # Retry on connection errors
+                if "ConnectionTerminated" in error_str or "RemoteProtocolError" in error_str:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        print(f"[WARNING] Database connection error (attempt {attempt + 1}/{max_retries}), retrying...")
+                        await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                        continue
+                else:
+                    # For other errors, fail immediately
+                    raise
+
+        # If all retries failed
+        if last_exception:
+            print(f"Error fetching ELO stats after {max_retries} retries: {last_exception}")
+            raise HTTPException(
+                status_code=503,
+                detail="Database temporarily unavailable. Please try again in a moment."
+            )
 
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error fetching ELO stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Unable to fetch ELO statistics")
 
 def _safe_divide(numerator: float, denominator: float) -> float:
     """Helper to avoid division by zero."""
@@ -1997,29 +2023,60 @@ async def get_comprehensive_analytics(
             print("[ERROR] Database not configured")
             raise HTTPException(status_code=503, detail="Database not configured")
 
-        # Determine total available games (for UI pagination context)
-        count_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()
-        )
-        total_games_count = getattr(count_response, 'count', 0) or 0
+        # Retry logic for transient connection errors
+        max_retries = 3
+        last_exception = None
+        games_response = None
 
-        # Base games query constrained by requested limit
-        # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
-        games_query = db_client.table('games').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True)
+        for attempt in range(max_retries):
+            try:
+                # Determine total available games (for UI pagination context)
+                count_response = await asyncio.to_thread(
+                    lambda: db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()
+                )
+                total_games_count = getattr(count_response, 'count', 0) or 0
 
-        # Supabase has a default limit of 1000 rows, so we need to explicitly set the limit
-        # If user requests >= 10000, fetch all available games
-        effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
+                # Base games query constrained by requested limit
+                # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
+                games_query = db_client.table('games').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True)
 
-        # Ensure we fetch at least the requested amount or all available games
-        if effective_limit > 0:
-            games_response = await asyncio.to_thread(
-                lambda: games_query.limit(effective_limit).execute()
-            )
-        else:
-            # Fallback: use the requested limit if we couldn't determine total
-            games_response = await asyncio.to_thread(
-                lambda: games_query.limit(limit).execute()
+                # Supabase has a default limit of 1000 rows, so we need to explicitly set the limit
+                # If user requests >= 10000, fetch all available games
+                effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
+
+                # Ensure we fetch at least the requested amount or all available games
+                if effective_limit > 0:
+                    games_response = await asyncio.to_thread(
+                        lambda: games_query.limit(effective_limit).execute()
+                    )
+                else:
+                    # Fallback: use the requested limit if we couldn't determine total
+                    games_response = await asyncio.to_thread(
+                        lambda: games_query.limit(limit).execute()
+                    )
+
+                # Success! Break out of retry loop
+                break
+
+            except Exception as e:
+                error_str = str(e)
+                # Retry on connection errors
+                if "ConnectionTerminated" in error_str or "RemoteProtocolError" in error_str:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        print(f"[WARNING] Database connection error (attempt {attempt + 1}/{max_retries}), retrying...")
+                        await asyncio.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                        continue
+                else:
+                    # For other errors, fail immediately
+                    raise
+
+        # If all retries failed
+        if last_exception and not games_response:
+            print(f"[ERROR] Failed to fetch comprehensive analytics after {max_retries} retries: {last_exception}")
+            raise HTTPException(
+                status_code=503,
+                detail="Database temporarily unavailable. Please try again in a moment."
             )
 
         games = games_response.data or []
@@ -5975,6 +6032,9 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
 
         return result
 
+    except HTTPException as http_exc:
+        # Re-raise HTTPException to preserve status code (like 429 for rate limits)
+        raise http_exc
     except Exception as e:
         print(f"Error in smart import: {e}")
         raise HTTPException(status_code=500, detail=str(e))

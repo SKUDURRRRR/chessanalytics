@@ -1558,7 +1558,7 @@ export default function GameAnalysisPage() {
         <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr,1fr]">
           <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-4 shadow-xl shadow-black/40">
             <h1 className="text-2xl font-semibold text-white">Game Overview</h1>
-            <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-2 text-base text-slate-200">
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 sm:gap-x-8 gap-y-2.5 text-base text-slate-200">
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Result: </span>
                 <span className={
@@ -1587,14 +1587,14 @@ export default function GameAnalysisPage() {
               </div>
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Opponent: </span>
-                <span className="text-white truncate inline-block max-w-full align-bottom">{opponentName}</span>
+                <span className="text-white break-words">{opponentName}</span>
               </div>
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Moves: </span>
                 <span>{processedData.moves.length > 0 ? processedData.moves.length : analysisRecord?.total_moves ?? 0}</span>
               </div>
                {performanceRating && (
-                 <div className="min-w-0 col-span-2">
+                 <div className="min-w-0 sm:col-span-2">
                    <span className="font-medium whitespace-nowrap">Performance Rating: </span>
                    <span className="text-yellow-300 font-semibold">
                      {performanceRating.rating}
