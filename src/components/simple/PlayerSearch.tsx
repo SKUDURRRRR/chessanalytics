@@ -210,13 +210,29 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
     setShowImportPrompt(false)
     setImportProgress({
       status: 'starting',
-      message: 'Validating user on platform...',
+      message: 'Checking database...',
       progress: 0,
       importedGames: 0,
     })
 
     try {
-      // First validate that the user exists on the platform
+      // First check if user already exists in our database
+      const userExists = await AutoImportService.checkUserExists(searchQuery, selectedPlatform)
+
+      if (userExists) {
+        // User already exists, just select them
+        await handlePlayerSelect(searchQuery, selectedPlatform)
+        return
+      }
+
+      // User not in database, now validate that they exist on the platform
+      setImportProgress({
+        status: 'starting',
+        message: 'Validating user on platform...',
+        progress: 0,
+        importedGames: 0,
+      })
+
       let validation
       try {
         validation = await AutoImportService.validateUserOnPlatform(
@@ -242,15 +258,6 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           progress: 0,
           importedGames: 0,
         })
-        return
-      }
-
-      // Check if user already exists in our database
-      const userExists = await AutoImportService.checkUserExists(searchQuery, selectedPlatform)
-
-      if (userExists) {
-        // User already exists, just select them
-        await handlePlayerSelect(searchQuery, selectedPlatform)
         return
       }
 

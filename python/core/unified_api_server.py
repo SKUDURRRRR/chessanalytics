@@ -2049,24 +2049,39 @@ async def get_comprehensive_analytics(
         move_analyses_map: Dict[str, Dict[str, Any]] = {}
 
         if provider_ids:
-            # game_analyses
-            analyses_response = await asyncio.to_thread(
-                lambda: db_client.table('game_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
-            )
-            for row in analyses_response.data or []:
-                analyses_map[row['game_id']] = row
+            # Batch the requests to avoid overwhelming Supabase with large IN clauses
+            # Supabase/HTTP2 has limits on request size, so we batch by 500 IDs
+            BATCH_SIZE = 500
 
-            move_response = await asyncio.to_thread(
-                lambda: db_client.table('move_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
-            )
-            for row in move_response.data or []:
-                move_analyses_map[row['game_id']] = row
+            # game_analyses - batch processing
+            for i in range(0, len(provider_ids), BATCH_SIZE):
+                batch_ids = provider_ids[i:i + BATCH_SIZE]
+                analyses_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('game_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', ids).execute()
+                )
+                for row in analyses_response.data or []:
+                    analyses_map[row['game_id']] = row
 
-        # Quick map of PGN terminations
-        pgn_response = await asyncio.to_thread(
-            lambda: db_client.table('games_pgn').select('provider_game_id, pgn').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_ids).execute()
-        )
-        pgn_map = {row['provider_game_id']: row.get('pgn') for row in (pgn_response.data or [])}
+            # move_analyses - batch processing
+            for i in range(0, len(provider_ids), BATCH_SIZE):
+                batch_ids = provider_ids[i:i + BATCH_SIZE]
+                move_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('move_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', ids).execute()
+                )
+                for row in move_response.data or []:
+                    move_analyses_map[row['game_id']] = row
+
+        # Quick map of PGN terminations - batch processing
+        pgn_map = {}
+        if provider_ids:
+            BATCH_SIZE = 500
+            for i in range(0, len(provider_ids), BATCH_SIZE):
+                batch_ids = provider_ids[i:i + BATCH_SIZE]
+                pgn_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('games_pgn').select('provider_game_id, pgn').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', ids).execute()
+                )
+                for row in (pgn_response.data or []):
+                    pgn_map[row['provider_game_id']] = row.get('pgn')
 
         # Distribution counters
         distribution: Dict[str, Dict[str, Any]] = {}

@@ -313,7 +313,7 @@ export default function SimpleAnalyticsPage() {
           handleRefresh()
           // Refresh usage stats after import for authenticated users
           if (user) {
-            refreshUsageStats()
+            await refreshUsageStats()
           }
         } else {
           setImportStatus(`Import complete! No new games found. You already have all recent games imported.`)
@@ -612,7 +612,7 @@ export default function SimpleAnalyticsPage() {
           // Clear cache to force fresh data load after analysis
           clearUserCache(userId, platform)
           // Refresh usage stats after analysis
-          refreshUsageStats()
+          await refreshUsageStats()
           // Set force refresh flag to bypass cache on next load
           setForceDataRefresh(true)
           // Add small delay to ensure database has finished writing analysis results

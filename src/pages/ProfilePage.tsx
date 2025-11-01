@@ -31,7 +31,8 @@ export default function ProfilePage() {
       // Verify the payment with our backend
       verifyStripeSession(sessionId)
     } else {
-      refreshUsageStats()
+      // Call refreshUsageStats without await since we're in useEffect
+      refreshUsageStats().catch(err => logger.error('Error refreshing usage stats:', err))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]) // Only run when user changes, not refreshUsageStats
