@@ -180,11 +180,13 @@ HANGING_PIECE_VALUE_MULTIPLIER = 0.6
 HANGING_PIECE_MIN_PENALTY = 40
 BASIC_MOVE_CANDIDATE_LIMIT = 5
 # Simplified Chess.com-aligned move classification thresholds
-# Merged categories for cleaner user experience:
-# - best(0-5), excellent(5-25), good(25-100), inaccuracy(100-200), mistake(200-400), blunder(400+)
+# Distinct categories for accurate move classification:
+# - best(0-5), great(5-15), excellent(15-25), good(25-50), acceptable(50-100), inaccuracy(100-200), mistake(200-400), blunder(400+)
 BASIC_BEST_THRESHOLD = 5  # Best moves (0-5cp loss)
-BASIC_EXCELLENT_THRESHOLD = 25  # Excellent moves (5-25cp loss) - merged great+excellent
-BASIC_GOOD_THRESHOLD = 100  # Good moves (25-100cp loss) - merged good+acceptable
+BASIC_GREAT_THRESHOLD = 15  # Great moves (5-15cp loss) - very strong moves
+BASIC_EXCELLENT_THRESHOLD = 25  # Excellent moves (15-25cp loss) - nearly optimal
+BASIC_GOOD_THRESHOLD = 50  # Good moves (25-50cp loss) - solid moves
+BASIC_ACCEPTABLE_THRESHOLD = 100  # Acceptable moves (50-100cp loss) - playable but imprecise
 BASIC_INACCURACY_THRESHOLD = 200  # Inaccuracies (100-200cp loss) - Chess.com standard
 BASIC_MISTAKE_THRESHOLD = 400  # Mistakes (200-400cp loss) - Chess.com standard
 BASIC_BLUNDER_THRESHOLD = 400  # Blunders (400+cp loss) - Chess.com standard
@@ -1284,11 +1286,11 @@ class ChessAnalysisEngine:
         # - Forced mate OR
         # - Sacrifice that is non-obvious and best move
         is_brilliant = is_best and (forcing_mate_trigger or (sacrifice_trigger and is_non_obvious))
-        is_excellent = BASIC_BEST_THRESHOLD < centipawn_loss <= BASIC_EXCELLENT_THRESHOLD  # Merged great+excellent (5-25cp)
-        is_great = is_excellent  # Alias for backward compatibility
-        is_good = BASIC_EXCELLENT_THRESHOLD < centipawn_loss <= BASIC_GOOD_THRESHOLD  # Merged good+acceptable (25-100cp)
-        is_acceptable = is_good  # Alias for backward compatibility
-        is_inaccuracy = BASIC_GOOD_THRESHOLD < centipawn_loss <= BASIC_INACCURACY_THRESHOLD
+        is_great = BASIC_BEST_THRESHOLD < centipawn_loss <= BASIC_GREAT_THRESHOLD  # Great moves (5-15cp loss) - very strong
+        is_excellent = BASIC_GREAT_THRESHOLD < centipawn_loss <= BASIC_EXCELLENT_THRESHOLD  # Excellent moves (15-25cp loss) - nearly optimal
+        is_good = BASIC_EXCELLENT_THRESHOLD < centipawn_loss <= BASIC_GOOD_THRESHOLD  # Good moves (25-50cp loss) - solid
+        is_acceptable = BASIC_GOOD_THRESHOLD < centipawn_loss <= BASIC_ACCEPTABLE_THRESHOLD  # Acceptable moves (50-100cp loss) - playable
+        is_inaccuracy = BASIC_ACCEPTABLE_THRESHOLD < centipawn_loss <= BASIC_INACCURACY_THRESHOLD
         is_mistake = BASIC_INACCURACY_THRESHOLD < centipawn_loss <= BASIC_MISTAKE_THRESHOLD
         is_blunder = centipawn_loss > BASIC_BLUNDER_THRESHOLD and (
             loss_from_best_gap or
@@ -1685,12 +1687,12 @@ class ChessAnalysisEngine:
                     # - Mistake: 0.10-0.20 loss    (~100-200cp depending on position)
                     # - Blunder: 0.20+ loss        (~200+cp depending on position)
                     #
-                    # Simplified Chess.com-aligned thresholds:
+                    # Simplified Chess.com-aligned thresholds with distinct categories:
                     is_best = centipawn_loss <= 5      # Best moves (engine top choice, 0-5cp)
-                    is_excellent = 5 < centipawn_loss <= 25  # Excellent moves (nearly optimal, 5-25cp) - merged great+excellent
-                    is_great = 5 < centipawn_loss <= 25      # Alias for is_excellent (for backward compatibility)
-                    is_good = 25 < centipawn_loss <= 100     # Good moves (solid play, 25-100cp) - merged good+acceptable
-                    is_acceptable = 25 < centipawn_loss <= 100  # Alias for is_good (for backward compatibility)
+                    is_great = 5 < centipawn_loss <= 15  # Great moves (very strong, 5-15cp)
+                    is_excellent = 15 < centipawn_loss <= 25  # Excellent moves (nearly optimal, 15-25cp)
+                    is_good = 25 < centipawn_loss <= 50     # Good moves (solid play, 25-50cp)
+                    is_acceptable = 50 < centipawn_loss <= 100  # Acceptable moves (playable, 50-100cp)
                     is_inaccuracy = 100 < centipawn_loss <= 200  # Inaccuracies (100-200cp) - Chess.com standard
                     is_mistake = 200 < centipawn_loss <= 400  # Mistakes (200-400cp) - Chess.com standard
                     is_blunder = centipawn_loss > 400  # Blunders (400+cp) - Chess.com standard
