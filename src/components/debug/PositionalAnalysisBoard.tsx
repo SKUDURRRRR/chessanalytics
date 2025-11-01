@@ -19,9 +19,9 @@ const MoveClassificationBadge = ({ classification }: { classification: string })
   }
 
   const classificationLabels = {
-    brilliant: 'Great',      // Chess.com: A move that altered the course of the game
+    brilliant: 'Brilliant',  // Spectacular tactical move with sacrifice or forced mate
     best: 'Best',            // Chess.com: The chess engine's top choice
-    great: 'Great',          // Chess.com: A move that altered the course of the game
+    great: 'Great',          // Very strong move, nearly optimal
     excellent: 'Excellent',  // Chess.com: Almost as good as the best move
     good: 'Good',            // Chess.com: A decent move, but not the best
     acceptable: 'Book',      // Chess.com: A conventional opening move
