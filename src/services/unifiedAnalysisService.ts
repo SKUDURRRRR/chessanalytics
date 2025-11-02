@@ -446,6 +446,65 @@ export class UnifiedAnalysisService {
   }
 
   /**
+   * Efficiently check which games from a list are already analyzed.
+   * This is optimized for Match History to quickly check analyze button states.
+   * Only fetches game_id, provider_game_id, and accuracy - not full analysis data.
+   */
+  static async checkGamesAnalyzed(
+    userId: string,
+    platform: Platform,
+    gameIds: string[],
+    analysisType: 'stockfish' | 'deep' = 'stockfish'
+  ): Promise<Map<string, { game_id: string; provider_game_id: string | null; accuracy: number | null }>> {
+    if (!gameIds || gameIds.length === 0) {
+      return new Map()
+    }
+
+    try {
+      const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}/check?analysis_type=${analysisType}`
+      console.log(`Checking analyzed games from: ${url}`)
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gameIds),
+      })
+
+      if (!response.ok) {
+        console.error(`HTTP error! status: ${response.status} for user ${userId}`)
+        return new Map()
+      }
+
+      const data = await response.json()
+      const analyzedGames = data.analyzed_games || []
+
+      // Create a map for fast lookups by both game_id and provider_game_id
+      const resultMap = new Map<string, { game_id: string; provider_game_id: string | null; accuracy: number | null }>()
+
+      analyzedGames.forEach((game: any) => {
+        const gameData = {
+          game_id: game.game_id,
+          provider_game_id: game.provider_game_id,
+          accuracy: game.accuracy
+        }
+
+        if (game.game_id) {
+          resultMap.set(game.game_id, gameData)
+        }
+        if (game.provider_game_id) {
+          resultMap.set(game.provider_game_id, gameData)
+        }
+      })
+
+      console.log(`Found ${analyzedGames.length} analyzed games out of ${gameIds.length} requested`)
+      return resultMap
+    } catch (error) {
+      console.error('Error checking analyzed games:', error)
+      return new Map()
+    }
+  }
+
+  /**
    * Get analysis progress for a user.
    * Replaces: AnalysisService.getAnalysisProgress
    */

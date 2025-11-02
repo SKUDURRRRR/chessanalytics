@@ -1436,6 +1436,59 @@ async def get_game_analyses_count(
     except Exception as e:
         print(f"Error fetching game analyses count: {e}")
         return {"count": 0}
+
+@app.post("/api/v1/analyses/{user_id}/{platform}/check")
+async def check_games_analyzed(
+    user_id: str,
+    platform: str,
+    game_ids: list[str],
+    analysis_type: str = Query("stockfish"),
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """
+    Efficiently check which games from a list are already analyzed.
+    Only returns game_id, provider_game_id, and accuracy for each analyzed game.
+    This is optimized for the Match History page to quickly check analyze button states.
+    """
+    try:
+        if not game_ids or len(game_ids) == 0:
+            return {"analyzed_games": []}
+
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(user_id, platform)
+
+        if not supabase and not supabase_service:
+            print("[ERROR] No database connection available")
+            return {"analyzed_games": []}
+
+        # Query only the fields we need: game_id, provider_game_id, and accuracy
+        # This is much faster than fetching all analysis data
+        db_client = supabase_service or supabase
+        response = await asyncio.to_thread(
+            lambda: db_client.table("unified_analyses")
+            .select("game_id,provider_game_id,accuracy")
+            .eq("user_id", canonical_user_id)
+            .eq("platform", platform)
+            .in_("game_id", game_ids)
+            .execute()
+        )
+
+        analyzed_games = []
+        if response.data:
+            for record in response.data:
+                analyzed_games.append({
+                    "game_id": record.get("game_id"),
+                    "provider_game_id": record.get("provider_game_id"),
+                    "accuracy": record.get("accuracy")
+                })
+
+        print(f"[check_games_analyzed] Found {len(analyzed_games)} analyzed games out of {len(game_ids)} requested")
+        return {"analyzed_games": analyzed_games}
+
+    except Exception as e:
+        print(f"Error checking analyzed games: {e}")
+        return {"analyzed_games": []}
 @app.get("/api/v1/progress/{user_id}/{platform}", response_model=AnalysisProgress)
 async def get_analysis_progress(
     user_id: str,

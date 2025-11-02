@@ -176,10 +176,11 @@ export default function SimpleAnalyticsPage() {
     checkApiHealth()
   }, [])
 
-  // Auto-sync effect - triggers when userId and platform are set (authenticated users only)
+  // Auto-sync effect - triggers when userId and platform are set
   useEffect(() => {
-    // Only auto-sync for authenticated users
-    if (user && userId && platform && !isLoading) {
+    // Auto-sync for both authenticated and anonymous users
+    // Anonymous users have import limits (100 imports per 24 hours)
+    if (userId && platform && !isLoading) {
       // Small delay to ensure page is fully loaded
       const timeoutId = setTimeout(() => {
         checkAndSyncNewGames()
@@ -187,7 +188,7 @@ export default function SimpleAnalyticsPage() {
 
       return () => clearTimeout(timeoutId)
     }
-  }, [user, userId, platform, isLoading])
+  }, [userId, platform, isLoading])
 
   useEffect(() => {
     const checkGamesExist = async () => {
@@ -477,6 +478,14 @@ export default function SimpleAnalyticsPage() {
       return
     }
 
+    // Check anonymous user limits (if not authenticated)
+    if (!user) {
+      if (!AnonymousUsageTracker.canImport()) {
+        console.log('[Auto-sync] Anonymous user reached import limit, skipping auto-sync')
+        return
+      }
+    }
+
     // Skip auto-sync if we synced within the last 10 minutes (saves 2-3 seconds)
     const lastSyncKey = `lastSync_${syncKey}`
     const lastSyncTime = localStorage.getItem(lastSyncKey)
@@ -533,6 +542,11 @@ export default function SimpleAnalyticsPage() {
       localStorage.setItem(lastSyncKey, Date.now().toString())
 
       if (result.success && actualNewGames > 0) {
+        // Track anonymous user usage
+        if (!user) {
+          AnonymousUsageTracker.incrementImports(actualNewGames)
+        }
+
         // Show success message
         setAutoSyncProgress({
           status: 'complete',

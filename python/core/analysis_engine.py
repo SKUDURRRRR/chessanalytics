@@ -1699,17 +1699,23 @@ class ChessAnalysisEngine:
                     # BRILLIANT MOVE DETECTION - Chess.com Aligned
                     # ============================================================================
                     # Based on Chess.com official criteria (support.chess.com/articles/8572705):
-                    # 1. Must be best or nearly best move (0-5cp loss maximum)
+                    # 1. Must be best or nearly best move (0-15cp loss maximum for sacrifices)
                     # 2. Must involve non-obvious piece sacrifice OR find forced mate
                     # 3. Position must not be completely winning without the move
                     # 4. Move should be difficult to find (non-obvious/surprising)
                     # 5. Adjusted for player rating (harder requirements for stronger players)
                     #
+                    # NOTE: Chess.com appears to be more lenient on centipawn loss for tactical
+                    # sacrifices compared to quiet moves. We allow up to 15cp loss for sacrifices
+                    # to better match their classification behavior.
+                    #
                     # Frequency: EXTREMELY rare - should appear in ~0-1% of games
                     # ============================================================================
                     is_brilliant = False
 
-                    if is_best and centipawn_loss <= 5:  # Must be near-perfect move (0-5cp loss)
+                    # More lenient threshold for sacrifice detection: allow up to 15cp loss
+                    # This better matches Chess.com's behavior for tactical sacrifices
+                    if centipawn_loss <= 15:  # Must be near-perfect move (0-5cp loss)
                         optimal_cp = best_cp
 
                         # Get rating-adjusted thresholds (default to 1500 if not available)
@@ -1794,16 +1800,24 @@ class ChessAnalysisEngine:
 
                                     # Calculate if evaluation "drops" compared to material exchange
                                     # For a true sacrifice: position should be worse than simple material exchange
+                                    # OR it's a tactical blow that maintains/improves the position
                                     material_exchange_value = (moving_value - captured_value) * 100  # Convert to centipawns
                                     expected_eval = optimal_cp - material_exchange_value
 
-                                    # True sacrifice: position evaluation is significantly worse than expected
-                                    # but still winning overall (tactical compensation exists)
+                                    # True sacrifice: either traditional (eval drops) OR tactical (strong despite material loss)
                                     # Rating-adjusted: lower ratings = more lenient
+                                    # RELAXED: Allow tactical sacrifices where position stays strong
+                                    eval_drop_indicates_sacrifice = actual_cp < expected_eval + 150
+                                    tactical_sacrifice = (
+                                        is_potential_sacrifice and
+                                        sacrifice_value >= rating_thresholds['min_sacrifice_value'] and
+                                        actual_cp >= -50  # Position not terrible after capture
+                                    )
+
                                     is_true_sacrifice = (
                                         is_potential_sacrifice and
                                         sacrifice_value >= rating_thresholds['min_sacrifice_value'] and
-                                        actual_cp < expected_eval + 150  # Eval worse than expected exchange
+                                        (eval_drop_indicates_sacrifice or tactical_sacrifice)
                                     )
 
                                     # Type 2: Check for pieces hanging after sacrifice
@@ -1881,12 +1895,22 @@ class ChessAnalysisEngine:
                         # -----------------------------------------------------------------------
                         # FINAL BRILLIANT DETERMINATION
                         # -----------------------------------------------------------------------
-                        # Chess.com criteria:
-                        # - Forced mate (even if position was already good) OR
-                        # - Sacrifice that is non-obvious
+                        # Chess.com criteria (adjusted based on empirical observations):
+                        # 1. Forced mate: Requires strict 0-5cp loss (truly best move)
+                        # 2. Tactical sacrifice: Allows 0-15cp loss (more lenient for tactics)
                         #
-                        # Note: is_non_obvious check ensures move is not trivial/forced
-                        is_brilliant = (forcing_mate_trigger or (sacrifice_trigger and is_non_obvious))
+                        # This differentiation better matches Chess.com's actual behavior,
+                        # where tactical sacrifices get more leeway than quiet moves.
+                        # Non-obvious check is less critical for clear tactical sacrifices.
+
+                        # For forced mates, require strict best move (0-5cp)
+                        brilliant_via_mate = forcing_mate_trigger and is_best and centipawn_loss <= 5
+
+                        # For sacrifices, allow up to 15cp loss
+                        # Make non-obvious check lenient - if it's a sacrifice, that's interesting enough
+                        brilliant_via_sacrifice = sacrifice_trigger and centipawn_loss <= 15
+
+                        is_brilliant = brilliant_via_mate or brilliant_via_sacrifice
 
                     # Convert evaluation to dict
                     evaluation = {

@@ -322,10 +322,10 @@ const buildEnhancedFallbackExplanation = (
 const classificationBadgeStyles: Record<MoveClassification, string> = {
   brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
   best: 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200',
-  great: 'border border-teal-400/40 bg-teal-500/20 text-teal-200',  // NEW
-  excellent: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',  // NEW
-  good: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',
-  acceptable: 'border border-slate-400/40 bg-slate-500/20 text-slate-200',
+  excellent: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',  // Merged great+excellent
+  great: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',  // Alias for excellent
+  good: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',  // Merged good+acceptable
+  acceptable: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',  // Alias for good
   inaccuracy: 'border border-amber-400/40 bg-amber-500/20 text-amber-200',
   mistake: 'border border-orange-400/40 bg-orange-500/20 text-orange-200',
   blunder: 'border border-rose-400/40 bg-rose-500/20 text-rose-200',
@@ -335,10 +335,10 @@ const classificationBadgeStyles: Record<MoveClassification, string> = {
 const classificationLabel: Record<MoveClassification, string> = {
   brilliant: 'Brilliant',  // Spectacular tactical move with sacrifice or forced mate
   best: 'Best',            // Chess.com: The chess engine's top choice
-  great: 'Great',          // Very strong move, nearly optimal
-  excellent: 'Excellent',  // Chess.com: Almost as good as the best move
-  good: 'Good',            // Chess.com: A decent move, but not the best
-  acceptable: 'Book',      // Chess.com: A conventional opening move
+  excellent: 'Excellent',  // Merged: Nearly optimal (5-25cp loss)
+  great: 'Excellent',      // Alias: Maps to excellent
+  good: 'Good',            // Merged: Solid play (25-100cp loss)
+  acceptable: 'Good',      // Alias: Maps to good
   inaccuracy: 'Inaccuracy', // Chess.com: A weak move
   mistake: 'Mistake',      // Chess.com: A bad move that immediately worsens your position
   blunder: 'Blunder',      // Chess.com: A very bad move that loses material or the game
@@ -841,9 +841,8 @@ export default function GameAnalysisPage() {
 
   useEffect(() => {
     if (processedData.positions.length > 0) {
-      // Set to the last position index (after all moves)
-      const lastPositionIndex = processedData.positions.length - 1
-      setCurrentIndex(lastPositionIndex)
+      // Set to the starting position (beginning of game)
+      setCurrentIndex(0)
     }
   }, [processedData.positions.length, processedData.moves.length])
 
@@ -980,13 +979,10 @@ export default function GameAnalysisPage() {
         console.log('✅ Re-analysis successful!')
         setReanalyzeSuccess(true)
 
-        // Wait a moment for the backend to save, then reload the data
-        setTimeout(async () => {
-          const result = await fetchGameAnalysisData(decodedUserId, platform, decodedGameId)
-          setGameRecord(prev => prev ?? result.game)
-          setAnalysisRecord(result.analysis)
-          setPgn(result.pgn)
-          setReanalyzeSuccess(false)
+        // Wait a moment for the backend to save, then hard refresh the page
+        setTimeout(() => {
+          // Perform a hard refresh (Ctrl+Shift+R equivalent)
+          window.location.reload()
         }, 2000)
       } else {
         throw new Error('Re-analysis failed')

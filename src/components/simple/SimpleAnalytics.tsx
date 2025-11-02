@@ -12,6 +12,7 @@ import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
 import { normalizeOpeningName } from '../../utils/openingUtils'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
+import { getOpeningColor } from '../../utils/openingColorClassification'
 import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { PersonalityRadar } from '../deep/PersonalityRadar'
 import { LongTermPlanner } from '../deep/LongTermPlanner'
@@ -96,11 +97,13 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         ),
         // Use backend API for player stats instead of direct Supabase query
         UnifiedAnalysisService.getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
+        // Reduced from 50 to 20 - only need a small sample for quick stats
+        // Most data comes from comprehensive analytics which is much more efficient
         UnifiedAnalysisService.getGameAnalyses(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
           'stockfish',
-          50,
+          20,  // Reduced from 50 for faster loading
           0
         ),
         // Use backend API for comprehensive analytics instead of direct Supabase queries
@@ -108,7 +111,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           const backendData = await UnifiedAnalysisService.getComprehensiveAnalytics(
             userId,
             (platform as 'lichess' | 'chess.com') || 'lichess',
-            10000  // Analyze ALL games for complete historical data
+            500  // Optimized: 500 games provides excellent statistical accuracy while loading 20x faster
           )
           // Return the full backend response with all the new analytics
           return backendData
@@ -455,6 +458,15 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     const fallbackFamilies = fallback?.openingFamily ? [fallback.openingFamily] : []
     const fallbackOpenings = fallback?.opening ? [fallback.opening] : []
 
+    // Auto-determine color if not explicitly provided
+    // This ensures we only show games where the player actually played this opening
+    const determinedColor = color || (() => {
+      const openingColor = getOpeningColor(normalizedName)
+      // If the opening is neutral (e.g., "King's Pawn Game"), don't filter by color
+      // If it's white or black, filter to only show games where player played that color
+      return openingColor === 'neutral' ? undefined : openingColor
+    })()
+
     return {
       normalized: normalizedName,
       identifiers: hasIdentifiers
@@ -463,7 +475,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             openingFamilies: fallbackFamilies,
             openings: fallbackOpenings,
           },
-      color,
+      color: determinedColor,
     }
   }
 

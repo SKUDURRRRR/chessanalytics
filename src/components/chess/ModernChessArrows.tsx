@@ -29,13 +29,13 @@ function squareToPixels(
     // White view: a1 is at bottom-left
     // In pixel coordinates: x increases left-to-right, y increases top-to-bottom
     // So rank 1 should be at bottom (high y), rank 8 at top (low y)
-    x = file * squareSize + squareSize / 2
-    y = (7 - rank) * squareSize + squareSize / 2
+    x = file * squareSize + squareSize / 2 + boardOffset.x
+    y = (7 - rank) * squareSize + squareSize / 2 + boardOffset.y
   } else {
     // Black view: board is flipped
     // h1 is at bottom-left, a8 at top-right
-    x = (7 - file) * squareSize + squareSize / 2
-    y = rank * squareSize + squareSize / 2
+    x = (7 - file) * squareSize + squareSize / 2 + boardOffset.x
+    y = rank * squareSize + squareSize / 2 + boardOffset.y
   }
 
   return { x, y }

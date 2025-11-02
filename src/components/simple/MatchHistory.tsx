@@ -297,24 +297,20 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         // Refresh analysis data after a short delay to get the accuracy
         setTimeout(async () => {
           try {
-            const analyses = await UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish')
-            const accuracyMap = new Map<string, number>()
+            // Use the optimized check endpoint instead of fetching all analyses
+            const analyzedMap = await UnifiedAnalysisService.checkGamesAnalyzed(userId, platform, [gameIdentifier], 'stockfish')
 
-            analyses.forEach(analysis => {
-              const id = analysis?.game_id
-              if (typeof id === 'string' && typeof analysis?.accuracy === 'number') {
-                accuracyMap.set(id, analysis.accuracy)
+            analyzedMap.forEach((gameData, gameId) => {
+              if (typeof gameData.accuracy === 'number') {
+                setGameAnalyses(prev => {
+                  const next = new Map(prev)
+                  next.set(gameId, gameData.accuracy)
+                  if (gameData.provider_game_id) {
+                    next.set(gameData.provider_game_id, gameData.accuracy)
+                  }
+                  return next
+                })
               }
-              const providerId = analysis?.provider_game_id
-              if (typeof providerId === 'string' && typeof analysis?.accuracy === 'number') {
-                accuracyMap.set(providerId, analysis.accuracy)
-              }
-            })
-
-            setGameAnalyses(prev => {
-              const next = new Map(prev)
-              accuracyMap.forEach((accuracy, id) => next.set(id, accuracy))
-              return next
             })
           } catch (refreshError) {
             // Extract just the error message to avoid circular references
@@ -402,24 +398,24 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
           if (providerIds.length > 0) {
             try {
-              const analyses = await UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish')
+              // Use the new optimized endpoint that only fetches game IDs and accuracy
+              // This is much faster than fetching all 100+ analysis records
+              const analyzedMap = await UnifiedAnalysisService.checkGamesAnalyzed(userId, platform, providerIds, 'stockfish')
+
               const analyzedIds = new Set<string>()
               const accuracyMap = new Map<string, number>()
 
-              analyses.forEach(analysis => {
-                const id = analysis?.game_id
-                if (typeof id === 'string') {
-                  analyzedIds.add(id)
-                  if (typeof analysis?.accuracy === 'number') {
-                    accuracyMap.set(id, analysis.accuracy)
-                  }
+              // Extract analyzed IDs and accuracy from the result map
+              analyzedMap.forEach((gameData, gameId) => {
+                analyzedIds.add(gameId)
+                if (typeof gameData.accuracy === 'number') {
+                  accuracyMap.set(gameId, gameData.accuracy)
                 }
-
-                const providerId = analysis?.provider_game_id
-                if (typeof providerId === 'string') {
-                  analyzedIds.add(providerId)
-                  if (typeof analysis?.accuracy === 'number') {
-                    accuracyMap.set(providerId, analysis.accuracy)
+                // Also add by provider_game_id if it exists
+                if (gameData.provider_game_id) {
+                  analyzedIds.add(gameData.provider_game_id)
+                  if (typeof gameData.accuracy === 'number') {
+                    accuracyMap.set(gameData.provider_game_id, gameData.accuracy)
                   }
                 }
               })

@@ -8,19 +8,22 @@ The **auto-import** (also called "auto-sync") is working **correctly** - it's no
 
 ### Trigger
 - **When**: Automatically runs when you visit a user's dashboard
-- **Where**: `SimpleAnalyticsPage.tsx` lines 162-172
+- **Where**: `SimpleAnalyticsPage.tsx` lines 179-191
 - **Delay**: 1 second after page loads
-- **Cooldown**: Skips if run within last 10 minutes (line 409-418)
+- **Cooldown**: Skips if run within last 10 minutes
+- **Authentication**: Works for both authenticated and anonymous users (anonymous users subject to 100 imports per 24 hours limit)
 
 ### Process Flow
-1. Check if user profile exists in database (line 431)
-2. If no profile, skip auto-sync (line 433-437)
-3. Call `AutoImportService.importSmartGames()` (line 448)
-4. Fetch **most recent 100 games** from Lichess (line 5156)
-5. Compare with existing games in database
-6. Import only NEW games (not already in database)
-7. If new games found, show notification and refresh (line 464-479)
-8. If no new games, dismiss silently (line 480-485)
+1. Check if user profile exists in database
+2. If no profile, skip auto-sync
+3. Check anonymous user limits (if not authenticated) - skip if limit reached
+4. Call `AutoImportService.importSmartGames()`
+5. Fetch **most recent 100 games** from platform
+6. Compare with existing games in database
+7. Import only NEW games (not already in database)
+8. If new games found, show notification and refresh
+9. If no new games, dismiss silently
+10. Track anonymous user usage (if not authenticated)
 
 ## Why Auto-Import Didn't Import All Games
 
@@ -35,9 +38,15 @@ The **auto-import** (also called "auto-sync") is working **correctly** - it's no
 - This means auto-import **won't run for brand new users**
 
 ### Limitation 3: 10-Minute Cooldown
-- Lines 409-418: Auto-sync skips if run within last 10 minutes
+- Auto-sync skips if run within last 10 minutes
 - If you visited the dashboard recently, auto-sync won't run again
 - This prevents excessive API calls but means you need to wait
+
+### Limitation 4: Anonymous User Limits (New - 2025-11-02)
+- Anonymous users (not logged in) have a limit of **100 game imports per 24 hours**
+- If the limit is reached, auto-sync will be skipped for anonymous users
+- To bypass limits, users can **sign in** to get higher limits
+- Limits reset every 24 hours on a rolling window
 
 ## What Happened with pakrovejas69
 
@@ -101,8 +110,10 @@ Current behavior is optimal:
 
 ### Auto-Sync Entry Point
 ```typescript
-// SimpleAnalyticsPage.tsx lines 162-172
+// SimpleAnalyticsPage.tsx lines 179-191
 useEffect(() => {
+  // Auto-sync for both authenticated and anonymous users
+  // Anonymous users have import limits (100 imports per 24 hours)
   if (userId && platform && !isLoading) {
     const timeoutId = setTimeout(() => {
       checkAndSyncNewGames()  // Runs after 1 second
@@ -110,6 +121,27 @@ useEffect(() => {
     return () => clearTimeout(timeoutId)
   }
 }, [userId, platform, isLoading])
+```
+
+### Anonymous User Limit Check
+```typescript
+// src/pages/SimpleAnalyticsPage.tsx lines 481-487
+// Check anonymous user limits (if not authenticated)
+if (!user) {
+  if (!AnonymousUsageTracker.canImport()) {
+    console.log('[Auto-sync] Anonymous user reached import limit, skipping auto-sync')
+    return
+  }
+}
+```
+
+### Usage Tracking
+```typescript
+// src/pages/SimpleAnalyticsPage.tsx lines 545-548
+// Track anonymous user usage
+if (!user) {
+  AnonymousUsageTracker.incrementImports(actualNewGames)
+}
 ```
 
 ### Smart Import Endpoint

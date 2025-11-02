@@ -90,18 +90,12 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
 
   // White's 1.d4 systems
   'Queen\'s Gambit': 'white',
-  'Queen\'s Pawn Game': 'white',
-  'Queen\'s Pawn': 'white',
   'London System': 'white',
   'London': 'white',
   'Colle System': 'white',
   'Torre Attack': 'white',
   'Trompowsky Attack': 'white',
   'Blackmar-Diemer Gambit': 'white',
-
-  // White's 1.e4 systems (general)
-  'King\'s Pawn Game': 'white',
-  'King\'s Pawn': 'white',
 
   // White's other first moves
   'English Opening': 'white',
@@ -117,6 +111,10 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
 
   // === NEUTRAL OPENINGS ===
   // These describe the game structure rather than a specific color's choice
+  'King\'s Pawn Game': 'neutral',
+  'King\'s Pawn': 'neutral',
+  'Queen\'s Pawn Game': 'neutral',
+  'Queen\'s Pawn': 'neutral',
   'Indian Game': 'neutral',
   'Indian': 'neutral',
   'Unknown': 'neutral',

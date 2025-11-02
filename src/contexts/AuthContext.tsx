@@ -182,26 +182,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
 
-      // If signup successful and user is created, create authenticated_users record
-      if (!error) {
-        const { data: session } = await supabase.auth.getSession()
-        if (session.session?.user) {
-          try {
-            // Create authenticated_users record via Supabase client
-            await supabase.from('authenticated_users').insert({
-              id: session.session.user.id,
-              account_tier: 'free'
-            })
-            logger.log('User profile created successfully')
-          } catch (dbError) {
-            logger.error('Error creating user profile:', dbError)
-            // Don't fail the signup if profile creation fails
-            // The database trigger should handle this as fallback
-          }
-        }
-        logger.log('Sign up successful')
-      } else {
+      // The database trigger (on_auth_user_created) automatically creates
+      // the authenticated_users record when a new user signs up.
+      // No need to manually insert - the trigger handles it with elevated permissions.
+
+      if (error) {
         logger.warn('Sign up failed:', error.message)
+      } else {
+        logger.log('Sign up successful')
       }
 
       return { error }

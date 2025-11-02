@@ -55,6 +55,25 @@ const EVAL_CAP = 1000
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
+// Classification label mapping - used across components
+const classificationLabels = {
+  brilliant: 'Brilliant',  // Spectacular tactical move with sacrifice or forced mate
+  best: 'Best',            // Chess.com: The chess engine's top choice
+  excellent: 'Excellent',  // Merged: Nearly optimal (5-25cp loss)
+  great: 'Excellent',      // Alias: Maps to excellent
+  good: 'Good',            // Merged: Solid play (25-100cp loss)
+  acceptable: 'Good',      // Alias: Maps to good
+  inaccuracy: 'Inaccuracy', // Chess.com: A weak move
+  mistake: 'Mistake',      // Chess.com: A bad move that immediately worsens your position
+  blunder: 'Blunder',      // Chess.com: A very bad move that loses material or the game
+  uncategorized: 'Move'    // Fallback for uncategorized moves
+}
+
+// Helper function to get classification display label
+const getClassificationLabel = (classification: string): string => {
+  return classificationLabels[classification as keyof typeof classificationLabels] || classification
+}
+
 const MoveClassificationBadge = ({ classification }: { classification: string }) => {
   const classificationColors = {
     brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
@@ -69,22 +88,9 @@ const MoveClassificationBadge = ({ classification }: { classification: string })
     uncategorized: 'border border-slate-400/30 bg-slate-500/10 text-slate-200'
   }
 
-  const classificationLabels = {
-    brilliant: 'Brilliant',  // Spectacular tactical move with sacrifice or forced mate
-    best: 'Best',            // Chess.com: The chess engine's top choice
-    excellent: 'Excellent',  // Merged: Nearly optimal (5-25cp loss)
-    great: 'Excellent',      // Alias: Maps to excellent
-    good: 'Good',            // Merged: Solid play (25-100cp loss)
-    acceptable: 'Good',      // Alias: Maps to good
-    inaccuracy: 'Inaccuracy', // Chess.com: A weak move
-    mistake: 'Mistake',      // Chess.com: A bad move that immediately worsens your position
-    blunder: 'Blunder',      // Chess.com: A very bad move that loses material or the game
-    uncategorized: 'Move'    // Fallback for uncategorized moves
-  }
-
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${classificationColors[classification as keyof typeof classificationColors]}`}>
-      {classificationLabels[classification as keyof typeof classificationLabels]}
+      {getClassificationLabel(classification)}
     </span>
   )
 }
@@ -1243,7 +1249,7 @@ export function UnifiedChessAnalysis({
                     {/* Show classification badge for normal moves */}
                     {currentMove && (
                       <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getMoveQualityColor(currentMove.classification)}`}>
-                        {currentMove.classification.charAt(0).toUpperCase() + currentMove.classification.slice(1)}
+                        {getClassificationLabel(currentMove.classification)}
                       </span>
                     )}
                   </div>
