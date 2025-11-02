@@ -90,10 +90,9 @@ function getArrowHead(
   const headLength = boardWidth / 25 // Length of arrow head
   const headWidth = boardWidth / 35 // Half-width at the base
 
-  // Calculate the tip point (slightly inset from destination)
-  const tipInset = boardWidth / 120 // Small inset to prevent overlap
-  const tipX = x2 - tipInset * Math.cos(angle)
-  const tipY = y2 - tipInset * Math.sin(angle)
+  // Tip point should be exactly at the destination square center
+  const tipX = x2
+  const tipY = y2
 
   // Arrow head points forming a triangle
   const point1 = {
@@ -108,7 +107,7 @@ function getArrowHead(
 
   return {
     points: `${tipX},${tipY} ${point1.x},${point1.y} ${point2.x},${point2.y}`,
-    tipOffset: headLength + tipInset
+    tipOffset: headLength
   }
 }
 
@@ -126,110 +125,99 @@ export function ModernChessArrows({
   const [squareSize, setSquareSize] = React.useState(boardWidth / 8)
   const [boardOffset, setBoardOffset] = React.useState({ x: 0, y: 0 })
 
-  /**
-   * CRITICAL: Arrow Alignment Measurement
-   *
-   * This effect measures the actual chessboard square positions and calculates
-   * the offset needed to align arrows perfectly with squares.
-   *
-   * WHY THIS IS NECESSARY:
-   * - The SVG overlay uses a coordinate system (0,0 to boardWidth,boardWidth)
-   * - The actual chessboard squares may have padding, margins, or internal offsets
-   * - Without measuring actual positions, arrows would be misaligned
-   *
-   * HOW IT WORKS:
-   * 1. Finds the a1 square element using data-square attribute
-   * 2. Measures its actual position in viewport coordinates
-   * 3. Converts to SVG local coordinate space
-   * 4. Compares with expected position (based on board orientation)
-   * 5. Calculates offset difference to align all squares correctly
-   *
-   * ⚠️ WARNING: Do not change this logic without understanding:
-   * - SVG coordinate system (viewBox="0 0 boardWidth boardWidth")
-   * - Square coordinate conversion (squareToPixels function)
-   * - Board orientation handling (white vs black view)
-   * - The relationship between viewport and local coordinates
-   */
+  // Measure actual board to align arrows perfectly to square centers
+  // This uses requestAnimationFrame to ensure DOM is fully rendered before measuring
+  // Measures multiple squares for more accurate alignment
   React.useEffect(() => {
+    let rafId: number
+    let timeoutId: NodeJS.Timeout
+
     const measure = () => {
       if (!svgRef.current) return
 
       const container = svgRef.current.parentElement
       if (!container) return
 
-      // Try to find actual square elements to measure
+      // Measure a1 and h8 to get more accurate alignment
       const a1Square = container.querySelector('[data-square="a1"]') as HTMLElement
       const h8Square = container.querySelector('[data-square="h8"]') as HTMLElement
 
-      if (a1Square && h8Square) {
-        const a1Rect = a1Square.getBoundingClientRect()
-        const svgRect = svgRef.current.getBoundingClientRect()
+      if (!a1Square || !h8Square) return
 
-        // Validate measurements are reasonable
-        if (a1Rect.width <= 0 || svgRect.width <= 0) {
-          console.warn('[ModernChessArrows] Invalid measurements, using fallback')
-          setSquareSize(boardWidth / 8)
-          setBoardOffset({ x: 0, y: 0 })
-          return
-        }
+      const a1Rect = a1Square.getBoundingClientRect()
+      const h8Rect = h8Square.getBoundingClientRect()
+      const svgRect = svgRef.current.getBoundingClientRect()
 
-        // Calculate actual square size from measured square element
-        const actualSquareSize = a1Rect.width
+      if (a1Rect.width <= 0 || svgRect.width <= 0) return
 
-        // Calculate where a1 square center is in SVG coordinate space
-        // We need to convert from viewport coordinates to SVG local coordinates
-        const a1CenterXViewport = a1Rect.left + a1Rect.width / 2
-        const a1CenterYViewport = a1Rect.top + a1Rect.height / 2
+      const actualSquareSize = a1Rect.width
+      setSquareSize(actualSquareSize)
 
-        // Get SVG position in viewport
-        const svgLeft = svgRect.left
-        const svgTop = svgRect.top
+      // Calculate where a1 center actually is in SVG coordinate space
+      const a1CenterX = a1Rect.left + a1Rect.width / 2 - svgRect.left
+      const a1CenterY = a1Rect.top + a1Rect.height / 2 - svgRect.top
 
-        // Convert to SVG local coordinates (0,0 is top-left of SVG)
-        // The SVG viewBox is "0 0 boardWidth boardWidth", so coordinates match pixels
-        const a1CenterXLocal = a1CenterXViewport - svgLeft
-        const a1CenterYLocal = a1CenterYViewport - svgTop
+      // Calculate where a1 center should be based on our coordinate system
+      // For white orientation: a1 is at file 0, rank 0 (but displayed at bottom)
+      // For black orientation: a1 is at file 7, rank 7 (but displayed at top-right)
+      let expectedA1X: number, expectedA1Y: number
 
-        // Expected a1 center position if board starts at (0,0) in SVG coordinates
-        // For white orientation: a1 is at bottom-left, so file=0, rank=0
-        // x = 0 * squareSize + squareSize/2 = squareSize/2
-        // y = (7-0) * squareSize + squareSize/2 = 7.5 * squareSize
-        // For black orientation: a1 is at top-right, so we need to account for flip
-        const expectedA1X = actualSquareSize / 2
-        const expectedA1Y = (boardOrientation === 'white')
-          ? (7 * actualSquareSize + actualSquareSize / 2)
-          : (actualSquareSize / 2)
-
-        // Calculate offset needed to align measured position with expected position
-        // This offset is added in squareToPixels() to shift all square centers correctly
-        const offsetX = a1CenterXLocal - expectedA1X
-        const offsetY = a1CenterYLocal - expectedA1Y
-
-        // Validate offset is reasonable (within ±50px to catch major misalignments)
-        if (Math.abs(offsetX) > 50 || Math.abs(offsetY) > 50) {
-          console.warn('[ModernChessArrows] Unusual offset detected:', { offsetX, offsetY, boardId })
-        }
-
-        setSquareSize(actualSquareSize)
-        setBoardOffset({ x: offsetX, y: offsetY })
+      if (boardOrientation === 'white') {
+        // a1 is bottom-left: file 0, rank 0 -> x = 0 * squareSize + squareSize/2, y = 7 * squareSize + squareSize/2
+        expectedA1X = actualSquareSize / 2
+        expectedA1Y = 7 * actualSquareSize + actualSquareSize / 2
       } else {
-        // Fallback: use boardWidth prop when squares can't be found
-        // This happens during initial render or if board structure changes
-        const actualSquareSize = boardWidth / 8
-        setSquareSize(actualSquareSize)
-        setBoardOffset({ x: 0, y: 0 })
+        // a1 is top-right when board is flipped: file 7, rank 7 -> x = 7 * squareSize + squareSize/2, y = 0 * squareSize + squareSize/2
+        expectedA1X = 7 * actualSquareSize + actualSquareSize / 2
+        expectedA1Y = actualSquareSize / 2
       }
+
+      // Calculate offset from a1
+      let offsetX = a1CenterX - expectedA1X
+      let offsetY = a1CenterY - expectedA1Y
+
+      // Verify with h8 for better accuracy
+      const h8CenterX = h8Rect.left + h8Rect.width / 2 - svgRect.left
+      const h8CenterY = h8Rect.top + h8Rect.height / 2 - svgRect.top
+
+      let expectedH8X: number, expectedH8Y: number
+      if (boardOrientation === 'white') {
+        // h8 is top-right: file 7, rank 7 -> x = 7 * squareSize + squareSize/2, y = 0 * squareSize + squareSize/2
+        expectedH8X = 7 * actualSquareSize + actualSquareSize / 2
+        expectedH8Y = actualSquareSize / 2
+      } else {
+        // h8 is bottom-left when flipped: file 0, rank 0 -> x = 0 * squareSize + squareSize/2, y = 7 * squareSize + squareSize/2
+        expectedH8X = actualSquareSize / 2
+        expectedH8Y = 7 * actualSquareSize + actualSquareSize / 2
+      }
+
+      // Average the offsets for more accuracy
+      const offsetXFromH8 = h8CenterX - expectedH8X
+      const offsetYFromH8 = h8CenterY - expectedH8Y
+
+      // Use average of both measurements
+      offsetX = (offsetX + offsetXFromH8) / 2
+      offsetY = (offsetY + offsetYFromH8) / 2
+
+      setBoardOffset({ x: offsetX, y: offsetY })
     }
 
-    // Delay measurement to ensure board is rendered
-    const timer = setTimeout(measure, 150)
-    window.addEventListener('resize', measure)
+    const scheduleMeasure = () => {
+      // Use requestAnimationFrame to ensure DOM is ready
+      rafId = requestAnimationFrame(() => {
+        timeoutId = setTimeout(measure, 50)
+      })
+    }
+
+    scheduleMeasure()
+    window.addEventListener('resize', scheduleMeasure)
 
     return () => {
-      clearTimeout(timer)
-      window.removeEventListener('resize', measure)
+      if (rafId) cancelAnimationFrame(rafId)
+      if (timeoutId) clearTimeout(timeoutId)
+      window.removeEventListener('resize', scheduleMeasure)
     }
-  }, [boardWidth, boardOrientation, boardId])
+  }, [boardWidth, boardOrientation])
 
   // Debug mode - can be enabled for troubleshooting
   const debugMode = false
