@@ -42,6 +42,12 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
   'Petrov': 'black',
   'Philidor Defense': 'black',
   'Philidor': 'black',
+  'Two Knights Defense': 'black',
+  'Hungarian Defense': 'black',
+  'Latvian Gambit': 'black',
+  'Elephant Gambit': 'black',
+  'Damiano Defense': 'black',
+  'Portuguese Opening': 'black',
 
   // 1.d4 openings (Black's defenses)
   'King\'s Indian Defense': 'black',
@@ -75,6 +81,7 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
   // White's 1.e4 systems
   'Italian Game': 'white',
   'Italian': 'white',
+  'Giuoco Piano': 'white',
   'Ruy Lopez': 'white',
   'Spanish Game': 'white',
   'Scotch Game': 'white',
@@ -87,6 +94,12 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
   'King\'s Gambit Declined': 'white',
   'Bishop\'s Opening': 'white',
   'Center Game': 'white',
+  'Ponziani Opening': 'white',
+  'Danish Gambit': 'white',
+  'Evans Gambit': 'white',
+  'Fried Liver Attack': 'white',
+  'Max Lange Attack': 'white',
+  'Italian Gambit': 'white',
 
   // White's 1.d4 systems
   'Queen\'s Gambit': 'white',
@@ -96,6 +109,9 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
   'Torre Attack': 'white',
   'Trompowsky Attack': 'white',
   'Blackmar-Diemer Gambit': 'white',
+  'Catalan Opening': 'white',
+  'Catalan': 'white',
+  'Stonewall Attack': 'white',
 
   // White's other first moves
   'English Opening': 'white',
@@ -108,6 +124,12 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
   'Bird': 'white',
   'Larsen\'s Opening': 'white',
   'Larsen': 'white',
+  'Nimzowitsch-Larsen Attack': 'white',
+  'Polish Opening': 'white',
+  'Orangutan': 'white',
+  'Sokolsky Opening': 'white',
+  'Zukertort Opening': 'white',
+  'Old Indian Attack': 'white',
 
   // === NEUTRAL OPENINGS ===
   // These describe the game structure rather than a specific color's choice

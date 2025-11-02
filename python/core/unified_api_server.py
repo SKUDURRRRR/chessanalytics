@@ -2358,15 +2358,56 @@ async def get_comprehensive_analytics(
         opening_stats.sort(key=lambda x: x['games'], reverse=True)
 
         # Opening stats by color
+        # 🚨 CRITICAL: This filter MUST remain in place - see docs/OPENING_COLOR_BUG_PREVENTION.md
+        # DO NOT remove the _should_count_opening_for_color check or Caro-Kann will appear under White openings
+
+        # For accurate opening color stats, we need ALL games, not just the limited sample
+        # Fetch all games for this user to calculate complete opening statistics
+        if DEBUG:
+            print(f"[DEBUG] Fetching ALL games for opening color stats (current sample: {len(games)} games)")
+
+        all_games_for_openings = await asyncio.to_thread(
+            lambda: db_client.table('games')
+                .select('opening, opening_family, opening_normalized, color, result, my_rating')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .not_.is_('color', 'null')
+                .execute()
+        )
+        games_for_color_stats = all_games_for_openings.data or []
+
+        if DEBUG:
+            print(f"[DEBUG] Fetched {len(games_for_color_stats)} total games for opening color stats")
+
         opening_color_performance = {'white': {}, 'black': {}}
-        for game in games:
+        filtered_white_openings = {}  # Debug: track what we filtered out for white
+        for game in games_for_color_stats:  # Use all games, not just the limited sample
             color = game.get('color')
             if color not in ['white', 'black']:
                 continue
 
             opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+
+            # 🚨 CRITICAL FIX: Filter out opponent's openings
+            # Only count openings that the player actually chose to play
+            # e.g., skip "Caro-Kann Defense" when player is white (that's opponent's opening)
+            # This bug has been reported multiple times - see docs/CARO_KANN_FIX_2025.md
+            if not _should_count_opening_for_color(opening, color):
+                # Track filtered openings for debugging
+                if color == 'white':
+                    filtered_white_openings[opening] = filtered_white_openings.get(opening, 0) + 1
+                continue
+
             if opening not in opening_color_performance[color]:
-                opening_color_performance[color][opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
+                opening_color_performance[color][opening] = {
+                    'games': 0,
+                    'wins': 0,
+                    'draws': 0,
+                    'losses': 0,
+                    'elos': [],
+                    'opening_families': set(),  # Track unique opening families
+                    'openings': set()  # Track unique opening names
+                }
 
             opening_color_performance[color][opening]['games'] += 1
             result = game.get('result')
@@ -2380,10 +2421,30 @@ async def get_comprehensive_analytics(
             if game.get('my_rating'):
                 opening_color_performance[color][opening]['elos'].append(game.get('my_rating'))
 
+            # Track opening families and openings for identifiers
+            if game.get('opening_family'):
+                opening_color_performance[color][opening]['opening_families'].add(game.get('opening_family'))
+            if game.get('opening'):
+                opening_color_performance[color][opening]['openings'].add(game.get('opening'))
+
         opening_color_stats = {'white': [], 'black': []}
         for color in ['white', 'black']:
             for opening, stats in opening_color_performance[color].items():
+                # 🚨 DEFENSIVE CHECK: Double-verify that opening matches color
+                # This is a safety net in case the filter above missed something
+                if not _should_count_opening_for_color(opening, color):
+                    # This should never happen if the filter worked correctly above
+                    # But if it does, skip it to prevent bugs like Caro-Kann under white
+                    if DEBUG:
+                        print(f"[WARNING] Defensive filter caught {opening} for {color} - this should have been filtered earlier!")
+                    continue
+
                 avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
+
+                # Convert sets to lists for JSON serialization (sets are not JSON serializable)
+                opening_families_set = stats.get('opening_families', set())
+                openings_set = stats.get('openings', set())
+
                 opening_color_stats[color].append({
                     'opening': opening,
                     'games': stats['games'],
@@ -2391,10 +2452,20 @@ async def get_comprehensive_analytics(
                     'draws': stats['draws'],
                     'losses': stats['losses'],
                     'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
-                    'averageElo': avg_elo
+                    'averageElo': avg_elo,
+                    'identifiers': {
+                        'openingFamilies': sorted([f for f in opening_families_set if f]),
+                        'openings': sorted([o for o in openings_set if o])
+                    }
                 })
             # Sort by number of games
             opening_color_stats[color].sort(key=lambda x: x['games'], reverse=True)
+
+        # Debug logging for filtered white openings
+        if filtered_white_openings:
+            print(f"[DEBUG] Filtered {len(filtered_white_openings)} unique openings from White stats:")
+            for opening, count in sorted(filtered_white_openings.items(), key=lambda x: x[1], reverse=True)[:10]:
+                print(f"  - {opening}: {count} games")
 
         # Highest ELO
         highest_elo = None
@@ -4628,15 +4699,23 @@ def _should_count_opening_for_color(opening: str, player_color: str) -> bool:
         'scandinavian', 'alekhine', 'nimzowitsch defense', 'petrov', 'philidor',
         "king's indian", 'grunfeld', 'grünfeld', 'nimzo-indian',
         "queen's gambit declined", "queen's gambit accepted", 'slav', 'semi-slav',
-        "queen's indian", 'benoni', 'benko', 'dutch', 'budapest', 'tarrasch defense'
+        "queen's indian", 'benoni', 'benko', 'dutch', 'budapest', 'tarrasch defense',
+        'two knights defense', 'hungarian defense', 'latvian gambit',
+        'elephant gambit', 'damiano defense', 'portuguese opening'
     ]
 
     # White openings (systems/attacks) - only count when player is white
     white_openings = [
         'italian', 'ruy lopez', 'spanish', 'scotch', 'four knights', 'vienna',
-        "king's gambit", "bishop's opening", 'center game',
+        "king's gambit", "bishop's opening", 'center game', 'giuoco piano',
         "queen's gambit", 'london', 'colle', 'torre', 'trompowsky',
-        'blackmar-diemer', 'english', 'reti', 'réti', "bird's", "larsen's"
+        'blackmar-diemer', 'english', 'reti', 'réti', "bird's", "larsen's",
+        'catalan', 'benko gambit declined', 'ponziani', 'danish gambit',
+        'alapin', 'morra', 'smith-morra', 'wing gambit', 'evans gambit',
+        'fried liver', 'max lange', 'greco', 'italian gambit',
+        'mieses opening', 'barnes opening', 'polish', 'orangutan', 'sokolsky',
+        'nimzowitsch-larsen', 'zukertort', 'old indian attack',
+        'kingside fianchetto', 'queenside fianchetto', 'stonewall'
     ]
 
     # Check if it's a black opening

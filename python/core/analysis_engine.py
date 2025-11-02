@@ -1714,15 +1714,57 @@ class ChessAnalysisEngine:
                     is_brilliant = False
 
                     # Brilliant moves must be near-best moves
-                    # Chess.com: 0-5cp for quiet moves, up to ~6cp for extremely clear tactical sacrifices
-                    # Need to be VERY selective - only truly exceptional moves
-                    if centipawn_loss <= 6:  # Allow up to 6cp for potential brilliant tactical sacrifices (very strict)
+                    # Chess.com: 0-5cp for quiet moves, up to ~10cp for clear tactical sacrifices
+                    # Based on examples (Nxe6, Bxg3), tactical sacrifices get more leeway
+
+                    # DEBUG: Log move being analyzed (safely - don't access board if move not pushed)
+                    try:
+                        move_san_debug = move_san  # Use SAN notation from above (calculated before push)
+                        move_uci_debug = move.uci()  # Also keep UCI for debugging
+                    except:
+                        try:
+                            move_san_debug = move.uci()  # Fallback to UCI
+                            move_uci_debug = move.uci()
+                        except:
+                            move_san_debug = str(move)
+                            move_uci_debug = str(move)
+
+                    # Write to log file for easier searching
+                    try:
+                        with open("brilliant_debug.log", "a", encoding="utf-8") as f:
+                            f.write(f"\n{'='*80}\n")
+                            f.write(f"MOVE: {move_san_debug} ({move_uci_debug})\n")
+                            f.write(f"{'='*80}\n")
+                    except:
+                        pass
+
+                    # DEBUG: Always log centipawn loss for ALL moves (before the check)
+                    print(f"[BRILLIANT DEBUG] {move_san_debug} ({move_uci_debug}): centipawn_loss={centipawn_loss:.1f}, best_cp={best_cp:.1f}, actual_cp={actual_cp:.1f}")
+                    try:
+                        with open("brilliant_debug.log", "a", encoding="utf-8") as f:
+                            f.write(f"[BRILLIANT DEBUG] {move_san_debug} ({move_uci_debug}): centipawn_loss={centipawn_loss:.1f}, best_cp={best_cp:.1f}, actual_cp={actual_cp:.1f}\n")
+                    except:
+                        pass
+
+                    if centipawn_loss <= 10:  # Allow up to 10cp for potential brilliant tactical sacrifices
                         optimal_cp = best_cp
+                        print(f"[BRILLIANT DEBUG] Checking {move_san_debug}: WITHIN RANGE for brilliant detection")
 
                         # Get rating-adjusted thresholds (default to 1500 if not available)
                         # NOTE: Player rating context would improve threshold accuracy (future enhancement)
                         rating_thresholds = get_rating_adjusted_brilliant_threshold(player_rating=None)
+                    else:
+                        print(f"[BRILLIANT DEBUG] {move_san_debug} SKIPPED: centipawn_loss={centipawn_loss:.1f} > 10 (too high for brilliant)")
+                        try:
+                            with open("brilliant_debug.log", "a", encoding="utf-8") as f:
+                                f.write(f"[BRILLIANT DEBUG] {move_san_debug} SKIPPED: centipawn_loss too high ({centipawn_loss:.1f} > 10)\n")
+                        except:
+                            pass
+                        # Skip brilliant detection if centipawn loss is too high
+                        is_brilliant = False
 
+                    # Only continue brilliant detection if within range
+                    if centipawn_loss <= 10:
                         # -----------------------------------------------------------------------
                         # CRITERION 1: Non-Obvious Move Detection
                         # -----------------------------------------------------------------------
@@ -1809,14 +1851,21 @@ class ChessAnalysisEngine:
                                     # This is a key indicator of tactical sacrifice (like Nxe6, Bxg3)
                                     board.push(move)
                                     moving_piece_hangs = False
+                                    moving_piece_can_be_captured = False
                                     to_square = move.to_square
 
-                                    # Check if the piece that just moved is now hanging
+                                    # Check if the piece that just moved can be captured
                                     if board.piece_at(to_square):
-                                        # Check if piece is attacked and not defended enough
+                                        # Check if piece is attacked (can be captured)
                                         attackers = board.attackers(not player_color, to_square)
                                         defenders = board.attackers(player_color, to_square)
+
+                                        # Piece "hangs" if more attackers than defenders (unsafe)
                                         moving_piece_hangs = len(attackers) > len(defenders)
+
+                                        # Piece can be captured if it's attacked (even if defended)
+                                        # For tactical sacrifices, this is sufficient - opponent CAN take it
+                                        moving_piece_can_be_captured = len(attackers) > 0
 
                                     board.pop()
 
@@ -1825,12 +1874,13 @@ class ChessAnalysisEngine:
                                     # RELAXED: Allow tactical sacrifices where position stays strong OR piece hangs
                                     eval_drop_indicates_sacrifice = actual_cp < expected_eval + 150
 
-                                    # Tactical sacrifice: position is good/equal OR piece hangs (clear tactical indicator)
-                                    # Chess.com is more lenient: if piece hangs after capture, it's clearly tactical
+                                    # Tactical sacrifice: position is good/equal OR piece can be captured (clear tactical indicator)
+                                    # Chess.com is more lenient: if piece can be captured after sacrifice, it's tactical
+                                    # For brilliant moves, even if piece is defended (equal attackers/defenders), it's still tactical
                                     tactical_sacrifice = (
                                         is_potential_sacrifice and
                                         sacrifice_value >= rating_thresholds['min_sacrifice_value'] and
-                                        (actual_cp >= -50 or moving_piece_hangs)  # Position good OR piece hangs
+                                        (actual_cp >= -50 or moving_piece_can_be_captured)  # Position good OR piece can be captured
                                     )
 
                                     is_true_sacrifice = (
@@ -1839,14 +1889,39 @@ class ChessAnalysisEngine:
                                         (eval_drop_indicates_sacrifice or tactical_sacrifice)
                                     )
 
-                                    # Sacrifice detected if: true sacrifice OR clear tactical sacrifice (piece hangs)
-                                    # Chess.com pattern: if you capture with more valuable piece and it hangs, that's tactical
+                                    # Sacrifice detected if: true sacrifice OR clear tactical sacrifice (piece can be captured)
+                                    # Chess.com pattern: if you capture with more valuable piece and it can be captured, that's tactical
                                     # BUT: require at least 2 points of material difference for brilliant moves
-                                    sacrifice_detected = is_true_sacrifice or (
+                                    # For brilliant: piece must be able to be captured (even if defended equally)
+
+                                    # PRIMARY: Clear tactical sacrifice - piece can be captured + material sacrifice
+                                    # This is the main pattern for brilliant moves like Nxe6
+                                    is_clear_tactical_sacrifice = (
                                         is_potential_sacrifice and
-                                        moving_piece_hangs and
+                                        moving_piece_can_be_captured and  # Must be capturable for brilliant
                                         sacrifice_value >= 2  # Require 2+ points for brilliant (e.g., Nxe6 = 2)
                                     )
+
+                                    sacrifice_detected = is_true_sacrifice or is_clear_tactical_sacrifice
+
+                                    # DEBUG: Log sacrifice detection
+                                    if board.is_capture(move):
+                                        debug_msg = (f"[BRILLIANT DEBUG] {move_san_debug}: is_potential_sacrifice={is_potential_sacrifice}, "
+                                              f"moving_piece_can_be_captured={moving_piece_can_be_captured}, "
+                                              f"sacrifice_value={sacrifice_value}, "
+                                              f"is_clear_tactical_sacrifice={is_clear_tactical_sacrifice}, "
+                                              f"sacrifice_detected={sacrifice_detected}")
+                                        print(debug_msg)
+                                        try:
+                                            with open("brilliant_debug.log", "a", encoding="utf-8") as f:
+                                                f.write(debug_msg + "\n")
+                                        except:
+                                            pass
+
+                                    # Additional filter: If it's a Queen capture and Queen can't be captured, it's NOT a sacrifice
+                                    # Queen captures that win material (forks/pins) are just good moves, not brilliant
+                                    if sacrifice_detected and not moving_piece_can_be_captured:
+                                        sacrifice_detected = False
 
                                     if sacrifice_detected:
                                         # Additional Chess.com criteria (rating-adjusted):
@@ -1854,24 +1929,33 @@ class ChessAnalysisEngine:
                                         # - Position should remain favorable after sacrifice (tactical compensation)
 
                                         # Rating-adjusted: allow wider range for lower ratings
+                                        # For clear tactical sacrifices, be more lenient - brilliant tactical shots are brilliant even if already winning
+                                        # Chess.com marks brilliant moves even in winning positions
                                         not_already_crushing = optimal_cp < rating_thresholds['max_position_cp']
+                                        # For tactical sacrifices, allow even if position is more winning (up to 500cp)
+                                        if moving_piece_can_be_captured:
+                                            not_already_crushing = optimal_cp < 500  # More lenient for tactical sacrifices
 
-                                        # Position compensation: For brilliant moves, require winning position after sacrifice
-                                        # Chess.com: Tactical sacrifices should maintain or improve winning advantage
-                                        compensation_threshold = rating_thresholds['min_compensation_cp']
-                                        if moving_piece_hangs:
-                                            # Clear tactical sacrifice: position should be clearly winning
-                                            # Allow small temporary deficit only if position dramatically improves (e.g., Nxe6 → +146cp)
-                                            # Otherwise require clearly winning position (50cp+) - stricter!
-                                            if actual_cp > optimal_cp + 120:
-                                                # Position dramatically improved - this is brilliant
-                                                compensation_threshold = min(compensation_threshold, -25)  # Allow small temporary drop
+                                        # Position compensation: For brilliant moves, require reasonable compensation
+                                        # Chess.com: Tactical sacrifices can be brilliant even if position temporarily drops
+                                        # KEY: For tactical sacrifices, allow temporary deficit because tactics compensate
+                                        if moving_piece_can_be_captured:
+                                            # Clear tactical sacrifice: allow temporary deficit because tactics provide compensation
+                                            # Chess.com is very lenient - allows up to -100cp temporarily for tactical brilliance
+                                            if actual_cp > optimal_cp + 80:
+                                                # Position significantly improved - this is brilliant
+                                                compensation_threshold = -50  # Allow moderate temporary drop
+                                            elif actual_cp > optimal_cp + 40:
+                                                # Position improved - still brilliant
+                                                compensation_threshold = -25  # Allow temporary drop
                                             else:
-                                                # Position should be clearly winning after sacrifice (50cp+) - much stricter
-                                                compensation_threshold = max(compensation_threshold, 50)
+                                                # Tactical sacrifice - allow temporary deficit up to -100cp
+                                                # The tactics compensate for the material loss
+                                                # This is KEY for moves like Nxe6 where position might temporarily drop
+                                                compensation_threshold = -100
                                         else:
-                                            # For non-clear sacrifices, require clearly winning position (50cp+)
-                                            compensation_threshold = max(compensation_threshold, 50)
+                                            # For non-clear sacrifices, require at least equal position (0cp+)
+                                            compensation_threshold = max(rating_thresholds['min_compensation_cp'], 0)
 
                                         has_compensation = actual_cp >= compensation_threshold
 
@@ -1879,12 +1963,12 @@ class ChessAnalysisEngine:
                                         if eval_after.pov(player_color).is_mate():
                                             has_compensation = True
 
-                                        # If position dramatically improved (e.g., Nxe6 leading to +146cp), it's brilliant
+                                        # If position significantly improved (e.g., Nxe6 leading to +146cp), it's brilliant
                                         # Chess.com marks these as brilliant even if starting position wasn't crushing
-                                        # BUT: require very substantial improvement (150cp+) to avoid false positives
-                                        if actual_cp > optimal_cp + 150:
+                                        # Lower threshold - even 80cp+ improvement is significant
+                                        if actual_cp > optimal_cp + 80:
                                             has_compensation = True
-                                            # Don't require "not_already_crushing" if this move actually improved position dramatically
+                                            # Don't require "not_already_crushing" if this move actually improved position significantly
                                             not_already_crushing = True
 
                                         sacrifice_trigger = (
@@ -1892,6 +1976,19 @@ class ChessAnalysisEngine:
                                             not_already_crushing and
                                             has_compensation
                                         )
+
+                                        # DEBUG: Log sacrifice trigger
+                                        debug_msg = (f"[BRILLIANT DEBUG] {move_san_debug}: sacrifice_trigger={sacrifice_trigger} "
+                                              f"(sacrifice_detected={sacrifice_detected}, "
+                                              f"not_already_crushing={not_already_crushing}, optimal_cp={optimal_cp:.1f}, "
+                                              f"has_compensation={has_compensation}, actual_cp={actual_cp:.1f}, "
+                                              f"compensation_threshold={compensation_threshold:.1f})")
+                                        print(debug_msg)
+                                        try:
+                                            with open("brilliant_debug.log", "a", encoding="utf-8") as f:
+                                                f.write(debug_msg + "\n")
+                                        except:
+                                            pass
 
                             # Type 2: Non-Capture Sacrifices (moving piece to hanging square)
                             elif moving_value >= rating_thresholds['min_sacrifice_value']:  # Rating-adjusted minimum
@@ -1938,10 +2035,10 @@ class ChessAnalysisEngine:
                         # For forced mates, require strict best move (0-5cp)
                         brilliant_via_mate = forcing_mate_trigger and is_best and centipawn_loss <= 5
 
-                        # For sacrifices: check if this is a clear tactical sacrifice (capture where piece hangs)
-                        # Chess.com: Very strict - only extremely clear tactical sacrifices
+                        # For sacrifices: check if this is a clear tactical sacrifice (capture where piece can be captured)
+                        # Chess.com: More lenient - allows up to ~10cp loss for clear tactical sacrifices
                         clear_tactical_sacrifice = False
-                        if centipawn_loss <= 6:  # Check for tactical sacrifices within very strict range
+                        if centipawn_loss <= 10:  # Check for tactical sacrifices within reasonable range (increased from 6)
                             # Temporarily undo to check if it's a capture sacrifice
                             board.pop()
                             if board.is_capture(move):
@@ -1956,44 +2053,112 @@ class ChessAnalysisEngine:
                                         # For non-clear sacrifices, require 3+ points
                                         # This matches cases like Nxe6 where piece hangs after capture
                                         sacrifice_points = moving_value - captured_value
+                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: checking clear_tactical - moving_value={moving_value}, captured_value={captured_value}, sacrifice_points={sacrifice_points}")
                                         if moving_value > captured_value and sacrifice_points >= 2:
                                             board.push(move)
                                             to_square = move.to_square
                                             if board.piece_at(to_square):
-                                                # Check if piece hangs (clear tactical indicator)
+                                                # Check if piece can be captured (clear tactical indicator)
                                                 attackers = board.attackers(not player_color, to_square)
                                                 defenders = board.attackers(player_color, to_square)
-                                                # Must be clearly hanging (more attackers than defenders)
-                                                clear_tactical_sacrifice = len(attackers) > len(defenders)
+                                                # Piece can be captured if it's attacked (even if defended)
+                                                # For tactical sacrifices, equal attackers/defenders still counts as tactical
+                                                clear_tactical_sacrifice = len(attackers) > 0
+                                                print(f"[BRILLIANT DEBUG] {move_san_debug}: after checking attackers - attackers={len(attackers)}, clear_tactical_sacrifice={clear_tactical_sacrifice}")
+                                            else:
+                                                print(f"[BRILLIANT DEBUG] {move_san_debug}: no piece at to_square after push")
                                             board.pop()
+                                        else:
+                                            print(f"[BRILLIANT DEBUG] {move_san_debug}: not a sacrifice - moving_value={moving_value} <= captured_value={captured_value} OR sacrifice_points={sacrifice_points} < 2")
                             board.push(move)
 
-                        # Chess.com pattern: Brilliant moves are best (0-5cp) OR extremely clear tactical sacrifices (up to ~6cp)
-                        # Based on examples: Nxe6 and Bxg3 are tactical sacrifices where piece hangs after capture
-                        # BUT: Must be VERY selective - only truly exceptional sacrifices
+                        # Chess.com pattern: Brilliant moves are best (0-5cp) OR clear tactical sacrifices (up to ~10cp)
+                        # Based on examples: Nxe6 and Bxg3 are tactical sacrifices where piece can be captured
+                        # KEY: Must be TRUE SACRIFICE - piece must be capturable (not just winning material)
+                        # Queen captures that win material are NOT brilliant unless piece can also be captured
+
+                        # DEBUG: Log clear tactical sacrifice detection
+                        print(f"[BRILLIANT DEBUG] {move_san_debug}: clear_tactical_sacrifice={clear_tactical_sacrifice}, "
+                              f"centipawn_loss={centipawn_loss:.1f}")
+
                         if clear_tactical_sacrifice:
-                            # Clear tactical sacrifice (piece hangs): allow up to 6cp loss ONLY
-                            # Additional strictness: require position to be very good (>60cp) AND non-obvious
-                            brilliant_via_sacrifice = (
-                                sacrifice_trigger and
-                                centipawn_loss <= 6 and
-                                actual_cp > 60  # Position must be clearly winning (60cp+)
-                            )
-                            # For moves with >4cp loss, require even better position (100cp+) - extra strict
-                            if brilliant_via_sacrifice and centipawn_loss > 4:
-                                brilliant_via_sacrifice = actual_cp > 100
-                            # Require non-obvious: move should not be forced or trivial
-                            if brilliant_via_sacrifice:
-                                # Re-check non-obvious - brilliant moves should be surprising
-                                # If not already checked above, at minimum require multiple legal moves
-                                try:
+                            # Clear tactical sacrifice (piece can be captured): allow up to 10cp loss
+                            # CRITICAL: Must verify piece can actually be captured (tactical sacrifice)
+                            # Re-verify piece can be captured
+                            board.pop()
+                            piece_can_be_captured = False
+                            if board.is_capture(move):
+                                board.push(move)
+                                to_square = move.to_square
+                                if board.piece_at(to_square):
+                                    attackers = board.attackers(not player_color, to_square)
+                                    defenders = board.attackers(player_color, to_square)
+                                    # Piece can be captured if attacked (even if defended)
+                                    piece_can_be_captured = len(attackers) > 0
+                                board.pop()
+                            board.push(move)
+
+                            # Only mark as brilliant if piece CAN be captured (true sacrifice)
+                            # Queen forks/pins that win material are NOT brilliant
+                            if piece_can_be_captured:
+                                # For tactical sacrifices, allow temporary deficit - tactics provide compensation
+                                # Position can be temporarily worse (up to -100cp) as long as sacrifice_trigger passes
+                                # KEY: For clear tactical sacrifices, be more lenient - these are the main brilliant move pattern
+                                brilliant_via_sacrifice = (
+                                    sacrifice_trigger and
+                                    centipawn_loss <= 10  # Allow up to 10cp loss
+                                    # Don't check actual_cp here - let compensation_threshold handle it
+                                )
+
+                                # SAFETY: If sacrifice_trigger passed but brilliant_via_sacrifice is False due to other checks,
+                                # but it's a clear tactical sacrifice (piece can be captured + 2+ material), override
+                                # This ensures moves like Nxe6 aren't filtered out by edge cases
+                                if not brilliant_via_sacrifice and sacrifice_detected and centipawn_loss <= 10:
+                                    # Double-check: verify it's truly a tactical sacrifice
                                     board.pop()
-                                    num_legal = len(list(board.legal_moves))
-                                    board.push(move)
-                                    if num_legal < rating_thresholds['non_obvious_threshold']:
-                                        brilliant_via_sacrifice = False
-                                except:
-                                    pass
+                                    try:
+                                        if board.is_capture(move):
+                                            moving_piece = board.piece_at(move.from_square)
+                                            if moving_piece:
+                                                moving_val = piece_values.get(moving_piece.symbol().upper(), 0)
+                                                captured_piece = board.piece_at(move.to_square)
+                                                if captured_piece:
+                                                    captured_val = piece_values.get(captured_piece.symbol().upper(), 0)
+                                                    if moving_val > captured_val and (moving_val - captured_val) >= 2:
+                                                        # Clear tactical sacrifice - check if piece can be captured
+                                                        board.push(move)
+                                                        if board.piece_at(move.to_square):
+                                                            attackers = board.attackers(not player_color, move.to_square)
+                                                            if len(attackers) > 0:  # Piece can be captured
+                                                                # Override - it's a clear tactical sacrifice
+                                                                brilliant_via_sacrifice = True
+                                    except:
+                                        pass
+                                    finally:
+                                        # Ensure board is restored
+                                        try:
+                                            board.push(move)
+                                        except:
+                                            pass
+
+                                # Require non-obvious: move should not be forced or trivial
+                                if brilliant_via_sacrifice:
+                                    # Re-check non-obvious - brilliant moves should be surprising
+                                    # But for clear tactical sacrifices, be more lenient - even obvious tactical shots can be brilliant
+                                    try:
+                                        board.pop()
+                                        num_legal = len(list(board.legal_moves))
+                                        board.push(move)
+                                        # For tactical sacrifices, require at least 3 legal moves (not forced)
+                                        # More lenient than the general non-obvious threshold
+                                        if num_legal < 3:
+                                            brilliant_via_sacrifice = False
+                                    except:
+                                        pass
+                            else:
+                                # Piece can't be captured - this is just winning material, not a sacrifice
+                                # Not brilliant (even if it's a fork/pin)
+                                brilliant_via_sacrifice = False
                         elif forcing_mate_trigger:
                             # Forced mate: must be best move (0-5cp)
                             brilliant_via_sacrifice = sacrifice_trigger and centipawn_loss <= 5
@@ -2002,6 +2167,28 @@ class ChessAnalysisEngine:
                             brilliant_via_sacrifice = sacrifice_trigger and centipawn_loss <= 5
 
                         is_brilliant = brilliant_via_mate or brilliant_via_sacrifice
+
+                        # DEBUG: Final result with clear summary
+                        status = "🌟 BRILLIANT! 🌟" if is_brilliant else "❌ NOT BRILLIANT"
+                        print(f"\n{'='*80}")
+                        print(f"[BRILLIANT SUMMARY] {move_san_debug} ({move_uci_debug}): {status}")
+                        print(f"  centipawn_loss={centipawn_loss:.1f}, actual_cp={actual_cp:.1f}")
+                        print(f"  brilliant_via_mate={brilliant_via_mate}, brilliant_via_sacrifice={brilliant_via_sacrifice}")
+                        print(f"  sacrifice_trigger={sacrifice_trigger}, clear_tactical_sacrifice={clear_tactical_sacrifice}")
+                        print(f"{'='*80}\n")
+
+                        # Write summary to log file
+                        try:
+                            with open("brilliant_debug.log", "a", encoding="utf-8") as f:
+                                f.write(f"RESULT: {status}\n")
+                                f.write(f"  centipawn_loss={centipawn_loss:.1f}\n")
+                                f.write(f"  actual_cp={actual_cp:.1f}, best_cp={best_cp:.1f}\n")
+                                f.write(f"  brilliant_via_mate={brilliant_via_mate}\n")
+                                f.write(f"  brilliant_via_sacrifice={brilliant_via_sacrifice}\n")
+                                f.write(f"  sacrifice_trigger={sacrifice_trigger}\n")
+                                f.write(f"  clear_tactical_sacrifice={clear_tactical_sacrifice}\n")
+                        except:
+                            pass
 
                     # Convert evaluation to dict
                     evaluation = {

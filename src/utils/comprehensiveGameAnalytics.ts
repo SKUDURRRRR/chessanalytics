@@ -693,76 +693,33 @@ function calculateOpeningColorStats(games: any[]): {
       return // Skip games without valid opening data
     }
 
-    // 🚨 CRITICAL FIX: Check opening color BEFORE normalization to catch any transformation issues
-    // First check the raw opening name to see if it's a black opening
-    // IMPORTANT: We need to normalize ECO codes first (e.g., "B10" → "Caro-Kann Defense") to get accurate color
-    let preNormalizedOpening = rawOpening
-    // Check if it's an ECO code (format: A00-E99)
-    if (/^[A-E]\d{2}$/.test(rawOpening.trim())) {
-      const ecoName = getOpeningNameFromECOCode(rawOpening.trim())
-      if (ecoName && ecoName !== rawOpening) {
-        preNormalizedOpening = ecoName
-      }
-    }
+    // 🚨 CRITICAL FIX: Normalize FIRST, then filter on the ACTUAL normalized result
+    // The issue: getOpeningNameWithFallback ignores the rawOpening parameter when game object is provided
+    // It calls identifyOpening(gameRecord) which reads from game.opening or game.opening_family directly!
+    // So we MUST normalize first to see what we're actually dealing with
+    const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
 
-    const rawOpeningColor = getOpeningColor(preNormalizedOpening)
-    if (rawOpeningColor === 'black') {
-      whiteFilteredOut[rawOpening] = (whiteFilteredOut[rawOpening] || 0) + 1
-      if (DEBUG) {
-        console.warn(`[Opening Color Stats] BLOCKED (raw check): Black opening "${preNormalizedOpening}" (from "${rawOpening}") filtered from white stats`, {
-          rawOpening,
-          preNormalizedOpening,
-          rawOpeningColor,
-          gameColor: game.color
-        })
-      }
+    // 🚨 IMMEDIATE CHECK: Filter black openings right after normalization
+    // This is THE critical check - if normalizedOpening is "Caro-Kann Defense", this catches it
+    const normalizedOpeningColor = getOpeningColor(normalizedOpening)
+
+    if (normalizedOpeningColor === 'black') {
+      whiteFilteredOut[normalizedOpening] = (whiteFilteredOut[normalizedOpening] || 0) + 1
       return // Skip this game - it's a black opening (Caro-Kann, Sicilian, etc.)
     }
 
-    // Now normalize the opening name fully
-    const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
-
-    // 🚨 CRITICAL: Filter: Only include if this opening belongs to white
-    // (e.g., exclude "Caro-Kann Defense", "Sicilian Defense" when player played white against them)
-    // This prevents Black openings from appearing in "Most Played White Openings"
-    // See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md
+    // Additional safety check using shouldCountOpeningForColor
     if (!shouldCountOpeningForColor(normalizedOpening, 'white')) {
       whiteFilteredOut[normalizedOpening] = (whiteFilteredOut[normalizedOpening] || 0) + 1
-      if (DEBUG) {
-        console.warn(`[Opening Color Stats] BLOCKED (shouldCount check): Opening "${normalizedOpening}" filtered from white stats`, {
-          rawOpening,
-          normalizedOpening,
-          shouldCountResult: shouldCountOpeningForColor(normalizedOpening, 'white'),
-          gameColor: game.color
-        })
-      }
       return // Skip this game for white opening stats
-    }
-
-    // Double-check: Defensive verification that opening is actually white
-    // This catches cases where getOpeningNameWithFallback might return unexpected names
-    // CRITICAL: We MUST filter out black openings even if shouldCountOpeningForColor somehow passes
-    const openingColor = getOpeningColor(normalizedOpening)
-
-    // If it's a black opening, ALWAYS filter it out from white stats
-    if (openingColor === 'black') {
-      if (DEBUG) {
-        console.warn(`[Opening Color Stats] BLOCKED (final check): Black opening "${normalizedOpening}" filtered from white stats`, {
-          rawOpening,
-          normalizedOpening,
-          openingColor,
-          shouldCountResult: shouldCountOpeningForColor(normalizedOpening, 'white'),
-          gameColor: game.color
-        })
-      }
-      whiteFilteredOut[normalizedOpening] = (whiteFilteredOut[normalizedOpening] || 0) + 1
-      return // Skip this game - it's a black opening
     }
 
     // 🚨 KEY FIX: Group by player perspective opening name to merge duplicates
     // Multiple board-perspective openings (e.g., "Caro-Kann Defense", "Sicilian Defense")
     // should merge into one player-perspective entry (e.g., "King's Pawn Opening")
-    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(normalizedOpening, 'white', game)
+    // CRITICAL: Pass rawOpening (not normalizedOpening) because getPlayerPerspectiveOpeningShort
+    // internally re-normalizes, and we need the original DB value to avoid double-normalization bugs
+    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(rawOpening, 'white', game)
 
     if (!whiteOpeningMap.has(playerPerspectiveOpening)) {
       whiteOpeningMap.set(playerPerspectiveOpening, { games: [], openings: new Set(), families: new Set() })
@@ -798,13 +755,6 @@ function calculateOpeningColorStats(games: any[]): {
     }
     const rawOpeningColor = getOpeningColor(preNormalizedOpening)
     if (rawOpeningColor === 'white') {
-      if (DEBUG) {
-        console.warn(`[Opening Color Stats] BLOCKED (raw check): White opening "${rawOpening}" filtered from black stats`, {
-          rawOpening,
-          rawOpeningColor,
-          gameColor: game.color
-        })
-      }
       return // Skip this game - it's a white opening (Italian, Ruy Lopez, etc.)
     }
 
@@ -816,14 +766,6 @@ function calculateOpeningColorStats(games: any[]): {
     // This prevents White openings from appearing in "Most Played Black Openings"
     // See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md
     if (!shouldCountOpeningForColor(normalizedOpening, 'black')) {
-      if (DEBUG) {
-        console.warn(`[Opening Color Stats] BLOCKED (shouldCount check): Opening "${normalizedOpening}" filtered from black stats`, {
-          rawOpening,
-          normalizedOpening,
-          shouldCountResult: shouldCountOpeningForColor(normalizedOpening, 'black'),
-          gameColor: game.color
-        })
-      }
       return // Skip this game for black opening stats
     }
 
@@ -831,22 +773,14 @@ function calculateOpeningColorStats(games: any[]): {
     // This catches cases where getOpeningNameWithFallback might return unexpected names
     const openingColor = getOpeningColor(normalizedOpening)
     if (openingColor === 'white') {
-      // This should have been caught by shouldCountOpeningForColor, but log it for debugging
-      if (DEBUG) {
-        console.warn(`[Opening Color Stats] BLOCKED (final check): White opening "${normalizedOpening}" filtered from black stats`, {
-          rawOpening,
-          normalizedOpening,
-          openingColor,
-          shouldCountResult: shouldCountOpeningForColor(normalizedOpening, 'black'),
-          gameColor: game.color
-        })
-      }
       return // Skip this game - it's a white opening
     }
 
     // 🚨 KEY FIX: Group by player perspective opening name to merge duplicates
     // Multiple board-perspective openings should merge into one player-perspective entry
-    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(normalizedOpening, 'black', game)
+    // CRITICAL: Pass rawOpening (not normalizedOpening) because getPlayerPerspectiveOpeningShort
+    // internally re-normalizes, and we need the original DB value to avoid double-normalization bugs
+    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(rawOpening, 'black', game)
 
     if (!blackOpeningMap.has(playerPerspectiveOpening)) {
       blackOpeningMap.set(playerPerspectiveOpening, { games: [], openings: new Set(), families: new Set() })
@@ -1658,70 +1592,30 @@ export async function getOpeningColorPerformance(
       return // Skip games without valid opening data
     }
 
-    // 🚨 CRITICAL FIX: Check opening color BEFORE normalization to catch opponent openings
-    // When player is White and faces Caro-Kann Defense (opponent's Black opening),
-    // we must filter it out BEFORE normalization can transform the name
-    // IMPORTANT: We need to normalize ECO codes first (e.g., "B10" → "Caro-Kann Defense") to get accurate color
-    let preNormalizedOpening = rawOpening
-    // Check if it's an ECO code (format: A00-E99)
-    if (/^[A-E]\d{2}$/.test(rawOpening.trim())) {
-      const ecoName = getOpeningNameFromECOCode(rawOpening.trim())
-      if (ecoName && ecoName !== rawOpening) {
-        preNormalizedOpening = ecoName
-      }
-    }
-
-    const rawOpeningColor = getOpeningColor(preNormalizedOpening)
-    if (rawOpeningColor === 'black') {
-      if (DEBUG) {
-        console.warn(`[getOpeningColorPerformance] BLOCKED (raw check): Black opening "${preNormalizedOpening}" (from "${rawOpening}") filtered from white stats - this is opponent's opening, not player's`, {
-          rawOpening,
-          preNormalizedOpening,
-          rawOpeningColor,
-          gameColor: game.color
-        })
-      }
-      return // Skip this game - it's a black opening (Caro-Kann, Sicilian, etc.) that the opponent played
-    }
-
-    // Now normalize the opening name fully
+    // 🚨 CRITICAL FIX: Normalize FIRST, then filter on the ACTUAL normalized result
+    // The issue: getOpeningNameWithFallback ignores the rawOpening parameter when game object is provided
+    // It calls identifyOpening(gameRecord) which reads from game.opening or game.opening_family directly!
+    // So we MUST normalize first to see what we're actually dealing with
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
 
-    // 🚨 CRITICAL: Filter: Only include if this opening belongs to white
-    // (e.g., exclude "Caro-Kann Defense", "Sicilian Defense" when player played white against them)
-    // This prevents Black openings from appearing in "Most Played White Openings"
-    // See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md
-    if (!shouldCountOpeningForColor(normalizedOpening, 'white')) {
-      if (DEBUG) {
-        console.warn(`[getOpeningColorPerformance] BLOCKED (shouldCount check): Opening "${normalizedOpening}" filtered from white stats`, {
-          rawOpening,
-          normalizedOpening,
-          shouldCountResult: shouldCountOpeningForColor(normalizedOpening, 'white'),
-          gameColor: game.color
-        })
-      }
-      return // Skip this game for white opening stats
+    // 🚨 IMMEDIATE CHECK: Filter black openings right after normalization
+    // This is THE critical check - if normalizedOpening is "Caro-Kann Defense", this catches it
+    const normalizedOpeningColor = getOpeningColor(normalizedOpening)
+    if (normalizedOpeningColor === 'black') {
+      return // Skip this game - it's a black opening (Caro-Kann, Sicilian, etc.)
     }
 
-    // Double-check: Defensive verification that opening is actually white
-    const openingColor = getOpeningColor(normalizedOpening)
-    if (openingColor === 'black') {
-      if (DEBUG) {
-        console.warn(`[getOpeningColorPerformance] BLOCKED (final check): Black opening "${normalizedOpening}" passed white filter`, {
-          rawOpening,
-          normalizedOpening,
-          openingColor,
-          shouldCountResult: shouldCountOpeningForColor(normalizedOpening, 'white'),
-          gameColor: game.color
-        })
-      }
-      return // Skip this game - it's a black opening
+    // Additional safety check using shouldCountOpeningForColor
+    if (!shouldCountOpeningForColor(normalizedOpening, 'white')) {
+      return // Skip this game for white opening stats
     }
 
     // 🚨 KEY FIX: Group by player perspective opening name to merge duplicates
     // Multiple board-perspective openings (e.g., "Caro-Kann Defense", "Sicilian Defense")
     // should merge into one player-perspective entry (e.g., "King's Pawn Opening")
-    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(normalizedOpening, 'white', game)
+    // CRITICAL: Pass rawOpening (not normalizedOpening) because getPlayerPerspectiveOpeningShort
+    // internally re-normalizes, and we need the original DB value to avoid double-normalization bugs
+    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(rawOpening, 'white', game)
 
     if (!whiteOpeningMap.has(playerPerspectiveOpening)) {
       whiteOpeningMap.set(playerPerspectiveOpening, { games: [], openings: new Set(), families: new Set() })
@@ -1759,14 +1653,6 @@ export async function getOpeningColorPerformance(
     }
     const rawOpeningColor = getOpeningColor(preNormalizedOpening)
     if (rawOpeningColor === 'white') {
-      if (DEBUG) {
-        console.warn(`[getOpeningColorPerformance] BLOCKED (raw check): White opening "${preNormalizedOpening}" (from "${rawOpening}") filtered from black stats - this is opponent's opening, not player's`, {
-          rawOpening,
-          preNormalizedOpening,
-          rawOpeningColor,
-          gameColor: game.color
-        })
-      }
       return // Skip this game - it's a white opening (Italian, Ruy Lopez, etc.) that the opponent played
     }
 
@@ -1778,35 +1664,20 @@ export async function getOpeningColorPerformance(
     // This prevents White openings from appearing in "Most Played Black Openings"
     // See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md
     if (!shouldCountOpeningForColor(normalizedOpening, 'black')) {
-      if (DEBUG) {
-        console.warn(`[getOpeningColorPerformance] BLOCKED (shouldCount check): Opening "${normalizedOpening}" filtered from black stats`, {
-          rawOpening,
-          normalizedOpening,
-          shouldCountResult: shouldCountOpeningForColor(normalizedOpening, 'black'),
-          gameColor: game.color
-        })
-      }
       return // Skip this game for black opening stats
     }
 
     // Double-check: Defensive verification that opening is actually black
     const openingColor = getOpeningColor(normalizedOpening)
     if (openingColor === 'white') {
-      if (DEBUG) {
-        console.warn(`[getOpeningColorPerformance] BLOCKED (final check): White opening "${normalizedOpening}" passed black filter`, {
-          rawOpening,
-          normalizedOpening,
-          openingColor,
-          shouldCountResult: shouldCountOpeningForColor(normalizedOpening, 'black'),
-          gameColor: game.color
-        })
-      }
       return // Skip this game - it's a white opening
     }
 
     // 🚨 KEY FIX: Group by player perspective opening name to merge duplicates
     // Multiple board-perspective openings should merge into one player-perspective entry
-    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(normalizedOpening, 'black', game)
+    // CRITICAL: Pass rawOpening (not normalizedOpening) because getPlayerPerspectiveOpeningShort
+    // internally re-normalizes, and we need the original DB value to avoid double-normalization bugs
+    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(rawOpening, 'black', game)
 
     if (!blackOpeningMap.has(playerPerspectiveOpening)) {
       blackOpeningMap.set(playerPerspectiveOpening, { games: [], openings: new Set(), families: new Set() })
