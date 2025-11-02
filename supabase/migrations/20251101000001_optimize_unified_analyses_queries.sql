@@ -16,10 +16,8 @@ CREATE INDEX IF NOT EXISTS idx_game_analyses_user_platform_date
   ON game_analyses(user_id, platform, analysis_date DESC);
 
 -- Index for move_analyses queries (fallback in UNION)
--- Only index records that aren't already in game_analyses (saves space)
 CREATE INDEX IF NOT EXISTS idx_move_analyses_user_platform_date
-  ON move_analyses(user_id, platform, analysis_date DESC)
-  WHERE game_id NOT IN (SELECT DISTINCT game_id FROM game_analyses);
+  ON move_analyses(user_id, platform, analysis_date DESC);
 
 -- Additional optimization: Index for COUNT queries
 CREATE INDEX IF NOT EXISTS idx_game_analyses_count

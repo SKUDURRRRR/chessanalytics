@@ -48,6 +48,7 @@ const SignUpPage = lazyWithRetry(() => import('./pages/SignUpPage'))
 const ForgotPasswordPage = lazyWithRetry(() => import('./pages/ForgotPasswordPage'))
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'))
 const PricingPage = lazyWithRetry(() => import('./pages/PricingPage'))
+const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'))
 const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'))
 
 // Loading component shown while pages load
@@ -82,6 +83,7 @@ function App() {
                   <Route path="/forgot-password" element={<ComponentErrorBoundary><ForgotPasswordPage /></ComponentErrorBoundary>} />
                   <Route path="/profile" element={<ComponentErrorBoundary><ProfilePage /></ComponentErrorBoundary>} />
                   <Route path="/pricing" element={<ComponentErrorBoundary><PricingPage /></ComponentErrorBoundary>} />
+                  <Route path="/admin/dashboard" element={<ComponentErrorBoundary><AdminDashboardPage /></ComponentErrorBoundary>} />
                   <Route path="*" element={<ComponentErrorBoundary><NotFoundPage /></ComponentErrorBoundary>} />
                 </Routes>
               </Suspense>

@@ -203,7 +203,15 @@ export async function getMostPlayedOpeningForTimeControl(
 
       // IMPORTANT: Only count openings that the player actually plays
       // Skip if this is an opponent's opening (e.g., skip Caro-Kann when player played white)
-      if (!shouldCountOpeningForColor(openingName, game.color)) {
+      const playerColor = game.color || game.my_color
+
+      // Skip games without color information - we can't determine perspective
+      if (!playerColor) {
+        continue
+      }
+
+      // Skip opponent's openings
+      if (!shouldCountOpeningForColor(openingName, playerColor)) {
         continue // Skip this game - it's the opponent's opening choice
       }
 
@@ -576,7 +584,16 @@ function calculateOpeningStats(games: any[]): Array<{
     // Filter out opponent's openings (e.g., skip "Caro-Kann Defense" when player played White against it)
     // This ensures we show what the player chooses to play, not what they face
     const playerColor = game.color || game.my_color
-    if (playerColor && !shouldCountOpeningForColor(opening, playerColor)) {
+
+    // Skip games without color information - we can't determine perspective
+    if (!playerColor) {
+      if (DEBUG) console.warn(`Skipping game without color: ${opening}`)
+      return
+    }
+
+    // Skip opponent's openings
+    if (!shouldCountOpeningForColor(opening, playerColor)) {
+      if (DEBUG) console.log(`Filtered out opponent opening: ${opening} (player was ${playerColor})`)
       return // Skip this game - it's the opponent's opening choice
     }
 
@@ -763,7 +780,7 @@ function calculateOpeningColorStats(games: any[]): {
       }
     }
   }).filter(stat => stat.games >= 3) // Lower threshold for color-specific stats (3 games provides meaningful data)
-    .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
+    .sort((a, b) => b.winRate - a.winRate) // Sort by win rate descending - highest win rate first
 
   if (DEBUG) {
     console.log('White games filtered out by shouldCountOpeningForColor:', whiteFilteredOut)
@@ -803,7 +820,7 @@ function calculateOpeningColorStats(games: any[]): {
       }
     }
   }).filter(stat => stat.games >= 3) // Lower threshold for color-specific stats (3 games provides meaningful data)
-    .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
+    .sort((a, b) => b.winRate - a.winRate) // Sort by win rate descending - highest win rate first
 
   if (DEBUG) {
     console.log('Black Opening Stats (before 3-game filter):', Array.from(blackOpeningMap.entries()).map(([opening, details]) => ({
@@ -1426,7 +1443,14 @@ export async function getOpeningPerformance(
     // IMPORTANT: Only count openings that the player actually plays
     // Filter out opponent's openings (e.g., skip "Caro-Kann Defense" when player played White against it)
     const playerColor = game.color || game.my_color
-    if (playerColor && !shouldCountOpeningForColor(normalizedOpening, playerColor)) {
+
+    // Skip games without color information - we can't determine perspective
+    if (!playerColor) {
+      return
+    }
+
+    // Skip opponent's openings
+    if (!shouldCountOpeningForColor(normalizedOpening, playerColor)) {
       return // Skip this game - it's the opponent's opening choice
     }
 

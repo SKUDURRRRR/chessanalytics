@@ -156,6 +156,15 @@ export function getOpeningColor(opening: string): OpeningColor {
   // Heuristic fallback based on naming patterns
   const lowerOpening = normalizedOpening.toLowerCase()
 
+  // Additional fuzzy matching for common variations (handle missing hyphens, etc.)
+  const fuzzyLowerOpening = lowerOpening.replace(/[-\s]/g, '')
+  for (const [key, color] of Object.entries(OPENING_COLOR_MAP)) {
+    const lowerKey = key.toLowerCase().replace(/[-\s]/g, '')
+    if (fuzzyLowerOpening.startsWith(lowerKey)) {
+      return color
+    }
+  }
+
   // Most "Defense" openings are black openings (exceptions handled above)
   if (lowerOpening.includes('defense') || lowerOpening.includes('defence')) {
     return 'black'

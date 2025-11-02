@@ -34,6 +34,8 @@ class AnalysisJob:
     depth: int
     skill_level: int
     auth_user_id: Optional[str] = None  # Authenticated user ID for usage tracking
+    is_anonymous: bool = True  # Whether this is an anonymous user
+    client_ip: Optional[str] = None  # Client IP for anonymous usage tracking
     status: AnalysisStatus = AnalysisStatus.PENDING
     created_at: datetime = field(default_factory=datetime.now)
     started_at: Optional[datetime] = None
@@ -198,6 +200,30 @@ class AnalysisQueue:
                     print(f"[QUEUE] Warning: Could not increment usage tracking: {e}")
                     import traceback
                     traceback.print_exc()
+            # Increment usage for anonymous users
+            elif job.is_anonymous and job.client_ip:
+                try:
+                    from .unified_api_server import supabase_service
+                    if supabase_service:
+                        games_analyzed = job.analyzed_games
+                        if games_analyzed > 0:
+                            import asyncio
+                            result = await asyncio.to_thread(
+                                lambda: supabase_service.rpc(
+                                    'increment_anonymous_usage',
+                                    {'p_ip_address': job.client_ip, 'p_count': games_analyzed}
+                                ).execute()
+                            )
+                            if result.data and result.data.get('success'):
+                                print(f"[QUEUE] Incremented anonymous usage for IP {job.client_ip}: {games_analyzed} analyses")
+                            else:
+                                print(f"[QUEUE] Warning: Failed to increment anonymous usage for IP {job.client_ip}")
+                        else:
+                            print(f"[QUEUE] No games analyzed, skipping anonymous usage increment")
+                except Exception as e:
+                    print(f"[QUEUE] Warning: Could not increment anonymous usage tracking: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             # Update in-memory progress to completed
             try:
@@ -302,7 +328,9 @@ class AnalysisQueue:
         limit: int = 5,
         depth: int = 14,
         skill_level: int = 20,
-        auth_user_id: Optional[str] = None
+        auth_user_id: Optional[str] = None,
+        is_anonymous: bool = True,
+        client_ip: Optional[str] = None
     ) -> str:
         """
         Submit a new analysis job to the queue.
@@ -333,7 +361,9 @@ class AnalysisQueue:
             limit=limit,
             depth=depth,
             skill_level=skill_level,
-            auth_user_id=auth_user_id
+            auth_user_id=auth_user_id,
+            is_anonymous=is_anonymous,
+            client_ip=client_ip
         )
 
         with self.lock:
@@ -342,7 +372,7 @@ class AnalysisQueue:
         # Add to queue
         await self.queue.put(job)
 
-        print(f"[QUEUE] Analysis job {job_id} submitted for {user_id} on {platform} (auth_user_id: {auth_user_id})")
+        print(f"[QUEUE] Analysis job {job_id} submitted for {user_id} on {platform} (auth_user_id: {auth_user_id}, is_anonymous: {is_anonymous}, client_ip: {client_ip})")
         return job_id
 
     def get_job_status(self, job_id: str) -> Optional[AnalysisJob]:

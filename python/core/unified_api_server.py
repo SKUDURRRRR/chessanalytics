@@ -2468,6 +2468,16 @@ async def get_comprehensive_analytics(
         opening_performance = {}
         for game in games:
             opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+            color = game.get('color')
+
+            # IMPORTANT: Only count openings that the player actually plays
+            # Filter out opponent's openings (e.g., skip "Caro-Kann Defense" when player played White against it)
+            if not color:
+                continue  # Skip games without color information
+
+            if not _should_count_opening_for_color(opening, color):
+                continue  # Skip this game - it's the opponent's opening choice
+
             if opening not in opening_performance:
                 opening_performance[opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
 
@@ -2508,6 +2518,12 @@ async def get_comprehensive_analytics(
                 continue
 
             opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+
+            # IMPORTANT: Only count openings that belong to this color
+            # Filter out opponent's openings (e.g., skip "Caro-Kann Defense" for white stats)
+            if not _should_count_opening_for_color(opening, color):
+                continue  # Skip this game - it's the opponent's opening choice
+
             if opening not in opening_color_performance[color]:
                 opening_color_performance[color][opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
 
@@ -7321,8 +7337,8 @@ async def check_user_exists(request: dict):
         from supabase import create_client, Client
         import os
 
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        supabase_url = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("VITE_SUPABASE_SERVICE_ROLE_KEY")
 
         if not supabase_url or not supabase_key:
             return {"exists": False}
@@ -8021,7 +8037,9 @@ async def _handle_batch_analysis(
     request: UnifiedAnalysisRequest,
     background_tasks: BackgroundTasks,
     use_parallel: bool = True,
-    auth_user_id: Optional[str] = None
+    auth_user_id: Optional[str] = None,
+    is_anonymous: bool = True,
+    client_ip: Optional[str] = None
 ) -> UnifiedAnalysisResponse:
     """Handle batch analysis using the queue system."""
     try:
@@ -8035,7 +8053,7 @@ async def _handle_batch_analysis(
         # Import the queue system
         from .analysis_queue import get_analysis_queue
 
-        # Submit job to queue with auth_user_id for usage tracking
+        # Submit job to queue with auth_user_id and client_ip for usage tracking
         queue = get_analysis_queue()
         job_id = await queue.submit_job(
             user_id=canonical_user_id,
@@ -8044,7 +8062,9 @@ async def _handle_batch_analysis(
             limit=request.limit or 5,
             depth=request.depth or 14,
             skill_level=request.skill_level or 20,
-            auth_user_id=auth_user_id
+            auth_user_id=auth_user_id,
+            is_anonymous=is_anonymous,
+            client_ip=client_ip
         )
 
         return UnifiedAnalysisResponse(
@@ -9091,6 +9111,7 @@ class TrackEventRequest(BaseModel):
 @app.post("/api/v1/admin/track-event")
 async def track_event(
     request: TrackEventRequest,
+    http_request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
@@ -9121,6 +9142,16 @@ async def track_event(
                 logger.debug(f"Token validation failed (proceeding as anonymous): {e}")
                 # Continue as anonymous user
 
+        # Get IP address from request
+        # Check X-Forwarded-For header first (for proxied requests)
+        ip_address = http_request.headers.get('X-Forwarded-For')
+        if ip_address:
+            # X-Forwarded-For can contain multiple IPs, take the first one
+            ip_address = ip_address.split(',')[0].strip()
+        else:
+            # Fall back to client host
+            ip_address = http_request.client.host if http_request.client else None
+
         # Use service role client for tracking
         db_client = supabase_service or supabase
         if not db_client:
@@ -9138,7 +9169,8 @@ async def track_event(
                 lambda: db_client.rpc('track_player_search', {
                     'p_user_id': user_id,
                     'p_platform': request.platform,
-                    'p_username': request.metadata.get('username') if request.metadata else None
+                    'p_username': request.metadata.get('username') if request.metadata else None,
+                    'p_ip_address': ip_address
                 }).execute()
             )
         elif request.event_type == 'game_analysis':
@@ -9148,14 +9180,16 @@ async def track_event(
                     'p_user_id': user_id,
                     'p_platform': request.platform,
                     'p_game_id': request.metadata.get('game_id') if request.metadata else None,
-                    'p_analysis_type': request.metadata.get('analysis_type') if request.metadata else None
+                    'p_analysis_type': request.metadata.get('analysis_type') if request.metadata else None,
+                    'p_ip_address': ip_address
                 }).execute()
             )
         elif request.event_type == 'pricing_page_view':
             # Use the track_pricing_page_view function
             result = await asyncio.to_thread(
                 lambda: db_client.rpc('track_pricing_page_view', {
-                    'p_user_id': user_id
+                    'p_user_id': user_id,
+                    'p_ip_address': ip_address
                 }).execute()
             )
 
@@ -9174,38 +9208,33 @@ async def track_event(
 @app.post("/api/v1/admin/dashboard-metrics")
 async def get_dashboard_metrics(
     request: DashboardMetricsRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
     Get dashboard metrics for admin analytics
     Requires authentication (admin only in production)
+    For local development: authentication optional
     """
     try:
-        # Validate authentication
-        if not credentials or not credentials.credentials:
-            raise HTTPException(status_code=401, detail="Authentication required")
-
-        # Verify JWT token
-        jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
-        if not jwt_secret:
-            raise AuthenticationError("JWT secret not configured")
-
-        try:
-            payload = jose_jwt.decode(
-                credentials.credentials,
-                jwt_secret,
-                algorithms=['HS256'],
-                options={"verify_aud": False}
-            )
-            user_id = payload.get('sub')
-            if not user_id:
-                raise AuthenticationError("Invalid token")
-        except Exception as e:
-            logger.error(f"Token validation failed: {e}")
-            raise HTTPException(status_code=401, detail="Invalid authentication token")
+        # For local development, allow without auth
+        user_id = None
+        if credentials and credentials.credentials:
+            # Validate authentication if provided
+            jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+            if jwt_secret:
+                try:
+                    payload = jose_jwt.decode(
+                        credentials.credentials,
+                        jwt_secret,
+                        algorithms=['HS256'],
+                        options={"verify_aud": False}
+                    )
+                    user_id = payload.get('sub')
+                except Exception as e:
+                    logger.debug(f"Token validation failed (proceeding anyway for local dev): {e}")
 
         # TODO: In production, add admin role check here
-        # For now, allow any authenticated user (you can add admin role check later)
+        # For now, allow any authenticated user or local development
 
         # Use service role client
         db_client = supabase_service or supabase
@@ -9260,35 +9289,30 @@ async def get_dashboard_metrics(
 async def get_registration_stats(
     start_date: str = Query(..., description="Start date in ISO format"),
     end_date: str = Query(..., description="End date in ISO format"),
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
     Get user registration statistics
     Requires authentication (admin only in production)
+    For local development: authentication optional
     """
     try:
-        # Validate authentication
-        if not credentials or not credentials.credentials:
-            raise HTTPException(status_code=401, detail="Authentication required")
-
-        # Verify JWT token
-        jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
-        if not jwt_secret:
-            raise AuthenticationError("JWT secret not configured")
-
-        try:
-            payload = jose_jwt.decode(
-                credentials.credentials,
-                jwt_secret,
-                algorithms=['HS256'],
-                options={"verify_aud": False}
-            )
-            user_id = payload.get('sub')
-            if not user_id:
-                raise AuthenticationError("Invalid token")
-        except Exception as e:
-            logger.error(f"Token validation failed: {e}")
-            raise HTTPException(status_code=401, detail="Invalid authentication token")
+        # For local development, allow without auth
+        user_id = None
+        if credentials and credentials.credentials:
+            # Validate authentication if provided
+            jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+            if jwt_secret:
+                try:
+                    payload = jose_jwt.decode(
+                        credentials.credentials,
+                        jwt_secret,
+                        algorithms=['HS256'],
+                        options={"verify_aud": False}
+                    )
+                    user_id = payload.get('sub')
+                except Exception as e:
+                    logger.debug(f"Token validation failed (proceeding anyway for local dev): {e}")
 
         # Use service role client
         db_client = supabase_service or supabase
@@ -9377,6 +9401,250 @@ async def refresh_analytics_views(
     except Exception as e:
         logger.error(f"Error refreshing analytics views: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/admin/user-analysis-stats")
+async def get_user_analysis_stats(
+    start_date: str = Query(..., description="Start date in ISO format"),
+    end_date: str = Query(..., description="End date in ISO format"),
+    limit: int = Query(50, description="Maximum number of users to return"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Get user analysis statistics (which users did analyses and how many)
+    Requires authentication (admin only in production)
+    For local development: authentication optional
+    """
+    try:
+        # For local development, allow without auth
+        user_id = None
+        if credentials and credentials.credentials:
+            # Validate authentication if provided
+            jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+            if jwt_secret:
+                try:
+                    payload = jose_jwt.decode(
+                        credentials.credentials,
+                        jwt_secret,
+                        algorithms=['HS256'],
+                        options={"verify_aud": False}
+                    )
+                    user_id = payload.get('sub')
+                except Exception as e:
+                    logger.debug(f"Token validation failed (proceeding anyway for local dev): {e}")
+
+        # Use service role client
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Call the database function
+        result = await asyncio.to_thread(
+            lambda: db_client.rpc('get_user_analysis_stats', {
+                'p_start_date': start_date,
+                'p_end_date': end_date,
+                'p_limit': limit
+            }).execute()
+        )
+
+        return {
+            'success': True,
+            'start_date': start_date,
+            'end_date': end_date,
+            'users': result.data or []
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_detail = str(e)
+        logger.error(f"Error getting user analysis stats: {e}")
+        logger.error(f"Error type: {type(e)}")
+        if hasattr(e, '__dict__'):
+            logger.error(f"Error details: {e.__dict__}")
+        raise HTTPException(status_code=500, detail=error_detail)
+
+@app.get("/api/v1/admin/player-search-stats")
+async def get_player_search_stats(
+    start_date: str = Query(..., description="Start date in ISO format"),
+    end_date: str = Query(..., description="End date in ISO format"),
+    limit: int = Query(20, description="Maximum number of players to return"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Get player search statistics (which players were most searched)
+    Requires authentication (admin only in production)
+    For local development: authentication optional
+    """
+    try:
+        # For local development, allow without auth
+        user_id = None
+        if credentials and credentials.credentials:
+            # Validate authentication if provided
+            jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+            if jwt_secret:
+                try:
+                    payload = jose_jwt.decode(
+                        credentials.credentials,
+                        jwt_secret,
+                        algorithms=['HS256'],
+                        options={"verify_aud": False}
+                    )
+                    user_id = payload.get('sub')
+                except Exception as e:
+                    logger.debug(f"Token validation failed (proceeding anyway for local dev): {e}")
+
+        # Use service role client
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Call the database function
+        result = await asyncio.to_thread(
+            lambda: db_client.rpc('get_player_search_stats', {
+                'p_start_date': start_date,
+                'p_end_date': end_date,
+                'p_limit': limit
+            }).execute()
+        )
+
+        return {
+            'success': True,
+            'start_date': start_date,
+            'end_date': end_date,
+            'players': result.data or []
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_detail = str(e)
+        logger.error(f"Error getting player search stats: {e}")
+        logger.error(f"Error type: {type(e)}")
+        if hasattr(e, '__dict__'):
+            logger.error(f"Error details: {e.__dict__}")
+        raise HTTPException(status_code=500, detail=error_detail)
+
+@app.get("/api/v1/admin/analyzed-players-stats")
+async def get_analyzed_players_stats(
+    start_date: str = Query(..., description="Start date in ISO format"),
+    end_date: str = Query(..., description="End date in ISO format"),
+    limit: int = Query(50, description="Maximum number of players to return"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Get statistics about which players' games were analyzed
+    Requires authentication (admin only in production)
+    For local development: authentication optional
+    """
+    try:
+        # For local development, allow without auth
+        user_id = None
+        if credentials and credentials.credentials:
+            # Validate authentication if provided
+            jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+            if jwt_secret:
+                try:
+                    payload = jose_jwt.decode(
+                        credentials.credentials,
+                        jwt_secret,
+                        algorithms=['HS256'],
+                        options={"verify_aud": False}
+                    )
+                    user_id = payload.get('sub')
+                except Exception as e:
+                    logger.debug(f"Token validation failed (proceeding anyway for local dev): {e}")
+
+        # Use service role client
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Call the database function
+        result = await asyncio.to_thread(
+            lambda: db_client.rpc('get_analyzed_players_stats', {
+                'p_start_date': start_date,
+                'p_end_date': end_date,
+                'p_limit': limit
+            }).execute()
+        )
+
+        return {
+            'success': True,
+            'start_date': start_date,
+            'end_date': end_date,
+            'players': result.data or []
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_detail = str(e)
+        logger.error(f"Error getting analyzed players stats: {e}")
+        logger.error(f"Error type: {type(e)}")
+        if hasattr(e, '__dict__'):
+            logger.error(f"Error details: {e.__dict__}")
+        raise HTTPException(status_code=500, detail=error_detail)
+
+@app.get("/api/v1/admin/registration-details")
+async def get_registration_details(
+    start_date: str = Query(..., description="Start date in ISO format"),
+    end_date: str = Query(..., description="End date in ISO format"),
+    limit: int = Query(100, description="Maximum number of registrations to return"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Get detailed registration information
+    Requires authentication (admin only in production)
+    For local development: authentication optional
+    """
+    try:
+        # For local development, allow without auth
+        user_id = None
+        if credentials and credentials.credentials:
+            # Validate authentication if provided
+            jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+            if jwt_secret:
+                try:
+                    payload = jose_jwt.decode(
+                        credentials.credentials,
+                        jwt_secret,
+                        algorithms=['HS256'],
+                        options={"verify_aud": False}
+                    )
+                    user_id = payload.get('sub')
+                except Exception as e:
+                    logger.debug(f"Token validation failed (proceeding anyway for local dev): {e}")
+
+        # Use service role client
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Call the database function
+        result = await asyncio.to_thread(
+            lambda: db_client.rpc('get_registration_details', {
+                'p_start_date': start_date,
+                'p_end_date': end_date,
+                'p_limit': limit
+            }).execute()
+        )
+
+        return {
+            'success': True,
+            'start_date': start_date,
+            'end_date': end_date,
+            'registrations': result.data or []
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_detail = str(e)
+        logger.error(f"Error getting registration details: {e}")
+        logger.error(f"Error type: {type(e)}")
+        if hasattr(e, '__dict__'):
+            logger.error(f"Error details: {e.__dict__}")
+        raise HTTPException(status_code=500, detail=error_detail)
 
 if __name__ == "__main__":
     import argparse

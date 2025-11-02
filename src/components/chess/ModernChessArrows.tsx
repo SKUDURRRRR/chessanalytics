@@ -29,13 +29,13 @@ function squareToPixels(
     // White view: a1 is at bottom-left
     // In pixel coordinates: x increases left-to-right, y increases top-to-bottom
     // So rank 1 should be at bottom (high y), rank 8 at top (low y)
-    x = file * squareSize + squareSize / 2
-    y = (7 - rank) * squareSize + squareSize / 2
+    x = boardOffset.x + file * squareSize + squareSize / 2
+    y = boardOffset.y + (7 - rank) * squareSize + squareSize / 2
   } else {
     // Black view: board is flipped
     // h1 is at bottom-left, a8 at top-right
-    x = (7 - file) * squareSize + squareSize / 2
-    y = rank * squareSize + squareSize / 2
+    x = boardOffset.x + (7 - file) * squareSize + squareSize / 2
+    y = boardOffset.y + rank * squareSize + squareSize / 2
   }
 
   return { x, y }
@@ -126,35 +126,82 @@ export function ModernChessArrows({
       const container = svgRef.current.parentElement
       if (!container) return
 
-      // Try to find actual square elements to measure
+      const svgRect = svgRef.current.getBoundingClientRect()
+
+      // Find reference squares to measure the board layout
+      // Try multiple squares in case some aren't rendered
+      const e4Square = container.querySelector('[data-square="e4"]') as HTMLElement
+      const e5Square = container.querySelector('[data-square="e5"]') as HTMLElement
+      const d4Square = container.querySelector('[data-square="d4"]') as HTMLElement
       const a1Square = container.querySelector('[data-square="a1"]') as HTMLElement
-      const h8Square = container.querySelector('[data-square="h8"]') as HTMLElement
 
-      if (a1Square && h8Square) {
-        const a1Rect = a1Square.getBoundingClientRect()
+      // Use the first available square
+      const refSquare = e4Square || e5Square || d4Square || a1Square
+      const refSquareName = e4Square ? 'e4' : e5Square ? 'e5' : d4Square ? 'd4' : a1Square ? 'a1' : null
 
-        // Calculate actual square size from measured square element
-        const actualSquareSize = a1Rect.width
+      if (refSquare && refSquareName) {
+        const refRect = refSquare.getBoundingClientRect()
+
+        // Calculate square size directly from the square's dimensions
+        const actualSquareSize = refRect.width
+
+        // Get the center of reference square in screen coordinates
+        const refCenterX = refRect.left + refRect.width / 2
+        const refCenterY = refRect.top + refRect.height / 2
+
+        // Parse the square name to get file and rank
+        const file = refSquareName.charCodeAt(0) - 'a'.charCodeAt(0) // 0-7
+        const rank = parseInt(refSquareName[1]) - 1 // 0-7
+
+        // Calculate where this square SHOULD be in our SVG coordinate system
+        let expectedX: number, expectedY: number
+
+        if (boardOrientation === 'white') {
+          // White orientation: standard layout
+          expectedX = file * actualSquareSize + actualSquareSize / 2
+          expectedY = (7 - rank) * actualSquareSize + actualSquareSize / 2
+        } else {
+          // Black orientation: board is flipped
+          expectedX = (7 - file) * actualSquareSize + actualSquareSize / 2
+          expectedY = rank * actualSquareSize + actualSquareSize / 2
+        }
+
+        // Calculate offset: where square actually is minus where it should be
+        const offsetX = (refCenterX - svgRect.left) - expectedX
+        const offsetY = (refCenterY - svgRect.top) - expectedY
+
+        console.log(`[ModernChessArrows ${boardId}] Measured from ${refSquareName}:`, {
+          squareSize: actualSquareSize.toFixed(2),
+          offsetX: offsetX.toFixed(2),
+          offsetY: offsetY.toFixed(2),
+          orientation: boardOrientation,
+          actualCenter: `(${(refCenterX - svgRect.left).toFixed(1)}, ${(refCenterY - svgRect.top).toFixed(1)})`,
+          expectedCenter: `(${expectedX.toFixed(1)}, ${expectedY.toFixed(1)})`,
+          svgSize: `${svgRect.width.toFixed(1)}x${svgRect.height.toFixed(1)}`
+        })
 
         setSquareSize(actualSquareSize)
-        setBoardOffset({ x: 0, y: 0 })
+        setBoardOffset({ x: offsetX, y: offsetY })
       } else {
         // Fallback: use boardWidth prop
         const actualSquareSize = boardWidth / 8
         setSquareSize(actualSquareSize)
         setBoardOffset({ x: 0, y: 0 })
+        console.log(`[ModernChessArrows ${boardId}] Fallback mode: no squares found`)
       }
     }
 
     // Delay measurement to ensure board is rendered
     const timer = setTimeout(measure, 150)
+    const timer2 = setTimeout(measure, 500) // Second measurement for safety
     window.addEventListener('resize', measure)
 
     return () => {
       clearTimeout(timer)
+      clearTimeout(timer2)
       window.removeEventListener('resize', measure)
     }
-  }, [boardWidth, boardOrientation, boardId])
+  }, [boardWidth, boardOrientation, boardId, arrows.length])
 
   // Debug mode - can be enabled for troubleshooting
   const debugMode = false
@@ -290,19 +337,19 @@ export function ModernChessArrows({
               <g key={`grid-${i}`}>
                 {/* Vertical lines */}
                 <line
-                  x1={i * squareSize}
-                  y1={0}
-                  x2={i * squareSize}
-                  y2={boardWidth}
+                  x1={boardOffset.x + i * squareSize}
+                  y1={boardOffset.y}
+                  x2={boardOffset.x + i * squareSize}
+                  y2={boardOffset.y + squareSize * 8}
                   stroke="red"
                   strokeWidth="2"
                 />
                 {/* Horizontal lines */}
                 <line
-                  x1={0}
-                  y1={i * squareSize}
-                  x2={boardWidth}
-                  y2={i * squareSize}
+                  x1={boardOffset.x}
+                  y1={boardOffset.y + i * squareSize}
+                  x2={boardOffset.x + squareSize * 8}
+                  y2={boardOffset.y + i * squareSize}
                   stroke="red"
                   strokeWidth="2"
                 />
@@ -339,24 +386,24 @@ export function ModernChessArrows({
             })
           )}
 
-          {/* Show grid origin point */}
+          {/* Show board offset point */}
           {(() => {
             return (
               <>
                 <circle
-                  cx={0}
-                  cy={0}
+                  cx={boardOffset.x}
+                  cy={boardOffset.y}
                   r="8"
                   fill="magenta"
                 />
                 <text
-                  x={10}
-                  y={15}
+                  x={boardOffset.x + 10}
+                  y={boardOffset.y + 15}
                   fontSize="14"
                   fill="magenta"
                   fontWeight="bold"
                 >
-                  GRID ORIGIN
+                  BOARD ORIGIN (offset: {boardOffset.x.toFixed(1)}, {boardOffset.y.toFixed(1)})
                 </text>
               </>
             )

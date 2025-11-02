@@ -7,6 +7,7 @@ import UnifiedAnalysisService from '../services/unifiedAnalysisService'
 import { config } from '../lib/config'
 import { getTimeControlCategory } from '../utils/timeControlUtils'
 import { getOpeningNameWithFallback } from '../utils/openingIdentification'
+import { getPlayerPerspectiveOpeningShort, getOpeningExplanation } from '../utils/playerPerspectiveOpening'
 import { EnhancedGameInsights } from '../components/debug/EnhancedGameInsights'
 import { EnhancedMoveCoaching } from '../components/debug/EnhancedMoveCoaching'
 import { UnifiedChessAnalysis } from '../components/debug/UnifiedChessAnalysis'
@@ -1582,7 +1583,12 @@ export default function GameAnalysisPage() {
               </div>
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Opening: </span>
-                <span className="break-words">{getOpeningNameWithFallback(gameRecord?.opening_family ?? gameRecord?.opening, gameRecord)}</span>
+                <span
+                  className="break-words"
+                  title={getOpeningExplanation(gameRecord?.opening_family ?? gameRecord?.opening, playerColor, gameRecord)}
+                >
+                  {getPlayerPerspectiveOpeningShort(gameRecord?.opening_family ?? gameRecord?.opening, playerColor, gameRecord)}
+                </span>
               </div>
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Opponent: </span>

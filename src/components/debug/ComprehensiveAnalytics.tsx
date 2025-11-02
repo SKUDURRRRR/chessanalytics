@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
+import { shouldCountOpeningForColor } from '../../utils/openingColorClassification'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 
 interface ComprehensiveAnalyticsProps {
@@ -100,17 +101,24 @@ export function ComprehensiveAnalytics({ userId, platform }: ComprehensiveAnalyt
           acc[tc] = (acc[tc] || 0) + 1
           return acc
         }, {} as Record<string, number>)
-        const mostPlayedTimeControl = Object.entries(timeControls).reduce((a, b) => 
+        const mostPlayedTimeControl = Object.entries(timeControls).reduce((a, b) =>
           timeControls[a[0]] > timeControls[b[0]] ? a : b, ['unknown', 0])[0]
 
-        // Find most played opening
+        // Find most played opening (filtered by player color)
         const openings = games.reduce((acc, game) => {
           const rawOpening = game.opening || 'unknown'
           const opening = getOpeningNameWithFallback(rawOpening)
+          const playerColor = game.color || game.my_color
+
+          // Only count openings that match the player's color
+          if (playerColor && !shouldCountOpeningForColor(opening, playerColor)) {
+            return acc // Skip opponent's opening
+          }
+
           acc[opening] = (acc[opening] || 0) + 1
           return acc
         }, {} as Record<string, number>)
-        const mostPlayedOpening = Object.entries(openings).reduce((a, b) => 
+        const mostPlayedOpening = Object.entries(openings).reduce((a, b) =>
           openings[a[0]] > openings[b[0]] ? a : b, ['unknown', 0])[0]
 
         setData({

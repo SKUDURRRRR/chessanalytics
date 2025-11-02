@@ -12,6 +12,7 @@ import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
 import { normalizeOpeningName } from '../../utils/openingUtils'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
+import { shouldCountOpeningForColor } from '../../utils/openingColorClassification'
 import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { PersonalityRadar } from '../deep/PersonalityRadar'
 import { LongTermPlanner } from '../deep/LongTermPlanner'
@@ -696,7 +697,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <h4 className="mb-4 text-sm font-semibold text-emerald-200">Winning Openings</h4>
                 <div className="space-y-3">
                   {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
-                    safeOpeningStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
+                    safeOpeningStats
+                      .filter((stat: any) => stat.winRate >= 50)
+                      .slice(0, 3)
+                      .map((stat: any, index: number) => (
                     <div
                       key={index}
                       className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
@@ -794,9 +798,13 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Best White Openings */}
                 <div>
-                  <h4 className="mb-3 text-sm font-semibold text-emerald-200">Most Played White Openings</h4>
+                  <h4 className="mb-3 text-sm font-semibold text-emerald-200">Best Winning White Openings</h4>
                   <div className="space-y-3">
-                    {safeOpeningColorStats.white.slice(0, 3).map((stat: any, index: number) => (
+                    {safeOpeningColorStats.white
+                      .filter((stat: any) => shouldCountOpeningForColor(stat.opening, 'white') && stat.winRate >= 50)
+                      .sort((a: any, b: any) => b.games - a.games)
+                      .slice(0, 3)
+                      .map((stat: any, index: number) => (
                       <div
                         key={index}
                         className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
@@ -837,9 +845,13 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
                 {/* Best Black Openings */}
                 <div>
-                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Most Played Black Openings</h4>
+                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Best Winning Black Openings</h4>
                   <div className="space-y-3">
-                    {safeOpeningColorStats.black.slice(0, 3).map((stat: any, index: number) => (
+                    {safeOpeningColorStats.black
+                      .filter((stat: any) => shouldCountOpeningForColor(stat.opening, 'black') && stat.winRate >= 50)
+                      .sort((a: any, b: any) => b.games - a.games)
+                      .slice(0, 3)
+                      .map((stat: any, index: number) => (
                       <div
                         key={index}
                         className="cursor-pointer rounded-2xl border border-sky-400/40 bg-sky-500/10 p-4 transition hover:border-sky-300/60 hover:bg-sky-500/20"

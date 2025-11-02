@@ -595,42 +595,27 @@ export function UnifiedChessAnalysis({
     // If exploring, use the exploration analysis evaluation
     if ((isExploringFollowUp || isFreeExploration) && explorationAnalysis && !explorationAnalysis.isAnalyzing) {
       const score = explorationAnalysis.evaluation.scoreForWhite * 100
-      console.log('🎯 Using exploration eval:', {
-        scoreForWhite: explorationAnalysis.evaluation.scoreForWhite,
-        score,
-        isExploringFollowUp,
-        isFreeExploration,
-        explorationAnalysis: explorationAnalysis
-      })
       return score
     }
 
     // Otherwise use current move evaluation
     if (!currentMove?.evaluation) {
-      console.log('🎯 No evaluation available, returning 0')
       return 0
     }
+    // IMPORTANT: evaluation.value is ALWAYS from white's perspective
+    // (positive = white winning, negative = black winning)
+    // We should use it directly WITHOUT any color-based transformation
+    // The evaluation bar always displays from white's perspective regardless of board orientation
     const score = currentMove.evaluation.type === 'mate'
       ? (currentMove.evaluation.value > 0 ? 1000 : -1000)
       : currentMove.evaluation.value
-    console.log('🎯 Using current move eval:', { score, currentMove: currentMove.san })
     return score
   }, [currentMove, isExploringFollowUp, isFreeExploration, explorationAnalysis])
 
   // Generate arrows from exploration analysis if available
   const displayArrows = useMemo(() => {
-    console.log('[UnifiedChessAnalysis] Computing displayArrows:', {
-      isExploringFollowUp,
-      isFreeExploration,
-      hasExplorationAnalysis: !!explorationAnalysis,
-      explorationBestMove: explorationAnalysis?.bestMove,
-      currentMoveArrows: currentMoveArrows,
-      currentMoveArrowsLength: currentMoveArrows?.length || 0
-    })
-
     // If exploring and we have analysis with a best move, show arrow for that
     if ((isExploringFollowUp || isFreeExploration) && explorationAnalysis?.bestMove) {
-      console.log('[UnifiedChessAnalysis] Using exploration arrow')
       return [{
         from: explorationAnalysis.bestMove.from,
         to: explorationAnalysis.bestMove.to,
@@ -639,7 +624,6 @@ export function UnifiedChessAnalysis({
     }
 
     // Otherwise use the current move arrows
-    console.log('[UnifiedChessAnalysis] Using currentMoveArrows:', currentMoveArrows)
     return currentMoveArrows
   }, [isExploringFollowUp, isFreeExploration, explorationAnalysis, currentMoveArrows])
 
@@ -685,14 +669,13 @@ export function UnifiedChessAnalysis({
 
   // Play sound when navigating to a new move
   useEffect(() => {
-    // Don't play sound on initial mount or when going backwards
-    if (prevIndexRef.current === currentIndex || currentIndex === 0) {
-      prevIndexRef.current = currentIndex
+    // Don't play sound on initial mount
+    if (prevIndexRef.current === currentIndex) {
       return
     }
 
-    // Only play sound when moving forward or when there's an actual move
-    if (currentMove && currentIndex > prevIndexRef.current) {
+    // Play sound for any move navigation (forward or backward)
+    if (currentMove) {
       const soundType = getMoveSoundSimple(currentMove.san)
       playSound(soundType)
     }

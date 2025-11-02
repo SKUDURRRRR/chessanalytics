@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
+import { AnalyticsService } from '../services/analyticsService'
 
 interface PaymentTier {
   id: string
@@ -26,6 +27,10 @@ export default function PricingPage() {
 
   useEffect(() => {
     fetchTiers()
+    // Track pricing page view
+    AnalyticsService.trackPricingPageView().catch(err =>
+      console.warn('Failed to track pricing page view:', err)
+    )
   }, [])
 
   const fetchTiers = async () => {

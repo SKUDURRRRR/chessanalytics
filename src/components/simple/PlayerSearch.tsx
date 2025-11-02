@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import UsageLimitModal from '../UsageLimitModal'
 import { AnonymousUsageTracker } from '../../services/anonymousUsageTracker'
 import AnonymousLimitModal from '../AnonymousLimitModal'
+import { AnalyticsService } from '../../services/analyticsService'
 
 // Add custom pulse animation style
 const customPulseStyle = `
@@ -143,6 +144,11 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
         displayName: displayName || profile.display_name || userId,
         rating: rating || profile.current_rating
       })
+
+      // Track player search event
+      AnalyticsService.trackPlayerSearch(userId, platform).catch(err =>
+        console.warn('Failed to track player search:', err)
+      )
 
       // Update recent players state
       setRecentPlayers(getRecentPlayers())
