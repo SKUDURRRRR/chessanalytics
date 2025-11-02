@@ -263,7 +263,7 @@ export function identifyOpening(
   if (gameRecord?.opening || (gameRecord?.opening_family && !/^[A-E]\d{2}/.test(gameRecord.opening_family))) {
     const rawOpening = (gameRecord.opening_family && !/^[A-E]\d{2}/.test(gameRecord.opening_family)) ? gameRecord.opening_family : gameRecord.opening
     const normalizedOpening = normalizeOpeningName(rawOpening)
-    
+
     if (normalizedOpening && normalizedOpening !== 'Unknown') {
       return {
         name: normalizedOpening,
@@ -280,7 +280,7 @@ export function identifyOpening(
   if (firstMoves.length > 0) {
     for (const [firstMove, variations] of Object.entries(OPENING_VARIATIONS)) {
       for (const variation of variations) {
-        if (variation.moves.every((move, index) => 
+        if (variation.moves.every((move, index) =>
           index < firstMoves.length && firstMoves[index] === move
         )) {
           return {
@@ -300,14 +300,14 @@ export function identifyOpening(
     if (firstMoves.length >= 4) {
       const blackMoves = firstMoves.filter((_, index) => index % 2 === 1) // Black moves (odd indices)
       const whiteMoves = firstMoves.filter((_, index) => index % 2 === 0) // White moves (even indices)
-      
+
       // Check if Black is setting up King's Indian structure
       if (blackMoves.length >= 2) {
         const hasD6 = blackMoves.includes('d6')
         const hasNf6 = blackMoves.includes('Nf6')
         const hasG6 = blackMoves.includes('g6')
         const hasBg7 = blackMoves.includes('Bg7')
-        
+
         // If Black has the characteristic KID setup moves
         if ((hasD6 && hasNf6 && hasG6) || (hasNf6 && hasG6 && hasBg7)) {
           return {
@@ -326,8 +326,8 @@ export function identifyOpening(
     const firstThreeMoves = firstMoves.slice(0, 3)
     for (const [firstMove, variations] of Object.entries(OPENING_VARIATIONS)) {
       for (const variation of variations) {
-        if (variation.moves.length >= 3 && 
-            variation.moves.slice(0, 3).every((move, index) => 
+        if (variation.moves.length >= 3 &&
+            variation.moves.slice(0, 3).every((move, index) =>
               index < firstThreeMoves.length && firstThreeMoves[index] === move
             )) {
           return {
@@ -436,6 +436,17 @@ export function getOpeningName(
 /**
  * Get opening name with fallback to normalizeOpeningName for backward compatibility
  * This maintains the existing API while using the improved logic
+ *
+ * ⚠️ WARNING: This function returns the RAW opening name from database (board perspective).
+ * For DISPLAY purposes on Game Analysis Page or Match History, use getPlayerPerspectiveOpeningShort() instead!
+ *
+ * This function should only be used for:
+ * - Opening identification/classification (not display)
+ * - Internal data processing
+ * - Fallback when player color is unknown
+ *
+ * ❌ DO NOT USE for displaying openings to users - use getPlayerPerspectiveOpeningShort() instead!
+ * See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md for details.
  */
 export function getOpeningNameWithFallback(
   opening: string | null | undefined,
@@ -447,7 +458,7 @@ export function getOpeningNameWithFallback(
   if (gameRecord) {
     return getOpeningName(gameRecord, moves, playerColor)
   }
-  
+
   // Fallback to the original normalizeOpeningName for backward compatibility
   return normalizeOpeningName(opening || 'Unknown')
 }

@@ -7,6 +7,7 @@ import UnifiedAnalysisService from '../services/unifiedAnalysisService'
 import { config } from '../lib/config'
 import { getTimeControlCategory } from '../utils/timeControlUtils'
 import { getOpeningNameWithFallback } from '../utils/openingIdentification'
+import { getPlayerPerspectiveOpeningShort } from '../utils/playerPerspectiveOpening'
 import { EnhancedGameInsights } from '../components/debug/EnhancedGameInsights'
 import { EnhancedMoveCoaching } from '../components/debug/EnhancedMoveCoaching'
 import { UnifiedChessAnalysis } from '../components/debug/UnifiedChessAnalysis'
@@ -1579,7 +1580,14 @@ export default function GameAnalysisPage() {
               </div>
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Opening: </span>
-                <span className="break-words">{getOpeningNameWithFallback(gameRecord?.opening_family ?? gameRecord?.opening, gameRecord)}</span>
+                {/*
+                  🚨 CRITICAL: MUST use getPlayerPerspectiveOpeningShort, NOT getOpeningNameWithFallback!
+                  - getOpeningNameWithFallback returns raw DB opening (board perspective)
+                  - getPlayerPerspectiveOpeningShort converts to player's perspective
+                  - Using the wrong function causes White vs Caro-Kann to show "Caro-Kann Defense" instead of "King's Pawn Opening"
+                  - See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md
+                */}
+                <span className="break-words">{getPlayerPerspectiveOpeningShort(gameRecord?.opening_family ?? gameRecord?.opening ?? gameRecord?.opening_normalized, playerColor, gameRecord)}</span>
               </div>
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Opponent: </span>

@@ -13,6 +13,7 @@ import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
 import { normalizeOpeningName } from '../../utils/openingUtils'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
 import { getOpeningColor } from '../../utils/openingColorClassification'
+import { getPlayerPerspectiveOpeningShort } from '../../utils/playerPerspectiveOpening'
 import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { PersonalityRadar } from '../deep/PersonalityRadar'
 import { LongTermPlanner } from '../deep/LongTermPlanner'
@@ -701,11 +702,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Opening Performance - Winning vs Losing */}
           <div className={cardClass}>
-            <h3 className="mb-6 text-lg font-semibold text-white">Opening Performance</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <h3 className="mb-4 text-lg font-semibold text-white">Opening Performance</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Winning Openings */}
               <div>
-                <h4 className="mb-4 text-sm font-semibold text-emerald-200">Winning Openings</h4>
+                <h4 className="mb-3 text-sm font-semibold text-emerald-200">Winning Openings</h4>
                 <div className="space-y-3">
                   {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
                     safeOpeningStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
@@ -722,8 +723,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       }
                       title="Click to view games with this opening"
                     >
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="font-medium text-white">
+                      <div className="mb-2 flex items-start justify-between">
+                        <span className="text-sm font-medium leading-tight text-white">
                           {normalizeOpeningName(stat.opening)}
                         </span>
                         <span className="text-xs uppercase tracking-wide text-emerald-100/80">{stat.games} games</span>
@@ -751,7 +752,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
               {/* Losing Openings */}
               <div>
-                <h4 className="mb-4 text-sm font-semibold text-amber-200">Losing Openings</h4>
+                <h4 className="mb-3 text-sm font-semibold text-amber-200">Losing Openings</h4>
                 <div className="space-y-3">
                   {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate < 50).length > 0 ? (
                     safeOpeningStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => b.games - a.games).slice(0, 3).map((stat: any, index: number) => (
@@ -768,8 +769,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         }
                         title="Click to view games with this opening"
                       >
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="font-medium text-white">
+                        <div className="mb-2 flex items-start justify-between">
+                          <span className="text-sm font-medium leading-tight text-white">
                             {normalizeOpeningName(stat.opening)}
                           </span>
                           <span className="text-xs uppercase tracking-wide text-amber-100/80">{stat.games} games</span>
@@ -821,7 +822,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       >
                         <div className="mb-2 flex items-start justify-between">
                           <span className="text-sm font-medium leading-tight text-white">
-                            {normalizeOpeningName(stat.opening)}
+                            {stat.opening}
                           </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
@@ -864,7 +865,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       >
                         <div className="mb-2 flex items-start justify-between">
                           <span className="text-sm font-medium leading-tight text-white">
-                            {normalizeOpeningName(stat.opening)}
+                            {stat.opening}
                           </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :

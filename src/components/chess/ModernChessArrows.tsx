@@ -13,6 +13,14 @@ interface ModernChessArrowsProps {
 
 /**
  * Convert chess square to pixel coordinates using measured square size and actual board offset
+ *
+ * This function calculates the center point of a chess square in SVG coordinate space.
+ * The boardOffset parameter is critical - it accounts for any padding, margins, or
+ * internal offsets in the chessboard component that shift squares from the expected (0,0) position.
+ *
+ * ⚠️ IMPORTANT: The boardOffset is calculated by measuring the actual a1 square position
+ * and comparing it to the expected position. Do not remove this offset calculation
+ * or arrows will be misaligned with squares.
  */
 function squareToPixels(
   square: Square,
@@ -118,7 +126,30 @@ export function ModernChessArrows({
   const [squareSize, setSquareSize] = React.useState(boardWidth / 8)
   const [boardOffset, setBoardOffset] = React.useState({ x: 0, y: 0 })
 
-  // Measure actual board squares for perfect alignment
+  /**
+   * CRITICAL: Arrow Alignment Measurement
+   *
+   * This effect measures the actual chessboard square positions and calculates
+   * the offset needed to align arrows perfectly with squares.
+   *
+   * WHY THIS IS NECESSARY:
+   * - The SVG overlay uses a coordinate system (0,0 to boardWidth,boardWidth)
+   * - The actual chessboard squares may have padding, margins, or internal offsets
+   * - Without measuring actual positions, arrows would be misaligned
+   *
+   * HOW IT WORKS:
+   * 1. Finds the a1 square element using data-square attribute
+   * 2. Measures its actual position in viewport coordinates
+   * 3. Converts to SVG local coordinate space
+   * 4. Compares with expected position (based on board orientation)
+   * 5. Calculates offset difference to align all squares correctly
+   *
+   * ⚠️ WARNING: Do not change this logic without understanding:
+   * - SVG coordinate system (viewBox="0 0 boardWidth boardWidth")
+   * - Square coordinate conversion (squareToPixels function)
+   * - Board orientation handling (white vs black view)
+   * - The relationship between viewport and local coordinates
+   */
   React.useEffect(() => {
     const measure = () => {
       if (!svgRef.current) return
@@ -132,14 +163,58 @@ export function ModernChessArrows({
 
       if (a1Square && h8Square) {
         const a1Rect = a1Square.getBoundingClientRect()
+        const svgRect = svgRef.current.getBoundingClientRect()
+
+        // Validate measurements are reasonable
+        if (a1Rect.width <= 0 || svgRect.width <= 0) {
+          console.warn('[ModernChessArrows] Invalid measurements, using fallback')
+          setSquareSize(boardWidth / 8)
+          setBoardOffset({ x: 0, y: 0 })
+          return
+        }
 
         // Calculate actual square size from measured square element
         const actualSquareSize = a1Rect.width
 
+        // Calculate where a1 square center is in SVG coordinate space
+        // We need to convert from viewport coordinates to SVG local coordinates
+        const a1CenterXViewport = a1Rect.left + a1Rect.width / 2
+        const a1CenterYViewport = a1Rect.top + a1Rect.height / 2
+
+        // Get SVG position in viewport
+        const svgLeft = svgRect.left
+        const svgTop = svgRect.top
+
+        // Convert to SVG local coordinates (0,0 is top-left of SVG)
+        // The SVG viewBox is "0 0 boardWidth boardWidth", so coordinates match pixels
+        const a1CenterXLocal = a1CenterXViewport - svgLeft
+        const a1CenterYLocal = a1CenterYViewport - svgTop
+
+        // Expected a1 center position if board starts at (0,0) in SVG coordinates
+        // For white orientation: a1 is at bottom-left, so file=0, rank=0
+        // x = 0 * squareSize + squareSize/2 = squareSize/2
+        // y = (7-0) * squareSize + squareSize/2 = 7.5 * squareSize
+        // For black orientation: a1 is at top-right, so we need to account for flip
+        const expectedA1X = actualSquareSize / 2
+        const expectedA1Y = (boardOrientation === 'white')
+          ? (7 * actualSquareSize + actualSquareSize / 2)
+          : (actualSquareSize / 2)
+
+        // Calculate offset needed to align measured position with expected position
+        // This offset is added in squareToPixels() to shift all square centers correctly
+        const offsetX = a1CenterXLocal - expectedA1X
+        const offsetY = a1CenterYLocal - expectedA1Y
+
+        // Validate offset is reasonable (within ±50px to catch major misalignments)
+        if (Math.abs(offsetX) > 50 || Math.abs(offsetY) > 50) {
+          console.warn('[ModernChessArrows] Unusual offset detected:', { offsetX, offsetY, boardId })
+        }
+
         setSquareSize(actualSquareSize)
-        setBoardOffset({ x: 0, y: 0 })
+        setBoardOffset({ x: offsetX, y: offsetY })
       } else {
-        // Fallback: use boardWidth prop
+        // Fallback: use boardWidth prop when squares can't be found
+        // This happens during initial render or if board structure changes
         const actualSquareSize = boardWidth / 8
         setSquareSize(actualSquareSize)
         setBoardOffset({ x: 0, y: 0 })
@@ -211,14 +286,6 @@ export function ModernChessArrows({
       {arrows.map((arrow, index) => {
         const from = squareToPixels(arrow.from, boardOrientation, squareSize, boardOffset)
         const to = squareToPixels(arrow.to, boardOrientation, squareSize, boardOffset)
-
-        // Debug: log first arrow position
-        if (index === 0) {
-          console.log(`[Arrow ${boardId}] ${arrow.from}→${arrow.to}:`, {
-            from: `(${from.x.toFixed(1)}, ${from.y.toFixed(1)})`,
-            to: `(${to.x.toFixed(1)}, ${to.y.toFixed(1)})`
-          })
-        }
 
         // Calculate arrow head pointing at the destination square center
         const arrowHead = getArrowHead(from.x, from.y, to.x, to.y, boardWidth)
