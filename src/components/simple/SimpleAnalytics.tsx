@@ -798,11 +798,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Best White Openings */}
                 <div>
-                  <h4 className="mb-3 text-sm font-semibold text-emerald-200">Best Winning White Openings</h4>
+                  <h4 className="mb-3 text-sm font-semibold text-emerald-200">Best White Openings</h4>
                   <div className="space-y-3">
                     {safeOpeningColorStats.white
-                      .filter((stat: any) => shouldCountOpeningForColor(stat.opening, 'white') && stat.winRate >= 50)
-                      .sort((a: any, b: any) => b.games - a.games)
+                      .sort((a: any, b: any) => b.winRate - a.winRate)
                       .slice(0, 3)
                       .map((stat: any, index: number) => (
                       <div
@@ -845,11 +844,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
                 {/* Best Black Openings */}
                 <div>
-                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Best Winning Black Openings</h4>
+                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Best Black Openings</h4>
                   <div className="space-y-3">
                     {safeOpeningColorStats.black
-                      .filter((stat: any) => shouldCountOpeningForColor(stat.opening, 'black') && stat.winRate >= 50)
-                      .sort((a: any, b: any) => b.games - a.games)
+                      .sort((a: any, b: any) => b.winRate - a.winRate)
                       .slice(0, 3)
                       .map((stat: any, index: number) => (
                       <div
