@@ -762,16 +762,16 @@ function calculateOpeningColorStats(games: any[]): {
         openings: Array.from(details.openings).filter(Boolean) as string[]
       }
     }
-  }).filter(stat => stat.games >= 3) // Lower threshold for color-specific stats (3 games provides meaningful data)
+  }) // Show ALL openings by color regardless of game count for better user feedback
     .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
 
   if (DEBUG) {
     console.log('White games filtered out by shouldCountOpeningForColor:', whiteFilteredOut)
-    console.log('White Opening Stats (before 3-game filter):', Array.from(whiteOpeningMap.entries()).map(([opening, details]) => ({
+    console.log('White Opening Stats (before game filter):', Array.from(whiteOpeningMap.entries()).map(([opening, details]) => ({
       opening,
       games: details.games.length
     })))
-    console.log('White Opening Stats (after 3+ game filter):', whiteStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
+    console.log('White Opening Stats (all games):', whiteStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
   }
 
   // Optimized: Calculate stats in single pass for black openings
@@ -802,15 +802,15 @@ function calculateOpeningColorStats(games: any[]): {
         openings: Array.from(details.openings).filter(Boolean) as string[]
       }
     }
-  }).filter(stat => stat.games >= 3) // Lower threshold for color-specific stats (3 games provides meaningful data)
+  }) // Show ALL openings by color regardless of game count for better user feedback
     .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
 
   if (DEBUG) {
-    console.log('Black Opening Stats (before 3-game filter):', Array.from(blackOpeningMap.entries()).map(([opening, details]) => ({
+    console.log('Black Opening Stats (before game filter):', Array.from(blackOpeningMap.entries()).map(([opening, details]) => ({
       opening,
       games: details.games.length
     })))
-    console.log('Black Opening Stats (after 3+ game filter):', blackStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
+    console.log('Black Opening Stats (all games):', blackStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
   }
 
   return {
