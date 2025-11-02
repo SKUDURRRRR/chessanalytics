@@ -841,9 +841,8 @@ export default function GameAnalysisPage() {
 
   useEffect(() => {
     if (processedData.positions.length > 0) {
-      // Set to the last position index (after all moves)
-      const lastPositionIndex = processedData.positions.length - 1
-      setCurrentIndex(lastPositionIndex)
+      // Set to the starting position (before any moves)
+      setCurrentIndex(0)
     }
   }, [processedData.positions.length, processedData.moves.length])
 
