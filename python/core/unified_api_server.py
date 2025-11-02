@@ -51,6 +51,9 @@ import logging
 # Set up logger
 logger = logging.getLogger(__name__)
 
+# Configure httpx to only log warnings and above (reduce INFO noise)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # Import our unified analysis engine
 from .analysis_engine import ChessAnalysisEngine, AnalysisConfig, AnalysisType, GameAnalysis
 
@@ -1109,6 +1112,7 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
 async def unified_analyze(
     request: UnifiedAnalysisRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,  # Add Request object to get client IP
     # Optional parallel analysis flag
     use_parallel: bool = True,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
@@ -1121,16 +1125,21 @@ async def unified_analyze(
     - /analyze-position (position analysis)
     - /analyze-move (move analysis)
     - /analyze-game (single game analysis)
+
+    Anonymous users: Can analyze up to 3 games per day
+    Authenticated users: Based on their subscription tier
     """
     try:
         # Check usage limits for authenticated users
         auth_user_id = None
+        is_anonymous = True
         try:
             if credentials:
                 token_data = await verify_token(credentials)
                 auth_user_id = token_data.get('sub')
+                is_anonymous = False
 
-                # Check analysis limit
+                # Check analysis limit for authenticated users
                 if auth_user_id and usage_tracker:
                     can_proceed, stats = await usage_tracker.check_analysis_limit(auth_user_id)
                     if not can_proceed:
@@ -1143,6 +1152,53 @@ async def unified_analyze(
         except Exception as e:
             # Log but don't fail - allow anonymous/failed auth to proceed
             print(f"Auth check failed (non-critical): {e}")
+
+        # Check anonymous user limits if not authenticated
+        if is_anonymous and supabase_service:
+            # Get client IP address
+            client_ip = http_request.client.host if http_request.client else "unknown"
+
+            # Handle forwarded IPs (e.g., from proxies/load balancers)
+            forwarded_for = http_request.headers.get("x-forwarded-for")
+            if forwarded_for:
+                client_ip = forwarded_for.split(",")[0].strip()
+
+            # Check if anonymous user can proceed (3 games per day limit)
+            try:
+                result = await asyncio.to_thread(
+                    lambda: supabase_service.rpc(
+                        'check_anonymous_analysis_limit',
+                        {'p_ip_address': client_ip}
+                    ).execute()
+                )
+
+                if result.data:
+                    can_proceed = result.data.get('can_proceed', False)
+                    if not can_proceed:
+                        message = result.data.get('message', 'Daily limit reached for anonymous users.')
+                        remaining = result.data.get('remaining', 0)
+                        resets_in = result.data.get('resets_in_hours', 24)
+                        raise HTTPException(
+                            status_code=429,
+                            detail={
+                                "error": "rate_limit_exceeded",
+                                "message": message,
+                                "limit": result.data.get('limit', 3),
+                                "current_usage": result.data.get('current_usage', 0),
+                                "remaining": remaining,
+                                "resets_in_hours": resets_in,
+                                "upgrade_message": "Sign up for unlimited access!"
+                            }
+                        )
+                    else:
+                        # Log remaining analyses for anonymous user
+                        remaining = result.data.get('remaining', 0)
+                        print(f"[info] Anonymous user ({client_ip}) can analyze. Remaining: {remaining}/3")
+            except HTTPException:
+                raise  # Re-raise HTTP exceptions
+            except Exception as e:
+                logger.warning(f"Failed to check anonymous limit for IP {client_ip}: {e}")
+                # Continue anyway - fail open for anonymous users to maintain service availability
 
         # Enforce rate limit per user
         user_key = f"analysis:{request.user_id}:{request.platform}"
@@ -1166,16 +1222,74 @@ async def unified_analyze(
         if request.pgn:
             # Single game analysis with PGN
             result = await _handle_single_game_analysis(request)
+            # Track analytics event
+            try:
+                await asyncio.to_thread(
+                    lambda: (supabase_service or supabase).rpc('track_game_analysis', {
+                        'p_user_id': auth_user_id,
+                        'p_platform': request.platform,
+                        'p_game_id': request.game_id or request.provider_game_id,
+                        'p_analysis_type': request.analysis_type
+                    }).execute()
+                )
+            except Exception as e:
+                logger.debug(f"Failed to track game analysis event: {e}")
             # Increment usage for authenticated users
             if auth_user_id and usage_tracker:
                 await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            # Increment usage for anonymous users
+            elif is_anonymous and supabase_service:
+                try:
+                    client_ip = http_request.client.host if http_request.client else "unknown"
+                    forwarded_for = http_request.headers.get("x-forwarded-for")
+                    if forwarded_for:
+                        client_ip = forwarded_for.split(",")[0].strip()
+
+                    await asyncio.to_thread(
+                        lambda: supabase_service.rpc(
+                            'increment_anonymous_usage',
+                            {'p_ip_address': client_ip, 'p_count': 1}
+                        ).execute()
+                    )
+                    print(f"[info] Incremented anonymous usage for IP: {client_ip}")
+                except Exception as e:
+                    logger.warning(f"Failed to increment anonymous usage: {e}")
             return result
         elif request.game_id or request.provider_game_id:
             # Single game analysis by game_id - fetch PGN from database
             result = await _handle_single_game_by_id(request)
+            # Track analytics event
+            try:
+                await asyncio.to_thread(
+                    lambda: (supabase_service or supabase).rpc('track_game_analysis', {
+                        'p_user_id': auth_user_id,
+                        'p_platform': request.platform,
+                        'p_game_id': request.game_id or request.provider_game_id,
+                        'p_analysis_type': request.analysis_type
+                    }).execute()
+                )
+            except Exception as e:
+                logger.debug(f"Failed to track game analysis event: {e}")
             # Increment usage for authenticated users
             if auth_user_id and usage_tracker:
                 await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            # Increment usage for anonymous users
+            elif is_anonymous and supabase_service:
+                try:
+                    client_ip = http_request.client.host if http_request.client else "unknown"
+                    forwarded_for = http_request.headers.get("x-forwarded-for")
+                    if forwarded_for:
+                        client_ip = forwarded_for.split(",")[0].strip()
+
+                    await asyncio.to_thread(
+                        lambda: supabase_service.rpc(
+                            'increment_anonymous_usage',
+                            {'p_ip_address': client_ip, 'p_count': 1}
+                        ).execute()
+                    )
+                    print(f"[info] Incremented anonymous usage for IP: {client_ip}")
+                except Exception as e:
+                    logger.warning(f"Failed to increment anonymous usage: {e}")
             return result
         elif request.fen:
             if request.move:
@@ -1184,6 +1298,7 @@ async def unified_analyze(
                 # Increment usage for authenticated users
                 if auth_user_id and usage_tracker:
                     await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+                # Note: Move analysis is typically exploratory, not counted for anonymous users
                 return result
             else:
                 # Position analysis
@@ -1194,7 +1309,14 @@ async def unified_analyze(
             # Batch analysis - use the unified handler
             # NOTE: Usage tracking for batch analysis is handled in the queue completion handler
             # since batch analysis is async and the count is determined when it completes
-            return await _handle_batch_analysis(request, background_tasks, use_parallel, auth_user_id)
+            # Pass client_ip for anonymous tracking
+            client_ip = None
+            if is_anonymous:
+                client_ip = http_request.client.host if http_request.client else "unknown"
+                forwarded_for = http_request.headers.get("x-forwarded-for")
+                if forwarded_for:
+                    client_ip = forwarded_for.split(",")[0].strip()
+            return await _handle_batch_analysis(request, background_tasks, use_parallel, auth_user_id, is_anonymous, client_ip)
 
     except ValidationError as e:
         raise e
@@ -8949,6 +9071,312 @@ async def get_payment_tiers():
     except Exception as e:
         logger.error(f"Error getting payment tiers: {e}")
         raise HTTPException(status_code=500, detail="Failed to get payment tiers")
+
+# ============================================================================
+# ADMIN ANALYTICS ENDPOINTS
+# ============================================================================
+
+class DashboardMetricsRequest(BaseModel):
+    """Request model for dashboard metrics"""
+    start_date: str  # ISO format timestamp
+    end_date: str  # ISO format timestamp
+    granularity: str = 'day'  # 'hour', 'day', 'week', 'month'
+
+class TrackEventRequest(BaseModel):
+    """Request model for tracking events"""
+    event_type: str  # 'player_search', 'game_analysis', 'pricing_page_view'
+    platform: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+@app.post("/api/v1/admin/track-event")
+async def track_event(
+    request: TrackEventRequest,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Track an analytics event (player search, game analysis, pricing page view)
+    Can be called by authenticated or anonymous users
+    """
+    try:
+        # Get user ID if authenticated
+        user_id = None
+        is_anonymous = True
+
+        if credentials and credentials.credentials:
+            try:
+                # Verify JWT token
+                jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+                if not jwt_secret:
+                    raise AuthenticationError("JWT secret not configured")
+
+                payload = jose_jwt.decode(
+                    credentials.credentials,
+                    jwt_secret,
+                    algorithms=['HS256'],
+                    options={"verify_aud": False}
+                )
+                user_id = payload.get('sub')
+                is_anonymous = False
+            except Exception as e:
+                logger.debug(f"Token validation failed (proceeding as anonymous): {e}")
+                # Continue as anonymous user
+
+        # Use service role client for tracking
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Validate event type
+        valid_event_types = ['player_search', 'game_analysis', 'pricing_page_view']
+        if request.event_type not in valid_event_types:
+            raise HTTPException(status_code=400, detail=f"Invalid event type. Must be one of: {valid_event_types}")
+
+        # Call appropriate tracking function based on event type
+        if request.event_type == 'player_search':
+            # Use the track_player_search function
+            result = await asyncio.to_thread(
+                lambda: db_client.rpc('track_player_search', {
+                    'p_user_id': user_id,
+                    'p_platform': request.platform,
+                    'p_username': request.metadata.get('username') if request.metadata else None
+                }).execute()
+            )
+        elif request.event_type == 'game_analysis':
+            # Use the track_game_analysis function
+            result = await asyncio.to_thread(
+                lambda: db_client.rpc('track_game_analysis', {
+                    'p_user_id': user_id,
+                    'p_platform': request.platform,
+                    'p_game_id': request.metadata.get('game_id') if request.metadata else None,
+                    'p_analysis_type': request.metadata.get('analysis_type') if request.metadata else None
+                }).execute()
+            )
+        elif request.event_type == 'pricing_page_view':
+            # Use the track_pricing_page_view function
+            result = await asyncio.to_thread(
+                lambda: db_client.rpc('track_pricing_page_view', {
+                    'p_user_id': user_id
+                }).execute()
+            )
+
+        return {
+            'success': True,
+            'event_id': result.data if result.data else None,
+            'message': 'Event tracked successfully'
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error tracking event: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/admin/dashboard-metrics")
+async def get_dashboard_metrics(
+    request: DashboardMetricsRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Get dashboard metrics for admin analytics
+    Requires authentication (admin only in production)
+    """
+    try:
+        # Validate authentication
+        if not credentials or not credentials.credentials:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        # Verify JWT token
+        jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+        if not jwt_secret:
+            raise AuthenticationError("JWT secret not configured")
+
+        try:
+            payload = jose_jwt.decode(
+                credentials.credentials,
+                jwt_secret,
+                algorithms=['HS256'],
+                options={"verify_aud": False}
+            )
+            user_id = payload.get('sub')
+            if not user_id:
+                raise AuthenticationError("Invalid token")
+        except Exception as e:
+            logger.error(f"Token validation failed: {e}")
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        # TODO: In production, add admin role check here
+        # For now, allow any authenticated user (you can add admin role check later)
+
+        # Use service role client
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Validate granularity
+        valid_granularities = ['hour', 'day', 'week', 'month']
+        if request.granularity not in valid_granularities:
+            raise HTTPException(status_code=400, detail=f"Invalid granularity. Must be one of: {valid_granularities}")
+
+        # Call the database function
+        result = await asyncio.to_thread(
+            lambda: db_client.rpc('get_dashboard_metrics', {
+                'p_start_date': request.start_date,
+                'p_end_date': request.end_date,
+                'p_granularity': request.granularity
+            }).execute()
+        )
+
+        # Transform data for frontend consumption
+        metrics = result.data or []
+
+        # Group by event type
+        grouped_metrics = {}
+        for metric in metrics:
+            event_type = metric['event_type']
+            if event_type not in grouped_metrics:
+                grouped_metrics[event_type] = []
+            grouped_metrics[event_type].append({
+                'time_bucket': metric['time_bucket'],
+                'event_count': metric['event_count'],
+                'unique_users': metric['unique_users'],
+                'anonymous_count': metric['anonymous_count']
+            })
+
+        return {
+            'success': True,
+            'start_date': request.start_date,
+            'end_date': request.end_date,
+            'granularity': request.granularity,
+            'metrics': grouped_metrics
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting dashboard metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/admin/registration-stats")
+async def get_registration_stats(
+    start_date: str = Query(..., description="Start date in ISO format"),
+    end_date: str = Query(..., description="End date in ISO format"),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Get user registration statistics
+    Requires authentication (admin only in production)
+    """
+    try:
+        # Validate authentication
+        if not credentials or not credentials.credentials:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        # Verify JWT token
+        jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+        if not jwt_secret:
+            raise AuthenticationError("JWT secret not configured")
+
+        try:
+            payload = jose_jwt.decode(
+                credentials.credentials,
+                jwt_secret,
+                algorithms=['HS256'],
+                options={"verify_aud": False}
+            )
+            user_id = payload.get('sub')
+            if not user_id:
+                raise AuthenticationError("Invalid token")
+        except Exception as e:
+            logger.error(f"Token validation failed: {e}")
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        # Use service role client
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Call the database function
+        result = await asyncio.to_thread(
+            lambda: db_client.rpc('get_registration_stats', {
+                'p_start_date': start_date,
+                'p_end_date': end_date
+            }).execute()
+        )
+
+        stats = result.data[0] if result.data else {
+            'total_registrations': 0,
+            'completed_registrations': 0,
+            'incomplete_registrations': 0,
+            'completion_rate': 0
+        }
+
+        return {
+            'success': True,
+            'start_date': start_date,
+            'end_date': end_date,
+            'stats': stats
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting registration stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/admin/refresh-analytics")
+async def refresh_analytics_views(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Refresh analytics materialized views
+    Requires authentication (admin only in production)
+    This should typically be called via a cron job every hour
+    """
+    try:
+        # Validate authentication
+        if not credentials or not credentials.credentials:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        # Verify JWT token
+        jwt_secret = os.getenv('SUPABASE_JWT_SECRET')
+        if not jwt_secret:
+            raise AuthenticationError("JWT secret not configured")
+
+        try:
+            payload = jose_jwt.decode(
+                credentials.credentials,
+                jwt_secret,
+                algorithms=['HS256'],
+                options={"verify_aud": False}
+            )
+            user_id = payload.get('sub')
+            if not user_id:
+                raise AuthenticationError("Invalid token")
+        except Exception as e:
+            logger.error(f"Token validation failed: {e}")
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        # Use service role client
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Call the refresh function
+        await asyncio.to_thread(
+            lambda: db_client.rpc('refresh_analytics_views').execute()
+        )
+
+        return {
+            'success': True,
+            'message': 'Analytics views refreshed successfully',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error refreshing analytics views: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import argparse
