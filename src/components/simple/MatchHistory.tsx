@@ -391,17 +391,19 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
         setHasMore(data.length === gamesPerPage)
 
-        if (isReset) {
-          const providerIds = mappedData
-            .map(game => game.provider_game_id || game.id)
-            .filter((id): id is string => Boolean(id))
+        // Check analyzed status for newly loaded games (both initial load and pagination)
+        const providerIds = mappedData
+          .map(game => game.provider_game_id || game.id)
+          .filter((id): id is string => Boolean(id))
 
-          if (providerIds.length > 0) {
-            try {
-              // Use the new optimized endpoint that only fetches game IDs and accuracy
-              // This is much faster than fetching all 100+ analysis records
-              const analyzedMap = await UnifiedAnalysisService.checkGamesAnalyzed(userId, platform, providerIds, 'stockfish')
+        if (providerIds.length > 0) {
+          try {
+            // Use the new optimized endpoint that only fetches game IDs and accuracy
+            // This is much faster than fetching all 100+ analysis records
+            const analyzedMap = await UnifiedAnalysisService.checkGamesAnalyzed(userId, platform, providerIds, 'stockfish')
 
+            if (isReset) {
+              // On initial load, replace the analyzed games set
               const analyzedIds = new Set<string>()
               const accuracyMap = new Map<string, number>()
 
@@ -422,14 +424,39 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
               setAnalyzedGameIds(analyzedIds)
               setGameAnalyses(accuracyMap)
-            } catch (analysisError) {
-              const errorMsg = analysisError instanceof Error ? analysisError.message : String(analysisError)
-              console.error('Error fetching analysis states:', errorMsg)
+            } else {
+              // On pagination, merge with existing analyzed games
+              setAnalyzedGameIds(prev => {
+                const next = new Set(prev)
+                analyzedMap.forEach((gameData, gameId) => {
+                  next.add(gameId)
+                  if (gameData.provider_game_id) {
+                    next.add(gameData.provider_game_id)
+                  }
+                })
+                return next
+              })
+              setGameAnalyses(prev => {
+                const next = new Map(prev)
+                analyzedMap.forEach((gameData, gameId) => {
+                  if (typeof gameData.accuracy === 'number') {
+                    next.set(gameId, gameData.accuracy)
+                    if (gameData.provider_game_id) {
+                      next.set(gameData.provider_game_id, gameData.accuracy)
+                    }
+                  }
+                })
+                return next
+              })
             }
-          } else {
-            setAnalyzedGameIds(new Set())
-            setGameAnalyses(new Map())
+          } catch (analysisError) {
+            const errorMsg = analysisError instanceof Error ? analysisError.message : String(analysisError)
+            console.error('Error fetching analysis states:', errorMsg)
           }
+        } else if (isReset) {
+          // Only reset on initial load if no games
+          setAnalyzedGameIds(new Set())
+          setGameAnalyses(new Map())
         }
       }
     } catch (err) {
