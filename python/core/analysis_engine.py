@@ -2183,6 +2183,7 @@ class ChessAnalysisEngine:
                                 if not brilliant_via_sacrifice and sacrifice_detected and centipawn_loss <= tactical_sacrifice_threshold:
                                     # Double-check: verify it's truly a tactical sacrifice
                                     board.pop()
+                                    board_restored = False
                                     try:
                                         if board.is_capture(move):
                                             moving_piece = board.piece_at(move.from_square)
@@ -2194,6 +2195,7 @@ class ChessAnalysisEngine:
                                                     if moving_val > captured_val and (moving_val - captured_val) >= 2:
                                                         # Clear tactical sacrifice - check if piece can be captured
                                                         board.push(move)
+                                                        board_restored = True  # Track that we pushed the move
                                                         if board.piece_at(move.to_square):
                                                             attackers = board.attackers(not player_color, move.to_square)
                                                             if len(attackers) > 0:  # Piece can be captured
@@ -2202,20 +2204,24 @@ class ChessAnalysisEngine:
                                     except:
                                         pass
                                     finally:
-                                        # Ensure board is restored
-                                        try:
-                                            board.push(move)
-                                        except:
-                                            pass
+                                        # Ensure board is restored (only push if we didn't already push it)
+                                        if not board_restored:
+                                            try:
+                                                board.push(move)
+                                            except:
+                                                pass
 
                                 # Require non-obvious: move should not be forced or trivial
                                 if brilliant_via_sacrifice:
                                     # Re-check non-obvious - brilliant moves should be surprising
                                     # But for clear tactical sacrifices, be more lenient - even obvious tactical shots can be brilliant
+                                    # FIXED: Use board copy to avoid corrupting main board state
                                     try:
-                                        board.pop()
-                                        num_legal = len(list(board.legal_moves))
-                                        board.push(move)
+                                        # Create a copy of the board to check legal moves without affecting main board
+                                        # The board currently has the move applied, so we need to pop once to get position before move
+                                        board_copy = board.copy()
+                                        board_copy.pop()  # Remove move to get position before move
+                                        num_legal = len(list(board_copy.legal_moves))
                                         # For tactical sacrifices, require at least 2 legal moves (not forced)
                                         # Very lenient - even if there are only 2 moves, if one is a brilliant tactical sacrifice, mark it brilliant
                                         # Chess.com is lenient for tactical sacrifices
