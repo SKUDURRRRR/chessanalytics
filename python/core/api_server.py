@@ -309,13 +309,14 @@ def map_analysis_to_unified_response(analysis: dict, analysis_type: str) -> Game
                 'total_moves': 0
             }
 
-        blunders = sum(1 for move in moves if move.get('is_blunder'))
-        mistakes = sum(1 for move in moves if move.get('is_mistake'))
-        inaccuracies = sum(1 for move in moves if move.get('is_inaccuracy'))
-        best_moves = sum(1 for move in moves if move.get('is_best'))
-        brilliants = sum(1 for move in moves if move.get('is_brilliant'))
-        good_moves = sum(1 for move in moves if move.get('is_good'))
-        acceptable_moves = sum(1 for move in moves if move.get('is_acceptable'))
+        # Only count user moves, not opponent moves
+        blunders = sum(1 for move in moves if move.get('is_blunder') and move.get('is_user_move', False))
+        mistakes = sum(1 for move in moves if move.get('is_mistake') and move.get('is_user_move', False))
+        inaccuracies = sum(1 for move in moves if move.get('is_inaccuracy') and move.get('is_user_move', False))
+        best_moves = sum(1 for move in moves if move.get('is_best') and move.get('is_user_move', False))
+        brilliants = sum(1 for move in moves if move.get('is_brilliant') and move.get('is_user_move', False))
+        good_moves = sum(1 for move in moves if move.get('is_good') and move.get('is_user_move', False))
+        acceptable_moves = sum(1 for move in moves if move.get('is_acceptable') and move.get('is_user_move', False))
 
         # Use opening_ply <= 20 (10 full moves) to match Chess.com's typical opening phase
         opening_moves = [move for move in moves if move.get('opening_ply', 0) <= 20 and move.get('is_user_move', False)]

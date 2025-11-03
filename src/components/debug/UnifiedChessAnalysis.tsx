@@ -847,7 +847,7 @@ export function UnifiedChessAnalysis({
                     {currentMove.san}
                   </h3>
                   <span className="text-xs text-slate-400">
-                    Move {currentMove.moveNumber} • {currentMove.player === 'white' ? 'White' : 'Black'}
+                    Move {currentMove.moveNumber} • {currentMove.isUserMove ? 'You' : 'Opponent'}
                   </span>
                 </div>
                 <button
@@ -1039,46 +1039,52 @@ export function UnifiedChessAnalysis({
                     <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10">
                       <tr className="text-xs uppercase text-slate-400 border-b border-white/10">
                         <th className="w-12 py-2 px-1">No.</th>
-                        <th className="w-1/2 py-2 px-1">White</th>
-                        <th className="w-1/2 py-2 px-1">Black</th>
+                        <th className="w-1/2 py-2 px-1">You</th>
+                        <th className="w-1/2 py-2 px-1">Opponent</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Array.from({ length: Math.ceil(allMoves.length / 2) }).map((_, row) => {
-                        const whiteMove = allMoves[row * 2]
-                        const blackMove = allMoves[row * 2 + 1]
+                        const move1 = allMoves[row * 2]
+                        const move2 = allMoves[row * 2 + 1]
+
+                        // Determine which move is the user's and which is the opponent's
+                        // based on isUserMove flag, not just color (white/black)
+                        const userMove = move1?.isUserMove ? move1 : move2
+                        const opponentMove = move1?.isUserMove ? move2 : move1
+
                         return (
                           <tr key={row} className="border-b border-white/5 last:border-b-0">
                             <td className="py-2 px-1 text-xs text-slate-400 font-medium">{row + 1}</td>
                             <td className="py-2 px-1">
-                              {whiteMove ? (
+                              {userMove ? (
                                 <button
-                                  onClick={() => onMoveNavigation(whiteMove.index + 1)}
+                                  onClick={() => onMoveNavigation(userMove.index + 1)}
                                   className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
-                                    currentIndex === whiteMove.index + 1
+                                    currentIndex === userMove.index + 1
                                       ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
                                       : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
                                   }`}
                                 >
-                                  <span className="text-xs font-medium truncate">{whiteMove.san}</span>
-                                  <MoveClassificationBadge classification={whiteMove.classification} />
+                                  <span className="text-xs font-medium truncate">{userMove.san}</span>
+                                  <MoveClassificationBadge classification={userMove.classification} />
                                 </button>
                               ) : (
                                 <span className="text-slate-600 text-xs">—</span>
                               )}
                             </td>
                             <td className="py-2 px-1">
-                              {blackMove ? (
+                              {opponentMove ? (
                                 <button
-                                  onClick={() => onMoveNavigation(blackMove.index + 1)}
+                                  onClick={() => onMoveNavigation(opponentMove.index + 1)}
                                   className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
-                                    currentIndex === blackMove.index + 1
+                                    currentIndex === opponentMove.index + 1
                                       ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
                                       : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
                                   }`}
                                 >
-                                  <span className="text-xs font-medium truncate">{blackMove.san}</span>
-                                  <MoveClassificationBadge classification={blackMove.classification} />
+                                  <span className="text-xs font-medium truncate">{opponentMove.san}</span>
+                                  <MoveClassificationBadge classification={opponentMove.classification} />
                                 </button>
                               ) : (
                                 <span className="text-slate-600 text-xs">—</span>
@@ -1259,7 +1265,7 @@ export function UnifiedChessAnalysis({
               {currentMove ? (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
-                    <span>{currentMove.player === 'white' ? 'White move' : 'Black move'}</span>
+                    <span>{currentMove.isUserMove ? 'Your move' : 'Opponent move'}</span>
                     <span className="h-px w-8 bg-white/20" />
                     <span>Move {currentMove.moveNumber}</span>
                   </div>
@@ -1439,52 +1445,58 @@ export function UnifiedChessAnalysis({
                   </thead>
                   <tbody>
                     {Array.from({ length: Math.ceil(allMoves.length / 2) }).map((_, row) => {
-                      const whiteMove = allMoves[row * 2]
-                      const blackMove = allMoves[row * 2 + 1]
+                      const move1 = allMoves[row * 2]
+                      const move2 = allMoves[row * 2 + 1]
+
+                      // Determine which move is the user's and which is the opponent's
+                      // based on isUserMove flag, not just color (white/black)
+                      const userMove = move1?.isUserMove ? move1 : move2
+                      const opponentMove = move1?.isUserMove ? move2 : move1
+
                       return (
                         <tr key={row} className="border-b border-white/10 last:border-b-0">
                           <td className="py-2 pr-2 text-xs text-slate-400">{row + 1}</td>
                           <td className="py-2 pr-2">
-                            {whiteMove ? (
+                            {userMove ? (
                               <button
-                                onClick={() => onMoveNavigation(whiteMove.index + 1)}
+                                onClick={() => onMoveNavigation(userMove.index + 1)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault()
-                                    onMoveNavigation(whiteMove.index + 1)
+                                    onMoveNavigation(userMove.index + 1)
                                   }
                                 }}
                                 className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
-                                  currentIndex === whiteMove.index + 1
+                                  currentIndex === userMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
                                     : 'bg-white/10 text-slate-200 hover:bg-white/20'
                                 }`}
                               >
-                                <span className="text-xs font-medium truncate">{whiteMove.san}</span>
-                                <MoveClassificationBadge classification={whiteMove.classification} />
+                                <span className="text-xs font-medium truncate">{userMove.san}</span>
+                                <MoveClassificationBadge classification={userMove.classification} />
                               </button>
                             ) : (
                               <span className="text-slate-600">—</span>
                             )}
                           </td>
                           <td className="py-2 pr-2">
-                            {blackMove ? (
+                            {opponentMove ? (
                               <button
-                                onClick={() => onMoveNavigation(blackMove.index + 1)}
+                                onClick={() => onMoveNavigation(opponentMove.index + 1)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault()
-                                    onMoveNavigation(blackMove.index + 1)
+                                    onMoveNavigation(opponentMove.index + 1)
                                   }
                                 }}
                                 className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
-                                  currentIndex === blackMove.index + 1
+                                  currentIndex === opponentMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
                                     : 'bg-white/10 text-slate-200 hover:bg-white/20'
                                 }`}
                               >
-                                <span className="text-xs font-medium truncate">{blackMove.san}</span>
-                                <MoveClassificationBadge classification={blackMove.classification} />
+                                <span className="text-xs font-medium truncate">{opponentMove.san}</span>
+                                <MoveClassificationBadge classification={opponentMove.classification} />
                               </button>
                             ) : (
                               <span className="text-slate-600">—</span>

@@ -65,6 +65,7 @@ interface AnalysisMoveRecord {
   move_quality?: string
   game_phase?: string
   is_user_move?: boolean
+  player_color?: string
 }
 
 export interface ProcessedMove {
@@ -691,7 +692,40 @@ export default function GameAnalysisPage() {
       const moveNumber = Math.floor(idx / 2) + 1
       const player = idx % 2 === 0 ? 'white' : 'black'
       const moveIsUserFlag = typeof move.is_user_move === 'boolean' ? move.is_user_move : undefined
-      const isUserMove = moveIsUserFlag != null ? moveIsUserFlag : (userIsWhite ? player === 'white' : player === 'black')
+      // Also check if move has its own player_color field for additional verification
+      const movePlayerColor = move.player_color?.toLowerCase()
+
+      // Determine if this is a user move based on player color (from move index and/or move's player_color field)
+      // Use move's player_color if available, otherwise use calculated player from index
+      const effectivePlayerColor = movePlayerColor || player
+      const isUserMoveByColor = userIsWhite ? effectivePlayerColor === 'white' : effectivePlayerColor === 'black'
+
+      // Always trust the color-based logic over backend flag
+      // This fixes cases where backend incorrectly sets is_user_move for opponent moves
+      // We verify the backend flag against color logic and correct it if needed
+      let isUserMove = isUserMoveByColor
+      if (moveIsUserFlag != null && moveIsUserFlag !== isUserMoveByColor) {
+        // Backend flag doesn't match color logic - trust color logic and log for debugging
+        if (import.meta.env.DEV) {
+          console.warn(`[GameAnalysis] Correcting is_user_move flag:`, {
+            move: move.move_san,
+            moveIndex: idx,
+            backendFlag: moveIsUserFlag,
+            colorBased: isUserMoveByColor,
+            player,
+            effectivePlayerColor,
+            userIsWhite
+          })
+        }
+        isUserMove = isUserMoveByColor
+      } else if (moveIsUserFlag != null) {
+        // Backend flag matches color logic - use it
+        isUserMove = moveIsUserFlag
+      }
+      // Otherwise use isUserMoveByColor (already set)
+
+      // Correct is_user_move flag if backend data is incorrect
+      // (Debug logs removed - fix is working correctly)
 
       const evaluation: EvaluationInfo | null = move.evaluation ?? null
       const scoreForPlayer = isUserMove
@@ -1032,6 +1066,7 @@ export default function GameAnalysisPage() {
     const userMoves = processedData.moves.filter(move => move.isUserMove)
     const opponentMoves = processedData.moves.filter(move => !move.isUserMove)
     const totalUserMoves = userMoves.length
+
 
   const countByClassification = (classification: MoveClassification) =>
     userMoves.filter(move => move.classification === classification).length
@@ -1618,8 +1653,27 @@ export default function GameAnalysisPage() {
                   - getPlayerPerspectiveOpeningShort converts to player's perspective
                   - Using the wrong function causes White vs Caro-Kann to show "Caro-Kann Defense" instead of "King's Pawn Opening"
                   - See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md
+                  - Pass moves from processedData to enable move-based identification for generic openings
                 */}
-                <span className="break-words">{getPlayerPerspectiveOpeningShort(gameRecord?.opening_family ?? gameRecord?.opening ?? gameRecord?.opening_normalized, playerColor, gameRecord)}</span>
+                <span className="break-words">{getPlayerPerspectiveOpeningShort(
+                  gameRecord?.opening_family ?? gameRecord?.opening ?? gameRecord?.opening_normalized,
+                  playerColor,
+                  gameRecord,
+                  (() => {
+                    // Try to get moves from processedData first
+                    if (processedData.moves.length > 0) {
+                      return processedData.moves.slice(0, 6).map(m => m.san)
+                    }
+                    // Fallback: extract moves from analysisRecord if available
+                    if (analysisRecord?.moves_analysis && Array.isArray(analysisRecord.moves_analysis)) {
+                      return analysisRecord.moves_analysis
+                        .slice(0, 6)
+                        .map((m: any) => m.move_san)
+                        .filter(Boolean)
+                    }
+                    return undefined
+                  })() // Extract first 6 moves for opening identification if available
+                )}</span>
               </div>
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Opponent: </span>
@@ -1641,7 +1695,7 @@ export default function GameAnalysisPage() {
           </div>
           <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-4 shadow-xl shadow-black/40">
             <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
-            <p className="mt-0.5 text-xs text-slate-300">Key highlights from Stockfish at a glance.</p>
+            <p className="mt-0.5 text-xs text-slate-300">Your performance highlights from Stockfish analysis.</p>
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
               {summaryCards.map(card => (
                 <div key={card.label} className="min-w-0 rounded-xl border border-white/10 bg-white/10 p-2.5 sm:p-3 text-center shadow-inner shadow-black/30">

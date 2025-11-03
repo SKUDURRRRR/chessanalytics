@@ -26,16 +26,19 @@ interface PlayerPerspectiveResult {
  * @param opening - Opening name from database (board perspective)
  * @param playerColor - The color the player played
  * @param game - Optional full game object for fallback logic
+ * @param moves - Optional array of moves (SAN notation) for move-based identification
  * @returns Player-perspective opening display
  */
 export function getPlayerPerspectiveOpening(
   opening: string | null | undefined,
   playerColor: 'white' | 'black',
-  game?: any
+  game?: any,
+  moves?: string[]
 ): PlayerPerspectiveResult {
   // Normalize and get the opening name
+  // If moves are provided, use them for better identification (especially for generic openings)
   const openingName = opening
-    ? (game ? getOpeningNameWithFallback(opening, game) : opening)
+    ? (game ? getOpeningNameWithFallback(opening, game, moves) : opening)
     : 'Unknown'
 
   if (openingName === 'Unknown' || !openingName) {
@@ -186,14 +189,16 @@ function getWhiteOpeningFamily(blackOpening: string): string {
  * @param opening - Opening name from database (board perspective)
  * @param playerColor - The color the player played
  * @param game - Optional full game object
+ * @param moves - Optional array of moves (SAN notation) for move-based identification
  * @returns Short display string (player perspective)
  */
 export function getPlayerPerspectiveOpeningShort(
   opening: string | null | undefined,
   playerColor: 'white' | 'black',
-  game?: any
+  game?: any,
+  moves?: string[]
 ): string {
-  const result = getPlayerPerspectiveOpening(opening, playerColor, game)
+  const result = getPlayerPerspectiveOpening(opening, playerColor, game, moves)
   return result.display
 }
 

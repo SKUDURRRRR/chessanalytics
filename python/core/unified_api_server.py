@@ -8278,21 +8278,24 @@ def _map_move_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
     acceptable_moves = analysis.get('acceptable_moves') or 0
 
     if isinstance(moves_analysis, list) and moves_analysis:
-        count_blunders = sum(1 for move in moves_analysis if move.get('is_blunder'))
-        count_mistakes = sum(1 for move in moves_analysis if move.get('is_mistake'))
-        count_inaccuracies = sum(1 for move in moves_analysis if move.get('is_inaccuracy'))
-        count_best_moves = sum(1 for move in moves_analysis if move.get('is_best'))
-        count_brilliants = sum(1 for move in moves_analysis if move.get('is_brilliant'))
-        count_good = sum(1 for move in moves_analysis if move.get('is_good'))
-        count_acceptable = sum(1 for move in moves_analysis if move.get('is_acceptable'))
+        # Only count user moves, not opponent moves
+        count_blunders = sum(1 for move in moves_analysis if move.get('is_blunder') and move.get('is_user_move', False))
+        count_mistakes = sum(1 for move in moves_analysis if move.get('is_mistake') and move.get('is_user_move', False))
+        count_inaccuracies = sum(1 for move in moves_analysis if move.get('is_inaccuracy') and move.get('is_user_move', False))
+        count_best_moves = sum(1 for move in moves_analysis if move.get('is_best') and move.get('is_user_move', False))
+        count_brilliants = sum(1 for move in moves_analysis if move.get('is_brilliant') and move.get('is_user_move', False))
+        count_good = sum(1 for move in moves_analysis if move.get('is_good') and move.get('is_user_move', False))
+        count_acceptable = sum(1 for move in moves_analysis if move.get('is_acceptable') and move.get('is_user_move', False))
 
-        blunders = blunders or count_blunders
-        mistakes = mistakes or count_mistakes
-        inaccuracies = inaccuracies or count_inaccuracies
-        best_moves = best_moves or count_best_moves
-        brilliant_moves = brilliant_moves or count_brilliants
-        good_moves = good_moves or count_good
-        acceptable_moves = acceptable_moves or count_acceptable
+        # Always use recalculated values from moves_analysis when available
+        # This ensures stats are always correct even if stored values are wrong
+        blunders = count_blunders
+        mistakes = count_mistakes
+        inaccuracies = count_inaccuracies
+        best_moves = count_best_moves
+        brilliant_moves = count_brilliants
+        good_moves = count_good
+        acceptable_moves = count_acceptable
 
         # Use opening_ply <= 20 (10 full moves) to match Chess.com's typical opening phase
         opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 20 and move.get('is_user_move', False)]
