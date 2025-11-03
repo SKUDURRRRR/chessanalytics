@@ -126,29 +126,51 @@ export function ModernChessArrows({
   const [boardOffset, setBoardOffset] = React.useState({ x: 0, y: 0 })
 
   // Measure actual board to align arrows perfectly to square centers
-  // This uses requestAnimationFrame to ensure DOM is fully rendered before measuring
-  // Measures multiple squares for more accurate alignment
+  // Uses multiple retries and ResizeObserver for robust alignment that doesn't break
   React.useEffect(() => {
     let rafId: number
     let timeoutId: NodeJS.Timeout
+    let observerTimeoutId: NodeJS.Timeout
+    let retryCount = 0
+    const maxRetries = 10
+    let resizeObserver: ResizeObserver | null = null
 
-    const measure = () => {
-      if (!svgRef.current) return
+    const measure = (): boolean => {
+      if (!svgRef.current) return false
 
       const container = svgRef.current.parentElement
-      if (!container) return
+      if (!container) return false
 
       // Measure a1 and h8 to get more accurate alignment
       const a1Square = container.querySelector('[data-square="a1"]') as HTMLElement
       const h8Square = container.querySelector('[data-square="h8"]') as HTMLElement
 
-      if (!a1Square || !h8Square) return
+      // If squares not found, retry
+      if (!a1Square || !h8Square) {
+        if (retryCount < maxRetries) {
+          retryCount++
+          timeoutId = setTimeout(measure, 100 * retryCount) // Exponential backoff
+          return false
+        }
+        return false
+      }
 
       const a1Rect = a1Square.getBoundingClientRect()
       const h8Rect = h8Square.getBoundingClientRect()
       const svgRect = svgRef.current.getBoundingClientRect()
 
-      if (a1Rect.width <= 0 || svgRect.width <= 0) return
+      // Verify squares are actually rendered and visible
+      if (a1Rect.width <= 0 || svgRect.width <= 0 || a1Rect.width !== h8Rect.width) {
+        if (retryCount < maxRetries) {
+          retryCount++
+          timeoutId = setTimeout(measure, 100 * retryCount)
+          return false
+        }
+        return false
+      }
+
+      // Success - reset retry count
+      retryCount = 0
 
       const actualSquareSize = a1Rect.width
       setSquareSize(actualSquareSize)
@@ -200,24 +222,50 @@ export function ModernChessArrows({
       offsetY = (offsetY + offsetYFromH8) / 2
 
       setBoardOffset({ x: offsetX, y: offsetY })
+      return true
     }
 
     const scheduleMeasure = () => {
-      // Use requestAnimationFrame to ensure DOM is ready
+      retryCount = 0 // Reset retry count on new measurement attempt
+      if (timeoutId) clearTimeout(timeoutId)
+      if (rafId) cancelAnimationFrame(rafId)
+
+      // Use multiple RAF calls to ensure DOM is fully ready
       rafId = requestAnimationFrame(() => {
-        timeoutId = setTimeout(measure, 50)
+        rafId = requestAnimationFrame(() => {
+          timeoutId = setTimeout(measure, 50)
+        })
       })
     }
 
+    // Initial measurement
     scheduleMeasure()
+
+    // Re-measure on window resize
     window.addEventListener('resize', scheduleMeasure)
+
+    // Use ResizeObserver to detect board container size changes
+    // Set up observer after initial measurement with a small delay to ensure ref is set
+    const setupObserver = () => {
+      if (svgRef.current?.parentElement && !resizeObserver) {
+        resizeObserver = new ResizeObserver(() => {
+          scheduleMeasure()
+        })
+        resizeObserver.observe(svgRef.current.parentElement)
+      }
+    }
+
+    // Set up observer after a brief delay to ensure SVG is mounted
+    observerTimeoutId = setTimeout(setupObserver, 200)
 
     return () => {
       if (rafId) cancelAnimationFrame(rafId)
       if (timeoutId) clearTimeout(timeoutId)
+      if (observerTimeoutId) clearTimeout(observerTimeoutId)
+      if (resizeObserver) resizeObserver.disconnect()
       window.removeEventListener('resize', scheduleMeasure)
     }
-  }, [boardWidth, boardOrientation])
+  }, [boardWidth, boardOrientation, arrows.length]) // Re-measure when arrows change
 
   // Debug mode - can be enabled for troubleshooting
   const debugMode = false
