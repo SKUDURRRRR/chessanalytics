@@ -877,23 +877,55 @@ export default function GameAnalysisPage() {
       san: currentMove.san,
       bestMoveSan: currentMove.bestMoveSan,
       classification: currentMove.classification,
-      isUserMove: currentMove.isUserMove
+      isUserMove: currentMove.isUserMove,
+      fenBefore: currentMove.fenBefore
     })
 
-    // Create a chess instance to replay moves up to the position BEFORE the current move
-    const chess = new Chess()
-
-    // Replay all moves up to (but not including) the current move
-    for (let i = 0; i < moveIndex; i++) {
-      const move = processedData.moves[i]
-      if (move) {
-        try {
-          // move.san contains Standard Algebraic Notation, not UCI
-          chess.move(move.san)
-        } catch (err) {
-          console.warn('Failed to apply move for arrow generation:', move.san, err)
+    // Use the stored fenBefore from the move data - this is more reliable than replaying moves
+    // because it avoids issues with moves that fail to replay (e.g., ambiguous notation)
+    let chess: Chess
+    if (currentMove.fenBefore) {
+      try {
+        chess = new Chess(currentMove.fenBefore)
+        console.log('[GameAnalysisPage] Using stored fenBefore for arrow generation')
+      } catch (err) {
+        console.warn('[GameAnalysisPage] Invalid fenBefore, falling back to replay:', err)
+        // Fallback to replaying moves if fenBefore is invalid
+        chess = new Chess()
+        for (let i = 0; i < moveIndex; i++) {
+          const move = processedData.moves[i]
+          if (move) {
+            try {
+              chess.move(move.san)
+            } catch (err) {
+              console.warn('Failed to apply move for arrow generation:', move.san, err)
+            }
+          }
         }
       }
+    } else {
+      // Fallback: replay moves if fenBefore is not available
+      console.warn('[GameAnalysisPage] No fenBefore available, replaying moves (less reliable)')
+      chess = new Chess()
+      for (let i = 0; i < moveIndex; i++) {
+        const move = processedData.moves[i]
+        if (move) {
+          try {
+            chess.move(move.san)
+          } catch (err) {
+            console.warn('Failed to apply move for arrow generation:', move.san, err)
+          }
+        }
+      }
+    }
+
+    // Verify the position is correct before generating arrows
+    const expectedTurn = currentMove.player
+    const actualTurn = chess.turn() === 'w' ? 'white' : 'black'
+    if (expectedTurn !== actualTurn) {
+      console.warn('[GameAnalysisPage] Position turn mismatch! Expected', expectedTurn, 'but position has', actualTurn, 'to move')
+      console.warn('[GameAnalysisPage] FEN:', chess.fen())
+      console.warn('[GameAnalysisPage] Move SAN:', currentMove.san)
     }
 
     // Generate modern arrows for the current move
