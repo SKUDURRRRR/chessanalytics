@@ -1102,21 +1102,27 @@ export function UnifiedChessAnalysis({
         </div>
 
         {/* Desktop Layout: Side by Side */}
-        <div className="hidden lg:flex gap-8">
+        <div className="hidden lg:flex gap-8 items-start">
         {/* Left: Evaluation Bar */}
-        <div className="flex-shrink-0 flex items-center" style={{ height: `${boardWidth}px` }}>
-          <EvaluationBar
-            score={currentScore}
-            playerColor={playerColor}
-            width={desktopEvaluationBarWidth}
-            className="relative"
-            height={desktopEvaluationBarHeight}
-            offsetTop={desktopEvaluationBarOffset}
-          />
+        <div className="flex-shrink-0 flex flex-col">
+          {/* Spacer to match Game Phase Indicator height */}
+          {currentMove && (
+            <div className="h-[40px] mb-4"></div>
+          )}
+          <div className="flex items-center justify-center" style={{ height: `${boardWidth}px` }}>
+            <EvaluationBar
+              score={currentScore}
+              playerColor={playerColor}
+              width={desktopEvaluationBarWidth}
+              className="relative"
+              height={desktopEvaluationBarHeight}
+              offsetTop={desktopEvaluationBarOffset}
+            />
+          </div>
         </div>
 
         {/* Center: Chess Board */}
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 flex flex-col items-center">
           {/* Desktop: Game Phase Indicator */}
           {currentMove && (() => {
             const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
