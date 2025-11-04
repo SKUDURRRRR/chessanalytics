@@ -103,6 +103,22 @@ class UsageTracker:
             return False, {'message': 'Usage check failed', 'is_anonymous': False}
 
         except Exception as e:
+            error_str = str(e)
+            # Check if this is a database schema error (column doesn't exist)
+            # In this case, allow the operation to proceed rather than blocking it
+            if 'does not exist' in error_str and ('column' in error_str.lower() or 'games_import_limit' in error_str):
+                logger.warning(
+                    f"Database schema error in usage limit check for user {user_id}: {e}. "
+                    "Allowing operation to proceed. Please update database schema."
+                )
+                # Allow operation to proceed when schema is outdated
+                return True, {
+                    'can_proceed': True,
+                    'schema_error': True,
+                    'message': 'Database schema needs update - allowing operation',
+                    'is_anonymous': False
+                }
+
             logger.error(f"Error checking usage limits for user {user_id}: {e}")
             # Fail closed - deny user if check fails (more secure than fail-open)
             return False, {'message': str(e)}
