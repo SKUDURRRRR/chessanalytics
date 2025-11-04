@@ -601,27 +601,34 @@ export function UnifiedChessAnalysis({
     // If exploring, use the exploration analysis evaluation
     if ((isExploringFollowUp || isFreeExploration) && explorationAnalysis && !explorationAnalysis.isAnalyzing) {
       const score = explorationAnalysis.evaluation.scoreForWhite * 100
-      console.log('🎯 Using exploration eval:', {
-        scoreForWhite: explorationAnalysis.evaluation.scoreForWhite,
-        score,
-        isExploringFollowUp,
-        isFreeExploration,
-        explorationAnalysis: explorationAnalysis
-      })
       return score
     }
 
-    // Otherwise use current move evaluation
-    if (!currentMove?.evaluation) {
-      console.log('🎯 No evaluation available, returning 0')
+    // The evaluation bar should show the position evaluation from White's perspective
+    // evaluation.value is ALWAYS from White's perspective (positive = white ahead)
+    // scoreForPlayer is calculated for the move's player, not the viewing player
+    // So we should use evaluation.value directly, NOT scoreForPlayer
+    if (!currentMove) {
       return 0
     }
-    const score = currentMove.evaluation.type === 'mate'
-      ? (currentMove.evaluation.value > 0 ? 1000 : -1000)
-      : currentMove.evaluation.value
-    console.log('🎯 Using current move eval:', { score, currentMove: currentMove.san })
-    return score
-  }, [currentMove, isExploringFollowUp, isFreeExploration, explorationAnalysis])
+
+    // For mate positions, evaluation.value is the mate value from White's perspective
+    // Positive = white wins (mate in N), negative = black wins (mate in -N)
+    // If value is 0 (old bug), treat as unknown and use a neutral score
+    if (currentMove.evaluation?.type === 'mate') {
+      const mateValue = currentMove.evaluation.value
+      if (mateValue === 0) {
+        // Old bug: mate evaluations were stored as 0, fallback to checking if it's actually a mate
+        // For now, treat as neutral until game is reanalyzed
+        return 0
+      }
+      return mateValue > 0 ? 1000 : -1000
+    }
+
+    // Use evaluation.value directly - it's always from White's perspective
+    // This is what the EvaluationBar expects (positive = white ahead, negative = black ahead)
+    return currentMove.evaluation?.value || 0
+  }, [currentMove, isExploringFollowUp, isFreeExploration, explorationAnalysis, playerColor])
 
   // Generate arrows from exploration analysis if available
   const displayArrows = useMemo(() => {

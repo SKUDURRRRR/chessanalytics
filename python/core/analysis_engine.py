@@ -1664,8 +1664,12 @@ class ChessAnalysisEngine:
                     board.push(move)
 
                     # Get evaluation after move
-                    info_after = engine.analyse(board, chess.engine.Limit(time=time_limit))
+                    # Use depth for better PV line to detect mate sequences
+                    info_after = engine.analyse(board, chess.engine.Limit(depth=depth))
                     eval_after = info_after.get("score", chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
+                    # Capture PV after move to check for mate sequences
+                    pv_after_moves = info_after.get("pv", [])
+                    pv_after = [mv.uci() for mv in pv_after_moves] if pv_after_moves else []
 
                     # Calculate centipawn loss relative to Stockfish's best move from the player's perspective
                     best_eval = eval_before.pov(player_color)
@@ -1829,6 +1833,33 @@ class ChessAnalysisEngine:
                     # Only continue brilliant detection if within range
                     if centipawn_loss <= tactical_sacrifice_threshold:
                         # -----------------------------------------------------------------------
+                        # CRITERION 0: Check if move is forced (CRITICAL - must pass for ALL brilliants)
+                        # -----------------------------------------------------------------------
+                        # Forced moves (check evasion, only 1-3 legal moves) are NEVER brilliant
+                        # Check this FIRST before other criteria
+                        board.pop()  # Undo move to check position before move
+                        num_legal_moves_before = len(list(board.legal_moves))
+                        board.push(move)  # Restore move
+
+                        # Check if move is forced (only 1-2 legal moves = forced, 3+ = might have choice)
+                        # For sacrifices leading to mate, be more lenient (sometimes brilliant moves happen in tactical positions)
+                        is_forced_move = num_legal_moves_before <= 2  # Only 1-2 moves = definitely forced
+
+                        # Check if this is a king move (especially to escape check) - these are almost never brilliant
+                        board.pop()  # Undo to check piece type
+                        moving_piece_type = None
+                        if board.piece_at(move.from_square):
+                            moving_piece_type = board.piece_at(move.from_square).piece_type
+                        board.push(move)  # Restore
+
+                        is_king_move = (moving_piece_type == chess.KING)
+                        if is_king_move:
+                            print(f"[BRILLIANT DEBUG] {move_san_debug}: King move detected - rarely brilliant unless it's a sacrifice")
+
+                        if is_forced_move:
+                            print(f"[BRILLIANT DEBUG] {move_san_debug}: Move appears forced (only {num_legal_moves_before} legal moves)")
+
+                        # -----------------------------------------------------------------------
                         # CRITERION 1: Non-Obvious Move Detection
                         # -----------------------------------------------------------------------
                         # A move is "non-obvious" if there are multiple reasonable alternatives
@@ -1849,17 +1880,32 @@ class ChessAnalysisEngine:
                                 second_best_score = multipv_analysis[1]["score"].pov(player_color).score(mate_score=1000)
 
                                 # Non-obvious if: multiple good moves exist (within 50cp) OR move is uniquely strong
+                                # Also check if the played move matches the best move (if it's the best, it's non-obvious)
                                 alternatives_close = abs(best_score - second_best_score) <= 50
                                 move_uniquely_strong = (best_score - second_best_score) > 150
 
-                                is_non_obvious = alternatives_close or move_uniquely_strong
+                                # Check if played move is the best move (if so, it's non-obvious if alternatives are close)
+                                # If played move is best and much better than alternatives, it's brilliant
+                                played_move_is_best = (centipawn_loss <= 5)  # Best or near-best
+
+                                is_non_obvious = (alternatives_close or move_uniquely_strong) and played_move_is_best
                             else:
                                 # If only one legal move, it's not brilliant (forced)
-                                is_non_obvious = len(list(board.legal_moves)) > 3
+                                # But if there are 2-3 moves, check if it's still non-obvious
+                                num_legal = len(list(board.legal_moves))
+                                is_non_obvious = num_legal > 3 or (num_legal >= 2 and centipawn_loss <= 5)
 
                             # Apply rating-adjusted threshold
                             num_legal_moves = len(list(board.legal_moves))
-                            is_non_obvious = is_non_obvious and num_legal_moves >= rating_thresholds['non_obvious_threshold']
+                            # For sacrifices leading to mate, be more lenient on non-obvious requirement
+                            # Only apply strict threshold for non-sacrifice brilliants
+                            min_moves_required = rating_thresholds['non_obvious_threshold']
+                            # If it's a sacrifice, allow lower threshold
+                            if num_legal_moves < min_moves_required and num_legal_moves >= 3:
+                                # Allow 3+ moves for sacrifices (we'll check this later)
+                                pass  # Don't block here, check later
+                            else:
+                                is_non_obvious = is_non_obvious and num_legal_moves >= min_moves_required
 
                         except Exception as e:
                             print(f"[BRILLIANT] Error in non-obvious detection: {e}")
@@ -1874,11 +1920,47 @@ class ChessAnalysisEngine:
                         # CRITERION 2: Forced Mate Detection (Rating-Adjusted)
                         # -----------------------------------------------------------------------
                         # Finding a forced mate, especially a short one, is brilliant
-                        forcing_mate_trigger = (
+                        # Check both immediate mate evaluation AND PV for mate sequences
+                        # (Stockfish may not show mate evaluation if mate is beyond current depth)
+
+                        # Method 1: Direct mate evaluation
+                        immediate_mate = (
                             eval_after.pov(player_color).is_mate() and
                             not eval_before.pov(player_color).is_mate() and
                             abs(eval_after.pov(player_color).mate()) <= rating_thresholds['mate_in_moves']
                         )
+
+                        # Method 2: Check PV for mate sequence (handles cases where mate is beyond depth)
+                        # Analyze PV line to see if it leads to mate
+                        pv_contains_mate = False
+                        if pv_after and len(pv_after) > 0:
+                            try:
+                                # Create a temporary board and play through the PV to check for mate
+                                temp_board = board.copy()
+                                mate_found = False
+                                for i, pv_move_uci in enumerate(pv_after[:10]):  # Check first 10 moves of PV
+                                    try:
+                                        pv_move = chess.Move.from_uci(pv_move_uci)
+                                        if pv_move in temp_board.legal_moves:
+                                            temp_board.push(pv_move)
+                                            # Check if this position is mate
+                                            if temp_board.is_checkmate():
+                                                # Found mate in PV - count moves
+                                                mate_in_moves = (i + 1) // 2 + 1  # Approximate (not perfect but good enough)
+                                                if mate_in_moves <= rating_thresholds['mate_in_moves']:
+                                                    pv_contains_mate = True
+                                                    mate_found = True
+                                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Found mate in PV at move {mate_in_moves} (PV line shows mate)")
+                                                    break
+                                    except Exception:
+                                        continue
+                                # Don't use high evaluation alone as indicator - only if combined with sacrifice
+                                # High evaluation alone could just be winning material, not brilliant
+                                # Only check PV for actual mate sequences, not just high evaluations
+                            except Exception as e:
+                                print(f"[BRILLIANT DEBUG] Error checking PV for mate: {e}")
+
+                        forcing_mate_trigger = immediate_mate or pv_contains_mate
 
                         # -----------------------------------------------------------------------
                         # CRITERION 3: Material Sacrifice Detection (Rating-Adjusted)
@@ -1959,13 +2041,29 @@ class ChessAnalysisEngine:
 
                                     # PRIMARY: Clear tactical sacrifice - piece can be captured + material sacrifice
                                     # This is the main pattern for brilliant moves like Nxe6
+                                    # CRITICAL: For brilliant moves, ONLY accept clear tactical sacrifices (piece can be captured)
+                                    # This prevents forks/pins that just win material from being marked as brilliant
                                     is_clear_tactical_sacrifice = (
                                         is_potential_sacrifice and
                                         moving_piece_can_be_captured and  # Must be capturable for brilliant
                                         sacrifice_value >= 2  # Require 2+ points for brilliant (e.g., Nxe6 = 2)
                                     )
 
-                                    sacrifice_detected = is_true_sacrifice or is_clear_tactical_sacrifice
+                                    # For brilliant moves, ONLY accept clear tactical sacrifices (piece can be captured)
+                                    # Don't accept "true sacrifices" that don't involve piece being capturable
+                                    # This prevents forks/pins from being marked as brilliant
+                                    sacrifice_detected = is_clear_tactical_sacrifice  # Only clear tactical sacrifices for brilliant
+
+                                    # DEBUG: Log why moves are/aren't clear tactical sacrifices
+                                    if board.is_capture(move) and not is_clear_tactical_sacrifice:
+                                        reason = []
+                                        if not is_potential_sacrifice:
+                                            reason.append("not a sacrifice (moving_value <= captured_value)")
+                                        if not moving_piece_can_be_captured:
+                                            reason.append("piece can't be captured (not a sacrifice, just winning material)")
+                                        if sacrifice_value < 2:
+                                            reason.append(f"insufficient sacrifice value ({sacrifice_value} < 2)")
+                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: NOT clear tactical sacrifice - {', '.join(reason)}")
 
                                     # DEBUG: Log sacrifice detection
                                     if board.is_capture(move):
@@ -2023,8 +2121,14 @@ class ChessAnalysisEngine:
                                         has_compensation = actual_cp >= compensation_threshold
 
                                         # For mates, always consider as having compensation
+                                        # Check both immediate mate evaluation and PV for mate sequences
                                         if eval_after.pov(player_color).is_mate():
                                             has_compensation = True
+                                        # Also check if PV contains mate or very high evaluation suggests mate
+                                        elif pv_after and len(pv_after) > 0:
+                                            # Check if evaluation is extremely high (>700cp) which suggests mate
+                                            if actual_cp > 700:
+                                                has_compensation = True
 
                                         # If position significantly improved (e.g., Nxe6 leading to +146cp), it's brilliant
                                         # Chess.com marks these as brilliant even if starting position wasn't crushing
@@ -2062,10 +2166,15 @@ class ChessAnalysisEngine:
                                 attackers = board.attackers(not player_color, to_square)
                                 defenders = board.attackers(player_color, to_square)
                                 piece_hangs = len(attackers) > len(defenders)
+                                piece_can_be_captured = len(attackers) > 0  # Can be captured if attacked
 
                                 board.pop()
 
-                                if piece_hangs:
+                                # CRITICAL: For non-capture moves, only consider it a sacrifice if:
+                                # 1. Piece can be captured (attacked), AND
+                                # 2. It's a significant sacrifice (moving_value >= min_sacrifice_value)
+                                # This prevents moves that just win material from being marked as sacrifices
+                                if piece_can_be_captured and piece_hangs:
                                     # Non-capture sacrifice: moved piece to attacked square
                                     # Check if it's truly sacrificial (eval drops or stays winning with compensation)
                                     not_already_crushing = optimal_cp < rating_thresholds['max_position_cp']
@@ -2078,6 +2187,14 @@ class ChessAnalysisEngine:
                                         not_already_crushing and
                                         has_compensation
                                     )
+                                else:
+                                    # Piece can't be captured or doesn't hang - not a sacrifice
+                                    sacrifice_trigger = False
+                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture move - piece can't be captured (attackers={len(attackers)}, defenders={len(defenders)}), not a sacrifice")
+                            else:
+                                # Piece value too low to be a sacrifice
+                                sacrifice_trigger = False
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Moving piece value ({moving_value}) < min_sacrifice_value ({rating_thresholds['min_sacrifice_value']}), not a sacrifice")
 
                         # Restore board state
                         board.push(move)
@@ -2253,14 +2370,69 @@ class ChessAnalysisEngine:
                                 # Piece can't be captured - this is just winning material, not a sacrifice
                                 # Not brilliant (even if it's a fork/pin)
                                 brilliant_via_sacrifice = False
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Piece can't be captured after move - not a sacrifice, just winning material (fork/pin)")
                         elif forcing_mate_trigger:
-                            # Forced mate: must be best move (0-5cp)
-                            brilliant_via_sacrifice = sacrifice_trigger and centipawn_loss <= 5
+                            # Forced mate: must be best move (0-5cp) AND non-obvious
+                            # Only mark as brilliant if:
+                            # 1. It's a sacrifice leading to mate (always brilliant), OR
+                            # 2. It finds mate when there wasn't one AND it's non-obvious
+                            if sacrifice_trigger:
+                                # Sacrifice leading to mate is always brilliant (if non-obvious)
+                                brilliant_via_sacrifice = True
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Sacrifice leading to mate detected - marking as brilliant")
+                            elif is_non_obvious and centipawn_loss <= 5:
+                                # Finding mate when there wasn't one before - but only if non-obvious
+                                brilliant_via_sacrifice = True
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Found forced mate (non-obvious) - marking as brilliant")
+                            else:
+                                brilliant_via_sacrifice = False
                         else:
                             # Other sacrifices: must be best move (0-5cp) - strictest for non-clear sacrifices
                             brilliant_via_sacrifice = sacrifice_trigger and centipawn_loss <= 5
 
-                        is_brilliant = brilliant_via_mate or brilliant_via_sacrifice
+                        # FINAL CHECK: Brilliant moves must be non-obvious (not forced)
+                        # Exception: Sacrifices leading to mate can be brilliant even in tactical positions
+                        # CRITICAL: King moves to escape check are almost never brilliant
+                        if is_king_move and not sacrifice_trigger:
+                            # King moves (especially to escape check) are almost never brilliant
+                            # Only allow if it's a sacrifice leading to mate
+                            if not (sacrifice_trigger and forcing_mate_trigger):
+                                is_brilliant = False
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: OVERRIDE - king move without sacrifice, not brilliant")
+
+                        if brilliant_via_sacrifice and forcing_mate_trigger:
+                            # Sacrifice for mate is brilliant even if slightly forced (3-4 legal moves)
+                            # But still require it's not completely forced (1-2 moves) AND not a king move
+                            if not is_brilliant:  # Only set if not already blocked
+                                is_brilliant = not is_forced_move and not (is_king_move and not sacrifice_trigger)
+                            if is_brilliant:
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Sacrifice for mate - allowing even with {num_legal_moves_before} legal moves")
+                        else:
+                            # For other brilliant moves, require non-obvious AND not forced AND not a king move
+                            if not is_brilliant:  # Only set if not already blocked
+                                is_brilliant = (brilliant_via_mate or brilliant_via_sacrifice) and is_non_obvious and not is_forced_move and not (is_king_move and not sacrifice_trigger)
+
+                        if is_forced_move:
+                            is_brilliant = False
+                            print(f"[BRILLIANT DEBUG] {move_san_debug}: OVERRIDE - forced move (only {num_legal_moves_before} legal moves), not brilliant")
+
+                        # Final safety check: If move is a check that just wins material (not a sacrifice), it's not brilliant
+                        # CRITICAL: Checks that fork/pin (win material) without sacrifice are NOT brilliant
+                        # Check if the move we just made gives check to the opponent
+                        # After the move, the board's turn has switched, so we need to check if the opponent is in check
+                        move_gives_check = board.is_check()  # After move, checks if opponent (current player) is in check
+
+                        # Block checks that just win material (forks/pins) without sacrifice
+                        # This is the KEY fix: Nxg3+, Qxf2+ are checks that win material, not sacrifices
+                        if move_gives_check:
+                            if not sacrifice_trigger and not forcing_mate_trigger:
+                                # Check that just wins material (fork/pin) is not brilliant
+                                # CRITICAL OVERRIDE: This must be the final word - checks without sacrifice are NOT brilliant
+                                is_brilliant = False
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: OVERRIDE - check that just wins material (not a sacrifice), not brilliant")
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: move_gives_check={move_gives_check}, sacrifice_trigger={sacrifice_trigger}, forcing_mate_trigger={forcing_mate_trigger}")
+                            else:
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Check move allowed - sacrifice_trigger={sacrifice_trigger}, forcing_mate_trigger={forcing_mate_trigger}")
 
                         # DEBUG: Final result with clear summary
                         status = "🌟 BRILLIANT! 🌟" if is_brilliant else "❌ NOT BRILLIANT"
@@ -2285,10 +2457,19 @@ class ChessAnalysisEngine:
                             pass
 
                     # Convert evaluation to dict
-                    evaluation = {
-                        "value": eval_after.pov(chess.WHITE).score() if not eval_after.pov(chess.WHITE).is_mate() else 0,
-                        "type": "cp" if not eval_after.pov(chess.WHITE).is_mate() else "mate"
-                    }
+                    # CRITICAL: For mate positions, use .mate() to get the mate value (positive = white wins, negative = black wins)
+                    # For non-mate positions, use .score() to get centipawn evaluation
+                    eval_white = eval_after.pov(chess.WHITE)
+                    if eval_white.is_mate():
+                        evaluation = {
+                            "value": eval_white.mate(),  # mate() returns positive for white win, negative for black win
+                            "type": "mate"
+                        }
+                    else:
+                        evaluation = {
+                            "value": eval_white.score(),
+                            "type": "cp"
+                        }
 
                     # Extract centipawn values for personality scoring
                     eval_before_cp = eval_before.pov(player_color).score(mate_score=1000) if eval_before else 0
