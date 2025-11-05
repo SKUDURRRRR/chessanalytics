@@ -1914,6 +1914,11 @@ class ChessAnalysisEngine:
                         # Now restore the move on the main board
                         board.push(current_move)  # Restore move on main board
 
+                        # EARLY CHECK: Immediate checkmate moves are NEVER brilliant unless they involve a clear sacrifice
+                        # Simple checkmate moves (like Qe2#) are just winning moves, not brilliant tactical sacrifices
+                        # Chess.com doesn't mark simple checkmates as brilliant - they're just the best move
+                        # We'll set a flag here and enforce it at the end with a final override
+
                         # Check if move is forced (only 1-2 legal moves = forced, 3+ = might have choice)
                         # For sacrifices leading to mate, be more lenient (sometimes brilliant moves happen in tactical positions)
                         is_forced_move = num_legal_moves_before <= 2  # Only 1-2 moves = definitely forced
@@ -2366,13 +2371,13 @@ class ChessAnalysisEngine:
                         # For forced mates, require strict best move (0-5cp)
                         # CRITICAL: Checks without sacrifice are NOT brilliant via mate
                         # Even if they find mate, checks that fork/pin (win material) are tactical, not brilliant
-                        # CRITICAL: Immediate checkmate without sacrifice is NOT brilliant - it's just the winning move
+                        # CRITICAL: Immediate checkmate is NEVER brilliant - it's just the winning move
                         brilliant_via_mate = (
                             forcing_mate_trigger and
                             is_best and
                             centipawn_loss <= 5 and
                             not (move_gives_check and not sacrifice_trigger) and
-                            not (move_is_checkmate and not sacrifice_trigger)  # Immediate checkmate without sacrifice is not brilliant
+                            not move_is_checkmate  # Immediate checkmate is never brilliant, regardless of sacrifice
                         )
 
                         # For sacrifices: check if this is a clear tactical sacrifice (capture where piece can be captured)
@@ -2645,17 +2650,16 @@ class ChessAnalysisEngine:
                         # move_gives_check is already detected above (early in the logic)
                         # This is the FINAL override - must be the last word
 
-                        # CRITICAL: Immediate checkmate moves are NOT brilliant unless they involve a sacrifice
+                        # CRITICAL: Immediate checkmate moves are NEVER brilliant
                         # Simple checkmate moves (like Qe2#) are just winning moves, not brilliant tactical sacrifices
                         # Chess.com doesn't mark simple checkmates as brilliant - they're just the best move
+                        # Even checkmates with captures are typically obvious winning moves, not brilliant sacrifices
+                        # This is the ABSOLUTE FINAL override - checkmate is NEVER brilliant
                         if move_is_checkmate:
-                            if not sacrifice_trigger:
-                                # Immediate checkmate without sacrifice is NOT brilliant - it's just the winning move
-                                is_brilliant = False
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: FINAL OVERRIDE - immediate checkmate without sacrifice is not brilliant (just the winning move)")
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: move_is_checkmate={move_is_checkmate}, sacrifice_trigger={sacrifice_trigger}")
-                            else:
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Checkmate move allowed - it's a sacrifice (sacrifice_trigger={sacrifice_trigger})")
+                            # Immediate checkmate is NOT brilliant - it's just the winning move
+                            is_brilliant = False
+                            print(f"[BRILLIANT DEBUG] {move_san_debug}: FINAL OVERRIDE - immediate checkmate is not brilliant (just the winning move)")
+                            print(f"[BRILLIANT DEBUG] {move_san_debug}: move_is_checkmate={move_is_checkmate}, sacrifice_trigger={sacrifice_trigger}")
 
                         if move_gives_check:
                             if not sacrifice_trigger:
