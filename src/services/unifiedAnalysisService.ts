@@ -17,6 +17,7 @@ import { config } from '../lib/config'
 import { withCache, generateCacheKey, apiCache } from '../utils/apiCache'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
+import { supabase } from '../lib/supabase'
 
 const UNIFIED_API_URL = config.getApi().baseUrl
 logger.log('🔧 UNIFIED_API_URL configured as:', UNIFIED_API_URL)
@@ -175,13 +176,27 @@ export class UnifiedAnalysisService {
         limit: requestBody.limit
       })
 
+      // Get auth token if user is logged in
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+          logger.log('🌐 Added Authorization header for authenticated user')
+        }
+      } catch (error) {
+        // Log but don't fail - allow request to proceed without auth (for anonymous users)
+        logger.log('🌐 No auth session found, proceeding without Authorization header')
+      }
+
       const response = await fetchWithTimeout(
         `${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
           body: JSON.stringify(requestBody),
         },
         TIMEOUT_CONFIG.LONG // Use long timeout for analysis operations
@@ -200,7 +215,17 @@ export class UnifiedAnalysisService {
       return data
     } catch (error) {
       logger.error('Error in unified analysis:', error)
-      throw new Error('Failed to perform analysis')
+
+      // Preserve the original error message for better debugging
+      if (error instanceof Error) {
+        // If it's already a detailed error (like from fetchWithTimeout), throw it as-is
+        if (error.message.includes('Network error') || error.message.includes('Request timeout')) {
+          throw error;
+        }
+        throw new Error(`Failed to perform analysis: ${error.message}`)
+      }
+
+      throw new Error('Failed to perform analysis: Unknown error')
     }
   }
 
