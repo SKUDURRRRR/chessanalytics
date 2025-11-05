@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect, useState } from 'react'
+import React, { useMemo, useRef, useEffect, useState } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
@@ -596,6 +596,10 @@ export function UnifiedChessAnalysis({
   const prevIndexRef = useRef(currentIndex)
   const [isMoveListOpen, setIsMoveListOpen] = useState(false)
   const [showMoveAnalysis, setShowMoveAnalysis] = useState(true)
+  // State to track user-drawn arrows (right-click drag) - these will be rendered via ModernChessArrows
+  const [userDrawnArrows, setUserDrawnArrows] = useState<ModernArrow[]>([])
+  const desktopBoardContainerRef = useRef<HTMLDivElement>(null)
+  const mobileBoardContainerRef = useRef<HTMLDivElement>(null)
 
   // Use exploration analysis if available, otherwise use current move
   const currentScore = useMemo(() => {
@@ -668,23 +672,125 @@ export function UnifiedChessAnalysis({
       hasExplorationAnalysis: !!explorationAnalysis,
       explorationBestMove: explorationAnalysis?.bestMove,
       currentMoveArrows: currentMoveArrows,
-      currentMoveArrowsLength: currentMoveArrows?.length || 0
+      currentMoveArrowsLength: currentMoveArrows?.length || 0,
+      userDrawnArrows: userDrawnArrows.length
     })
+
+    const arrows: ModernArrow[] = []
+
+    // Add user-drawn arrows (right-click drag) - these are orange
+    arrows.push(...userDrawnArrows)
 
     // If exploring and we have analysis with a best move, show arrow for that
     if ((isExploringFollowUp || isFreeExploration) && explorationAnalysis?.bestMove) {
       console.log('[UnifiedChessAnalysis] Using exploration arrow')
-      return [{
+      arrows.push({
         from: explorationAnalysis.bestMove.from,
         to: explorationAnalysis.bestMove.to,
-        color: 'rgb(74, 222, 128)' // Green for exploration best move
-      }]
+        color: 'rgb(74, 222, 128)', // Green for exploration best move
+        classification: 'best',
+        isBestMove: true
+      })
+    } else {
+      // Otherwise use the current move arrows
+      console.log('[UnifiedChessAnalysis] Using currentMoveArrows:', currentMoveArrows)
+      arrows.push(...currentMoveArrows)
     }
 
-    // Otherwise use the current move arrows
-    console.log('[UnifiedChessAnalysis] Using currentMoveArrows:', currentMoveArrows)
-    return currentMoveArrows
-  }, [isExploringFollowUp, isFreeExploration, explorationAnalysis, currentMoveArrows])
+    return arrows
+  }, [isExploringFollowUp, isFreeExploration, explorationAnalysis, currentMoveArrows, userDrawnArrows])
+
+  // Handler to intercept user-drawn arrows from react-chessboard
+  // This will be called when user right-clicks and drags to draw an arrow
+  const handleArrowsChange = React.useCallback((arrows: Array<[string, string, string?]>) => {
+    // Convert react-chessboard arrow format [from, to, color?] to ModernArrow format
+    const modernArrows: ModernArrow[] = arrows.map(([from, to, color]) => ({
+      from: from as any,
+      to: to as any,
+      color: color || '#f97316', // Default orange color for user-drawn arrows
+      classification: 'uncategorized',
+      isBestMove: false
+    }))
+    setUserDrawnArrows(modernArrows)
+    console.log('[UnifiedChessAnalysis] User drew arrows:', modernArrows)
+  }, [])
+
+  // Clear user-drawn arrows when position changes
+  useEffect(() => {
+    setUserDrawnArrows([])
+  }, [currentPosition])
+
+  // Effect to actively hide react-chessboard's native arrow rendering
+  // This ensures native arrows are always hidden, even if CSS doesn't catch them
+  useEffect(() => {
+    const hideNativeArrows = (container: HTMLElement | null) => {
+      if (!container) return
+
+      // Find all SVG elements that are not our ModernChessArrows
+      // Check both direct children and nested SVG elements
+      const allSvgs = container.querySelectorAll('svg')
+
+      allSvgs.forEach((svg) => {
+        // Skip our ModernChessArrows
+        if (svg.classList.contains('modern-chess-arrows')) {
+          return
+        }
+
+        // Check if it contains arrow elements (paths with stroke, or polygons that look like arrowheads)
+        const hasArrowPath = svg.querySelector('path[stroke]')
+        const hasArrowPolygon = svg.querySelector('polygon[fill]')
+        const hasArrowLine = svg.querySelector('line[stroke]')
+
+        // If it has arrow-like elements and is positioned absolutely (overlay), hide it
+        if ((hasArrowPath || hasArrowPolygon || hasArrowLine) &&
+            (svg.getAttribute('style')?.includes('position: absolute') ||
+             svg.getAttribute('style')?.includes('position:absolute'))) {
+          ;(svg as HTMLElement).style.display = 'none'
+          // Also hide all children just in case
+          svg.querySelectorAll('path, polygon, line').forEach((el) => {
+            ;(el as HTMLElement).style.display = 'none'
+          })
+        }
+      })
+    }
+
+    const hideAllNativeArrows = () => {
+      hideNativeArrows(desktopBoardContainerRef.current)
+      hideNativeArrows(mobileBoardContainerRef.current)
+    }
+
+    // Hide arrows immediately
+    hideAllNativeArrows()
+
+    // Use MutationObserver to watch for new arrows being added
+    const observers: MutationObserver[] = []
+
+    if (desktopBoardContainerRef.current) {
+      const observer = new MutationObserver(hideAllNativeArrows)
+      observer.observe(desktopBoardContainerRef.current, {
+        childList: true,
+        subtree: true
+      })
+      observers.push(observer)
+    }
+
+    if (mobileBoardContainerRef.current) {
+      const observer = new MutationObserver(hideAllNativeArrows)
+      observer.observe(mobileBoardContainerRef.current, {
+        childList: true,
+        subtree: true
+      })
+      observers.push(observer)
+    }
+
+    // Also check periodically as a fallback (more frequent to catch arrow heads)
+    const interval = setInterval(hideAllNativeArrows, 50)
+
+    return () => {
+      observers.forEach(obs => obs.disconnect())
+      clearInterval(interval)
+    }
+  }, [currentPosition, boardWidth])
 
   const mobileBoardSize = Math.min(boardWidth, 400)
   const mobileEvaluationBarWidth = Math.max(12, Math.round(mobileBoardSize * 0.04))
@@ -781,7 +887,7 @@ export function UnifiedChessAnalysis({
 
           {/* Mobile: Chess Board */}
           <div className="flex-shrink-0">
-            <div className="relative" style={{ width: `${mobileBoardSize}px`, height: `${mobileBoardSize}px` }}>
+            <div ref={mobileBoardContainerRef} className="relative" style={{ width: `${mobileBoardSize}px`, height: `${mobileBoardSize}px` }}>
               <Chessboard
                 id="unified-analysis-board-mobile"
                 position={currentPosition}
@@ -790,6 +896,7 @@ export function UnifiedChessAnalysis({
                 boardOrientation={playerColor}
                 boardWidth={mobileBoardSize}
                 showBoardNotation={true}
+                onArrowsChange={handleArrowsChange}
                 {...getDarkChessBoardTheme('default')}
               />
               {/* Show arrows unless in follow-up mode (follow-up has its own UI) */}
@@ -1173,7 +1280,7 @@ export function UnifiedChessAnalysis({
             )
           })()}
 
-          <div className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
+          <div ref={desktopBoardContainerRef} className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
             <Chessboard
               id="unified-analysis-board"
               position={currentPosition}
@@ -1182,6 +1289,7 @@ export function UnifiedChessAnalysis({
               boardOrientation={playerColor}
               boardWidth={boardWidth}
               showBoardNotation={true}
+              onArrowsChange={handleArrowsChange}
               {...getDarkChessBoardTheme('default')}
             />
             {/* Modern Chess Arrows */}

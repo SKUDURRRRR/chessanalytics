@@ -261,4 +261,22 @@
     -webkit-hyphens: manual;
     -ms-hyphens: manual;
   }
+
+  /* Hide react-chessboard's native arrow rendering - we render user-drawn arrows via ModernChessArrows for proper centering */
+  /* This ensures all arrows (both move arrows and user-drawn arrows) are centered on squares */
+  .react-chessboard > div > svg[style*="position: absolute"]:not(.modern-chess-arrows):has(path[stroke]),
+  .react-chessboard > div > svg[style*="position:absolute"]:not(.modern-chess-arrows):has(path[stroke]),
+  .react-chessboard > div > svg[style*="position: absolute"]:not(.modern-chess-arrows):has(polygon[fill]),
+  .react-chessboard > div > svg[style*="position:absolute"]:not(.modern-chess-arrows):has(polygon[fill]),
+  .react-chessboard > div > svg[style*="position: absolute"]:not(.modern-chess-arrows):has(line[stroke]),
+  .react-chessboard > div > svg[style*="position:absolute"]:not(.modern-chess-arrows):has(line[stroke]) {
+    display: none !important;
+  }
+
+  /* Also hide arrow elements directly within react-chessboard containers */
+  .react-chessboard path[stroke]:not(.modern-chess-arrows path),
+  .react-chessboard polygon[fill]:not(.modern-chess-arrows polygon),
+  .react-chessboard line[stroke]:not(.modern-chess-arrows line) {
+    display: none !important;
+  }
 }

@@ -277,6 +277,7 @@ export function ModernChessArrows({
   return (
     <svg
       ref={svgRef}
+      className="modern-chess-arrows"
       width={boardWidth}
       height={boardWidth}
       viewBox={`0 0 ${boardWidth} ${boardWidth}`}
