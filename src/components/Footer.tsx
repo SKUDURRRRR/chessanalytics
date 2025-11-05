@@ -5,7 +5,7 @@ export function Footer() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Copyright */}
           <div className="text-slate-400 text-sm">
-            © {new Date().getFullYear()} ChessData. All rights reserved.
+            © {new Date().getFullYear()} chessdata.app. All rights reserved.
           </div>
 
           {/* Discord Link */}

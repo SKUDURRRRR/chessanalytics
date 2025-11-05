@@ -67,10 +67,10 @@ export function Navigation() {
           <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <img
               src="/logo.png"
-              alt="ChessData"
+              alt="chessdata.app"
               className="h-8 w-auto"
             />
-            <span className="text-xl font-semibold text-white">ChessData</span>
+            <span className="text-xl font-semibold text-white">chessdata.app</span>
           </Link>
 
           {/* Navigation Links */}
