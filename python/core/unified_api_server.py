@@ -8152,6 +8152,7 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'move_notation': move.move,  # Legacy field
                 'best_move': move.best_move,  # UCI notation
                 'best_move_san': getattr(move, 'best_move_san', ''),  # SAN notation
+                'best_move_pv': getattr(move, 'best_move_pv', []),  # PV for best move line (UCI)
                 'engine_move': move.best_move,  # Legacy field
                 'fen_before': getattr(move, 'fen_before', ''),  # FEN before move
                 'fen_after': getattr(move, 'fen_after', ''),  # FEN after move
