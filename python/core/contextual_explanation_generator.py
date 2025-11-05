@@ -109,22 +109,22 @@ class ContextualExplanationGenerator:
 
         # Only check for other tactical patterns if it's not checkmate
         if not is_checkmate:
-        # Check for specific tactical patterns (avoid duplicates)
-        patterns_seen = set()
-        if impact.tactical_patterns:
-            for pattern in impact.tactical_patterns:
-                if pattern.pattern not in patterns_seen:
-                    patterns_seen.add(pattern.pattern)
-                    if pattern.pattern == TacticalPattern.SACRIFICE:
-                        explanations.append(f"it sacrifices material ({abs(impact.material_change)} points) for devastating tactical compensation")
-                    elif pattern.pattern == TacticalPattern.MATE_THREAT:
-                        explanations.append(f"it creates a mate threat that forces the opponent into a losing position")
-                    elif pattern.pattern == TacticalPattern.DISCOVERED_ATTACK:
-                        explanations.append(f"it creates a discovered attack that exposes the opponent's king")
-                    elif pattern.pattern == TacticalPattern.FORK:
-                        explanations.append(f"it forks multiple enemy pieces, winning material")
-                    elif pattern.pattern == TacticalPattern.PIN:
-                        explanations.append(f"it pins an enemy piece, restricting the opponent's options")
+            # Check for specific tactical patterns (avoid duplicates)
+            patterns_seen = set()
+            if impact.tactical_patterns:
+                for pattern in impact.tactical_patterns:
+                    if pattern.pattern not in patterns_seen:
+                        patterns_seen.add(pattern.pattern)
+                        if pattern.pattern == TacticalPattern.SACRIFICE:
+                            explanations.append(f"it sacrifices material ({abs(impact.material_change)} points) for devastating tactical compensation")
+                        elif pattern.pattern == TacticalPattern.MATE_THREAT:
+                            explanations.append(f"it creates a mate threat that forces the opponent into a losing position")
+                        elif pattern.pattern == TacticalPattern.DISCOVERED_ATTACK:
+                            explanations.append(f"it creates a discovered attack that exposes the opponent's king")
+                        elif pattern.pattern == TacticalPattern.FORK:
+                            explanations.append(f"it forks multiple enemy pieces, winning material")
+                        elif pattern.pattern == TacticalPattern.PIN:
+                            explanations.append(f"it pins an enemy piece, restricting the opponent's options")
 
         # Check for positional brilliance
         if impact.positional_changes:

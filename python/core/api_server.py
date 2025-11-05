@@ -793,6 +793,11 @@ async def save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'move': move.move,
                 'move_san': move.move_san,
                 'evaluation': move.evaluation,
+                'best_move': move.best_move,
+                'best_move_san': getattr(move, 'best_move_san', ''),
+                'best_move_pv': getattr(move, 'best_move_pv', []),  # PV for best move line (UCI)
+                'fen_before': getattr(move, 'fen_before', ''),
+                'fen_after': getattr(move, 'fen_after', ''),
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
                 'is_great': move.is_great,
@@ -886,6 +891,11 @@ async def save_game_analysis(analysis: GameAnalysis) -> bool:
                 'move': move.move,
                 'move_san': move.move_san,
                 'evaluation': move.evaluation,
+                'best_move': move.best_move,
+                'best_move_san': getattr(move, 'best_move_san', ''),
+                'best_move_pv': getattr(move, 'best_move_pv', []),  # PV for best move line (UCI)
+                'fen_before': getattr(move, 'fen_before', ''),
+                'fen_after': getattr(move, 'fen_after', ''),
                 'is_best': move.is_best,
                 'is_brilliant': move.is_brilliant,
                 'is_great': move.is_great,

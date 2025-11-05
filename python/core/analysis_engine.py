@@ -1644,6 +1644,8 @@ class ChessAnalysisEngine:
         loop = asyncio.get_event_loop()
 
         def run_stockfish_analysis():
+            # Capture move in local scope to avoid UnboundLocalError
+            current_move = move
             try:
                 with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
                     # Configure engine for Railway Hobby tier optimization
@@ -1674,20 +1676,20 @@ class ChessAnalysisEngine:
                     # Validate move is legal before proceeding
                     # CRITICAL: Try to reconstruct move from board if it's not legal
                     # This handles cases where the move object might be from a different board context
-                    if not board.is_legal(move):
-                        print(f"⚠️  Move {move.uci()} not legal in position {board.fen()}")
-                        print(f"   Board turn: {board.turn}, Move from: {chess.square_name(move.from_square)}, to: {chess.square_name(move.to_square)}")
+                    if not board.is_legal(current_move):
+                        print(f"⚠️  Move {current_move.uci()} not legal in position {board.fen()}")
+                        print(f"   Board turn: {board.turn}, Move from: {chess.square_name(current_move.from_square)}, to: {chess.square_name(current_move.to_square)}")
 
                         # Try to find the move in legal moves - maybe it's just a promotion or castling issue
                         legal_moves = list(board.legal_moves)
                         matching_move = None
                         for legal_move in legal_moves:
                             # Match by from/to squares, and also check promotion if present
-                            if (legal_move.from_square == move.from_square and
-                                legal_move.to_square == move.to_square):
+                            if (legal_move.from_square == current_move.from_square and
+                                legal_move.to_square == current_move.to_square):
                                 # For promotion moves, also check promotion piece matches
-                                if move.promotion is not None:
-                                    if legal_move.promotion == move.promotion:
+                                if current_move.promotion is not None:
+                                    if legal_move.promotion == current_move.promotion:
                                         matching_move = legal_move
                                         print(f"   Found matching legal move: {legal_move.uci()} (promotion: {legal_move.promotion})")
                                         break
@@ -1699,24 +1701,24 @@ class ChessAnalysisEngine:
 
                         if matching_move:
                             # Use the reconstructed move
-                            move = matching_move
+                            current_move = matching_move
                         else:
                             # Move truly doesn't exist - fallback to basic analysis
-                            print(f"   Move {move.uci()} truly illegal - falling back to basic analysis")
+                            print(f"   Move {current_move.uci()} truly illegal - falling back to basic analysis")
                             import asyncio
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
                             try:
-                                result = loop.run_until_complete(self._analyze_move_basic(board, move))
+                                result = loop.run_until_complete(self._analyze_move_basic(board, current_move))
                                 return result
                             finally:
                                 loop.close()
 
                     # Get SAN notation before making the move
-                    move_san = board.san(move)
+                    move_san = board.san(current_move)
 
                     # Make the move
-                    board.push(move)
+                    board.push(current_move)
 
                     # Get evaluation after move
                     # Use depth for better PV line to detect mate sequences
@@ -1779,14 +1781,14 @@ class ChessAnalysisEngine:
                     # DEBUG: Log move being analyzed (safely - don't access board if move not pushed)
                     try:
                         move_san_debug = move_san  # Use SAN notation from above (calculated before push)
-                        move_uci_debug = move.uci()  # Also keep UCI for debugging
+                        move_uci_debug = current_move.uci()  # Also keep UCI for debugging
                     except:
                         try:
-                            move_san_debug = move.uci()  # Fallback to UCI
-                            move_uci_debug = move.uci()
+                            move_san_debug = current_move.uci()  # Fallback to UCI
+                            move_uci_debug = current_move.uci()
                         except:
-                            move_san_debug = str(move)
-                            move_uci_debug = str(move)
+                            move_san_debug = str(current_move)
+                            move_uci_debug = str(current_move)
 
                     # Write to log file for easier searching
                     try:
@@ -1817,9 +1819,9 @@ class ChessAnalysisEngine:
                         piece_values = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}
                         board_restored = False
 
-                        if board.is_capture(move):
-                            moving_piece = board.piece_at(move.from_square)
-                            captured_piece = board.piece_at(move.to_square)
+                        if board.is_capture(current_move):
+                            moving_piece = board.piece_at(current_move.from_square)
+                            captured_piece = board.piece_at(current_move.to_square)
 
                             if moving_piece and captured_piece:
                                 moving_value = piece_values.get(moving_piece.symbol().upper(), 0)
@@ -1830,11 +1832,11 @@ class ChessAnalysisEngine:
                                     sacrifice_value = moving_value - captured_value
 
                                     # Now push move and check if piece can be captured
-                                    board.push(move)
+                                    board.push(current_move)
                                     board_restored = True
 
                                     # Check if the moving piece can be captured after the move
-                                    to_square = move.to_square
+                                    to_square = current_move.to_square
                                     if board.piece_at(to_square):
                                         attackers = board.attackers(not player_color, to_square)
 
@@ -1854,16 +1856,16 @@ class ChessAnalysisEngine:
 
                         # Always restore board state if we haven't already
                         if not board_restored:
-                            board.push(move)
+                            board.push(current_move)
                     except Exception as e:
                         # If anything goes wrong, restore board and use default threshold
                         try:
                             # Try to restore if board is invalid (move not on board)
-                            if not any(move == m for m in board.legal_moves):
-                                board.push(move)
+                            if not any(current_move == m for m in board.legal_moves):
+                                board.push(current_move)
                         except:
                             try:
-                                board.push(move)  # Fallback: just try to push
+                                board.push(current_move)  # Fallback: just try to push
                             except:
                                 pass
 
@@ -1899,18 +1901,18 @@ class ChessAnalysisEngine:
                         # Check if this is a king move (especially to escape check) - these are almost never brilliant
                         # Check piece type BEFORE restoring the move
                         moving_piece_type = None
-                        if board.piece_at(move.from_square):
-                            moving_piece_type = board.piece_at(move.from_square).piece_type
+                        if board.piece_at(current_move.from_square):
+                            moving_piece_type = board.piece_at(current_move.from_square).piece_type
 
                         # CRITICAL: Check if move gives check or checkmate BEFORE restoring move
                         # Create a test board to check if move gives check/checkmate without corrupting main board
                         test_board = board.copy()
-                        test_board.push(move)
+                        test_board.push(current_move)
                         move_gives_check = test_board.is_check()  # Check if opponent is now in check
                         move_is_checkmate = test_board.is_checkmate()  # Check if move is immediate checkmate
 
                         # Now restore the move on the main board
-                        board.push(move)  # Restore move on main board
+                        board.push(current_move)  # Restore move on main board
 
                         # Check if move is forced (only 1-2 legal moves = forced, 3+ = might have choice)
                         # For sacrifices leading to mate, be more lenient (sometimes brilliant moves happen in tactical positions)
@@ -2730,7 +2732,7 @@ class ChessAnalysisEngine:
 
                     # Create basic move analysis
                     move_analysis = MoveAnalysis(
-                        move=move.uci(),
+                        move=current_move.uci(),
                         move_san=move_san,
                         evaluation=evaluation,
                         best_move=best_move_before.uci() if best_move_before else None,
@@ -2760,9 +2762,9 @@ class ChessAnalysisEngine:
                     # We need to undo the move temporarily to get the correct move number
                     board.pop()  # Undo the move to get the original position
                     move_number = (board.fullmove_number - 1) * 2 + (0 if board.turn == chess.WHITE else 1)
-                    board.push(move)  # Restore the move for coaching analysis
+                    board.push(current_move)  # Restore the move for coaching analysis
                     # For now, assume all moves are user moves - this will be determined by the frontend
-                    return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=True)
+                    return self._enhance_move_analysis_with_coaching(move_analysis, board, current_move, move_number, is_user_move=True)
             except Exception as e:
                 error_msg = str(e)
                 if "exit code: -9" in error_msg or "died unexpectedly" in error_msg:
