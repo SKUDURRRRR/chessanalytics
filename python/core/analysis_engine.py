@@ -2044,6 +2044,7 @@ class ChessAnalysisEngine:
                         # -----------------------------------------------------------------------
                         piece_values = {'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0}
                         sacrifice_trigger = False
+                        sacrifice_detected = False  # Initialize to ensure it's always defined
 
                         # Check both captures AND non-capturing sacrifices (e.g., piece moves to hanging square)
                         board.pop()  # Undo move to check original position
