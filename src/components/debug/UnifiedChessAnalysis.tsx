@@ -1,4 +1,5 @@
 import { useMemo, useRef, useEffect, useState } from 'react'
+import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
 import type { ModernArrow } from '../../utils/chessArrows'
@@ -612,6 +613,24 @@ export function UnifiedChessAnalysis({
       return 0
     }
 
+    // CRITICAL: Check if the position after the move is in checkmate
+    // If so, the winning side should show dominance in the evaluation bar
+    try {
+      if (currentMove.fenAfter) {
+        const chess = new Chess(currentMove.fenAfter)
+        if (chess.isCheckmate()) {
+          // The side to move is the one in checkmate (the losing side)
+          // If it's White's turn, White is in checkmate, so Black wins -> return -1000
+          // If it's Black's turn, Black is in checkmate, so White wins -> return +1000
+          const isWhiteToMove = chess.turn() === 'w'
+          return isWhiteToMove ? -1000 : 1000
+        }
+      }
+    } catch (error) {
+      // If FEN parsing fails, fall through to normal evaluation logic
+      console.warn('Failed to parse FEN for checkmate detection:', error)
+    }
+
     // For mate positions, evaluation.value is the mate value from White's perspective
     // Positive = white wins (mate in N), negative = black wins (mate in -N)
     // If value is 0 (old bug), treat as unknown and use a neutral score
@@ -619,7 +638,18 @@ export function UnifiedChessAnalysis({
       const mateValue = currentMove.evaluation.value
       if (mateValue === 0) {
         // Old bug: mate evaluations were stored as 0, fallback to checking if it's actually a mate
-        // For now, treat as neutral until game is reanalyzed
+        // Try to detect checkmate from FEN if available
+        try {
+          if (currentMove.fenAfter) {
+            const chess = new Chess(currentMove.fenAfter)
+            if (chess.isCheckmate()) {
+              const isWhiteToMove = chess.turn() === 'w'
+              return isWhiteToMove ? -1000 : 1000
+            }
+          }
+        } catch (error) {
+          // Ignore errors, fall through to neutral
+        }
         return 0
       }
       return mateValue > 0 ? 1000 : -1000
