@@ -1049,28 +1049,55 @@ class ChessAnalysisEngine:
     async def _analyze_move_basic(self, board: chess.Board, move: chess.Move) -> MoveAnalysis:
         """Basic move analysis using improved heuristics."""
         # Validate move is legal before proceeding
+        # CRITICAL: Try to reconstruct move from board if it's not legal
+        # This handles cases where the move object might be from a different board context
         if not board.is_legal(move):
-            print(f"Illegal move detected in basic analysis: {move.uci()} in position {board.fen()}")
-            # Return a basic analysis for illegal moves
-            return MoveAnalysis(
-                move=move.uci(),
-                move_san="illegal",
-                evaluation={"value": 0, "type": "cp"},
-                best_move=None,
-                is_best=False,
-                is_brilliant=False,
-                is_good=False,
-                is_acceptable=False,
-                is_blunder=True,
-                is_mistake=True,
-                is_inaccuracy=False,
-                centipawn_loss=1000.0,
-                depth_analyzed=0,
-                analysis_time_ms=0,
-                explanation="Illegal move",
-                heuristic_details={},
-                accuracy_score=0.0
-            )
+            print(f"⚠️  Move {move.uci()} not legal in basic analysis: position {board.fen()}")
+
+            # Try to find the move in legal moves - maybe it's just a promotion or castling issue
+            legal_moves = list(board.legal_moves)
+            matching_move = None
+            for legal_move in legal_moves:
+                # Match by from/to squares, and also check promotion if present
+                if (legal_move.from_square == move.from_square and
+                    legal_move.to_square == move.to_square):
+                    # For promotion moves, also check promotion piece matches
+                    if move.promotion is not None:
+                        if legal_move.promotion == move.promotion:
+                            matching_move = legal_move
+                            print(f"   Found matching legal move: {legal_move.uci()} (promotion: {legal_move.promotion})")
+                            break
+                    else:
+                        # Non-promotion move - found match
+                        matching_move = legal_move
+                        print(f"   Found matching legal move: {legal_move.uci()}")
+                        break
+
+            if matching_move:
+                # Use the reconstructed move
+                move = matching_move
+            else:
+                # Move truly doesn't exist - return illegal move analysis
+                print(f"   Move {move.uci()} truly illegal - returning illegal move analysis")
+                return MoveAnalysis(
+                    move=move.uci(),
+                    move_san="illegal",
+                    evaluation={"value": 0, "type": "cp"},
+                    best_move=None,
+                    is_best=False,
+                    is_brilliant=False,
+                    is_good=False,
+                    is_acceptable=False,
+                    is_blunder=True,
+                    is_mistake=True,
+                    is_inaccuracy=False,
+                    centipawn_loss=1000.0,
+                    depth_analyzed=0,
+                    analysis_time_ms=0,
+                    explanation="Illegal move",
+                    heuristic_details={},
+                    accuracy_score=0.0
+                )
 
         move_san = board.san(move)
         color_to_move = board.turn
@@ -1645,17 +1672,45 @@ class ChessAnalysisEngine:
                     player_color = board.turn
 
                     # Validate move is legal before proceeding
+                    # CRITICAL: Try to reconstruct move from board if it's not legal
+                    # This handles cases where the move object might be from a different board context
                     if not board.is_legal(move):
-                        print(f"Illegal move detected: {move.uci()} in position {board.fen()}")
-                        # Fallback to basic analysis for illegal moves - run in thread pool since this is not async
-                        import asyncio
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            result = loop.run_until_complete(self._analyze_move_basic(board, move))
-                            return result
-                        finally:
-                            loop.close()
+                        print(f"⚠️  Move {move.uci()} not legal in position {board.fen()}")
+                        print(f"   Board turn: {board.turn}, Move from: {chess.square_name(move.from_square)}, to: {chess.square_name(move.to_square)}")
+
+                        # Try to find the move in legal moves - maybe it's just a promotion or castling issue
+                        legal_moves = list(board.legal_moves)
+                        matching_move = None
+                        for legal_move in legal_moves:
+                            # Match by from/to squares, and also check promotion if present
+                            if (legal_move.from_square == move.from_square and
+                                legal_move.to_square == move.to_square):
+                                # For promotion moves, also check promotion piece matches
+                                if move.promotion is not None:
+                                    if legal_move.promotion == move.promotion:
+                                        matching_move = legal_move
+                                        print(f"   Found matching legal move: {legal_move.uci()} (promotion: {legal_move.promotion})")
+                                        break
+                                else:
+                                    # Non-promotion move - found match
+                                    matching_move = legal_move
+                                    print(f"   Found matching legal move: {legal_move.uci()}")
+                                    break
+
+                        if matching_move:
+                            # Use the reconstructed move
+                            move = matching_move
+                        else:
+                            # Move truly doesn't exist - fallback to basic analysis
+                            print(f"   Move {move.uci()} truly illegal - falling back to basic analysis")
+                            import asyncio
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            try:
+                                result = loop.run_until_complete(self._analyze_move_basic(board, move))
+                                return result
+                            finally:
+                                loop.close()
 
                     # Get SAN notation before making the move
                     move_san = board.san(move)
@@ -1837,24 +1892,39 @@ class ChessAnalysisEngine:
                         # -----------------------------------------------------------------------
                         # Forced moves (check evasion, only 1-3 legal moves) are NEVER brilliant
                         # Check this FIRST before other criteria
+                        # NOTE: Move is already on board at this point (pushed at line 1664)
                         board.pop()  # Undo move to check position before move
                         num_legal_moves_before = len(list(board.legal_moves))
-                        board.push(move)  # Restore move
+
+                        # Check if this is a king move (especially to escape check) - these are almost never brilliant
+                        # Check piece type BEFORE restoring the move
+                        moving_piece_type = None
+                        if board.piece_at(move.from_square):
+                            moving_piece_type = board.piece_at(move.from_square).piece_type
+
+                        # CRITICAL: Check if move gives check or checkmate BEFORE restoring move
+                        # Create a test board to check if move gives check/checkmate without corrupting main board
+                        test_board = board.copy()
+                        test_board.push(move)
+                        move_gives_check = test_board.is_check()  # Check if opponent is now in check
+                        move_is_checkmate = test_board.is_checkmate()  # Check if move is immediate checkmate
+
+                        # Now restore the move on the main board
+                        board.push(move)  # Restore move on main board
 
                         # Check if move is forced (only 1-2 legal moves = forced, 3+ = might have choice)
                         # For sacrifices leading to mate, be more lenient (sometimes brilliant moves happen in tactical positions)
                         is_forced_move = num_legal_moves_before <= 2  # Only 1-2 moves = definitely forced
 
-                        # Check if this is a king move (especially to escape check) - these are almost never brilliant
-                        board.pop()  # Undo to check piece type
-                        moving_piece_type = None
-                        if board.piece_at(move.from_square):
-                            moving_piece_type = board.piece_at(move.from_square).piece_type
-                        board.push(move)  # Restore
-
                         is_king_move = (moving_piece_type == chess.KING)
                         if is_king_move:
                             print(f"[BRILLIANT DEBUG] {move_san_debug}: King move detected - rarely brilliant unless it's a sacrifice")
+
+                        if move_gives_check:
+                            print(f"[BRILLIANT DEBUG] {move_san_debug}: Move gives check detected - will block if not a sacrifice")
+
+                        if move_is_checkmate:
+                            print(f"[BRILLIANT DEBUG] {move_san_debug}: Move is immediate checkmate - will block unless it's a sacrifice")
 
                         if is_forced_move:
                             print(f"[BRILLIANT DEBUG] {move_san_debug}: Move appears forced (only {num_legal_moves_before} legal moves)")
@@ -2157,40 +2227,119 @@ class ChessAnalysisEngine:
                                         except:
                                             pass
 
-                            # Type 2: Non-Capture Sacrifices (moving piece to hanging square)
+                            # Type 2: Non-Capture Sacrifices (moving piece to hanging square OR leaving other pieces hanging)
                             elif moving_value >= rating_thresholds['min_sacrifice_value']:  # Rating-adjusted minimum
+                                # FIRST: Check position BEFORE move (board is already popped at line 1983, so we're in position before)
+                                pieces_hanging_before = {}
+                                for square in chess.SQUARES:
+                                    piece = board.piece_at(square)
+                                    if piece and piece.color == player_color:
+                                        piece_attackers = board.attackers(not player_color, square)
+                                        piece_defenders = board.attackers(player_color, square)
+                                        if len(piece_attackers) > len(piece_defenders):
+                                            piece_value = piece_values.get(piece.symbol().upper(), 0)
+                                            if piece_value >= 3:  # Only count significant pieces
+                                                pieces_hanging_before[square] = piece_value
+
+                                # NOW: Apply the move and check position AFTER
                                 board.push(move)
                                 to_square = move.to_square
 
-                                # Check if piece is now hanging
+                                # Check if moving piece is now hanging
                                 attackers = board.attackers(not player_color, to_square)
                                 defenders = board.attackers(player_color, to_square)
                                 piece_hangs = len(attackers) > len(defenders)
                                 piece_can_be_captured = len(attackers) > 0  # Can be captured if attacked
 
+                                # Check if OTHER pieces are hanging AFTER the move
+                                # This covers cases like Bf6 where queen is hanging and move threatens mate
+                                other_pieces_hanging = False
+                                other_pieces_hanging_value = 0
+
+                                # Check all squares of the player's pieces to see if any are now hanging
+                                for square in chess.SQUARES:
+                                    piece = board.piece_at(square)
+                                    # Only check pieces of the moving player's color (excluding the moving piece itself)
+                                    if piece and piece.color == player_color and square != to_square:
+                                        piece_attackers = board.attackers(not player_color, square)
+                                        piece_defenders = board.attackers(player_color, square)
+                                        # Piece is hanging if more attackers than defenders
+                                        piece_is_hanging_after = len(piece_attackers) > len(piece_defenders)
+
+                                        if piece_is_hanging_after:
+                                            piece_value = piece_values.get(piece.symbol().upper(), 0)
+                                            # Only count significant pieces (3+ points) as hanging
+                                            if piece_value >= 3:
+                                                other_pieces_hanging = True
+                                                other_pieces_hanging_value = max(other_pieces_hanging_value, piece_value)
+                                                was_hanging_before = square in pieces_hanging_before
+                                                status = "became hanging" if not was_hanging_before else "already hanging"
+                                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Piece on {chess.square_name(square)} ({piece.symbol()}) is {status} after move")
+
                                 board.pop()
 
-                                # CRITICAL: For non-capture moves, only consider it a sacrifice if:
-                                # 1. Piece can be captured (attacked), AND
-                                # 2. It's a significant sacrifice (moving_value >= min_sacrifice_value)
-                                # This prevents moves that just win material from being marked as sacrifices
-                                if piece_can_be_captured and piece_hangs:
-                                    # Non-capture sacrifice: moved piece to attacked square
+                                # CRITICAL: For non-capture moves, consider it a sacrifice if:
+                                # 1. Moving piece can be captured (attacked) AND hangs, OR
+                                # 2. Other significant pieces (3+ points) are left hanging AND move creates significant threat
+                                # This covers cases like Bf6 leaving queen hanging to threaten mate
+                                is_moving_piece_sacrifice = piece_can_be_captured and piece_hangs
+                                is_leaving_pieces_hanging = other_pieces_hanging and other_pieces_hanging_value >= 3
+
+                                # Check if move creates significant threat (check, mate threat, etc.)
+                                # We already have move_gives_check, but also check if move creates mate threat
+                                board.push(move)
+                                move_creates_check = board.is_check()
+                                # Check if move creates a strong tactical threat (high evaluation, mate threat, check)
+                                # For moves that leave pieces hanging, a check is already a strong threat
+                                # because it forces the opponent to respond and can't take the hanging piece
+                                move_creates_strong_threat = (
+                                    move_creates_check or  # Check is a strong threat, especially with hanging pieces
+                                    actual_cp > 200 or  # Strong evaluation suggests threat
+                                    eval_after.pov(player_color).is_mate() or  # Immediate mate
+                                    forcing_mate_trigger  # Mate in PV
+                                )
+                                board.pop()
+
+                                if is_moving_piece_sacrifice or (is_leaving_pieces_hanging and move_creates_strong_threat):
+                                    # Non-capture sacrifice: either moved piece to attacked square OR left other pieces hanging with threat
                                     # Check if it's truly sacrificial (eval drops or stays winning with compensation)
-                                    not_already_crushing = optimal_cp < rating_thresholds['max_position_cp']
+
+                                    # For moves that leave pieces hanging but create strong threats, be very lenient
+                                    # Chess.com marks brilliant moves even in very winning positions if they're tactical sacrifices
+                                    if is_leaving_pieces_hanging and move_creates_strong_threat:
+                                        # For tactical sacrifices that leave pieces hanging, allow even if position is very winning
+                                        # The brilliance is in the tactical calculation, not whether position was already winning
+                                        not_already_crushing = True  # Always allow if leaving pieces hanging with strong threat
+                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Leaving pieces hanging with strong threat - allowing even in winning position (optimal_cp={optimal_cp:.1f})")
+                                    else:
+                                        not_already_crushing = optimal_cp < rating_thresholds['max_position_cp']
+
                                     has_compensation = (
                                         actual_cp >= rating_thresholds['min_compensation_cp'] or
-                                        eval_after.pov(player_color).is_mate()
+                                        eval_after.pov(player_color).is_mate() or
+                                        forcing_mate_trigger or
+                                        (is_leaving_pieces_hanging and move_creates_strong_threat and actual_cp >= -100)  # Allow temporary deficit for strong threats
                                     )
+
+                                    # Debug output
+                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Sacrifice check - is_leaving_pieces_hanging={is_leaving_pieces_hanging}, move_creates_strong_threat={move_creates_strong_threat}, not_already_crushing={not_already_crushing}, has_compensation={has_compensation}, optimal_cp={optimal_cp:.1f}, actual_cp={actual_cp:.1f}")
 
                                     sacrifice_trigger = (
                                         not_already_crushing and
                                         has_compensation
                                     )
+
+                                    if sacrifice_trigger:
+                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture sacrifice detected - moving_piece_sacrifice={is_moving_piece_sacrifice}, leaving_pieces_hanging={is_leaving_pieces_hanging}, creates_strong_threat={move_creates_strong_threat}")
+                                    else:
+                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture sacrifice FAILED - not_already_crushing={not_already_crushing}, has_compensation={has_compensation}")
                                 else:
                                     # Piece can't be captured or doesn't hang - not a sacrifice
                                     sacrifice_trigger = False
-                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture move - piece can't be captured (attackers={len(attackers)}, defenders={len(defenders)}), not a sacrifice")
+                                    if not is_moving_piece_sacrifice and not is_leaving_pieces_hanging:
+                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture move - piece can't be captured (attackers={len(attackers)}, defenders={len(defenders)}), no other pieces hanging, not a sacrifice")
+                                    elif is_leaving_pieces_hanging and not move_creates_strong_threat:
+                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture move - pieces hanging but no strong threat created, not a sacrifice")
                             else:
                                 # Piece value too low to be a sacrifice
                                 sacrifice_trigger = False
@@ -2213,12 +2362,23 @@ class ChessAnalysisEngine:
                         # get more leeway than quiet positional sacrifices.
 
                         # For forced mates, require strict best move (0-5cp)
-                        brilliant_via_mate = forcing_mate_trigger and is_best and centipawn_loss <= 5
+                        # CRITICAL: Checks without sacrifice are NOT brilliant via mate
+                        # Even if they find mate, checks that fork/pin (win material) are tactical, not brilliant
+                        # CRITICAL: Immediate checkmate without sacrifice is NOT brilliant - it's just the winning move
+                        brilliant_via_mate = (
+                            forcing_mate_trigger and
+                            is_best and
+                            centipawn_loss <= 5 and
+                            not (move_gives_check and not sacrifice_trigger) and
+                            not (move_is_checkmate and not sacrifice_trigger)  # Immediate checkmate without sacrifice is not brilliant
+                        )
 
                         # For sacrifices: check if this is a clear tactical sacrifice (capture where piece can be captured)
+                        # OR a non-capture sacrifice that leaves pieces hanging
                         # Use the earlier detection result (is_potential_clear_tactical) which already set the 60cp threshold
                         # OR recalculate if not detected earlier, but use the tactical_sacrifice_threshold instead of hardcoded 10cp
                         clear_tactical_sacrifice = False
+                        non_capture_hanging_pieces = False  # Track if non-capture leaves pieces hanging
                         if centipawn_loss <= tactical_sacrifice_threshold:  # Use the dynamic threshold (10cp default, 60cp for clear tactical)
                             # Temporarily undo to check if it's a capture sacrifice
                             board.pop()
@@ -2251,6 +2411,40 @@ class ChessAnalysisEngine:
                                             board.pop()
                                         else:
                                             print(f"[BRILLIANT DEBUG] {move_san_debug}: not a sacrifice - moving_value={moving_value} <= captured_value={captured_value} OR sacrifice_points={sacrifice_points} < 2")
+                            else:
+                                # Non-capture move - check if it leaves pieces hanging (like Bf6 leaving queen)
+                                # We already calculated this earlier in the non-capture sacrifice section
+                                # Use the variables we set: is_leaving_pieces_hanging and move_creates_strong_threat
+                                # But we need to check again here since we're in a different context
+                                board.push(move)  # Move is already on board from earlier
+                                # Check if significant pieces are hanging after this move
+                                other_pieces_hanging_value = 0
+                                for square in chess.SQUARES:
+                                    piece = board.piece_at(square)
+                                    if piece and piece.color == player_color and square != move.to_square:
+                                        piece_attackers = board.attackers(not player_color, square)
+                                        piece_defenders = board.attackers(player_color, square)
+                                        if len(piece_attackers) > len(piece_defenders):
+                                            piece_value = piece_values.get(piece.symbol().upper(), 0)
+                                            if piece_value >= 3:  # Queen, rook, or significant piece
+                                                other_pieces_hanging_value = max(other_pieces_hanging_value, piece_value)
+
+                                # Check if move creates strong threat (check or mate threat)
+                                move_creates_check_here = board.is_check()
+                                move_creates_strong_threat_here = (
+                                    move_creates_check_here or
+                                    actual_cp > 200 or
+                                    eval_after.pov(player_color).is_mate() or
+                                    forcing_mate_trigger
+                                )
+
+                                # If significant pieces are hanging and move creates strong threat, treat as clear tactical
+                                # Don't require sacrifice_trigger here - we'll check that later
+                                # The key is: pieces hanging + strong threat = tactical sacrifice candidate
+                                if other_pieces_hanging_value >= 3 and move_creates_strong_threat_here:
+                                    non_capture_hanging_pieces = True
+                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture leaves pieces hanging (value={other_pieces_hanging_value}) with strong threat - treating as clear tactical")
+                                board.pop()
                             board.push(move)
 
                         # Chess.com pattern: Brilliant moves are best (0-5cp) OR clear tactical sacrifices (up to ~10cp)
@@ -2260,9 +2454,10 @@ class ChessAnalysisEngine:
 
                         # DEBUG: Log clear tactical sacrifice detection
                         print(f"[BRILLIANT DEBUG] {move_san_debug}: clear_tactical_sacrifice={clear_tactical_sacrifice}, "
+                              f"non_capture_hanging_pieces={non_capture_hanging_pieces}, "
                               f"centipawn_loss={centipawn_loss:.1f}")
 
-                        if clear_tactical_sacrifice:
+                        if clear_tactical_sacrifice or non_capture_hanging_pieces:
                             # Clear tactical sacrifice (piece can be captured): use the dynamic threshold
                             # If detected earlier as clear tactical, tactical_sacrifice_threshold is already 60cp
                             # CRITICAL: Must verify piece can actually be captured (tactical sacrifice)
@@ -2280,16 +2475,22 @@ class ChessAnalysisEngine:
                                 board.pop()
                             board.push(move)
 
-                            # Only mark as brilliant if piece CAN be captured (true sacrifice)
+                            # Only mark as brilliant if piece CAN be captured (true sacrifice) OR non-capture leaves pieces hanging
                             # Queen forks/pins that win material are NOT brilliant
-                            if piece_can_be_captured:
+                            if piece_can_be_captured or non_capture_hanging_pieces:
                                 # For tactical sacrifices, allow temporary deficit - tactics provide compensation
                                 # Position can be temporarily worse (up to -100cp) as long as sacrifice_trigger passes
                                 # KEY: For clear tactical sacrifices, be more lenient - these are the main brilliant move pattern
                                 # Use the dynamic threshold: 60cp for clear tactical, 10cp for others
+                                # For non-capture sacrifices that leave pieces hanging, also use higher threshold (similar to clear tactical)
+                                effective_threshold = tactical_sacrifice_threshold
+                                if non_capture_hanging_pieces:
+                                    # Non-capture sacrifices that leave pieces hanging get same leniency as clear tactical
+                                    effective_threshold = 75  # Same as clear tactical sacrifices
+
                                 brilliant_via_sacrifice = (
                                     sacrifice_trigger and
-                                    centipawn_loss <= tactical_sacrifice_threshold  # Use dynamic threshold (10cp default, 60cp for clear tactical)
+                                    centipawn_loss <= effective_threshold  # Use dynamic threshold (10cp default, 60cp for clear tactical, 75cp for non-capture hanging)
                                     # Don't check actual_cp here - let compensation_threshold handle it
                                 )
 
@@ -2376,19 +2577,39 @@ class ChessAnalysisEngine:
                             # Only mark as brilliant if:
                             # 1. It's a sacrifice leading to mate (always brilliant), OR
                             # 2. It finds mate when there wasn't one AND it's non-obvious
-                            if sacrifice_trigger:
+
+                            # CRITICAL: Block checks that just win material (forks/pins) even if they find mate
+                            # Moves like Nxg3+, Qxf2+ are checks that win material, not brilliant sacrifices
+                            # move_gives_check is already detected above
+                            if move_gives_check and not sacrifice_trigger:
+                                # Check that just wins material (fork/pin) - not brilliant even if it finds mate
+                                brilliant_via_sacrifice = False
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: BLOCKED - check that just wins material (fork/pin), not brilliant even if finds mate")
+                            elif sacrifice_trigger:
                                 # Sacrifice leading to mate is always brilliant (if non-obvious)
                                 brilliant_via_sacrifice = True
                                 print(f"[BRILLIANT DEBUG] {move_san_debug}: Sacrifice leading to mate detected - marking as brilliant")
                             elif is_non_obvious and centipawn_loss <= 5:
                                 # Finding mate when there wasn't one before - but only if non-obvious
-                                brilliant_via_sacrifice = True
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Found forced mate (non-obvious) - marking as brilliant")
+                                # BUT: Must not be a check that just wins material
+                                if not move_gives_check:
+                                    brilliant_via_sacrifice = True
+                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Found forced mate (non-obvious) - marking as brilliant")
+                                else:
+                                    brilliant_via_sacrifice = False
+                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: BLOCKED - check without sacrifice, not brilliant")
                             else:
                                 brilliant_via_sacrifice = False
                         else:
                             # Other sacrifices: must be best move (0-5cp) - strictest for non-clear sacrifices
-                            brilliant_via_sacrifice = sacrifice_trigger and centipawn_loss <= 5
+                            # CRITICAL: Block checks that just win material (forks/pins) even if they're "sacrifices"
+                            # move_gives_check is already detected above
+                            if move_gives_check and not sacrifice_trigger:
+                                # Check that just wins material (fork/pin) - not brilliant
+                                brilliant_via_sacrifice = False
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: BLOCKED - check that just wins material (fork/pin), not brilliant")
+                            else:
+                                brilliant_via_sacrifice = sacrifice_trigger and centipawn_loss <= 5
 
                         # FINAL CHECK: Brilliant moves must be non-obvious (not forced)
                         # Exception: Sacrifices leading to mate can be brilliant even in tactical positions
@@ -2418,21 +2639,33 @@ class ChessAnalysisEngine:
 
                         # Final safety check: If move is a check that just wins material (not a sacrifice), it's not brilliant
                         # CRITICAL: Checks that fork/pin (win material) without sacrifice are NOT brilliant
-                        # Check if the move we just made gives check to the opponent
-                        # After the move, the board's turn has switched, so we need to check if the opponent is in check
-                        move_gives_check = board.is_check()  # After move, checks if opponent (current player) is in check
+                        # This applies EVEN IF they find forced mate - forks/pins are tactical, not brilliant sacrifices
+                        # move_gives_check is already detected above (early in the logic)
+                        # This is the FINAL override - must be the last word
 
-                        # Block checks that just win material (forks/pins) without sacrifice
-                        # This is the KEY fix: Nxg3+, Qxf2+ are checks that win material, not sacrifices
-                        if move_gives_check:
-                            if not sacrifice_trigger and not forcing_mate_trigger:
-                                # Check that just wins material (fork/pin) is not brilliant
-                                # CRITICAL OVERRIDE: This must be the final word - checks without sacrifice are NOT brilliant
+                        # CRITICAL: Immediate checkmate moves are NOT brilliant unless they involve a sacrifice
+                        # Simple checkmate moves (like Qe2#) are just winning moves, not brilliant tactical sacrifices
+                        # Chess.com doesn't mark simple checkmates as brilliant - they're just the best move
+                        if move_is_checkmate:
+                            if not sacrifice_trigger:
+                                # Immediate checkmate without sacrifice is NOT brilliant - it's just the winning move
                                 is_brilliant = False
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: OVERRIDE - check that just wins material (not a sacrifice), not brilliant")
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: FINAL OVERRIDE - immediate checkmate without sacrifice is not brilliant (just the winning move)")
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: move_is_checkmate={move_is_checkmate}, sacrifice_trigger={sacrifice_trigger}")
+                            else:
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Checkmate move allowed - it's a sacrifice (sacrifice_trigger={sacrifice_trigger})")
+
+                        if move_gives_check:
+                            if not sacrifice_trigger:
+                                # Check that just wins material (fork/pin) is not brilliant, even if it finds mate
+                                # Moves like Ne2+, Nxg3+, Qxf2+ are checks that fork/pin pieces - they're good tactical
+                                # moves but NOT brilliant sacrifices, regardless of whether they lead to mate
+                                # CRITICAL OVERRIDE: This must be the final word - checks without sacrifice are NEVER brilliant
+                                is_brilliant = False
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: FINAL OVERRIDE - check without sacrifice is not brilliant (even if finds mate)")
                                 print(f"[BRILLIANT DEBUG] {move_san_debug}: move_gives_check={move_gives_check}, sacrifice_trigger={sacrifice_trigger}, forcing_mate_trigger={forcing_mate_trigger}")
                             else:
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Check move allowed - sacrifice_trigger={sacrifice_trigger}, forcing_mate_trigger={forcing_mate_trigger}")
+                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Check move allowed - it's a sacrifice (sacrifice_trigger={sacrifice_trigger})")
 
                         # DEBUG: Final result with clear summary
                         status = "🌟 BRILLIANT! 🌟" if is_brilliant else "❌ NOT BRILLIANT"
