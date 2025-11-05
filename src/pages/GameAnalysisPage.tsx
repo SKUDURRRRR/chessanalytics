@@ -1215,41 +1215,21 @@ export default function GameAnalysisPage() {
       targetSquare,
       currentIndex,
       isExploring: isExploringFollowUp || isFreeExploration,
-      currentPosition: processedData.positions[currentIndex]
+      displayPosition: displayPosition
     })
 
     try {
-      // Determine the starting FEN for exploration
-      let startingFen: string
+      // Use the displayPosition which already accounts for all exploration moves
+      // This ensures validation matches what's actually shown on the board
+      const startingFen = displayPosition
 
-      if (isExploringFollowUp || isFreeExploration) {
-        // Already exploring - use current exploration position
-        const game = new Chess(currentMove?.fenBefore || processedData.positions[currentIndex])
-
-        // If in follow-up mode, apply the best move first
-        if (isExploringFollowUp && currentMove?.bestMoveSan) {
-          game.move(currentMove.bestMoveSan)
-        }
-
-        // Apply exploration moves
-        for (const move of explorationMoves) {
-          game.move(move)
-        }
-
-        startingFen = game.fen()
-      } else {
-        // Not exploring yet - use CURRENT display position
-        // Important: processedData.positions[currentIndex] is the position AFTER the move at currentIndex
-        startingFen = processedData.positions[currentIndex]
-
-        if (!startingFen) {
-          // Fallback to standard chess starting position
-          startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
-          console.log('⚠️ No position found, using starting position')
-        }
+      if (!startingFen) {
+        // Fallback to standard chess starting position
+        console.log('⚠️ No display position found, using starting position')
+        return false
       }
 
-      console.log('🎯 Starting FEN:', startingFen)
+      console.log('🎯 Starting FEN (from displayPosition):', startingFen)
 
       // Create a chess instance with the starting position
       const game = new Chess(startingFen)
@@ -1274,27 +1254,46 @@ export default function GameAnalysisPage() {
 
       const move = game.move(moveOptions)
 
-            if (move) {
-              console.log('✅ Move successful:', move.san)
+      if (move) {
+        console.log('✅ Move successful:', move.san)
 
-              // Play sound for the move
-              const soundType = getMoveSoundSimple(move.san)
-              playSound(soundType)
+        // Play sound for the move
+        const soundType = getMoveSoundSimple(move.san)
+        playSound(soundType)
 
-              setExplorationMoves([...explorationMoves, move.san])
+        setExplorationMoves([...explorationMoves, move.san])
 
-              // If not already exploring, enter free exploration mode
-              if (!isExploringFollowUp && !isFreeExploration) {
-                console.log('🔵 Entering free exploration mode')
-                setIsFreeExploration(true)
-                setExplorationBaseIndex(currentIndex)
-                console.log('🔵 isFreeExploration should now be TRUE')
-              } else {
-                console.log('🔵 Already in exploration mode:', { isExploringFollowUp, isFreeExploration })
-              }
+        // If not already exploring, enter free exploration mode
+        if (!isExploringFollowUp && !isFreeExploration) {
+          console.log('🔵 Entering free exploration mode')
+          setIsFreeExploration(true)
+          setExplorationBaseIndex(currentIndex)
+          console.log('🔵 isFreeExploration should now be TRUE')
+        } else {
+          console.log('🔵 Already in exploration mode:', { isExploringFollowUp, isFreeExploration })
+        }
 
-              return true
-            }
+        return true
+      } else {
+        // Move is invalid - provide detailed feedback
+        const targetPiece = game.get(targetSquare as any)
+        const sourcePiece = game.get(sourceSquare as any)
+
+        let errorReason = 'Unknown reason'
+        if (!sourcePiece) {
+          errorReason = `No piece found on ${sourceSquare}`
+        } else if (targetPiece && targetPiece.color === sourcePiece.color) {
+          errorReason = `Target square ${targetSquare} is occupied by a friendly ${targetPiece.type}`
+        } else if (targetPiece && targetPiece.color !== sourcePiece.color) {
+          errorReason = `Cannot capture ${targetPiece.type} on ${targetSquare} (illegal move pattern)`
+        } else {
+          errorReason = `Illegal move pattern for ${sourcePiece.type} from ${sourceSquare} to ${targetSquare}`
+        }
+
+        console.error(`❌ Invalid exploration move: ${sourceSquare} → ${targetSquare}. ${errorReason}`)
+        console.error(`   Current position: ${game.fen()}`)
+        console.error(`   Turn: ${game.turn() === 'w' ? 'White' : 'Black'}`)
+      }
     } catch (err) {
       console.error('❌ Invalid exploration move:', err)
     }
