@@ -58,7 +58,7 @@ Add the API key to your environment:
 # In your .env file (or .env.local)
 ANTHROPIC_API_KEY=sk-ant-api03-your_actual_key_here
 AI_ENABLED=true
-AI_MODEL=claude-3-5-sonnet-20241022
+AI_MODEL=claude-3-5-sonnet-20240620
 ```
 
 **For Production (Railway):**
@@ -66,7 +66,7 @@ AI_MODEL=claude-3-5-sonnet-20241022
 2. Add:
    - `ANTHROPIC_API_KEY` = `sk-ant-api03-your_actual_key_here`
    - `AI_ENABLED` = `true`
-   - `AI_MODEL` = `claude-3-5-sonnet-20241022`
+   - `AI_MODEL` = `claude-3-5-sonnet-20240620` (or `claude-3-5-sonnet` for latest)
 
 ### 3. Install Dependencies
 
@@ -195,7 +195,7 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 
 # Optional
 AI_ENABLED=true                    # Enable/disable AI (default: true)
-AI_MODEL=claude-3-5-sonnet-20241022 # Model to use
+AI_MODEL=claude-3-5-sonnet-20240620 # Model to use
 AI_MAX_TOKENS=500                   # Max tokens per response
 AI_TEMPERATURE=0.7                  # Creativity (0.0-1.0, default: 0.7)
 ```
@@ -204,7 +204,8 @@ AI_TEMPERATURE=0.7                  # Creativity (0.0-1.0, default: 0.7)
 
 You can use different Anthropic models by changing `AI_MODEL`:
 
-- `claude-3-5-sonnet-20241022` - Recommended, best balance of quality and cost
+- `claude-3-5-sonnet` - Recommended, latest version, best balance of quality and cost
+- `claude-3-5-sonnet-20240620` - June 2024 version, best balance of quality and cost
 - `claude-3-opus-20240229` - Highest quality (more expensive)
 - `claude-3-haiku-20240307` - Fastest and cheapest (lower quality)
 

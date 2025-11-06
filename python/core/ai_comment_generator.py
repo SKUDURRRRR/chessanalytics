@@ -10,12 +10,14 @@ Features:
 - Supports multiple Claude models:
   - claude-3-haiku-20240307 (recommended: fastest, cheapest, most reliable)
   - claude-3-sonnet-20240229 (good balance of quality and cost)
-  - claude-3-5-sonnet-20241022 (best quality, may not be available to all API keys)
+  - claude-3-5-sonnet-20240620 (best quality, may not be available to all API keys)
+  - claude-3-5-sonnet (latest version, best quality)
 - Graceful error handling with clear logging for debugging
 """
 
 import os
 import re
+import hashlib
 from pathlib import Path
 from typing import Dict, Any, Optional
 from enum import Enum
@@ -49,7 +51,8 @@ class AIConfig(BaseSettings):
     Model options:
     - claude-3-haiku-20240307 (recommended: fastest, cheapest, most reliable)
     - claude-3-sonnet-20240229 (good balance of quality and cost)
-    - claude-3-5-sonnet-20241022 (best quality, may not be available to all API keys)
+    - claude-3-5-sonnet-20240620 (best quality, may not be available to all API keys)
+    - claude-3-5-sonnet (latest version, best quality)
 
     The system will automatically fall back to working models if the configured
     model is not available.
@@ -57,8 +60,8 @@ class AIConfig(BaseSettings):
     anthropic_api_key: Optional[str] = None
     ai_enabled: bool = True
     ai_model: str = "claude-3-haiku-20240307"  # Recommended: most reliable, fastest, cheapest
-    max_tokens: int = 200  # Reduced to enforce shorter comments (3-4 sentences max)
-    temperature: float = 0.85  # Higher creativity for Tal-inspired playful, imaginative style
+    max_tokens: int = 150  # Optimized: 2-3 sentences max (reduced from 200 to save costs)
+    temperature: float = 0.75  # Slightly reduced from 0.85 to reduce variability and token usage
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -112,6 +115,19 @@ class AIChessCommentGenerator:
         print(f"[AI] API Key present: {bool(self.config.anthropic_api_key)}")
         self.client = None
         self.enabled = False
+
+        # Initialize comment cache to avoid regenerating identical comments
+        # Cache key: hash of (FEN + move + quality + ELO_range)
+        # Cache size: 500 entries (common positions/moves)
+        # TTL: 24 hours (comments don't change for same position)
+        try:
+            from .cache_manager import LRUCache
+            self._comment_cache = LRUCache(maxsize=500, ttl=86400, name="ai_comment_cache")
+            print("[AI] ✅ Comment cache initialized (500 entries, 24h TTL)")
+        except ImportError:
+            # Fallback to simple dict if cache_manager not available
+            self._comment_cache = {}
+            print("[AI] ⚠️  Cache manager not available, using simple dict cache")
 
         # Check if Anthropic package is available
         if not ANTHROPIC_AVAILABLE:
@@ -191,6 +207,18 @@ class AIChessCommentGenerator:
             return None
 
         try:
+            # Check cache first to avoid regenerating identical comments
+            cache_key = self._generate_cache_key(move_analysis, board, move, is_user_move, player_elo)
+            if hasattr(self._comment_cache, 'get'):
+                cached_comment = self._comment_cache.get(cache_key)
+                if cached_comment:
+                    print(f"[AI] ✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
+                    return cached_comment
+            elif isinstance(self._comment_cache, dict) and cache_key in self._comment_cache:
+                cached_comment = self._comment_cache[cache_key]
+                print(f"[AI] ✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
+                return cached_comment
+
             print(f"[AI] Building prompt for move {move_analysis.get('move_san', 'unknown')}, ELO: {player_elo}")
             # Prepare prompt with move context
             prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
@@ -209,6 +237,13 @@ class AIChessCommentGenerator:
             if comment:
                 comment = self._clean_comment(comment, is_user_move)
                 print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
+
+                # Cache the comment for future use
+                if hasattr(self._comment_cache, 'set'):
+                    self._comment_cache.set(cache_key, comment)
+                elif isinstance(self._comment_cache, dict):
+                    self._comment_cache[cache_key] = comment
+
                 return comment
 
             print("[AI] Response had no content")
@@ -323,7 +358,8 @@ class AIChessCommentGenerator:
 
         # Models that may not be available to all API keys
         optional_models = [
-            "claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet (October 2024 - may not be available)
+            "claude-3-5-sonnet",            # Claude 3.5 Sonnet (latest version - best quality)
+            "claude-3-5-sonnet-20240620",   # Claude 3.5 Sonnet (June 2024 - may not be available to all API keys)
         ]
 
         # Build model list: try configured model first if it's a known working one,
@@ -384,6 +420,15 @@ class AIChessCommentGenerator:
                         print(f"[AI] ❌ Model {model} not found (404). Trying alternatives...")
                     else:
                         print(f"[AI]   Model {model} also not found (404). Trying next...")
+                    continue
+                elif "429" in error_msg or "rate_limit" in error_msg.lower() or "too many requests" in error_msg.lower():
+                    # Rate limit error - the SDK will retry automatically, but we should inform the user
+                    print(f"[AI] ⚠️  Rate limit exceeded (429) for model {model}. The SDK will retry automatically.")
+                    print(f"[AI] 💡 If this persists, consider:")
+                    print(f"[AI]    - Waiting a few minutes before trying again")
+                    print(f"[AI]    - Contacting Anthropic to increase your rate limit")
+                    print(f"[AI]    - Using a different model (e.g., claude-3-haiku-20240307)")
+                    # Continue to next model as fallback
                     continue
                 else:
                     # For other errors, log but continue trying
@@ -584,17 +629,10 @@ class AIChessCommentGenerator:
                 except Exception as e:
                     print(f"[AI] Warning: Could not convert PV to SAN: {e}")
 
-        # Build the prompt
-        position_context = ""
-        if fen_before:
-            position_context = f"""**THE POSITION BEFORE {move_san}:**
-{fen_before}
-"""
-
-        # Add opening context if available
+        # Add opening context if available (only for early moves to save tokens)
         opening_context = ""
         if opening_name and move_number <= 3:
-            opening_context = f"\n**OPENING:** {opening_name} (identified from move sequence: {' '.join(move_sequence[:2]) if move_sequence and len(move_sequence) >= 2 else 'N/A'})\n"
+            opening_context = f"\n**OPENING:** {opening_name}\n"
 
         # Special handling for first move - keep it short and Tal'ish
         # Both White's first move and Black's first move have fullmove_number == 1
@@ -619,59 +657,26 @@ Write ONE short, encouraging sentence (maximum 15 words) that captures the excit
 Write the comment now:"""
                 return prompt
 
-        prompt = f"""A player rated {player_elo} ELO ({complexity} level) just played {move_san} in the {game_phase} (move {move_number}).
-
-**THE MOVE:** {move_san}
-**MOVE QUALITY:** {move_quality.value}
-**THIS IS:** {"the player's move" if is_user_move else "the opponent's move"}
+        # Optimized prompt - shorter to reduce input tokens while maintaining quality
+        prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
 {opening_context}{capture_info}
+**MOVE QUALITY:** {move_quality.value} | {"player's move" if is_user_move else "opponent's move"}
+**EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
 {stockfish_context}
-**WHAT HAPPENED:**
-This move {eval_verb} {eval_description}. {eval_explanation}
 {tactical_context}{positional_context}
-{position_context}
-**THE POSITION AFTER {move_san}:**
-{fen_after}
+**POSITION:** {fen_after}
 
-**YOUR MISSION (Tal-Style Commentary):**
+**TASK:** Write 2-3 sentences explaining the *principle* and *idea* behind this move. Style: {tal_style}. {"Focus on brilliant reasoning and principles demonstrated." if move_quality == MoveQuality.BRILLIANT else "Explain what went wrong tactically/positionally and what should be played instead." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Explain the reasoning and how it improves the position."}
 
-Write 3 sentences MAXIMUM (preferably 2-3) that capture the *idea* and *principle* behind this move. Be concise and focused. Channel Mikhail Tal's spirit:
+**RULES:**
+- Start directly (no "Ah," "Oh,")
+- Use chess terms, not numbers or "centipawns/evaluation/engine"
+- Be specific: "loses the attack" not "is a good move"
+- {"Use 'your' not 'the player's'" if is_user_move else "Use 'your opponent'"}
+- 2-3 sentences max, clear and instructive
+{"Mention better move " + best_move_san + " if relevant." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
 
-**STYLE:** {tal_style}
-**INTENSITY:** {style_intensity}
-
-**WHAT TO FOCUS ON:**
-1. Explain the *why* behind the move—the idea, the principle, the pattern—not just what happened. What chess principle was followed or violated?
-2. Use descriptive language like "{eval_description}" instead of numbers. Explain the impact in chess terms: "loses the attack", "gives up the center", "weakens the kingside"
-3. Explain the concrete reasons: "loses the attack because the knight retreats and the kingside becomes vulnerable" - explain the tactical or positional consequences clearly
-4. Use occasional metaphors only when they clarify a concept—prioritize clear, analytical explanations
-5. Teach a principle the player can learn: "This abandons the center, giving your opponent space to maneuver" - explain what principle applies here and why it matters
-6. Focus on concrete chess analysis: piece coordination, tactical patterns, positional weaknesses, and strategic plans
-7. {"Explain the brilliant tactical or positional reasoning—what makes this move exceptional and what principles it demonstrates!" if move_quality == MoveQuality.BRILLIANT else "Be constructive and educational—explain what went wrong tactically or positionally, what principle was violated, and what should be played instead" if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Explain the reasoning behind the move—what principle it follows and how it improves the position"}
-8. AVOID generic phrases like "This is a good move", "This permits you to gain an advantage", "They are making a solid move" - be SPECIFIC and ANALYTICAL
-9. {"Use the Principal Variation (best continuation line) to understand why the move works or fails—explain what the best line shows about the position" if best_move_pv and len(best_move_pv) > 0 else ""}
-10. Consider the Stockfish evaluation change—explain what the evaluation shift means in concrete chess terms (piece activity, king safety, material balance, etc.)
-
-**CRITICAL RULES:**
-- NEVER start with "Ah," "Oh," or similar interjections - begin directly with your commentary
-- NEVER mention "centipawns", "evaluation", "engine", "permit", "allows", "enables" in the comment text - these are too generic
-- NEVER use numbers like "+1.27" or "-4.36" in the comment—only descriptive phrases
-- You can reference the Stockfish analysis data (Principal Variation, evaluation changes) to understand the position, but explain it in chess terms, not technical terms
-- NEVER use boring phrases like "This is a good move", "This permits you to gain", "They are making a solid move" - be SPECIFIC
-- ACCURATELY describe the move: If the move is a capture (e.g., Kxf2), say "the king captures on f2" NOT "sacrificing a pawn on f2". Understand what the move notation means.
-- For capture moves: Clearly state what piece was captured (e.g., "captures the knight on f2" not "sacrifices a pawn")
-- {"CRITICAL: The opening is " + opening_name + ". Use this EXACT opening name. Do NOT guess or invent opening names. If the opening is 'Sicilian Defense', say 'Sicilian Defense' NOT 'Caro-Kann' or any other opening." if opening_name else ""}
-- {"CRITICAL: This is the player's move. Always use 'your' instead of 'the player's' when referring to the player. For example, say 'your understanding' NOT 'the player's understanding', 'your move' NOT 'the player's move', 'your position' NOT 'the player's position'. This makes the commentary personal and direct." if is_user_move else "CRITICAL: This is the opponent's move. Use 'your opponent' or 'the opponent' when referring to them, not 'the player'."}
-- Focus on the *principle* and *idea*, not just the evaluation - explain WHAT principle and WHY it matters
-- Keep it 3 sentences MAXIMUM (preferably 2-3), clear and instructive - be concise and focused
-- If you write more than 3 sentences, your response will be truncated
-- Prioritize clear analysis over flowery language - teach chess principles, tactical patterns, and positional understanding
-- For mistakes/blunders: Explain what principle was violated and why it matters tactically/positionally. What should they have played instead and why?
-- For good moves: Explain what principle they followed and how it improves their position (tactically, positionally, or strategically)
-
-{"If there's a better move (" + best_move_san + "), mention it naturally as part of the idea—what principle does that move follow?" if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
-
-Write the comment now:"""
+Write comment:"""
 
         return prompt
 
@@ -693,6 +698,34 @@ Write the comment now:"""
             return MoveQuality.BLUNDER
         else:
             return MoveQuality.GOOD
+
+    def _generate_cache_key(self, move_analysis: Dict[str, Any], board: chess.Board, move: chess.Move, is_user_move: bool, player_elo: int) -> str:
+        """
+        Generate a cache key for AI comments.
+
+        Cache key is based on:
+        - FEN position (after move)
+        - Move SAN notation
+        - Move quality
+        - ELO range (rounded to nearest 200 for grouping similar skill levels)
+        - Whether it's user's move or opponent's
+
+        This allows caching comments for identical positions/moves across different games.
+        """
+        fen = board.fen()
+        move_san = move_analysis.get('move_san', '')
+        move_quality = self._get_move_quality(move_analysis)
+
+        # Round ELO to nearest 200 to group similar skill levels
+        # This allows comments to be reused for players of similar skill
+        elo_range = (player_elo // 200) * 200
+
+        # Create cache key from position + move + quality + ELO range + move owner
+        cache_data = f"{fen}|{move_san}|{move_quality.value}|{elo_range}|{'user' if is_user_move else 'opponent'}"
+
+        # Use hash to keep key size manageable
+        cache_key = hashlib.md5(cache_data.encode()).hexdigest()
+        return f"ai_comment:{cache_key}"
 
     def generate_style_analysis(
         self,

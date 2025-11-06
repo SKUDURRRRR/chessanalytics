@@ -38,7 +38,7 @@ if ai_enabled not in ['true', '1', 'yes']:
 
 print(f"AI_MODEL: {ai_model}")
 if ai_model == "claude-3-5-sonnet-20241022":
-    print("   ⚠️  Using old model name! Update to: claude-3-5-sonnet-20240620")
+    print("   ⚠️  Using incorrect model name! Update to: claude-3-5-sonnet-20240620 or claude-3-5-sonnet")
 elif ai_model == "not set":
     print("   ⚠️  Using default from code")
 else:
