@@ -152,10 +152,10 @@ export default function HomePage() {
               <p className="text-fluid-base text-slate-300 leading-relaxed mb-6">
                 Every move in your games gets thoughtful commentary that explains the ideas behind
                 the moves. Instead of just seeing "+1.2", "-0.8" or generic AI, you'll understand why a move
-                works or doesn't work—the principles, the patterns, the story behind each decision.
+                works or doesn't work - the principles, the patterns, the story behind each decision.
               </p>
               <p className="text-fluid-base text-slate-300 leading-relaxed">
-                Our coach writes in the spirit of Mikhail Tal—bringing chess to life with
+                Our coach writes in the spirit of Mikhail Tal - bringing chess to life with
                 passion and insight. You'll learn not just what happened, but why it matters
                 for your game.
               </p>
@@ -165,10 +165,10 @@ export default function HomePage() {
                   <div>
                     <p className="text-sm text-amber-200 italic leading-relaxed">
                       "This move maintains the tension in the center while keeping your pieces
-                      flexible. The knight can support the pawn push or retreat to safety—options
+                      flexible. The knight can support the pawn push or retreat to safety - options
                       that keep your opponent guessing."
                     </p>
-                    <p className="text-xs text-slate-400 mt-2">— TaI Coach</p>
+                    <p className="text-xs text-slate-400 mt-2">- TaI Coach</p>
                   </div>
                 </div>
               </div>
@@ -232,7 +232,7 @@ export default function HomePage() {
               </p>
               <p className="text-fluid-base text-slate-300 leading-relaxed">
                 Beyond personality, you'll see your ELO trends, opening performance, and time
-                control stats—all the insights that help you see your progress over time and
+                control stats - all the insights that help you see your progress over time and
                 make smarter study choices.
               </p>
               <div className="mt-8 card-responsive bg-sky-500/5 border-sky-400/20">
@@ -264,7 +264,7 @@ export default function HomePage() {
               <p className="text-fluid-base text-slate-300 leading-relaxed mb-6">
                 Watch your ELO rating evolve over time with detailed trend analysis. Track your
                 performance across different openings to see which ones work best for your style.
-                Monitor your results by time control—from bullet to classical—and understand
+                Monitor your results by time control - from bullet to classical - and understand
                 where you excel and where you need practice.
               </p>
               <div className="mt-8 card-responsive bg-purple-500/5 border-purple-400/20">
@@ -273,7 +273,7 @@ export default function HomePage() {
                   <div>
                     <p className="text-sm text-purple-200">
                       Track ELO trends, opening performance, time control statistics, win rates,
-                      and more—all in one comprehensive dashboard.
+                      and more - all in one comprehensive dashboard.
                     </p>
                   </div>
                 </div>
@@ -337,7 +337,7 @@ export default function HomePage() {
             </h2>
             <p className="text-fluid-base text-slate-300 leading-relaxed mb-6">
               Chess improvement is a journey that thousands of players are on right now.
-              Every game you play, every analysis you review, every pattern you notice—it all adds up.
+              Every game you play, every analysis you review, every pattern you notice - it all adds up.
               The players who improve aren't necessarily the most talented; they're the ones who
               keep learning from their games.
             </p>
@@ -367,7 +367,7 @@ export default function HomePage() {
             Ready to see what your games can teach you?
           </h2>
           <p className="text-fluid-base text-slate-300 leading-relaxed">
-            Start by searching for your profile. No account needed—just enter your username
+            Start by searching for your profile. No account needed - just enter your username
             and we'll show you what insights are waiting in your games.
           </p>
         </div>
@@ -431,12 +431,6 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-
-        <div className="max-w-3xl mx-auto text-center">
-          <p className="mt-8 text-sm text-slate-400">
-            Perfect for players rated 600-1800 ELO. Start improving today. ♟
-          </p>
-        </div>
       </section>
     </div>
   )

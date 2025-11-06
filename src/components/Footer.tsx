@@ -7,12 +7,7 @@ export function Footer() {
           <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
                style={{
                  background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
-                 boxShadow: `
-                   0 0 20px rgba(34, 211, 238, 0.3),
-                   0 0 40px rgba(6, 182, 212, 0.15),
-                   inset 0 1px 1px rgba(255, 255, 255, 0.2),
-                   inset 0 -1px 1px rgba(0, 0, 0, 0.2)
-                 `,
+                 animation: 'liquid-glow 4s ease-in-out infinite',
                }}>
             {/* Liquid shimmer effect */}
             <div className="absolute inset-0 opacity-40"
