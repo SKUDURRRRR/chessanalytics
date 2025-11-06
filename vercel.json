@@ -1,7 +1,15 @@
 {
   "rewrites": [
     {
-      "source": "/((?!assets|logo\\.png|.*\\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot|css|js|json|xml|txt|mp3|mp4|pdf)).*)",
+      "source": "/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/logo.png",
+      "destination": "/logo.png"
+    },
+    {
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
