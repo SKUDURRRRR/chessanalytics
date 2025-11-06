@@ -3,6 +3,32 @@ export function Footer() {
     <footer className="bg-slate-900 border-t border-slate-700 mt-auto">
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          {/* chessdata.app badge */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
+               style={{
+                 background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
+                 boxShadow: `
+                   0 0 20px rgba(34, 211, 238, 0.3),
+                   0 0 40px rgba(6, 182, 212, 0.15),
+                   inset 0 1px 1px rgba(255, 255, 255, 0.2),
+                   inset 0 -1px 1px rgba(0, 0, 0, 0.2)
+                 `,
+               }}>
+            {/* Liquid shimmer effect */}
+            <div className="absolute inset-0 opacity-40"
+                 style={{
+                   background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
+                   animation: 'liquid-shimmer 3s ease-in-out infinite',
+                 }}></div>
+            {/* Floating bubble effect */}
+            <div className="absolute inset-0 opacity-30"
+                 style={{
+                   background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
+                   animation: 'liquid-bubble 4s ease-in-out infinite',
+                 }}></div>
+            <span className="relative z-10">chessdata.app</span>
+          </div>
+
           {/* Copyright */}
           <div className="text-slate-400 text-sm">
             © {new Date().getFullYear()} chessdata.app. All rights reserved.
