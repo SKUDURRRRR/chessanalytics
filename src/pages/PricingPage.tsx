@@ -558,7 +558,7 @@ export default function PricingPage() {
           {/* Value Proposition Section */}
           <div className="max-w-4xl mx-auto mb-16">
             <div className="bg-gradient-to-br from-slate-900/80 to-slate-800/50 border border-slate-700/50 rounded-2xl p-8 md:p-12">
-              <h2 className="text-2xl md:text-3xl font-bold text-white mb-6 text-center">
+              <h2 className="text-2xl md:text-3xl font-bold text-white mb-12 text-center">
                 Why chessdata.app?
               </h2>
               <div className="grid md:grid-cols-2 gap-8">
@@ -636,7 +636,7 @@ export default function PricingPage() {
                   How accurate is the analysis?
                 </h3>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Our analysis is powered by Stockfish 17.1, the world's strongest chess engine. It evaluates positions with professional-grade accuracy, providing move classifications (best, brilliant move, excellent, mistake, blunder) that align with industry standards used by Chess.com and Lichess.
+                  Our analysis is powered by Stockfish 17.1, the world's strongest chess engine. It evaluates positions with professional-grade accuracy, providing move classifications (best, excellent, mistake, blunder) that align with industry standards used by Chess.com and Lichess.
                 </p>
               </div>
               <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-6">

@@ -153,10 +153,20 @@ class ContextualExplanationGenerator:
             result = base + f"it demonstrates sophisticated chess understanding in this complex position."
             return self._limit_explanation_length(result)
 
-    def _limit_explanation_length(self, explanation: str) -> str:
-        """Limit explanation to 2-3 sentences maximum for consistent UI display."""
+    def _limit_explanation_length(self, explanation: str, max_sentences: int = 4) -> str:
+        """Limit explanation to 3-4 sentences maximum for concise, readable explanations.
+
+        Frontend expandable UI handles display truncation, but we keep explanations concise
+        at the source to ensure they're focused and digestible.
+        """
         if not explanation:
             return explanation
+
+        # Clean up any trailing incomplete sentences (ending with ".." or incomplete)
+        explanation = explanation.strip()
+        # Remove trailing ellipsis or incomplete endings
+        while explanation.endswith('..') or explanation.endswith('...'):
+            explanation = explanation[:-1].strip()
 
         # Split by sentence endings
         sentences = []
@@ -165,22 +175,36 @@ class ContextualExplanationGenerator:
         for char in explanation:
             current_sentence += char
             if char in '.!?':
-                sentences.append(current_sentence.strip())
+                sentence = current_sentence.strip()
+                # Only add complete sentences (ending with proper punctuation)
+                if sentence and sentence.endswith(('.', '!', '?')):
+                    sentences.append(sentence)
                 current_sentence = ""
 
-        # Add any remaining text as a sentence
-        if current_sentence.strip():
-            sentences.append(current_sentence.strip())
+        # Only add remaining text if it ends with proper punctuation
+        remaining = current_sentence.strip()
+        if remaining and remaining.endswith(('.', '!', '?')):
+            sentences.append(remaining)
 
-        # Limit to 3 sentences maximum
-        if len(sentences) <= 3:
+        # Filter out any incomplete sentences (those ending with ".." or without punctuation)
+        complete_sentences = [s for s in sentences if s and s.endswith(('.', '!', '?')) and not s.endswith('..')]
+
+        # If no complete sentences, return original (might be a single sentence without punctuation)
+        if not complete_sentences:
+            # If original ends properly, return it
+            if explanation.endswith(('.', '!', '?')):
+                return explanation
+            # Otherwise, return original
             return explanation
 
-        # Take first 2-3 sentences and add ellipsis if truncated
-        limited_sentences = sentences[:3]
-        result = " ".join(limited_sentences)
+        # Limit to max_sentences
+        if len(complete_sentences) <= max_sentences:
+            return " ".join(complete_sentences)
 
-        # Ensure it ends with proper punctuation
+        # Take first max_sentences complete sentences
+        result = " ".join(complete_sentences[:max_sentences])
+
+        # Ensure it ends with proper punctuation (should already, but double-check)
         if not result.endswith(('.', '!', '?')):
             result += "."
 

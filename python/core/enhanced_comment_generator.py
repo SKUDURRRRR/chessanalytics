@@ -415,8 +415,8 @@ class EnhancedCommentGenerator:
                 pass
 
         if centipawn_loss == 0:
-            # Truly the best move (engine's top choice)
-            details['specific_detail'] = "This is the engine's top choice and maintains optimal play"
+            # Truly the best move - describe it in terms of principles
+            details['specific_detail'] = "This is the strongest move and maintains optimal play"
         elif centipawn_loss > 0:
             # Not the best move - show what the best move is and its follow-up sequence
             best_move_text = f" {best_move_san} was the best move here." if best_move_san else " A better move was available."

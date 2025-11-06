@@ -13,6 +13,7 @@ from enum import Enum
 import random
 from .advanced_chess_analysis import AdvancedChessAnalyzer, TacticalPattern, PositionalConcept
 from .contextual_explanation_generator import ContextualExplanationGenerator
+from .ai_comment_generator import AIChessCommentGenerator
 
 
 class MoveQuality(Enum):
@@ -86,6 +87,26 @@ class ChessCoachingGenerator:
     def __init__(self):
         self.advanced_analyzer = AdvancedChessAnalyzer()
         self.contextual_generator = ContextualExplanationGenerator()
+        # Initialize AI comment generator (will be None if API key not configured)
+        print("[COACHING] Initializing ChessCoachingGenerator...")
+        try:
+            print("[COACHING] Attempting to initialize AI comment generator...")
+            self.ai_generator = AIChessCommentGenerator()
+            if self.ai_generator and self.ai_generator.enabled:
+                print(f"[COACHING] ✅ AI comment generator initialized successfully!")
+                print(f"[COACHING] ✅ Model: {self.ai_generator.config.ai_model}")
+                print(f"[COACHING] ✅ Ready to generate Tal-style comments")
+            elif self.ai_generator:
+                print("[COACHING] ⚠️  AI comment generator created but disabled")
+                print(f"[COACHING] ⚠️  Check: AI_ENABLED={self.ai_generator.config.ai_enabled}")
+                print(f"[COACHING] ⚠️  Check: API key present={bool(self.ai_generator.config.anthropic_api_key)}")
+            else:
+                print("[COACHING] ❌ AI comment generator not available")
+        except Exception as e:
+            import traceback
+            print(f"[COACHING] ❌ AI comment generator not available: {e}")
+            print(f"[COACHING] Traceback: {traceback.format_exc()}")
+            self.ai_generator = None
         self.encouragement_templates = {
             MoveQuality.BRILLIANT: [
                 "This move demonstrates exceptional chess understanding.",
@@ -185,15 +206,25 @@ class ChessCoachingGenerator:
         move: chess.Move,
         game_phase: GamePhase = GamePhase.MIDDLEGAME,
         player_skill_level: str = "intermediate",
-        is_user_move: bool = True
+        is_user_move: bool = True,
+        previous_phase: Optional[GamePhase] = None
     ) -> CoachingComment:
         """Generate comprehensive coaching comment for a move."""
 
         # Determine move quality
         move_quality = self._determine_move_quality(move_analysis)
 
-        # Generate main comment (different for user vs opponent moves)
-        main_comment = self._generate_main_comment(move_quality, move_analysis, is_user_move)
+        # Check for special comments: move 1, moves 5-10, phase transitions
+        # Use board_after from move_analysis if available (position after the move), otherwise use board
+        board_after = move_analysis.get('board_after', board)
+        special_comment = self._check_for_special_comments(move_analysis, board_after, move, game_phase, previous_phase, is_user_move, player_skill_level)
+
+        if special_comment:
+            # Use special comment as main comment
+            main_comment = special_comment
+        else:
+            # Generate main comment (different for user vs opponent moves)
+            main_comment = self._generate_main_comment(move_quality, move_analysis, is_user_move)
 
         # Generate detailed explanations (different perspective for opponent moves)
         what_went_right = self._analyze_what_went_right(move_analysis, board, move, move_quality, is_user_move)
@@ -248,8 +279,393 @@ class ChessCoachingGenerator:
         else:
             return MoveQuality.GOOD  # Default to good instead of acceptable
 
+    def _should_use_ai_comment(self, move_analysis: Dict[str, Any], move_quality: MoveQuality) -> bool:
+        """Determine if this move warrants AI/Tal-style commentary vs template-based comments."""
+        move_number = move_analysis.get('fullmove_number', 0)
+        # Check if this is a user move (default to True if not specified)
+        is_user_move = move_analysis.get('is_user_move', True)
+
+        # First check: special comments (move 1 welcome, position update windows) always use AI
+        if move_number == 1 and is_user_move:
+            return True
+        if is_user_move and self._is_in_position_update_window(move_number):
+            return True
+
+        # Always use AI for significant move types (learning moments!)
+        if move_quality in [MoveQuality.BRILLIANT, MoveQuality.BLUNDER, MoveQuality.MISTAKE, MoveQuality.INACCURACY]:
+            return True
+
+        # Check if routine - if so, don't use AI (unless it's already a significant move type above)
+        if self._is_routine_move(move_analysis, move_quality):
+            return False
+
+        # Use AI if tactical insights present (forks, pins, skewers, etc.)
+        tactical_insights = move_analysis.get('tactical_insights', [])
+        if tactical_insights and len(tactical_insights) > 0:
+            return True
+
+        # Use AI for significant positional shifts (>30cp)
+        centipawn_loss = move_analysis.get('centipawn_loss', 0)
+        if centipawn_loss > 30:
+            return True
+
+        # Use AI for important captures (piece captures, not simple pawn captures)
+        if self._is_significant_capture(move_analysis):
+            return True
+
+        # Use AI for excellent and best moves (celebration moments and important decisions)
+        if move_quality in [MoveQuality.EXCELLENT, MoveQuality.BEST]:
+            return True
+
+        # Use AI for "good" moves that have some positional impact (>15cp) - more opportunities for Tal-style commentary
+        if move_quality == MoveQuality.GOOD and centipawn_loss > 15:
+            return True
+
+        return False
+
+    def _is_significant_capture(self, move_analysis: Dict[str, Any]) -> bool:
+        """Check if this is a significant capture (piece capture, not simple pawn capture)."""
+        move_san = move_analysis.get('move_san', '')
+        if not move_san or 'x' not in move_san:
+            return False
+
+        # Check if it's a capture using the board
+        board_before = move_analysis.get('board_before')
+        move = move_analysis.get('move')
+
+        if board_before and move:
+            try:
+                # Check what piece was captured
+                captured_piece = board_before.piece_at(move.to_square)
+                if captured_piece:
+                    # Significant if capturing a piece (not a pawn)
+                    piece_value = captured_piece.piece_type
+                    # Piece types: 1=pawn, 2=knight, 3=bishop, 4=rook, 5=queen, 6=king
+                    if piece_value > 1:  # Not a pawn
+                        return True
+            except Exception:
+                pass
+
+        return False
+
+    def _is_routine_move(self, move_analysis: Dict[str, Any], move_quality: MoveQuality) -> bool:
+        """Check if this is a routine move that should use templates instead of AI."""
+        # Book moves are routine (but not if it's a brilliant/best move - those might still warrant AI commentary)
+        if self._is_opening_book_move(move_analysis) and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST]:
+            return True
+
+        # Simple captures (pawn captures) are routine
+        move_san = move_analysis.get('move_san', '')
+        if move_san and 'x' in move_san:
+            board_before = move_analysis.get('board_before')
+            move = move_analysis.get('move')
+            if board_before and move:
+                try:
+                    captured_piece = board_before.piece_at(move.to_square)
+                    if captured_piece and captured_piece.piece_type == 1:  # Pawn capture
+                        # Only routine if it's a quiet/good move with low centipawn loss
+                        centipawn_loss = move_analysis.get('centipawn_loss', 0)
+                        if centipawn_loss <= 25 and move_quality in [MoveQuality.BEST, MoveQuality.GOOD]:
+                            return True
+                except Exception:
+                    pass
+
+        # Quiet moves with minimal impact are routine (but not "best" moves - those might still be interesting)
+        centipawn_loss = move_analysis.get('centipawn_loss', 0)
+        tactical_insights = move_analysis.get('tactical_insights', [])
+        # Only mark as routine if it's GOOD (not BEST) and truly quiet
+        if (centipawn_loss <= 25 and
+            not tactical_insights and
+            move_quality == MoveQuality.GOOD):
+            return True
+
+        return False
+
+    def _is_in_position_update_window(self, move_number: int) -> bool:
+        """Check if a move number falls in a position update window.
+
+        Windows are: 5-10, 14-17, 21-24, 28-31, 35-38, etc.
+        Formula: For moves >= 14, window_start = ((move_number - 14) // 7) * 7 + 14
+        Each window spans 4 moves.
+        """
+        # Moves 5-10: position update
+        if 5 <= move_number <= 10:
+            return True
+
+        # Moves 14-17, 21-24, 28-31, etc.
+        if move_number >= 14:
+            window_start = ((move_number - 14) // 7) * 7 + 14
+            window_end = window_start + 3
+            if window_start <= move_number <= window_end:
+                return True
+
+        return False
+
+    def _check_for_special_comments(
+        self,
+        move_analysis: Dict[str, Any],
+        board: chess.Board,
+        move: chess.Move,
+        game_phase: GamePhase,
+        previous_phase: Optional[GamePhase],
+        is_user_move: bool,
+        player_elo: int
+    ) -> Optional[str]:
+        """Check if this move warrants a special Tal-style comment (move 1, position update windows, phase transitions)."""
+        move_number = move_analysis.get('fullmove_number', 0)
+        # Use player_elo from move_analysis if available, otherwise use parameter
+        player_elo = move_analysis.get('player_elo', player_elo)
+
+        # Move 1: Welcome comment
+        if move_number == 1 and is_user_move:
+            return self._generate_move_1_welcome_comment(board, move, player_elo, move_analysis)
+
+        # Position descriptions: Windows 5-10, 14-17, 21-24, 28-31, etc.
+        if is_user_move and self._is_in_position_update_window(move_number):
+            return self._generate_position_description_comment(move_analysis, board, move, move_number, player_elo)
+
+        # Phase transitions: Opening -> Middlegame
+        if previous_phase == GamePhase.OPENING and game_phase == GamePhase.MIDDLEGAME:
+            return self._generate_phase_transition_comment(move_analysis, board, move, "middlegame", player_elo)
+
+        # Phase transitions: Middlegame -> Endgame
+        if previous_phase == GamePhase.MIDDLEGAME and game_phase == GamePhase.ENDGAME:
+            return self._generate_phase_transition_comment(move_analysis, board, move, "endgame", player_elo)
+
+        return None
+
+    def _generate_move_1_welcome_comment(self, board: chess.Board, move: chess.Move, player_elo: int, move_analysis: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Generate a Tal-inspired welcoming comment for the first move."""
+        if not self.ai_generator or not self.ai_generator.enabled:
+            # Fallback template
+            return "Welcome to the game! The pieces are ready, the board awaits. Let's see what adventure unfolds."
+
+        # Get move_san from move_analysis if available, otherwise try to get from board
+        if move_analysis and 'move_san' in move_analysis:
+            move_san = move_analysis['move_san']
+        else:
+            # Board is already after the move, so we need to get SAN differently
+            # Create a temporary board before the move to get SAN
+            try:
+                temp_board = board.copy()
+                temp_board.pop()  # Go back to before the move
+                move_san = temp_board.san(move)
+            except:
+                move_san = move.uci() if hasattr(move, 'uci') else str(move)
+
+        fen_after = board.fen()  # Board is already after the move
+
+        # Build special prompt for move 1
+        prompt = f"""Welcome! A player rated {player_elo} ELO has just made their first move: {move_san}.
+
+**THE POSITION AFTER {move_san}:**
+{fen_after}
+
+**YOUR MISSION:**
+Write a warm, inspiring, Tal-style welcome comment (2 sentences MAXIMUM) that:
+- Welcomes the player to the game with enthusiasm and charm
+- Uses Tal's playful, imaginative language
+- Makes chess feel like an exciting adventure about to begin
+- Avoids being too long or instructional - just a warm welcome
+
+**STYLE:** Channel Mikhail Tal's energy: "Welcome to the deep dark forest where 2+2=5! The pieces are ready, the board awaits. Let's see what adventure unfolds."
+
+Write the welcome comment now:"""
+
+        try:
+            # Use the helper method with fallback
+            comment = self.ai_generator._call_api_with_fallback(
+                prompt=prompt,
+                system="You are Mikhail Tal, the Magician from Riga. You welcome players to chess with warmth and enthusiasm, helping them understand the game. Focus on teaching and building chess understanding rather than flowery language.",
+                max_tokens=150,  # Reduced for welcome comments (2 sentences max)
+                temperature=0.9  # Higher creativity for welcome
+            )
+
+            if comment:
+                comment = self.ai_generator._clean_comment(comment)
+                print(f"[AI] ✅ Generated move 1 welcome comment: {comment[:50]}...")
+                return comment
+        except Exception as e:
+            print(f"[AI] Failed to generate move 1 welcome: {e}")
+            import traceback
+            print(f"[AI] Traceback: {traceback.format_exc()}")
+
+        return None
+
+    def _generate_position_description_comment(
+        self,
+        move_analysis: Dict[str, Any],
+        board: chess.Board,
+        move: chess.Move,
+        move_number: int,
+        player_elo: int
+    ) -> Optional[str]:
+        """Generate a Tal-style description of how the position is taking shape (moves 5-10)."""
+        if not self.ai_generator or not self.ai_generator.enabled:
+            return None  # Only use AI for this
+
+        move_san = move_analysis.get('move_san', '')
+        fen_after = board.fen()
+        tactical_insights = move_analysis.get('tactical_insights', [])
+        positional_insights = move_analysis.get('positional_insights', [])
+
+        tactical_context = ""
+        if tactical_insights:
+            tactical_context = "\n**TACTICAL IDEAS BEGINNING TO EMERGE:**\n" + "\n".join(f"- {insight}" for insight in tactical_insights[:2])
+
+        positional_context = ""
+        if positional_insights:
+            positional_context = "\n**POSITIONAL THEMES TAKING SHAPE:**\n" + "\n".join(f"- {insight}" for insight in positional_insights[:2])
+
+        prompt = f"""A player rated {player_elo} ELO just played move {move_number}: {move_san}. The position is starting to take shape!
+
+**THE POSITION AFTER {move_san}:**
+{fen_after}
+{tactical_context}{positional_context}
+
+**YOUR MISSION:**
+Write a Tal-style comment (2 sentences MAXIMUM) describing how the position is developing. Focus on teaching and analysis:
+
+- Describe the key characteristics: Is it sharp? Solid? Dynamic? Tense?
+- Explain the tactical and positional features clearly: piece activity, center control, king safety
+- Focus on concrete chess concepts the player can learn from
+- Use occasional metaphors only if they help clarify a concept
+
+**STYLE:** Engaging and instructive, explaining the position's key features clearly while building understanding.
+
+Write the position description now:"""
+
+        try:
+            # Use the helper method with fallback
+            comment = self.ai_generator._call_api_with_fallback(
+                prompt=prompt,
+                system="You are Mikhail Tal, the Magician from Riga. You analyze chess positions clearly, explaining their key features and teaching what matters. Focus on concrete chess concepts rather than flowery language.",
+                max_tokens=150,  # Reduced for position descriptions (2 sentences max)
+                temperature=0.85
+            )
+
+            if comment:
+                comment = self.ai_generator._clean_comment(comment)
+                print(f"[AI] ✅ Generated position description for move {move_number}: {comment[:50]}...")
+                return comment
+        except Exception as e:
+            print(f"[AI] Failed to generate position description: {e}")
+            import traceback
+            print(f"[AI] Traceback: {traceback.format_exc()}")
+
+        return None
+
+    def _generate_phase_transition_comment(
+        self,
+        move_analysis: Dict[str, Any],
+        board: chess.Board,
+        move: chess.Move,
+        new_phase: str,
+        player_elo: int
+    ) -> Optional[str]:
+        """Generate a Tal-style comment when transitioning between game phases."""
+        if not self.ai_generator or not self.ai_generator.enabled:
+            # Fallback templates
+            if new_phase == "middlegame":
+                return "The opening has ended. The pieces are developed, and now the real battle begins—the middlegame, where tactics and strategy collide."
+            elif new_phase == "endgame":
+                return "The middlegame gives way to the endgame. Now precision and technique become paramount, where every move counts."
+            return None
+
+        move_san = move_analysis.get('move_san', '')
+        fen_after = board.fen()
+        piece_count = len(board.piece_map())
+
+        phase_description = "middlegame" if new_phase == "middlegame" else "endgame"
+        phase_character = "tactics and strategy collide" if new_phase == "middlegame" else "precision and technique become paramount"
+
+        prompt = f"""A player rated {player_elo} ELO just played {move_san}, and we've entered the {phase_description}!
+
+**THE POSITION:**
+{fen_after}
+**PIECES ON BOARD:** {piece_count}
+
+**YOUR MISSION:**
+Write a Tal-style comment (2 sentences MAXIMUM) explaining the transition to the {phase_description}. Focus on teaching what this phase means:
+
+- Acknowledge the phase transition clearly
+- Explain what this phase means strategically: "{phase_character}"
+- Teach the key principles and priorities for this phase
+- Focus on concrete chess concepts: what to look for, what matters most
+
+**STYLE:** Engaging and instructive, explaining the phase transition and what it means for the game.
+
+**EXAMPLES:**
+- For middlegame: "The opening has ended. The pieces are developed, and now the middlegame begins—where tactics and strategy combine. Focus on piece coordination, tactical opportunities, and improving your position."
+- For endgame: "The middlegame gives way to the endgame. Precision becomes crucial—activate your king, push passed pawns, and coordinate your pieces to support pawn promotion."
+
+Write the phase transition comment now:"""
+
+        try:
+            # Use the helper method with fallback
+            comment = self.ai_generator._call_api_with_fallback(
+                prompt=prompt,
+                system="You are Mikhail Tal, the Magician from Riga. You explain chess phases clearly, teaching what each phase means strategically. Focus on the principles and priorities for each phase.",
+                max_tokens=150,  # Reduced for phase transitions (2 sentences max)
+                temperature=0.85
+            )
+
+            if comment:
+                comment = self.ai_generator._clean_comment(comment)
+                print(f"[AI] ✅ Generated {new_phase} transition comment: {comment[:50]}...")
+                return comment
+        except Exception as e:
+            print(f"[AI] Failed to generate phase transition comment: {e}")
+            import traceback
+            print(f"[AI] Traceback: {traceback.format_exc()}")
+
+        return None
+
     def _generate_main_comment(self, move_quality: MoveQuality, move_analysis: Dict[str, Any], is_user_move: bool = True) -> str:
         """Generate the main coaching comment with detailed explanations."""
+        # Check if this move warrants AI commentary
+        should_use_ai = self._should_use_ai_comment(move_analysis, move_quality)
+        print(f"[COACHING] Move {move_analysis.get('move_san', 'unknown')}: quality={move_quality}, should_use_ai={should_use_ai}, ai_enabled={self.ai_generator.enabled if self.ai_generator else False}")
+
+        # Try AI generation first if available and move is significant
+        if should_use_ai and self.ai_generator and self.ai_generator.enabled:
+            try:
+                # Get board from move_analysis - it should be the board AFTER the move
+                board = move_analysis.get('board_after')
+                move = move_analysis.get('move')
+                player_elo = move_analysis.get('player_elo', 1200)  # Default to middle of target range
+
+                # Debug logging
+                if not board:
+                    print("[AI] Warning: board_after not found in move_analysis, skipping AI generation")
+                elif not move:
+                    print("[AI] Warning: move not found in move_analysis, skipping AI generation")
+                elif board and move:
+                    print(f"[AI] ✅ Attempting to generate AI comment for move {move_analysis.get('move_san', 'unknown')}, quality: {move_quality}, is_user_move: {is_user_move}")
+                    ai_comment = self.ai_generator.generate_comment(
+                        move_analysis=move_analysis,
+                        board=board,
+                        move=move,
+                        is_user_move=is_user_move,
+                        player_elo=player_elo
+                    )
+                    if ai_comment:
+                        print(f"[AI] ✅ Successfully generated AI comment ({len(ai_comment)} chars): {ai_comment[:100]}...")
+                        return self._limit_comment_length(ai_comment)
+                    else:
+                        print(f"[AI] ❌ AI generator returned None for {move_analysis.get('move_san', 'unknown')}, falling back to templates")
+            except Exception as e:
+                import traceback
+                print(f"[AI] AI comment generation failed, falling back to templates: {e}")
+                print(f"[AI] Traceback: {traceback.format_exc()}")
+                # Fall through to template-based generation
+        elif should_use_ai:
+            if not self.ai_generator:
+                print("[AI] AI generator not available (not initialized), using templates")
+            elif not self.ai_generator.enabled:
+                print("[AI] AI generator is disabled, using templates")
+
+        # Fallback to template-based generation
         # Check if this is an opening move and handle it specially
         game_phase = move_analysis.get('game_phase', 'middlegame')
         if game_phase == 'opening' and self._is_opening_book_move(move_analysis):
@@ -274,13 +690,24 @@ class ChessCoachingGenerator:
                 if positional_context:
                     comment = f"{comment} {positional_context}"
 
-        # Limit to 2-3 sentences maximum
-        return self._limit_comment_length(comment)
+        # Limit to 3-4 sentences maximum for concise, readable comments
+        # Frontend expandable UI handles display, but we keep comments concise at the source
+        return self._limit_comment_length(comment, max_sentences=4)
 
-    def _limit_comment_length(self, comment: str) -> str:
-        """Limit comment to 2-3 sentences maximum for consistent UI display."""
+    def _limit_comment_length(self, comment: str, max_sentences: int = 4) -> str:
+        """Limit comment to 3-4 sentences maximum for concise, readable coaching comments.
+
+        Frontend expandable UI handles display truncation, but we keep comments concise
+        at the source to ensure they're focused and digestible.
+        """
         if not comment:
             return comment
+
+        # Clean up any trailing incomplete sentences (ending with ".." or incomplete)
+        comment = comment.strip()
+        # Remove trailing ellipsis or incomplete endings
+        while comment.endswith('..') or comment.endswith('...'):
+            comment = comment[:-1].strip()
 
         # Split by sentence endings
         sentences = []
@@ -289,22 +716,36 @@ class ChessCoachingGenerator:
         for char in comment:
             current_sentence += char
             if char in '.!?':
-                sentences.append(current_sentence.strip())
+                sentence = current_sentence.strip()
+                # Only add complete sentences (ending with proper punctuation)
+                if sentence and sentence.endswith(('.', '!', '?')):
+                    sentences.append(sentence)
                 current_sentence = ""
 
-        # Add any remaining text as a sentence
-        if current_sentence.strip():
-            sentences.append(current_sentence.strip())
+        # Only add remaining text if it ends with proper punctuation
+        remaining = current_sentence.strip()
+        if remaining and remaining.endswith(('.', '!', '?')):
+            sentences.append(remaining)
 
-        # Limit to 3 sentences maximum
-        if len(sentences) <= 3:
+        # Filter out any incomplete sentences (those ending with ".." or without punctuation)
+        complete_sentences = [s for s in sentences if s and s.endswith(('.', '!', '?')) and not s.endswith('..')]
+
+        # If no complete sentences, return original (might be a single sentence without punctuation)
+        if not complete_sentences:
+            # If original ends properly, return it
+            if comment.endswith(('.', '!', '?')):
+                return comment
+            # Otherwise, return first part up to last complete sentence
             return comment
 
-        # Take first 2-3 sentences and add ellipsis if truncated
-        limited_sentences = sentences[:3]
-        result = " ".join(limited_sentences)
+        # Limit to max_sentences
+        if len(complete_sentences) <= max_sentences:
+            return " ".join(complete_sentences)
 
-        # Ensure it ends with proper punctuation
+        # Take first max_sentences complete sentences
+        result = " ".join(complete_sentences[:max_sentences])
+
+        # Ensure it ends with proper punctuation (should already, but double-check)
         if not result.endswith(('.', '!', '?')):
             result += "."
 
@@ -1306,7 +1747,6 @@ class ChessCoachingGenerator:
         elif game_phase == 'middlegame' or (move_number > 15 and move_number <= 40):
             middlegame_advice = [
                 "Look for tactical opportunities and threats.",
-                "Consider piece coordination and activity.",
                 "Evaluate pawn structure and weak squares.",
                 "Look for ways to improve piece placement.",
                 "Search for tactical motifs like pins, forks, or skewers."
