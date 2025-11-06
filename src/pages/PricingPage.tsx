@@ -199,7 +199,7 @@ export default function PricingPage() {
       // Only deep analysis and Stockfish go to analysis category
       if (lower.includes('stockfish') || lower.includes('deep analysis')) {
         categories.analysis.push(feature)
-      } else if (lower.includes('personality') || lower.includes('opening') || lower.includes('repertoire') || lower.includes('opponent') || lower.includes('unlimited') || lower.includes('import') || lower.includes('limit') || lower.includes('analytics') || lower.includes('tracking')) {
+      } else if (lower.includes('personality') || lower.includes('opening') || lower.includes('repertoire') || lower.includes('unlimited') || lower.includes('import') || lower.includes('limit') || lower.includes('analytics') || lower.includes('analyses') || lower.includes('tracking') || lower.includes('position exploration') || lower.includes('tal inspired') || lower.includes('playstyle') || lower.includes('learning suggestions')) {
         categories.insights.push(feature)
       } else {
         categories.other.push(feature)
@@ -286,7 +286,7 @@ export default function PricingPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Serious Players</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">Improving Player</h3>
                 <p className="text-slate-300 text-sm leading-relaxed">
                   Identify patterns in your play, discover your weaknesses, and track improvement over time. Move from intuition to understanding.
                 </p>
@@ -317,7 +317,7 @@ export default function PricingPage() {
           </div>
 
           {/* Pricing Cards */}
-          <div className="grid md:grid-cols-3 gap-6 lg:gap-8 max-w-6xl mx-auto mb-16">
+          <div className="grid md:grid-cols-3 gap-10 md:gap-6 lg:gap-8 max-w-6xl mx-auto mb-16">
             {tiers.map((tier) => {
               const isPopular = tier.id === 'pro_monthly'
               const featureCategories = categorizeFeatures(tier.features)
@@ -445,9 +445,9 @@ export default function PricingPage() {
                         ) : (
                           <a
                             href="/signup"
-                            className="block w-full text-center px-6 py-3.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold transition-colors shadow-lg"
+                            className="block w-full text-center px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors shadow-lg"
                           >
-                            Start Free
+                            Become Pro
                           </a>
                         )
                       ) : tier.id === 'enterprise' ? (
@@ -512,21 +512,21 @@ export default function PricingPage() {
               </h2>
               <div className="grid md:grid-cols-3 gap-8">
                 <div className="text-center">
-                  <div className="text-4xl font-bold text-blue-400 mb-2">10x</div>
+                  <div className="text-2xl md:text-3xl font-bold text-blue-400 mb-2">Tal Commentary</div>
                   <p className="text-slate-300 text-sm">
-                    Faster than analyzing games manually. Get instant insights instead of spending hours reviewing positions.
+                    Not just generic AI comments — Mikhail Tal inspired thoughtful explanations of every move. Learn the principles, patterns, and story behind each decision.
                   </p>
                 </div>
                 <div className="text-center">
-                  <div className="text-4xl font-bold text-purple-400 mb-2">100+</div>
+                  <div className="text-2xl md:text-3xl font-bold text-purple-400 mb-2">6-Dimensional</div>
                   <p className="text-slate-300 text-sm">
-                    Games analyzed per month. Build a comprehensive understanding of your play style and patterns.
+                    Your chess personality mapped across 6 metrics. Understand your playing style like never before.
                   </p>
                 </div>
                 <div className="text-center">
-                  <div className="text-4xl font-bold text-green-400 mb-2">24/7</div>
+                  <div className="text-2xl md:text-3xl font-bold text-green-400 mb-2">Track Progress</div>
                   <p className="text-slate-300 text-sm">
-                    Access to professional analysis. Review your games anytime, anywhere, without waiting for coaches.
+                    ELO trends, phase-specific accuracy, and performance analytics. Watch your improvement over time.
                   </p>
                 </div>
               </div>
@@ -548,7 +548,7 @@ export default function PricingPage() {
                     <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>30-day money-back guarantee</span>
+                    <span>14-day money-back guarantee</span>
                   </div>
                 </div>
               </div>
@@ -559,7 +559,7 @@ export default function PricingPage() {
           <div className="max-w-4xl mx-auto mb-16">
             <div className="bg-gradient-to-br from-slate-900/80 to-slate-800/50 border border-slate-700/50 rounded-2xl p-8 md:p-12">
               <h2 className="text-2xl md:text-3xl font-bold text-white mb-6 text-center">
-                Why Choose Our Chess Analysis?
+                Why chessdata.app?
               </h2>
               <div className="grid md:grid-cols-2 gap-8">
                 <div className="flex items-start gap-4">
@@ -578,13 +578,15 @@ export default function PricingPage() {
                 <div className="flex items-start gap-4">
                   <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
                     <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-2">AI Coach Commentary</h3>
+                    <h3 className="text-lg font-semibold text-white mb-2">Personalized Openings</h3>
                     <p className="text-slate-300 text-sm leading-relaxed">
-                      Learn from every move with explanations that help you understand chess principles and improve your decision-making.
+                      Build your perfect opening repertoire. Get recommendations tailored to your playing style, not generic theory that doesn't fit how you play.
                     </p>
                   </div>
                 </div>
@@ -618,114 +620,6 @@ export default function PricingPage() {
             </div>
           </div>
 
-          {/* Feature Comparison Table */}
-          <div className="max-w-6xl mx-auto mb-16">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">
-                Compare Plans
-              </h2>
-              <p className="text-slate-400 text-lg">
-                See exactly what's included in each plan to choose what works best for you.
-              </p>
-            </div>
-            <div className="bg-slate-900/50 border border-slate-700/50 rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-slate-700/50">
-                      <th className="text-left p-4 text-slate-300 font-semibold">Feature</th>
-                      {tiers.map((tier) => (
-                        <th key={tier.id} className={`text-center p-4 font-semibold ${
-                          tier.id === 'pro_monthly' ? 'text-blue-400' : 'text-slate-300'
-                        }`}>
-                          {tier.name}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-slate-700/30">
-                      <td className="p-4 text-slate-300">Game Imports</td>
-                      {tiers.map((tier) => (
-                        <td key={tier.id} className="text-center p-4">
-                          {tier.import_limit === null ? (
-                            <span className="text-slate-500">Unlimited</span>
-                          ) : (
-                            <span className="text-slate-300">{tier.import_limit} games</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr className="border-b border-slate-700/30">
-                      <td className="p-4 text-slate-300">Deep Analysis</td>
-                      {tiers.map((tier) => (
-                        <td key={tier.id} className="text-center p-4">
-                          {tier.features.some(f => f.toLowerCase().includes('deep')) ? (
-                            <svg className="w-5 h-5 text-green-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <span className="text-slate-500">—</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr className="border-b border-slate-700/30">
-                      <td className="p-4 text-slate-300">Personality Insights</td>
-                      {tiers.map((tier) => (
-                        <td key={tier.id} className="text-center p-4">
-                          {tier.features.some(f => f.toLowerCase().includes('personality')) ? (
-                            <svg className="w-5 h-5 text-green-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <span className="text-slate-500">—</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr className="border-b border-slate-700/30">
-                      <td className="p-4 text-slate-300">Opening Recommendations</td>
-                      {tiers.map((tier) => (
-                        <td key={tier.id} className="text-center p-4">
-                          {tier.features.some(f => f.toLowerCase().includes('opening') || f.toLowerCase().includes('repertoire')) ? (
-                            <svg className="w-5 h-5 text-green-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <span className="text-slate-500">—</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr className="border-b border-slate-700/30">
-                      <td className="p-4 text-slate-300">AI Coach Commentary</td>
-                      {tiers.map((tier) => (
-                        <td key={tier.id} className="text-center p-4">
-                          {tier.features.some(f => f.toLowerCase().includes('comment') || f.toLowerCase().includes('coach')) ? (
-                            <svg className="w-5 h-5 text-green-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <span className="text-slate-500">—</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr>
-                      <td className="p-4 text-slate-300">Support</td>
-                      {tiers.map((tier) => (
-                        <td key={tier.id} className="text-center p-4 text-slate-300 text-sm">
-                          {tier.id === 'free' ? 'Community' : 'Priority'}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
           {/* FAQ Section */}
           <div className="max-w-4xl mx-auto mb-16">
             <div className="text-center mb-8">
@@ -742,7 +636,7 @@ export default function PricingPage() {
                   How accurate is the analysis?
                 </h3>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Our analysis is powered by Stockfish 17.1, the world's strongest chess engine. It evaluates positions with professional-grade accuracy, providing move classifications (best, excellent, mistake, blunder) that align with industry standards used by Chess.com and Lichess.
+                  Our analysis is powered by Stockfish 17.1, the world's strongest chess engine. It evaluates positions with professional-grade accuracy, providing move classifications (best, brilliant move, excellent, mistake, blunder) that align with industry standards used by Chess.com and Lichess.
                 </p>
               </div>
               <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-6">
@@ -766,7 +660,7 @@ export default function PricingPage() {
                   Can I cancel my subscription anytime?
                 </h3>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Absolutely. You can cancel your subscription at any time with no questions asked. You'll continue to have access until the end of your billing period. We also offer a 30-day money-back guarantee if you're not satisfied.
+                  Absolutely. You can cancel your subscription at any time with no questions asked. You'll continue to have access until the end of your billing period. We also offer a 14-day money-back guarantee if you're not satisfied.
                 </p>
               </div>
               <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-6">
@@ -787,7 +681,7 @@ export default function PricingPage() {
                 <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
-                <h3 className="text-lg font-semibold text-white">30-Day Money-Back Guarantee</h3>
+                <h3 className="text-lg font-semibold text-white">14-Day Money-Back Guarantee</h3>
               </div>
               <p className="text-slate-300 text-sm">
                 Not satisfied? We'll refund your payment, no questions asked.
