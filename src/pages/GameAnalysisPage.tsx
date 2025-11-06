@@ -252,8 +252,13 @@ const buildEnhancedFallbackExplanation = (
 
   if (isOpeningMove) {
     // First move - keep it short and Tal'ish to cheer up the player
-    if (moveNumber === 1 && isUserMove) {
-      return 'The adventure begins! Time to bring out your forces and claim the center.'
+    // Check if this is the first move of the game (move 1 for either player)
+    if (moveNumber === 1) {
+      if (isUserMove) {
+        return 'The adventure begins! Time to bring out your forces and claim the center.'
+      } else {
+        return 'The game begins! Your opponent makes their first move. The adventure is underway!'
+      }
     }
     // Simple book move comment for other opening moves
     return 'Book move.'

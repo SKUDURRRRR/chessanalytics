@@ -286,10 +286,14 @@ class ChessCoachingGenerator:
         is_user_move = move_analysis.get('is_user_move', True)
 
         # First check: special comments (move 1 welcome, position update windows) always use AI
-        # Check if this is the first move of the game (ply 0 or 1, which both have fullmove_number == 1)
-        ply_index = move_analysis.get('ply_index', 0)
-        if move_number == 1 and (ply_index == 0 or ply_index == 1):
-            return True
+        # Both White's first move and Black's first move have fullmove_number == 1
+        # Additional check: ensure this is actually one of the first two moves (ply 1 or 2) if ply_index is available
+        ply_index = move_analysis.get('ply_index', None)
+        if move_number == 1:
+            # If ply_index is available, verify it's one of the first two moves
+            # Otherwise, just trust fullmove_number == 1
+            if ply_index is None or ply_index in [1, 2]:
+                return True
         if is_user_move and self._is_in_position_update_window(move_number):
             return True
 
@@ -419,10 +423,14 @@ class ChessCoachingGenerator:
         player_elo = move_analysis.get('player_elo', player_elo)
 
         # Move 1: Welcome comment (for both user's and opponent's first move)
-        # Check if this is the first move of the game (ply 0 or 1, which both have fullmove_number == 1)
-        ply_index = move_analysis.get('ply_index', 0)
-        if move_number == 1 and (ply_index == 0 or ply_index == 1):
-            return self._generate_move_1_welcome_comment(board, move, player_elo, move_analysis, is_user_move)
+        # Both White's first move and Black's first move have fullmove_number == 1
+        # Additional check: ensure this is actually one of the first two moves (ply 1 or 2) if ply_index is available
+        ply_index = move_analysis.get('ply_index', None)
+        if move_number == 1:
+            # If ply_index is available, verify it's one of the first two moves
+            # Otherwise, just trust fullmove_number == 1
+            if ply_index is None or ply_index in [1, 2]:
+                return self._generate_move_1_welcome_comment(board, move, player_elo, move_analysis, is_user_move)
 
         # Position descriptions: Windows 5-10, 14-17, 21-24, 28-31, etc.
         if is_user_move and self._is_in_position_update_window(move_number):

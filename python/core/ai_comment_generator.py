@@ -597,8 +597,15 @@ class AIChessCommentGenerator:
             opening_context = f"\n**OPENING:** {opening_name} (identified from move sequence: {' '.join(move_sequence[:2]) if move_sequence and len(move_sequence) >= 2 else 'N/A'})\n"
 
         # Special handling for first move - keep it short and Tal'ish
-        if move_number == 1 and is_user_move:
-            prompt = f"""A player just started their game with {move_san} (move 1).
+        # Both White's first move and Black's first move have fullmove_number == 1
+        # Additional check: ensure this is actually one of the first two moves (ply 1 or 2) if ply_index is available
+        ply_index = move_analysis.get('ply_index', None)
+        if move_number == 1:
+            # If ply_index is available, verify it's one of the first two moves
+            # Otherwise, just trust fullmove_number == 1
+            if ply_index is None or ply_index in [1, 2]:
+                move_owner = "the player" if is_user_move else "the opponent"
+                prompt = f"""{move_owner.capitalize()} just started the game with {move_san} (move 1).
 
 **YOUR MISSION (Tal-Style Commentary):**
 Write ONE short, encouraging sentence (maximum 15 words) that captures the excitement of starting a game. Channel Mikhail Tal's playful, energetic spirit. Be brief, cheerful, and inspiring—something like "The adventure begins!" or "Time to bring out your forces!" Keep it light and encouraging, not technical or educational.
@@ -607,10 +614,10 @@ Write ONE short, encouraging sentence (maximum 15 words) that captures the excit
 - ONE sentence maximum, 15 words or less
 - Be encouraging and energetic, like Tal
 - NO technical explanations, NO long descriptions
-- Just cheer them on for starting the game!
+- {"Just cheer them on for starting the game!" if is_user_move else "Acknowledge the game beginning with enthusiasm!"}
 
 Write the comment now:"""
-            return prompt
+                return prompt
 
         prompt = f"""A player rated {player_elo} ELO ({complexity} level) just played {move_san} in the {game_phase} (move {move_number}).
 
