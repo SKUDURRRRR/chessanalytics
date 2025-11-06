@@ -14,7 +14,6 @@ import { useAuth } from '../contexts/AuthContext'
 import UsageLimitModal from '../components/UsageLimitModal'
 import { AnonymousUsageTracker } from '../services/anonymousUsageTracker'
 import AnonymousLimitModal from '../components/AnonymousLimitModal'
-import LoadingModal from '../components/LoadingModal'
 // DatabaseDiagnosticsComponent is development-only, imported conditionally below
 // Debug components removed from production
 // import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
@@ -836,14 +835,7 @@ export default function SimpleAnalyticsPage() {
 
   if (isLoading && showSlowLoadingPopup) {
     return (
-      <>
-        <div className="min-h-screen bg-slate-950" />
-        <LoadingModal
-          isOpen={true}
-          message="Loading your chess analytics..."
-          subtitle="Fetching player profile"
-        />
-      </>
+      <div className="min-h-screen bg-slate-950" />
     )
   }
 
@@ -1188,12 +1180,6 @@ export default function SimpleAnalyticsPage() {
         limitType={anonymousLimitType}
       />
 
-      {/* Slow Loading Popup - shows after 1 second if still loading/analyzing */}
-      <LoadingModal
-        isOpen={showSlowLoadingPopup && (isLoading || analyzing)}
-        message={analyzing ? 'Preparing games...' : 'Loading your chess analytics...'}
-        subtitle={analyzing ? 'This may take a few minutes' : 'Please wait'}
-      />
     </div>
   )
 }
