@@ -8,6 +8,11 @@ export interface GameAnalysisFetchResult {
   pgn: string | null
 }
 
+// Simple in-memory cache to avoid redundant queries
+// Cache key: `${canonicalUserId}:${platform}:${normalizedGameId}`
+const cache = new Map<string, { data: GameAnalysisFetchResult; timestamp: number }>()
+const CACHE_TTL = 2 * 60 * 1000 // 2 minutes cache
+
 const canonicalizeUserId = (userId: string, platform: Platform): string => {
   if (platform === 'chess.com') {
     return userId.trim().toLowerCase()
@@ -27,6 +32,9 @@ const unique = <T,>(values: T[]): T[] => {
   return result
 }
 
+/**
+ * Optimized version that runs queries in parallel and uses batch queries instead of loops
+ */
 export async function fetchGameAnalysisData(
   userId: string,
   platform: Platform,
@@ -41,70 +49,96 @@ export async function fetchGameAnalysisData(
     normalizedGameId = gameIdentifier
   }
 
+  // Check cache first
+  const cacheKey = `${canonicalUserId}:${platform}:${normalizedGameId}`
+  const cached = cache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data
+  }
+
   let gameRecord: any | null = null
   let analysisRecord: any | null = null
   let pgnText: string | null = null
 
   try {
-    const { data: primaryGame } = await supabase
-      .from('games')
-      .select('*')
-      .eq('user_id', canonicalUserId)
-      .eq('platform', platform)
-      .eq('provider_game_id', normalizedGameId)
-      .maybeSingle()
-
-    gameRecord = primaryGame ?? null
-
-    if (!gameRecord) {
-      const { data: fallbackGame } = await supabase
+    // OPTIMIZATION 1: Run both game queries in parallel instead of sequentially
+    const [primaryGameResult, fallbackGameResult] = await Promise.all([
+      supabase
+        .from('games')
+        .select('*')
+        .eq('user_id', canonicalUserId)
+        .eq('platform', platform)
+        .eq('provider_game_id', normalizedGameId)
+        .maybeSingle(),
+      supabase
         .from('games')
         .select('*')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
         .eq('id', normalizedGameId)
-        .maybeSingle()
+        .maybeSingle(),
+    ])
 
-      gameRecord = fallbackGame ?? null
-    }
+    gameRecord = primaryGameResult.data ?? fallbackGameResult.data ?? null
 
     const identifierCandidates = unique([
       normalizedGameId,
       gameRecord?.provider_game_id,
       gameRecord?.id,
+    ]).filter(Boolean) // Remove null/undefined values
+
+    // OPTIMIZATION 2: Batch query for analysis records using OR conditions instead of loops
+    // This queries all candidates in parallel (faster than sequential loops)
+    const analysisPromises = identifierCandidates.map(candidate =>
+      supabase
+        .from('move_analyses')
+        .select('*')
+        .eq('user_id', canonicalUserId)
+        .eq('platform', platform)
+        .eq('game_id', candidate)
+        .maybeSingle()
+    )
+
+    // OPTIMIZATION 3: Query PGN in parallel with analysis
+    const pgnPromises = identifierCandidates.map(candidate =>
+      supabase
+        .from('games_pgn')
+        .select('pgn')
+        .eq('user_id', canonicalUserId)
+        .eq('platform', platform)
+        .eq('provider_game_id', candidate)
+        .maybeSingle()
+    )
+
+    const [analysisResults, pgnResults] = await Promise.all([
+      Promise.all(analysisPromises),
+      Promise.all(pgnPromises),
     ])
 
-    if (!analysisRecord) {
-      for (const candidate of identifierCandidates) {
-        const { data } = await supabase
-          .from('move_analyses')
-          .select('*')
-          .eq('user_id', canonicalUserId)
-          .eq('platform', platform)
-          .eq('game_id', candidate)
-          .maybeSingle()
-
-        if (data) {
-          analysisRecord = data
-          break
-        }
+    // Get the first non-null analysis record
+    for (const result of analysisResults) {
+      if (result.data) {
+        analysisRecord = result.data
+        break
       }
     }
 
-    if (!analysisRecord) {
-      const apiAnalyses = await UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish')
-      analysisRecord = apiAnalyses.find(item =>
-        item?.game_id === normalizedGameId ||
-        (gameRecord && item?.game_id === gameRecord.id) ||
-        (gameRecord && item?.game_id === gameRecord.provider_game_id)
-      ) ?? null
+    // Get the first non-null PGN
+    for (const pgnResult of pgnResults) {
+      if (pgnResult.data?.pgn) {
+        pgnText = pgnResult.data.pgn
+        break
+      }
     }
 
-    const needsMoveData = !analysisRecord?.moves_analysis || !Array.isArray(analysisRecord.moves_analysis) || analysisRecord.moves_analysis.length === 0
+    // OPTIMIZATION 4: Only check for move data if analysis exists but lacks moves_analysis
+    // Query with stockfish filter only if needed
+    const needsMoveData = analysisRecord && (!analysisRecord.moves_analysis || !Array.isArray(analysisRecord.moves_analysis) || analysisRecord.moves_analysis.length === 0)
 
-    if (needsMoveData) {
-      for (const candidate of identifierCandidates) {
-        const { data } = await supabase
+    if (needsMoveData && identifierCandidates.length > 0) {
+      // Query all candidates in parallel with stockfish filter
+      const moveDataPromises = identifierCandidates.map(candidate =>
+        supabase
           .from('move_analyses')
           .select('*')
           .eq('user_id', canonicalUserId)
@@ -112,42 +146,69 @@ export async function fetchGameAnalysisData(
           .eq('game_id', candidate)
           .eq('analysis_method', 'stockfish')
           .maybeSingle()
+      )
 
-        if (data) {
+      const moveDataResults = await Promise.all(moveDataPromises)
+      for (const result of moveDataResults) {
+        if (result.data) {
           analysisRecord = {
-            ...data,
-            ...(analysisRecord ?? {}),
-            moves_analysis: data.moves_analysis ?? analysisRecord?.moves_analysis ?? null,
+            ...result.data,
+            ...analysisRecord,
+            moves_analysis: result.data.moves_analysis ?? analysisRecord.moves_analysis ?? null,
           }
           break
         }
       }
     }
 
-    for (const candidate of identifierCandidates) {
-      if (pgnText) {
-        break
-      }
-
-      const { data } = await supabase
-        .from('games_pgn')
-        .select('pgn')
+    // OPTIMIZATION 5: Only call expensive API as absolute last resort
+    // This is expensive because it fetches ALL analyses for the user
+    // Only use if we have a game but no analysis at all
+    if (!analysisRecord && gameRecord) {
+      // Try one more direct query before falling back to API
+      const finalAttempt = await supabase
+        .from('move_analyses')
+        .select('*')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
-        .eq('provider_game_id', candidate)
+        .or(`game_id.eq.${gameRecord.id},game_id.eq.${gameRecord.provider_game_id}`)
         .maybeSingle()
 
-      if (data?.pgn) {
-        pgnText = data.pgn
+      if (finalAttempt.data) {
+        analysisRecord = finalAttempt.data
+      } else {
+        // Last resort: API call (but this is expensive, so we try to avoid it)
+        // Only fetch 1 analysis to minimize data transfer
+        const apiAnalyses = await UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish', 1, 0)
+        analysisRecord = apiAnalyses.find(item =>
+          item?.game_id === normalizedGameId ||
+          (gameRecord && item?.game_id === gameRecord.id) ||
+          (gameRecord && item?.game_id === gameRecord.provider_game_id)
+        ) ?? null
       }
     }
   } catch (error) {
     console.error('Failed to fetch game analysis data', error)
   }
 
-  return {
+  const result = {
     game: gameRecord,
     analysis: analysisRecord,
     pgn: pgnText,
   }
+
+  // Cache the result
+  cache.set(cacheKey, { data: result, timestamp: Date.now() })
+
+  // Clean up old cache entries (keep cache size manageable)
+  if (cache.size > 100) {
+    const now = Date.now()
+    for (const [key, value] of cache.entries()) {
+      if (now - value.timestamp > CACHE_TTL) {
+        cache.delete(key)
+      }
+    }
+  }
+
+  return result
 }

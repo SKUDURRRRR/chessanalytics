@@ -21,11 +21,21 @@ Start-Process docker -ArgumentList $composeArgs -NoNewWindow -Wait
 Write-Host "Docker analysis API started." -ForegroundColor Green
 
 # 2. Python main service (if you still need it locally)
-Start-Process powershell -ArgumentList @(
-    "-NoExit","-Command",
-    "cd '$root\python'; `"$venv`"; python main.py"
-) -WindowStyle Normal
-Write-Host "Launched python\main.py in a new PowerShell window." -ForegroundColor Green
+$venvPython = Join-Path $root ".venv\Scripts\python.exe"
+$pythonDir = Join-Path $root "python"
+if (Test-Path $venvPython) {
+    # Use -WorkingDirectory to avoid path quoting issues
+    Start-Process powershell -ArgumentList @(
+        "-NoExit","-Command", "& '$venvPython' main.py"
+    ) -WorkingDirectory $pythonDir -WindowStyle Normal
+    Write-Host "Launched python\main.py in a new PowerShell window using venv Python." -ForegroundColor Green
+} else {
+    # Use -WorkingDirectory to avoid path quoting issues
+    Start-Process powershell -ArgumentList @(
+        "-NoExit","-Command", "& '$venv'; python main.py"
+    ) -WorkingDirectory $pythonDir -WindowStyle Normal
+    Write-Host "Launched python\main.py in a new PowerShell window (venv not found, using system Python)." -ForegroundColor Yellow
+}
 
 # 3. Vite dev server
 Start-Process powershell -ArgumentList @(

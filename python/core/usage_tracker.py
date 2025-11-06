@@ -8,7 +8,7 @@ Security Features:
 - Fail-safe error handling
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 import logging
 import asyncio
@@ -149,8 +149,8 @@ class UsageTracker:
             raise ValueError("count cannot exceed 1000 in a single operation")
 
         try:
-            today = datetime.now().date()
-            reset_at = datetime.now()
+            today = datetime.now(timezone.utc).date()
+            reset_at = datetime.now(timezone.utc)
 
             # Determine which field to increment
             field_name = 'games_imported' if action_type == 'import' else 'games_analyzed'
@@ -169,7 +169,8 @@ class UsageTracker:
 
                 # Check if we need to reset (24 hours passed)
                 record_reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
-                if datetime.now() - record_reset_at > timedelta(hours=24):
+                # Use timezone-aware datetime to avoid "can't subtract offset-naive and offset-aware datetimes" error
+                if datetime.now(timezone.utc) - record_reset_at > timedelta(hours=24):
                     # Reset both counters when window expires
                     update_data = {
                         'games_imported': count if action_type == 'import' else 0,
@@ -266,7 +267,7 @@ class UsageTracker:
             logger.info(f"[USAGE_STATS] User {user_id}: tier={account_tier}, name={tier_name}, import_limit={import_limit}, analysis_limit={analysis_limit}")
 
             # Get current usage (within 24-hour window)
-            today = datetime.now().date()
+            today = datetime.now(timezone.utc).date()
             usage_result = await asyncio.to_thread(
                 lambda: self.supabase.table('usage_tracking').select('*').eq(
                     'user_id', user_id
@@ -282,7 +283,8 @@ class UsageTracker:
                 reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
 
                 # Check if 24 hours have passed
-                if datetime.now() - reset_at <= timedelta(hours=24):
+                # Use timezone-aware datetime to avoid "can't subtract offset-naive and offset-aware datetimes" error
+                if datetime.now(timezone.utc) - reset_at <= timedelta(hours=24):
                     current_imports = record.get('games_imported', 0)
                     current_analyses = record.get('games_analyzed', 0)
                 else:
@@ -313,7 +315,7 @@ class UsageTracker:
                 },
                 'reset_at': reset_at.isoformat() if reset_at else None,
                 'resets_in_hours': (
-                    round((reset_at + timedelta(hours=24) - datetime.now()).total_seconds() / 3600, 1)
+                    round((reset_at + timedelta(hours=24) - datetime.now(timezone.utc)).total_seconds() / 3600, 1)
                     if reset_at else 24.0
                 )
             }

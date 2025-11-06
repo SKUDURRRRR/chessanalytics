@@ -57,6 +57,8 @@ export const TIMEOUT_CONFIG = {
   QUICK: 5000,
   /** Long-running operations like game analysis (2 minutes) */
   LONG: 120000,
+  /** Deep analysis operations (5 minutes) - can take longer for complex games */
+  DEEP_ANALYSIS: 300000,
   /** External API calls (1 minute) */
   EXTERNAL: 60000,
 } as const;

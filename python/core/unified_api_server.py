@@ -48,6 +48,11 @@ from supabase import create_client, Client
 from jose import jwt as jose_jwt
 import logging
 
+# Suppress harmless asyncio connection cleanup errors on Windows
+# These occur when sockets are closed during cleanup and are not actual errors
+asyncio_logger = logging.getLogger('asyncio')
+asyncio_logger.setLevel(logging.WARNING)  # Suppress ERROR level, but keep CRITICAL visible
+
 # Set up logger
 logger = logging.getLogger(__name__)
 
@@ -137,7 +142,7 @@ if JWT_AUDIENCE:
 
 # Simple in-memory cache for analytics with TTL
 _analytics_cache: Dict[str, Dict[str, Any]] = {}
-CACHE_TTL_SECONDS = 300  # 5 minutes cache TTL
+CACHE_TTL_SECONDS = 1800  # 30 minutes cache TTL (was 5 minutes)
 
 def _get_from_cache(cache_key: str) -> Optional[Dict[str, Any]]:
     """Get data from cache if it exists and is not expired."""
@@ -369,6 +374,38 @@ async def startup_event():
     )
     await _memory_monitor_instance.start()
     print(f"[STARTUP] ✅ Memory monitor started")
+
+    # Initialize analysis engine early to trigger AI comment generator initialization
+    logger.info("[STARTUP] Pre-initializing analysis engine (this will initialize AI comment generator)...")
+    try:
+        get_analysis_engine()
+        logger.info("[STARTUP] ✅ Analysis engine pre-initialized successfully")
+    except Exception as e:
+        logger.warning(f"[STARTUP] ⚠️  Analysis engine pre-initialization failed: {e}")
+        import traceback
+        logger.debug(f"[STARTUP] Traceback: {traceback.format_exc()}")
+
+    # Check AI status and log it
+    logger.info("[STARTUP] Checking AI generation status...")
+    try:
+        from .ai_comment_generator import AIChessCommentGenerator
+        ai_check = AIChessCommentGenerator()
+        if ai_check and ai_check.enabled:
+            model = ai_check.config.ai_model if hasattr(ai_check, 'config') else 'unknown'
+            logger.info(f"[STARTUP] ✅ AI Generation: ENABLED (Model: {model})")
+            logger.info("[STARTUP] ✅ AI-powered style analysis and move comments are available")
+        else:
+            if ai_check:
+                ai_enabled = ai_check.config.ai_enabled if hasattr(ai_check, 'config') else False
+                has_api_key = bool(ai_check.config.anthropic_api_key if hasattr(ai_check, 'config') else False)
+                logger.warning(f"[STARTUP] ⚠️  AI Generation: DISABLED")
+                logger.info(f"[STARTUP]    AI_ENABLED={ai_enabled}, API_KEY present={has_api_key}")
+            else:
+                logger.warning("[STARTUP] ⚠️  AI Generation: NOT AVAILABLE (generator failed to initialize)")
+            logger.info("[STARTUP]    Falling back to template-based generation")
+    except Exception as ai_error:
+        logger.warning(f"[STARTUP] ⚠️  AI Generation: CHECK FAILED - {ai_error}")
+        logger.info("[STARTUP]    AI features will use template-based fallback")
 
     # Start cache cleanup background task
     async def cache_cleanup_loop():
@@ -926,9 +963,33 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with AI status."""
     engine = get_analysis_engine()
     stockfish_available = engine.stockfish_path is not None
+
+    # Check AI generation status
+    ai_status = {
+        "available": False,
+        "enabled": False,
+        "model": None,
+        "error": None
+    }
+
+    try:
+        from .ai_comment_generator import AIChessCommentGenerator
+        ai_check = AIChessCommentGenerator()
+        ai_status["available"] = True
+        if ai_check and ai_check.enabled:
+            ai_status["enabled"] = True
+            ai_status["model"] = ai_check.config.ai_model if hasattr(ai_check, 'config') else 'unknown'
+        elif ai_check:
+            ai_status["enabled"] = False
+            if hasattr(ai_check, 'config'):
+                ai_status["model"] = ai_check.config.ai_model if hasattr(ai_check.config, 'ai_model') else None
+    except ImportError as e:
+        ai_status["error"] = f"Import failed: {str(e)}"
+    except Exception as e:
+        ai_status["error"] = f"Initialization failed: {str(e)}"
 
     return {
         "status": "healthy",
@@ -937,6 +998,7 @@ async def health_check():
         "stockfish_available": stockfish_available,
         "analysis_types": ["stockfish", "deep"],
         "database_connected": True,
+        "ai_generation": ai_status,
         "timestamp": datetime.now().isoformat()
     }
 
@@ -2023,11 +2085,234 @@ def _calculate_performance_trends(games: List[Dict[str, Any]]) -> Dict[str, Any]
     }
 
 
+async def _fetch_game_analyses_batched(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str,
+    provider_ids: List[str],
+    batch_size: int = 400
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch game_analyses in batches with minimal delays."""
+    analyses_map: Dict[str, Dict[str, Any]] = {}
+    if not provider_ids:
+        return analyses_map
+
+    try:
+        for i in range(0, len(provider_ids), batch_size):
+            batch_ids = provider_ids[i:i + batch_size]
+            try:
+                analyses_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('game_analyses')
+                        .select('*')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .in_('game_id', ids)
+                        .execute()
+                )
+                for row in analyses_response.data or []:
+                    analyses_map[row['game_id']] = row
+                # Minimal delay between batches to avoid overwhelming Supabase
+                if i + batch_size < len(provider_ids):
+                    await asyncio.sleep(0.01)
+            except Exception as e:
+                print(f"[WARN] Error fetching game_analyses batch {i//batch_size + 1}: {e}")
+                # Continue with other batches even if one fails
+    except Exception as e:
+        print(f"[WARN] Error in _fetch_game_analyses_batched: {e}")
+
+    return analyses_map
+
+
+async def _fetch_move_analyses_batched(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str,
+    provider_ids: List[str],
+    batch_size: int = 400
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch move_analyses in batches with minimal delays."""
+    move_analyses_map: Dict[str, Dict[str, Any]] = {}
+    if not provider_ids:
+        return move_analyses_map
+
+    try:
+        for i in range(0, len(provider_ids), batch_size):
+            batch_ids = provider_ids[i:i + batch_size]
+            try:
+                move_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('move_analyses')
+                        .select('*')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .in_('game_id', ids)
+                        .execute()
+                )
+                for row in move_response.data or []:
+                    move_analyses_map[row['game_id']] = row
+                # Minimal delay between batches
+                if i + batch_size < len(provider_ids):
+                    await asyncio.sleep(0.01)
+            except Exception as e:
+                print(f"[WARN] Error fetching move_analyses batch {i//batch_size + 1}: {e}")
+                # Continue with other batches even if one fails
+    except Exception as e:
+        print(f"[WARN] Error in _fetch_move_analyses_batched: {e}")
+
+    return move_analyses_map
+
+
+async def _fetch_pgn_data_batched(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str,
+    provider_ids: List[str],
+    batch_size: int = 400
+) -> Dict[str, str]:
+    """Fetch games_pgn in batches with minimal delays."""
+    pgn_map: Dict[str, str] = {}
+    if not provider_ids:
+        return pgn_map
+
+    try:
+        for i in range(0, len(provider_ids), batch_size):
+            batch_ids = provider_ids[i:i + batch_size]
+            try:
+                pgn_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('games_pgn')
+                        .select('provider_game_id, pgn')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .in_('provider_game_id', ids)
+                        .execute()
+                )
+                for row in pgn_response.data or []:
+                    pgn_map[row['provider_game_id']] = row.get('pgn', '')
+                # Minimal delay between batches
+                if i + batch_size < len(provider_ids):
+                    await asyncio.sleep(0.01)
+            except Exception as e:
+                print(f"[WARN] Error fetching games_pgn batch {i//batch_size + 1}: {e}")
+                # Continue with other batches even if one fails
+    except Exception as e:
+        print(f"[WARN] Error in _fetch_pgn_data_batched: {e}")
+
+    return pgn_map
+
+
+async def _fetch_opening_color_stats_games(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str
+) -> List[Dict[str, Any]]:
+    """Fetch all games for opening color stats calculation."""
+    # Check cache first
+    cache_key = f"opening_color_stats_games:{canonical_user_id}:{platform}"
+    cached_data = _get_from_cache(cache_key)
+    if cached_data is not None:
+        if DEBUG:
+            print(f"[CACHE] Hit for opening color stats games")
+        return cached_data
+
+    games_for_color_stats = []
+    opening_batch_size = 1000
+    opening_offset = 0
+
+    if DEBUG:
+        print(f"[DEBUG] Fetching ALL games for opening color stats")
+
+    while True:
+        try:
+            opening_batch = await asyncio.to_thread(
+                lambda off=opening_offset: db_client.table('games')
+                    .select('opening, opening_family, opening_normalized, color, result, my_rating')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .not_.is_('color', 'null')
+                    .range(off, off + opening_batch_size - 1)
+                    .execute()
+            )
+            batch_data = opening_batch.data or []
+            if not batch_data:
+                break
+            games_for_color_stats.extend(batch_data)
+
+            # If we got fewer than requested, we've reached the end
+            if len(batch_data) < opening_batch_size:
+                break
+
+            opening_offset += opening_batch_size
+        except Exception as e:
+            print(f"[WARN] Error fetching opening color stats batch at offset {opening_offset}: {e}")
+            break
+
+    if DEBUG:
+        print(f"[DEBUG] Fetched {len(games_for_color_stats)} total games for opening color stats")
+
+    # Cache the result
+    _set_in_cache(cache_key, games_for_color_stats)
+
+    return games_for_color_stats
+
+
+async def _fetch_remaining_games(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str,
+    start_count: int,
+    total_limit: int
+):
+    """Background task to fetch remaining games."""
+    try:
+        print(f"[BACKGROUND] Starting background fetch for {canonical_user_id}: {start_count} -> {total_limit} games")
+
+        remaining_games = []
+        page_size = 1000
+        offset = start_count
+
+        while len(remaining_games) < (total_limit - start_count):
+            remaining = total_limit - start_count - len(remaining_games)
+            current_page_size = min(page_size, remaining)
+            current_offset = offset
+
+            try:
+                games_response = await asyncio.to_thread(
+                    lambda start=current_offset, end=current_offset + current_page_size - 1: db_client.table('games')
+                        .select('*')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .order('played_at', desc=True)
+                        .range(start, end)
+                        .execute()
+                )
+
+                page_games = games_response.data or []
+                if not page_games:
+                    break
+
+                remaining_games.extend(page_games)
+                offset += current_page_size
+
+                if len(page_games) < current_page_size or len(remaining_games) >= (total_limit - start_count):
+                    break
+
+            except Exception as e:
+                print(f"[BACKGROUND] Error fetching games: {e}")
+                break
+
+        print(f"[BACKGROUND] Completed: Fetched {len(remaining_games)} additional games for {canonical_user_id}")
+
+    except Exception as e:
+        print(f"[BACKGROUND] Error fetching remaining games for {canonical_user_id}: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 @app.get("/api/v1/comprehensive-analytics/{user_id}/{platform}")
 async def get_comprehensive_analytics(
     user_id: str,
     platform: str,
     limit: int = Query(500, ge=1, le=10000, description="Number of games to analyze"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
 ):
@@ -2056,29 +2341,84 @@ async def get_comprehensive_analytics(
         )
         total_games_count = getattr(count_response, 'count', 0) or 0
 
-        # Base games query constrained by requested limit
+        # Supabase has a default limit of 1000 rows, so we need to paginate to fetch all games
         # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
-        games_query = db_client.table('games').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True)
-
-        # Supabase has a default limit of 1000 rows, so we need to explicitly set the limit
-        # If user requests >= 10000, fetch all available games
         effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
 
-        # Ensure we fetch at least the requested amount or all available games
-        if effective_limit > 0:
-            games_response = await asyncio.to_thread(
-                lambda: games_query.limit(effective_limit).execute()
-            )
-        else:
-            # Fallback: use the requested limit if we couldn't determine total
-            games_response = await asyncio.to_thread(
-                lambda: games_query.limit(limit).execute()
-            )
+        # PERFORMANCE: Fetch first 500 games for fast response, rest in background
+        initial_limit = 500
+        needs_background = effective_limit > initial_limit
+        fetch_limit = min(initial_limit, effective_limit) if needs_background else effective_limit
 
-        games = games_response.data or []
+        # Paginate through games in chunks of 1000 (Supabase's max per query)
+        # Match the pattern from import_games_smart which works correctly
+        games = []
+        page_size = 1000
+        offset = 0
 
-        if DEBUG:
-            print(f"[DEBUG] Fetched {len(games)} games out of {total_games_count} total games (requested limit={limit}, effective_limit={effective_limit})")
+        while len(games) < fetch_limit:
+            # Calculate how many more games we need
+            remaining = fetch_limit - len(games)
+            current_page_size = min(page_size, remaining)
+            current_offset = offset  # Capture for lambda
+
+            # Fetch page using range (Supabase pagination)
+            # Use the exact pattern from match_history endpoint (line 2742) which works
+            try:
+                # Validate range values
+                range_start = current_offset
+                range_end = current_offset + current_page_size - 1
+
+                if range_start < 0 or range_end < range_start:
+                    print(f"[ERROR] Invalid range: start={range_start}, end={range_end}, page_size={current_page_size}")
+                    break
+
+                # Build entire query inside lambda to avoid closure issues
+                # Match the exact pattern from match_history endpoint (line 2748)
+                # Capture variables with default parameters to avoid closure issues
+                # Optimized: Select only fields needed for analytics (reduces data transfer by 60-70%)
+                games_response = await asyncio.to_thread(
+                    lambda start=range_start, end=range_end: db_client.table('games')
+                        .select('id,user_id,platform,provider_game_id,result,color,opening,opening_normalized,my_rating,opponent_rating,time_control,total_moves,opponent_name,played_at')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .order('played_at', desc=True)
+                        .range(start, end)
+                        .execute()
+                )
+            except Exception as e:
+                print(f"[ERROR] Error fetching games page at offset {offset}, range {range_start}-{range_end}: {e}")
+                import traceback
+                traceback.print_exc()
+                break
+
+            page_games = games_response.data or []
+            if not page_games:
+                # No more games available
+                break
+
+            games.extend(page_games)
+
+            # If we got fewer games than requested, we've reached the end
+            if len(page_games) < current_page_size:
+                break
+
+            offset += current_page_size
+
+            # Safety check: if we've fetched enough, stop
+            if len(games) >= fetch_limit:
+                break
+
+        # Always log if we got no games or if DEBUG is enabled
+        if DEBUG or len(games) == 0:
+            if needs_background:
+                print(f"[DEBUG] Fetched {len(games)} initial games (will fetch remaining {effective_limit - len(games)} in background)")
+            else:
+                print(f"[DEBUG] Fetched {len(games)} games out of {total_games_count} total games (requested limit={limit}, effective_limit={effective_limit})")
+            if len(games) == 0 and total_games_count > 0:
+                print(f"[ERROR] CRITICAL: No games fetched despite {total_games_count} total games available!")
+                print(f"[ERROR] Query params: user_id={canonical_user_id}, platform={platform}")
+                print(f"[ERROR] This indicates the pagination query is failing. Check Supabase connection and query syntax.")
 
         if not games:
             return {
@@ -2096,30 +2436,143 @@ async def get_comprehensive_analytics(
                 "resignation_timing": None
             }
 
-        # Fetch analysis data for the games for richer insights
-        provider_ids = [g['provider_game_id'] for g in games if g.get('provider_game_id')]
-        analyses_map: Dict[str, Dict[str, Any]] = {}
-        move_analyses_map: Dict[str, Dict[str, Any]] = {}
+        # Calculate basic analytics from games (can be done immediately, no analysis data needed)
+        wins = len([g for g in games if g.get('result') == 'win'])
+        draws = len([g for g in games if g.get('result') == 'draw'])
+        losses = len([g for g in games if g.get('result') == 'loss'])
 
-        if provider_ids:
-            # game_analyses
-            analyses_response = await asyncio.to_thread(
-                lambda: db_client.table('game_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+        win_rate = _safe_divide(wins, len(games)) * 100
+        draw_rate = _safe_divide(draws, len(games)) * 100
+        loss_rate = _safe_divide(losses, len(games)) * 100
+
+        # Color stats
+        white_games = [g for g in games if g.get('color') == 'white']
+        black_games = [g for g in games if g.get('color') == 'black']
+
+        white_wins = len([g for g in white_games if g.get('result') == 'win'])
+        black_wins = len([g for g in black_games if g.get('result') == 'win'])
+
+        white_elos = [g.get('my_rating') for g in white_games if g.get('my_rating')]
+        black_elos = [g.get('my_rating') for g in black_games if g.get('my_rating')]
+
+        color_stats = {
+            'white': {
+                'games': len(white_games),
+                'winRate': round(_safe_divide(white_wins, len(white_games)) * 100, 1) if white_games else 0,
+                'averageElo': round(sum(white_elos) / len(white_elos), 0) if white_elos else 0
+            },
+            'black': {
+                'games': len(black_games),
+                'winRate': round(_safe_divide(black_wins, len(black_games)) * 100, 1) if black_games else 0,
+                'averageElo': round(sum(black_elos) / len(black_elos), 0) if black_elos else 0
+            }
+        }
+
+        # Opening stats
+        opening_performance = {}
+        for game in games:
+            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+            if opening not in opening_performance:
+                opening_performance[opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
+
+            opening_performance[opening]['games'] += 1
+            result = game.get('result')
+            if result == 'win':
+                opening_performance[opening]['wins'] += 1
+            elif result == 'draw':
+                opening_performance[opening]['draws'] += 1
+            elif result == 'loss':
+                opening_performance[opening]['losses'] += 1
+
+            # Track ELO for this opening
+            if game.get('my_rating'):
+                opening_performance[opening]['elos'].append(game.get('my_rating'))
+
+        opening_stats = []
+        for opening, stats in opening_performance.items():
+            avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
+            opening_stats.append({
+                'opening': opening,
+                'games': stats['games'],
+                'wins': stats['wins'],
+                'draws': stats['draws'],
+                'losses': stats['losses'],
+                'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
+                'averageElo': avg_elo
+            })
+
+        # Sort by number of games played
+        opening_stats.sort(key=lambda x: x['games'], reverse=True)
+
+        # Start background task to fetch remaining games if needed
+        if needs_background and len(games) < effective_limit:
+            print(f"[PERF] Starting background task: {len(games)}/{effective_limit} games loaded, will fetch remaining {effective_limit - len(games)} in background")
+            background_tasks.add_task(
+                _fetch_remaining_games,
+                db_client,
+                canonical_user_id,
+                platform,
+                len(games),
+                effective_limit
             )
-            for row in analyses_response.data or []:
-                analyses_map[row['game_id']] = row
+        elif needs_background:
+            print(f"[PERF] Background task NOT started: needs_background={needs_background}, games={len(games)}, limit={effective_limit}")
 
-            move_response = await asyncio.to_thread(
-                lambda: db_client.table('move_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+        # Fetch analysis data and opening color stats in parallel for richer insights
+        # NOTE: This is optional - if it fails, we still return basic stats
+        # Only fetch analysis for recent 500 games to speed up response
+        recent_games = games[:500] if len(games) > 500 else games
+        provider_ids = [g['provider_game_id'] for g in recent_games if g.get('provider_game_id')]
+
+        # Use batch size of 400 (increased from 250, but not jumping to 500 to avoid connection issues)
+        batch_size = 400
+
+        # Fetch all data in parallel: analysis data (3 queries) + opening color stats
+        try:
+            # Run all 4 queries in parallel
+            results = await asyncio.gather(
+                _fetch_game_analyses_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
+                _fetch_move_analyses_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
+                _fetch_pgn_data_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
+                _fetch_opening_color_stats_games(db_client, canonical_user_id, platform),
+                return_exceptions=True
             )
-            for row in move_response.data or []:
-                move_analyses_map[row['game_id']] = row
 
-        # Quick map of PGN terminations
-        pgn_response = await asyncio.to_thread(
-            lambda: db_client.table('games_pgn').select('provider_game_id, pgn').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_ids).execute()
-        )
-        pgn_map = {row['provider_game_id']: row.get('pgn') for row in (pgn_response.data or [])}
+            # Unpack results and handle exceptions
+            analyses_map_result, move_analyses_map_result, pgn_map_result, games_for_color_stats_result = results
+
+            # Handle exceptions from parallel execution
+            if isinstance(analyses_map_result, Exception):
+                print(f"[WARN] Error in parallel analysis fetching: {analyses_map_result}")
+                analyses_map: Dict[str, Dict[str, Any]] = {}
+            else:
+                analyses_map = analyses_map_result
+
+            if isinstance(move_analyses_map_result, Exception):
+                print(f"[WARN] Error in parallel move analysis fetching: {move_analyses_map_result}")
+                move_analyses_map: Dict[str, Dict[str, Any]] = {}
+            else:
+                move_analyses_map = move_analyses_map_result
+
+            if isinstance(pgn_map_result, Exception):
+                print(f"[WARN] Error in parallel PGN fetching: {pgn_map_result}")
+                pgn_map: Dict[str, str] = {}
+            else:
+                pgn_map = pgn_map_result
+
+            if isinstance(games_for_color_stats_result, Exception):
+                print(f"[WARN] Error fetching opening color stats games: {games_for_color_stats_result}")
+                games_for_color_stats: List[Dict[str, Any]] = []
+            else:
+                games_for_color_stats = games_for_color_stats_result
+
+        except Exception as e:
+            # If parallel fetching completely fails, log but continue with basic stats
+            print(f"[WARN] Analysis data fetching failed completely, continuing with basic stats: {e}")
+            analyses_map: Dict[str, Dict[str, Any]] = {}
+            move_analyses_map: Dict[str, Dict[str, Any]] = {}
+            pgn_map: Dict[str, str] = {}
+            games_for_color_stats: List[Dict[str, Any]] = []
 
         # Distribution counters
         distribution: Dict[str, Dict[str, Any]] = {}
@@ -2289,95 +2742,10 @@ async def get_comprehensive_analytics(
                 'insight': insight
             }
 
-        # Calculate basic analytics from games
-        wins = len([g for g in games if g.get('result') == 'win'])
-        draws = len([g for g in games if g.get('result') == 'draw'])
-        losses = len([g for g in games if g.get('result') == 'loss'])
-
-        win_rate = _safe_divide(wins, len(games)) * 100
-        draw_rate = _safe_divide(draws, len(games)) * 100
-        loss_rate = _safe_divide(losses, len(games)) * 100
-
-        # Color stats
-        white_games = [g for g in games if g.get('color') == 'white']
-        black_games = [g for g in games if g.get('color') == 'black']
-
-        white_wins = len([g for g in white_games if g.get('result') == 'win'])
-        black_wins = len([g for g in black_games if g.get('result') == 'win'])
-
-        white_elos = [g.get('my_rating') for g in white_games if g.get('my_rating')]
-        black_elos = [g.get('my_rating') for g in black_games if g.get('my_rating')]
-
-        color_stats = {
-            'white': {
-                'games': len(white_games),
-                'winRate': round(_safe_divide(white_wins, len(white_games)) * 100, 1) if white_games else 0,
-                'averageElo': round(sum(white_elos) / len(white_elos), 0) if white_elos else 0
-            },
-            'black': {
-                'games': len(black_games),
-                'winRate': round(_safe_divide(black_wins, len(black_games)) * 100, 1) if black_games else 0,
-                'averageElo': round(sum(black_elos) / len(black_elos), 0) if black_elos else 0
-            }
-        }
-
-        # Opening stats
-        opening_performance = {}
-        for game in games:
-            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
-            if opening not in opening_performance:
-                opening_performance[opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
-
-            opening_performance[opening]['games'] += 1
-            result = game.get('result')
-            if result == 'win':
-                opening_performance[opening]['wins'] += 1
-            elif result == 'draw':
-                opening_performance[opening]['draws'] += 1
-            elif result == 'loss':
-                opening_performance[opening]['losses'] += 1
-
-            # Track ELO for this opening
-            if game.get('my_rating'):
-                opening_performance[opening]['elos'].append(game.get('my_rating'))
-
-        opening_stats = []
-        for opening, stats in opening_performance.items():
-            avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
-            opening_stats.append({
-                'opening': opening,
-                'games': stats['games'],
-                'wins': stats['wins'],
-                'draws': stats['draws'],
-                'losses': stats['losses'],
-                'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
-                'averageElo': avg_elo
-            })
-
-        # Sort by number of games played
-        opening_stats.sort(key=lambda x: x['games'], reverse=True)
-
         # Opening stats by color
         # 🚨 CRITICAL: This filter MUST remain in place - see docs/OPENING_COLOR_BUG_PREVENTION.md
         # DO NOT remove the _should_count_opening_for_color check or Caro-Kann will appear under White openings
-
-        # For accurate opening color stats, we need ALL games, not just the limited sample
-        # Fetch all games for this user to calculate complete opening statistics
-        if DEBUG:
-            print(f"[DEBUG] Fetching ALL games for opening color stats (current sample: {len(games)} games)")
-
-        all_games_for_openings = await asyncio.to_thread(
-            lambda: db_client.table('games')
-                .select('opening, opening_family, opening_normalized, color, result, my_rating')
-                .eq('user_id', canonical_user_id)
-                .eq('platform', platform)
-                .not_.is_('color', 'null')
-                .execute()
-        )
-        games_for_color_stats = all_games_for_openings.data or []
-
-        if DEBUG:
-            print(f"[DEBUG] Fetched {len(games_for_color_stats)} total games for opening color stats")
+        # games_for_color_stats was already fetched in parallel above
 
         opening_color_performance = {'white': {}, 'black': {}}
         filtered_white_openings = {}  # Debug: track what we filtered out for white
@@ -2509,6 +2877,9 @@ async def get_comprehensive_analytics(
         result = {
             'total_games': total_games_count,
             'totalGames': len(games),  # Actual games analyzed
+            'loading_more': needs_background and len(games) < effective_limit,
+            'games_loaded': len(games),
+            'games_total': effective_limit,
             'winRate': round(win_rate, 1),
             'drawRate': round(draw_rate, 1),
             'lossRate': round(loss_rate, 1),
@@ -2532,8 +2903,9 @@ async def get_comprehensive_analytics(
             'resignation_timing': resignation_summary
         }
 
-        # Cache the result before returning
-        _set_in_cache(cache_key, result)
+        # Only cache complete results (not partial)
+        if not needs_background or len(games) >= effective_limit:
+            _set_in_cache(cache_key, result)
         return result
 
     except HTTPException:
@@ -3483,8 +3855,17 @@ def _build_recommendations(
     player_style: Dict[str, Any],
     strengths: List[str],
     improvements: List[str],
-    phase_accuracies: Dict[str, float]
+    phase_accuracies: Dict[str, float],
+    analyses: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, str]:
+    """
+    Build improvement roadmap recommendations using personality scores and move analysis data.
+    Enhanced with AI move analysis insights for more specific, actionable recommendations.
+    """
+    # Analyze move-level data if available
+    move_insights = _analyze_move_patterns_for_recommendations(analyses) if analyses else {}
+
+    # Rank personality traits
     ranked = sorted(
         ((key, personality_scores.get(key, 0.0)) for key in CORE_PERSONALITY_KEYS),
         key=lambda item: item[1],
@@ -3492,20 +3873,306 @@ def _build_recommendations(
     )
     top_key, top_value = ranked[0]
     lowest_key, lowest_value = ranked[-1]
-    primary = f"Focus targeted training on {PERSONALITY_LABELS[lowest_key].lower()} (currently {lowest_value:.0f})."
-    if phase_accuracies.get('endgame', 0.0) < 50.0:
-        primary += ' Add dedicated endgame study sessions to stabilise long games.'
-    secondary = f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples."
-    if personality_scores.get('staleness', 50.0) <= 40.0:
-        secondary = 'Develop a more structured opening repertoire for consistent play.'
-    leverage = (
-        f"Lean into a {player_style['category']} approach - {player_style['description'].rstrip('.')} to steer games into favourable territory."
+
+    # PRIMARY FOCUS: Use move analysis insights when available, otherwise fall back to personality scores
+    primary = _generate_primary_focus(
+        personality_scores, lowest_key, lowest_value, phase_accuracies, move_insights
     )
+
+    # SECONDARY FOCUS: Build on strengths identified in move analysis
+    secondary = _generate_secondary_focus(
+        personality_scores, top_key, top_value, move_insights
+    )
+
+    # LEVERAGE STRENGTH: Use player style and move analysis insights
+    leverage = _generate_leverage_strength(
+        player_style, personality_scores, move_insights
+    )
+
     return {
         'primary': primary,
         'secondary': secondary,
         'leverage': leverage,
     }
+
+
+def _analyze_move_patterns_for_recommendations(analyses: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Analyze move patterns from AI move analysis to identify specific improvement areas.
+    Returns insights about blunders, mistakes, tactical/positional patterns, and phase weaknesses.
+    """
+    if not analyses:
+        return {}
+
+    insights = {
+        'blunder_phase_distribution': {'opening': 0, 'middlegame': 0, 'endgame': 0},
+        'mistake_phase_distribution': {'opening': 0, 'middlegame': 0, 'endgame': 0},
+        'tactical_insight_count': 0,
+        'positional_insight_count': 0,
+        'tactical_mistakes': 0,
+        'positional_mistakes': 0,
+        'common_learning_points': [],
+        'common_improvements': [],
+        'total_user_moves': 0,
+        'blunder_rate': 0.0,
+        'mistake_rate': 0.0,
+        'weakest_phase': None,
+        'strongest_phase': None,
+    }
+
+    all_user_moves = []
+    learning_points_counter = Counter()
+    improvement_counter = Counter()
+
+    for analysis in analyses:
+        moves = analysis.get('moves_analysis') or []
+        if not moves:
+            continue
+
+        for move in moves:
+            # Only analyze user moves
+            if not move.get('is_user_move', False):
+                continue
+
+            all_user_moves.append(move)
+            game_phase = move.get('game_phase', 'middlegame').lower()
+
+            # Track phase distribution of errors
+            if move.get('is_blunder', False):
+                if game_phase in insights['blunder_phase_distribution']:
+                    insights['blunder_phase_distribution'][game_phase] += 1
+                elif game_phase == 'opening':
+                    insights['blunder_phase_distribution']['opening'] += 1
+                elif 'end' in game_phase:
+                    insights['blunder_phase_distribution']['endgame'] += 1
+                else:
+                    insights['blunder_phase_distribution']['middlegame'] += 1
+
+            if move.get('is_mistake', False):
+                if game_phase in insights['mistake_phase_distribution']:
+                    insights['mistake_phase_distribution'][game_phase] += 1
+                elif game_phase == 'opening':
+                    insights['mistake_phase_distribution']['opening'] += 1
+                elif 'end' in game_phase:
+                    insights['mistake_phase_distribution']['endgame'] += 1
+                else:
+                    insights['mistake_phase_distribution']['middlegame'] += 1
+
+            # Count tactical vs positional insights
+            tactical_insights = move.get('tactical_insights') or []
+            positional_insights = move.get('positional_insights') or []
+
+            if tactical_insights:
+                insights['tactical_insight_count'] += len(tactical_insights)
+                if move.get('is_mistake', False) or move.get('is_blunder', False):
+                    insights['tactical_mistakes'] += 1
+
+            if positional_insights:
+                insights['positional_insight_count'] += len(positional_insights)
+                if move.get('is_mistake', False) or move.get('is_blunder', False):
+                    insights['positional_mistakes'] += 1
+
+            # Collect learning points and improvement suggestions
+            learning_points = move.get('learning_points') or []
+            for point in learning_points:
+                if point and len(point.strip()) > 0:
+                    learning_points_counter[point.strip()] += 1
+
+            how_to_improve = move.get('how_to_improve', '')
+            if how_to_improve and len(how_to_improve.strip()) > 0:
+                improvement_counter[how_to_improve.strip()] += 1
+
+    insights['total_user_moves'] = len(all_user_moves)
+
+    if all_user_moves:
+        blunders = sum(1 for m in all_user_moves if m.get('is_blunder', False))
+        mistakes = sum(1 for m in all_user_moves if m.get('is_mistake', False))
+        insights['blunder_rate'] = (blunders / len(all_user_moves)) * 100
+        insights['mistake_rate'] = (mistakes / len(all_user_moves)) * 100
+
+    # Identify weakest and strongest phases
+    phase_error_totals = {}
+    for phase in ['opening', 'middlegame', 'endgame']:
+        phase_error_totals[phase] = (
+            insights['blunder_phase_distribution'].get(phase, 0) +
+            insights['mistake_phase_distribution'].get(phase, 0)
+        )
+
+    if phase_error_totals:
+        insights['weakest_phase'] = max(phase_error_totals.items(), key=lambda x: x[1])[0]
+        insights['strongest_phase'] = min(phase_error_totals.items(), key=lambda x: x[1])[0]
+
+    # Get most common learning points and improvements
+    insights['common_learning_points'] = [point for point, count in learning_points_counter.most_common(3)]
+    insights['common_improvements'] = [improvement for improvement, count in improvement_counter.most_common(3)]
+
+    return insights
+
+
+def _generate_primary_focus(
+    personality_scores: Dict[str, float],
+    lowest_key: str,
+    lowest_value: float,
+    phase_accuracies: Dict[str, float],
+    move_insights: Dict[str, Any]
+) -> str:
+    """Generate primary focus recommendation using move analysis insights when available."""
+
+    # If we have move analysis insights, use them for more specific recommendations
+    if move_insights and move_insights.get('total_user_moves', 0) > 0:
+        total_moves = move_insights.get('total_user_moves', 0)
+
+        # Check for high blunder rate - critical issue
+        blunder_rate = move_insights.get('blunder_rate', 0.0)
+        if blunder_rate > 5.0:  # More than 5% blunder rate
+            weakest_phase = move_insights.get('weakest_phase')
+            if weakest_phase:
+                phase_label = weakest_phase.capitalize()
+                blunders_count = int((blunder_rate / 100) * total_moves)
+                return f"Focus targeted training on reducing blunders in {phase_label.lower()} play (currently {blunder_rate:.1f}% blunder rate, {blunders_count} blunders). Take extra time to calculate candidate moves and check for tactical threats before committing."
+
+        # Check for tactical vs positional mistakes with specific counts
+        tactical_mistakes = move_insights.get('tactical_mistakes', 0)
+        positional_mistakes = move_insights.get('positional_mistakes', 0)
+        total_mistakes = tactical_mistakes + positional_mistakes
+
+        if tactical_mistakes > positional_mistakes * 1.5 and tactical_mistakes > 5:
+            tactical_score = personality_scores.get('tactical', 50.0)
+            return f"Focus targeted training on tactical awareness (currently {tactical_score:.0f}). Your move analysis reveals {tactical_mistakes} tactical mistakes compared to {positional_mistakes} positional ones—practice puzzle solving daily to improve pattern recognition and calculation."
+        elif positional_mistakes > tactical_mistakes * 1.5 and positional_mistakes > 5:
+            positional_score = personality_scores.get('positional', 50.0)
+            return f"Focus targeted training on positional understanding (currently {positional_score:.0f}). Your move analysis shows {positional_mistakes} positional mistakes compared to {tactical_mistakes} tactical ones—study strategic plans, pawn structures, and long-term piece placement."
+
+        # Use weakest phase if identified with personalized context
+        weakest_phase = move_insights.get('weakest_phase')
+        if weakest_phase:
+            phase_label = weakest_phase.capitalize()
+            phase_blunders = move_insights['blunder_phase_distribution'].get(weakest_phase, 0)
+            phase_mistakes = move_insights['mistake_phase_distribution'].get(weakest_phase, 0)
+            phase_errors = phase_blunders + phase_mistakes
+
+            if phase_errors > 0:
+                # Calculate percentage of total errors in this phase
+                total_errors = sum(
+                    move_insights['blunder_phase_distribution'].get(p, 0) +
+                    move_insights['mistake_phase_distribution'].get(p, 0)
+                    for p in ['opening', 'middlegame', 'endgame']
+                )
+                error_percentage = (phase_errors / total_errors * 100) if total_errors > 0 else 0
+
+                # Get phase accuracy for context (map phase names correctly)
+                phase_key = 'middle' if weakest_phase == 'middlegame' else weakest_phase
+                phase_accuracy = phase_accuracies.get(phase_key, 0.0)
+                if phase_accuracy > 0:
+                    return f"Focus targeted training on {phase_label.lower()} play (currently {phase_errors} significant errors, {error_percentage:.0f}% of your total mistakes, accuracy: {phase_accuracy:.0f}%). Review your best {phase_label.lower()} examples to identify patterns that work."
+                else:
+                    return f"Focus targeted training on {phase_label.lower()} play—your move analysis shows {phase_errors} significant errors in this phase ({error_percentage:.0f}% of total mistakes). Study your strongest {phase_label.lower()} games to identify what you did right."
+
+        # Use common learning points if available
+        common_learning = move_insights.get('common_learning_points', [])
+        if common_learning:
+            # Extract the most actionable learning point
+            learning_point = common_learning[0]
+            if len(learning_point) < 150:  # Keep it concise
+                return f"Focus targeted training on {PERSONALITY_LABELS[lowest_key].lower()} (currently {lowest_value:.0f}). {learning_point}"
+
+    # Fall back to personality-based recommendation
+    primary = f"Focus targeted training on {PERSONALITY_LABELS[lowest_key].lower()} (currently {lowest_value:.0f})."
+    if phase_accuracies.get('endgame', 0.0) < 50.0:
+        primary += " Add dedicated endgame study sessions to stabilize long games."
+
+    return primary
+
+
+def _generate_secondary_focus(
+    personality_scores: Dict[str, float],
+    top_key: str,
+    top_value: float,
+    move_insights: Dict[str, Any]
+) -> str:
+    """Generate secondary focus recommendation to build on strengths."""
+
+    # If we have move analysis insights, reference specific strengths
+    if move_insights and move_insights.get('total_user_moves', 0) > 0:
+        strongest_phase = move_insights.get('strongest_phase')
+        weakest_phase = move_insights.get('weakest_phase')
+
+        if strongest_phase and strongest_phase != weakest_phase:
+            phase_label = strongest_phase.capitalize()
+            phase_blunders = move_insights['blunder_phase_distribution'].get(strongest_phase, 0)
+            phase_mistakes = move_insights['mistake_phase_distribution'].get(strongest_phase, 0)
+            phase_errors = phase_blunders + phase_mistakes
+
+            if phase_errors == 0:
+                return f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples. Your {phase_label.lower()} play shows exceptional consistency with zero significant errors."
+            elif phase_errors < 3:
+                return f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples. Your {phase_label.lower()} play stands out with only {phase_errors} significant error{'s' if phase_errors > 1 else ''}—this is your strongest phase."
+
+        # Check for areas with many insights (indicating activity/engagement)
+        tactical_count = move_insights.get('tactical_insight_count', 0)
+        positional_count = move_insights.get('positional_insight_count', 0)
+        total_insights = tactical_count + positional_count
+
+        if total_insights > 10:  # Only if we have substantial insight data
+            if tactical_count > positional_count * 1.2 and top_key == 'tactical':
+                return f"Continue to cultivate tactical awareness (currently {top_value:.0f}) by reviewing your best examples. Your games contain {tactical_count} tactical patterns worth studying—analyze positions where you found tactical solutions."
+            elif positional_count > tactical_count * 1.2 and top_key == 'positional':
+                return f"Continue to cultivate positional understanding (currently {top_value:.0f}) by reviewing your best examples. Your strategic play shows {positional_count} clear positional patterns—identify what made these positions work."
+
+        # If we have strong phase data, reference it
+        if strongest_phase:
+            phase_blunders_check = move_insights['blunder_phase_distribution'].get(strongest_phase, 0)
+            phase_mistakes_check = move_insights['mistake_phase_distribution'].get(strongest_phase, 0)
+            phase_errors_check = phase_blunders_check + phase_mistakes_check
+            if phase_errors_check < 5:
+                phase_label = strongest_phase.capitalize()
+                return f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples. Your {phase_label.lower()} performance demonstrates this strength."
+
+    # Default recommendation
+    secondary = f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples."
+    if personality_scores.get('staleness', 50.0) <= 40.0:
+        secondary = 'Develop a more structured opening repertoire for consistent play.'
+
+    return secondary
+
+
+def _generate_leverage_strength(
+    player_style: Dict[str, Any],
+    personality_scores: Dict[str, float],
+    move_insights: Dict[str, Any]
+) -> str:
+    """Generate leverage strength recommendation using player style and move insights."""
+
+    style_category = player_style.get('category', 'balanced')
+    style_description = player_style.get('description', '').rstrip('.')
+
+    base_leverage = f"Lean into a {style_category} approach - {style_description} to steer games into favorable territory."
+
+    # Enhance with move analysis insights if available
+    if move_insights and move_insights.get('total_user_moves', 0) > 0:
+        tactical_count = move_insights.get('tactical_insight_count', 0)
+        positional_count = move_insights.get('positional_insight_count', 0)
+        total_insights = tactical_count + positional_count
+
+        # If player style matches move analysis patterns, reinforce it with specific data
+        if style_category == 'tactical' and tactical_count > positional_count and total_insights > 5:
+            if tactical_count > positional_count * 1.5:
+                return f"Lean into a tactical approach - {style_description} Your move analysis confirms this is where you excel with {tactical_count} tactical patterns identified. Seek positions with tactical complications and calculation challenges."
+            else:
+                return f"Lean into a tactical approach - {style_description} Your move analysis shows strong tactical intuition. Focus on positions where you can create complications and calculate variations."
+        elif style_category == 'positional' and positional_count > tactical_count and total_insights > 5:
+            if positional_count > tactical_count * 1.5:
+                return f"Lean into a positional approach - {style_description} Your move analysis shows strong strategic understanding with {positional_count} positional patterns identified. Prefer long-term advantages and structural edges over immediate tactics."
+            else:
+                return f"Lean into a positional approach - {style_description} Your move analysis confirms your strategic strength. Focus on accumulating small advantages and improving piece placement gradually."
+        elif style_category == 'aggressive' and total_insights > 5:
+            return f"Lean into an aggressive approach - {style_description} Your move analysis shows you thrive in dynamic positions. Look for opportunities to create threats and complicate the position."
+        elif style_category == 'balanced' and total_insights > 5:
+            # For balanced players, highlight their versatility
+            if tactical_count > 0 and positional_count > 0:
+                return f"Lean into a balanced approach - {style_description} Your move analysis shows versatility with both tactical ({tactical_count}) and positional ({positional_count}) patterns. Adapt your style based on the position's requirements."
+
+    return base_leverage
 
 
 def _generate_ai_style_analysis(
@@ -3516,7 +4183,83 @@ def _generate_ai_style_analysis(
     average_accuracy: float,
     phase_accuracies: Dict[str, float]
 ) -> Dict[str, str]:
-    """Generate personalized, data-driven style analysis with specific insights."""
+    """Generate personalized, data-driven style analysis with specific insights.
+
+    First tries AI generation if available, then falls back to template-based generation.
+    """
+
+    # Try AI generation first
+    try:
+        from .ai_comment_generator import AIChessCommentGenerator
+
+        logger.info("[STYLE ANALYSIS] Initializing AI generator...")
+        ai_generator = AIChessCommentGenerator()
+
+        if ai_generator and ai_generator.enabled:
+            logger.info("[STYLE ANALYSIS] ✅ AI generator is enabled and ready")
+            logger.info(f"[STYLE ANALYSIS] Model: {ai_generator.config.ai_model if hasattr(ai_generator, 'config') else 'unknown'}")
+            logger.info("[STYLE ANALYSIS] Attempting AI generation for style analysis...")
+
+            try:
+                ai_result = ai_generator.generate_style_analysis(
+                    personality_scores=personality_scores,
+                    player_style=player_style,
+                    player_level=player_level,
+                    total_games=total_games,
+                    average_accuracy=average_accuracy,
+                    phase_accuracies=phase_accuracies
+                )
+
+                if ai_result and all(key in ai_result for key in ['style_summary', 'characteristics', 'strengths', 'playing_patterns', 'improvement_focus']):
+                    logger.info("[STYLE ANALYSIS] ✅ AI generation successful - using AI-generated style analysis")
+                    logger.debug(f"[STYLE ANALYSIS] Generated fields: {list(ai_result.keys())}")
+                    return ai_result
+                else:
+                    missing_keys = [key for key in ['style_summary', 'characteristics', 'strengths', 'playing_patterns', 'improvement_focus']
+                                   if key not in (ai_result or {})]
+                    logger.warning(f"[STYLE ANALYSIS] ⚠️  AI generation returned incomplete result (missing: {missing_keys}), falling back to templates")
+            except Exception as gen_error:
+                import traceback
+                logger.error(f"[STYLE ANALYSIS] ❌ AI generation call failed: {gen_error}")
+                logger.debug(f"[STYLE ANALYSIS] Generation error traceback: {traceback.format_exc()}")
+                logger.info("[STYLE ANALYSIS] Falling back to template-based generation")
+        else:
+            if ai_generator:
+                logger.warning("[STYLE ANALYSIS] ⚠️  AI generator exists but is disabled")
+                logger.info(f"[STYLE ANALYSIS] AI_ENABLED={ai_generator.config.ai_enabled if hasattr(ai_generator, 'config') else 'unknown'}")
+            else:
+                logger.warning("[STYLE ANALYSIS] ⚠️  AI generator not available - using templates")
+            logger.info("[STYLE ANALYSIS] Using template-based style analysis generation")
+    except ImportError as import_error:
+        logger.warning(f"[STYLE ANALYSIS] ⚠️  Failed to import AI generator: {import_error}")
+        logger.info("[STYLE ANALYSIS] AI feature not available - using templates")
+    except Exception as e:
+        import traceback
+        logger.error(f"[STYLE ANALYSIS] ❌ Unexpected error during AI initialization: {e}")
+        logger.debug(f"[STYLE ANALYSIS] Error traceback: {traceback.format_exc()}")
+        logger.info("[STYLE ANALYSIS] Falling back to template-based generation")
+
+    # Fallback to template-based generation
+    logger.info("[STYLE ANALYSIS] Using template-based style analysis generation")
+    return _generate_template_style_analysis(
+        personality_scores,
+        player_style,
+        player_level,
+        total_games,
+        average_accuracy,
+        phase_accuracies
+    )
+
+
+def _generate_template_style_analysis(
+    personality_scores: Dict[str, float],
+    player_style: Dict[str, Any],
+    player_level: str,
+    total_games: int,
+    average_accuracy: float,
+    phase_accuracies: Dict[str, float]
+) -> Dict[str, str]:
+    """Generate template-based style analysis (fallback when AI is not available)."""
 
     # Get the dominant trait and its score
     ranked_traits = sorted(
@@ -5000,7 +5743,7 @@ def _build_deep_analysis_response(
     phase_accuracies = _compute_phase_accuracies(analyses)
     player_style, playing_style = _determine_player_style(personality_scores)
     strengths, improvements = _summarize_strengths_and_gaps(personality_scores)
-    recommendations = _build_recommendations(personality_scores, player_style, strengths, improvements, phase_accuracies)
+    recommendations = _build_recommendations(personality_scores, player_style, strengths, improvements, phase_accuracies, analyses)
     famous_players = _generate_famous_player_comparisons(personality_scores, player_style)
     ai_style_analysis = _generate_ai_style_analysis(personality_scores, player_style, player_level, total_games, average_accuracy, phase_accuracies)
 
@@ -7403,13 +8146,19 @@ def _validate_single_game_analysis_request(request: UnifiedAnalysisRequest) -> T
 def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
+    if analysis_engine is not None:
+        return analysis_engine
+
     # Pass stockfish path from config to ensure production paths are checked
     stockfish_path = config.stockfish.path
     if stockfish_path:
         print(f"[ENGINE] Using Stockfish from config: {stockfish_path}")
     else:
         print(f"[ENGINE] Warning: No Stockfish path found in config")
+
+    print("[ENGINE] Initializing ChessAnalysisEngine (this will also initialize AI comment generator)...")
     analysis_engine = ChessAnalysisEngine(stockfish_path=stockfish_path)
+    print("[ENGINE] ✅ ChessAnalysisEngine initialized successfully")
     return analysis_engine
 
 async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:

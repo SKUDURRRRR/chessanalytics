@@ -636,7 +636,7 @@ export default function PricingPage() {
                   How accurate is the analysis?
                 </h3>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  Our analysis is powered by Stockfish 17.1, the world's strongest chess engine. It evaluates positions with professional-grade accuracy, providing move classifications (best, excellent, mistake, blunder) that align with industry standards used by Chess.com and Lichess.
+                  Our analysis is powered by Stockfish 17.1, the world's strongest chess engine. It evaluates positions with professional-grade accuracy, providing move classifications (brilliant, best, excellent, mistake, blunder) that align with industry standards used by Chess.com and Lichess.
                 </p>
               </div>
               <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-6">

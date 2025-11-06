@@ -108,11 +108,12 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           0
         ),
         // Use backend API for comprehensive analytics instead of direct Supabase queries
+        // Fetch all games for accurate color/opening stats (backend supports up to 10,000)
         (async () => {
           const backendData = await UnifiedAnalysisService.getComprehensiveAnalytics(
             userId,
             (platform as 'lichess' | 'chess.com') || 'lichess',
-            500  // Optimized: 500 games provides excellent statistical accuracy while loading 20x faster
+            10000  // Fetch all games (up to 10,000 limit) for accurate color/opening statistics
           )
           // Return the full backend response with all the new analytics
           return backendData

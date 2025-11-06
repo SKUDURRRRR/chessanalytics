@@ -286,7 +286,9 @@ class ChessCoachingGenerator:
         is_user_move = move_analysis.get('is_user_move', True)
 
         # First check: special comments (move 1 welcome, position update windows) always use AI
-        if move_number == 1 and is_user_move:
+        # Check if this is the first move of the game (ply 0 or 1, which both have fullmove_number == 1)
+        ply_index = move_analysis.get('ply_index', 0)
+        if move_number == 1 and (ply_index == 0 or ply_index == 1):
             return True
         if is_user_move and self._is_in_position_update_window(move_number):
             return True
@@ -416,9 +418,11 @@ class ChessCoachingGenerator:
         # Use player_elo from move_analysis if available, otherwise use parameter
         player_elo = move_analysis.get('player_elo', player_elo)
 
-        # Move 1: Welcome comment
-        if move_number == 1 and is_user_move:
-            return self._generate_move_1_welcome_comment(board, move, player_elo, move_analysis)
+        # Move 1: Welcome comment (for both user's and opponent's first move)
+        # Check if this is the first move of the game (ply 0 or 1, which both have fullmove_number == 1)
+        ply_index = move_analysis.get('ply_index', 0)
+        if move_number == 1 and (ply_index == 0 or ply_index == 1):
+            return self._generate_move_1_welcome_comment(board, move, player_elo, move_analysis, is_user_move)
 
         # Position descriptions: Windows 5-10, 14-17, 21-24, 28-31, etc.
         if is_user_move and self._is_in_position_update_window(move_number):
@@ -434,11 +438,14 @@ class ChessCoachingGenerator:
 
         return None
 
-    def _generate_move_1_welcome_comment(self, board: chess.Board, move: chess.Move, player_elo: int, move_analysis: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    def _generate_move_1_welcome_comment(self, board: chess.Board, move: chess.Move, player_elo: int, move_analysis: Optional[Dict[str, Any]] = None, is_user_move: bool = True) -> Optional[str]:
         """Generate a Tal-inspired welcoming comment for the first move."""
         if not self.ai_generator or not self.ai_generator.enabled:
             # Fallback template
-            return "Welcome to the game! The pieces are ready, the board awaits. Let's see what adventure unfolds."
+            if is_user_move:
+                return "Welcome to the game! The pieces are ready, the board awaits. Let's see what adventure unfolds."
+            else:
+                return "The game begins! Your opponent makes their first move. The adventure is underway!"
 
         # Get move_san from move_analysis if available, otherwise try to get from board
         if move_analysis and 'move_san' in move_analysis:
@@ -456,17 +463,19 @@ class ChessCoachingGenerator:
         fen_after = board.fen()  # Board is already after the move
 
         # Build special prompt for move 1
-        prompt = f"""Welcome! A player rated {player_elo} ELO has just made their first move: {move_san}.
+        move_owner = "the player" if is_user_move else "the opponent"
+        prompt = f"""Welcome! {move_owner.capitalize()} rated {player_elo} ELO has just made their first move: {move_san}.
 
 **THE POSITION AFTER {move_san}:**
 {fen_after}
 
 **YOUR MISSION:**
 Write a warm, inspiring, Tal-style welcome comment (2 sentences MAXIMUM) that:
-- Welcomes the player to the game with enthusiasm and charm
+- Welcomes the game with enthusiasm and charm
 - Uses Tal's playful, imaginative language
 - Makes chess feel like an exciting adventure about to begin
 - Avoids being too long or instructional - just a warm welcome
+- {"Focus on the player starting their game" if is_user_move else "Acknowledge the opponent's first move and the game beginning"}
 
 **STYLE:** Channel Mikhail Tal's energy: "Welcome to the deep dark forest where 2+2=5! The pieces are ready, the board awaits. Let's see what adventure unfolds."
 
@@ -1634,7 +1643,10 @@ Write the phase transition comment now:"""
         move_number = move_analysis.get('fullmove_number', 0)
         move_san = move_analysis.get('move_san', '')
 
-        if move_number <= 3:
+        if move_number == 1:
+            # First move - keep it short and Tal'ish to cheer up the player
+            return "The adventure begins! Time to bring out your forces and claim the center."
+        elif move_number <= 3:
             return f"Book move. {move_san} is a fundamental opening move that helps control the center and develop your position."
         elif move_number <= 6:
             return f"Book move. {move_san} follows established opening theory and helps develop your pieces effectively."

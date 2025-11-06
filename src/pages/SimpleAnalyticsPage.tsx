@@ -14,6 +14,7 @@ import { useAuth } from '../contexts/AuthContext'
 import UsageLimitModal from '../components/UsageLimitModal'
 import { AnonymousUsageTracker } from '../services/anonymousUsageTracker'
 import AnonymousLimitModal from '../components/AnonymousLimitModal'
+import LoadingModal from '../components/LoadingModal'
 // DatabaseDiagnosticsComponent is development-only, imported conditionally below
 // Debug components removed from production
 // import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
@@ -133,6 +134,10 @@ export default function SimpleAnalyticsPage() {
   const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
   const [anonymousLimitType, setAnonymousLimitType] = useState<'import' | 'analyze'>('import')
 
+  // Slow loading popup state
+  const [showSlowLoadingPopup, setShowSlowLoadingPopup] = useState(false)
+  const slowLoadingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
   useEffect(() => {
     // Check for route parameters first, then URL parameters
     const routeUser = params.userId
@@ -175,6 +180,37 @@ export default function SimpleAnalyticsPage() {
   useEffect(() => {
     checkApiHealth()
   }, [])
+
+  // Show popup if loading takes more than 1 second
+  useEffect(() => {
+    // Clear any existing timeout
+    if (slowLoadingTimeoutRef.current) {
+      clearTimeout(slowLoadingTimeoutRef.current)
+      slowLoadingTimeoutRef.current = null
+    }
+
+    // If we're loading or analyzing, set a timeout to show popup after 1 second
+    if (isLoading || analyzing) {
+      slowLoadingTimeoutRef.current = setTimeout(() => {
+        // Use a function to get the latest state
+        setShowSlowLoadingPopup(prev => {
+          // Double-check if still loading/analyzing (this will be checked again in the render)
+          return true
+        })
+      }, 1000)
+    } else {
+      // If not loading/analyzing, hide the popup immediately
+      setShowSlowLoadingPopup(false)
+    }
+
+    // Cleanup timeout on unmount or when loading state changes
+    return () => {
+      if (slowLoadingTimeoutRef.current) {
+        clearTimeout(slowLoadingTimeoutRef.current)
+        slowLoadingTimeoutRef.current = null
+      }
+    }
+  }, [isLoading, analyzing])
 
   // Auto-sync effect - triggers when userId and platform are set
   useEffect(() => {
@@ -223,6 +259,7 @@ export default function SimpleAnalyticsPage() {
       if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
       if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
       if (forceRefreshTimeoutRef.current) clearTimeout(forceRefreshTimeoutRef.current)
+      if (slowLoadingTimeoutRef.current) clearTimeout(slowLoadingTimeoutRef.current)
 
       // Clear intervals
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
@@ -790,23 +827,29 @@ export default function SimpleAnalyticsPage() {
     }
   }, [])
 
-  if (isLoading) {
+  if (isLoading && !showSlowLoadingPopup) {
+    // Show background while waiting for popup to appear after 1 second
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100">
-        <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.08] px-8 py-10 text-center shadow-2xl shadow-black/50">
-            <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-            <p className="text-base text-slate-200">Loading your chess analytics...</p>
-            <p className="mt-2 text-xs uppercase tracking-wide text-slate-400">Fetching player profile</p>
-          </div>
-        </div>
-      </div>
+      <div className="min-h-screen bg-slate-950" />
+    )
+  }
+
+  if (isLoading && showSlowLoadingPopup) {
+    return (
+      <>
+        <div className="min-h-screen bg-slate-950" />
+        <LoadingModal
+          isOpen={true}
+          message="Loading your chess analytics..."
+          subtitle="Fetching player profile"
+        />
+      </>
     )
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="container-responsive space-responsive py-8">
+      <div className="container-responsive space-responsive py-8 content-fade">
         {userId && (
           <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-6 py-6 shadow-2xl shadow-black/60 sm:px-8 sm:py-8">
             <div className="absolute inset-x-10 top-0 h-40 rounded-full bg-sky-400/10 blur-3xl" />
@@ -1143,6 +1186,13 @@ export default function SimpleAnalyticsPage() {
         isOpen={anonymousLimitModalOpen}
         onClose={() => setAnonymousLimitModalOpen(false)}
         limitType={anonymousLimitType}
+      />
+
+      {/* Slow Loading Popup - shows after 1 second if still loading/analyzing */}
+      <LoadingModal
+        isOpen={showSlowLoadingPopup && (isLoading || analyzing)}
+        message={analyzing ? 'Preparing games...' : 'Loading your chess analytics...'}
+        subtitle={analyzing ? 'This may take a few minutes' : 'Please wait'}
       />
     </div>
   )

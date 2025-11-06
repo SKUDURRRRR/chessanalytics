@@ -134,6 +134,7 @@ export function ModernChessArrows({
     let retryCount = 0
     const maxRetries = 10
     let resizeObserver: ResizeObserver | null = null
+    let isUnmounted = false
 
     const measure = (): boolean => {
       if (!svgRef.current) return false
@@ -147,7 +148,7 @@ export function ModernChessArrows({
 
       // If squares not found, retry
       if (!a1Square || !h8Square) {
-        if (retryCount < maxRetries) {
+        if (retryCount < maxRetries && !isUnmounted) {
           retryCount++
           timeoutId = setTimeout(measure, 100 * retryCount) // Exponential backoff
           return false
@@ -161,7 +162,7 @@ export function ModernChessArrows({
 
       // Verify squares are actually rendered and visible
       if (a1Rect.width <= 0 || svgRect.width <= 0 || a1Rect.width !== h8Rect.width) {
-        if (retryCount < maxRetries) {
+        if (retryCount < maxRetries && !isUnmounted) {
           retryCount++
           timeoutId = setTimeout(measure, 100 * retryCount)
           return false
@@ -173,7 +174,10 @@ export function ModernChessArrows({
       retryCount = 0
 
       const actualSquareSize = a1Rect.width
-      setSquareSize(actualSquareSize)
+      // Only update state if component is still mounted
+      if (!isUnmounted) {
+        setSquareSize(actualSquareSize)
+      }
 
       // Calculate where a1 center actually is in SVG coordinate space
       const a1CenterX = a1Rect.left + a1Rect.width / 2 - svgRect.left
@@ -221,18 +225,26 @@ export function ModernChessArrows({
       offsetX = (offsetX + offsetXFromH8) / 2
       offsetY = (offsetY + offsetYFromH8) / 2
 
-      setBoardOffset({ x: offsetX, y: offsetY })
+      // Only update state if component is still mounted
+      if (!isUnmounted) {
+        setBoardOffset({ x: offsetX, y: offsetY })
+      }
       return true
     }
 
     const scheduleMeasure = () => {
+      // Don't schedule if component is unmounted
+      if (isUnmounted) return
+
       retryCount = 0 // Reset retry count on new measurement attempt
       if (timeoutId) clearTimeout(timeoutId)
       if (rafId) cancelAnimationFrame(rafId)
 
       // Use multiple RAF calls to ensure DOM is fully ready
       rafId = requestAnimationFrame(() => {
+        if (isUnmounted) return
         rafId = requestAnimationFrame(() => {
+          if (isUnmounted) return
           timeoutId = setTimeout(measure, 50)
         })
       })
@@ -259,6 +271,7 @@ export function ModernChessArrows({
     observerTimeoutId = setTimeout(setupObserver, 200)
 
     return () => {
+      isUnmounted = true
       if (rafId) cancelAnimationFrame(rafId)
       if (timeoutId) clearTimeout(timeoutId)
       if (observerTimeoutId) clearTimeout(observerTimeoutId)
@@ -286,7 +299,7 @@ export function ModernChessArrows({
         top: 0,
         left: 0,
         pointerEvents: 'none',
-        zIndex: 10,
+        zIndex: 1,
         overflow: 'visible'
       }}
     >

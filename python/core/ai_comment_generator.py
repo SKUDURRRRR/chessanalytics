@@ -596,6 +596,22 @@ class AIChessCommentGenerator:
         if opening_name and move_number <= 3:
             opening_context = f"\n**OPENING:** {opening_name} (identified from move sequence: {' '.join(move_sequence[:2]) if move_sequence and len(move_sequence) >= 2 else 'N/A'})\n"
 
+        # Special handling for first move - keep it short and Tal'ish
+        if move_number == 1 and is_user_move:
+            prompt = f"""A player just started their game with {move_san} (move 1).
+
+**YOUR MISSION (Tal-Style Commentary):**
+Write ONE short, encouraging sentence (maximum 15 words) that captures the excitement of starting a game. Channel Mikhail Tal's playful, energetic spirit. Be brief, cheerful, and inspiring—something like "The adventure begins!" or "Time to bring out your forces!" Keep it light and encouraging, not technical or educational.
+
+**CRITICAL RULES:**
+- ONE sentence maximum, 15 words or less
+- Be encouraging and energetic, like Tal
+- NO technical explanations, NO long descriptions
+- Just cheer them on for starting the game!
+
+Write the comment now:"""
+            return prompt
+
         prompt = f"""A player rated {player_elo} ELO ({complexity} level) just played {move_san} in the {game_phase} (move {move_number}).
 
 **THE MOVE:** {move_san}

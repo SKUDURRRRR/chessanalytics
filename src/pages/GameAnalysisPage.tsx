@@ -26,6 +26,7 @@ import { useChessSound } from '../hooks/useChessSound'
 import { useChessSoundSettings } from '../contexts/ChessSoundContext'
 import { getMoveSoundSimple } from '../utils/chessSounds'
 import type { MatchHistoryGameSummary, Platform } from '../types'
+import LoadingModal from '../components/LoadingModal'
 
 interface EvaluationInfo {
   type: 'cp' | 'mate'
@@ -133,9 +134,21 @@ const canonicalizePlatform = (platform: string | undefined): Platform | null => 
 }
 
 const parseUciMove = (uci: string) => {
+  // Validate UCI format
+  if (!uci || typeof uci !== 'string' || uci.length < 4) {
+    throw new Error(`Invalid UCI format: ${uci}`)
+  }
+
   const from = uci.slice(0, 2)
   const to = uci.slice(2, 4)
   const promotion = uci.length > 4 ? uci.slice(4) : undefined
+
+  // Validate square format (should be like 'e2', 'a1', etc.)
+  const squareRegex = /^[a-h][1-8]$/
+  if (!squareRegex.test(from) || !squareRegex.test(to)) {
+    throw new Error(`Invalid square format in UCI: ${uci}`)
+  }
+
   return { from, to, promotion }
 }
 
@@ -238,7 +251,11 @@ const buildEnhancedFallbackExplanation = (
   const isOpeningMove = moveNumber <= 10 && (classification === 'best' || classification === 'excellent' || classification === 'good')
 
   if (isOpeningMove) {
-    // Simple book move comment for opening moves
+    // First move - keep it short and Tal'ish to cheer up the player
+    if (moveNumber === 1 && isUserMove) {
+      return 'The adventure begins! Time to bring out your forces and claim the center.'
+    }
+    // Simple book move comment for other opening moves
     return 'Book move.'
   }
 
@@ -689,6 +706,24 @@ export default function GameAnalysisPage() {
       // Prefer fen_before from backend data if available (more reliable)
       // Fall back to calculated positions if not available
       const fenBefore = move.fen_before || positions[idx]
+
+      // CRITICAL: Reset chess instance to the correct position before processing this move
+      // This ensures we're always applying moves from the correct position, even if previous moves failed
+      try {
+        chess.load(fenBefore)
+      } catch (err) {
+        console.warn(`Failed to load fenBefore for move ${idx}, using calculated position:`, err)
+        // Fallback to using the last calculated position
+        if (positions[idx]) {
+          try {
+            chess.load(positions[idx])
+          } catch (fallbackErr) {
+            console.error(`Failed to load fallback position for move ${idx}:`, fallbackErr)
+            // If all else fails, keep current position (shouldn't happen but prevents crash)
+          }
+        }
+      }
+
       const moveNumber = Math.floor(idx / 2) + 1
       const player = idx % 2 === 0 ? 'white' : 'black'
       const moveIsUserFlag = typeof move.is_user_move === 'boolean' ? move.is_user_move : undefined
@@ -748,84 +783,166 @@ export default function GameAnalysisPage() {
         }
       }
 
-      // Use enhanced coaching comment if available and doesn't contain centipawn references,
-      // otherwise use Chess.com-style comments for concise tactical explanations
+      // Prioritize backend coaching_comment (Tal-style AI comments) if available
+      // Only use Chess.com-style comments as fallback for moves without backend comments
       let explanation
 
-      // Try Chess.com-style comment first for more concise, tactical explanations
-      try {
-        const prevEvaluation: EvaluationInfo | null = idx > 0 && rawMoves[idx - 1]?.evaluation
-          ? rawMoves[idx - 1].evaluation!
-          : null
-
-        const chessComContext: ChessComCommentContext = {
-          classification,
-          centipawnLoss: move.centipawn_loss ?? null,
-          evaluation: evaluation,
-          prevEvaluation: prevEvaluation,
-          san: displaySan,
-          bestMoveSan: bestMoveSan,
-          isUserMove,
-          player,
-          fenBefore: fenBefore,
-          fenAfter: '', // Will be set after move is applied
-          tacticalInsights: move.tactical_insights,
-          positionalInsights: move.positional_insights
-        }
-
-        // Apply move first to get fenAfter
+      // First, check if backend provided a coaching comment (Tal-style AI-generated)
+      if (move.coaching_comment && move.coaching_comment.trim() &&
+          !move.coaching_comment.toLowerCase().includes('centipawn') &&
+          !move.coaching_comment.toLowerCase().includes('cp')) {
+        explanation = move.coaching_comment
+      } else {
+        // Fallback to Chess.com-style comments for moves without backend comments
         try {
-          const { from, to, promotion } = parseUciMove(move.move)
-          chess.move({ from, to, promotion })
-        } catch (err) {
-          console.warn('Failed to apply move, attempting SAN fallback', move.move, err)
-          try {
-            chess.move(move.move_san)
-          } catch (fallbackError) {
-            console.error('Unable to apply move to board', move.move_san, fallbackError)
-          }
-        }
+          const prevEvaluation: EvaluationInfo | null = idx > 0 && rawMoves[idx - 1]?.evaluation
+            ? rawMoves[idx - 1].evaluation!
+            : null
 
-        chessComContext.fenAfter = chess.fen()
-
-        const chessComComment = generateChessComComment(chessComContext)
-        explanation = formatChessComComment(chessComComment, displaySan)
-      } catch (error) {
-        console.warn('Error generating Chess.com-style comment, falling back to standard comment', error)
-
-        // Fallback to existing comment generation
-        if (move.coaching_comment && move.coaching_comment.trim() &&
-            !move.coaching_comment.toLowerCase().includes('centipawn') &&
-            !move.coaching_comment.toLowerCase().includes('cp')) {
-          explanation = move.coaching_comment
-        } else {
-          const commentContext: HumanReasonContext = {
+          const chessComContext: ChessComCommentContext = {
             classification,
             centipawnLoss: move.centipawn_loss ?? null,
+            evaluation: evaluation,
+            prevEvaluation: prevEvaluation,
+            san: displaySan,
             bestMoveSan: bestMoveSan,
-            moveNumber: moveNumber,
             isUserMove,
-            isOpeningMove: moveNumber <= 10 && (classification === 'best' || classification === 'excellent' || classification === 'good' || classification === 'great'),
-            tacticalInsights: move.tactical_insights,
-            positionalInsights: move.positional_insights,
-            risks: move.risks,
-            benefits: move.benefits,
+            player,
             fenBefore: fenBefore,
-            move: move.move_san,
+            fenAfter: '', // Will be set after move is applied
+            tacticalInsights: move.tactical_insights,
+            positionalInsights: move.positional_insights
           }
-          explanation = buildHumanComment(commentContext)
-        }
 
-        // Apply move if not already applied
-        try {
-          const { from, to, promotion } = parseUciMove(move.move)
-          chess.move({ from, to, promotion })
-        } catch (err) {
-          // Already logged
+          // Apply move first to get fenAfter
+          let moveApplied = false
+          try {
+            const { from, to, promotion } = parseUciMove(move.move)
+            const moveResult = chess.move({ from, to, promotion })
+            if (moveResult) {
+              moveApplied = true
+            }
+          } catch (err) {
+            console.warn('Failed to apply move, attempting SAN fallback', move.move, err)
+            try {
+              if (move.move_san) {
+                const moveResult = chess.move(move.move_san)
+                if (moveResult) {
+                  moveApplied = true
+                }
+              }
+            } catch (fallbackError) {
+              console.error('Unable to apply move to board', move.move_san, fallbackError)
+            }
+          }
+
+          // Only update fenAfter if move was successfully applied
+          if (moveApplied) {
+            chessComContext.fenAfter = chess.fen()
+          } else {
+            // Use fenBefore as fallback if move couldn't be applied
+            chessComContext.fenAfter = fenBefore
+          }
+
+          const chessComComment = generateChessComComment(chessComContext)
+          explanation = formatChessComComment(chessComComment, displaySan)
+        } catch (error) {
+          console.warn('Error generating Chess.com-style comment, falling back to standard comment', error)
+
+          // Final fallback to template-based comments
+          if (move.explanation) {
+            explanation = move.explanation
+          } else {
+            const commentContext: HumanReasonContext = {
+              classification,
+              centipawnLoss: move.centipawn_loss ?? null,
+              bestMoveSan: bestMoveSan,
+              moveNumber: moveNumber,
+              isUserMove,
+              isOpeningMove: moveNumber <= 10 && (classification === 'best' || classification === 'excellent' || classification === 'good' || classification === 'great'),
+              tacticalInsights: move.tactical_insights,
+              positionalInsights: move.positional_insights,
+              risks: move.risks,
+              benefits: move.benefits,
+              fenBefore: fenBefore,
+              move: move.move_san,
+            }
+            explanation = buildHumanComment(commentContext)
+          }
         }
       }
 
-      const fenAfter = chess.fen()
+      // Apply move to board state
+      // Note: We've already reset chess to fenBefore above, so we can safely apply the move
+      let moveAppliedToBoard = false
+
+      // Verify we're at the correct starting position
+      const currentFenBeforeMove = chess.fen()
+      if (currentFenBeforeMove !== fenBefore) {
+        console.warn(`Position mismatch for move ${idx}:`, {
+          expected: fenBefore,
+          actual: currentFenBeforeMove
+        })
+        // Try to reload to correct position
+        try {
+          chess.load(fenBefore)
+        } catch (err) {
+          console.error(`Failed to reload fenBefore for move ${idx}:`, err)
+        }
+      }
+
+      // Try to apply the move
+      try {
+        const { from, to, promotion } = parseUciMove(move.move)
+        const moveResult = chess.move({ from, to, promotion })
+        if (moveResult) {
+          moveAppliedToBoard = true
+        }
+      } catch (err) {
+        // Move might be invalid - try SAN fallback
+        try {
+          if (move.move_san) {
+            const moveResult = chess.move(move.move_san)
+            if (moveResult) {
+              moveAppliedToBoard = true
+            }
+          }
+        } catch (fallbackError) {
+          // If both attempts fail, log warning
+          console.warn(`Failed to apply move ${idx} to board state:`, {
+            uci: move.move,
+            san: move.move_san,
+            error: fallbackError,
+            currentFen: chess.fen(),
+            expectedFenBefore: fenBefore,
+            backendFenAfter: move.fen_after
+          })
+        }
+      }
+
+      // Determine final fenAfter - prefer calculated position if move was applied,
+      // otherwise use backend fenAfter if available
+      let fenAfter: string
+      if (moveAppliedToBoard) {
+        // Move was successfully applied, use calculated position
+        fenAfter = chess.fen()
+      } else if (move.fen_after) {
+        // Move application failed, but we have backend fenAfter - use it
+        fenAfter = move.fen_after
+        // Update chess instance to match backend position for subsequent moves
+        try {
+          chess.load(fenAfter)
+        } catch (err) {
+          console.warn('Failed to load backend fenAfter, using current position:', err)
+          fenAfter = chess.fen()
+        }
+      } else {
+        // No move applied and no backend fenAfter - keep current position
+        // This prevents positions array from getting out of sync
+        console.warn(`Move ${idx} could not be applied and no backend fenAfter, keeping current position`)
+        fenAfter = chess.fen()
+      }
+
       positions.push(fenAfter)
 
       // Convert best move PV from UCI to SAN notation for follow-up display
@@ -984,29 +1101,124 @@ export default function GameAnalysisPage() {
         return
       }
 
-      // Don't allow keyboard navigation during follow-up exploration
+      // Handle keyboard navigation during follow-up exploration
       if (isExploringFollowUp) {
-        console.log('⚠️ Keyboard navigation blocked during follow-up exploration')
-        return
+        // Compute currentMove inside the effect to avoid initialization order issues
+        const currentMove = currentIndex > 0 ? processedData.moves[currentIndex - 1] : null
+
+        if (currentMove) {
+          const pvMoves = currentMove.pvMoves || []
+          const maxExplorationIndex = pvMoves.length - 1 // -1 because pvMoves[0] is best move (already applied)
+
+          switch (event.key) {
+            case 'ArrowLeft':
+              event.preventDefault()
+              // Go backwards in exploration sequence
+              if (explorationMoves.length > 0) {
+                // Play sound for undo (use move sound)
+                playSound('move')
+                setExplorationMoves(prev => prev.slice(0, -1))
+              }
+              break
+            case 'ArrowRight':
+              event.preventDefault()
+              // Go forwards in exploration sequence
+              const nextMoveIndex = explorationMoves.length + 1 // +1 because pvMoves[0] is best move
+              if (nextMoveIndex < pvMoves.length) {
+                const nextMove = pvMoves[nextMoveIndex]
+                // Play sound for the move being added
+                const soundType = getMoveSoundSimple(nextMove)
+                playSound(soundType)
+                setExplorationMoves(prev => [...prev, nextMove])
+              }
+              break
+            case 'Home':
+              event.preventDefault()
+              // Reset to start of exploration (just best move, no exploration moves)
+              playSound('move')
+              setExplorationMoves([])
+              break
+            case 'End':
+              event.preventDefault()
+              // Go to end of PV line (add all remaining moves)
+              if (explorationMoves.length < maxExplorationIndex) {
+                // Play sound for the first move being added (most important feedback)
+                const firstNewMoveIndex = explorationMoves.length + 1
+                if (firstNewMoveIndex < pvMoves.length) {
+                  const firstNewMove = pvMoves[firstNewMoveIndex]
+                  const soundType = getMoveSoundSimple(firstNewMove)
+                  playSound(soundType)
+                }
+                // Add all remaining moves from PV in a single update
+                const remainingMoves: string[] = []
+                for (let i = explorationMoves.length + 1; i < pvMoves.length; i++) {
+                  remainingMoves.push(pvMoves[i])
+                }
+                setExplorationMoves(prev => [...prev, ...remainingMoves])
+              }
+              break
+          }
+          return
+        }
       }
 
+      // Normal keyboard navigation for main game
       switch (event.key) {
-        case 'ArrowLeft':
+        case 'ArrowLeft': {
           event.preventDefault()
-          navigateToMove(currentIndex - 1)
+          const clampedIndex = Math.max(0, currentIndex - 1)
+          // If in any exploration mode, exit it first and then navigate
+          if (isExploringFollowUp || isFreeExploration) {
+            setIsExploringFollowUp(false)
+            setIsFreeExploration(false)
+            setExplorationMoves([])
+            setExplorationBaseIndex(null)
+          }
+          // Sound will be played by UnifiedChessAnalysis component when currentIndex changes
+          setCurrentIndex(clampedIndex)
           break
-        case 'ArrowRight':
+        }
+        case 'ArrowRight': {
           event.preventDefault()
-          navigateToMove(currentIndex + 1)
+          const clampedIndex = Math.min(processedData.positions.length - 1, currentIndex + 1)
+          // If in any exploration mode, exit it first and then navigate
+          if (isExploringFollowUp || isFreeExploration) {
+            setIsExploringFollowUp(false)
+            setIsFreeExploration(false)
+            setExplorationMoves([])
+            setExplorationBaseIndex(null)
+          }
+          // Sound will be played by UnifiedChessAnalysis component when currentIndex changes
+          setCurrentIndex(clampedIndex)
           break
-        case 'Home':
+        }
+        case 'Home': {
           event.preventDefault()
-          navigateToMove(0)
+          // If in any exploration mode, exit it first and then navigate
+          if (isExploringFollowUp || isFreeExploration) {
+            setIsExploringFollowUp(false)
+            setIsFreeExploration(false)
+            setExplorationMoves([])
+            setExplorationBaseIndex(null)
+          }
+          // Sound will be played by UnifiedChessAnalysis component when currentIndex changes
+          setCurrentIndex(0)
           break
-        case 'End':
+        }
+        case 'End': {
           event.preventDefault()
-          navigateToMove(processedData.positions.length - 1)
+          const endIndex = processedData.positions.length - 1
+          // If in any exploration mode, exit it first and then navigate
+          if (isExploringFollowUp || isFreeExploration) {
+            setIsExploringFollowUp(false)
+            setIsFreeExploration(false)
+            setExplorationMoves([])
+            setExplorationBaseIndex(null)
+          }
+          // Sound will be played by UnifiedChessAnalysis component when currentIndex changes
+          setCurrentIndex(endIndex)
           break
+        }
       }
     }
 
@@ -1014,7 +1226,7 @@ export default function GameAnalysisPage() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [currentIndex, processedData.positions.length, isExploringFollowUp])
+  }, [currentIndex, processedData.positions.length, processedData.moves, isExploringFollowUp, isFreeExploration, explorationMoves, playSound])
 
   // Re-analyze handler
   const handleReanalyze = async () => {
@@ -1056,6 +1268,42 @@ export default function GameAnalysisPage() {
       }
     } catch (error) {
       console.error('❌ Re-analysis error:', error)
+
+      // Check if this is an AbortError (timeout or cancelled request)
+      // The backend might have still completed the analysis successfully
+      const isAbortError = error instanceof Error && (
+        error.name === 'AbortError' ||
+        error.message.includes('timeout') ||
+        error.message.includes('aborted')
+      )
+
+      if (isAbortError) {
+        // For abort errors, wait a bit then check if analysis was actually saved
+        // This handles cases where the request timed out but backend completed
+        console.log('⏱️ Request was aborted/timed out, checking if analysis completed...')
+
+        // Wait a moment for backend to potentially finish
+        await new Promise(resolve => setTimeout(resolve, 3000))
+
+        // Try to verify if the analysis was saved by fetching the latest analysis
+        try {
+          const latestAnalysis = await fetchGameAnalysisData(decodedUserId, platform, decodedGameId)
+          if (latestAnalysis.analysis && latestAnalysis.analysis.analysis_type === 'deep') {
+            // Analysis was saved! Treat as success
+            console.log('✅ Analysis completed and saved despite request timeout')
+            setReanalyzeSuccess(true)
+            setTimeout(() => {
+              window.location.reload()
+            }, 1000)
+            return
+          }
+        } catch (fetchError) {
+          // If we can't verify, show the error
+          console.error('Could not verify analysis completion:', fetchError)
+        }
+      }
+
+      // If not an abort error, or verification failed, show error message
       setAnalysisError('Failed to re-analyze game. Please try again.')
     } finally {
       setIsReanalyzing(false)
@@ -1359,16 +1607,14 @@ export default function GameAnalysisPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950">
-        <div className="mx-auto max-w-6xl px-4 py-10">
-          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
-            <div className="flex items-center space-x-3">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-sky-400" />
-              <span>Loading analysis...</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <>
+        <div className="min-h-screen bg-slate-950" />
+        <LoadingModal
+          isOpen={true}
+          message="Loading analysis..."
+          subtitle="Please wait"
+        />
+      </>
     )
   }
 
@@ -1495,7 +1741,7 @@ export default function GameAnalysisPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div ref={layoutContainerRef} className="container-responsive py-6">
+      <div ref={layoutContainerRef} className="container-responsive py-6 content-fade">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={handleBack}

@@ -1,0 +1,58 @@
+[33mcommit bf9fcffa3d5df55877bc4f264037491046b06681[m
+Author: Chess Analytics Developer <developer@chessdata.app>
+Date:   Sun Nov 2 05:11:23 2025 +0200
+
+    Add admin dashboard, database optimizations, and comprehensive documentation
+
+    - Add AdminDashboardPage with real-time analytics and monitoring
+    - Implement anonymous usage tracking and rate limiting
+    - Add multiple database migrations for performance optimization
+    - Fix opening perspective classification and evaluation bar issues
+    - Add comprehensive documentation for security fixes and features
+    - Update Python core services (analysis_queue, unified_api_server)
+    - Enhance React components with improved analytics and UI
+    - Add detailed audit documentation for personality formula accuracy
+
+ADMIN_DASHBOARD_ARCHITECTURE.md
+ADMIN_DASHBOARD_GUIDE.md
+ADMIN_DASHBOARD_QUICKSTART.md
+ADMIN_DASHBOARD_SUMMARY.md
+ANONYMOUS_RATE_LIMIT_QUICK_REF.md
+APPLY_MIGRATION_INSTRUCTIONS.md
+EVALUATION_BAR_DEBUG_GUIDE.md
+EVALUATION_BAR_FIX.md
+OPENING_PERFORMANCE_COLOR_FILTER_FIX.md
+OPENING_PERSPECTIVE_FIX_SUMMARY.md
+SECURITY_FIXES_GUIDE.md
+docs/ANONYMOUS_USAGE_RATE_LIMITING.md
+docs/ANONYMOUS_USER_RATE_LIMITING_SUMMARY.md
+docs/PERSONALITY_FORMULA_ACCURACY_AUDIT.md
+python/core/analysis_queue.py
+python/core/unified_api_server.py
+src/App.tsx
+src/components/chess/ModernChessArrows.tsx
+src/components/debug/ComprehensiveAnalytics.tsx
+src/components/debug/UnifiedChessAnalysis.tsx
+src/components/simple/PlayerSearch.tsx
+src/components/simple/SimpleAnalytics.tsx
+src/pages/AdminDashboardPage.tsx
+src/pages/GameAnalysisPage.tsx
+src/pages/PricingPage.tsx
+src/services/analyticsService.ts
+src/utils/comprehensiveGameAnalytics.ts
+src/utils/openingColorClassification.ts
+src/utils/openingStatsFilter.ts
+supabase/migrations/20251030000007_fix_authenticated_users_schema.sql
+supabase/migrations/20251101000001_optimize_unified_analyses_queries.sql
+supabase/migrations/20251102000001_optimize_rls_auth_calls.sql
+supabase/migrations/20251102000002_remove_duplicate_indexes.sql
+supabase/migrations/20251102000003_consolidate_permissive_policies.sql
+supabase/migrations/20251102000004_fix_critical_database_issues.sql
+supabase/migrations/20251102000005_create_admin_analytics_system.sql
+supabase/migrations/20251102000006_add_ip_tracking.sql
+supabase/migrations/20251102000007_add_user_analysis_stats.sql
+supabase/migrations/20251102000008_fix_stats_functions_types.sql
+supabase/migrations/20251102000009_add_detailed_analytics.sql
+supabase/migrations/20251102000010_add_players_to_user_stats.sql
+supabase/migrations/20251102000011_anonymous_usage_tracking.sql
+test_anonymous_usage.py
