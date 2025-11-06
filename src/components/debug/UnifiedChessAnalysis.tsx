@@ -703,16 +703,29 @@ export function UnifiedChessAnalysis({
   // Handler to intercept user-drawn arrows from react-chessboard
   // This will be called when user right-clicks and drags to draw an arrow
   const handleArrowsChange = React.useCallback((arrows: Array<[string, string, string?]>) => {
+    console.log('[UnifiedChessAnalysis] Raw arrows from react-chessboard:', arrows)
+
     // Convert react-chessboard arrow format [from, to, color?] to ModernArrow format
-    const modernArrows: ModernArrow[] = arrows.map(([from, to, color]) => ({
-      from: from as any,
-      to: to as any,
-      color: color || '#f97316', // Default orange color for user-drawn arrows
-      classification: 'uncategorized',
-      isBestMove: false
-    }))
+    // Filter out invalid arrows
+    const modernArrows: ModernArrow[] = arrows
+      .filter((arrow): arrow is [string, string, string?] => {
+        const [from, to] = arrow
+        const isValid = typeof from === 'string' && typeof to === 'string' && from.length === 2 && to.length === 2
+        if (!isValid) {
+          console.warn('[UnifiedChessAnalysis] Invalid arrow format:', arrow)
+        }
+        return isValid
+      })
+      .map(([from, to, color]) => ({
+        from: from as any,
+        to: to as any,
+        color: color || '#f97316', // Default orange color for user-drawn arrows
+        classification: 'uncategorized',
+        isBestMove: false
+      }))
+
     setUserDrawnArrows(modernArrows)
-    console.log('[UnifiedChessAnalysis] User drew arrows:', modernArrows)
+    console.log('[UnifiedChessAnalysis] User drew arrows (converted):', modernArrows)
   }, [])
 
   // Clear user-drawn arrows when position changes
@@ -720,8 +733,80 @@ export function UnifiedChessAnalysis({
     setUserDrawnArrows([])
   }, [currentPosition])
 
-  // Note: Native arrow hiding is now handled purely by CSS in index.css
-  // DOM manipulation via JS was causing coordinate calculation issues during piece drags
+  // Remove react-chessboard native arrows (backup to CSS)
+  // Only removes arrow elements, not the entire SVG, to avoid coordinate issues
+  useEffect(() => {
+    const containers = [
+      desktopBoardContainerRef.current,
+      mobileBoardContainerRef.current
+    ].filter(Boolean) as HTMLElement[]
+
+    if (containers.length === 0) return
+
+    const removeNativeArrows = () => {
+      containers.forEach(container => {
+        try {
+          // Find arrow elements that are NOT in our custom arrows SVG
+          const arrowElements = container.querySelectorAll(
+            'svg:not(.modern-chess-arrows) path[stroke], ' +
+            'svg:not(.modern-chess-arrows) polygon[fill], ' +
+            'svg:not(.modern-chess-arrows) line[stroke]'
+          )
+
+          // Safely remove each element
+          arrowElements.forEach(el => {
+            try {
+              // Check if element still has a parent before removing
+              if (el.parentNode) {
+                el.parentNode.removeChild(el)
+              }
+            } catch (err) {
+              // Element may have already been removed, ignore
+            }
+          })
+
+          // Also try to remove entire SVG containers that contain arrows (but not our custom one)
+          const arrowSvgs = container.querySelectorAll(
+            'svg:not(.modern-chess-arrows)[style*="position: absolute"], ' +
+            'svg:not(.modern-chess-arrows)[style*="position:absolute"]'
+          )
+          arrowSvgs.forEach(svg => {
+            try {
+              if (svg.parentNode) {
+                svg.parentNode.removeChild(svg)
+              }
+            } catch (err) {
+              // SVG may have already been removed, ignore
+            }
+          })
+        } catch (err) {
+          // Ignore errors during removal
+        }
+      })
+    }
+
+    // Remove immediately with a small delay to ensure DOM is ready
+    const timeoutId = setTimeout(removeNativeArrows, 100)
+
+    // Use MutationObserver to catch arrows added later
+    const observers: MutationObserver[] = []
+    containers.forEach(container => {
+      const observer = new MutationObserver(() => {
+        // Debounce to avoid too many removals
+        setTimeout(removeNativeArrows, 50)
+      })
+      observer.observe(container, {
+        childList: true,
+        subtree: true
+      })
+      observers.push(observer)
+    })
+
+    return () => {
+      clearTimeout(timeoutId)
+      observers.forEach(obs => obs.disconnect())
+    }
+  }, [currentPosition, displayArrows.length])
 
   const mobileBoardSize = Math.min(boardWidth, 400)
   const mobileEvaluationBarWidth = Math.max(12, Math.round(mobileBoardSize * 0.04))
@@ -781,7 +866,7 @@ export function UnifiedChessAnalysis({
 
   return (
     <>
-      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 lg:p-6 shadow-2xl shadow-black/50 ${className}`}>
+      <div className={`rounded-[32px] border border-white/5 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 lg:p-6 shadow-sm shadow-black/20 backdrop-blur-sm overflow-hidden ${className}`}>
         {/* Mobile Layout: Stacked */}
         <div className="flex flex-col gap-4 lg:hidden">
 
@@ -1144,7 +1229,7 @@ export function UnifiedChessAnalysis({
                                   <MoveClassificationBadge classification={userMove.classification} />
                                 </button>
                               ) : (
-                                <span className="text-slate-600 text-xs">—</span>
+                                <span className="text-slate-600 text-xs">-</span>
                               )}
                             </td>
                             <td className="py-2 px-1">
@@ -1161,7 +1246,7 @@ export function UnifiedChessAnalysis({
                                   <MoveClassificationBadge classification={opponentMove.classification} />
                                 </button>
                               ) : (
-                                <span className="text-slate-600 text-xs">—</span>
+                                <span className="text-slate-600 text-xs">-</span>
                               )}
                             </td>
                           </tr>
@@ -1308,7 +1393,7 @@ export function UnifiedChessAnalysis({
                     }`}>
                       {currentMove ? currentMove.san :
                        isFreeExploration && explorationMoves.length > 0 ? explorationMoves[explorationMoves.length - 1] :
-                       '—'}
+                       '-'}
                     </div>
                     {/* Show evaluation badge for exploration mode */}
                     {isFreeExploration && explorationAnalysis && !explorationAnalysis.isAnalyzing && explorationMoves.length > 0 && (() => {
@@ -1557,7 +1642,7 @@ export function UnifiedChessAnalysis({
                                 <MoveClassificationBadge classification={userMove.classification} />
                               </button>
                             ) : (
-                              <span className="text-slate-600">—</span>
+                              <span className="text-slate-600">-</span>
                             )}
                           </td>
                           <td className="py-2 pr-2">
@@ -1580,7 +1665,7 @@ export function UnifiedChessAnalysis({
                                 <MoveClassificationBadge classification={opponentMove.classification} />
                               </button>
                             ) : (
-                              <span className="text-slate-600">—</span>
+                              <span className="text-slate-600">-</span>
                             )}
                           </td>
                         </tr>

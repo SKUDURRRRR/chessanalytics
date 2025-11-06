@@ -338,12 +338,29 @@
 
   /* Hide ALL react-chessboard native arrows completely */
   /* We use ModernChessArrows for all arrow rendering to ensure proper centering */
-  .react-chessboard > div > svg[style*="position: absolute"]:not(.modern-chess-arrows),
-  .react-chessboard > div > svg[style*="position:absolute"]:not(.modern-chess-arrows) {
+
+  /* Hide ALL SVG overlays from react-chessboard except our custom arrows */
+  .react-chessboard svg:not(.modern-chess-arrows) {
     display: none !important;
     opacity: 0 !important;
     visibility: hidden !important;
     pointer-events: none !important;
+  }
+
+  /* Also hide any arrow elements directly */
+  .react-chessboard path[stroke]:not(.modern-chess-arrows path),
+  .react-chessboard polygon[fill]:not(.modern-chess-arrows polygon),
+  .react-chessboard line[stroke]:not(.modern-chess-arrows line) {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+  }
+
+  /* Ensure our custom arrows are always visible */
+  .modern-chess-arrows {
+    display: block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
   }
 
   /* Liquidy animations for chessdata.app button */
