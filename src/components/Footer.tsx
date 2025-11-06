@@ -10,7 +10,7 @@ export function Footer() {
 
           {/* Discord Link */}
           <a
-            href="https://discord.gg/s7cqYgJZ"
+            href="https://discord.gg/S3ymXCeCqK"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 transition-colors"
