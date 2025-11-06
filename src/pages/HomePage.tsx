@@ -65,31 +65,7 @@ export default function HomePage() {
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
       <div className="relative container-responsive space-responsive py-8 sm:py-12 md:py-16">
         <header className="text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs uppercase tracking-wider text-cyan-100 font-semibold mb-6 relative overflow-hidden backdrop-blur-md"
-               style={{
-                 background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
-                 boxShadow: `
-                   0 0 20px rgba(34, 211, 238, 0.3),
-                   0 0 40px rgba(6, 182, 212, 0.15),
-                   inset 0 1px 1px rgba(255, 255, 255, 0.2),
-                   inset 0 -1px 1px rgba(0, 0, 0, 0.2)
-                 `,
-               }}>
-            {/* Liquid shimmer effect */}
-            <div className="absolute inset-0 opacity-40"
-                 style={{
-                   background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
-                   animation: 'liquid-shimmer 3s ease-in-out infinite',
-                 }}></div>
-            {/* Floating bubble effect */}
-            <div className="absolute inset-0 opacity-30"
-                 style={{
-                   background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
-                   animation: 'liquid-bubble 4s ease-in-out infinite',
-                 }}></div>
-            <span className="relative z-10">chessdata.app</span>
-          </div>
-          <h1 className="mt-6 text-fluid-4xl font-semibold leading-tight text-white">
+          <h1 className="text-fluid-4xl font-semibold leading-tight text-white">
             Your edge for improvement
           </h1>
           <p className="mt-4 text-fluid-base"
