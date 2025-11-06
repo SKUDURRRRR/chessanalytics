@@ -70,7 +70,7 @@ export default function HomePage() {
           </h1>
           <p className="mt-4 text-fluid-base"
              style={{ color: '#B0B8C4' }}>
-            AI coach commentary, Stockfish-powered analysis, and personalized insights that help you understand your moves and improve your game.
+            TaI coach commentary, Stockfish-powered analysis, and personalized insights to improve your game.
           </p>
         </header>
 
