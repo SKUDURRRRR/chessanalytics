@@ -1,5 +1,5 @@
 // Home Page - Engaging entry point for chess improvement
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PlayerSearch } from '../components/simple/PlayerSearch'
 import { useAuth } from '../contexts/AuthContext'
@@ -7,6 +7,9 @@ import { useAuth } from '../contexts/AuthContext'
 export default function HomePage() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const [imageError, setImageError] = useState(false)
+  const [personalityImageError, setPersonalityImageError] = useState(false)
+  const [eloImageError, setEloImageError] = useState(false)
 
   useEffect(() => {
     // Clean up OAuth hash fragments and wildcards from URL
@@ -62,11 +65,11 @@ export default function HomePage() {
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
       <div className="relative container-responsive space-responsive py-8 sm:py-12 md:py-16">
         <header className="text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-wide text-slate-300 shadow-md shadow-cyan-500/10">
-            Precision Chess Insights
+          <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 px-4 py-1 text-xs uppercase tracking-wide text-amber-950 font-semibold shadow-md shadow-amber-500/30">
+            chessdata.app
           </div>
           <h1 className="mt-6 text-fluid-4xl font-semibold leading-tight text-white">
-            Turn every game into a chess lesson
+            Your edge for improvement
           </h1>
           <p className="mt-4 text-fluid-base"
              style={{ color: '#B0B8C4' }}>
@@ -135,34 +138,6 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Vision Statement Section */}
-      <section className="relative container-responsive py-12 sm:py-16 md:py-20">
-        <div className="max-w-3xl mx-auto text-center">
-          <div className="flex justify-center mb-6">
-            <img
-              src="/logo.png"
-              alt="chessdata.app logo"
-              className="h-32 w-auto"
-            />
-          </div>
-          <h2 className="text-fluid-3xl font-semibold text-white mb-6">
-            Improving at chess is a journey, not a destination
-          </h2>
-          <div className="space-y-4">
-            <p className="text-fluid-base text-slate-300 leading-relaxed">
-              If you're playing between 600 and 1800 ELO, you know that feeling.
-              You've learned the rules, you've played hundreds of games, and you're hungry to improve.
-              But sometimes it's hard to see the patterns in your play—to know what you're doing well
-              and where you're leaving points on the board.
-            </p>
-            <p className="text-fluid-base text-slate-300 leading-relaxed">
-              That's where we come in. Think of this as your chess friend who sits down with you
-              after each game, helps you understand what happened, and celebrates your progress.
-              No judgment, no pressure—just honest insights that help you grow.
-            </p>
-          </div>
-        </div>
-      </section>
 
       {/* Core Features Showcase */}
       <section className="relative container-responsive py-12 sm:py-16 md:py-20 space-y-16 sm:space-y-20">
@@ -202,11 +177,22 @@ export default function HomePage() {
               </div>
             </div>
             <div className="order-1 lg:order-2">
-              <div className="card-responsive bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-400/20 h-64 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="text-6xl mb-4">♛</div>
-                  <p className="text-sm text-slate-400">AI Coach Commentary</p>
-                </div>
+              <div className="card-responsive bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-400/20 min-h-64 overflow-hidden relative flex items-center justify-center">
+                {imageError ? (
+                  <div className="h-64 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-6xl mb-4">♛</div>
+                      <p className="text-sm text-slate-400">AI Coach Commentary</p>
+                    </div>
+                  </div>
+                ) : (
+                  <img
+                    src="/assets/chessboard.png"
+                    alt="Chess board with AI coach commentary"
+                    className="w-full h-auto max-h-96 object-contain"
+                    onError={() => setImageError(true)}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -216,11 +202,22 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
             <div>
-              <div className="card-responsive bg-gradient-to-br from-sky-500/10 to-cyan-600/5 border-sky-400/20 h-64 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="text-6xl mb-4">📊</div>
-                  <p className="text-sm text-slate-400">Personality Radar & Analytics</p>
-                </div>
+              <div className="card-responsive bg-gradient-to-br from-sky-500/10 to-cyan-600/5 border-sky-400/20 min-h-64 overflow-hidden relative flex items-center justify-center">
+                {personalityImageError ? (
+                  <div className="h-64 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-6xl mb-4">📊</div>
+                      <p className="text-sm text-slate-400">Personality Radar & Analytics</p>
+                    </div>
+                  </div>
+                ) : (
+                  <img
+                    src="/assets/Personality.png"
+                    alt="Chess personality radar visualization"
+                    className="w-full h-auto max-h-96 object-contain"
+                    onError={() => setPersonalityImageError(true)}
+                  />
+                )}
               </div>
             </div>
             <div>
@@ -256,45 +253,52 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Feature 3: Deep Game Analysis */}
+        {/* Feature 3: Performance Tracking */}
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
             <div className="order-2 lg:order-1">
               <div className="inline-flex items-center gap-2 rounded-full border border-purple-400/30 bg-purple-500/10 px-4 py-1.5 text-xs uppercase tracking-wide text-purple-200 mb-4">
-                <span>♚</span>
-                <span>Learn From Every Game</span>
+                <span>📈</span>
+                <span>Track Your Progress</span>
               </div>
               <h2 className="text-fluid-3xl font-semibold text-white mb-4">
-                Move-by-move insights that teach principles
+                Comprehensive performance tracking that shows your growth
               </h2>
               <p className="text-fluid-base text-slate-300 leading-relaxed mb-6">
-                Every game you play is a lesson waiting to be learned. Our deep game analysis
-                walks you through each move, explaining what worked, what didn't, and what
-                principles you can carry into your next game.
-              </p>
-              <p className="text-fluid-base text-slate-300 leading-relaxed">
-                You'll see the critical moments, understand the turning points, and learn
-                from both your brilliant moves and your mistakes. It's guided study that fits
-                into your schedule—learn from one game, and you'll see patterns in the next.
+                Watch your ELO rating evolve over time with detailed trend analysis. Track your
+                performance across different openings to see which ones work best for your style.
+                Monitor your results by time control—from bullet to classical—and understand
+                where you excel and where you need practice.
               </p>
               <div className="mt-8 card-responsive bg-purple-500/5 border-purple-400/20">
                 <div className="flex items-start gap-3">
-                  <span className="text-2xl">🎯</span>
+                  <span className="text-2xl">📊</span>
                   <div>
                     <p className="text-sm text-purple-200">
-                      Identify key moments, understand why positions changed, and learn principles
-                      you can apply in similar situations.
+                      Track ELO trends, opening performance, time control statistics, win rates,
+                      and more—all in one comprehensive dashboard.
                     </p>
                   </div>
                 </div>
               </div>
             </div>
             <div className="order-1 lg:order-2">
-              <div className="card-responsive bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-400/20 h-64 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="text-6xl mb-4">♚</div>
-                  <p className="text-sm text-slate-400">Game Analysis</p>
-                </div>
+              <div className="card-responsive bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-400/20 min-h-64 overflow-hidden relative flex items-center justify-center">
+                {eloImageError ? (
+                  <div className="h-64 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-6xl mb-4">♚</div>
+                      <p className="text-sm text-slate-400">Game Analysis</p>
+                    </div>
+                  </div>
+                ) : (
+                  <img
+                    src="/assets/elo.png"
+                    alt="ELO rating and game analysis visualization"
+                    className="w-full h-auto max-h-96 object-contain"
+                    onError={() => setEloImageError(true)}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -331,7 +335,6 @@ export default function HomePage() {
       <section className="relative container-responsive py-12 sm:py-16 md:py-20">
         <div className="max-w-3xl mx-auto text-center">
           <div className="card-responsive bg-gradient-to-br from-slate-800/50 to-slate-900/50 border-white/10">
-            <div className="text-5xl mb-6">💪</div>
             <h2 className="text-fluid-2xl font-semibold text-white mb-4">
               You're not alone in wanting to improve
             </h2>
@@ -341,10 +344,21 @@ export default function HomePage() {
               The players who improve aren't necessarily the most talented; they're the ones who
               keep learning from their games.
             </p>
-            <p className="text-fluid-base text-slate-300 leading-relaxed">
+            <p className="text-fluid-base text-slate-300 leading-relaxed mb-8">
               We're here to help you see your progress, understand your style, and learn from
-              every move. Let's make your next game better than your last one.
+              every move.
             </p>
+            <a
+              href="https://discord.gg/S3ymXCeCqK"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-3 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors duration-200 shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515a.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.839 19.839 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.956-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.946 2.418-2.157 2.418z"/>
+              </svg>
+              <span>Join our Discord community</span>
+            </a>
           </div>
         </div>
       </section>
