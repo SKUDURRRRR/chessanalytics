@@ -732,6 +732,100 @@ export function UnifiedChessAnalysis({
     setUserDrawnArrows([])
   }, [currentPosition])
 
+  // Fix dragged piece positioning with MutationObserver for better performance
+  // This ensures the dragged piece is perfectly centered on the cursor
+  useEffect(() => {
+    const containers = [
+      desktopBoardContainerRef.current,
+      mobileBoardContainerRef.current
+    ].filter(Boolean) as HTMLElement[]
+
+    if (containers.length === 0) return
+
+    const fixDraggedPiece = (element: HTMLElement) => {
+      const style = window.getComputedStyle(element)
+      const inlineStyle = element.getAttribute('style') || ''
+
+      // Check if this is the dragged piece
+      const isAbsolute = style.position === 'absolute' || inlineStyle.includes('position: absolute')
+      const hasPointerEventsNone = style.pointerEvents === 'none' || inlineStyle.includes('pointer-events: none')
+      const hasPiece = element.querySelector('img, svg:not(.modern-chess-arrows)') !== null
+
+      if (isAbsolute && hasPointerEventsNone && hasPiece) {
+        // Apply centering transform
+        const currentTransform = style.transform || inlineStyle.match(/transform:\s*([^;]+)/)?.[1] || ''
+        if (!currentTransform.includes('translate(-50%, -50%)')) {
+          // Preserve any existing transform and add our centering
+          const existingTransform = inlineStyle.match(/transform:\s*([^;]+)/)?.[1] || ''
+          if (existingTransform && !existingTransform.includes('translate(-50%, -50%)')) {
+            element.style.transform = `${existingTransform} translate(-50%, -50%)`
+          } else {
+            element.style.transform = 'translate(-50%, -50%)'
+          }
+        }
+      }
+    }
+
+    const observers: MutationObserver[] = []
+
+    containers.forEach(container => {
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as HTMLElement
+              // Check if it's a div that might be the dragged piece
+              if (element.tagName === 'DIV' && element.getAttribute('style')?.includes('position: absolute')) {
+                fixDraggedPiece(element)
+              }
+              // Also check children
+              const potentialPieces = element.querySelectorAll?.('div[style*="position: absolute"]')
+              potentialPieces?.forEach((piece: Element) => {
+                fixDraggedPiece(piece as HTMLElement)
+              })
+            }
+          })
+        })
+      })
+
+      observer.observe(container, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style']
+      })
+
+      observers.push(observer)
+
+      // Also check existing elements
+      const existingPieces = container.querySelectorAll('.react-chessboard > div > div[style*="position: absolute"]')
+      existingPieces.forEach((piece) => {
+        fixDraggedPiece(piece as HTMLElement)
+      })
+    })
+
+    // Backup: Use requestAnimationFrame to continuously check during drag
+    // This ensures we catch the piece even if MutationObserver misses it
+    let rafId: number | null = null
+    const checkLoop = () => {
+      containers.forEach(container => {
+        const pieces = container.querySelectorAll('.react-chessboard > div > div[style*="position: absolute"]')
+        pieces.forEach((piece) => {
+          fixDraggedPiece(piece as HTMLElement)
+        })
+      })
+      rafId = requestAnimationFrame(checkLoop)
+    }
+    rafId = requestAnimationFrame(checkLoop)
+
+    return () => {
+      observers.forEach(observer => observer.disconnect())
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+      }
+    }
+  }, [currentPosition, boardWidth])
+
   // Remove react-chessboard native arrows (backup to CSS)
   // Only removes arrow elements, not the entire SVG, to avoid coordinate issues
   useEffect(() => {
@@ -810,10 +904,10 @@ export function UnifiedChessAnalysis({
   const mobileBoardSize = Math.min(boardWidth, 400)
   const mobileEvaluationBarWidth = Math.max(12, Math.round(mobileBoardSize * 0.04))
   const desktopEvaluationBarWidth = Math.max(18, Math.round(boardWidth * 0.04))
-  const mobileEvaluationBarHeight = mobileBoardSize * 0.92
-  const desktopEvaluationBarHeight = boardWidth * 0.92
-  const mobileEvaluationBarOffset = (mobileBoardSize - mobileEvaluationBarHeight) / 2 + mobileBoardSize * 0.02
-  const desktopEvaluationBarOffset = (boardWidth - desktopEvaluationBarHeight) / 2 + boardWidth * 0.02
+  const mobileEvaluationBarHeight = mobileBoardSize
+  const desktopEvaluationBarHeight = boardWidth
+  const mobileEvaluationBarOffset = 0
+  const desktopEvaluationBarOffset = 0
 
   // Auto-scroll to current move in timeline
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -1244,11 +1338,11 @@ export function UnifiedChessAnalysis({
         {/* Desktop Layout: Side by Side */}
         <div className="hidden lg:flex gap-8 items-start">
         {/* Left: Evaluation Bar */}
-        <div className="flex-shrink-0 flex flex-col">
-          {/* Spacer to match Game Phase Indicator height */}
-          {currentMove && (
-            <div className="h-[40px] mb-4"></div>
-          )}
+        <div className="flex-shrink-0 flex flex-col items-center">
+          {/* Spacer to match chessdata.app button height */}
+          <div className="flex items-center justify-center mb-4 h-[42px]">
+            {/* Empty spacer to align with button (py-1.5 + text-xs ≈ 42px) */}
+          </div>
           <div className="flex items-center justify-center" style={{ height: `${boardWidth}px` }}>
             <EvaluationBar
               score={currentScore}
