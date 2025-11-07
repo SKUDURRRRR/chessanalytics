@@ -447,7 +447,7 @@ export default function PricingPage() {
                             href="/signup"
                             className="block w-full text-center px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors shadow-lg"
                           >
-                            Become Pro
+                            Start Free
                           </a>
                         )
                       ) : tier.id === 'enterprise' ? (
@@ -494,7 +494,7 @@ export default function PricingPage() {
                               : 'bg-blue-600 hover:bg-blue-500 text-white'
                           }`}
                         >
-                          Start Free Trial
+                          Become Pro
                         </a>
                       )}
                     </div>

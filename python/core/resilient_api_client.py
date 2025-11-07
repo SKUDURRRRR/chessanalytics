@@ -407,7 +407,9 @@ class ResilientAPIClient:
             # Make request with retry
             async def request_func():
                 client = await self.get_httpx_client()
-                canonical_username = username.strip().lower()
+                # Chess.com API is case-insensitive, but preserve original case for better error messages
+                # Strip whitespace but don't lowercase - let Chess.com API handle case insensitivity
+                canonical_username = username.strip()
                 # URL encode the username, but keep hyphens and underscores safe (they're valid in URLs)
                 # This handles special characters while preserving common username characters
                 encoded_username = quote(canonical_username, safe='-_')

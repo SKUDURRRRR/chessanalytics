@@ -1,36 +1,34 @@
--- Update Pricing and Remove Enterprise Tier
--- This script updates the pricing to $5.45/month and $49.05/year
--- and ensures the Enterprise tier is deactivated
+-- Add "New Games Auto Import" feature to all payment tiers
+-- Run this in Supabase SQL Editor to update the database immediately
+-- https://supabase.com/dashboard/project/YOUR_PROJECT_ID/sql/new
 
--- Update Free tier with same features as Pro Monthly, but with limits at top
+-- Update Free tier
 UPDATE payment_tiers
 SET
     features = '["5 game analyses per day", "100 game imports per day", "New Games Auto Import", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions"]'::jsonb,
     updated_at = NOW()
 WHERE id = 'free';
 
--- Update Pro Monthly price to $5.45 with updated features
+-- Update Pro Monthly tier
 UPDATE payment_tiers
-SET price_monthly = 5.45,
+SET
     features = '["Unlimited game imports", "Unlimited game analyses", "New Games Auto Import", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions"]'::jsonb,
     updated_at = NOW()
 WHERE id = 'pro_monthly';
 
--- Update Pro Yearly price to $49.05 with updated features
+-- Update Pro Yearly tier
 UPDATE payment_tiers
-SET price_yearly = 49.05,
-    description = 'Save 25% with annual billing',
+SET
     features = '["Unlimited game imports", "Unlimited game analyses", "New Games Auto Import", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions", "25% savings vs monthly"]'::jsonb,
     updated_at = NOW()
 WHERE id = 'pro_yearly';
 
--- Deactivate Enterprise tier
-UPDATE payment_tiers
-SET is_active = false,
-    updated_at = NOW()
-WHERE id = 'enterprise';
-
--- Verify changes
-SELECT id, name, price_monthly, price_yearly, is_active
+-- Verify the changes
+SELECT
+    id,
+    name,
+    features,
+    updated_at
 FROM payment_tiers
+WHERE is_active = true
 ORDER BY display_order;

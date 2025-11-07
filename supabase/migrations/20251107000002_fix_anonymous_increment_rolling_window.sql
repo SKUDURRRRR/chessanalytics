@@ -108,4 +108,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-COMMENT ON FUNCTION increment_anonymous_usage IS 'Increments usage counter for anonymous user (by IP) using rolling 24-hour window (matches check_anonymous_usage_limits logic)';
+COMMENT ON FUNCTION increment_anonymous_usage(TEXT, TEXT, INTEGER) IS 'Increments usage counter for anonymous user (by IP) using rolling 24-hour window (matches check_anonymous_usage_limits logic)';
