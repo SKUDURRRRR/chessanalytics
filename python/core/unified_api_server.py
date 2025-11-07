@@ -6786,6 +6786,7 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
             logger.warning(f"Auth check failed (non-critical): {e}")
 
         # Check anonymous user limits if not authenticated
+        anonymous_limit_remaining = None
         if not auth_user_id and usage_tracker:
             client_ip = get_client_ip(http_request)
             try:
@@ -6795,6 +6796,10 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
                         status_code=429,
                         detail=f"Import limit reached. {stats.get('reason', 'Anonymous users: 50 imports per 24 hours. Create a free account for 100 imports per day!')}"
                     )
+                # Calculate remaining limit for anonymous users
+                import_limit = stats.get('import_limit', 50)
+                current_imports = stats.get('current_imports', 0)
+                anonymous_limit_remaining = max(0, import_limit - current_imports)
             except HTTPException:
                 raise  # Re-raise HTTP exceptions (429 limit errors)
             except Exception as e:
@@ -6922,6 +6927,13 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
                 print(f"[Smart import] ✗ SKIPPING existing game: {game_id} ({game_date})")
 
         print(f"[Smart import] Duplicate check complete: fetched {len(games_data)} games, found {len(new_games)} new games, {len(games_data) - len(new_games)} already exist")
+
+        # Cap new games for anonymous users to their remaining limit
+        if anonymous_limit_remaining is not None and len(new_games) > anonymous_limit_remaining:
+            original_count = len(new_games)
+            new_games = new_games[:anonymous_limit_remaining]
+            logger.info(f"Capping smart import for anonymous user: found={original_count}, remaining={anonymous_limit_remaining}, importing={len(new_games)}")
+            print(f"[Smart import] CAPPED: {original_count} new games → {len(new_games)} (anonymous limit: {anonymous_limit_remaining})")
 
         # If no new games found, return early
         if len(new_games) == 0:
@@ -7076,6 +7088,7 @@ async def import_games_simple(request: Dict[str, Any], http_request: Request, cr
             logger.warning(f"Auth check failed (non-critical): {e}")
 
         # Check anonymous user limits if not authenticated
+        anonymous_limit_remaining = None
         if not auth_user_id and usage_tracker:
             client_ip = get_client_ip(http_request)
             try:
@@ -7085,6 +7098,10 @@ async def import_games_simple(request: Dict[str, Any], http_request: Request, cr
                         status_code=429,
                         detail=f"Import limit reached. {stats.get('reason', 'Anonymous users: 50 imports per 24 hours. Create a free account for 100 imports per day!')}"
                     )
+                # Calculate remaining limit for anonymous users
+                import_limit = stats.get('import_limit', 50)
+                current_imports = stats.get('current_imports', 0)
+                anonymous_limit_remaining = max(0, import_limit - current_imports)
             except HTTPException:
                 raise  # Re-raise HTTP exceptions (429 limit errors)
             except Exception as e:
@@ -7097,8 +7114,14 @@ async def import_games_simple(request: Dict[str, Any], http_request: Request, cr
         canonical_user_id = _canonical_user_id(user_id, platform)
         db_client = supabase_service or supabase
 
+        # Cap the limit for anonymous users to their remaining limit
+        effective_limit = limit
+        if anonymous_limit_remaining is not None and anonymous_limit_remaining < limit:
+            effective_limit = anonymous_limit_remaining
+            logger.info(f"Capping import limit for anonymous user: requested={limit}, remaining={anonymous_limit_remaining}, using={effective_limit}")
+
         # Fetch games from platform
-        games_data = await _fetch_games_from_platform(user_id, platform, limit)
+        games_data = await _fetch_games_from_platform(user_id, platform, effective_limit)
 
         # For chess.com, also fetch stats to get highest ratings
         highest_rating = None
