@@ -1254,7 +1254,7 @@ async def unified_analyze(
             # Batch analysis - use the unified handler
             # NOTE: Usage tracking for batch analysis is handled in the queue completion handler
             # since batch analysis is async and the count is determined when it completes
-            return await _handle_batch_analysis(request, background_tasks, use_parallel)
+            return await _handle_batch_analysis(request, background_tasks, use_parallel, auth_user_id)
 
     except ValidationError as e:
         raise e
@@ -8709,7 +8709,7 @@ async def _handle_move_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnaly
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tasks: BackgroundTasks, use_parallel: bool = True) -> UnifiedAnalysisResponse:
+async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tasks: BackgroundTasks, use_parallel: bool = True, auth_user_id: Optional[str] = None) -> UnifiedAnalysisResponse:
     """Handle batch analysis using the queue system."""
     try:
         # Validate request parameters
@@ -8730,7 +8730,8 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
             analysis_type=request.analysis_type,
             limit=request.limit or 5,
             depth=request.depth or 14,
-            skill_level=request.skill_level or 20
+            skill_level=request.skill_level or 20,
+            auth_user_id=auth_user_id
         )
 
         return UnifiedAnalysisResponse(

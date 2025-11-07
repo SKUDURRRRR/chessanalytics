@@ -11,6 +11,7 @@ import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { useAuth } from '../../contexts/AuthContext'
 import { AnonymousUsageTracker } from '../../services/anonymousUsageTracker'
 import AnonymousLimitModal from '../AnonymousLimitModal'
+import { supabase } from '../../lib/supabase'
 
 // Canonicalize user ID to match backend logic
 function canonicalizeUserId(userId: string, platform: string): string {
@@ -72,7 +73,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
   const [gameAnalyses, setGameAnalyses] = useState<Map<string, number>>(new Map())
 
   // Auth and anonymous user tracking
-  const { user } = useAuth()
+  const { user, refreshUsageStats } = useAuth()
   const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
 
   const gamesPerPage = 20
@@ -245,9 +246,22 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
     markGameAsPending(gameIdentifier)
     try {
       const { baseUrl } = config.getApi()
+
+      // Get auth token if user is logged in
+      const headers: HeadersInit = { 'Content-Type': 'application/json' }
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      } catch (authError) {
+        // Log but don't fail - allow request to proceed without auth (for anonymous users)
+        console.log('[MatchHistory] No auth session found, proceeding without Authorization header')
+      }
+
       const response = await fetch(`${baseUrl}/api/v1/analyze?use_parallel=false`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           user_id: userId,
           platform,
@@ -292,6 +306,9 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         // Increment anonymous usage after successful start
         if (!user) {
           AnonymousUsageTracker.incrementAnalyses()
+        } else {
+          // Refresh usage stats for authenticated users after successful analysis
+          refreshUsageStats()
         }
 
         // Refresh analysis data after a short delay to get the accuracy
