@@ -20,6 +20,7 @@ import re
 import hashlib
 import time
 import threading
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional
 from enum import Enum
@@ -124,6 +125,22 @@ class AIChessCommentGenerator:
         self._last_api_call_time = 0.0
         self._rate_limit_lock = threading.Lock()
         self._rate_limit_delay = self.config.rate_limit_delay
+
+        # Async rate limiting: token bucket rate limiter for parallel calls
+        # Anthropic limit: 50 requests per minute
+        try:
+            from .resilient_api_client import RateLimiter
+            self._async_rate_limiter = RateLimiter(
+                capacity=50,  # Anthropic limit: 50 requests/minute
+                refill_rate=50.0 / 60.0  # Refill at 50/60 requests per second
+            )
+            # Semaphore to limit concurrent API calls (prevent overwhelming)
+            self._api_semaphore = asyncio.Semaphore(15)  # Max 15 concurrent calls
+            print("[AI] ✅ Async rate limiter initialized (50 req/min, 15 concurrent)")
+        except ImportError:
+            self._async_rate_limiter = None
+            self._api_semaphore = None
+            print("[AI] ⚠️  RateLimiter not available, async parallel calls disabled")
 
         # Initialize comment cache to avoid regenerating identical comments
         # Cache key: hash of (FEN + move + quality + ELO_range)
@@ -304,6 +321,147 @@ class AIChessCommentGenerator:
             import traceback
             print(f"[AI] Error generating AI comment: {e}")
             print(f"[AI] Full traceback: {traceback.format_exc()}")
+            return None
+
+    async def generate_comment_async(
+        self,
+        move_analysis: Dict[str, Any],
+        board: chess.Board,
+        move: chess.Move,
+        is_user_move: bool = True,
+        player_elo: int = 1200
+    ) -> Optional[str]:
+        """
+        Async version of generate_comment for parallel execution.
+        Respects Anthropic rate limits (50 requests/minute) using token bucket rate limiter.
+
+        Args:
+            move_analysis: Dictionary containing move analysis data
+            board: Chess board position after the move
+            move: The chess move being analyzed
+            is_user_move: Whether this is the user's move or opponent's
+            player_elo: Estimated player ELO (for tailoring complexity)
+
+        Returns:
+            Generated comment string, or None if AI is disabled/failed
+        """
+        if not self.enabled:
+            return None
+
+        if not self.client:
+            return None
+
+        # Check if async rate limiter is available
+        if not self._async_rate_limiter or not self._api_semaphore:
+            # Fallback to synchronous version if rate limiter not available
+            print("[AI] Async rate limiter not available, falling back to sync")
+            return self.generate_comment(move_analysis, board, move, is_user_move, player_elo)
+
+        try:
+            # Check cache first (same as sync version)
+            cache_key = self._generate_cache_key(move_analysis, board, move, is_user_move, player_elo)
+            if hasattr(self._comment_cache, 'get'):
+                cached_comment = self._comment_cache.get(cache_key)
+                if cached_comment:
+                    print(f"[AI] ✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
+                    return cached_comment
+            elif isinstance(self._comment_cache, dict) and cache_key in self._comment_cache:
+                cached_comment = self._comment_cache[cache_key]
+                print(f"[AI] ✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
+                return cached_comment
+
+            # Wait for rate limiter token (respects 50/minute limit, non-blocking)
+            token_acquired = await self._async_rate_limiter.wait_for_token(tokens=1, timeout=30.0)
+            if not token_acquired:
+                print(f"[AI] ⚠️  Rate limiter timeout for {move_analysis.get('move_san', 'unknown')}, skipping AI comment")
+                return None
+
+            # Use semaphore to limit concurrent calls
+            async with self._api_semaphore:
+                print(f"[AI] Building prompt for move {move_analysis.get('move_san', 'unknown')}, ELO: {player_elo}")
+                prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
+
+                print(f"[AI] Calling Anthropic API (async) with model {self.config.ai_model}")
+                system_prompt = "You are Mikhail Tal, the Magician from Riga. You teach chess with energy and insight, explaining the principles behind each move. Your comments are engaging and instructive—you help players understand why moves work or fail. Focus on teaching chess concepts clearly: piece coordination, tactical patterns, positional understanding. Use occasional metaphors when they help explain, but prioritize clear analysis and principle-based teaching. You encourage creative thinking while building solid chess understanding. Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly with your commentary."
+
+                # Use async API call
+                comment = await self._call_api_async(prompt, system_prompt)
+
+                if comment:
+                    comment = self._clean_comment(comment, is_user_move)
+                    print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
+
+                    # Cache the comment
+                    if hasattr(self._comment_cache, 'set'):
+                        self._comment_cache.set(cache_key, comment)
+                    elif isinstance(self._comment_cache, dict):
+                        self._comment_cache[cache_key] = comment
+
+                    return comment
+
+            print("[AI] Response had no content")
+            return None
+
+        except Exception as e:
+            import traceback
+            print(f"[AI] Error generating AI comment (async): {e}")
+            print(f"[AI] Full traceback: {traceback.format_exc()}")
+            return None
+
+    async def _call_api_async(self, prompt: str, system: str) -> Optional[str]:
+        """
+        Async API call to Anthropic.
+        Uses httpx.AsyncClient for non-blocking HTTP requests.
+        """
+        if not self.enabled or not self.client:
+            return None
+
+        try:
+            import httpx
+
+            # Create async HTTP client
+            timeout = httpx.Timeout(
+                connect=10.0,
+                read=self.config.api_timeout,
+                write=10.0,
+                pool=10.0
+            )
+
+            async with httpx.AsyncClient(timeout=timeout) as async_client:
+                # Build request
+                headers = {
+                    "x-api-key": self.config.anthropic_api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                }
+
+                payload = {
+                    "model": self.config.ai_model,
+                    "max_tokens": self.config.max_tokens,
+                    "temperature": self.config.temperature,
+                    "system": system,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+
+                response = await async_client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers=headers,
+                    json=payload
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if "content" in data and len(data["content"]) > 0:
+                        return data["content"][0].get("text", "")
+                elif response.status_code == 429:
+                    print(f"[AI] ⚠️  Rate limit exceeded (429), skipping AI comment")
+                    return None
+                else:
+                    print(f"[AI] API call failed with status {response.status_code}: {response.text}")
+                    return None
+
+        except Exception as e:
+            print(f"[AI] Error in async API call: {e}")
             return None
 
     def _clean_comment(self, comment: str, is_user_move: bool = True) -> str:
@@ -593,6 +751,7 @@ class AIChessCommentGenerator:
         board_before = move_analysis.get('board_before')
         fen_before = ""
         capture_info = ""
+        is_capture = False
 
         if board_before and move:
             try:
@@ -600,6 +759,7 @@ class AIChessCommentGenerator:
                 # Check if this is a capture move
                 captured_piece = board_before.piece_at(move.to_square)
                 if captured_piece:
+                    is_capture = True
                     piece_names = {
                         chess.PAWN: "pawn",
                         chess.KNIGHT: "knight",
@@ -611,6 +771,9 @@ class AIChessCommentGenerator:
                     piece_name = piece_names.get(captured_piece.piece_type, "piece")
                     color = "white" if captured_piece.color == chess.WHITE else "black"
                     capture_info = f"\n**CAPTURE:** This move captures the {color} {piece_name} on {chess.square_name(move.to_square)}."
+                else:
+                    # Explicitly state when it's NOT a capture to prevent AI hallucination
+                    capture_info = f"\n**NOT A CAPTURE:** This move does NOT capture any piece."
             except Exception as e:
                 print(f"[AI] Warning: Could not extract capture info: {e}")
 
@@ -756,6 +919,8 @@ Write the comment now:"""
 - Be specific: "loses the attack" not "is a good move"
 - {"Use 'your' not 'the player's'" if is_user_move else "Use 'your opponent'"}
 - 2-3 sentences max, clear and instructive
+- CRITICAL: If the move is NOT A CAPTURE, do NOT mention capturing anything
+- CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
 {"Mention better move " + best_move_san + " if relevant." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
 
 Write comment:"""

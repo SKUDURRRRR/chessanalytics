@@ -2276,9 +2276,13 @@ class ChessAnalysisEngine:
                                         # For clear tactical sacrifices, be more lenient - brilliant tactical shots are brilliant even if already winning
                                         # Chess.com marks brilliant moves even in winning positions
                                         not_already_crushing = optimal_cp < rating_thresholds['max_position_cp']
-                                        # For tactical sacrifices, allow even if position is more winning (up to 500cp)
-                                        if moving_piece_can_be_captured:
-                                            not_already_crushing = optimal_cp < 500  # More lenient for tactical sacrifices
+                                        # For CLEAR tactical sacrifices (piece can be captured), allow up to 500cp
+                                        # But only if this is actually a capture move - prevents false positives in winning positions
+                                        if moving_piece_can_be_captured and board.is_capture(move):
+                                            not_already_crushing = optimal_cp < 500  # More lenient for clear tactical sacrifices
+                                        elif moving_piece_can_be_captured:
+                                            # Non-capture with piece hanging: be more conservative in already winning positions
+                                            not_already_crushing = optimal_cp < 300  # Still allow, but not in crushing positions
 
                                         # Position compensation: For brilliant moves, require reasonable compensation
                                         # Chess.com: Tactical sacrifices can be brilliant even if position temporarily drops
@@ -2421,9 +2425,17 @@ class ChessAnalysisEngine:
                                     # Chess.com marks brilliant moves even in very winning positions if they're tactical sacrifices
                                     if is_leaving_pieces_hanging and move_creates_strong_threat:
                                         # For tactical sacrifices that leave pieces hanging, allow even if position is very winning
-                                        # The brilliance is in the tactical calculation, not whether position was already winning
-                                        not_already_crushing = True  # Always allow if leaving pieces hanging with strong threat
-                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Leaving pieces hanging with strong threat - allowing even in winning position (optimal_cp={optimal_cp:.1f})")
+                                        # BUT: Be more conservative - require significant piece hanging (Queen or Rook) in very winning positions
+                                        # This prevents false positives like Nc3 in already crushing positions
+                                        if optimal_cp >= 400 and other_pieces_hanging_value < 5:
+                                            # In crushing positions (+400cp), require at least Rook (5 points) hanging for brilliant
+                                            # Knight/Bishop hanging in crushing positions is likely just a good move, not brilliant
+                                            not_already_crushing = False
+                                            print(f"[BRILLIANT DEBUG] {move_san_debug}: Position too winning (+{optimal_cp:.0f}cp) with only {other_pieces_hanging_value} points hanging - not brilliant")
+                                        else:
+                                            # The brilliance is in the tactical calculation, not whether position was already winning
+                                            not_already_crushing = True  # Always allow if leaving significant pieces hanging with strong threat
+                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Leaving pieces hanging with strong threat - optimal_cp={optimal_cp:.1f}, pieces_value={other_pieces_hanging_value}")
                                     else:
                                         not_already_crushing = optimal_cp < rating_thresholds['max_position_cp']
 
