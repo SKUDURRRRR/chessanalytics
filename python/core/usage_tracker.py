@@ -280,30 +280,29 @@ class UsageTracker:
             # Debug logging
             logger.info(f"[USAGE_STATS] User {user_id}: tier={account_tier}, name={tier_name}, import_limit={import_limit}, analysis_limit={analysis_limit}")
 
-            # Get current usage (within 24-hour window)
-            today = datetime.now(timezone.utc).date()
+            # Get current usage (within 24-hour rolling window)
+            # Query all recent records and filter by reset_at to match check_usage_limits logic
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
             usage_result = await asyncio.to_thread(
                 lambda: self.supabase.table('usage_tracking').select('*').eq(
                     'user_id', user_id
-                ).eq('date', str(today)).execute()
+                ).order('reset_at', desc=True).limit(10).execute()
             )
 
             current_imports = 0
             current_analyses = 0
             reset_at = None
 
+            # Find the most recent record within 24-hour window (matching check_usage_limits logic)
             if usage_result.data and len(usage_result.data) > 0:
-                record = usage_result.data[0]
-                reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
-
-                # Check if 24 hours have passed
-                # Use timezone-aware datetime to avoid "can't subtract offset-naive and offset-aware datetimes" error
-                if datetime.now(timezone.utc) - reset_at <= timedelta(hours=24):
-                    current_imports = record.get('games_imported', 0)
-                    current_analyses = record.get('games_analyzed', 0)
-                else:
-                    # Usage has reset
-                    reset_at = None
+                for record in usage_result.data:
+                    record_reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
+                    if record_reset_at > cutoff_time:
+                        # Found valid record within 24-hour window
+                        reset_at = record_reset_at
+                        current_imports = record.get('games_imported', 0)
+                        current_analyses = record.get('games_analyzed', 0)
+                        break
 
             # Calculate remaining
             imports_remaining = None if import_limit is None else max(0, import_limit - current_imports)

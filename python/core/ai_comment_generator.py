@@ -18,6 +18,8 @@ Features:
 import os
 import re
 import hashlib
+import time
+import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
 from enum import Enum
@@ -62,7 +64,8 @@ class AIConfig(BaseSettings):
     ai_model: str = "claude-3-haiku-20240307"  # Recommended: most reliable, fastest, cheapest
     max_tokens: int = 150  # Optimized: 2-3 sentences max (reduced from 200 to save costs)
     temperature: float = 0.75  # Slightly reduced from 0.85 to reduce variability and token usage
-    api_timeout: float = 60.0  # API call timeout in seconds (increased from 10s to 60s to prevent premature timeouts)
+    api_timeout: float = 30.0  # API call timeout in seconds (reduced from 60s to 30s to prevent blocking)
+    rate_limit_delay: float = 2.0  # Delay between AI API calls in seconds (increased to prevent 429 errors)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -117,6 +120,11 @@ class AIChessCommentGenerator:
         self.client = None
         self.enabled = False
 
+        # Rate limiting: track last API call time to prevent overwhelming the API
+        self._last_api_call_time = 0.0
+        self._rate_limit_lock = threading.Lock()
+        self._rate_limit_delay = self.config.rate_limit_delay
+
         # Initialize comment cache to avoid regenerating identical comments
         # Cache key: hash of (FEN + move + quality + ELO_range)
         # Cache size: 500 entries (common positions/moves)
@@ -162,11 +170,12 @@ class AIChessCommentGenerator:
 
                 # Initialize Anthropic client with httpx timeout configuration
                 # This prevents the SDK from hanging indefinitely on slow API responses
+                # Reduced timeout to fail fast and prevent blocking analysis
                 try:
                     import httpx
                     timeout = httpx.Timeout(
                         connect=10.0,  # Connection timeout: 10 seconds
-                        read=self.config.api_timeout,  # Read timeout: configurable (default 60s)
+                        read=self.config.api_timeout,  # Read timeout: configurable (default 30s, reduced from 60s)
                         write=10.0,  # Write timeout: 10 seconds
                         pool=10.0  # Pool timeout: 10 seconds
                     )
@@ -174,17 +183,31 @@ class AIChessCommentGenerator:
                     http_client = httpx.Client(timeout=timeout)
                     # Pass the custom http_client to Anthropic SDK
                     # The SDK will use this client for all HTTP requests
-                    self.client = Anthropic(
-                        api_key=api_key,
-                        http_client=http_client
-                    )
-                    print(f"[AI] ✅ Anthropic client initialized with httpx timeout: {self.config.api_timeout}s")
+                    # Set max_retries=0 to disable automatic retries on 429 errors
+                    # We handle rate limits manually with delays to prevent blocking
+                    try:
+                        self.client = Anthropic(
+                            api_key=api_key,
+                            http_client=http_client,
+                            max_retries=0  # Disable automatic retries - we handle rate limits manually
+                        )
+                    except TypeError:
+                        # Older SDK versions might not support max_retries parameter
+                        self.client = Anthropic(
+                            api_key=api_key,
+                            http_client=http_client
+                        )
+                    print(f"[AI] ✅ Anthropic client initialized with httpx timeout: {self.config.api_timeout}s, max_retries=0")
                 except (ImportError, TypeError) as e:
                     # Fallback if httpx is not available or http_client parameter not supported
                     # (shouldn't happen with modern Anthropic SDK, but be defensive)
                     print(f"[AI] ⚠️  Could not configure custom http_client: {e}")
                     print(f"[AI] ⚠️  Using default client (timeout may not be configurable)")
-                    self.client = Anthropic(api_key=api_key)
+                    try:
+                        self.client = Anthropic(api_key=api_key, max_retries=0)
+                    except TypeError:
+                        # Older SDK versions might not support max_retries parameter
+                        self.client = Anthropic(api_key=api_key)
 
                 self.enabled = self.config.ai_enabled
                 if self.enabled:
@@ -361,6 +384,7 @@ class AIChessCommentGenerator:
     ) -> Optional[str]:
         """
         Call Anthropic API with automatic model fallback on 404 errors.
+        Includes rate limiting to prevent overwhelming the API.
 
         Args:
             prompt: The user prompt
@@ -373,6 +397,16 @@ class AIChessCommentGenerator:
         """
         if not self.enabled or not self.client:
             return None
+
+        # Rate limiting: ensure we don't make API calls too fast
+        with self._rate_limit_lock:
+            current_time = time.time()
+            time_since_last_call = current_time - self._last_api_call_time
+            if time_since_last_call < self._rate_limit_delay:
+                sleep_time = self._rate_limit_delay - time_since_last_call
+                print(f"[AI] Rate limiting: waiting {sleep_time:.2f}s before API call")
+                time.sleep(sleep_time)
+            self._last_api_call_time = time.time()
 
         max_tokens = max_tokens or self.config.max_tokens
         temperature = temperature if temperature is not None else self.config.temperature
@@ -458,11 +492,12 @@ class AIChessCommentGenerator:
                 error_msg = str(e)
                 last_error = e
 
-                # Check for timeout errors
+                # Check for timeout errors - fail fast to prevent blocking
                 if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
                     print(f"[AI] ⚠️  API call timeout ({self.config.api_timeout}s) for model {model}. Skipping to prevent blocking analysis.")
-                    print(f"[AI] 💡 Consider increasing AI_API_TIMEOUT if timeouts persist (current: {self.config.api_timeout}s)")
-                    continue
+                    print(f"[AI] 💡 This is expected if API is slow. Analysis will continue with template comments.")
+                    # Don't try other models if we're timing out - likely API issue
+                    break
 
                 # If it's a 404 (model not found), try next model immediately (no need to wait)
                 if "404" in error_msg or "not_found" in error_msg.lower():
@@ -472,14 +507,11 @@ class AIChessCommentGenerator:
                         print(f"[AI]   Model {model} also not found (404). Trying next...")
                     continue
                 elif "429" in error_msg or "rate_limit" in error_msg.lower() or "too many requests" in error_msg.lower():
-                    # Rate limit error - the SDK will retry automatically, but we should inform the user
-                    print(f"[AI] ⚠️  Rate limit exceeded (429) for model {model}. The SDK will retry automatically.")
-                    print(f"[AI] 💡 If this persists, consider:")
-                    print(f"[AI]    - Waiting a few minutes before trying again")
-                    print(f"[AI]    - Contacting Anthropic to increase your rate limit")
-                    print(f"[AI]    - Using a different model (e.g., claude-3-haiku-20240307)")
-                    # Continue to next model as fallback
-                    continue
+                    # Rate limit error - fail fast to prevent blocking
+                    print(f"[AI] ⚠️  Rate limit exceeded (429) for model {model}. Skipping AI comment to prevent blocking analysis.")
+                    print(f"[AI] 💡 Analysis will continue with template comments. This is expected when analyzing many games.")
+                    # Don't try other models if we're rate limited - likely too many concurrent requests
+                    break
                 else:
                     # For other errors, log but continue trying
                     print(f"[AI]   Model {model} failed with error: {error_msg}")

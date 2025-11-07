@@ -2337,7 +2337,10 @@ async def get_comprehensive_analytics(
 
         # Determine total available games (for UI pagination context)
         count_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()
+            lambda: db_client.table('games').select('id', count='exact', head=True)
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .execute()
         )
         total_games_count = getattr(count_response, 'count', 0) or 0
 
@@ -2437,20 +2440,39 @@ async def get_comprehensive_analytics(
             }
 
         # Calculate basic analytics from games (can be done immediately, no analysis data needed)
-        wins = len([g for g in games if g.get('result') == 'win'])
-        draws = len([g for g in games if g.get('result') == 'draw'])
-        losses = len([g for g in games if g.get('result') == 'loss'])
+        # Normalize result values to handle any edge cases (whitespace, case sensitivity)
+        wins = len([g for g in games if str(g.get('result', '')).strip().lower() == 'win'])
+        draws = len([g for g in games if str(g.get('result', '')).strip().lower() == 'draw'])
+        losses = len([g for g in games if str(g.get('result', '')).strip().lower() == 'loss'])
 
-        win_rate = _safe_divide(wins, len(games)) * 100
-        draw_rate = _safe_divide(draws, len(games)) * 100
-        loss_rate = _safe_divide(losses, len(games)) * 100
+        # Count games with NULL or invalid results for diagnostics
+        games_without_result = len([g for g in games if not g.get('result') or g.get('result') == ''])
+        games_with_invalid_result = len([g for g in games if g.get('result') and str(g.get('result', '')).strip().lower() not in ['win', 'loss', 'draw']])
+
+        # Diagnostic logging: Check for unexpected result values
+        if DEBUG or wins == 0 or games_without_result > 0 or games_with_invalid_result > 0:
+            unique_results = set(g.get('result') for g in games if g.get('result'))
+            result_counts = {}
+            for g in games:
+                result = g.get('result')
+                result_counts[result] = result_counts.get(result, 0) + 1
+            print(f"[DEBUG] Result distribution for {canonical_user_id} on {platform}: {result_counts}")
+            print(f"[DEBUG] Unique result values: {unique_results}")
+            print(f"[DEBUG] Wins: {wins}, Draws: {draws}, Losses: {losses}, Total games: {len(games)}")
+            print(f"[DEBUG] Games without result: {games_without_result}, Games with invalid result: {games_with_invalid_result}")
+
+        # Use games_with_valid_results as denominator to ensure percentages add up to 100%
+        games_with_valid_results = wins + draws + losses
+        win_rate = _safe_divide(wins, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
+        draw_rate = _safe_divide(draws, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
+        loss_rate = _safe_divide(losses, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
 
         # Color stats
         white_games = [g for g in games if g.get('color') == 'white']
         black_games = [g for g in games if g.get('color') == 'black']
 
-        white_wins = len([g for g in white_games if g.get('result') == 'win'])
-        black_wins = len([g for g in black_games if g.get('result') == 'win'])
+        white_wins = len([g for g in white_games if str(g.get('result', '')).strip().lower() == 'win'])
+        black_wins = len([g for g in black_games if str(g.get('result', '')).strip().lower() == 'win'])
 
         white_elos = [g.get('my_rating') for g in white_games if g.get('my_rating')]
         black_elos = [g.get('my_rating') for g in black_games if g.get('my_rating')]
@@ -7002,6 +7024,11 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
             skipped_no_time_control += 1
             print(f'[import_games] Skipping game {game.provider_game_id} due to missing time_control')
             continue
+        # DIAGNOSTIC: Log result values to debug NULL issue
+        if game.result is None or game.result == '':
+            print(f'[import_games] WARNING: Game {game.provider_game_id} has NULL/empty result: {repr(game.result)}')
+        elif game.result not in ['win', 'loss', 'draw']:
+            print(f'[import_games] WARNING: Game {game.provider_game_id} has invalid result: {repr(game.result)}')
 
         played_at = _normalize_played_at(game.played_at)
         # Normalize opening name to family for efficient filtering and grouping

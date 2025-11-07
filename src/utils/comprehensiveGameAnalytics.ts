@@ -255,12 +255,11 @@ export async function getComprehensiveGameAnalytics(
     if (DEBUG) console.log(`Canonicalized user ID: "${canonicalUserId}"`)
 
     // PERFORMANCE: First get total count
-    const { count: totalGamesCount, error: countError } = await supabase
+    const { count: totalGamesCount, error: countError} = await supabase
       .from('games')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', canonicalUserId)
       .eq('platform', platform)
-      .not('my_rating', 'is', null)
 
     if (countError) {
       if (DEBUG) console.error('Error fetching game count:', countError)
@@ -283,7 +282,6 @@ export async function getComprehensiveGameAnalytics(
         .select('*')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
-        .not('my_rating', 'is', null)
         .order('played_at', { ascending: false })
         .range(offset, offset + currentLimit - 1)
 
@@ -340,12 +338,15 @@ export function calculateAnalyticsFromGames(games: any[], totalGamesInDB?: numbe
   const draws = games.filter(g => g.result === 'draw').length
   const losses = games.filter(g => g.result === 'loss').length
 
-  // IMPORTANT: Calculate rates based on ANALYZED games, not total games in database
+  // IMPORTANT: Only count games with valid results (win/loss/draw) for percentage calculations
+  // This prevents percentages from exceeding 100% when some games have null/invalid results
+  const gamesWithValidResults = wins + draws + losses
+
+  // IMPORTANT: Calculate rates based on ANALYZED games with valid results, not total games
   // Using totalGames (from database count) with wins from limited sample creates incorrect percentages
-  const analyzedGames = games.length
-  const winRate = analyzedGames > 0 ? (wins / analyzedGames) * 100 : 0
-  const drawRate = analyzedGames > 0 ? (draws / analyzedGames) * 100 : 0
-  const lossRate = analyzedGames > 0 ? (losses / analyzedGames) * 100 : 0
+  const winRate = gamesWithValidResults > 0 ? (wins / gamesWithValidResults) * 100 : 0
+  const drawRate = gamesWithValidResults > 0 ? (draws / gamesWithValidResults) * 100 : 0
+  const lossRate = gamesWithValidResults > 0 ? (losses / gamesWithValidResults) * 100 : 0
 
   // ELO Statistics
   // Only filter out games with 'null' string literal (actual corruption)
