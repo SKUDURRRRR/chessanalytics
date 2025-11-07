@@ -437,18 +437,28 @@ export function ModernChessArrows({
 
         const pathId = `arrow-${boardId}-${index}`
 
+        // Determine tail visibility and color:
+        // - User-drawn arrows (orange, uncategorized): show tail with original color
+        // - All actual moves (user and opponent moves, not best move suggestions): show tail matching arrowhead color
+        // - Suggested moves (isBestMove === true): no tail, only arrowhead
+        const isUserDrawnArrow = arrow.classification === 'uncategorized' && arrow.color === '#f97316'
+        const isActualMove = !arrow.isBestMove // Actual moves are not best move suggestions
+        const shouldShowTail = isUserDrawnArrow || isActualMove
+        const tailColor = arrow.color // Tail color matches arrowhead color
 
         return (
           <g key={pathId}>
             {/* Straight arrow path starting exactly at square center */}
-            <path
-              d={`M ${startX},${startY} L ${actualShortenedEnd.x},${actualShortenedEnd.y}`}
-              stroke={arrow.color}
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              fill="none"
-              opacity={1.0}
-            />
+            {shouldShowTail && (
+              <path
+                d={`M ${startX},${startY} L ${actualShortenedEnd.x},${actualShortenedEnd.y}`}
+                stroke={tailColor}
+                strokeWidth={strokeWidth}
+                strokeLinecap="round"
+                fill="none"
+                opacity={1.0}
+              />
+            )}
 
             {/* Arrow head */}
             <polygon
