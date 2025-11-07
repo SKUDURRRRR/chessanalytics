@@ -324,6 +324,44 @@ def get_optional_auth():
     else:
         return None
 
+def get_client_ip(request: Request) -> str:
+    """
+    Extract client IP address from request.
+
+    Checks headers in order of priority:
+    1. X-Forwarded-For (handles proxies/load balancers like Railway, Vercel)
+    2. X-Real-IP
+    3. X-Remote-IP
+    4. request.client.host (direct connection)
+
+    Returns:
+        str: Client IP address (defaults to 127.0.0.1 if not found)
+    """
+    # Check X-Forwarded-For header (handles proxies, Railway, Vercel, etc.)
+    x_forwarded_for = request.headers.get('x-forwarded-for')
+    if x_forwarded_for:
+        # Take the first IP (client IP) from comma-separated list
+        ip = x_forwarded_for.split(',')[0].strip()
+        if ip:
+            return ip
+
+    # Check X-Real-IP header
+    x_real_ip = request.headers.get('x-real-ip')
+    if x_real_ip:
+        return x_real_ip.strip()
+
+    # Check X-Remote-IP header
+    x_remote_ip = request.headers.get('x-remote-ip')
+    if x_remote_ip:
+        return x_remote_ip.strip()
+
+    # Fall back to direct client host
+    if request.client and request.client.host:
+        return request.client.host
+
+    # Last resort - localhost
+    return '127.0.0.1'
+
 # FastAPI app
 app = FastAPI(
     title="Unified Chess Analysis API",
@@ -1168,6 +1206,7 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
 @app.post("/api/v1/analyze", response_model=UnifiedAnalysisResponse)
 async def unified_analyze(
     request: UnifiedAnalysisRequest,
+    http_request: Request,
     background_tasks: BackgroundTasks,
     # Optional parallel analysis flag
     use_parallel: bool = True,
@@ -1212,6 +1251,22 @@ async def unified_analyze(
             # Log but don't fail - allow anonymous/failed auth to proceed
             logger.warning(f"Auth check failed (non-critical): {e}")
 
+        # Check anonymous user limits if not authenticated
+        if not auth_user_id and usage_tracker:
+            client_ip = get_client_ip(http_request)
+            try:
+                can_proceed, stats = await usage_tracker.check_anonymous_analysis_limit(client_ip)
+                if not can_proceed:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Analysis limit reached. {stats.get('reason', 'Anonymous users: 2 analyses per 24 hours. Create a free account for 5 analyses per day!')}"
+                    )
+            except HTTPException:
+                raise  # Re-raise HTTP exceptions (429 limit errors)
+            except Exception as e:
+                # Log but allow anonymous user to proceed (fail-open)
+                logger.warning(f"Anonymous analysis limit check failed for IP {client_ip} (non-critical): {e}")
+
         # Enforce rate limit per user
         user_key = f"analysis:{request.user_id}:{request.platform}"
         _enforce_rate_limit(user_key, ANALYSIS_RATE_LIMIT)
@@ -1234,24 +1289,36 @@ async def unified_analyze(
         if request.pgn:
             # Single game analysis with PGN
             result = await _handle_single_game_analysis(request)
-            # Increment usage for authenticated users
+            # Increment usage
             if auth_user_id and usage_tracker:
                 await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            elif usage_tracker:
+                # Increment for anonymous users
+                client_ip = get_client_ip(http_request)
+                await usage_tracker.increment_anonymous_usage(client_ip, 'analyze', count=1)
             return result
         elif request.game_id or request.provider_game_id:
             # Single game analysis by game_id - fetch PGN from database
             result = await _handle_single_game_by_id(request)
-            # Increment usage for authenticated users
+            # Increment usage
             if auth_user_id and usage_tracker:
                 await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            elif usage_tracker:
+                # Increment for anonymous users
+                client_ip = get_client_ip(http_request)
+                await usage_tracker.increment_anonymous_usage(client_ip, 'analyze', count=1)
             return result
         elif request.fen:
             if request.move:
                 # Move analysis
                 result = await _handle_move_analysis(request)
-                # Increment usage for authenticated users
+                # Increment usage
                 if auth_user_id and usage_tracker:
                     await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+                elif usage_tracker:
+                    # Increment for anonymous users
+                    client_ip = get_client_ip(http_request)
+                    await usage_tracker.increment_anonymous_usage(client_ip, 'analyze', count=1)
                 return result
             else:
                 # Position analysis
@@ -6680,7 +6747,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
 # PROXY ENDPOINTS (for external APIs)
 # ============================================================================
 @app.post("/api/v1/import-games-smart", response_model=BulkGameImportResponse)
-async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+async def import_games_smart(request: Dict[str, Any], http_request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Smart import endpoint - imports only the most recent 100 games"""
     try:
         user_id = request.get('user_id')
@@ -6718,6 +6785,22 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
             # Log but don't fail - allow anonymous/failed auth to proceed
             logger.warning(f"Auth check failed (non-critical): {e}")
 
+        # Check anonymous user limits if not authenticated
+        if not auth_user_id and usage_tracker:
+            client_ip = get_client_ip(http_request)
+            try:
+                can_proceed, stats = await usage_tracker.check_anonymous_import_limit(client_ip)
+                if not can_proceed:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Import limit reached. {stats.get('reason', 'Anonymous users: 50 imports per 24 hours. Create a free account for 100 imports per day!')}"
+                    )
+            except HTTPException:
+                raise  # Re-raise HTTP exceptions (429 limit errors)
+            except Exception as e:
+                # Log but allow anonymous user to proceed (fail-open)
+                logger.warning(f"Anonymous import limit check failed for IP {client_ip} (non-critical): {e}")
+
         user_key = f"import:{user_id}:{platform}:smart"
         _enforce_rate_limit(user_key, IMPORT_RATE_LIMIT)
 
@@ -6725,10 +6808,6 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
         db_client = supabase_service or supabase
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured for smart import")
-
-        # Note: Anonymous user daily import limit (50 per day) is enforced by frontend localStorage
-        # Backend doesn't track anonymous users, so we rely on frontend enforcement
-        # The frontend will show popup when limit is reached
 
         print(f"Smart import for {user_id}: starting...")
 
@@ -6939,9 +7018,13 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
                 result.message = f"Imported {result.imported_games} new games"
                 print(f"[Smart import] Success: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
 
-                # Increment usage tracking for authenticated users
+                # Increment usage tracking
                 if auth_user_id and usage_tracker:
                     await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
+                elif usage_tracker:
+                    # Increment for anonymous users
+                    client_ip = get_client_ip(http_request)
+                    await usage_tracker.increment_anonymous_usage(client_ip, 'import', count=result.imported_games)
             else:
                 result.message = "No new games found. You already have all recent games imported."
                 print(f"[Smart import] No new games: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
@@ -6953,7 +7036,7 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/import-games", response_model=BulkGameImportResponse)
-async def import_games_simple(request: Dict[str, Any], credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+async def import_games_simple(request: Dict[str, Any], http_request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Import games endpoint for frontend - handles PGN parsing and move counting"""
     try:
         user_id = request.get('user_id')
@@ -6992,14 +7075,27 @@ async def import_games_simple(request: Dict[str, Any], credentials: Optional[HTT
             # Log but don't fail - allow anonymous/failed auth to proceed
             logger.warning(f"Auth check failed (non-critical): {e}")
 
+        # Check anonymous user limits if not authenticated
+        if not auth_user_id and usage_tracker:
+            client_ip = get_client_ip(http_request)
+            try:
+                can_proceed, stats = await usage_tracker.check_anonymous_import_limit(client_ip)
+                if not can_proceed:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Import limit reached. {stats.get('reason', 'Anonymous users: 50 imports per 24 hours. Create a free account for 100 imports per day!')}"
+                    )
+            except HTTPException:
+                raise  # Re-raise HTTP exceptions (429 limit errors)
+            except Exception as e:
+                # Log but allow anonymous user to proceed (fail-open)
+                logger.warning(f"Anonymous import limit check failed for IP {client_ip} (non-critical): {e}")
+
         rate_key = f"import:{user_id}:{platform}:simple"
         _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
 
         canonical_user_id = _canonical_user_id(user_id, platform)
         db_client = supabase_service or supabase
-
-        # Note: Anonymous user daily import limit (50 per day) is enforced by frontend localStorage
-        # Backend doesn't track anonymous users, so we rely on frontend enforcement
 
         # Fetch games from platform
         games_data = await _fetch_games_from_platform(user_id, platform, limit)
@@ -7076,9 +7172,14 @@ async def import_games_simple(request: Dict[str, Any], credentials: Optional[HTT
         # Process the import
         result = await import_games(bulk_request)
 
-        # Increment usage tracking for authenticated users
-        if auth_user_id and usage_tracker and hasattr(result, 'imported_games') and result.imported_games > 0:
-            await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
+        # Increment usage tracking
+        if hasattr(result, 'imported_games') and result.imported_games > 0:
+            if auth_user_id and usage_tracker:
+                await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
+            elif usage_tracker:
+                # Increment for anonymous users
+                client_ip = get_client_ip(http_request)
+                await usage_tracker.increment_anonymous_usage(client_ip, 'import', count=result.imported_games)
 
         return result
 

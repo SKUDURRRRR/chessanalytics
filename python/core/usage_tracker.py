@@ -393,3 +393,133 @@ class UsageTracker:
         except Exception as e:
             logger.error(f"Error claiming anonymous data: {e}")
             return {'success': False, 'message': str(e)}
+
+    # ============================================================================
+    # ANONYMOUS USER LIMIT CHECKING (IP-based)
+    # ============================================================================
+
+    async def check_anonymous_import_limit(self, ip_address: str) -> Tuple[bool, Dict]:
+        """
+        Check if anonymous user (by IP) can import more games.
+
+        Args:
+            ip_address: Client IP address
+
+        Returns:
+            Tuple of (can_proceed: bool, stats: dict)
+        """
+        if not ip_address or not isinstance(ip_address, str) or not ip_address.strip():
+            logger.error("Invalid IP address provided to check_anonymous_import_limit")
+            return False, {'error': 'Invalid IP address'}
+
+        return await self._check_anonymous_limit(ip_address, 'import')
+
+    async def check_anonymous_analysis_limit(self, ip_address: str) -> Tuple[bool, Dict]:
+        """
+        Check if anonymous user (by IP) can analyze more games.
+
+        Args:
+            ip_address: Client IP address
+
+        Returns:
+            Tuple of (can_proceed: bool, stats: dict)
+        """
+        if not ip_address or not isinstance(ip_address, str) or not ip_address.strip():
+            logger.error("Invalid IP address provided to check_anonymous_analysis_limit")
+            return False, {'error': 'Invalid IP address'}
+
+        return await self._check_anonymous_limit(ip_address, 'analyze')
+
+    async def _check_anonymous_limit(self, ip_address: str, action_type: str) -> Tuple[bool, Dict]:
+        """
+        Internal method to check anonymous usage limits.
+
+        Args:
+            ip_address: Client IP address
+            action_type: 'import' or 'analyze'
+
+        Returns:
+            Tuple of (can_proceed: bool, stats: dict)
+        """
+        if action_type not in ('import', 'analyze'):
+            logger.error(f"Invalid action_type: {action_type}")
+            return False, {'error': 'Invalid action type'}
+
+        try:
+            # Call database function to check limits
+            result = await asyncio.to_thread(
+                lambda: self.supabase.rpc(
+                    'check_anonymous_usage_limits',
+                    {'p_ip_address': ip_address, 'p_action_type': action_type}
+                ).execute()
+            )
+
+            if result.data:
+                can_proceed = result.data.get('can_proceed', False)
+                logger.info(
+                    f"Anonymous {action_type} limit check for IP {ip_address}: "
+                    f"can_proceed={can_proceed}, "
+                    f"current={result.data.get('current_imports' if action_type == 'import' else 'current_analyses', 0)}, "
+                    f"limit={result.data.get('import_limit' if action_type == 'import' else 'analysis_limit', 0)}"
+                )
+                return can_proceed, result.data
+
+            logger.warning(f"Anonymous usage limit check failed for IP {ip_address}, denying by default")
+            return False, {'message': 'Usage check failed'}
+
+        except Exception as e:
+            logger.error(f"Error checking anonymous usage limits for IP {ip_address}: {e}")
+            # Fail open for anonymous users (allow operation) to avoid blocking legitimate users
+            # Anonymous users can bypass by changing IP anyway, so fail-open is acceptable
+            logger.warning("Allowing anonymous operation due to limit check error (fail-open)")
+            return True, {'message': 'Limit check error - allowing operation', 'error': str(e)}
+
+    async def increment_anonymous_usage(self, ip_address: str, action_type: str, count: int = 1) -> bool:
+        """
+        Increment usage counter for anonymous user (by IP).
+
+        Args:
+            ip_address: Client IP address
+            action_type: 'import' or 'analyze'
+            count: Number to increment by (default: 1)
+
+        Returns:
+            bool: True if increment succeeded, False otherwise
+        """
+        if not ip_address or not isinstance(ip_address, str) or not ip_address.strip():
+            logger.error("Invalid IP address provided to increment_anonymous_usage")
+            return False
+
+        if action_type not in ('import', 'analyze'):
+            logger.error(f"Invalid action_type: {action_type}")
+            return False
+
+        if not isinstance(count, int) or count < 1:
+            logger.error(f"Invalid count: {count}")
+            return False
+
+        try:
+            result = await asyncio.to_thread(
+                lambda: self.supabase.rpc(
+                    'increment_anonymous_usage',
+                    {
+                        'p_ip_address': ip_address,
+                        'p_action_type': action_type,
+                        'p_count': count
+                    }
+                ).execute()
+            )
+
+            if result.data and result.data.get('success'):
+                logger.info(
+                    f"Incremented anonymous {action_type} usage for IP {ip_address}: "
+                    f"+{count}, new_value={result.data.get('new_value', '?')}"
+                )
+                return True
+
+            logger.warning(f"Failed to increment anonymous usage for IP {ip_address}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error incrementing anonymous usage for IP {ip_address}: {e}")
+            return False
