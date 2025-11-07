@@ -163,8 +163,13 @@ class ChessAnalysisConfig:
 
     def _load_api_config(self) -> APIConfig:
         """Load API configuration."""
-        cors_origins = os.getenv("CORS_ORIGINS", "").split(",")
-        if cors_origins == [""]:
+        cors_origins_str = os.getenv("CORS_ORIGINS", "")
+        if cors_origins_str:
+            # Split by comma and strip whitespace from each origin
+            cors_origins = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+            if not cors_origins:
+                cors_origins = None
+        else:
             cors_origins = None
 
         return APIConfig(

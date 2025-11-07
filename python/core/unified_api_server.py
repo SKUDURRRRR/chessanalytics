@@ -1192,17 +1192,25 @@ async def unified_analyze(
 
                 # Check analysis limit
                 if auth_user_id and usage_tracker:
-                    can_proceed, stats = await usage_tracker.check_analysis_limit(auth_user_id)
-                    if not can_proceed:
-                        raise HTTPException(
-                            status_code=429,
-                            detail=f"Analysis limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
-                        )
+                    try:
+                        can_proceed, stats = await usage_tracker.check_analysis_limit(auth_user_id)
+                        if not can_proceed:
+                            raise HTTPException(
+                                status_code=429,
+                                detail=f"Analysis limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                            )
+                    except HTTPException:
+                        raise  # Re-raise HTTP exceptions (429 limit errors)
+                    except Exception as e:
+                        # If limit check fails, log but don't block - this prevents 500 errors
+                        # The limit check failure is non-critical and shouldn't break the API
+                        logger.warning(f"Analysis limit check failed for user {auth_user_id} (non-critical): {e}")
+                        # Continue without limit check - better to allow than to block with 500 error
         except HTTPException:
             raise  # Re-raise HTTP exceptions
         except Exception as e:
             # Log but don't fail - allow anonymous/failed auth to proceed
-            print(f"Auth check failed (non-critical): {e}")
+            logger.warning(f"Auth check failed (non-critical): {e}")
 
         # Enforce rate limit per user
         user_key = f"analysis:{request.user_id}:{request.platform}"
@@ -6619,17 +6627,25 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
 
                 # Check import limit
                 if auth_user_id and usage_tracker:
-                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
-                    if not can_proceed:
-                        raise HTTPException(
-                            status_code=429,
-                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
-                        )
+                    try:
+                        can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
+                        if not can_proceed:
+                            raise HTTPException(
+                                status_code=429,
+                                detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                            )
+                    except HTTPException:
+                        raise  # Re-raise HTTP exceptions (429 limit errors)
+                    except Exception as e:
+                        # If limit check fails, log but don't block - this prevents 500 errors
+                        # The limit check failure is non-critical and shouldn't break the API
+                        logger.warning(f"Import limit check failed for user {auth_user_id} (non-critical): {e}")
+                        # Continue without limit check - better to allow than to block with 500 error
         except HTTPException:
             raise  # Re-raise HTTP exceptions
         except Exception as e:
             # Log but don't fail - allow anonymous/failed auth to proceed
-            print(f"Auth check failed (non-critical): {e}")
+            logger.warning(f"Auth check failed (non-critical): {e}")
 
         user_key = f"import:{user_id}:{platform}:smart"
         _enforce_rate_limit(user_key, IMPORT_RATE_LIMIT)
@@ -6885,17 +6901,25 @@ async def import_games_simple(request: Dict[str, Any], credentials: Optional[HTT
 
                 # Check import limit
                 if auth_user_id and usage_tracker:
-                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
-                    if not can_proceed:
-                        raise HTTPException(
-                            status_code=429,
-                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
-                        )
+                    try:
+                        can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
+                        if not can_proceed:
+                            raise HTTPException(
+                                status_code=429,
+                                detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                            )
+                    except HTTPException:
+                        raise  # Re-raise HTTP exceptions (429 limit errors)
+                    except Exception as e:
+                        # If limit check fails, log but don't block - this prevents 500 errors
+                        # The limit check failure is non-critical and shouldn't break the API
+                        logger.warning(f"Import limit check failed for user {auth_user_id} (non-critical): {e}")
+                        # Continue without limit check - better to allow than to block with 500 error
         except HTTPException:
             raise  # Re-raise HTTP exceptions
         except Exception as e:
             # Log but don't fail - allow anonymous/failed auth to proceed
-            print(f"Auth check failed (non-critical): {e}")
+            logger.warning(f"Auth check failed (non-critical): {e}")
 
         rate_key = f"import:{user_id}:{platform}:simple"
         _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)

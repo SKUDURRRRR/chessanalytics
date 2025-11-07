@@ -27,6 +27,7 @@ import { useChessSoundSettings } from '../contexts/ChessSoundContext'
 import { getMoveSoundSimple } from '../utils/chessSounds'
 import type { MatchHistoryGameSummary, Platform } from '../types'
 import LoadingModal from '../components/LoadingModal'
+import LimitReachedModal from '../components/LimitReachedModal'
 
 interface EvaluationInfo {
   type: 'cp' | 'mate'
@@ -449,6 +450,8 @@ export default function GameAnalysisPage() {
   const [explorationMoves, setExplorationMoves] = useState<string[]>([])
   const [explorationBaseIndex, setExplorationBaseIndex] = useState<number | null>(null)
   const [isFreeExploration, setIsFreeExploration] = useState(false) // New: track free exploration mode
+  const [showLimitModal, setShowLimitModal] = useState(false)
+  const [limitType, setLimitType] = useState<'import' | 'analyze'>('analyze')
 
   const parseNumericValue = (value: unknown): number | null => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -512,6 +515,14 @@ export default function GameAnalysisPage() {
       if (!response.ok) {
         const text = await response.text()
         let errorMessage = `Analysis request failed: ${response.status}`
+
+        // Check if it's a 429 error (rate limit / usage limit)
+        if (response.status === 429) {
+          setLimitType('analyze')
+          setShowLimitModal(true)
+          setAutoAnalyzing(false)
+          return
+        }
 
         // Try to extract error message from response
         try {
@@ -1991,6 +2002,13 @@ export default function GameAnalysisPage() {
           />
         </div>
       </div>
+
+      {/* Limit Reached Modal */}
+      <LimitReachedModal
+        isOpen={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        limitType={limitType}
+      />
     </div>
   )
 }

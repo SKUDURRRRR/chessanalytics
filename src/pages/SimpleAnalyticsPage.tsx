@@ -349,9 +349,17 @@ export default function SimpleAnalyticsPage() {
       const message = error instanceof Error ? error.message : 'Unknown error'
 
       // Check if it's a 429 error (rate limit / usage limit)
-      if (error instanceof Error && message.includes('429') || message.includes('limit reached')) {
-          setLimitType('import')
-          setShowLimitModal(true)
+      // Check both status code in message and common limit-related phrases
+      const isLimitError = error instanceof Error && (
+        message.includes('429') ||
+        message.includes('limit reached') ||
+        message.includes('Import limit reached') ||
+        message.includes('Too many requests')
+      )
+
+      if (isLimitError) {
+        setLimitType('import')
+        setShowLimitModal(true)
       } else {
         setImportError(message)
       }
@@ -392,13 +400,34 @@ export default function SimpleAnalyticsPage() {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      setLargeImportProgress({
-        status: 'error',
-        importedGames: 0,
-        totalToImport: 0,
-        progress: 0,
-        message: `Import failed: ${errorMessage}`
-      })
+
+      // Check if it's a 429 error (rate limit / usage limit)
+      const isLimitError = error instanceof Error && (
+        errorMessage.includes('429') ||
+        errorMessage.includes('limit reached') ||
+        errorMessage.includes('Import limit reached') ||
+        errorMessage.includes('Too many requests')
+      )
+
+      if (isLimitError) {
+        setLimitType('import')
+        setShowLimitModal(true)
+        setLargeImportProgress({
+          status: 'error',
+          importedGames: 0,
+          totalToImport: 0,
+          progress: 0,
+          message: 'Import limit reached'
+        })
+      } else {
+        setLargeImportProgress({
+          status: 'error',
+          importedGames: 0,
+          totalToImport: 0,
+          progress: 0,
+          message: `Import failed: ${errorMessage}`
+        })
+      }
     }
   }
 
