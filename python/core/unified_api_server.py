@@ -3207,16 +3207,30 @@ async def get_single_game(
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured")
 
-        # Try to find the game by provider_game_id first, then by id
-        game_response = await asyncio.to_thread(
-            lambda: db_client.table('games')
-            .select('*')
-            .eq('user_id', canonical_user_id)
-            .eq('platform', platform)
-            .or_(f'provider_game_id.eq.{game_id},id.eq.{game_id}')
-            .limit(1)
-            .execute()
-        )
+        # Try to find the game by provider_game_id first, then by id (if game_id is a valid UUID)
+        # Only query by id if game_id is a valid UUID format to avoid PostgreSQL UUID type errors
+        if _is_valid_uuid(game_id):
+            # game_id is a UUID, so we can safely query both fields
+            game_response = await asyncio.to_thread(
+                lambda: db_client.table('games')
+                .select('*')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .or_(f'provider_game_id.eq.{game_id},id.eq.{game_id}')
+                .limit(1)
+                .execute()
+            )
+        else:
+            # game_id is not a UUID (e.g., chess.com numeric ID), only query by provider_game_id
+            game_response = await asyncio.to_thread(
+                lambda: db_client.table('games')
+                .select('*')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .eq('provider_game_id', game_id)
+                .limit(1)
+                .execute()
+            )
 
         if not game_response.data or len(game_response.data) == 0:
             raise HTTPException(status_code=404, detail="Game not found")
@@ -3231,7 +3245,7 @@ async def get_single_game(
             .eq('user_id', canonical_user_id)
             .eq('platform', platform)
             .eq('provider_game_id', game_identifier)
-            .maybeSingle()
+            .maybe_single()
             .execute()
         )
 
@@ -3242,7 +3256,7 @@ async def get_single_game(
             .eq('user_id', canonical_user_id)
             .eq('platform', platform)
             .eq('provider_game_id', game_identifier)
-            .maybeSingle()
+            .maybe_single()
             .execute()
         )
 
@@ -8366,6 +8380,14 @@ VALID_PLATFORMS = ["chess.com", "lichess"]
 def _validate_platform(platform: str) -> bool:
     """Validate that platform is one of the allowed values."""
     return platform in VALID_PLATFORMS
+
+def _is_valid_uuid(uuid_string: str) -> bool:
+    """Check if a string is a valid UUID format."""
+    try:
+        uuid.UUID(uuid_string)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 def _canonical_user_id(user_id: str, platform: str) -> str:
     """Canonicalize user ID for database operations.
