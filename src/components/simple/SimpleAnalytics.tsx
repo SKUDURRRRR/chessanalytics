@@ -529,11 +529,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               </p>
               <div className="rounded-xl border border-amber-300/30 bg-amber-500/15 p-4">
                 <p className="mb-2 text-sm font-medium text-amber-100">To see your real analytics:</p>
-                <ol className="list-decimal space-y-1 text-xs text-amber-100/90">
-                  <li>Click the "Analyze My Games" button above</li>
-                  <li>Wait for the analysis to complete (this may take a few minutes)</li>
-                  <li>Refresh the page to see your real analytics data</li>
-                </ol>
+                <p className="text-xs text-amber-100/90">
+                  Games need to be analyzed to show real analytics data. Analysis can be triggered from individual games in the match history.
+                </p>
               </div>
             </div>
           </div>

@@ -3,7 +3,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useParams, useNavigate, useLocation } from 'react-router-dom'
 import { SimpleAnalytics } from '../components/simple/SimpleAnalytics'
 import { MatchHistory } from '../components/simple/MatchHistory'
-import { AnalysisProgressBar } from '../components/simple/AnalysisProgressBar'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { AutoImportService, LargeImportProgress, GameDiscovery, DateRange } from '../services/autoImportService'
 import { UnifiedAnalysisService } from '../services/unifiedAnalysisService'
@@ -17,8 +16,6 @@ import LimitReachedModal from '../components/LimitReachedModal'
 // Debug components removed from production
 // import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
-
-const ANALYSIS_TEST_LIMIT = 5
 
 const serializeOpeningIdentifiers = (identifiers: OpeningIdentifierSets): string => {
   try {
@@ -80,23 +77,10 @@ export default function SimpleAnalyticsPage() {
   const [openingFilter, setOpeningFilter] = useState<OpeningFilter | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
-  const [analyzing, setAnalyzing] = useState(false)
-  const [apiAvailable, setApiAvailable] = useState(false)
-  const [analysisError, setAnalysisError] = useState<string | null>(null)
-  const [analysisProgress, setAnalysisProgress] = useState<{
-    analyzed_games: number
-    total_games: number
-    progress_percentage: number
-    is_complete: boolean
-    current_phase: string
-  } | null>(null)
-  const [progressStatus, setProgressStatus] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [analyzedGameIds, setAnalyzedGameIds] = useState<Set<string>>(new Set())
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const statusTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const forceRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [hasGames, setHasGames] = useState(false)
@@ -186,9 +170,6 @@ export default function SimpleAnalyticsPage() {
     }
   }, [userId, platform])
 
-  useEffect(() => {
-    checkApiHealth()
-  }, [])
 
   // Show popup if loading takes more than 1 second
   useEffect(() => {
@@ -198,17 +179,17 @@ export default function SimpleAnalyticsPage() {
       slowLoadingTimeoutRef.current = null
     }
 
-    // If we're loading or analyzing, set a timeout to show popup after 1 second
-    if (isLoading || analyzing) {
+    // If we're loading, set a timeout to show popup after 1 second
+    if (isLoading) {
       slowLoadingTimeoutRef.current = setTimeout(() => {
         // Use a function to get the latest state
         setShowSlowLoadingPopup(prev => {
-          // Double-check if still loading/analyzing (this will be checked again in the render)
+          // Double-check if still loading (this will be checked again in the render)
           return true
         })
       }, 1000)
     } else {
-      // If not loading/analyzing, hide the popup immediately
+      // If not loading, hide the popup immediately
       setShowSlowLoadingPopup(false)
     }
 
@@ -219,7 +200,7 @@ export default function SimpleAnalyticsPage() {
         slowLoadingTimeoutRef.current = null
       }
     }
-  }, [isLoading, analyzing])
+  }, [isLoading])
 
   // Auto-sync effect - triggers when userId and platform are set
   useEffect(() => {
@@ -265,13 +246,11 @@ export default function SimpleAnalyticsPage() {
   useEffect(() => {
     return () => {
       // Clear all timeouts
-      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
       if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
       if (forceRefreshTimeoutRef.current) clearTimeout(forceRefreshTimeoutRef.current)
       if (slowLoadingTimeoutRef.current) clearTimeout(slowLoadingTimeoutRef.current)
 
       // Clear intervals
-      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
       if (largeImportIntervalRef.current) clearInterval(largeImportIntervalRef.current)
       if (importStuckTimeoutRef.current) clearTimeout(importStuckTimeoutRef.current)
       if (largeImportDismissTimeoutRef.current) clearTimeout(largeImportDismissTimeoutRef.current)
@@ -279,12 +258,6 @@ export default function SimpleAnalyticsPage() {
     }
   }, [])
 
-  const checkApiHealth = async () => {
-    console.log('🔍 Checking API health...')
-    const available = await UnifiedAnalysisService.checkHealth()
-    console.log('🔍 API health check result:', available)
-    setApiAvailable(available)
-  }
 
   const loadMostRecentUser = async () => {
     // For now, just set loading to false
@@ -639,211 +612,6 @@ export default function SimpleAnalyticsPage() {
     }
   }
 
-  const fetchProgress = async () => {
-    if (!userId) {
-      return
-    }
-
-    try {
-      console.log('[SimpleAnalytics] fetchProgress triggered', { userId, platform })
-      const progress = await UnifiedAnalysisService.getRealtimeAnalysisProgress(userId, platform, 'stockfish')
-
-      if (progress) {
-        console.log('[SimpleAnalytics] Progress received:', progress)
-        setAnalysisProgress(progress)
-
-        // Check if this is a real completion or just no analysis running
-        const isRealCompletion = progress.is_complete && progress.total_games > 0
-        const isNoAnalysisRunning = progress.is_complete && progress.total_games === 0 && progress.analyzed_games === 0
-
-        setProgressStatus(
-          isRealCompletion
-            ? (progress.status_message || 'Analysis complete! Refreshing your insights...')
-            : isNoAnalysisRunning
-            ? null
-            : 'Crunching games with Stockfish and updating live...'
-        )
-
-        if (isRealCompletion) {
-          console.log('[SimpleAnalytics] Analysis complete, stopping progress polling')
-          if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current)
-            progressIntervalRef.current = null
-          }
-          setAnalyzing(false)
-
-          // Clear any existing timeouts before setting new ones
-          if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
-          if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
-          if (forceRefreshTimeoutRef.current) clearTimeout(forceRefreshTimeoutRef.current)
-
-          statusTimeoutRef.current = setTimeout(() => setProgressStatus(null), 2500)
-          // Clear cache to force fresh data load after analysis
-          clearUserCache(userId, platform)
-          // Refresh usage stats after analysis
-          refreshUsageStats()
-          // Set force refresh flag to bypass cache on next load
-          setForceDataRefresh(true)
-          // Add small delay to ensure database has finished writing analysis results
-          refreshTimeoutRef.current = setTimeout(() => {
-            console.log('[SimpleAnalytics] Refreshing data after analysis completion with force refresh')
-            handleRefresh()
-            // Reset force refresh flag after a brief moment
-            forceRefreshTimeoutRef.current = setTimeout(() => setForceDataRefresh(false), 2000)
-          }, 1500)
-        } else if (isNoAnalysisRunning) {
-          console.log('[SimpleAnalytics] No analysis running, stopping progress polling')
-          if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current)
-            progressIntervalRef.current = null
-          }
-          setAnalyzing(false)
-        } else {
-          setAnalyzing(true)
-        }
-      } else {
-        console.log('[SimpleAnalytics] No progress data received')
-        setProgressStatus('Waiting for the engine to report progress...')
-        setAnalyzing(true)
-
-        // Fallback: Check if analysis data is available even without progress
-        // This helps detect completion when progress tracking fails
-        try {
-          console.log('[SimpleAnalytics] Checking for analysis data as fallback...')
-          const analysisData = await UnifiedAnalysisService.getAnalysisStats(userId, platform, 'stockfish')
-          if (analysisData && analysisData.total_games > 0) {
-            console.log('[SimpleAnalytics] Found analysis data, assuming analysis complete')
-            if (progressIntervalRef.current) {
-              clearInterval(progressIntervalRef.current)
-              progressIntervalRef.current = null
-            }
-            setAnalyzing(false)
-            setProgressStatus('Analysis complete! Refreshing your insights...')
-
-            // Clear any existing timeouts before setting new ones
-            if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
-            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
-
-            statusTimeoutRef.current = setTimeout(() => setProgressStatus(null), 2500)
-            // Add small delay to ensure database has finished writing analysis results
-            refreshTimeoutRef.current = setTimeout(() => {
-              console.log('[SimpleAnalytics] Refreshing data after fallback detection')
-              handleRefresh()
-            }, 1500)
-            return
-          }
-        } catch (fallbackError) {
-          console.log('[SimpleAnalytics] Fallback check failed:', fallbackError)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching progress:', error)
-      setProgressStatus('Still waiting for updates from the analysis engine...')
-      setAnalyzing(true)
-    }
-  }
-
-  const startAnalysis = async () => {
-    // Check anonymous user limits first
-    if (!user) {
-      if (!AnonymousUsageTracker.canAnalyze()) {
-        console.log('[SimpleAnalytics] Anonymous user reached analysis limit')
-        setLimitType('analyze')
-        setShowLimitModal(true)
-        return
-      }
-    }
-
-    // Check usage limits before analyzing (authenticated users)
-    if (user && usageStats?.analyses && !usageStats.analyses.unlimited && usageStats.analyses.remaining === 0) {
-      setLimitType('analyze')
-      setShowLimitModal(true)
-      return
-    }
-
-    try {
-      console.log('Analyze games button clicked! SimpleAnalyticsPage.')
-      console.log('Starting analysis for:', { userId, platform, limit: ANALYSIS_TEST_LIMIT })
-      console.log('User ID type:', typeof userId, 'Value:', JSON.stringify(userId))
-      console.log('API available:', apiAvailable)
-      console.log('Current analyzing state:', analyzing)
-
-      setAnalyzing(true)
-      setAnalysisError(null)
-      setAnalysisProgress(null)
-      setProgressStatus('Connecting to the analysis engine...')
-
-      const result = await UnifiedAnalysisService.startBatchAnalysis(userId, platform, 'stockfish', ANALYSIS_TEST_LIMIT)
-      console.log('Analysis result:', result)
-      console.log('Analysis success:', result.success)
-
-      if (result.success) {
-        console.log('Analysis started successfully, starting progress monitoring...')
-
-        // Increment anonymous usage after successful start
-        if (!user) {
-          AnonymousUsageTracker.incrementAnalyses()
-        }
-
-        setProgressStatus('Waiting for the engine to report progress...')
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current)
-        }
-
-        setAnalyzing(true)
-        console.log('[SimpleAnalytics] Setting progress polling interval (1s)')
-        progressIntervalRef.current = setInterval(fetchProgress, 1000) // Check every 1 second for more responsive updates
-
-        setTimeout(() => {
-          if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current)
-            progressIntervalRef.current = null
-          }
-          setAnalyzing(false)
-          setProgressStatus('Analysis is taking longer than expected. Refreshing your data...')
-          handleRefresh()
-        }, 3 * 60 * 1000) // 3 minutes timeout - reduced for faster recovery
-
-        console.log('[SimpleAnalytics] Calling initial fetchProgress immediately')
-        await fetchProgress()
-      } else {
-        console.log('Analysis failed to start:', result.message)
-        const message = result.message || 'Failed to start analysis'
-        setAnalysisError(message)
-        setProgressStatus(message)
-        setAnalyzing(false)
-      }
-    } catch (err) {
-      console.error('Error starting analysis:', err)
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
-      const friendlyMessage = `Failed to start analysis: ${errorMessage}. Please ensure the Python backend server is running.`
-      setAnalysisError(friendlyMessage)
-      setProgressStatus(friendlyMessage)
-      setAnalyzing(false)
-    }
-  }
-
-  // Cleanup interval on unmount
-  useEffect(() => {
-    console.log('[SimpleAnalytics] cleanup effect registered')
-    return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current)
-      }
-      if (largeImportIntervalRef.current) {
-        clearInterval(largeImportIntervalRef.current)
-      }
-      if (autoSyncTimeoutRef.current) {
-        clearTimeout(autoSyncTimeoutRef.current)
-      }
-      if (largeImportDismissTimeoutRef.current) {
-        clearTimeout(largeImportDismissTimeoutRef.current)
-      }
-      if (importStuckTimeoutRef.current) {
-        clearTimeout(importStuckTimeoutRef.current)
-      }
-    }
-  }, [])
 
   if (isLoading && !showSlowLoadingPopup) {
     // Show background while waiting for popup to appear after 1 second
@@ -932,23 +700,8 @@ export default function SimpleAnalyticsPage() {
                       )}
                     </button>
                   )}
-
-                  <button
-                    onClick={() => {
-                      console.log('🔘 Analyze games button clicked!')
-                      console.log('🔘 Button state - analyzing:', analyzing, 'apiAvailable:', apiAvailable)
-                      startAnalysis()
-                    }}
-                    disabled={analyzing || !apiAvailable || !user}
-                    className="inline-flex items-center gap-2 rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 font-medium text-sky-200 transition hover:border-sky-300/60 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {analyzing ? 'Analyzing…' : 'Analyze games'}
-                  </button>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-400">
-                  <span className={apiAvailable ? 'text-emerald-300' : 'text-rose-300'}>
-                    Engine {apiAvailable ? 'online' : 'offline'}
-                  </span>
                   {lastRefresh && <span>Updated · {lastRefresh.toLocaleTimeString()}</span>}
                 </div>
                 {importStatus && <div className="text-xs text-sky-300">{importStatus}</div>}
@@ -956,8 +709,6 @@ export default function SimpleAnalyticsPage() {
             </div>
           </section>
         )}
-
-        <AnalysisProgressBar analyzing={analyzing} progress={analysisProgress} statusMessage={progressStatus} />
 
         {/* Auto-Sync Progress Bar */}
         {autoSyncing && (
@@ -1132,11 +883,6 @@ export default function SimpleAnalyticsPage() {
         {importError && (
           <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">
             <span className="font-semibold">Import warning:</span> {importError}
-          </div>
-        )}
-        {analysisError && (
-          <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 p-4 text-sm text-rose-200">
-            <span className="font-semibold">Analysis error:</span> {analysisError}
           </div>
         )}
       </div>
