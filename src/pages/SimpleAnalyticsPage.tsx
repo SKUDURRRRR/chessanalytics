@@ -214,7 +214,7 @@ export default function SimpleAnalyticsPage() {
   // Auto-sync effect - triggers when userId and platform are set
   useEffect(() => {
     // Auto-sync for both authenticated and anonymous users
-    // Anonymous users have import limits (100 imports per 24 hours)
+    // Anonymous users have import limits (50 imports per 24 hours)
     if (userId && platform && !isLoading) {
       // Small delay to ensure page is fully loaded
       const timeoutId = setTimeout(() => {
@@ -313,8 +313,9 @@ export default function SimpleAnalyticsPage() {
 
     // Check anonymous user limits first
     if (!user) {
+      // Check daily import limit for anonymous users (50 per day)
       if (!AnonymousUsageTracker.canImport()) {
-        console.log('[SimpleAnalytics] Anonymous user reached import limit')
+        console.log('[SimpleAnalytics] Anonymous user reached daily import limit (50 per day)')
         setAnonymousLimitType('import')
         setAnonymousLimitModalOpen(true)
         return
@@ -363,7 +364,19 @@ export default function SimpleAnalyticsPage() {
     } catch (error) {
       console.error('Error importing games:', error)
       const message = error instanceof Error ? error.message : 'Unknown error'
-      setImportError(message)
+
+      // Check if it's a 429 error (rate limit / usage limit)
+      if (error instanceof Error && message.includes('429') || message.includes('limit reached')) {
+        if (!user) {
+          setAnonymousLimitType('import')
+          setAnonymousLimitModalOpen(true)
+        } else {
+          setLimitType('import')
+          setShowLimitModal(true)
+        }
+      } else {
+        setImportError(message)
+      }
     } finally {
       setImporting(false)
     }
@@ -374,8 +387,9 @@ export default function SimpleAnalyticsPage() {
 
     // Check anonymous user limits first
     if (!user) {
+      // Check daily import limit for anonymous users (50 per day)
       if (!AnonymousUsageTracker.canImport()) {
-        console.log('[SimpleAnalytics] Anonymous user reached import limit')
+        console.log('[SimpleAnalytics] Anonymous user reached daily import limit (50 per day)')
         setAnonymousLimitType('import')
         setAnonymousLimitModalOpen(true)
         return
@@ -909,7 +923,7 @@ export default function SimpleAnalyticsPage() {
                       console.log('🔘 Button state - analyzing:', analyzing, 'apiAvailable:', apiAvailable)
                       startAnalysis()
                     }}
-                    disabled={analyzing || !apiAvailable}
+                    disabled={analyzing || !apiAvailable || !user}
                     className="inline-flex items-center gap-2 rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 font-medium text-sky-200 transition hover:border-sky-300/60 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {analyzing ? 'Analyzing…' : 'Analyze games'}

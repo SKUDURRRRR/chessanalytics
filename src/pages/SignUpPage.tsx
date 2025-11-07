@@ -116,7 +116,7 @@ export default function SignUpPage() {
                   <Upload className="w-5 h-5 text-sky-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-white mb-1 text-base">100 Game Imports</h3>
+                  <h3 className="font-semibold text-white mb-1 text-base">100 Game Imports Per Day</h3>
                   <p className="text-sm text-slate-400 leading-relaxed">Import up to 100 games per day from Chess.com, Lichess, and more</p>
                 </div>
               </div>
@@ -126,7 +126,7 @@ export default function SignUpPage() {
                   <BarChart3 className="w-5 h-5 text-purple-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-white mb-1 text-base">5 Deep Analyses</h3>
+                  <h3 className="font-semibold text-white mb-1 text-base">5 Game Analyses Per Day</h3>
                   <p className="text-sm text-slate-400 leading-relaxed">Get comprehensive game analysis with Stockfish engine insights</p>
                 </div>
               </div>

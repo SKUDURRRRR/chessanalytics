@@ -87,7 +87,8 @@ export default function TermsOfServicePage() {
               Our Service offers different tiers with specific usage limits:
             </p>
             <ul className="list-disc pl-6 space-y-2">
-              <li><strong>Free Tier:</strong> Up to 100 game imports per day and 5 analyses per day</li>
+              <li><strong>Free Registered Accounts:</strong> Up to 100 game imports per day and 5 analyses per day</li>
+              <li><strong>Anonymous/Guest Users:</strong> Up to 50 game imports per day and 2 analyses per day</li>
               <li><strong>Pro Tier:</strong> Unlimited imports and analyses</li>
             </ul>
             <p className="mt-4">

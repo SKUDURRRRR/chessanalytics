@@ -24,8 +24,8 @@ INSERT INTO payment_tiers (
     'Perfect for trying out chess analytics',
     0.00,
     0.00,
-    100, -- 100 imports per 24 hours
-    5,   -- 5 analyses per 24 hours
+    100, -- 100 imports per day
+    5,   -- 5 analyses per day
     '["5 game analyses per day", "100 game imports per day", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions"]'::jsonb,
     1,
     true

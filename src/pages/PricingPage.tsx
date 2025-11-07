@@ -254,15 +254,15 @@ export default function PricingPage() {
           </div>
 
           {notification && (
-            <div className={`max-w-2xl mx-auto mb-8 flex items-start justify-between rounded-2xl border px-4 py-3 text-sm ${notification.type === 'error' ? 'border-rose-400/40 bg-rose-500/10 text-rose-100' : 'border-sky-400/40 bg-sky-500/10 text-sky-100'}`}>
-              <div className="flex items-start gap-3">
-                <span className="text-lg leading-none">{notification.type === 'error' ? '⚠' : 'ℹ'}</span>
-                <span>{notification.message}</span>
+            <div className={`max-w-2xl mx-auto mb-8 flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${notification.type === 'error' ? 'border-rose-400/30 bg-rose-500/10 text-rose-100' : 'border-sky-400/30 bg-sky-500/10 text-sky-100'}`}>
+              <div className="flex items-center gap-3 flex-1">
+                <span className="text-lg leading-none flex-shrink-0">{notification.type === 'error' ? '⚠' : 'ℹ'}</span>
+                <span className="flex-1">{notification.message}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setNotification(null)}
-                className="ml-3 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+                className="ml-3 text-xs font-medium text-slate-300 hover:text-white transition-colors flex-shrink-0"
               >
                 OK
               </button>

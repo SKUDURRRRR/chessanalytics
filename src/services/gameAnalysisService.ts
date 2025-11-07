@@ -89,15 +89,25 @@ export async function fetchGameAnalysisData(
 
     // OPTIMIZATION 2: Batch query for analysis records using OR conditions instead of loops
     // This queries all candidates in parallel (faster than sequential loops)
-    const analysisPromises = identifierCandidates.map(candidate =>
+    // Also try unified_analyses view which has provider_game_id alias
+    const analysisPromises = identifierCandidates.flatMap(candidate => [
+      // Query move_analyses by game_id
       supabase
         .from('move_analyses')
         .select('*')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
         .eq('game_id', candidate)
+        .maybeSingle(),
+      // Also try unified_analyses view by provider_game_id (alias for game_id)
+      supabase
+        .from('unified_analyses')
+        .select('*')
+        .eq('user_id', canonicalUserId)
+        .eq('platform', platform)
+        .eq('provider_game_id', candidate)
         .maybeSingle()
-    )
+    ])
 
     // OPTIMIZATION 3: Query PGN in parallel with analysis
     const pgnPromises = identifierCandidates.map(candidate =>

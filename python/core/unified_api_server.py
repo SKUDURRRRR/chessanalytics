@@ -6617,6 +6617,10 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured for smart import")
 
+        # Note: Anonymous user daily import limit (50 per day) is enforced by frontend localStorage
+        # Backend doesn't track anonymous users, so we rely on frontend enforcement
+        # The frontend will show popup when limit is reached
+
         print(f"Smart import for {user_id}: starting...")
 
         # Get all existing game IDs to avoid duplicates
@@ -6873,6 +6877,12 @@ async def import_games_simple(request: Dict[str, Any], credentials: Optional[HTT
 
         rate_key = f"import:{user_id}:{platform}:simple"
         _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
+
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
+
+        # Note: Anonymous user daily import limit (50 per day) is enforced by frontend localStorage
+        # Backend doesn't track anonymous users, so we rely on frontend enforcement
 
         # Fetch games from platform
         games_data = await _fetch_games_from_platform(user_id, platform, limit)

@@ -577,15 +577,15 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         <div className="py-4 text-xs uppercase tracking-wider text-slate-400">{games.length} games loaded</div>
 
         {analysisNotification && (
-          <div className={`mb-4 flex items-start justify-between rounded-2xl border px-3 py-3 text-sm ${analysisNotification.type === 'success' ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100' : 'border-rose-400/40 bg-rose-500/10 text-rose-100'}`}>
-            <div className="flex items-start gap-2">
-              <span className="text-lg leading-none">{analysisNotification.type === 'success' ? '✓' : '!'}</span>
-              <span>{analysisNotification.message}</span>
+          <div className={`mb-4 flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${analysisNotification.type === 'success' ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-100' : 'border-rose-400/30 bg-rose-500/10 text-rose-100'}`}>
+            <div className="flex items-center gap-3 flex-1">
+              <span className="text-lg leading-none flex-shrink-0">{analysisNotification.type === 'success' ? '✓' : '!'}</span>
+              <span className="flex-1">{analysisNotification.message}</span>
             </div>
             <button
               type="button"
               onClick={() => setAnalysisNotification(null)}
-              className="ml-3 text-xs font-medium text-slate-400 hover:text-slate-200"
+              className="ml-3 text-xs font-medium text-slate-300 hover:text-white transition-colors flex-shrink-0"
             >
               Close
             </button>
@@ -686,7 +686,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                           event.stopPropagation()
                           requestAnalysis(event, game)
                         }}
-                        disabled={pending || analyzed}
+                        disabled={pending || analyzed || !user}
                         className={`btn-touch-sm rounded-full text-xs font-medium transition ${
                           analyzed
                             ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
@@ -831,7 +831,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                         <button
                           type="button"
                           onClick={event => requestAnalysis(event, game)}
-                          disabled={pending || analyzed}
+                          disabled={pending || analyzed || !user}
                           className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition ${
                             analyzed
                               ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'

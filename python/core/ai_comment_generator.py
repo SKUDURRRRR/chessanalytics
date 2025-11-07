@@ -62,6 +62,7 @@ class AIConfig(BaseSettings):
     ai_model: str = "claude-3-haiku-20240307"  # Recommended: most reliable, fastest, cheapest
     max_tokens: int = 150  # Optimized: 2-3 sentences max (reduced from 200 to save costs)
     temperature: float = 0.75  # Slightly reduced from 0.85 to reduce variability and token usage
+    api_timeout: float = 60.0  # API call timeout in seconds (increased from 10s to 60s to prevent premature timeouts)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -157,7 +158,34 @@ class AIChessCommentGenerator:
                 print(f"[AI] Attempting to initialize Anthropic client with key: {masked_key}")
                 print(f"[AI] Model from config: {self.config.ai_model}")
                 print(f"[AI] AI_ENABLED from config: {self.config.ai_enabled}")
-                self.client = Anthropic(api_key=api_key)
+                print(f"[AI] API timeout: {self.config.api_timeout}s")
+
+                # Initialize Anthropic client with httpx timeout configuration
+                # This prevents the SDK from hanging indefinitely on slow API responses
+                try:
+                    import httpx
+                    timeout = httpx.Timeout(
+                        connect=10.0,  # Connection timeout: 10 seconds
+                        read=self.config.api_timeout,  # Read timeout: configurable (default 60s)
+                        write=10.0,  # Write timeout: 10 seconds
+                        pool=10.0  # Pool timeout: 10 seconds
+                    )
+                    # Create httpx client with timeout configuration
+                    http_client = httpx.Client(timeout=timeout)
+                    # Pass the custom http_client to Anthropic SDK
+                    # The SDK will use this client for all HTTP requests
+                    self.client = Anthropic(
+                        api_key=api_key,
+                        http_client=http_client
+                    )
+                    print(f"[AI] ✅ Anthropic client initialized with httpx timeout: {self.config.api_timeout}s")
+                except (ImportError, TypeError) as e:
+                    # Fallback if httpx is not available or http_client parameter not supported
+                    # (shouldn't happen with modern Anthropic SDK, but be defensive)
+                    print(f"[AI] ⚠️  Could not configure custom http_client: {e}")
+                    print(f"[AI] ⚠️  Using default client (timeout may not be configurable)")
+                    self.client = Anthropic(api_key=api_key)
+
                 self.enabled = self.config.ai_enabled
                 if self.enabled:
                     print(f"[AI] ✅ Anthropic client initialized successfully!")
@@ -394,8 +422,16 @@ class AIChessCommentGenerator:
                 unique_models.append(model)
 
         last_error = None
+        # Use configurable timeout from config (default 60s, much better than 10s)
+        # The httpx timeout is already configured in the client, but we keep this
+        # for additional safety and logging
+
         for model in unique_models:
             try:
+                print(f"[AI] Attempting API call with model: {model} (timeout: {self.config.api_timeout}s)")
+
+                # The httpx timeout is already configured in the client initialization
+                # This will automatically timeout after api_timeout seconds
                 response = self.client.messages.create(
                     model=model,
                     max_tokens=max_tokens,
@@ -404,17 +440,31 @@ class AIChessCommentGenerator:
                     messages=[{"role": "user", "content": prompt}]
                 )
 
+                if not response:
+                    print(f"[AI] ⚠️  Empty response from model {model}")
+                    continue
+
                 if response.content and len(response.content) > 0:
                     comment = response.content[0].text.strip()
                     if model != self.config.ai_model:
                         print(f"[AI] ✅ Successfully generated using model: {model} (configured model was {self.config.ai_model})")
                         print(f"[AI] 💡 Update your .env.local: AI_MODEL={model}")
                     return comment
+                else:
+                    print(f"[AI] ⚠️  Response from {model} had no content")
+                    continue
+
             except Exception as e:
                 error_msg = str(e)
                 last_error = e
 
-                # If it's a 404 (model not found), try next model
+                # Check for timeout errors
+                if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                    print(f"[AI] ⚠️  API call timeout ({self.config.api_timeout}s) for model {model}. Skipping to prevent blocking analysis.")
+                    print(f"[AI] 💡 Consider increasing AI_API_TIMEOUT if timeouts persist (current: {self.config.api_timeout}s)")
+                    continue
+
+                # If it's a 404 (model not found), try next model immediately (no need to wait)
                 if "404" in error_msg or "not_found" in error_msg.lower():
                     if model == self.config.ai_model:
                         print(f"[AI] ❌ Model {model} not found (404). Trying alternatives...")

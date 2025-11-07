@@ -578,6 +578,8 @@ export default function GameAnalysisPage() {
           setPgn(result.pgn ?? null)
           setAutoAnalyzing(false)
           setAnalysisError(null)
+          // Force a full page reload to ensure all data is fresh
+          window.location.reload()
           return
         }
 
