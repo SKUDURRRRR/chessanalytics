@@ -76,6 +76,7 @@ function getShortenedEndpoint(
 /**
  * Calculate arrow head points
  * Size is proportional to board width for consistent appearance
+ * Includes minimum sizes for mobile visibility
  */
 function getArrowHead(
   x1: number,
@@ -87,8 +88,9 @@ function getArrowHead(
   const angle = Math.atan2(y2 - y1, x2 - x1)
 
   // Arrow head size scales with board size - larger and wider for better visibility
-  const headLength = boardWidth / 25 // Length of arrow head
-  const headWidth = boardWidth / 35 // Half-width at the base
+  // Minimum sizes ensure visibility on mobile devices
+  const headLength = Math.max(boardWidth / 25, 18) // Length of arrow head, minimum 18px
+  const headWidth = Math.max(boardWidth / 35, 12) // Half-width at the base, minimum 12px
 
   // Tip point should be exactly at the destination square center
   const tipX = x2
@@ -386,10 +388,13 @@ export function ModernChessArrows({
         const dy = to.y - from.y
         const arrowLength = Math.sqrt(dx * dx + dy * dy)
 
+        // For suggestion arrows (best moves with no tail), use a larger arrowhead for better visibility
+        // Scale up the board size used for arrowhead calculation
+        const arrowHeadBoardSize = arrow.isBestMove ? measuredBoardSize * 1.2 : measuredBoardSize
 
         // Calculate arrow head pointing at the destination square center
         // Use measuredBoardSize for arrow head calculation to match viewBox
-        const arrowHead = getArrowHead(from.x, from.y, to.x, to.y, measuredBoardSize)
+        const arrowHead = getArrowHead(from.x, from.y, to.x, to.y, arrowHeadBoardSize)
 
         // Start the arrow path exactly at the square center
         // No backward extension - tail starts precisely at from.x, from.y
@@ -440,10 +445,11 @@ export function ModernChessArrows({
         // Determine tail visibility and color:
         // - User-drawn arrows (orange, uncategorized): show tail with original color
         // - All actual moves (user and opponent moves, not best move suggestions): show tail matching arrowhead color
-        // - Suggested moves (isBestMove === true): no tail, only arrowhead
+        // - Suggested moves (isBestMove === true): show tail for clarity - users need to see the full move
         const isUserDrawnArrow = arrow.classification === 'uncategorized' && arrow.color === '#f97316'
         const isActualMove = !arrow.isBestMove // Actual moves are not best move suggestions
-        const shouldShowTail = isUserDrawnArrow || isActualMove
+        // Show tail for all arrows to make moves clear (including suggestions)
+        const shouldShowTail = true
         const tailColor = arrow.color // Tail color matches arrowhead color
 
         return (
