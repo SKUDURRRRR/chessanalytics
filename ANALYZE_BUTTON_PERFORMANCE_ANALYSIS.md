@@ -146,12 +146,139 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
 
 ## Optimization Recommendations
 
-### 🚀 **CRITICAL: AI Commentary Optimization (Implement First)**
+### 🚀 **CRITICAL: AI Commentary Optimization (Keep All Insights, Make Faster)**
 
-#### 1. Make AI Commentary Asynchronous/Deferred ⭐ **BIGGEST IMPACT**
-**Current:** AI commentary generated synchronously during analysis (blocks analysis)
-**Recommended:** Generate template-based comments during analysis, AI commentary asynchronously after
-**Impact:** **~30-60 seconds saved** (50-100% of current time)
+#### 1. Parallel AI API Calls ⭐ **BIGGEST IMPACT - KEEPS ALL INSIGHTS**
+**Current:** AI commentary generated **sequentially** (one API call at a time) with 2s delay between calls
+**Problem:** 15-25 API calls × (1-3s + 2s delay) = **45-125 seconds**
+**Recommended:** Make AI API calls **in parallel** (concurrent)
+**Impact:** **~30-60 seconds saved** while keeping all AI insights
+
+**Current Flow (Sequential - SLOW):**
+```
+Move 1: AI call (2s) → wait 2s → Move 2: AI call (2s) → wait 2s → ...
+Total: 15-25 calls × 4s = 60-100 seconds
+```
+
+**Optimized Flow (Parallel - FAST):**
+```
+All moves: AI calls in parallel (15-25 concurrent calls)
+Total: max(2-3s per call) = 2-3 seconds for all calls
+```
+
+**Implementation:**
+```python
+# In analysis_engine.py - analyze_game()
+# Instead of generating AI comments sequentially during move analysis,
+# collect all moves that need AI, then generate in parallel
+
+async def analyze_game(self, pgn: str, ...):
+    # ... existing Stockfish analysis ...
+
+    # Collect moves that need AI commentary
+    moves_needing_ai = []
+    for move_analysis in moves_analysis:
+        if self._should_use_ai_comment(move_analysis):
+            moves_needing_ai.append(move_analysis)
+
+    # Generate AI commentary in parallel (not sequential!)
+    if moves_needing_ai:
+        ai_tasks = [
+            self._generate_ai_comment_async(move_analysis, board, move)
+            for move_analysis in moves_needing_ai
+        ]
+        ai_comments = await asyncio.gather(*ai_tasks)  # Parallel execution!
+
+        # Update move analyses with AI comments
+        for move_analysis, ai_comment in zip(moves_needing_ai, ai_comments):
+            move_analysis.coaching_comment = ai_comment
+```
+
+**File:** `python/core/ai_comment_generator.py`
+```python
+# Make API calls async and remove sequential rate limiting
+async def generate_comment_async(self, move_analysis, board, move, ...):
+    """Async version that can run in parallel."""
+    # Remove the blocking rate limit delay
+    # Use async rate limiting instead (token bucket or semaphore)
+
+    # Use asyncio.sleep instead of time.sleep for non-blocking delays
+    # Or better: use a semaphore to limit concurrent calls (e.g., 10 at a time)
+
+    async with self._api_semaphore:  # Limit to 10 concurrent calls
+        return await self._call_api_async(...)
+```
+
+#### 2. Reduce Rate Limit Delay
+**Current:** 2.0 seconds delay between API calls
+**Recommended:** 0.1-0.5 seconds (or remove if using parallel calls)
+**Impact:** **~20-30 seconds saved** (if keeping sequential)
+
+**Implementation:**
+```python
+# In ai_comment_generator.py AIConfig
+rate_limit_delay: float = 0.1  # Reduced from 2.0 (only needed for sequential calls)
+```
+
+**Note:** With parallel calls, rate limiting is handled by semaphore/concurrency limit, not delays
+
+#### 3. Batch AI API Calls (Advanced)
+**Current:** One API call per move
+**Recommended:** Batch 3-5 moves into single API call
+**Impact:** **~10-15 seconds saved** (fewer API calls)
+
+**Implementation:**
+```python
+async def _generate_batched_ai_comments(self, moves_batch: List[Dict]) -> List[str]:
+    """Generate AI comments for multiple moves in one API call."""
+    prompt = "Analyze these chess moves:\n" + format_moves_batch(moves_batch)
+    response = await self._call_api_async(prompt, system_prompt)
+    # Parse response to extract individual comments
+    return parse_batched_response(response)
+```
+
+#### 4. Progressive/Streaming Response (Best UX)
+**Current:** User waits for all AI commentary before seeing results
+**Recommended:** Return analysis immediately, stream AI commentary as it completes
+**Impact:** **Perceived time: 15-20s** (user sees results immediately)
+
+**Implementation:**
+```python
+# In unified_api_server.py
+async def _handle_single_game_by_id(request):
+    # Analyze game (Stockfish + template comments) - fast
+    game_analysis = await engine.analyze_game(...)
+
+    # Save immediately
+    await _save_stockfish_analysis(game_analysis)
+
+    # Return immediately with analysis
+    response = UnifiedAnalysisResponse(
+        success=True,
+        message="Analysis complete",
+        data={"game_id": game_analysis.game_id}
+    )
+
+    # Generate AI commentary in background (non-blocking)
+    background_tasks.add_task(
+        _enhance_with_ai_commentary_parallel,
+        game_analysis, user_id, platform
+    )
+
+    return response
+
+async def _enhance_with_ai_commentary_parallel(game_analysis, user_id, platform):
+    """Generate AI commentary in parallel, update database as completed."""
+    moves_needing_ai = [m for m in game_analysis.moves_analysis if _should_use_ai(m)]
+
+    # Generate all AI comments in parallel
+    ai_tasks = [generate_ai_comment_async(m) for m in moves_needing_ai]
+    ai_comments = await asyncio.gather(*ai_tasks)
+
+    # Update database with AI comments (can be done incrementally)
+    for move, comment in zip(moves_needing_ai, ai_comments):
+        await _update_move_commentary_in_db(move, comment)
+```
 
 **Implementation Options:**
 
@@ -204,35 +331,31 @@ def _should_use_ai_comment(self, move_analysis, move_quality):
 
 **Recommended:** **Option B** (defer to background) - Best user experience, immediate analysis results
 
-#### 2. Reduce AI Commentary Scope
-**Current:** AI used for 15-25 moves per game
-**Recommended:** Only for brilliant, blunder, mistake (3-5 moves per game)
-**Impact:** **~10-20 seconds saved**
+#### 5. Optimize AI Model Selection
+**Current:** Using Claude 3 Haiku (already fastest) ✅
+**Recommended:** Keep Haiku, but ensure it's used consistently
+**Impact:** Already optimized
+
+**Note:** Haiku is 3-5x faster than Sonnet and much cheaper, perfect for move commentary
+
+#### 6. Improve Caching Strategy
+**Current:** 500 entry cache with 24h TTL
+**Recommended:** Increase cache size, add position-based caching
+**Impact:** **~5-10 seconds saved** (cache hits for similar positions)
 
 **Implementation:**
 ```python
-# In coaching_comment_generator.py
-def _should_use_ai_comment(self, move_analysis, move_quality):
-    # Only use AI for critical learning moments
-    if move_quality in [MoveQuality.BRILLIANT, MoveQuality.BLUNDER, MoveQuality.MISTAKE]:
-        return True
-    # Everything else uses fast template-based comments
-    return False
+# Increase cache size for more hits
+self._comment_cache = LRUCache(maxsize=2000, ttl=86400, name="ai_comment_cache")
+
+# Add position-based caching (same position = same comment)
+cache_key = f"{board.fen()}:{move.uci()}:{move_quality}"
 ```
 
-#### 3. Batch AI API Calls
-**Current:** One API call per move (sequential)
-**Recommended:** Batch multiple moves into single API call
-**Impact:** **~5-10 seconds saved**
-
-**Implementation:**
-```python
-# Batch 3-5 moves into single API call
-async def _generate_batched_ai_comments(moves_data):
-    prompt = "Analyze these moves: " + format_moves(moves_data)
-    comments = await ai_generator.generate_batch(prompt)
-    return comments
-```
+#### 7. Reduce API Timeout
+**Current:** 30s timeout per API call
+**Recommended:** 10-15s timeout (Haiku is fast, rarely needs 30s)
+**Impact:** **~1-2 seconds saved** (faster failure detection)
 
 ### 🚀 High-Impact Optimizations (Stockfish - Maintain Accuracy)
 
@@ -331,169 +454,173 @@ return UnifiedAnalysisResponse(
 
 ## Recommended Implementation Plan
 
-### Phase 1: AI Commentary Optimization (2-4 hours) ⭐ **PRIORITY**
-1. ✅ **Defer AI commentary to background** (Option B above)
-   - Generate template-based comments during analysis
-   - Queue AI commentary generation as background task
-   - Return analysis immediately to user
-2. ✅ **Reduce AI commentary scope** (only brilliant/blunder/mistake)
-   - Update `_should_use_ai_comment()` to be more selective
-   - Skip AI for routine moves, good moves, etc.
+### Phase 1: Parallel AI Commentary (3-4 hours) ⭐ **PRIORITY - KEEPS ALL INSIGHTS**
+1. ✅ **Make AI API calls parallel** (not sequential)
+   - Convert `generate_comment()` to async
+   - Use `asyncio.gather()` to run all AI calls concurrently
+   - Remove sequential rate limiting delays
+   - Add semaphore to limit concurrent calls (e.g., 10-15 at a time)
+2. ✅ **Reduce rate limit delay** (0.1s instead of 2.0s)
+   - Only needed if keeping some sequential behavior
+   - With parallel calls, use semaphore instead
+3. ✅ **Progressive response** (return immediately, enhance with AI in background)
+   - Save analysis with template comments immediately
+   - Generate AI commentary in parallel background task
+   - Update database as AI comments complete
 
-**Expected Result:** **60s → ~15-20s** (3-4x improvement, **maintains accuracy**)
+**Expected Result:** **60s → ~15-20s** (3-4x improvement, **keeps all AI insights**)
 
-### Phase 2: Stockfish Optimizations (1-2 hours) - Optional
-3. ✅ Increase max_concurrent: 4 → 6 (if CPU allows)
-4. ✅ Optimize database queries with indexes
-5. ✅ Use endgame tablebase for simple endgames
+### Phase 2: Additional AI Optimizations (2-3 hours) - Optional
+4. ✅ Batch AI API calls (3-5 moves per call)
+5. ✅ Improve caching (2000 entries, position-based)
+6. ✅ Reduce API timeout (30s → 15s)
 
 **Expected Result:** **15-20s → ~12-15s** (4-5x total improvement)
 
-### Phase 3: Architecture Improvements (1-2 days) - Future
-6. ✅ Add analysis result caching
-7. ✅ Optimize database writes
-8. ✅ Batch AI API calls
+### Phase 3: Stockfish Optimizations (1-2 hours) - Optional
+7. ✅ Increase max_concurrent: 4 → 6 (if CPU allows)
+8. ✅ Optimize database queries with indexes
+9. ✅ Use endgame tablebase for simple endgames
+
+**Expected Result:** **12-15s → ~10-12s** (5-6x total improvement)
+
+### Phase 4: Architecture Improvements (1-2 days) - Future
+10. ✅ Add analysis result caching
+11. ✅ Optimize database writes
+12. ✅ WebSocket/SSE for real-time AI commentary updates
 
 **Expected Result:** **Perceived time: <1s** (immediate response, AI commentary loads progressively)
 
 ## Performance Targets
 
-| Metric | Current | Phase 1 (AI Opt) | Phase 2 (Stockfish) | Phase 3 (Architecture) |
-|--------|---------|------------------|---------------------|------------------------|
-| **Analysis Time** | 60s | 15-20s | 12-15s | 12-15s |
-| **Perceived Time** | 60s | 15-20s | 12-15s | <1s |
-| **AI Commentary** | Blocking | Background | Background | Progressive |
-| **Accuracy** | High | **High** ✅ | **High** ✅ | **High** ✅ |
-| **User Experience** | Poor | Good | Excellent | Excellent |
+| Metric | Current | Phase 1 (Parallel AI) | Phase 2 (AI Opt) | Phase 3 (Stockfish) | Phase 4 (Architecture) |
+|--------|---------|----------------------|------------------|---------------------|------------------------|
+| **Analysis Time** | 60s | 15-20s | 12-15s | 10-12s | 10-12s |
+| **Perceived Time** | 60s | 15-20s | 12-15s | 10-12s | <1s |
+| **AI Commentary** | Sequential (60s) | Parallel (2-3s) | Batched (1-2s) | Batched (1-2s) | Progressive |
+| **AI Insights** | 15-25 moves | **15-25 moves** ✅ | **15-25 moves** ✅ | **15-25 moves** ✅ | **15-25 moves** ✅ |
+| **Accuracy** | High | **High** ✅ | **High** ✅ | **High** ✅ | **High** ✅ |
+| **User Experience** | Poor | Good | Excellent | Excellent | Excellent |
 
-**Key Insight:** AI commentary is the bottleneck, not Stockfish. Optimizing AI commentary maintains accuracy while dramatically improving speed.
+**Key Insight:** AI commentary is the bottleneck, but it's **sequential execution**, not the number of insights. Making AI calls **parallel** keeps all insights while dramatically improving speed.
 
 ## Code Changes Required
 
-### 1. Defer AI Commentary to Background (Priority)
-**File:** `python/core/analysis_engine.py`
+### 1. Make AI Commentary Parallel (Priority - Keeps All Insights)
+**File:** `python/core/ai_comment_generator.py` - Make async and parallel
 
 ```python
-# Line 1623 - Add skip_ai parameter
-def _enhance_move_analysis_with_coaching(self, move_analysis: MoveAnalysis, board: chess.Board,
-                                         move: chess.Move, move_number: int,
-                                         player_skill_level: str = "intermediate",
-                                         is_user_move: bool = True,
-                                         skip_ai: bool = False) -> MoveAnalysis:
-    # ... existing code ...
+# Add async semaphore for concurrent API calls
+import asyncio
 
-    # Generate coaching comment
-    if skip_ai:
-        # Use template-based comments only (fast, no API calls)
-        coaching_comment = self.coaching_generator.generate_coaching_comment(
-            enhanced_move_data, board, move, game_phase,
-            player_skill_level, is_user_move, use_ai=False
-        )
-    else:
-        # Normal flow with AI (slow)
-        coaching_comment = self.coaching_generator.generate_coaching_comment(...)
+class AIChessCommentGenerator:
+    def __init__(self):
+        # ... existing code ...
+        # Add semaphore to limit concurrent API calls (10-15 at a time)
+        self._api_semaphore = asyncio.Semaphore(12)  # Allow 12 concurrent calls
+
+    async def generate_comment_async(self, move_analysis, board, move,
+                                     is_user_move=True, player_elo=1200):
+        """Async version for parallel execution."""
+        # Check cache first (same as before)
+        cache_key = self._generate_cache_key(move_analysis, board, move, is_user_move, player_elo)
+        cached = self._comment_cache.get(cache_key)
+        if cached:
+            return cached
+
+        # Use semaphore to limit concurrent calls (not sequential delays!)
+        async with self._api_semaphore:
+            # No rate limit delay needed - semaphore handles concurrency
+            prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
+            comment = await self._call_api_async(prompt, system_prompt)
+
+            if comment:
+                comment = self._clean_comment(comment, is_user_move)
+                self._comment_cache.set(cache_key, comment)
+                return comment
+        return None
+
+    async def _call_api_async(self, prompt, system):
+        """Async API call without blocking."""
+        # Use async HTTP client (httpx or aiohttp)
+        # Remove blocking time.sleep() delays
+        response = await self._async_client.messages.create(...)
+        return response.content[0].text
 ```
 
-**File:** `python/core/coaching_comment_generator.py`
+**File:** `python/core/analysis_engine.py` - Collect and parallelize AI calls
 
 ```python
-# Line 202 - Add use_ai parameter
-def generate_coaching_comment(self, move_analysis, board, move, game_phase,
-                             player_skill_level="intermediate", is_user_move=True,
-                             use_ai: bool = True):
-    # ... existing code ...
+# In analyze_game() method, after Stockfish analysis
+async def analyze_game(self, pgn: str, ...):
+    # ... existing Stockfish analysis code ...
+    # This generates moves_analysis with Stockfish data
 
-    # Generate main comment
-    if use_ai:
-        main_comment = self._generate_main_comment(move_quality, move_analysis, is_user_move)
+    # Collect moves that need AI commentary (keep all current logic!)
+    moves_needing_ai = []
+    for i, move_analysis in enumerate(moves_analysis):
+        # Use existing _should_use_ai_comment logic (no changes needed)
+        if self.coaching_generator._should_use_ai_comment(
+            move_analysis.__dict__,
+            self._get_move_quality(move_analysis)
+        ):
+            moves_needing_ai.append((i, move_analysis, move_data[i]))
+
+    # Generate ALL AI commentary in parallel (not sequential!)
+    if moves_needing_ai and self.coaching_generator.ai_generator:
+        ai_tasks = [
+            self._generate_single_ai_comment_async(idx, move_analysis, move_data_item)
+            for idx, move_analysis, move_data_item in moves_needing_ai
+        ]
+        ai_results = await asyncio.gather(*ai_tasks, return_exceptions=True)
+
+        # Update move analyses with AI comments
+        for (idx, _, _), result in zip(moves_needing_ai, ai_results):
+            if not isinstance(result, Exception) and result:
+                moves_analysis[idx].coaching_comment = result
+
+    # Continue with existing code...
+    return game_analysis
+
+async def _generate_single_ai_comment_async(self, idx, move_analysis, move_data):
+    """Generate AI comment for a single move (async)."""
+    board = move_data['board']
+    move = move_data['move']
+    # Use async AI generator
+    comment = await self.coaching_generator.ai_generator.generate_comment_async(
+        move_analysis.__dict__, board, move,
+        is_user_move=move_analysis.is_user_move
+    )
+    return comment
+```
+
+**File:** `python/core/coaching_comment_generator.py` - Support async
+
+```python
+# Update to support async AI generation
+async def generate_coaching_comment_async(self, move_analysis, board, move, ...):
+    """Async version that uses parallel AI calls."""
+    move_quality = self._determine_move_quality(move_analysis)
+
+    # Generate main comment (async if using AI)
+    if self._should_use_ai_comment(move_analysis, move_quality) and self.ai_generator:
+        main_comment = await self.ai_generator.generate_comment_async(
+            move_analysis, board, move, is_user_move
+        )
     else:
-        # Skip AI, use template-based comments only
+        # Template-based (fast, no API call)
         main_comment = self._generate_template_comment(move_quality, move_analysis, is_user_move)
+
+    # ... rest of coaching comment generation ...
+    return CoachingComment(main_comment=main_comment, ...)
 ```
 
-**File:** `python/core/unified_api_server.py`
+**File:** `python/core/ai_comment_generator.py` - Reduce rate limit delay
 
 ```python
-# In _handle_single_game_by_id(), after analysis
-async def _handle_single_game_by_id(request):
-    # ... existing code to analyze game ...
-
-    # Analyze game WITHOUT AI commentary (fast)
-    game_analysis = await engine.analyze_game(
-        pgn_data, canonical_user_id, request.platform,
-        analysis_type_enum, analysis_game_id,
-        skip_ai_commentary=True  # NEW parameter
-    )
-
-    # Save analysis immediately (user gets results fast)
-    success = await _save_stockfish_analysis(game_analysis)
-
-    if success:
-        # Generate AI commentary in background (non-blocking)
-        background_tasks.add_task(
-            _generate_ai_commentary_background,
-            game_analysis, canonical_user_id, request.platform
-        )
-
-        return UnifiedAnalysisResponse(
-            success=True,
-            message="Analysis complete. AI commentary generating...",
-            data={"game_id": game_analysis.game_id, "ai_commentary_pending": True}
-        )
-```
-
-**File:** `python/core/unified_api_server.py` - Add background task
-
-```python
-async def _generate_ai_commentary_background(game_analysis, user_id, platform):
-    """Generate AI commentary for moves in background."""
-    try:
-        engine = get_analysis_engine()
-        for move_analysis in game_analysis.moves_analysis:
-            # Only generate AI for critical moves
-            if move_analysis.is_brilliant or move_analysis.is_blunder or move_analysis.is_mistake:
-                # Generate AI commentary
-                enhanced = engine._enhance_move_analysis_with_coaching(
-                    move_analysis, board, move, move_number,
-                    skip_ai=False  # Use AI for critical moves
-                )
-                # Update in database
-                await _update_move_commentary(move_analysis, enhanced)
-    except Exception as e:
-        print(f"Error generating AI commentary: {e}")
-```
-
-### 2. Reduce AI Commentary Scope
-**File:** `python/core/coaching_comment_generator.py`
-
-```python
-# Line 282 - Make AI usage more selective
-def _should_use_ai_comment(self, move_analysis: Dict[str, Any], move_quality: MoveQuality) -> bool:
-    """Only use AI for critical learning moments."""
-    # Only use AI for the most important moves
-    if move_quality in [MoveQuality.BRILLIANT, MoveQuality.BLUNDER, MoveQuality.MISTAKE]:
-        return True
-
-    # Skip AI for everything else (use templates)
-    return False
-```
-
-### 3. Update Analysis Engine to Support skip_ai
-**File:** `python/core/analysis_engine.py`
-
-```python
-# Line 918 - Add skip_ai_commentary parameter
-async def analyze_game(self, pgn: str, user_id: str, platform: str,
-                      analysis_type: Optional[AnalysisType] = None,
-                      game_id: Optional[str] = None,
-                      skip_ai_commentary: bool = False) -> Optional[GameAnalysis]:
-    # ... existing code ...
-
-    # Line 2877 - Pass skip_ai flag
-    return self._enhance_move_analysis_with_coaching(
-        move_analysis, board, current_move, move_number,
-        is_user_move=True, skip_ai=skip_ai_commentary
-    )
+# In AIConfig class
+rate_limit_delay: float = 0.1  # Reduced from 2.0 (only for sequential calls)
+# With parallel calls, semaphore handles concurrency, not delays
 ```
 
 ### 3. Add Move Skipping Logic
@@ -550,16 +677,22 @@ Add performance metrics:
 
 ## Conclusion
 
-**Key Finding:** The main bottleneck is **AI commentary generation**, not Stockfish analysis. AI commentary was added recently and generates 15-25 API calls per game, each taking 1-3 seconds, adding **30-60 seconds** to analysis time.
+**Key Finding:** The main bottleneck is **AI commentary generation**, not Stockfish analysis. AI commentary generates 15-25 API calls per game, but they're executed **sequentially** with 2s delays between calls, adding **45-125 seconds** to analysis time.
 
-**Solution:** By deferring AI commentary to background processing and only using it for critical moves (brilliant, blunder, mistake), we can achieve a **3-4x improvement** (60s → 15-20s) while **maintaining full analysis accuracy**.
+**Solution:** By making AI API calls **parallel** (concurrent) instead of sequential, we can achieve a **3-4x improvement** (60s → 15-20s) while **keeping ALL AI insights** for all moves that currently get them.
 
-**Stockfish analysis** (12-15s) is already well-optimized and should not be changed to preserve accuracy. The focus should be on making AI commentary non-blocking.
+**Key Optimizations:**
+1. ✅ **Parallel AI API calls** - Run 15-25 calls concurrently (2-3s total) instead of sequentially (60-100s)
+2. ✅ **Remove sequential delays** - Use semaphore for concurrency control instead of 2s delays
+3. ✅ **Progressive response** - Return analysis immediately, enhance with AI in background
+4. ✅ **Keep all AI insights** - No reduction in commentary coverage
+
+**Stockfish analysis** (12-15s) is already well-optimized and should not be changed to preserve accuracy.
 
 **Recommended Approach:**
-1. ✅ Generate template-based comments during analysis (fast, no API calls)
-2. ✅ Save analysis immediately (user gets results in 15-20s)
-3. ✅ Generate AI commentary in background (progressive enhancement)
-4. ✅ Only use AI for critical moves (brilliant, blunder, mistake)
+1. ✅ Convert AI commentary generation to async/parallel
+2. ✅ Use `asyncio.gather()` to run all AI calls concurrently
+3. ✅ Use semaphore (10-15 concurrent) instead of sequential delays
+4. ✅ Return analysis immediately, update with AI commentary progressively
 
-This maintains accuracy while dramatically improving user experience.
+This keeps all AI insights while dramatically improving speed - **best of both worlds!**

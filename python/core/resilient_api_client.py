@@ -380,7 +380,8 @@ class ResilientAPIClient:
         Returns:
             Tuple of (exists: bool, message: str)
         """
-        cache_key = self._get_cache_key("GET", f"chesscom_user_{username}")
+        # Use original username for cache key (case-sensitive for cache, but API is case-insensitive)
+        cache_key = self._get_cache_key("GET", f"chesscom_user_{username.strip()}")
 
         # Check cache
         cached = self._get_cached(cache_key)
