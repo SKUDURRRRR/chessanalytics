@@ -33,7 +33,8 @@ const unique = <T,>(values: T[]): T[] => {
 }
 
 /**
- * Optimized version that runs queries in parallel and uses batch queries instead of loops
+ * Optimized version that uses backend API to avoid UUID validation issues
+ * Falls back to direct Supabase queries for authenticated users
  */
 export async function fetchGameAnalysisData(
   userId: string,
@@ -61,140 +62,144 @@ export async function fetchGameAnalysisData(
   let pgnText: string | null = null
 
   try {
-    // OPTIMIZATION 1: Run both game queries in parallel instead of sequentially
-    const [primaryGameResult, fallbackGameResult] = await Promise.all([
-      supabase
-        .from('games')
-        .select('*')
-        .eq('user_id', canonicalUserId)
-        .eq('platform', platform)
-        .eq('provider_game_id', normalizedGameId)
-        .maybeSingle(),
-      supabase
-        .from('games')
-        .select('*')
-        .eq('user_id', canonicalUserId)
-        .eq('platform', platform)
-        .eq('id', normalizedGameId)
-        .maybeSingle(),
-    ])
-
-    gameRecord = primaryGameResult.data ?? fallbackGameResult.data ?? null
-
-    const identifierCandidates = unique([
-      normalizedGameId,
-      gameRecord?.provider_game_id,
-      gameRecord?.id,
-    ]).filter(Boolean) // Remove null/undefined values
-
-    // OPTIMIZATION 2: Batch query for analysis records using OR conditions instead of loops
-    // This queries all candidates in parallel (faster than sequential loops)
-    // Also try unified_analyses view which has provider_game_id alias
-    const analysisPromises = identifierCandidates.flatMap(candidate => [
-      // Query move_analyses by game_id
-      supabase
-        .from('move_analyses')
-        .select('*')
-        .eq('user_id', canonicalUserId)
-        .eq('platform', platform)
-        .eq('game_id', candidate)
-        .maybeSingle(),
-      // Also try unified_analyses view by provider_game_id (alias for game_id)
-      supabase
-        .from('unified_analyses')
-        .select('*')
-        .eq('user_id', canonicalUserId)
-        .eq('platform', platform)
-        .eq('provider_game_id', candidate)
-        .maybeSingle()
-    ])
-
-    // OPTIMIZATION 3: Query PGN in parallel with analysis
-    const pgnPromises = identifierCandidates.map(candidate =>
-      supabase
-        .from('games_pgn')
-        .select('pgn')
-        .eq('user_id', canonicalUserId)
-        .eq('platform', platform)
-        .eq('provider_game_id', candidate)
-        .maybeSingle()
+    // Try backend API first - handles both UUID and username-based queries
+    const baseUrl = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
+    const response = await fetch(
+      `${baseUrl}/api/v1/game/${encodeURIComponent(userId)}/${platform}/${encodeURIComponent(normalizedGameId)}`
     )
 
-    const [analysisResults, pgnResults] = await Promise.all([
-      Promise.all(analysisPromises),
-      Promise.all(pgnPromises),
-    ])
+    if (response.ok) {
+      // Backend API succeeded
+      const data = await response.json()
+      gameRecord = data.game
+      analysisRecord = data.analysis
+      pgnText = data.pgn
+    } else {
+      // Backend API failed - fall back to direct Supabase queries
+      // This only works for authenticated users with UUID-based user_ids
+      console.warn('Backend API failed, falling back to direct Supabase queries')
 
-    // Get the first non-null analysis record
-    for (const result of analysisResults) {
-      if (result.data) {
-        analysisRecord = result.data
-        break
-      }
-    }
+      const [primaryGameResult, fallbackGameResult] = await Promise.all([
+        supabase
+          .from('games')
+          .select('*')
+          .eq('user_id', canonicalUserId)
+          .eq('platform', platform)
+          .eq('provider_game_id', normalizedGameId)
+          .maybeSingle(),
+        supabase
+          .from('games')
+          .select('*')
+          .eq('user_id', canonicalUserId)
+          .eq('platform', platform)
+          .eq('id', normalizedGameId)
+          .maybeSingle(),
+      ])
 
-    // Get the first non-null PGN
-    for (const pgnResult of pgnResults) {
-      if (pgnResult.data?.pgn) {
-        pgnText = pgnResult.data.pgn
-        break
-      }
-    }
+      gameRecord = primaryGameResult.data ?? fallbackGameResult.data ?? null
 
-    // OPTIMIZATION 4: Only check for move data if analysis exists but lacks moves_analysis
-    // Query with stockfish filter only if needed
-    const needsMoveData = analysisRecord && (!analysisRecord.moves_analysis || !Array.isArray(analysisRecord.moves_analysis) || analysisRecord.moves_analysis.length === 0)
+      const identifierCandidates = unique([
+        normalizedGameId,
+        gameRecord?.provider_game_id,
+        gameRecord?.id,
+      ]).filter(Boolean)
 
-    if (needsMoveData && identifierCandidates.length > 0) {
-      // Query all candidates in parallel with stockfish filter
-      const moveDataPromises = identifierCandidates.map(candidate =>
+      const analysisPromises = identifierCandidates.flatMap(candidate => [
         supabase
           .from('move_analyses')
           .select('*')
           .eq('user_id', canonicalUserId)
           .eq('platform', platform)
           .eq('game_id', candidate)
-          .eq('analysis_method', 'stockfish')
+          .maybeSingle(),
+        supabase
+          .from('unified_analyses')
+          .select('*')
+          .eq('user_id', canonicalUserId)
+          .eq('platform', platform)
+          .eq('provider_game_id', candidate)
+          .maybeSingle()
+      ])
+
+      const pgnPromises = identifierCandidates.map(candidate =>
+        supabase
+          .from('games_pgn')
+          .select('pgn')
+          .eq('user_id', canonicalUserId)
+          .eq('platform', platform)
+          .eq('provider_game_id', candidate)
           .maybeSingle()
       )
 
-      const moveDataResults = await Promise.all(moveDataPromises)
-      for (const result of moveDataResults) {
+      const [analysisResults, pgnResults] = await Promise.all([
+        Promise.all(analysisPromises),
+        Promise.all(pgnPromises),
+      ])
+
+      // Get the first non-null analysis record
+      for (const result of analysisResults) {
         if (result.data) {
-          analysisRecord = {
-            ...result.data,
-            ...analysisRecord,
-            moves_analysis: result.data.moves_analysis ?? analysisRecord.moves_analysis ?? null,
-          }
+          analysisRecord = result.data
           break
         }
       }
-    }
 
-    // OPTIMIZATION 5: Only call expensive API as absolute last resort
-    // This is expensive because it fetches ALL analyses for the user
-    // Only use if we have a game but no analysis at all
-    if (!analysisRecord && gameRecord) {
-      // Try one more direct query before falling back to API
-      const finalAttempt = await supabase
-        .from('move_analyses')
-        .select('*')
-        .eq('user_id', canonicalUserId)
-        .eq('platform', platform)
-        .or(`game_id.eq.${gameRecord.id},game_id.eq.${gameRecord.provider_game_id}`)
-        .maybeSingle()
+      // Get the first non-null PGN
+      for (const pgnResult of pgnResults) {
+        if (pgnResult.data?.pgn) {
+          pgnText = pgnResult.data.pgn
+          break
+        }
+      }
 
-      if (finalAttempt.data) {
-        analysisRecord = finalAttempt.data
-      } else {
-        // Last resort: API call (but this is expensive, so we try to avoid it)
-        // Only fetch 1 analysis to minimize data transfer
-        const apiAnalyses = await UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish', 1, 0)
-        analysisRecord = apiAnalyses.find(item =>
-          item?.game_id === normalizedGameId ||
-          (gameRecord && item?.game_id === gameRecord.id) ||
-          (gameRecord && item?.game_id === gameRecord.provider_game_id)
-        ) ?? null
+      // OPTIMIZATION: Only check for move data if analysis exists but lacks moves_analysis
+      const needsMoveData = analysisRecord && (!analysisRecord.moves_analysis || !Array.isArray(analysisRecord.moves_analysis) || analysisRecord.moves_analysis.length === 0)
+
+      if (needsMoveData && identifierCandidates.length > 0) {
+        const moveDataPromises = identifierCandidates.map(candidate =>
+          supabase
+            .from('move_analyses')
+            .select('*')
+            .eq('user_id', canonicalUserId)
+            .eq('platform', platform)
+            .eq('game_id', candidate)
+            .eq('analysis_method', 'stockfish')
+            .maybeSingle()
+        )
+
+        const moveDataResults = await Promise.all(moveDataPromises)
+        for (const result of moveDataResults) {
+          if (result.data) {
+            analysisRecord = {
+              ...result.data,
+              ...analysisRecord,
+              moves_analysis: result.data.moves_analysis ?? analysisRecord.moves_analysis ?? null,
+            }
+            break
+          }
+        }
+      }
+
+      // Last resort: Try API call if we have a game but no analysis
+      if (!analysisRecord && gameRecord) {
+        const finalAttempt = await supabase
+          .from('move_analyses')
+          .select('*')
+          .eq('user_id', canonicalUserId)
+          .eq('platform', platform)
+          .or(`game_id.eq.${gameRecord.id},game_id.eq.${gameRecord.provider_game_id}`)
+          .maybeSingle()
+
+        if (finalAttempt.data) {
+          analysisRecord = finalAttempt.data
+        } else {
+          const apiAnalyses = await UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish', 1, 0)
+          analysisRecord = apiAnalyses.find(item =>
+            item?.game_id === normalizedGameId ||
+            (gameRecord && item?.game_id === gameRecord.id) ||
+            (gameRecord && item?.game_id === gameRecord.provider_game_id)
+          ) ?? null
+        }
       }
     }
   } catch (error) {

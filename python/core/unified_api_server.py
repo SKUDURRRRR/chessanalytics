@@ -3120,6 +3120,77 @@ async def get_match_history(
         print(f"Error fetching match history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/v1/game/{user_id}/{platform}/{game_id}")
+async def get_single_game(
+    user_id: str,
+    platform: str,
+    game_id: str,
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """Get a single game with its analysis and PGN.
+
+    This endpoint is used by the Game Analysis Page to fetch game data without
+    requiring direct Supabase access from the frontend.
+    Handles both UUID-based auth users and username-based anonymous users.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Try to find the game by provider_game_id first, then by id
+        game_response = await asyncio.to_thread(
+            lambda: db_client.table('games')
+            .select('*')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .or_(f'provider_game_id.eq.{game_id},id.eq.{game_id}')
+            .limit(1)
+            .execute()
+        )
+
+        if not game_response.data or len(game_response.data) == 0:
+            raise HTTPException(status_code=404, detail="Game not found")
+
+        game = game_response.data[0]
+        game_identifier = game.get('provider_game_id') or game.get('id')
+
+        # Fetch PGN
+        pgn_response = await asyncio.to_thread(
+            lambda: db_client.table('games_pgn')
+            .select('pgn')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .eq('provider_game_id', game_identifier)
+            .maybeSingle()
+            .execute()
+        )
+
+        # Fetch analysis (try both move_analyses and unified_analyses)
+        analysis_response = await asyncio.to_thread(
+            lambda: db_client.table('unified_analyses')
+            .select('*')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .eq('provider_game_id', game_identifier)
+            .maybeSingle()
+            .execute()
+        )
+
+        return {
+            'game': game,
+            'pgn': pgn_response.data['pgn'] if pgn_response.data else None,
+            'analysis': analysis_response.data if analysis_response.data else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching single game: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/api/v1/clear-cache/{user_id}/{platform}", response_model=ClearCacheResponse)
 async def clear_user_cache(
     user_id: str,
