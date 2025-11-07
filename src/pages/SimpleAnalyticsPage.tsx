@@ -918,7 +918,18 @@ export default function SimpleAnalyticsPage() {
                           startLargeImport()
                         }
                       }}
-                      disabled={largeImportProgress?.status === 'importing'}
+                      disabled={
+                        largeImportProgress?.status === 'importing' ||
+                        !user ||
+                        (usageStats?.account_tier === 'free' || usageStats?.account_tier === undefined)
+                      }
+                      title={
+                        !user
+                          ? 'Sign in to import more games'
+                          : usageStats?.account_tier === 'free' || usageStats?.account_tier === undefined
+                          ? 'Upgrade to Pro to import more games'
+                          : undefined
+                      }
                       className="inline-flex items-center gap-2 rounded-full border border-purple-400/40 bg-purple-500/10 px-4 py-2 font-medium text-purple-200 transition hover:border-purple-300/60 hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {largeImportProgress?.status === 'importing' ? (
