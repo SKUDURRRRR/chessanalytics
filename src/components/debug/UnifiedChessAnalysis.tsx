@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
@@ -594,8 +595,6 @@ export function UnifiedChessAnalysis({
   const { soundEnabled, volume } = useChessSoundSettings()
   const { playSound } = useChessSound({ enabled: soundEnabled, volume })
   const prevIndexRef = useRef(currentIndex)
-  const [isMoveListOpen, setIsMoveListOpen] = useState(false)
-  const [showMoveAnalysis, setShowMoveAnalysis] = useState(true)
   // State to track user-drawn arrows (right-click drag) - these will be rendered via ModernChessArrows
   const [userDrawnArrows, setUserDrawnArrows] = useState<ModernArrow[]>([])
   const desktopBoardContainerRef = useRef<HTMLDivElement>(null)
@@ -870,18 +869,73 @@ export function UnifiedChessAnalysis({
         {/* Mobile Layout: Stacked */}
         <div className="flex flex-col gap-4 lg:hidden">
 
-        {/* Mobile: Game Phase Indicator */}
-        {currentMove && (() => {
-          const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
-          const gamePhase = normalizeGamePhase(rawPhase)
-          return (
-            <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/50 w-fit mx-auto">
-              <span className={`text-sm font-semibold ${getGamePhaseColor(gamePhase)}`}>
-                {gamePhase}
-              </span>
+        {/* Mobile: chessdata.app Button */}
+        <div className="flex items-center justify-center">
+          <Link to="/" className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md hover:opacity-80 transition-opacity"
+               style={{
+                 background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
+                 animation: 'liquid-glow 4s ease-in-out infinite',
+               }}>
+            {/* Liquid shimmer effect */}
+            <div className="absolute inset-0 opacity-40"
+                 style={{
+                   background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
+                   animation: 'liquid-shimmer 3s ease-in-out infinite',
+                 }}></div>
+            {/* Floating bubble effect */}
+            <div className="absolute inset-0 opacity-30"
+                 style={{
+                   background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
+                   animation: 'liquid-bubble 4s ease-in-out infinite',
+                 }}></div>
+            <span className="relative z-10">chessdata.app</span>
+          </Link>
+        </div>
+
+        {/* Mobile: Move Comments/Analysis - Moved to top */}
+        {currentMove ? (
+          <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`text-xl font-bold ${
+                    getMoveTextColor(currentMove.classification)
+                  }`}>
+                    {currentMove.san}
+                  </div>
+                  <MoveClassificationBadge classification={currentMove.classification} />
+                </div>
+                {currentMove.evaluation && (
+                  <div className="text-xs text-slate-400">
+                    {currentMove.displayEvaluation}
+                  </div>
+                )}
+              </div>
             </div>
-          )
-        })()}
+            <EnhancedMoveCoaching move={currentMove} className="text-xs" />
+
+            {/* Mobile Follow-Up Explorer */}
+            {onExploringChange && onResetExploration && onUndoExplorationMove && (
+              <div className="mt-3">
+                <FollowUpExplorer
+                  currentMove={currentMove}
+                  isExploring={isExploringFollowUp}
+                  explorationMoves={explorationMoves}
+                  onExploringChange={onExploringChange}
+                  onResetExploration={onResetExploration}
+                  onUndoExplorationMove={onUndoExplorationMove}
+                  onAddExplorationMove={onAddExplorationMove}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
+            <div className="text-sm text-slate-400 text-center py-2">
+              Navigate to a move to see analysis
+            </div>
+          </div>
+        )}
 
         {/* Mobile: Evaluation Bar + Chess Board */}
         <div className="flex justify-center gap-5">
@@ -997,46 +1051,79 @@ export function UnifiedChessAnalysis({
             </div>
           </div>
 
-          {/* Mobile: Current Move Analysis */}
-          {currentMove && showMoveAnalysis && (
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-white">
-                    {currentMove.san}
-                  </h3>
-                  <span className="text-xs text-slate-400">
-                    Move {currentMove.moveNumber} • {currentMove.isUserMove ? 'You' : 'Opponent'}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setShowMoveAnalysis(false)}
-                  className="text-slate-400 hover:text-white transition-colors p-1"
-                  aria-label="Hide analysis"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+          {/* Mobile: Move Sequence - Always visible below board */}
+          <div className="mt-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-white">All Moves</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{allMoves.length} moves in this game</p>
               </div>
-              <EnhancedMoveCoaching move={currentMove} className="text-xs" />
-
-              {/* Mobile Follow-Up Explorer */}
-              {currentMove && onExploringChange && onResetExploration && onUndoExplorationMove && (
-                <div className="mt-3">
-                  <FollowUpExplorer
-                    currentMove={currentMove}
-                    isExploring={isExploringFollowUp}
-                    explorationMoves={explorationMoves}
-                    onExploringChange={onExploringChange}
-                    onResetExploration={onResetExploration}
-                    onUndoExplorationMove={onUndoExplorationMove}
-                    onAddExplorationMove={onAddExplorationMove}
-                  />
-                </div>
-              )}
             </div>
-          )}
+            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+              <div ref={mobileTimelineRef} className="max-h-[280px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                <table className="w-full table-fixed text-left">
+                  <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10">
+                    <tr className="text-xs uppercase text-slate-400 border-b border-white/10">
+                      <th className="w-12 py-2.5 px-2">No.</th>
+                      <th className="w-1/2 py-2.5 px-2">You</th>
+                      <th className="w-1/2 py-2.5 px-2">Opponent</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: Math.ceil(allMoves.length / 2) }).map((_, row) => {
+                      const move1 = allMoves[row * 2]
+                      const move2 = allMoves[row * 2 + 1]
+
+                      // Determine which move is the user's and which is the opponent's
+                      // based on isUserMove flag, not just color (white/black)
+                      const userMove = move1?.isUserMove ? move1 : move2
+                      const opponentMove = move1?.isUserMove ? move2 : move1
+
+                      return (
+                        <tr key={row} className="border-b border-white/5 last:border-b-0">
+                          <td className="py-2.5 px-2 text-xs text-slate-400 font-medium align-top pt-3">{row + 1}</td>
+                          <td className="py-1.5 px-2">
+                            {userMove ? (
+                              <button
+                                onClick={() => onMoveNavigation(userMove.index + 1)}
+                                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2.5 text-left transition-all duration-200 gap-2 min-h-[44px] ${
+                                  currentIndex === userMove.index + 1
+                                    ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
+                                    : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
+                                }`}
+                              >
+                                <span className="text-xs font-medium truncate">{userMove.san}</span>
+                                <MoveClassificationBadge classification={userMove.classification} />
+                              </button>
+                            ) : (
+                              <span className="text-slate-600 text-xs py-2.5">-</span>
+                            )}
+                          </td>
+                          <td className="py-1.5 px-2">
+                            {opponentMove ? (
+                              <button
+                                onClick={() => onMoveNavigation(opponentMove.index + 1)}
+                                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2.5 text-left transition-all duration-200 gap-2 min-h-[44px] ${
+                                  currentIndex === opponentMove.index + 1
+                                    ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
+                                    : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
+                                }`}
+                              >
+                                <span className="text-xs font-medium truncate">{opponentMove.san}</span>
+                                <MoveClassificationBadge classification={opponentMove.classification} />
+                              </button>
+                            ) : (
+                              <span className="text-slate-600 text-xs py-2.5">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
 
           {/* Mobile: Exploration Analysis */}
           {!currentMove && isFreeExploration && explorationAnalysis && (
@@ -1152,112 +1239,6 @@ export function UnifiedChessAnalysis({
             </div>
           )}
 
-          {!showMoveAnalysis && currentMove && (
-            <button
-              onClick={() => setShowMoveAnalysis(true)}
-              className="mt-4 w-full rounded-xl border border-white/10 bg-white/[0.08] p-3 text-sm text-slate-300 hover:bg-white/[0.12] transition-colors"
-            >
-              Show Move Analysis
-            </button>
-          )}
-
-          {/* Mobile: Moves List Accordion */}
-          <div className="mt-4">
-            <button
-              onClick={() => setIsMoveListOpen(!isMoveListOpen)}
-              className="w-full flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.08] p-4 text-left hover:bg-white/[0.12] transition-colors"
-              aria-expanded={isMoveListOpen}
-            >
-              <div className="flex items-center gap-3">
-                <svg
-                  className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${isMoveListOpen ? 'rotate-90' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <div>
-                  <h3 className="text-sm font-semibold text-white">All Moves</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">{allMoves.length} moves in this game</p>
-                </div>
-              </div>
-              <div className="text-xs text-slate-400">
-                {isMoveListOpen ? 'Hide' : 'Show'}
-              </div>
-            </button>
-
-            <div
-              className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                isMoveListOpen ? 'max-h-[400px] opacity-100 mt-3' : 'max-h-0 opacity-0'
-              }`}
-            >
-              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
-                <div ref={mobileTimelineRef} className="max-h-[350px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                  <table className="w-full table-fixed text-left">
-                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10">
-                      <tr className="text-xs uppercase text-slate-400 border-b border-white/10">
-                        <th className="w-12 py-2 px-1">No.</th>
-                        <th className="w-1/2 py-2 px-1">You</th>
-                        <th className="w-1/2 py-2 px-1">Opponent</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Array.from({ length: Math.ceil(allMoves.length / 2) }).map((_, row) => {
-                        const move1 = allMoves[row * 2]
-                        const move2 = allMoves[row * 2 + 1]
-
-                        // Determine which move is the user's and which is the opponent's
-                        // based on isUserMove flag, not just color (white/black)
-                        const userMove = move1?.isUserMove ? move1 : move2
-                        const opponentMove = move1?.isUserMove ? move2 : move1
-
-                        return (
-                          <tr key={row} className="border-b border-white/5 last:border-b-0">
-                            <td className="py-2 px-1 text-xs text-slate-400 font-medium">{row + 1}</td>
-                            <td className="py-2 px-1">
-                              {userMove ? (
-                                <button
-                                  onClick={() => onMoveNavigation(userMove.index + 1)}
-                                  className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
-                                    currentIndex === userMove.index + 1
-                                      ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
-                                      : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
-                                  }`}
-                                >
-                                  <span className="text-xs font-medium truncate">{userMove.san}</span>
-                                  <MoveClassificationBadge classification={userMove.classification} />
-                                </button>
-                              ) : (
-                                <span className="text-slate-600 text-xs">-</span>
-                              )}
-                            </td>
-                            <td className="py-2 px-1">
-                              {opponentMove ? (
-                                <button
-                                  onClick={() => onMoveNavigation(opponentMove.index + 1)}
-                                  className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
-                                    currentIndex === opponentMove.index + 1
-                                      ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
-                                      : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
-                                  }`}
-                                >
-                                  <span className="text-xs font-medium truncate">{opponentMove.san}</span>
-                                  <MoveClassificationBadge classification={opponentMove.classification} />
-                                </button>
-                              ) : (
-                                <span className="text-slate-600 text-xs">-</span>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Desktop Layout: Side by Side */}
@@ -1282,18 +1263,28 @@ export function UnifiedChessAnalysis({
 
         {/* Center: Chess Board */}
         <div className="flex-shrink-0 flex flex-col items-center">
-          {/* Desktop: Game Phase Indicator */}
-          {currentMove && (() => {
-            const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
-            const gamePhase = normalizeGamePhase(rawPhase)
-            return (
-              <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/50 w-fit mx-auto mb-4">
-                <span className={`text-sm font-semibold ${getGamePhaseColor(gamePhase)}`}>
-                  {gamePhase}
-                </span>
-              </div>
-            )
-          })()}
+          {/* Desktop: chessdata.app Button */}
+          <div className="flex items-center justify-center mb-4">
+            <Link to="/" className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md hover:opacity-80 transition-opacity"
+                 style={{
+                   background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
+                   animation: 'liquid-glow 4s ease-in-out infinite',
+                 }}>
+              {/* Liquid shimmer effect */}
+              <div className="absolute inset-0 opacity-40"
+                   style={{
+                     background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
+                     animation: 'liquid-shimmer 3s ease-in-out infinite',
+                   }}></div>
+              {/* Floating bubble effect */}
+              <div className="absolute inset-0 opacity-30"
+                   style={{
+                     background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
+                     animation: 'liquid-bubble 4s ease-in-out infinite',
+                   }}></div>
+              <span className="relative z-10">chessdata.app</span>
+            </Link>
+          </div>
 
           <div ref={desktopBoardContainerRef} className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
             <Chessboard
