@@ -1530,19 +1530,6 @@ export default function GameAnalysisPage() {
       displayPosition: displayPosition
     })
 
-    // CRITICAL FIX: Prevent invalid moves when clicking on a piece without dragging
-    // If source and target are the same, this is likely a click without drag - ignore it
-    if (sourceSquare === targetSquare) {
-      console.log('⚠️ Ignoring click on piece (source === target):', sourceSquare)
-      return false
-    }
-
-    // Validate square format
-    if (!sourceSquare || !targetSquare || sourceSquare.length !== 2 || targetSquare.length !== 2) {
-      console.error('❌ Invalid square format:', { sourceSquare, targetSquare })
-      return false
-    }
-
     try {
       // Use the displayPosition which already accounts for all exploration moves
       // This ensures validation matches what's actually shown on the board
@@ -1559,34 +1546,10 @@ export default function GameAnalysisPage() {
       // Create a chess instance with the starting position
       const game = new Chess(startingFen)
 
-      // Validate that a piece exists on the source square
-      const piece = game.get(sourceSquare as any)
-      if (!piece) {
-        console.error(`❌ No piece found on source square ${sourceSquare}`)
-        return false
-      }
-
-      // Validate that it's the correct player's turn
-      const isWhitePiece = piece.color === 'w'
-      const isWhiteTurn = game.turn() === 'w'
-      if (isWhitePiece !== isWhiteTurn) {
-        console.error(`❌ Wrong player's turn. Piece color: ${piece.color}, Turn: ${game.turn()}`)
-        return false
-      }
-
-      // Check if the move is legal before attempting it
-      const legalMoves = game.moves({ square: sourceSquare as any, verbose: true })
-      const isLegalMove = legalMoves.some(m => m.to === targetSquare)
-
-      if (!isLegalMove) {
-        console.error(`❌ Move ${sourceSquare} → ${targetSquare} is not legal. Legal moves from ${sourceSquare}:`,
-          legalMoves.map(m => m.to))
-        return false
-      }
-
       // Try to make the new move
       // Only specify promotion if it's a pawn move to the 8th rank
-      const isPromotion = piece.type === 'p' && (targetSquare[1] === '8' || targetSquare[1] === '1')
+      const piece = game.get(sourceSquare as any)
+      const isPromotion = piece?.type === 'p' && (targetSquare[1] === '8' || targetSquare[1] === '1')
 
       console.log('🎯 Piece info:', { piece, isPromotion, turn: game.turn() })
 

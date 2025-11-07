@@ -122,10 +122,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUsageStats(stats)
         logger.log('Usage stats fetched successfully')
       } else {
-        logger.warn(`Failed to fetch usage stats: ${response.status}`)
+        // Only log non-connection errors
+        if (response.status !== 0) {
+          logger.warn(`Failed to fetch usage stats: ${response.status}`)
+        }
       }
     } catch (error) {
-      logger.error('Error fetching usage stats:', error)
+      // Check if it's a connection error - don't log these as errors when backend is down
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage.includes('Failed to fetch') ||
+          errorMessage.includes('ERR_CONNECTION_REFUSED') ||
+          errorMessage.includes('NetworkError') ||
+          errorMessage.includes('Network request failed')) {
+        // Backend is not running - this is expected, don't log as error
+        logger.log('Backend server not available, skipping usage stats fetch')
+      } else {
+        logger.error('Error fetching usage stats:', error)
+      }
       // Don't throw - fail gracefully
     }
   }

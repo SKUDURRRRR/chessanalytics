@@ -303,7 +303,30 @@ class AIChessCommentGenerator:
             )
 
             if comment:
+                # Get capture info for validation
+                board_before = move_analysis.get('board_before')
+                is_capture = False
+                captured_piece_name = None
+                if board_before and move:
+                    captured_piece = board_before.piece_at(move.to_square)
+                    if captured_piece:
+                        is_capture = True
+                        piece_names = {
+                            chess.PAWN: "pawn",
+                            chess.KNIGHT: "knight",
+                            chess.BISHOP: "bishop",
+                            chess.ROOK: "rook",
+                            chess.QUEEN: "queen",
+                            chess.KING: "king"
+                        }
+                        piece_name = piece_names.get(captured_piece.piece_type, "piece")
+                        color = "white" if captured_piece.color == chess.WHITE else "black"
+                        captured_piece_name = f"{color} {piece_name}"
+
+                move_san = move_analysis.get('move_san', '')
+                # Clean and validate comment
                 comment = self._clean_comment(comment, is_user_move)
+                comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
                 print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
 
                 # Cache the comment for future use
@@ -388,7 +411,30 @@ class AIChessCommentGenerator:
                 comment = await self._call_api_async(prompt, system_prompt)
 
                 if comment:
+                    # Get capture info for validation
+                    board_before = move_analysis.get('board_before')
+                    is_capture = False
+                    captured_piece_name = None
+                    if board_before and move:
+                        captured_piece = board_before.piece_at(move.to_square)
+                        if captured_piece:
+                            is_capture = True
+                            piece_names = {
+                                chess.PAWN: "pawn",
+                                chess.KNIGHT: "knight",
+                                chess.BISHOP: "bishop",
+                                chess.ROOK: "rook",
+                                chess.QUEEN: "queen",
+                                chess.KING: "king"
+                            }
+                            piece_name = piece_names.get(captured_piece.piece_type, "piece")
+                            color = "white" if captured_piece.color == chess.WHITE else "black"
+                            captured_piece_name = f"{color} {piece_name}"
+
+                    move_san = move_analysis.get('move_san', '')
+                    # Clean and validate comment
                     comment = self._clean_comment(comment, is_user_move)
+                    comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
                     print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
 
                     # Cache the comment
@@ -463,6 +509,78 @@ class AIChessCommentGenerator:
         except Exception as e:
             print(f"[AI] Error in async API call: {e}")
             return None
+
+    def _filter_insights_for_move(self, insights: list, move_san: str, is_capture: bool, is_user_move: bool) -> list:
+        """Filter insights to only include those relevant to the current move."""
+        if not insights:
+            return []
+
+        filtered = []
+        for insight in insights:
+            insight_lower = insight.lower()
+
+            # Remove generic sacrifice advice if not a capture
+            if "sacrifice" in insight_lower and not is_capture:
+                continue
+
+            # Remove future move suggestions for opponent moves
+            if not is_user_move:
+                suggestion_patterns = ["you should", "consider", "look for", "try", "you can", "you could"]
+                if any(pattern in insight_lower for pattern in suggestion_patterns):
+                    continue
+
+            # Remove generic capture mentions if not a capture
+            if not is_capture:
+                capture_patterns = ["captures", "capturing", "takes", "taking"]
+                if any(pattern in insight_lower for pattern in capture_patterns):
+                    # Only skip if it's clearly about a capture, not just mentioning the word
+                    if any(word in insight_lower for word in ["piece", "pawn", "knight", "bishop", "rook", "queen"]):
+                        continue
+
+            # Include insight if it passes filters
+            filtered.append(insight)
+
+        # Limit to 3 most relevant
+        return filtered[:3]
+
+    def _validate_comment(self, comment: str, move_san: str, is_capture: bool,
+                          is_user_move: bool, captured_piece: Optional[str] = None) -> str:
+        """Validate and fix common AI hallucination patterns."""
+        if not comment:
+            return comment
+
+        # Check for capture mentions when move is not a capture
+        if not is_capture:
+            # Remove mentions of captures/sacrifices
+            patterns_to_remove = [
+                r'\bcaptur(?:e|es|ed|ing)\b',
+                r'\bsacrific(?:e|es|ed|ing)\b',
+                r'\btak(?:e|es|ing)\s+(?:the\s+)?(?:pawn|knight|bishop|rook|queen)',
+            ]
+            for pattern in patterns_to_remove:
+                comment = re.sub(pattern, '', comment, flags=re.IGNORECASE)
+
+        # For opponent moves, remove suggestions to user
+        if not is_user_move:
+            suggestion_patterns = [
+                r'\byou\s+(?:should|can|could|might|may)\s+',
+                r'\bconsider\s+',
+                r'\blook\s+for\s+',
+                r'\btry\s+',
+                r'\byou\s+should\s+',
+            ]
+            for pattern in suggestion_patterns:
+                comment = re.sub(pattern, '', comment, flags=re.IGNORECASE)
+
+        # Clean up double spaces and punctuation
+        comment = re.sub(r'\s+', ' ', comment)
+        comment = comment.strip()
+
+        # Remove leading/trailing punctuation artifacts
+        comment = re.sub(r'^[,\s]+', '', comment)
+        comment = re.sub(r'[,\s]+$', '', comment)
+
+        return comment
 
     def _clean_comment(self, comment: str, is_user_move: bool = True) -> str:
         """Remove common interjections at the start of comments and limit to 3-4 sentences maximum."""
@@ -752,6 +870,8 @@ class AIChessCommentGenerator:
         fen_before = ""
         capture_info = ""
         is_capture = False
+        captured_piece_name = None
+        is_sacrifice = False
 
         if board_before and move:
             try:
@@ -770,10 +890,33 @@ class AIChessCommentGenerator:
                     }
                     piece_name = piece_names.get(captured_piece.piece_type, "piece")
                     color = "white" if captured_piece.color == chess.WHITE else "black"
-                    capture_info = f"\n**CAPTURE:** This move captures the {color} {piece_name} on {chess.square_name(move.to_square)}."
+                    captured_piece_name = f"{color} {piece_name}"
+
+                    # Check if this is a sacrifice (using SEE score or heuristic_details)
+                    heuristic_details = move_analysis.get('heuristic_details', {})
+                    see_score = heuristic_details.get('see', 0)
+                    # Only mark as sacrifice if SEE is significantly negative (losing at least 1 pawn worth)
+                    if see_score < -100:
+                        is_sacrifice = True
+                        capture_info = f"""
+**CAPTURE INFORMATION (ONLY FOR THIS MOVE):**
+- This move ({move_san}) captures the {color} {piece_name} on {chess.square_name(move.to_square)}
+- This is a SACRIFICE (losing material for tactical/positional compensation)
+- This is the ONLY capture in this move
+- Do NOT mention any other captures or sacrifices"""
+                    else:
+                        capture_info = f"""
+**CAPTURE INFORMATION (ONLY FOR THIS MOVE):**
+- This move ({move_san}) captures the {color} {piece_name} on {chess.square_name(move.to_square)}
+- This is the ONLY capture in this move
+- Do NOT mention any other captures or sacrifices"""
                 else:
                     # Explicitly state when it's NOT a capture to prevent AI hallucination
-                    capture_info = f"\n**NOT A CAPTURE:** This move does NOT capture any piece."
+                    capture_info = f"""
+**NO CAPTURE IN THIS MOVE:**
+- This move ({move_san}) does NOT capture any piece
+- Do NOT mention captures, sacrifices, or material exchanges
+- Focus on the move's positional or tactical purpose"""
             except Exception as e:
                 print(f"[AI] Warning: Could not extract capture info: {e}")
 
@@ -822,17 +965,21 @@ class AIChessCommentGenerator:
             eval_explanation = "This maintains the position effectively."
             eval_verb = "maintains"
 
+        # Filter tactical and positional insights to only include relevant ones
+        filtered_tactical = self._filter_insights_for_move(tactical_insights, move_san, is_capture, is_user_move)
+        filtered_positional = self._filter_insights_for_move(positional_insights, move_san, is_capture, is_user_move)
+
         # Build tactical context
         tactical_context = ""
-        if tactical_insights:
+        if filtered_tactical:
             tactical_context = f"\n**TACTICAL IDEAS IN THE POSITION:**\n"
-            for insight in tactical_insights[:3]:
+            for insight in filtered_tactical:
                 tactical_context += f"- {insight}\n"
 
         positional_context = ""
-        if positional_insights:
+        if filtered_positional:
             positional_context = f"\n**POSITIONAL THEMES:**\n"
-            for insight in positional_insights[:3]:
+            for insight in filtered_positional:
                 positional_context += f"- {insight}\n"
 
         # Build Stockfish analysis context
@@ -879,6 +1026,13 @@ class AIChessCommentGenerator:
         if opening_name and move_number <= 3:
             opening_context = f"\n**OPENING:** {opening_name}\n"
 
+        # Add move sequence context to help distinguish current vs previous moves
+        previous_move_context = ""
+        if move_number > 1:
+            previous_move = move_analysis.get('previous_move_san', '')
+            if previous_move:
+                previous_move_context = f"\n**MOVE SEQUENCE:** Previous move: {previous_move}. Current move: {move_san}."
+
         # Special handling for first move - keep it short and Tal'ish
         # Both White's first move and Black's first move have fullmove_number == 1
         # Additional check: ensure this is actually one of the first two moves (ply 1 or 2) if ply_index is available
@@ -902,29 +1056,101 @@ Write ONE short, encouraging sentence (maximum 15 words) that captures the excit
 Write the comment now:"""
                 return prompt
 
-        # Optimized prompt - shorter to reduce input tokens while maintaining quality
+        # Route to appropriate prompt builder based on move type
+        if not is_user_move:
+            return self._build_opponent_move_prompt(
+                move_san, move_number, player_elo, complexity, game_phase,
+                opening_context, previous_move_context, capture_info, is_capture,
+                move_quality, eval_verb, eval_description, eval_explanation,
+                stockfish_context, tactical_context, positional_context,
+                fen_after, best_move_san, tal_style
+            )
+        else:
+            return self._build_user_move_prompt(
+                move_san, move_number, player_elo, complexity, game_phase,
+                opening_context, previous_move_context, capture_info, is_capture,
+                move_quality, eval_verb, eval_description, eval_explanation,
+                stockfish_context, tactical_context, positional_context,
+                fen_after, best_move_san, tal_style
+            )
+
+    def _build_opponent_move_prompt(
+        self, move_san: str, move_number: int, player_elo: int, complexity: str,
+        game_phase: str, opening_context: str, previous_move_context: str,
+        capture_info: str, is_capture: bool, move_quality: MoveQuality,
+        eval_verb: str, eval_description: str, eval_explanation: str,
+        stockfish_context: str, tactical_context: str, positional_context: str,
+        fen_after: str, best_move_san: str, tal_style: str
+    ) -> str:
+        """Build prompt specifically for opponent moves - analyze what opponent did."""
+        task_description = ""
+        if move_quality == MoveQuality.BRILLIANT:
+            task_description = "Analyze what your opponent did with this brilliant move and why it's strong."
+        elif move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY]:
+            task_description = "Analyze what your opponent did with this move and why it's problematic."
+        else:
+            task_description = "Analyze what your opponent did with this move and its purpose."
+
         prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
-{opening_context}{capture_info}
-**MOVE QUALITY:** {move_quality.value} | {"player's move" if is_user_move else "opponent's move"}
+{opening_context}{previous_move_context}{capture_info}
+**MOVE QUALITY:** {move_quality.value} | opponent's move
 **EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
 {stockfish_context}
 {tactical_context}{positional_context}
 **POSITION:** {fen_after}
 
-**TASK:** Write 2-3 sentences explaining the *principle* and *idea* behind this move. Style: {tal_style}. {"Focus on brilliant reasoning and principles demonstrated." if move_quality == MoveQuality.BRILLIANT else "Explain what went wrong tactically/positionally and what should be played instead." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Explain the reasoning and how it improves the position."}
+**TASK:** Write 2-3 sentences analyzing what your opponent did with this move. {task_description} Style: {tal_style}. Focus on analyzing their move's purpose and consequences, NOT what you should do in response.
+
+**RULES:**
+- Start directly (no "Ah," "Oh,")
+- Use chess terms, not numbers or "centipawns/evaluation/engine"
+- Be specific: "weakens the position" not "is a good move"
+- Use "your opponent" when referring to the player who made this move
+- 2-3 sentences max, clear and instructive
+- CRITICAL: Analyze what your opponent did, NOT what you should do next
+- CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
+- CRITICAL: Do NOT infer sacrifices from position context or previous moves
+- CRITICAL: The CAPTURE section above is the ONLY capture information - do not mention other captures
+- CRITICAL: If the move is NOT A CAPTURE, do NOT mention capturing anything
+- CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
+{"Mention better move " + best_move_san + " if relevant (what opponent should have played)." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
+
+Write comment:"""
+        return prompt
+
+    def _build_user_move_prompt(
+        self, move_san: str, move_number: int, player_elo: int, complexity: str,
+        game_phase: str, opening_context: str, previous_move_context: str,
+        capture_info: str, is_capture: bool, move_quality: MoveQuality,
+        eval_verb: str, eval_description: str, eval_explanation: str,
+        stockfish_context: str, tactical_context: str, positional_context: str,
+        fen_after: str, best_move_san: str, tal_style: str
+    ) -> str:
+        """Build prompt for user moves - explain the principle and idea behind the move."""
+        prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
+{opening_context}{previous_move_context}{capture_info}
+**MOVE QUALITY:** {move_quality.value} | player's move
+**EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
+{stockfish_context}
+{tactical_context}{positional_context}
+**POSITION:** {fen_after}
+
+**TASK:** Write 2-3 sentences explaining the *principle* and *idea* behind this move. Style: {tal_style}. {"Focus on brilliant reasoning and principles demonstrated." if move_quality == MoveQuality.BRILLIANT else "Explain what went wrong tactically/positionally and what should be played instead." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Explain the reasoning and how it improves the position."} Focus on what you did, not what your opponent might do next.
 
 **RULES:**
 - Start directly (no "Ah," "Oh,")
 - Use chess terms, not numbers or "centipawns/evaluation/engine"
 - Be specific: "loses the attack" not "is a good move"
-- {"Use 'your' not 'the player's'" if is_user_move else "Use 'your opponent'"}
+- Use 'your' not 'the player's'
 - 2-3 sentences max, clear and instructive
+- CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
+- CRITICAL: Do NOT infer sacrifices from position context or previous moves
+- CRITICAL: The CAPTURE section above is the ONLY capture information - do not mention other captures
 - CRITICAL: If the move is NOT A CAPTURE, do NOT mention capturing anything
 - CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
 {"Mention better move " + best_move_san + " if relevant." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
 
 Write comment:"""
-
         return prompt
 
     def _get_move_quality(self, move_analysis: Dict[str, Any]) -> MoveQuality:

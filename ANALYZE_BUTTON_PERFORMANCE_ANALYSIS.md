@@ -151,8 +151,14 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
 #### 1. Parallel AI API Calls ⭐ **BIGGEST IMPACT - KEEPS ALL INSIGHTS**
 **Current:** AI commentary generated **sequentially** (one API call at a time) with 2s delay between calls
 **Problem:** 15-25 API calls × (1-3s + 2s delay) = **45-125 seconds**
-**Recommended:** Make AI API calls **in parallel** (concurrent)
+**Recommended:** Make AI API calls **in parallel** (concurrent) with **rate limit respect**
 **Impact:** **~30-60 seconds saved** while keeping all AI insights
+
+**⚠️ IMPORTANT: Anthropic Rate Limits**
+- **Limit:** 50 requests per minute (documented in `env.example` line 135)
+- **Current protection:** 2.0s delay between calls (~30 calls/minute max)
+- **Parallel approach:** Use **token bucket rate limiter** to respect 50/minute limit
+- **Solution:** Parallel calls with semaphore + rate limiter (not just delays)
 
 **Current Flow (Sequential - SLOW):**
 ```
@@ -196,31 +202,77 @@ async def analyze_game(self, pgn: str, ...):
 
 **File:** `python/core/ai_comment_generator.py`
 ```python
-# Make API calls async and remove sequential rate limiting
-async def generate_comment_async(self, move_analysis, board, move, ...):
-    """Async version that can run in parallel."""
-    # Remove the blocking rate limit delay
-    # Use async rate limiting instead (token bucket or semaphore)
+# Make API calls async with proper rate limiting
+import asyncio
+from .resilient_api_client import RateLimiter  # Reuse existing rate limiter
 
-    # Use asyncio.sleep instead of time.sleep for non-blocking delays
-    # Or better: use a semaphore to limit concurrent calls (e.g., 10 at a time)
+class AIChessCommentGenerator:
+    def __init__(self):
+        # ... existing code ...
+        # Use token bucket rate limiter (respects 50 requests/minute)
+        self._rate_limiter = RateLimiter(
+            capacity=50,      # Anthropic limit: 50 requests/minute
+            refill_rate=50.0 / 60.0  # Refill at 50/60 requests per second
+        )
+        # Semaphore to limit concurrent calls (prevent overwhelming)
+        self._api_semaphore = asyncio.Semaphore(15)  # Max 15 concurrent
 
-    async with self._api_semaphore:  # Limit to 10 concurrent calls
-        return await self._call_api_async(...)
+    async def generate_comment_async(self, move_analysis, board, move, ...):
+        """Async version that respects rate limits while running in parallel."""
+        # Check cache first (same as before)
+        cache_key = self._generate_cache_key(...)
+        cached = self._comment_cache.get(cache_key)
+        if cached:
+            return cached
+
+        # Wait for rate limiter token (non-blocking, respects 50/minute limit)
+        await self._rate_limiter.wait_for_token(tokens=1, timeout=30.0)
+
+        try:
+            # Use semaphore to limit concurrent calls
+            async with self._api_semaphore:
+                prompt = self._build_prompt(...)
+                comment = await self._call_api_async(prompt, system_prompt)
+
+                if comment:
+                    comment = self._clean_comment(comment, is_user_move)
+                    self._comment_cache.set(cache_key, comment)
+                    return comment
+        finally:
+            # Rate limiter automatically refills tokens
+            pass
+
+        return None
 ```
 
-#### 2. Reduce Rate Limit Delay
-**Current:** 2.0 seconds delay between API calls
-**Recommended:** 0.1-0.5 seconds (or remove if using parallel calls)
-**Impact:** **~20-30 seconds saved** (if keeping sequential)
+#### 2. Use Token Bucket Rate Limiter (Replaces Sequential Delays)
+**Current:** 2.0 seconds delay between API calls (sequential, slow)
+**Recommended:** Token bucket rate limiter (parallel, respects 50/minute limit)
+**Impact:** **~20-30 seconds saved** while respecting API limits
 
 **Implementation:**
 ```python
-# In ai_comment_generator.py AIConfig
-rate_limit_delay: float = 0.1  # Reduced from 2.0 (only needed for sequential calls)
+# Use existing RateLimiter from resilient_api_client.py
+from .resilient_api_client import RateLimiter
+
+# In AIChessCommentGenerator.__init__()
+self._rate_limiter = RateLimiter(
+    capacity=50,              # Anthropic limit: 50 requests/minute
+    refill_rate=50.0 / 60.0   # Refill at 50/60 requests per second
+)
+
+# In generate_comment_async()
+await self._rate_limiter.wait_for_token(tokens=1, timeout=30.0)  # Non-blocking, respects limit
 ```
 
-**Note:** With parallel calls, rate limiting is handled by semaphore/concurrency limit, not delays
+**Benefits:**
+- ✅ Respects 50 requests/minute limit
+- ✅ Allows parallel calls (up to 50/minute total)
+- ✅ Non-blocking (uses async/await)
+- ✅ Automatic token refill
+- ✅ No sequential delays needed
+
+**Note:** The rate limiter ensures we never exceed 50 requests/minute across all parallel calls
 
 #### 3. Batch AI API Calls (Advanced)
 **Current:** One API call per move
@@ -454,21 +506,28 @@ return UnifiedAnalysisResponse(
 
 ## Recommended Implementation Plan
 
-### Phase 1: Parallel AI Commentary (3-4 hours) ⭐ **PRIORITY - KEEPS ALL INSIGHTS**
+### Phase 1: Parallel AI Commentary with Rate Limiting (3-4 hours) ⭐ **PRIORITY - KEEPS ALL INSIGHTS**
 1. ✅ **Make AI API calls parallel** (not sequential)
    - Convert `generate_comment()` to async
    - Use `asyncio.gather()` to run all AI calls concurrently
-   - Remove sequential rate limiting delays
-   - Add semaphore to limit concurrent calls (e.g., 10-15 at a time)
-2. ✅ **Reduce rate limit delay** (0.1s instead of 2.0s)
-   - Only needed if keeping some sequential behavior
-   - With parallel calls, use semaphore instead
+   - **Use token bucket rate limiter** (respects 50 requests/minute limit)
+   - Add semaphore to limit concurrent calls (15 at a time)
+2. ✅ **Replace sequential delays with rate limiter**
+   - Use `RateLimiter` from `resilient_api_client.py`
+   - Configure: 50 capacity, 50/60 refill rate
+   - Non-blocking async rate limiting
 3. ✅ **Progressive response** (return immediately, enhance with AI in background)
    - Save analysis with template comments immediately
    - Generate AI commentary in parallel background task
    - Update database as AI comments complete
 
-**Expected Result:** **60s → ~15-20s** (3-4x improvement, **keeps all AI insights**)
+**Expected Result:** **60s → ~15-20s** (3-4x improvement, **keeps all AI insights**, **respects API limits**)
+
+**Rate Limit Protection:**
+- ✅ Never exceeds 50 requests/minute (Anthropic limit)
+- ✅ Parallel calls are rate-limited automatically
+- ✅ Multiple games analyzed simultaneously share the 50/minute limit
+- ✅ Graceful handling of 429 errors (fallback to templates)
 
 ### Phase 2: Additional AI Optimizations (2-3 hours) - Optional
 4. ✅ Batch AI API calls (3-5 moves per call)
@@ -507,17 +566,23 @@ return UnifiedAnalysisResponse(
 ## Code Changes Required
 
 ### 1. Make AI Commentary Parallel (Priority - Keeps All Insights)
-**File:** `python/core/ai_comment_generator.py` - Make async and parallel
+**File:** `python/core/ai_comment_generator.py` - Make async with rate limiting
 
 ```python
-# Add async semaphore for concurrent API calls
+# Add async semaphore + rate limiter for concurrent API calls
 import asyncio
+from .resilient_api_client import RateLimiter
 
 class AIChessCommentGenerator:
     def __init__(self):
         # ... existing code ...
-        # Add semaphore to limit concurrent API calls (10-15 at a time)
-        self._api_semaphore = asyncio.Semaphore(12)  # Allow 12 concurrent calls
+        # Token bucket rate limiter: 50 requests/minute (Anthropic limit)
+        self._rate_limiter = RateLimiter(
+            capacity=50,
+            refill_rate=50.0 / 60.0  # 50 requests per 60 seconds
+        )
+        # Semaphore to limit concurrent calls (prevent overwhelming)
+        self._api_semaphore = asyncio.Semaphore(15)  # Max 15 concurrent
 
     async def generate_comment_async(self, move_analysis, board, move,
                                      is_user_move=True, player_elo=1200):
@@ -528,24 +593,42 @@ class AIChessCommentGenerator:
         if cached:
             return cached
 
-        # Use semaphore to limit concurrent calls (not sequential delays!)
-        async with self._api_semaphore:
-            # No rate limit delay needed - semaphore handles concurrency
-            prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
-            comment = await self._call_api_async(prompt, system_prompt)
+        # Wait for rate limiter token (respects 50/minute limit, non-blocking)
+        token_acquired = await self._rate_limiter.wait_for_token(tokens=1, timeout=30.0)
+        if not token_acquired:
+            print("[AI] Rate limiter timeout, skipping AI comment")
+            return None
 
-            if comment:
-                comment = self._clean_comment(comment, is_user_move)
-                self._comment_cache.set(cache_key, comment)
-                return comment
+        try:
+            # Use semaphore to limit concurrent calls
+            async with self._api_semaphore:
+                prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
+                comment = await self._call_api_async(prompt, system_prompt)
+
+                if comment:
+                    comment = self._clean_comment(comment, is_user_move)
+                    self._comment_cache.set(cache_key, comment)
+                    return comment
+        finally:
+            # Rate limiter automatically refills tokens
+            pass
+
         return None
 
     async def _call_api_async(self, prompt, system):
         """Async API call without blocking."""
-        # Use async HTTP client (httpx or aiohttp)
+        # Use async HTTP client (httpx.AsyncClient)
         # Remove blocking time.sleep() delays
-        response = await self._async_client.messages.create(...)
-        return response.content[0].text
+        async_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+        try:
+            response = await async_client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": self.config.anthropic_api_key, ...},
+                json={"model": self.config.ai_model, "messages": [...]}
+            )
+            return response.json()["content"][0]["text"]
+        finally:
+            await async_client.aclose()
 ```
 
 **File:** `python/core/analysis_engine.py` - Collect and parallelize AI calls
@@ -615,12 +698,14 @@ async def generate_coaching_comment_async(self, move_analysis, board, move, ...)
     return CoachingComment(main_comment=main_comment, ...)
 ```
 
-**File:** `python/core/ai_comment_generator.py` - Reduce rate limit delay
+**File:** `python/core/ai_comment_generator.py` - Update rate limiting
 
 ```python
-# In AIConfig class
-rate_limit_delay: float = 0.1  # Reduced from 2.0 (only for sequential calls)
-# With parallel calls, semaphore handles concurrency, not delays
+# In AIConfig class - keep for backward compatibility, but not used with async
+rate_limit_delay: float = 2.0  # Kept for sequential fallback, but async uses RateLimiter
+
+# The async version uses RateLimiter instead of delays
+# This respects the 50 requests/minute limit while allowing parallel calls
 ```
 
 ### 3. Add Move Skipping Logic
@@ -683,16 +768,24 @@ Add performance metrics:
 
 **Key Optimizations:**
 1. ✅ **Parallel AI API calls** - Run 15-25 calls concurrently (2-3s total) instead of sequentially (60-100s)
-2. ✅ **Remove sequential delays** - Use semaphore for concurrency control instead of 2s delays
+2. ✅ **Token bucket rate limiter** - Respects Anthropic's 50 requests/minute limit while allowing parallel calls
 3. ✅ **Progressive response** - Return analysis immediately, enhance with AI in background
 4. ✅ **Keep all AI insights** - No reduction in commentary coverage
+5. ✅ **Rate limit protection** - Never exceeds API limits, graceful 429 error handling
 
 **Stockfish analysis** (12-15s) is already well-optimized and should not be changed to preserve accuracy.
 
 **Recommended Approach:**
 1. ✅ Convert AI commentary generation to async/parallel
 2. ✅ Use `asyncio.gather()` to run all AI calls concurrently
-3. ✅ Use semaphore (10-15 concurrent) instead of sequential delays
-4. ✅ Return analysis immediately, update with AI commentary progressively
+3. ✅ Use **token bucket rate limiter** (50 requests/minute) to respect Anthropic limits
+4. ✅ Use semaphore (15 concurrent) to prevent overwhelming
+5. ✅ Return analysis immediately, update with AI commentary progressively
+6. ✅ Handle 429 errors gracefully (fallback to templates)
 
-This keeps all AI insights while dramatically improving speed - **best of both worlds!**
+**Rate Limit Strategy:**
+- **Single game:** 15-25 calls in parallel, rate limiter ensures <50/minute
+- **Multiple games:** Shared rate limiter ensures total <50/minute across all games
+- **429 errors:** Graceful fallback to template comments (no blocking)
+
+This keeps all AI insights while dramatically improving speed **and respecting API limits** - **best of all worlds!**

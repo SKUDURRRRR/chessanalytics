@@ -339,6 +339,21 @@
   /* Hide ALL react-chessboard native arrows completely */
   /* We use ModernChessArrows for all arrow rendering to ensure proper centering */
 
+  /* Fix for piece dragging - ensure coordinate calculations are correct */
+  /* The dragged piece preview should follow the cursor accurately */
+  .react-chessboard {
+    position: relative !important;
+    /* Ensure no transforms that could affect coordinate calculations */
+    transform: none !important;
+  }
+
+  /* Fix dragged piece positioning - react-chessboard uses absolute positioning */
+  /* Ensure the dragged piece element follows the cursor correctly */
+  .react-chessboard > div > div[style*="position: absolute"] {
+    /* The library should handle positioning, but ensure no conflicting transforms */
+    transform: none !important;
+  }
+
   /* Hide ALL SVG overlays from react-chessboard except our custom arrows */
   .react-chessboard svg:not(.modern-chess-arrows) {
     display: none !important;

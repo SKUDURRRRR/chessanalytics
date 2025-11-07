@@ -658,6 +658,13 @@ Write the phase transition comment now:"""
                 elif not move:
                     print("[AI] Warning: move not found in move_analysis, skipping AI generation")
                 elif board and move:
+                    # Check if AI comment was pre-generated in parallel
+                    pre_generated = move_analysis.get('_pre_generated_ai_comment')
+                    if pre_generated:
+                        print(f"[AI] ✅ Using pre-generated AI comment for {move_analysis.get('move_san', 'unknown')}")
+                        return self._limit_comment_length(pre_generated)
+
+                    # Otherwise generate synchronously (fallback for non-parallel path)
                     print(f"[AI] ✅ Attempting to generate AI comment for move {move_analysis.get('move_san', 'unknown')}, quality: {move_quality}, is_user_move: {is_user_move}")
                     ai_comment = self.ai_generator.generate_comment(
                         move_analysis=move_analysis,

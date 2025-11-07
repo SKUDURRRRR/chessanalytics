@@ -407,7 +407,8 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         filters
       )
 
-      if (data) {
+      // Check if we got data or if it's empty due to connection error
+      if (data && data.length > 0) {
         const mappedData = data.map(mapGameRow)
         const isReset = reset || page === 1
         if (isReset) {
@@ -485,11 +486,39 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           setAnalyzedGameIds(new Set())
           setGameAnalyses(new Map())
         }
+      } else if (data && data.length === 0 && reset) {
+        // Empty result - could be no games or connection error
+        // Check if backend is available by testing the health endpoint
+        try {
+          const healthCheck = await fetch(`${config.getApi().baseUrl}/health`, {
+            method: 'GET',
+            signal: AbortSignal.timeout(2000) // 2 second timeout
+          })
+          if (!healthCheck.ok) {
+            // Backend is not responding
+            setError('Backend server is not running. Please start the backend server to view match history.')
+          } else {
+            // Backend is up but no games found
+            setGames([])
+            setHasMore(false)
+          }
+        } catch {
+          // Connection failed - backend is down
+          setError('Backend server is not running. Please start the backend server to view match history.')
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err)
       console.error('Error loading games:', errorMessage)
-      setError('Failed to load match history')
+
+      // Provide more specific error messages
+      if (errorMessage.includes('Cannot connect to backend server') ||
+          errorMessage.includes('ERR_CONNECTION_REFUSED') ||
+          errorMessage.includes('Failed to fetch')) {
+        setError('Backend server is not running. Please start the backend server to view match history.')
+      } else {
+        setError('Failed to load match history. Please try again later.')
+      }
     } finally {
       setLoading(false)
     }
