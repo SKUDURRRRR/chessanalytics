@@ -5,9 +5,8 @@ import { AutoImportService, ImportProgress } from '../../services/autoImportServ
 import { getRecentPlayers, addRecentPlayer, clearRecentPlayers, RecentPlayer } from '../../utils/recentPlayers'
 import { retryWithBackoff } from '../../lib/errorHandling'
 import { useAuth } from '../../contexts/AuthContext'
-import UsageLimitModal from '../UsageLimitModal'
 import { AnonymousUsageTracker } from '../../services/anonymousUsageTracker'
-import AnonymousLimitModal from '../AnonymousLimitModal'
+import LimitReachedModal from '../LimitReachedModal'
 
 // Add custom pulse animation style
 const customPulseStyle = `
@@ -48,10 +47,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   // Auth and usage tracking
   const { user, usageStats, refreshUsageStats } = useAuth()
   const [showLimitModal, setShowLimitModal] = useState(false)
-
-  // Anonymous user tracking
-  const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
-  const [anonymousLimitType, setAnonymousLimitType] = useState<'import' | 'analyze'>('import')
+  const [limitType, setLimitType] = useState<'import' | 'analyze'>('import')
 
   // Load recent players on mount
   useEffect(() => {
@@ -194,25 +190,6 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   const performImport = async () => {
     if (!searchQuery.trim()) return
 
-    // Check anonymous user limits first
-    if (!user) {
-      if (!AnonymousUsageTracker.canImport()) {
-        console.log('[PlayerSearch] Anonymous user reached import limit')
-        setAnonymousLimitType('import')
-        setAnonymousLimitModalOpen(true)
-        return
-      }
-    }
-
-    // Check usage limits for authenticated users
-    if (user && usageStats) {
-      // Check if user has remaining imports
-      if (usageStats.imports && !usageStats.imports.unlimited && usageStats.imports.remaining === 0) {
-        setShowLimitModal(true)
-        return
-      }
-    }
-
     setIsAutoImporting(true)
     setShowImportPrompt(false)
     setImportProgress({
@@ -224,6 +201,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
     try {
       // First validate that the user exists on the platform
+      // This ensures we show proper error messages even if limits are reached
       let validation
       try {
         validation = await AutoImportService.validateUserOnPlatform(
@@ -250,6 +228,47 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           importedGames: 0,
         })
         return
+      }
+
+      console.log('[PlayerSearch] User validated successfully, checking limits...', { user: !!user, usageStats })
+
+      // User exists on platform - now check limits before importing
+      // Check anonymous user limits first
+      if (!user) {
+        const canImport = AnonymousUsageTracker.canImport()
+        console.log('[PlayerSearch] Anonymous user limit check:', { canImport })
+        if (!canImport) {
+          console.log('[PlayerSearch] Anonymous user reached import limit - showing modal')
+          // Clear import progress and show modal popup (same as guest users)
+          setImportProgress(null)
+          setIsAutoImporting(false)
+          setLimitType('import')
+          setShowLimitModal(true)
+          console.log('[PlayerSearch] Modal state set:', { showLimitModal: true })
+          return
+        }
+      }
+
+      // Check usage limits for authenticated users
+      if (user && usageStats) {
+        const hasRemaining = usageStats.imports && !usageStats.imports.unlimited && usageStats.imports.remaining === 0
+        console.log('[PlayerSearch] Authenticated user limit check:', {
+          hasImports: !!usageStats.imports,
+          unlimited: usageStats.imports?.unlimited,
+          remaining: usageStats.imports?.remaining,
+          hasRemaining
+        })
+        // Check if user has remaining imports
+        if (hasRemaining) {
+          console.log('[PlayerSearch] Authenticated user reached import limit - showing modal')
+          // Clear import progress and show modal popup (same as guest users)
+          setImportProgress(null)
+          setIsAutoImporting(false)
+          setLimitType('import')
+          setShowLimitModal(true)
+          console.log('[PlayerSearch] Modal state set:', { showLimitModal: true })
+          return
+        }
       }
 
       // Check if user already exists in our database
@@ -668,24 +687,10 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       </div>
 
       {/* Usage Limit Modal */}
-      <UsageLimitModal
+      <LimitReachedModal
         isOpen={showLimitModal}
         onClose={() => setShowLimitModal(false)}
-        limitType="import"
-        isAuthenticated={!!user}
-        currentUsage={usageStats?.imports ? {
-          used: usageStats.imports.used,
-          limit: usageStats.imports.limit,
-          remaining: usageStats.imports.remaining,
-          unlimited: usageStats.imports.unlimited
-        } : undefined}
-      />
-
-      {/* Anonymous User Limit Modal */}
-      <AnonymousLimitModal
-        isOpen={anonymousLimitModalOpen}
-        onClose={() => setAnonymousLimitModalOpen(false)}
-        limitType={anonymousLimitType}
+        limitType={limitType}
       />
     </>
   )

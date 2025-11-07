@@ -11,9 +11,8 @@ import { ProfileService } from '../services/profileService'
 import { supabase } from '../lib/supabase'
 import { clearUserCache } from '../utils/apiCache'
 import { useAuth } from '../contexts/AuthContext'
-import UsageLimitModal from '../components/UsageLimitModal'
 import { AnonymousUsageTracker } from '../services/anonymousUsageTracker'
-import AnonymousLimitModal from '../components/AnonymousLimitModal'
+import LimitReachedModal from '../components/LimitReachedModal'
 // DatabaseDiagnosticsComponent is development-only, imported conditionally below
 // Debug components removed from production
 // import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
@@ -127,11 +126,7 @@ export default function SimpleAnalyticsPage() {
   // Auth and usage tracking
   const { user, usageStats, refreshUsageStats } = useAuth()
   const [showLimitModal, setShowLimitModal] = useState(false)
-  const [limitType, setLimitType] = useState<'import' | 'analyze'>('analyze')
-
-  // Anonymous user tracking
-  const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
-  const [anonymousLimitType, setAnonymousLimitType] = useState<'import' | 'analyze'>('import')
+  const [limitType, setLimitType] = useState<'import' | 'analyze'>('import')
 
   // Slow loading popup state
   const [showSlowLoadingPopup, setShowSlowLoadingPopup] = useState(false)
@@ -331,8 +326,8 @@ export default function SimpleAnalyticsPage() {
       // Check daily import limit for anonymous users (50 per day)
       if (!AnonymousUsageTracker.canImport()) {
         console.log('[SimpleAnalytics] Anonymous user reached daily import limit (50 per day)')
-        setAnonymousLimitType('import')
-        setAnonymousLimitModalOpen(true)
+        setLimitType('import')
+        setShowLimitModal(true)
         return
       }
     }
@@ -382,13 +377,8 @@ export default function SimpleAnalyticsPage() {
 
       // Check if it's a 429 error (rate limit / usage limit)
       if (error instanceof Error && message.includes('429') || message.includes('limit reached')) {
-        if (!user) {
-          setAnonymousLimitType('import')
-          setAnonymousLimitModalOpen(true)
-        } else {
           setLimitType('import')
           setShowLimitModal(true)
-        }
       } else {
         setImportError(message)
       }
@@ -405,8 +395,8 @@ export default function SimpleAnalyticsPage() {
       // Check daily import limit for anonymous users (50 per day)
       if (!AnonymousUsageTracker.canImport()) {
         console.log('[SimpleAnalytics] Anonymous user reached daily import limit (50 per day)')
-        setAnonymousLimitType('import')
-        setAnonymousLimitModalOpen(true)
+        setLimitType('import')
+        setShowLimitModal(true)
         return
       }
     }
@@ -758,8 +748,8 @@ export default function SimpleAnalyticsPage() {
     if (!user) {
       if (!AnonymousUsageTracker.canAnalyze()) {
         console.log('[SimpleAnalytics] Anonymous user reached analysis limit')
-        setAnonymousLimitType('analyze')
-        setAnonymousLimitModalOpen(true)
+        setLimitType('analyze')
+        setShowLimitModal(true)
         return
       }
     }
@@ -1204,20 +1194,11 @@ export default function SimpleAnalyticsPage() {
         </div>
       )}
 
-      {/* Usage Limit Modal */}
-      <UsageLimitModal
+      {/* Limit Reached Modal */}
+      <LimitReachedModal
         isOpen={showLimitModal}
         onClose={() => setShowLimitModal(false)}
         limitType={limitType}
-        isAuthenticated={!!user}
-        currentUsage={limitType === 'import' ? usageStats?.imports : usageStats?.analyses}
-      />
-
-      {/* Anonymous User Limit Modal */}
-      <AnonymousLimitModal
-        isOpen={anonymousLimitModalOpen}
-        onClose={() => setAnonymousLimitModalOpen(false)}
-        limitType={anonymousLimitType}
       />
 
     </div>

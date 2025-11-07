@@ -10,7 +10,7 @@ import { config } from '../../lib/config'
 import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { useAuth } from '../../contexts/AuthContext'
 import { AnonymousUsageTracker } from '../../services/anonymousUsageTracker'
-import AnonymousLimitModal from '../AnonymousLimitModal'
+import LimitReachedModal from '../LimitReachedModal'
 import { supabase } from '../../lib/supabase'
 
 // Canonicalize user ID to match backend logic
@@ -74,7 +74,8 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
   // Auth and anonymous user tracking
   const { user, refreshUsageStats } = useAuth()
-  const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
+  const [showLimitModal, setShowLimitModal] = useState(false)
+  const [limitType, setLimitType] = useState<'import' | 'analyze'>('analyze')
 
   const gamesPerPage = 20
   const escapeFilterValue = (value: string) => {
@@ -232,7 +233,8 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
     if (!user) {
       if (!AnonymousUsageTracker.canAnalyze()) {
         console.log('[MatchHistory] Anonymous user reached analysis limit')
-        setAnonymousLimitModalOpen(true)
+        setLimitType('analyze')
+        setShowLimitModal(true)
         return
       }
     }
@@ -274,6 +276,14 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       if (!response.ok) {
         const text = await response.text()
         let errorMessage = `Analysis request failed: ${response.status}`
+
+        // Check if it's a 429 error (rate limit / usage limit)
+        if (response.status === 429) {
+          setLimitType('analyze')
+          setShowLimitModal(true)
+          clearGamePending(gameIdentifier)
+          return
+        }
 
         // Try to extract error message from response
         try {
@@ -703,7 +713,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                           event.stopPropagation()
                           requestAnalysis(event, game)
                         }}
-                        disabled={pending || analyzed || !user}
+                        disabled={pending || analyzed}
                         className={`btn-touch-sm rounded-full text-xs font-medium transition ${
                           analyzed
                             ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
@@ -848,7 +858,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                         <button
                           type="button"
                           onClick={event => requestAnalysis(event, game)}
-                          disabled={pending || analyzed || !user}
+                          disabled={pending || analyzed}
                           className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition ${
                             analyzed
                               ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
@@ -885,11 +895,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         )}
       </div>
 
-      {/* Anonymous User Limit Modal */}
-      <AnonymousLimitModal
-        isOpen={anonymousLimitModalOpen}
-        onClose={() => setAnonymousLimitModalOpen(false)}
-        limitType="analyze"
+      {/* Limit Reached Modal */}
+      <LimitReachedModal
+        isOpen={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        limitType={limitType}
       />
     </div>
   )

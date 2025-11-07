@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 import hashlib
 import json
+from urllib.parse import quote
 
 
 class CircuitState(Enum):
@@ -407,7 +408,10 @@ class ResilientAPIClient:
             async def request_func():
                 client = await self.get_httpx_client()
                 canonical_username = username.strip().lower()
-                url = f"https://api.chess.com/pub/player/{canonical_username}"
+                # URL encode the username, but keep hyphens and underscores safe (they're valid in URLs)
+                # This handles special characters while preserving common username characters
+                encoded_username = quote(canonical_username, safe='-_')
+                url = f"https://api.chess.com/pub/player/{encoded_username}"
                 headers = {
                     'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
                 }
