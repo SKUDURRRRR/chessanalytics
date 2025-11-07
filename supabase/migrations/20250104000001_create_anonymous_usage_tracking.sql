@@ -1,7 +1,7 @@
 -- Migration: Create Anonymous Usage Tracking Table
 -- Date: 2025-01-04
 -- Description: Tracks anonymous user usage by IP address with 24-hour rolling window
--- Limits: 100 imports per 24 hours, 5 analyses per 24 hours
+-- Limits: See latest migration for current limits (initially 100/5, updated to 50/2)
 
 -- ============================================================================
 -- ANONYMOUS_USAGE_TRACKING TABLE
@@ -197,5 +197,5 @@ COMMENT ON FUNCTION increment_anonymous_usage IS 'Increments usage counter for a
 -- 2. Created check_anonymous_usage_limits() function to check limits
 -- 3. Created increment_anonymous_usage() function to increment counters
 -- 4. All functions use 24-hour rolling window
--- 5. Limits: 100 imports per 24 hours, 5 analyses per 24 hours
+-- 5. Limits: See 20251107000001_update_anonymous_limits.sql for current limits
 -- ============================================================================
