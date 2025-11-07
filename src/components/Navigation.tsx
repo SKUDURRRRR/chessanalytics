@@ -2,11 +2,18 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useState, useRef, useEffect } from 'react'
 
+interface LastVisitedPlayer {
+  userId: string
+  platform: 'lichess' | 'chess.com'
+  timestamp: number
+}
+
 export function Navigation() {
   const { user, signOut, usageStats, loading } = useAuth()
   const location = useLocation()
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const [lastVisitedPlayer, setLastVisitedPlayer] = useState<LastVisitedPlayer | null>(null)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -19,6 +26,22 @@ export function Navigation() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Load last visited player from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('lastVisitedPlayer')
+      if (stored) {
+        const parsed = JSON.parse(stored) as LastVisitedPlayer
+        // Validate the stored data
+        if (parsed.userId && parsed.platform && ['lichess', 'chess.com'].includes(parsed.platform)) {
+          setLastVisitedPlayer(parsed)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load last visited player:', error)
+    }
+  }, [location.pathname]) // Re-check when route changes
 
   const handleSignOut = async () => {
     try {
@@ -46,6 +69,10 @@ export function Navigation() {
 
   // Helper function to determine if a nav button is active
   const isActive = (path: string) => {
+    if (path === '/simple-analytics') {
+      // Active for both /simple-analytics and /profile/:userId/:platform routes
+      return location.pathname === '/simple-analytics' || location.pathname.startsWith('/profile/')
+    }
     return location.pathname === path
   }
 
@@ -157,6 +184,15 @@ export function Navigation() {
                         >
                           Home
                         </Link>
+                        {lastVisitedPlayer && (
+                          <Link
+                            to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                            className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                            onClick={() => setIsDropdownOpen(false)}
+                          >
+                            Last Player
+                          </Link>
+                        )}
                         <Link
                           to="/pricing"
                           className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
@@ -193,6 +229,14 @@ export function Navigation() {
                   >
                     Home
                   </Link>
+                  {lastVisitedPlayer && (
+                    <Link
+                      to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                      className={getButtonClass('/simple-analytics')}
+                    >
+                      Last Player
+                    </Link>
+                  )}
                   <Link
                     to="/pricing"
                     className={getButtonClass('/pricing')}
@@ -249,6 +293,15 @@ export function Navigation() {
                         >
                           Home
                         </Link>
+                        {lastVisitedPlayer && (
+                          <Link
+                            to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                            className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                            onClick={() => setIsDropdownOpen(false)}
+                          >
+                            Last Player
+                          </Link>
+                        )}
                         <Link
                           to="/pricing"
                           className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
@@ -283,6 +336,14 @@ export function Navigation() {
                   >
                     Home
                   </Link>
+                  {lastVisitedPlayer && (
+                    <Link
+                      to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                      className={getButtonClass('/simple-analytics')}
+                    >
+                      Last Player
+                    </Link>
+                  )}
                   <Link
                     to="/pricing"
                     className={getButtonClass('/pricing')}

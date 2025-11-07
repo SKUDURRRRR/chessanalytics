@@ -176,6 +176,21 @@ export default function SimpleAnalyticsPage() {
     }
   }, [searchParams, params])
 
+  // Track last visited player for quick navigation
+  useEffect(() => {
+    if (userId && platform) {
+      try {
+        localStorage.setItem('lastVisitedPlayer', JSON.stringify({
+          userId: userId,
+          platform: platform,
+          timestamp: Date.now()
+        }))
+      } catch (error) {
+        console.error('Failed to save last visited player:', error)
+      }
+    }
+  }, [userId, platform])
+
   useEffect(() => {
     checkApiHealth()
   }, [])
