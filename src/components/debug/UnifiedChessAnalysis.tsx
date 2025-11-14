@@ -1,5 +1,4 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
@@ -595,6 +594,8 @@ export function UnifiedChessAnalysis({
   const { soundEnabled, volume } = useChessSoundSettings()
   const { playSound } = useChessSound({ enabled: soundEnabled, volume })
   const prevIndexRef = useRef(currentIndex)
+  const [isMoveListOpen, setIsMoveListOpen] = useState(false)
+  const [showMoveAnalysis, setShowMoveAnalysis] = useState(true)
   // State to track user-drawn arrows (right-click drag) - these will be rendered via ModernChessArrows
   const [userDrawnArrows, setUserDrawnArrows] = useState<ModernArrow[]>([])
   const desktopBoardContainerRef = useRef<HTMLDivElement>(null)
@@ -672,7 +673,6 @@ export function UnifiedChessAnalysis({
       explorationBestMove: explorationAnalysis?.bestMove,
       currentMoveArrows: currentMoveArrows,
       currentMoveArrowsLength: currentMoveArrows?.length || 0,
-      userDrawnArrows: userDrawnArrows.length
     })
 
     const arrows: ModernArrow[] = []
@@ -704,24 +704,14 @@ export function UnifiedChessAnalysis({
   const handleArrowsChange = React.useCallback((arrows: Array<[string, string, string?]>) => {
     console.log('[UnifiedChessAnalysis] Raw arrows from react-chessboard:', arrows)
 
-    // Convert react-chessboard arrow format [from, to, color?] to ModernArrow format
-    // Filter out invalid arrows
-    const modernArrows: ModernArrow[] = arrows
-      .filter((arrow): arrow is [string, string, string?] => {
-        const [from, to] = arrow
-        const isValid = typeof from === 'string' && typeof to === 'string' && from.length === 2 && to.length === 2
-        if (!isValid) {
-          console.warn('[UnifiedChessAnalysis] Invalid arrow format:', arrow)
-        }
-        return isValid
-      })
-      .map(([from, to, color]) => ({
-        from: from as any,
-        to: to as any,
-        color: color || '#f97316', // Default orange color for user-drawn arrows
-        classification: 'uncategorized',
-        isBestMove: false
-      }))
+    const modernArrows: ModernArrow[] = arrows.map(([from, to, color]) => ({
+      from: from as any,
+      to: to as any,
+      color: color || 'rgb(255, 170, 0)', // Default to orange
+      classification: 'uncategorized',
+      isBestMove: false,
+      isUserMove: true
+    }))
 
     setUserDrawnArrows(modernArrows)
     console.log('[UnifiedChessAnalysis] User drew arrows (converted):', modernArrows)
@@ -732,182 +722,16 @@ export function UnifiedChessAnalysis({
     setUserDrawnArrows([])
   }, [currentPosition])
 
-  // Fix dragged piece positioning with MutationObserver for better performance
-  // This ensures the dragged piece is perfectly centered on the cursor
-  useEffect(() => {
-    const containers = [
-      desktopBoardContainerRef.current,
-      mobileBoardContainerRef.current
-    ].filter(Boolean) as HTMLElement[]
-
-    if (containers.length === 0) return
-
-    const fixDraggedPiece = (element: HTMLElement) => {
-      const style = window.getComputedStyle(element)
-      const inlineStyle = element.getAttribute('style') || ''
-
-      // Check if this is the dragged piece
-      const isAbsolute = style.position === 'absolute' || inlineStyle.includes('position: absolute')
-      const hasPointerEventsNone = style.pointerEvents === 'none' || inlineStyle.includes('pointer-events: none')
-      const hasPiece = element.querySelector('img, svg:not(.modern-chess-arrows)') !== null
-
-      if (isAbsolute && hasPointerEventsNone && hasPiece) {
-        // Apply centering transform
-        const currentTransform = style.transform || inlineStyle.match(/transform:\s*([^;]+)/)?.[1] || ''
-        if (!currentTransform.includes('translate(-50%, -50%)')) {
-          // Preserve any existing transform and add our centering
-          const existingTransform = inlineStyle.match(/transform:\s*([^;]+)/)?.[1] || ''
-          if (existingTransform && !existingTransform.includes('translate(-50%, -50%)')) {
-            element.style.transform = `${existingTransform} translate(-50%, -50%)`
-          } else {
-            element.style.transform = 'translate(-50%, -50%)'
-          }
-        }
-      }
-    }
-
-    const observers: MutationObserver[] = []
-
-    containers.forEach(container => {
-      const observer = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-          mutation.addedNodes.forEach((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              const element = node as HTMLElement
-              // Check if it's a div that might be the dragged piece
-              if (element.tagName === 'DIV' && element.getAttribute('style')?.includes('position: absolute')) {
-                fixDraggedPiece(element)
-              }
-              // Also check children
-              const potentialPieces = element.querySelectorAll?.('div[style*="position: absolute"]')
-              potentialPieces?.forEach((piece: Element) => {
-                fixDraggedPiece(piece as HTMLElement)
-              })
-            }
-          })
-        })
-      })
-
-      observer.observe(container, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['style']
-      })
-
-      observers.push(observer)
-
-      // Also check existing elements
-      const existingPieces = container.querySelectorAll('.react-chessboard > div > div[style*="position: absolute"]')
-      existingPieces.forEach((piece) => {
-        fixDraggedPiece(piece as HTMLElement)
-      })
-    })
-
-    // Backup: Use requestAnimationFrame to continuously check during drag
-    // This ensures we catch the piece even if MutationObserver misses it
-    let rafId: number | null = null
-    const checkLoop = () => {
-      containers.forEach(container => {
-        const pieces = container.querySelectorAll('.react-chessboard > div > div[style*="position: absolute"]')
-        pieces.forEach((piece) => {
-          fixDraggedPiece(piece as HTMLElement)
-        })
-      })
-      rafId = requestAnimationFrame(checkLoop)
-    }
-    rafId = requestAnimationFrame(checkLoop)
-
-    return () => {
-      observers.forEach(observer => observer.disconnect())
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId)
-      }
-    }
-  }, [currentPosition, boardWidth])
-
-  // Remove react-chessboard native arrows (backup to CSS)
-  // Only removes arrow elements, not the entire SVG, to avoid coordinate issues
-  useEffect(() => {
-    const containers = [
-      desktopBoardContainerRef.current,
-      mobileBoardContainerRef.current
-    ].filter(Boolean) as HTMLElement[]
-
-    if (containers.length === 0) return
-
-    const removeNativeArrows = () => {
-      containers.forEach(container => {
-        try {
-          // Find arrow elements that are NOT in our custom arrows SVG
-          const arrowElements = container.querySelectorAll(
-            'svg:not(.modern-chess-arrows) path[stroke], ' +
-            'svg:not(.modern-chess-arrows) polygon[fill], ' +
-            'svg:not(.modern-chess-arrows) line[stroke]'
-          )
-
-          // Safely remove each element
-          arrowElements.forEach(el => {
-            try {
-              // Check if element still has a parent before removing
-              if (el.parentNode) {
-                el.parentNode.removeChild(el)
-              }
-            } catch (err) {
-              // Element may have already been removed, ignore
-            }
-          })
-
-          // Also try to remove entire SVG containers that contain arrows (but not our custom one)
-          const arrowSvgs = container.querySelectorAll(
-            'svg:not(.modern-chess-arrows)[style*="position: absolute"], ' +
-            'svg:not(.modern-chess-arrows)[style*="position:absolute"]'
-          )
-          arrowSvgs.forEach(svg => {
-            try {
-              if (svg.parentNode) {
-                svg.parentNode.removeChild(svg)
-              }
-            } catch (err) {
-              // SVG may have already been removed, ignore
-            }
-          })
-        } catch (err) {
-          // Ignore errors during removal
-        }
-      })
-    }
-
-    // Remove immediately with a small delay to ensure DOM is ready
-    const timeoutId = setTimeout(removeNativeArrows, 100)
-
-    // Use MutationObserver to catch arrows added later
-    const observers: MutationObserver[] = []
-    containers.forEach(container => {
-      const observer = new MutationObserver(() => {
-        // Debounce to avoid too many removals
-        setTimeout(removeNativeArrows, 50)
-      })
-      observer.observe(container, {
-        childList: true,
-        subtree: true
-      })
-      observers.push(observer)
-    })
-
-    return () => {
-      clearTimeout(timeoutId)
-      observers.forEach(obs => obs.disconnect())
-    }
-  }, [currentPosition, displayArrows.length])
+  // Note: Native arrow hiding is now handled purely by CSS in index.css
+  // DOM manipulation via JS was causing coordinate calculation issues during piece drags
 
   const mobileBoardSize = Math.min(boardWidth, 400)
   const mobileEvaluationBarWidth = Math.max(12, Math.round(mobileBoardSize * 0.04))
   const desktopEvaluationBarWidth = Math.max(18, Math.round(boardWidth * 0.04))
-  const mobileEvaluationBarHeight = mobileBoardSize
-  const desktopEvaluationBarHeight = boardWidth
-  const mobileEvaluationBarOffset = 0
-  const desktopEvaluationBarOffset = 0
+  const mobileEvaluationBarHeight = mobileBoardSize * 0.92
+  const desktopEvaluationBarHeight = boardWidth * 0.92
+  const mobileEvaluationBarOffset = (mobileBoardSize - mobileEvaluationBarHeight) / 2 + mobileBoardSize * 0.02
+  const desktopEvaluationBarOffset = (boardWidth - desktopEvaluationBarHeight) / 2 + boardWidth * 0.02
 
   // Auto-scroll to current move in timeline
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -959,77 +783,22 @@ export function UnifiedChessAnalysis({
 
   return (
     <>
-      <div className={`rounded-[32px] border border-white/5 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 lg:p-6 shadow-sm shadow-black/20 backdrop-blur-sm overflow-hidden ${className}`}>
+      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 lg:p-6 shadow-2xl shadow-black/50 ${className}`}>
         {/* Mobile Layout: Stacked */}
         <div className="flex flex-col gap-4 lg:hidden">
 
-        {/* Mobile: chessdata.app Button */}
-        <div className="flex items-center justify-center">
-          <Link to="/" className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md hover:opacity-80 transition-opacity"
-               style={{
-                 background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
-                 animation: 'liquid-glow 4s ease-in-out infinite',
-               }}>
-            {/* Liquid shimmer effect */}
-            <div className="absolute inset-0 opacity-40"
-                 style={{
-                   background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
-                   animation: 'liquid-shimmer 3s ease-in-out infinite',
-                 }}></div>
-            {/* Floating bubble effect */}
-            <div className="absolute inset-0 opacity-30"
-                 style={{
-                   background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
-                   animation: 'liquid-bubble 4s ease-in-out infinite',
-                 }}></div>
-            <span className="relative z-10">chessdata.app</span>
-          </Link>
-        </div>
-
-        {/* Mobile: Move Comments/Analysis - Moved to top */}
-        {currentMove ? (
-          <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
-            <div className="flex items-start gap-3 mb-3">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className={`text-xl font-bold ${
-                    getMoveTextColor(currentMove.classification)
-                  }`}>
-                    {currentMove.san}
-                  </div>
-                  <MoveClassificationBadge classification={currentMove.classification} />
-                </div>
-                {currentMove.evaluation && (
-                  <div className="text-xs text-slate-400">
-                    {currentMove.displayEvaluation}
-                  </div>
-                )}
-              </div>
+        {/* Mobile: Game Phase Indicator */}
+        {currentMove && (() => {
+          const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
+          const gamePhase = normalizeGamePhase(rawPhase)
+          return (
+            <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/50 w-fit mx-auto">
+              <span className={`text-sm font-semibold ${getGamePhaseColor(gamePhase)}`}>
+                {gamePhase}
+              </span>
             </div>
-            <EnhancedMoveCoaching move={currentMove} className="text-xs" />
-
-            {/* Mobile Follow-Up Explorer */}
-            {onExploringChange && onResetExploration && onUndoExplorationMove && (
-              <div className="mt-3">
-                <FollowUpExplorer
-                  currentMove={currentMove}
-                  isExploring={isExploringFollowUp}
-                  explorationMoves={explorationMoves}
-                  onExploringChange={onExploringChange}
-                  onResetExploration={onResetExploration}
-                  onUndoExplorationMove={onUndoExplorationMove}
-                  onAddExplorationMove={onAddExplorationMove}
-                />
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
-            <div className="text-sm text-slate-400 text-center py-2">
-              Navigate to a move to see analysis
-            </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Mobile: Evaluation Bar + Chess Board */}
         <div className="flex justify-center gap-5">
@@ -1059,18 +828,18 @@ export function UnifiedChessAnalysis({
                 boardOrientation={playerColor}
                 boardWidth={mobileBoardSize}
                 showBoardNotation={true}
-                onArrowsChange={handleArrowsChange}
+
                 {...getDarkChessBoardTheme('default')}
               />
-              {/* Show arrows unless in follow-up mode (follow-up has its own UI) */}
-              {!isExploringFollowUp && (
-                <ModernChessArrows
-                  arrows={displayArrows}
-                  boardWidth={mobileBoardSize}
-                  boardOrientation={playerColor}
-                  boardId="unified-mobile"
-                />
-              )}
+                {/* Show arrows unless in follow-up mode (follow-up has its own UI) */}
+                {!isExploringFollowUp && (
+                  <ModernChessArrows
+                    arrows={displayArrows}
+                    boardWidth={mobileBoardSize}
+                    boardOrientation={playerColor}
+                    squareSize={mobileBoardSize / 8}
+                  />
+                )}
             </div>
           </div>
 
@@ -1145,79 +914,46 @@ export function UnifiedChessAnalysis({
             </div>
           </div>
 
-          {/* Mobile: Move Sequence - Always visible below board */}
-          <div className="mt-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-white">All Moves</h3>
-                <p className="text-xs text-slate-400 mt-0.5">{allMoves.length} moves in this game</p>
+          {/* Mobile: Current Move Analysis */}
+          {currentMove && showMoveAnalysis && (
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-white">
+                    {currentMove.san}
+                  </h3>
+                  <span className="text-xs text-slate-400">
+                    Move {currentMove.moveNumber} • {currentMove.isUserMove ? 'You' : 'Opponent'}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowMoveAnalysis(false)}
+                  className="text-slate-400 hover:text-white transition-colors p-1"
+                  aria-label="Hide analysis"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
-              <div ref={mobileTimelineRef} className="max-h-[280px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                <table className="w-full table-fixed text-left">
-                  <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10">
-                    <tr className="text-xs uppercase text-slate-400 border-b border-white/10">
-                      <th className="w-12 py-2.5 px-2">No.</th>
-                      <th className="w-1/2 py-2.5 px-2">You</th>
-                      <th className="w-1/2 py-2.5 px-2">Opponent</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from({ length: Math.ceil(allMoves.length / 2) }).map((_, row) => {
-                      const move1 = allMoves[row * 2]
-                      const move2 = allMoves[row * 2 + 1]
+              <EnhancedMoveCoaching move={currentMove} className="text-xs" />
 
-                      // Determine which move is the user's and which is the opponent's
-                      // based on isUserMove flag, not just color (white/black)
-                      const userMove = move1?.isUserMove ? move1 : move2
-                      const opponentMove = move1?.isUserMove ? move2 : move1
-
-                      return (
-                        <tr key={row} className="border-b border-white/5 last:border-b-0">
-                          <td className="py-2.5 px-2 text-xs text-slate-400 font-medium align-top pt-3">{row + 1}</td>
-                          <td className="py-1.5 px-2">
-                            {userMove ? (
-                              <button
-                                onClick={() => onMoveNavigation(userMove.index + 1)}
-                                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2.5 text-left transition-all duration-200 gap-2 min-h-[44px] ${
-                                  currentIndex === userMove.index + 1
-                                    ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
-                                    : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
-                                }`}
-                              >
-                                <span className="text-xs font-medium truncate">{userMove.san}</span>
-                                <MoveClassificationBadge classification={userMove.classification} />
-                              </button>
-                            ) : (
-                              <span className="text-slate-600 text-xs py-2.5">-</span>
-                            )}
-                          </td>
-                          <td className="py-1.5 px-2">
-                            {opponentMove ? (
-                              <button
-                                onClick={() => onMoveNavigation(opponentMove.index + 1)}
-                                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2.5 text-left transition-all duration-200 gap-2 min-h-[44px] ${
-                                  currentIndex === opponentMove.index + 1
-                                    ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
-                                    : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
-                                }`}
-                              >
-                                <span className="text-xs font-medium truncate">{opponentMove.san}</span>
-                                <MoveClassificationBadge classification={opponentMove.classification} />
-                              </button>
-                            ) : (
-                              <span className="text-slate-600 text-xs py-2.5">-</span>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {/* Mobile Follow-Up Explorer */}
+              {currentMove && onExploringChange && onResetExploration && onUndoExplorationMove && (
+                <div className="mt-3">
+                  <FollowUpExplorer
+                    currentMove={currentMove}
+                    isExploring={isExploringFollowUp}
+                    explorationMoves={explorationMoves}
+                    onExploringChange={onExploringChange}
+                    onResetExploration={onResetExploration}
+                    onUndoExplorationMove={onUndoExplorationMove}
+                    onAddExplorationMove={onAddExplorationMove}
+                  />
+                </div>
+              )}
             </div>
-          </div>
+          )}
 
           {/* Mobile: Exploration Analysis */}
           {!currentMove && isFreeExploration && explorationAnalysis && (
@@ -1333,16 +1069,122 @@ export function UnifiedChessAnalysis({
             </div>
           )}
 
+          {!showMoveAnalysis && currentMove && (
+            <button
+              onClick={() => setShowMoveAnalysis(true)}
+              className="mt-4 w-full rounded-xl border border-white/10 bg-white/[0.08] p-3 text-sm text-slate-300 hover:bg-white/[0.12] transition-colors"
+            >
+              Show Move Analysis
+            </button>
+          )}
+
+          {/* Mobile: Moves List Accordion */}
+          <div className="mt-4">
+            <button
+              onClick={() => setIsMoveListOpen(!isMoveListOpen)}
+              className="w-full flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.08] p-4 text-left hover:bg-white/[0.12] transition-colors"
+              aria-expanded={isMoveListOpen}
+            >
+              <div className="flex items-center gap-3">
+                <svg
+                  className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${isMoveListOpen ? 'rotate-90' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">All Moves</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">{allMoves.length} moves in this game</p>
+                </div>
+              </div>
+              <div className="text-xs text-slate-400">
+                {isMoveListOpen ? 'Hide' : 'Show'}
+              </div>
+            </button>
+
+            <div
+              className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                isMoveListOpen ? 'max-h-[400px] opacity-100 mt-3' : 'max-h-0 opacity-0'
+              }`}
+            >
+              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                <div ref={mobileTimelineRef} className="max-h-[350px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                  <table className="w-full table-fixed text-left">
+                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10">
+                      <tr className="text-xs uppercase text-slate-400 border-b border-white/10">
+                        <th className="w-12 py-2 px-1">No.</th>
+                        <th className="w-1/2 py-2 px-1">You</th>
+                        <th className="w-1/2 py-2 px-1">Opponent</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: Math.ceil(allMoves.length / 2) }).map((_, row) => {
+                        const move1 = allMoves[row * 2]
+                        const move2 = allMoves[row * 2 + 1]
+
+                        // Determine which move is the user's and which is the opponent's
+                        // based on isUserMove flag, not just color (white/black)
+                        const userMove = move1?.isUserMove ? move1 : move2
+                        const opponentMove = move1?.isUserMove ? move2 : move1
+
+                        return (
+                          <tr key={row} className="border-b border-white/5 last:border-b-0">
+                            <td className="py-2 px-1 text-xs text-slate-400 font-medium">{row + 1}</td>
+                            <td className="py-2 px-1">
+                              {userMove ? (
+                                <button
+                                  onClick={() => onMoveNavigation(userMove.index + 1)}
+                                  className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
+                                    currentIndex === userMove.index + 1
+                                      ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
+                                      : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
+                                  }`}
+                                >
+                                  <span className="text-xs font-medium truncate">{userMove.san}</span>
+                                  <MoveClassificationBadge classification={userMove.classification} />
+                                </button>
+                              ) : (
+                                <span className="text-slate-600 text-xs">—</span>
+                              )}
+                            </td>
+                            <td className="py-2 px-1">
+                              {opponentMove ? (
+                                <button
+                                  onClick={() => onMoveNavigation(opponentMove.index + 1)}
+                                  className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
+                                    currentIndex === opponentMove.index + 1
+                                      ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
+                                      : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
+                                  }`}
+                                >
+                                  <span className="text-xs font-medium truncate">{opponentMove.san}</span>
+                                  <MoveClassificationBadge classification={opponentMove.classification} />
+                                </button>
+                              ) : (
+                                <span className="text-slate-600 text-xs">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Desktop Layout: Side by Side */}
         <div className="hidden lg:flex gap-8 items-start">
         {/* Left: Evaluation Bar */}
-        <div className="flex-shrink-0 flex flex-col items-center">
-          {/* Spacer to match chessdata.app button height */}
-          <div className="flex items-center justify-center mb-4 h-[42px]">
-            {/* Empty spacer to align with button (py-1.5 + text-xs ≈ 42px) */}
-          </div>
+        <div className="flex-shrink-0 flex flex-col">
+          {/* Spacer to match Game Phase Indicator height */}
+          {currentMove && (
+            <div className="h-[40px] mb-4"></div>
+          )}
           <div className="flex items-center justify-center" style={{ height: `${boardWidth}px` }}>
             <EvaluationBar
               score={currentScore}
@@ -1357,28 +1199,18 @@ export function UnifiedChessAnalysis({
 
         {/* Center: Chess Board */}
         <div className="flex-shrink-0 flex flex-col items-center">
-          {/* Desktop: chessdata.app Button */}
-          <div className="flex items-center justify-center mb-4">
-            <Link to="/" className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md hover:opacity-80 transition-opacity"
-                 style={{
-                   background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
-                   animation: 'liquid-glow 4s ease-in-out infinite',
-                 }}>
-              {/* Liquid shimmer effect */}
-              <div className="absolute inset-0 opacity-40"
-                   style={{
-                     background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
-                     animation: 'liquid-shimmer 3s ease-in-out infinite',
-                   }}></div>
-              {/* Floating bubble effect */}
-              <div className="absolute inset-0 opacity-30"
-                   style={{
-                     background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
-                     animation: 'liquid-bubble 4s ease-in-out infinite',
-                   }}></div>
-              <span className="relative z-10">chessdata.app</span>
-            </Link>
-          </div>
+          {/* Desktop: Game Phase Indicator */}
+          {currentMove && (() => {
+            const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
+            const gamePhase = normalizeGamePhase(rawPhase)
+            return (
+              <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/50 w-fit mx-auto mb-4">
+                <span className={`text-sm font-semibold ${getGamePhaseColor(gamePhase)}`}>
+                  {gamePhase}
+                </span>
+              </div>
+            )
+          })()}
 
           <div ref={desktopBoardContainerRef} className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
             <Chessboard
@@ -1389,18 +1221,18 @@ export function UnifiedChessAnalysis({
               boardOrientation={playerColor}
               boardWidth={boardWidth}
               showBoardNotation={true}
-              onArrowsChange={handleArrowsChange}
+
               {...getDarkChessBoardTheme('default')}
             />
-            {/* Modern Chess Arrows */}
-            {!isExploringFollowUp && (
-              <ModernChessArrows
-                arrows={displayArrows}
-                boardWidth={boardWidth}
-                boardOrientation={playerColor}
-                boardId="unified-desktop"
-              />
-            )}
+              {/* Modern Chess Arrows */}
+              {!isExploringFollowUp && (
+                <ModernChessArrows
+                  arrows={displayArrows}
+                  boardWidth={boardWidth}
+                  boardOrientation={playerColor}
+                  squareSize={boardWidth / 8}
+                />
+              )}
           </div>
 
           {/* Navigation Controls */}
@@ -1478,7 +1310,7 @@ export function UnifiedChessAnalysis({
                     }`}>
                       {currentMove ? currentMove.san :
                        isFreeExploration && explorationMoves.length > 0 ? explorationMoves[explorationMoves.length - 1] :
-                       '-'}
+                       '—'}
                     </div>
                     {/* Show evaluation badge for exploration mode */}
                     {isFreeExploration && explorationAnalysis && !explorationAnalysis.isAnalyzing && explorationMoves.length > 0 && (() => {
@@ -1727,7 +1559,7 @@ export function UnifiedChessAnalysis({
                                 <MoveClassificationBadge classification={userMove.classification} />
                               </button>
                             ) : (
-                              <span className="text-slate-600">-</span>
+                              <span className="text-slate-600">—</span>
                             )}
                           </td>
                           <td className="py-2 pr-2">
@@ -1750,7 +1582,7 @@ export function UnifiedChessAnalysis({
                                 <MoveClassificationBadge classification={opponentMove.classification} />
                               </button>
                             ) : (
-                              <span className="text-slate-600">-</span>
+                              <span className="text-slate-600">—</span>
                             )}
                           </td>
                         </tr>

@@ -336,48 +336,6 @@
     -ms-hyphens: manual;
   }
 
-  /* Hide ALL react-chessboard native arrows completely */
-  /* We use ModernChessArrows for all arrow rendering to ensure proper centering */
-
-  /* Fix for piece dragging - ensure coordinate calculations are correct */
-  /* The dragged piece preview should follow the cursor accurately */
-  .react-chessboard {
-    position: relative !important;
-    /* Ensure no transforms that could affect coordinate calculations */
-    transform: none !important;
-  }
-
-  /* Fix dragged piece positioning - react-chessboard uses absolute positioning */
-  /* Ensure the dragged piece element follows the cursor correctly */
-  .react-chessboard > div > div[style*="position: absolute"] {
-    /* The library should handle positioning, but ensure no conflicting transforms */
-    transform: none !important;
-  }
-
-  /* Hide ALL SVG overlays from react-chessboard except our custom arrows */
-  .react-chessboard svg:not(.modern-chess-arrows) {
-    display: none !important;
-    opacity: 0 !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
-
-  /* Also hide any arrow elements directly */
-  .react-chessboard path[stroke]:not(.modern-chess-arrows path),
-  .react-chessboard polygon[fill]:not(.modern-chess-arrows polygon),
-  .react-chessboard line[stroke]:not(.modern-chess-arrows line) {
-    display: none !important;
-    opacity: 0 !important;
-    visibility: hidden !important;
-  }
-
-  /* Ensure our custom arrows are always visible */
-  .modern-chess-arrows {
-    display: block !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-  }
-
   /* Liquidy animations for chessdata.app button */
   @keyframes liquid-shimmer {
     0% {
@@ -436,23 +394,6 @@
         0 0 30px rgba(34, 211, 238, 0.5),
         0 0 60px rgba(6, 182, 212, 0.25),
         inset 0 1px 1px rgba(255, 255, 255, 0.3),
-        inset 0 -1px 1px rgba(0, 0, 0, 0.2);
-    }
-  }
-
-  @keyframes liquid-glow-gold {
-    0%, 100% {
-      box-shadow:
-        0 0 20px rgba(251, 191, 36, 0.4),
-        0 0 40px rgba(245, 158, 11, 0.2),
-        inset 0 1px 1px rgba(255, 255, 255, 0.25),
-        inset 0 -1px 1px rgba(0, 0, 0, 0.2);
-    }
-    50% {
-      box-shadow:
-        0 0 30px rgba(251, 191, 36, 0.6),
-        0 0 60px rgba(245, 158, 11, 0.3),
-        inset 0 1px 1px rgba(255, 255, 255, 0.35),
         inset 0 -1px 1px rgba(0, 0, 0, 0.2);
     }
   }
