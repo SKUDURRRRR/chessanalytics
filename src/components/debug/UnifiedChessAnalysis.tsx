@@ -857,19 +857,28 @@ export function UnifiedChessAnalysis({
       <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 lg:p-6 shadow-2xl shadow-black/50 ${className}`}>
         {/* Mobile Layout: Stacked */}
         <div className="flex flex-col gap-4 lg:hidden">
-
-        {/* Mobile: Game Phase Indicator */}
-        {currentMove && (() => {
-          const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
-          const gamePhase = normalizeGamePhase(rawPhase)
-          return (
-            <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/50 w-fit mx-auto">
-              <span className={`text-sm font-semibold ${getGamePhaseColor(gamePhase)}`}>
-                {gamePhase}
-              </span>
+        {/* Mobile: chessdata.app Badge */}
+        <div className="flex items-center justify-center mb-2">
+          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
+                 style={{
+                   background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
+                   animation: 'liquid-glow 4s ease-in-out infinite',
+                 }}>
+              {/* Liquid shimmer effect */}
+              <div className="absolute inset-0 opacity-40"
+                   style={{
+                     background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
+                     animation: 'liquid-shimmer 3s ease-in-out infinite',
+                   }}></div>
+              {/* Floating bubble effect */}
+              <div className="absolute inset-0 opacity-30"
+                   style={{
+                     background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
+                     animation: 'liquid-bubble 4s ease-in-out infinite',
+                   }}></div>
+              <span className="relative z-10">chessdata.app</span>
             </div>
-          )
-        })()}
+        </div>
 
         {/* Mobile: Evaluation Bar + Chess Board */}
         <div className="flex justify-center gap-5">
@@ -1271,18 +1280,28 @@ export function UnifiedChessAnalysis({
 
         {/* Center: Chess Board */}
         <div className="flex-shrink-0 flex flex-col items-center">
-          {/* Desktop: Game Phase Indicator */}
-          {currentMove && (() => {
-            const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
-            const gamePhase = normalizeGamePhase(rawPhase)
-            return (
-              <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/50 w-fit mx-auto mb-4">
-                <span className={`text-sm font-semibold ${getGamePhaseColor(gamePhase)}`}>
-                  {gamePhase}
-                </span>
-              </div>
-            )
-          })()}
+          {/* Desktop: chessdata.app Badge */}
+          <div className="flex items-center justify-center mb-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-4 py-1.5 text-sm uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
+                 style={{
+                   background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
+                   animation: 'liquid-glow 4s ease-in-out infinite',
+                 }}>
+              {/* Liquid shimmer effect */}
+              <div className="absolute inset-0 opacity-40"
+                   style={{
+                     background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
+                     animation: 'liquid-shimmer 3s ease-in-out infinite',
+                   }}></div>
+              {/* Floating bubble effect */}
+              <div className="absolute inset-0 opacity-30"
+                   style={{
+                     background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
+                     animation: 'liquid-bubble 4s ease-in-out infinite',
+                   }}></div>
+              <span className="relative z-10">chessdata.app</span>
+            </div>
+          </div>
 
           <div ref={desktopBoardContainerRef} className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
             <Chessboard
@@ -1414,6 +1433,16 @@ export function UnifiedChessAnalysis({
                         {getClassificationLabel(currentMove.classification)}
                       </span>
                     )}
+                    {/* Show game phase badge */}
+                    {currentMove && (() => {
+                      const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
+                      const gamePhase = normalizeGamePhase(rawPhase)
+                      return (
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold border border-slate-700/50 bg-slate-800/40 ${getGamePhaseColor(gamePhase)}`}>
+                          {gamePhase}
+                        </span>
+                      )
+                    })()}
                   </div>
                 </div>
               </div>
