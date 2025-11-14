@@ -242,7 +242,10 @@ class ResilientAPIClient:
     async def get_httpx_client(self) -> httpx.AsyncClient:
         """Get or create httpx client"""
         if self._httpx_client is None:
-            self._httpx_client = httpx.AsyncClient(timeout=10.0)
+            self._httpx_client = httpx.AsyncClient(
+                timeout=10.0,
+                follow_redirects=True  # Explicitly follow redirects (e.g., 301, 302)
+            )
             print("[SESSION] Created new httpx client")
         return self._httpx_client
 
