@@ -2754,8 +2754,8 @@ async def get_comprehensive_analytics(
         # Compute aggregated metrics
         distribution_summary = {}
         for bucket, stats in distribution.items():
-            win_rate = _safe_divide(stats['wins'], stats['games']) * 100
-            distribution_summary[bucket] = {**stats, 'win_rate': round(win_rate, 2)}
+            bucket_win_rate = _safe_divide(stats['wins'], stats['games']) * 100
+            distribution_summary[bucket] = {**stats, 'win_rate': round(bucket_win_rate, 2)}
 
         quick_victory_summary = {label: count for label, count in quick_victory_breakdown.items()}
 
