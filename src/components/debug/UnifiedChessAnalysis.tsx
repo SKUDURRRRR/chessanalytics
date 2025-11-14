@@ -722,6 +722,77 @@ export function UnifiedChessAnalysis({
     setUserDrawnArrows([])
   }, [currentPosition])
 
+  // Effect to actively hide react-chessboard's native arrow rendering
+  // This ensures native arrows are always hidden, even if CSS doesn't catch them
+  useEffect(() => {
+    const hideNativeArrows = (container: HTMLElement | null) => {
+      if (!container) return
+
+      // Find all SVG elements that are not our ModernChessArrows
+      const allSvgs = container.querySelectorAll('svg')
+
+      allSvgs.forEach((svg) => {
+        // Skip our ModernChessArrows
+        if (svg.classList.contains('modern-chess-arrows')) {
+          return
+        }
+
+        // Check if it contains arrow elements
+        const hasArrowPath = svg.querySelector('path[stroke]')
+        const hasArrowPolygon = svg.querySelector('polygon[fill]')
+        const hasArrowLine = svg.querySelector('line[stroke]')
+
+        // If it has arrow-like elements and is positioned absolutely, hide it
+        if ((hasArrowPath || hasArrowPolygon || hasArrowLine) &&
+            (svg.getAttribute('style')?.includes('position: absolute') ||
+             svg.getAttribute('style')?.includes('position:absolute'))) {
+          ;(svg as HTMLElement).style.display = 'none'
+          // Also hide all children just in case
+          svg.querySelectorAll('path, polygon, line').forEach((el) => {
+            ;(el as HTMLElement).style.display = 'none'
+          })
+        }
+      })
+    }
+
+    const hideAllNativeArrows = () => {
+      hideNativeArrows(desktopBoardContainerRef.current)
+      hideNativeArrows(mobileBoardContainerRef.current)
+    }
+
+    // Hide arrows immediately
+    hideAllNativeArrows()
+
+    // Use MutationObserver to watch for new arrows being added
+    const observers: MutationObserver[] = []
+
+    if (desktopBoardContainerRef.current) {
+      const observer = new MutationObserver(hideAllNativeArrows)
+      observer.observe(desktopBoardContainerRef.current, {
+        childList: true,
+        subtree: true
+      })
+      observers.push(observer)
+    }
+
+    if (mobileBoardContainerRef.current) {
+      const observer = new MutationObserver(hideAllNativeArrows)
+      observer.observe(mobileBoardContainerRef.current, {
+        childList: true,
+        subtree: true
+      })
+      observers.push(observer)
+    }
+
+    // Also check periodically as a fallback
+    const interval = setInterval(hideAllNativeArrows, 50)
+
+    return () => {
+      observers.forEach(obs => obs.disconnect())
+      clearInterval(interval)
+    }
+  }, [currentPosition, boardWidth])
+
   // Note: Native arrow hiding is now handled purely by CSS in index.css
   // DOM manipulation via JS was causing coordinate calculation issues during piece drags
 
@@ -828,6 +899,7 @@ export function UnifiedChessAnalysis({
                 boardOrientation={playerColor}
                 boardWidth={mobileBoardSize}
                 showBoardNotation={true}
+                  onArrowsChange={handleArrowsChange}
 
                 {...getDarkChessBoardTheme('default')}
               />
@@ -1221,6 +1293,7 @@ export function UnifiedChessAnalysis({
               boardOrientation={playerColor}
               boardWidth={boardWidth}
               showBoardNotation={true}
+                  onArrowsChange={handleArrowsChange}
 
               {...getDarkChessBoardTheme('default')}
             />
