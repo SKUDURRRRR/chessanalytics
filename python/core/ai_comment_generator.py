@@ -324,8 +324,9 @@ class AIChessCommentGenerator:
                         captured_piece_name = f"{color} {piece_name}"
 
                 move_san = move_analysis.get('move_san', '')
+                player_color = move_analysis.get('player_color', 'white')
                 # Clean and validate comment
-                comment = self._clean_comment(comment, is_user_move)
+                comment = self._clean_comment(comment, is_user_move, player_color)
                 comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
                 print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
 
@@ -432,8 +433,9 @@ class AIChessCommentGenerator:
                             captured_piece_name = f"{color} {piece_name}"
 
                     move_san = move_analysis.get('move_san', '')
+                    player_color = move_analysis.get('player_color', 'white')
                     # Clean and validate comment
-                    comment = self._clean_comment(comment, is_user_move)
+                    comment = self._clean_comment(comment, is_user_move, player_color)
                     comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
                     print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
 
@@ -582,8 +584,11 @@ class AIChessCommentGenerator:
 
         return comment
 
-    def _clean_comment(self, comment: str, is_user_move: bool = True) -> str:
-        """Remove common interjections at the start of comments and limit to 3-4 sentences maximum."""
+    def _clean_comment(self, comment: str, is_user_move: bool = True, player_color: str = 'white') -> str:
+        """Remove common interjections at the start of comments and limit to 3-4 sentences maximum.
+
+        Also replaces any second-person pronouns with color-based references (White/Black).
+        """
         if not comment:
             return comment
 
@@ -597,11 +602,79 @@ class AIChessCommentGenerator:
                     comment = comment[0].upper() + comment[1:]
                 break  # Only remove one prefix
 
-        # Replace "the player's" with "your" when analyzing user's moves
-        if is_user_move:
-            # Use regex to replace "the player's" with "your" (case-insensitive) - handles all possessive forms
-            pattern = r'\bthe player\'s\b'
-            comment = re.sub(pattern, 'your', comment, flags=re.IGNORECASE)
+        # Clean up "the player's" references
+        pattern = r'\bthe player\'s\b'
+        comment = re.sub(pattern, 'the', comment, flags=re.IGNORECASE)
+
+        # Replace any second-person pronouns with color-based references
+        color_name = player_color.capitalize()  # "White" or "Black"
+
+        # Map of "you [verb]" -> "color [conjugated verb]"
+        verb_replacements = {
+            'create': 'creates',
+            'capture': 'captures',
+            'develop': 'develops',
+            'improve': 'improves',
+            'control': 'controls',
+            'dominate': 'dominates',
+            'threaten': 'threatens',
+            'attack': 'attacks',
+            'defend': 'defends',
+            'sacrifice': 'sacrifices',
+            'exchange': 'exchanges',
+            'trade': 'trades',
+            'gain': 'gains',
+            'lose': 'loses',
+            'weaken': 'weakens',
+            'strengthen': 'strengthens',
+            'advance': 'advances',
+            'retreat': 'retreats',
+            'maintain': 'maintains',
+            'establish': 'establishes',
+            'challenge': 'challenges',
+            'undermine': 'undermines',
+            'play': 'plays',
+            'make': 'makes',
+            'take': 'takes',
+            'give': 'gives',
+            'build': 'builds',
+            'force': 'forces',
+            'push': 'pushes',
+            'open': 'opens',
+            'close': 'closes',
+            'activate': 'activates',
+            'neutralize': 'neutralizes',
+            'find': 'finds',
+            'miss': 'misses',
+        }
+
+        # Replace "you [verb]" with "color [conjugated verb]"
+        for base_verb, conjugated_verb in verb_replacements.items():
+            pattern = rf'\byou\s+{base_verb}\b'
+            replacement = f'{color_name} {conjugated_verb}'
+            comment = re.sub(pattern, replacement, comment, flags=re.IGNORECASE)
+
+        # Handle "you have" -> "color has"
+        comment = re.sub(r'\byou\s+have\b', f'{color_name} has', comment, flags=re.IGNORECASE)
+
+        # Handle "you are" -> "color is"
+        comment = re.sub(r'\byou\s+are\b', f'{color_name} is', comment, flags=re.IGNORECASE)
+
+        # Handle "you've" -> "color has"
+        comment = re.sub(r"\byou've\b", f'{color_name} has', comment, flags=re.IGNORECASE)
+
+        # Handle "you're" -> "color is"
+        comment = re.sub(r"\byou're\b", f'{color_name} is', comment, flags=re.IGNORECASE)
+
+        # Replace "your opponent" with the opposite color
+        opposite_color = "Black" if color_name == "White" else "White"
+        comment = re.sub(r'\byour opponent\b', opposite_color, comment, flags=re.IGNORECASE)
+
+        # Replace remaining "you" with color name (catch-all)
+        comment = re.sub(r'\byou\b', color_name, comment, flags=re.IGNORECASE)
+
+        # Replace "your" with "color's" (possessive)
+        comment = re.sub(r'\byour\b', f"{color_name}'s", comment, flags=re.IGNORECASE)
 
         # Limit to 3 sentences maximum (strictly enforced)
         # Use regex to split on sentence endings (period, exclamation, question mark)
@@ -991,9 +1064,6 @@ class AIChessCommentGenerator:
         heuristic_details = move_analysis.get('heuristic_details', {})
         new_hanging = heuristic_details.get('new_hanging_pieces', [])
 
-        # DEBUG: Log hanging pieces detection
-        print(f"[AI PROMPT DEBUG] Move {move_san}: new_hanging_pieces = {new_hanging}")
-
         if new_hanging:
             hanging_pieces_context = f"\n**CRITICAL TACTICAL ISSUE - HANGING PIECES:**\n"
             for hanging in new_hanging:
@@ -1012,9 +1082,6 @@ class AIChessCommentGenerator:
                 defenders = hanging.get('defenders', 0)
                 hanging_pieces_context += f"- {piece_name.title()} on {square} is hanging ({attackers} attackers vs {defenders} defenders)\n"
             hanging_pieces_context += f"- This is the MOST IMPORTANT tactical issue in this position - MUST be mentioned!\n"
-            print(f"[AI PROMPT DEBUG] Hanging pieces context:\n{hanging_pieces_context}")
-        else:
-            print(f"[AI PROMPT DEBUG] No hanging pieces detected for move {move_san}")
 
         # Build tactical context
         tactical_context = ""
@@ -1058,9 +1125,8 @@ class AIChessCommentGenerator:
                 board_state_context += f"- If you mention pinning/attacking/defending a piece, VERIFY its exact square from the list\n"
                 board_state_context += f"- If unsure about a piece location, DO NOT mention it - be vague instead\n"
 
-                print(f"[AI ACCURACY] Board state context generated with {len(piece_locations)} pieces for validation")
             except Exception as e:
-                print(f"[AI ACCURACY] Warning: Could not generate board state context: {e}")
+                # Could not generate board state context - continue without it
 
         # Build Stockfish analysis context
         stockfish_context = ""
@@ -1136,6 +1202,9 @@ Write ONE short, encouraging sentence (maximum 15 words) that captures the excit
 Write the comment now:"""
                 return prompt
 
+        # Get player color from move analysis
+        player_color = move_analysis.get('player_color', 'white')
+
         # Route to appropriate prompt builder based on move type
         if not is_user_move:
             return self._build_opponent_move_prompt(
@@ -1143,7 +1212,7 @@ Write the comment now:"""
                 opening_context, previous_move_context, capture_info, is_capture,
                 move_quality, eval_verb, eval_description, eval_explanation,
                 board_state_context, stockfish_context, hanging_pieces_context, tactical_context, positional_context,
-                fen_after, best_move_san, tal_style
+                fen_after, best_move_san, tal_style, player_color
             )
         else:
             return self._build_user_move_prompt(
@@ -1151,7 +1220,7 @@ Write the comment now:"""
                 opening_context, previous_move_context, capture_info, is_capture,
                 move_quality, eval_verb, eval_description, eval_explanation,
                 board_state_context, stockfish_context, hanging_pieces_context, tactical_context, positional_context,
-                fen_after, best_move_san, tal_style
+                fen_after, best_move_san, tal_style, player_color
             )
 
     def _build_opponent_move_prompt(
@@ -1160,36 +1229,38 @@ Write the comment now:"""
         capture_info: str, is_capture: bool, move_quality: MoveQuality,
         eval_verb: str, eval_description: str, eval_explanation: str,
         board_state_context: str, stockfish_context: str, hanging_pieces_context: str, tactical_context: str, positional_context: str,
-        fen_after: str, best_move_san: str, tal_style: str
+        fen_after: str, best_move_san: str, tal_style: str, player_color: str
     ) -> str:
         """Build prompt specifically for opponent moves - analyze what opponent did."""
+        color_name = player_color.capitalize()  # "White" or "Black"
+
         task_description = ""
         if move_quality == MoveQuality.BRILLIANT:
-            task_description = "Analyze what your opponent did with this brilliant move and why it's strong."
+            task_description = f"Analyze what {color_name} did with this brilliant move and why it's strong."
         elif move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY]:
-            task_description = "Analyze what your opponent did with this move and why it's problematic."
+            task_description = f"Analyze what {color_name} did with this move and why it's problematic."
         else:
-            task_description = "Analyze what your opponent did with this move and its purpose."
+            task_description = f"Analyze what {color_name} did with this move and its purpose."
 
         prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
 {opening_context}{previous_move_context}{capture_info}{hanging_pieces_context}
-**MOVE QUALITY:** {move_quality.value} | opponent's move
+**MOVE QUALITY:** {move_quality.value} | {color_name}'s move
 **EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
 {board_state_context}
 {stockfish_context}
 {tactical_context}{positional_context}
 **POSITION:** {fen_after}
 
-**TASK:** Write 2-3 sentences analyzing what your opponent did with this move. {task_description} Style: {tal_style}. Focus on analyzing their move's purpose and consequences, NOT what you should do in response.
+**TASK:** Write 2-3 sentences analyzing what {color_name} did with this move. {task_description} Style: {tal_style}. Focus on analyzing their move's purpose and consequences.
 
 **RULES:**
 - Start directly (no "Ah," "Oh,")
 - Use chess terms, not numbers or "centipawns/evaluation/engine"
 - Be specific: "weakens the position" not "is a good move"
-- Use "your opponent" when referring to the player who made this move
+- Use "{color_name}" when referring to the player who made this move (never "you" or "your opponent")
 - 2-3 sentences max, clear and instructive
 - CRITICAL: If HANGING PIECES are listed above, you MUST mention them in your comment - this is the most important tactical issue!
-- CRITICAL: Analyze what your opponent did, NOT what you should do next
+- CRITICAL: Analyze what {color_name} did, NOT what the other player should do in response
 - CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
 - CRITICAL: Do NOT infer sacrifices from position context or previous moves
 - CRITICAL: The CAPTURE section above is the ONLY capture information - do not mention other captures
@@ -1197,7 +1268,7 @@ Write the comment now:"""
 - CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
 - CRITICAL: NEVER mention a piece on a square unless it's listed in the ACTUAL BOARD STATE section above
 - CRITICAL: If you say "knight on d4" or "bishop on e5", VERIFY that exact piece is on that exact square in the board state list
-{"Mention better move " + best_move_san + " if relevant (what opponent should have played)." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
+{"Mention better move " + best_move_san + " if relevant (what " + color_name + " should have played)." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
 
 Write comment:"""
         return prompt
@@ -1208,25 +1279,27 @@ Write comment:"""
         capture_info: str, is_capture: bool, move_quality: MoveQuality,
         eval_verb: str, eval_description: str, eval_explanation: str,
         board_state_context: str, stockfish_context: str, hanging_pieces_context: str, tactical_context: str, positional_context: str,
-        fen_after: str, best_move_san: str, tal_style: str
+        fen_after: str, best_move_san: str, tal_style: str, player_color: str
     ) -> str:
         """Build prompt for user moves - explain the principle and idea behind the move."""
+        color_name = player_color.capitalize()  # "White" or "Black"
+
         prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
 {opening_context}{previous_move_context}{capture_info}{hanging_pieces_context}
-**MOVE QUALITY:** {move_quality.value} | player's move
+**MOVE QUALITY:** {move_quality.value} | {color_name}'s move
 **EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
 {board_state_context}
 {stockfish_context}
 {tactical_context}{positional_context}
 **POSITION:** {fen_after}
 
-**TASK:** Write 2-3 sentences explaining the *principle* and *idea* behind this move. Style: {tal_style}. {"Focus on brilliant reasoning and principles demonstrated." if move_quality == MoveQuality.BRILLIANT else "Explain what went wrong tactically/positionally and what should be played instead." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Explain the reasoning and how it improves the position."} Focus on what you did, not what your opponent might do next.
+**TASK:** Write 2-3 sentences explaining the *principle* and *idea* behind this move. Style: {tal_style}. {"Focus on brilliant reasoning and principles demonstrated." if move_quality == MoveQuality.BRILLIANT else "Explain what went wrong tactically/positionally and what should be played instead." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Explain the reasoning and how it improves the position."} Focus on what {color_name} did.
 
 **RULES:**
 - Start directly (no "Ah," "Oh,")
 - Use chess terms, not numbers or "centipawns/evaluation/engine"
 - Be specific: "loses the attack" not "is a good move"
-- Use 'your' not 'the player's'
+- Use "{color_name}" when referring to the player who made this move (never "you" or "your")
 - 2-3 sentences max, clear and instructive
 - CRITICAL: If HANGING PIECES are listed above, you MUST mention them in your comment - this is the most important tactical issue!
 - CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
@@ -1236,7 +1309,7 @@ Write comment:"""
 - CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
 - CRITICAL: NEVER mention a piece on a square unless it's listed in the ACTUAL BOARD STATE section above
 - CRITICAL: If you say "knight on d4" or "bishop on e5", VERIFY that exact piece is on that exact square in the board state list
-{"Mention better move " + best_move_san + " if relevant." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
+{"Mention better move " + best_move_san + " if relevant (what " + color_name + " should have played)." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
 
 Write comment:"""
         return prompt

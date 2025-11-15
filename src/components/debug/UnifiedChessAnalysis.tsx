@@ -581,14 +581,6 @@ export function UnifiedChessAnalysis({
   onPieceDrop,
   className = ''
 }: UnifiedChessAnalysisProps) {
-  // Debug log
-  console.log('🔍 UnifiedChessAnalysis rendered:', {
-    onPieceDrop: typeof onPieceDrop,
-    currentPosition,
-    currentIndex,
-    isExploringFollowUp,
-    isFreeExploration
-  })
 
   // Chess sound integration
   const { soundEnabled, volume } = useChessSoundSettings()
@@ -666,14 +658,6 @@ export function UnifiedChessAnalysis({
 
   // Generate arrows from exploration analysis if available
   const displayArrows = useMemo(() => {
-    console.log('[UnifiedChessAnalysis] Computing displayArrows:', {
-      isExploringFollowUp,
-      isFreeExploration,
-      hasExplorationAnalysis: !!explorationAnalysis,
-      explorationBestMove: explorationAnalysis?.bestMove,
-      currentMoveArrows: currentMoveArrows,
-      currentMoveArrowsLength: currentMoveArrows?.length || 0,
-    })
 
     const arrows: ModernArrow[] = []
 
@@ -682,7 +666,6 @@ export function UnifiedChessAnalysis({
 
     // If exploring and we have analysis with a best move, show arrow for that
     if ((isExploringFollowUp || isFreeExploration) && explorationAnalysis?.bestMove) {
-      console.log('[UnifiedChessAnalysis] Using exploration arrow')
       arrows.push({
         from: explorationAnalysis.bestMove.from,
         to: explorationAnalysis.bestMove.to,
@@ -692,7 +675,6 @@ export function UnifiedChessAnalysis({
       })
     } else {
       // Otherwise use the current move arrows
-      console.log('[UnifiedChessAnalysis] Using currentMoveArrows:', currentMoveArrows)
       arrows.push(...currentMoveArrows)
     }
 
@@ -702,7 +684,6 @@ export function UnifiedChessAnalysis({
   // Handler to intercept user-drawn arrows from react-chessboard
   // This will be called when user right-clicks and drags to draw an arrow
   const handleArrowsChange = React.useCallback((arrows: Array<[string, string, string?]>) => {
-    console.log('[UnifiedChessAnalysis] Raw arrows from react-chessboard:', arrows)
 
     const modernArrows: ModernArrow[] = arrows.map(([from, to, color]) => ({
       from: from as any,
@@ -714,7 +695,6 @@ export function UnifiedChessAnalysis({
     }))
 
     setUserDrawnArrows(modernArrows)
-    console.log('[UnifiedChessAnalysis] User drew arrows (converted):', modernArrows)
   }, [])
 
   // Clear user-drawn arrows when position changes

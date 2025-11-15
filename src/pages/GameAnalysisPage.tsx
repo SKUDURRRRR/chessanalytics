@@ -243,9 +243,11 @@ const buildEnhancedFallbackExplanation = (
   centipawnLoss: number | null,
   bestMoveSan: string | null,
   move: any,
-  isUserMove: boolean = true
+  isUserMove: boolean = true,
+  playerColor: string = 'white'
 ) => {
   const loss = centipawnLoss != null ? Math.round(centipawnLoss) : null
+  const colorName = playerColor.charAt(0).toUpperCase() + playerColor.slice(1) // "White" or "Black"
 
   // Check if this is an opening move that should get educational treatment
   const moveNumber = move?.moveNumber || 0
@@ -258,7 +260,7 @@ const buildEnhancedFallbackExplanation = (
       if (isUserMove) {
         return 'The adventure begins! Time to bring out your forces and claim the center.'
       } else {
-        return 'The game begins! Your opponent makes their first move. The adventure is underway!'
+        return `The game begins! ${colorName} makes the first move. The adventure is underway!`
       }
     }
     // Simple book move comment for other opening moves
@@ -266,12 +268,12 @@ const buildEnhancedFallbackExplanation = (
   }
 
   if (!isUserMove) {
-    // Opponent move analysis
+    // Opponent move analysis using color-based references
     switch (classification) {
       case 'brilliant':
-        return '🌟 Your opponent played a brilliant move! This shows exceptional tactical vision and demonstrates advanced chess understanding. Study this position carefully to understand the sophisticated tactics involved - this could involve a calculated sacrifice, devastating tactical combination, or sophisticated positional maneuver. This is the kind of move that wins games and shows real chess mastery.'
+        return `🌟 ${colorName} played a brilliant move! This shows exceptional tactical vision and demonstrates advanced chess understanding. Study this position carefully to understand the sophisticated tactics involved - this could involve a calculated sacrifice, devastating tactical combination, or sophisticated positional maneuver. This is the kind of move that wins games and shows real chess mastery.`
       case 'best':
-        return '✅ Your opponent played the best move available. This is solid, accurate play that maintains their position well and shows strong chess fundamentals. They found the optimal continuation that keeps their position on track.'
+        return `✅ ${colorName} played the best move available. This is solid, accurate play that maintains their position well and shows strong chess fundamentals. They found the optimal continuation that keeps their position on track.`
       case 'great':
         // Check if this is an opening move or if evaluation shows minimal change
         const isOpponentOpeningMove = moveNumber <= 10
@@ -280,28 +282,28 @@ const buildEnhancedFallbackExplanation = (
         if (isOpponentOpeningMove) {
           return 'Book move.'
         } else if (hasOpponentMinimalEvalChange) {
-          return '🎯 Your opponent played a great move! This is very strong play that shows excellent chess understanding. They\'re playing accurately and keeping the position well-balanced.'
+          return `🎯 ${colorName} played a great move! This is very strong play that shows excellent chess understanding. They're playing accurately and keeping the position well-balanced.`
         } else {
-          return '🎯 Your opponent played a great move! This is very strong play that shows excellent chess understanding. They found a move that improves their position and demonstrates advanced tactical awareness.'
+          return `🎯 ${colorName} played a great move! This is very strong play that shows excellent chess understanding. They found a move that improves their position and demonstrates advanced tactical awareness.`
         }
       case 'excellent':
-        return '⭐ Your opponent played an excellent move! This is nearly optimal play that shows strong chess fundamentals. They found a move that maintains their position well and demonstrates good tactical awareness.'
+        return `⭐ ${colorName} played an excellent move! This is nearly optimal play that shows strong chess fundamentals. They found a move that maintains their position well and demonstrates good tactical awareness.`
       case 'good':
-        return '👍 Your opponent made a good move. This maintains a solid position and shows reasonable chess understanding with sound positional play. They\'re making solid decisions that keep their position balanced.'
+        return `👍 ${colorName} made a good move. This maintains a solid position and shows reasonable chess understanding with sound positional play. They're making solid decisions that keep their position balanced.`
       case 'acceptable':
-        return '⚠️ Your opponent\'s move is acceptable, but not the strongest choice. Better options were available that could have improved their position more significantly. This gives you a small opportunity to gain an edge.'
+        return `⚠️ ${colorName}'s move is acceptable, but not the strongest choice. Better options were available that could have improved their position more significantly. This creates an opportunity.`
       case 'inaccuracy':
-        return '❌ Your opponent made an inaccuracy. This gives you an opportunity to improve your position and potentially gain an advantage. Look for ways to exploit this weakness.'
+        return `❌ ${colorName} made an inaccuracy. This creates an opportunity to improve the position. Look for ways to exploit this weakness.`
       case 'mistake':
         return bestMoveSan
-          ? `❌ Your opponent made a mistake! They should have played ${bestMoveSan} instead. This creates tactical opportunities for you - look for ways to take advantage of their error and gain a significant advantage.`
-          : '❌ Your opponent\'s move creates significant difficulties for them. Look for tactical opportunities to exploit this mistake and gain a substantial advantage. This could be a turning point in the game.'
+          ? `❌ ${colorName} made a mistake! They should have played ${bestMoveSan} instead. This creates tactical opportunities - look for ways to take advantage of their error and gain a significant advantage.`
+          : `❌ ${colorName}'s move creates significant difficulties for them. Look for tactical opportunities to exploit this mistake and gain a substantial advantage. This could be a turning point in the game.`
       case 'blunder':
         return bestMoveSan
-          ? `❌ Your opponent blundered! They should have played ${bestMoveSan}. This is a major tactical error - look for immediate opportunities to win material or deliver checkmate. This could be game-changing!`
-          : '❌ Your opponent made a serious mistake that could be game-changing. This creates a major tactical opportunity - look for winning combinations and decisive tactics that could end the game.'
+          ? `❌ ${colorName} blundered! They should have played ${bestMoveSan}. This is a major tactical error - look for immediate opportunities to win material or deliver checkmate. This could be game-changing!`
+          : `❌ ${colorName} made a serious mistake that could be game-changing. This creates a major tactical opportunity - look for winning combinations and decisive tactics that could end the game.`
       default:
-        return '📝 Opponent move recorded. Analyze the position carefully and look for the best response to maintain or improve your position.'
+        return '📝 Opponent move recorded. Analyze the position carefully and look for the best response to maintain or improve the position.'
     }
   }
 
@@ -479,9 +481,8 @@ export default function GameAnalysisPage() {
       return
     }
 
-    // Prevent duplicate analysis requests
+      // Prevent duplicate analysis requests
     if (autoAnalyzing) {
-      console.log('Analysis already in progress, skipping duplicate request')
       return
     }
 
@@ -493,12 +494,6 @@ export default function GameAnalysisPage() {
       // If providerGameId is an event object (from onClick), ignore it
       const providedGameId = (typeof providerGameId === 'string') ? providerGameId : undefined
       const gameIdToUse = providedGameId || gameRecord?.provider_game_id || decodedGameId
-      console.log('Requesting analysis for game:', {
-        user_id: decodedUserId,
-        platform,
-        game_id: gameIdToUse,
-        provider_game_id: gameIdToUse
-      })
 
       const response = await fetch(`${baseUrl}/api/v1/analyze?use_parallel=false`, {
         method: 'POST',
@@ -543,7 +538,6 @@ export default function GameAnalysisPage() {
       }
 
       const payload = await response.json()
-      console.log('Analysis request successful:', payload)
 
       // Start polling for analysis completion
       const cleanup = pollForAnalysis()
@@ -574,7 +568,6 @@ export default function GameAnalysisPage() {
       }
 
       try {
-        console.log(`Polling for analysis (attempt ${attempts + 1}/${maxAttempts})...`)
         const result = await fetchGameAnalysisData(decodedUserId, platform, decodedGameId)
 
         if (isCancelled) {
@@ -583,7 +576,6 @@ export default function GameAnalysisPage() {
 
         if (result.analysis && result.analysis.moves_analysis && result.analysis.moves_analysis.length > 0) {
           // Analysis is complete
-          console.log('Analysis found! Updating UI...')
           setAnalysisRecord(result.analysis)
           setGameRecord(prev => prev ?? result.game)
           setPgn(result.pgn ?? null)
@@ -596,7 +588,6 @@ export default function GameAnalysisPage() {
 
         // Continue polling
         attempts++
-        console.log(`No analysis yet, will retry in 10 seconds...`)
         setTimeout(poll, 10000) // Poll every 10 seconds
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error)
@@ -649,9 +640,6 @@ export default function GameAnalysisPage() {
         // Auto-analysis disabled - users should click "Analyze" button in match history
         // This prevents automatic analysis when navigating to game details
         // Only "Analyze My Games" button should trigger batch analysis
-        if (!result.analysis && result.game) {
-          console.log('No analysis found for this game. User can click "Analyze" in match history to analyze it.')
-        }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err)
         console.error('Unable to load game analysis', errorMessage)
@@ -1066,7 +1054,6 @@ export default function GameAnalysisPage() {
   const currentMoveArrows = useMemo(() => {
     // Check if we have moves and if currentIndex is valid
     if (!processedData.moves || processedData.moves.length === 0) {
-      console.log('[GameAnalysisPage] No moves to generate arrows for')
       return []
     }
 
@@ -1077,24 +1064,13 @@ export default function GameAnalysisPage() {
     const moveIndex = currentIndex - 1
 
     if (moveIndex < 0 || moveIndex >= processedData.moves.length) {
-      console.log('[GameAnalysisPage] Move index out of bounds:', moveIndex, 'moves length:', processedData.moves.length)
       return []
     }
 
     const currentMove = processedData.moves[moveIndex]
     if (!currentMove) {
-      console.log('[GameAnalysisPage] No current move at index:', moveIndex)
       return []
     }
-
-    console.log('[GameAnalysisPage] Generating arrows for move:', {
-      moveIndex,
-      san: currentMove.san,
-      bestMoveSan: currentMove.bestMoveSan,
-      classification: currentMove.classification,
-      isUserMove: currentMove.isUserMove,
-      fenBefore: currentMove.fenBefore
-    })
 
     // Use the stored fenBefore from the move data - this is more reliable than replaying moves
     // because it avoids issues with moves that fail to replay (e.g., ambiguous notation)
@@ -1102,7 +1078,6 @@ export default function GameAnalysisPage() {
     if (currentMove.fenBefore) {
       try {
         chess = new Chess(currentMove.fenBefore)
-        console.log('[GameAnalysisPage] Using stored fenBefore for arrow generation')
       } catch (err) {
         console.warn('[GameAnalysisPage] Invalid fenBefore, falling back to replay:', err)
         // Fallback to replaying moves if fenBefore is invalid
@@ -1120,7 +1095,6 @@ export default function GameAnalysisPage() {
       }
     } else {
       // Fallback: replay moves if fenBefore is not available
-      console.warn('[GameAnalysisPage] No fenBefore available, replaying moves (less reliable)')
       chess = new Chess()
       for (let i = 0; i < moveIndex; i++) {
         const move = processedData.moves[i]
@@ -1138,9 +1112,7 @@ export default function GameAnalysisPage() {
     const expectedTurn = currentMove.player
     const actualTurn = chess.turn() === 'w' ? 'white' : 'black'
     if (expectedTurn !== actualTurn) {
-      console.warn('[GameAnalysisPage] Position turn mismatch! Expected', expectedTurn, 'but position has', actualTurn, 'to move')
-      console.warn('[GameAnalysisPage] FEN:', chess.fen())
-      console.warn('[GameAnalysisPage] Move SAN:', currentMove.san)
+      console.warn('[GameAnalysisPage] Position turn mismatch for move:', currentMove.san)
     }
 
     // Generate modern arrows for the current move
@@ -1151,7 +1123,6 @@ export default function GameAnalysisPage() {
       isUserMove: currentMove.isUserMove
     }, chess)
 
-    console.log('[GameAnalysisPage] Generated arrows:', arrows.length, 'for move:', currentMove.san, 'at position index:', currentIndex, 'move index:', moveIndex)
     return arrows
   }, [currentIndex, processedData.moves])
 
@@ -1294,37 +1265,16 @@ export default function GameAnalysisPage() {
 
   // Re-analyze handler
   const handleReanalyze = async () => {
-    console.log('[REANALYZE] Button clicked!')
-    console.log('[REANALYZE] Checking data availability:', {
-      hasPgn: !!pgn,
-      pgnLength: pgn?.length,
-      platform,
-      decodedUserId,
-      decodedGameId
-    })
 
     if (!pgn || !platform || !decodedUserId) {
-      console.error('[REANALYZE] ❌ Missing required data for re-analysis:', {
-        pgn: !!pgn,
-        platform: !!platform,
-        decodedUserId: !!decodedUserId
-      })
       setAnalysisError('Missing required data for re-analysis. Please try refreshing the page.')
       return
     }
-
-    console.log('[REANALYZE] ✅ All data available, starting analysis...')
     setIsReanalyzing(true)
     setReanalyzeSuccess(false)
     setAnalysisError(null)
 
     try {
-      console.log('[REANALYZE] 🔄 Calling UnifiedAnalysisService.analyzeGame...', {
-        user: decodedUserId,
-        platform,
-        gameId: decodedGameId,
-        pgnPreview: pgn.substring(0, 100)
-      })
 
       // Call the analyzeGame API with DEEP analysis for better results
       const response = await UnifiedAnalysisService.analyzeGame(
@@ -1335,7 +1285,6 @@ export default function GameAnalysisPage() {
       )
 
       if (response.success) {
-        console.log('✅ Re-analysis successful!')
         setReanalyzeSuccess(true)
 
         // Wait a moment for the backend to save, then hard refresh the page
@@ -1347,7 +1296,6 @@ export default function GameAnalysisPage() {
         throw new Error('Re-analysis failed')
       }
     } catch (error) {
-      console.error('❌ Re-analysis error:', error)
 
       // Check if this is an AbortError (timeout or cancelled request)
       // The backend might have still completed the analysis successfully
@@ -1360,7 +1308,6 @@ export default function GameAnalysisPage() {
       if (isAbortError) {
         // For abort errors, wait a bit then check if analysis was actually saved
         // This handles cases where the request timed out but backend completed
-        console.log('⏱️ Request was aborted/timed out, checking if analysis completed...')
 
         // Wait a moment for backend to potentially finish
         await new Promise(resolve => setTimeout(resolve, 3000))
@@ -1370,7 +1317,6 @@ export default function GameAnalysisPage() {
           const latestAnalysis = await fetchGameAnalysisData(decodedUserId, platform, decodedGameId)
           if (latestAnalysis.analysis && latestAnalysis.analysis.analysis_type === 'deep') {
             // Analysis was saved! Treat as success
-            console.log('✅ Analysis completed and saved despite request timeout')
             setReanalyzeSuccess(true)
             setTimeout(() => {
               window.location.reload()
@@ -1481,12 +1427,9 @@ export default function GameAnalysisPage() {
 
   const navigateToMove = (index: number) => {
     const clampedIndex = clamp(index, 0, processedData.positions.length - 1)
-    console.log('navigateToMove called:', { index, clampedIndex, currentIndex, totalPositions: processedData.positions.length })
-    console.log('🔥 NAVIGATION DEBUG: Moving from', currentIndex, 'to', clampedIndex)
 
     // If in any exploration mode, exit it first and then navigate
     if (isExploringFollowUp || isFreeExploration) {
-      console.log('⚠️ Exiting exploration to navigate')
       setIsExploringFollowUp(false)
       setIsFreeExploration(false)
       setExplorationMoves([])
@@ -1538,13 +1481,6 @@ export default function GameAnalysisPage() {
 
   // Handle piece drop on main board during exploration
   const handlePieceDrop = (sourceSquare: string, targetSquare: string): boolean => {
-    console.log('🎯 handlePieceDrop called:', {
-      sourceSquare,
-      targetSquare,
-      currentIndex,
-      isExploring: isExploringFollowUp || isFreeExploration,
-      displayPosition: displayPosition
-    })
 
     try {
       // Use the displayPosition which already accounts for all exploration moves
@@ -1553,11 +1489,8 @@ export default function GameAnalysisPage() {
 
       if (!startingFen) {
         // Fallback to standard chess starting position
-        console.log('⚠️ No display position found, using starting position')
         return false
       }
-
-      console.log('🎯 Starting FEN (from displayPosition):', startingFen)
 
       // Create a chess instance with the starting position
       const game = new Chess(startingFen)
@@ -1566,8 +1499,6 @@ export default function GameAnalysisPage() {
       // Only specify promotion if it's a pawn move to the 8th rank
       const piece = game.get(sourceSquare as any)
       const isPromotion = piece?.type === 'p' && (targetSquare[1] === '8' || targetSquare[1] === '1')
-
-      console.log('🎯 Piece info:', { piece, isPromotion, turn: game.turn() })
 
       const moveOptions: any = {
         from: sourceSquare,
@@ -1578,12 +1509,9 @@ export default function GameAnalysisPage() {
         moveOptions.promotion = 'q'
       }
 
-      console.log('🎯 Attempting move with options:', moveOptions)
-
       const move = game.move(moveOptions)
 
       if (move) {
-        console.log('✅ Move successful:', move.san)
 
         // Play sound for the move
         const soundType = getMoveSoundSimple(move.san)
@@ -1593,12 +1521,8 @@ export default function GameAnalysisPage() {
 
         // If not already exploring, enter free exploration mode
         if (!isExploringFollowUp && !isFreeExploration) {
-          console.log('🔵 Entering free exploration mode')
           setIsFreeExploration(true)
           setExplorationBaseIndex(currentIndex)
-          console.log('🔵 isFreeExploration should now be TRUE')
-        } else {
-          console.log('🔵 Already in exploration mode:', { isExploringFollowUp, isFreeExploration })
         }
 
         return true
@@ -1631,14 +1555,13 @@ export default function GameAnalysisPage() {
 
   // Handle adding exploration moves programmatically (for auto-play)
   const handleAddExplorationMove = (move: string) => {
-    console.log('📝 Adding exploration move:', move)
     // Use functional update to avoid stale closure issues
     setExplorationMoves(prev => [...prev, move])
   }
 
   // Handle URL query parameter for move navigation
   useEffect(() => {
-    const moveParam = searchParams.get('move')
+      const moveParam = searchParams.get('move')
     if (moveParam && !loading && processedData.moves.length > 0) {
       const moveNumber = parseInt(moveParam, 10)
       if (!isNaN(moveNumber) && moveNumber > 0) {
@@ -1646,7 +1569,6 @@ export default function GameAnalysisPage() {
         // Move 1 = index 1 (ply 1), Move 2 = index 2 (ply 2), etc.
         const targetIndex = moveNumber
         if (targetIndex >= 0 && targetIndex <= processedData.positions.length - 1) {
-          console.log(`Navigating to move ${moveNumber} (index ${targetIndex}) from URL parameter`)
           setCurrentIndex(targetIndex)
         }
       }

@@ -1,5 +1,5 @@
-# Cursor AI Assistant Safety Rules
-# These rules help prevent destructive commands and data loss
+# Cursor AI Assistant Rules for Chess Analytics Project
+# Comprehensive rules covering safety, architecture, coding conventions, and best practices
 
 ## CRITICAL SAFETY RULES
 
@@ -62,3 +62,411 @@
 - When in doubt, don't run the command
 - Always prioritize user data safety over convenience
 - A few extra steps to be safe is always worth it
+
+# ============================================================================
+# PROJECT ARCHITECTURE & STRUCTURE
+# ============================================================================
+
+## Project Overview
+This is a Chess Analytics application with:
+- **Frontend**: React + TypeScript + Vite (port 3000)
+- **Backend**: Python + FastAPI (port 8002)
+- **Database**: Supabase (PostgreSQL)
+- **Chess Engine**: Stockfish 17.1
+- **Deployment**: Railway (backend), Vercel (frontend)
+
+## Directory Structure
+```
+src/                    # Frontend React/TypeScript code
+├── components/         # React components
+│   ├── simple/        # Basic analytics components
+│   ├── deep/          # Advanced analysis components
+│   ├── debug/         # Debug/diagnostic components
+│   ├── chess/         # Chess-specific UI components
+│   └── ui/            # Reusable UI components
+├── pages/             # React Router pages
+├── services/          # API service layers
+├── lib/               # Utilities and Supabase client
+├── utils/             # Helper functions
+├── hooks/             # Custom React hooks
+├── contexts/          # React contexts (Auth, ChessSound)
+└── types/             # TypeScript type definitions
+
+python/                # Backend Python code
+├── core/              # Core analysis engine and API
+│   ├── analysis_engine.py      # Main analysis engine
+│   ├── unified_api_server.py   # FastAPI server
+│   ├── config.py               # Configuration management
+│   ├── error_handlers.py       # Error handling
+│   ├── engine_pool.py          # Stockfish engine pool
+│   └── cache_manager.py        # Caching system
+├── scripts/           # Utility scripts
+└── tests/             # Python tests
+
+supabase/              # Database migrations and functions
+├── migrations/        # SQL migration files
+└── functions/         # Edge functions
+```
+
+## Key Technologies
+- **Frontend**: React 18, TypeScript 5.8, Vite 7, TailwindCSS, React Router
+- **Backend**: Python 3, FastAPI, Uvicorn, python-chess, Stockfish
+- **Database**: Supabase (PostgreSQL)
+- **Testing**: Vitest, Playwright, pytest
+- **Deployment**: Railway (backend), Vercel (frontend)
+
+# ============================================================================
+# FRONTEND CONVENTIONS (TypeScript/React)
+# ============================================================================
+
+## TypeScript Standards
+- **Strict Mode**: Always enabled (`strict: true` in tsconfig.json)
+- **Type Safety**: Use explicit types, avoid `any` unless absolutely necessary
+- **Interfaces**: Prefer interfaces over types for component props
+- **File Extensions**: Use `.tsx` for React components, `.ts` for utilities
+- **Imports**: Use ES6 imports, organize imports (external → internal → relative)
+
+## React Component Patterns
+- **Functional Components**: Always use functional components with hooks
+- **Component Structure**:
+  ```typescript
+  // 1. Imports (external → internal → relative)
+  // 2. Type/Interface definitions
+  // 3. Component function
+  // 4. Exports
+  ```
+- **Props Interface**: Define props interface above component
+- **Hooks**: Use hooks at the top of component, before any logic
+- **State Management**: Use `useState` for local state, contexts for global state
+- **Memoization**: Use `useMemo` and `useCallback` for expensive computations
+
+## Naming Conventions
+- **Components**: PascalCase (e.g., `UnifiedChessAnalysis.tsx`)
+- **Files**: Match component name exactly
+- **Functions**: camelCase (e.g., `getGamePhaseColor`)
+- **Constants**: UPPER_SNAKE_CASE (e.g., `CHESS_ANALYSIS_COLORS`)
+- **Types/Interfaces**: PascalCase (e.g., `ProcessedMove`, `GameAnalysisProps`)
+
+## Component Organization
+- **Simple Components**: `src/components/simple/` - Basic analytics displays
+- **Deep Analysis**: `src/components/deep/` - Advanced analysis features
+- **Debug Components**: `src/components/debug/` - Diagnostic/debugging tools
+- **Chess UI**: `src/components/chess/` - Chess-specific UI (boards, arrows)
+- **Reusable UI**: `src/components/ui/` - Generic reusable components
+
+## State Management
+- **Local State**: `useState` for component-specific state
+- **Global State**: React Context API (`AuthContext`, `ChessSoundContext`)
+- **Server State**: Direct Supabase queries or service layer calls
+- **No Redux**: This project does NOT use Redux
+
+## Error Handling
+- **Error Boundaries**: Use `ErrorBoundary` component for React error catching
+- **API Errors**: Handle in service layer, show user-friendly messages
+- **Validation**: Use Zod for environment variable validation (`src/lib/env.ts`)
+
+## Environment Variables
+- **Validation**: All env vars validated with Zod in `src/lib/env.ts`
+- **Naming**: Frontend vars must start with `VITE_` prefix
+- **Access**: Use `import.meta.env.VITE_*` or validated `env` object from `lib/env.ts`
+- **Required**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- **Optional**: `VITE_API_URL`, `VITE_ANALYSIS_API_URL`, `VITE_DEBUG`, `VITE_LOG_LEVEL`
+
+## Styling
+- **Framework**: TailwindCSS for all styling
+- **Theme**: Dark theme by default, responsive design
+- **Colors**: Use `CHESS_ANALYSIS_COLORS` from `utils/chessColors.ts`
+- **Responsive**: Mobile-first approach, use `useResponsive` hook when needed
+
+## API Communication
+- **Service Layer**: Use service classes in `src/services/`
+- **Base URL**: Get from `config.getApi().baseUrl` (defaults to `http://localhost:8002`)
+- **Error Handling**: Always handle errors, show user-friendly messages
+- **Caching**: Use `apiCache.ts` utilities for request caching
+- **Timeout**: Default 30 seconds, configurable via config
+
+## File Organization
+- **One Component Per File**: Each component in its own file
+- **Co-location**: Keep related files together (component + tests)
+- **Barrel Exports**: Use index files sparingly, prefer direct imports
+- **Test Files**: Co-locate with component: `ComponentName.test.tsx`
+
+# ============================================================================
+# BACKEND CONVENTIONS (Python/FastAPI)
+# ============================================================================
+
+## Python Standards
+- **Version**: Python 3.10+ required
+- **Type Hints**: Always use type hints for function parameters and return types
+- **Docstrings**: Use Google-style docstrings for all public functions/classes
+- **Imports**: Organize imports (stdlib → third-party → local)
+- **Formatting**: Follow PEP 8, use black formatter if available
+
+## FastAPI Patterns
+- **API Version**: Use `/api/v1/` prefix for all endpoints
+- **Unified Server**: All endpoints in `python/core/unified_api_server.py`
+- **Request Validation**: Use Pydantic models for request/response validation
+- **Error Handling**: Use custom error classes from `error_handlers.py`
+- **CORS**: Configured via `cors_security.py`, production-safe defaults
+
+## Naming Conventions
+- **Files**: snake_case (e.g., `analysis_engine.py`)
+- **Classes**: PascalCase (e.g., `ChessAnalysisEngine`)
+- **Functions**: snake_case (e.g., `analyze_game`)
+- **Constants**: UPPER_SNAKE_CASE (e.g., `PIECE_VALUES`)
+- **Private**: Prefix with underscore (e.g., `_load_config`)
+
+## Configuration Management
+- **Central Config**: All config in `python/core/config.py`
+- **Environment Variables**: Load from `.env.local` (highest priority) → `.env`
+- **Tier-Based**: Configuration adapts to deployment tier (free/starter/production)
+- **Validation**: Config validated on startup, errors logged clearly
+- **Stockfish Path**: Auto-detected, can be overridden via `STOCKFISH_PATH` env var
+
+## Error Handling
+- **Custom Exceptions**: Use exception classes from `error_handlers.py`:
+  - `ChessAnalyticsError` (base)
+  - `DatabaseError`, `AnalysisError`, `AuthenticationError`, `ValidationError`, `RateLimitError`
+- **Error Responses**: Use `create_error_response()` for consistent JSON responses
+- **Logging**: Always log errors with context, use structured logging
+- **User Messages**: Never expose internal errors to users, sanitize messages
+
+## Database Patterns
+- **Client**: Use Supabase client from `config.get_database_config()`
+- **Queries**: Use Supabase Python client, handle connection errors gracefully
+- **Transactions**: Use Supabase transactions for multi-step operations
+- **Migrations**: All schema changes via SQL migrations in `supabase/migrations/`
+- **Error Handling**: Wrap DB operations in try/except, use `handle_database_error()`
+
+## Analysis Engine
+- **Unified Engine**: Use `ChessAnalysisEngine` from `analysis_engine.py`
+- **Engine Pool**: Use `StockfishEnginePool` for concurrent analysis
+- **Caching**: Use `LRUCache` and `TTLDict` from `cache_manager.py`
+- **Memory**: Monitor with `MemoryMonitor` for production deployments
+- **Config**: Analysis config from `config.get_analysis_engine_config()`
+
+## API Endpoints
+- **Main Endpoint**: `POST /api/v1/analyze` - Unified analysis endpoint
+- **Results**: `GET /api/v1/results/{user_id}/{platform}` - Get analysis results
+- **Stats**: `GET /api/v1/stats/{user_id}/{platform}` - Get statistics
+- **Progress**: `GET /api/v1/progress/{user_id}/{platform}` - Get analysis progress
+- **Health**: `GET /health` - Health check endpoint
+
+## Background Tasks
+- **FastAPI BackgroundTasks**: Use for long-running operations
+- **Queue System**: Use `analysis_queue.py` for batch processing
+- **Progress Tracking**: Update progress in database, frontend polls for updates
+
+## Security
+- **CORS**: Configured per environment, production-safe defaults
+- **Authentication**: JWT tokens via Supabase Auth
+- **Rate Limiting**: Implemented per user/tier, use `RateLimitError`
+- **Input Validation**: Always validate with Pydantic models
+- **SQL Injection**: Use parameterized queries, never string concatenation
+
+## Logging
+- **Level**: Configurable via `LOG_LEVEL` env var (default: INFO)
+- **Format**: Structured logging with timestamps
+- **File Logging**: Optional, configured via `LOG_FILE` env var
+- **Sensitive Data**: Never log API keys, tokens, or passwords
+
+# ============================================================================
+# DATABASE CONVENTIONS (Supabase/PostgreSQL)
+# ============================================================================
+
+## Migration Files
+- **Location**: `supabase/migrations/` directory
+- **Naming**: Timestamped format (e.g., `20240101000000_create_table.sql`)
+- **Idempotent**: All migrations should be idempotent (safe to run multiple times)
+- **Rollback**: Consider rollback scripts for critical changes
+
+## Schema Patterns
+- **Tables**: snake_case for table names (e.g., `game_analyses`)
+- **Columns**: snake_case for column names (e.g., `user_id`, `created_at`)
+- **Primary Keys**: Use `id` UUID primary key with `gen_random_uuid()`
+- **Timestamps**: Always include `created_at` and `updated_at` timestamps
+- **Foreign Keys**: Explicit foreign key constraints with proper indexes
+
+## Query Patterns
+- **RLS**: Row Level Security enabled on all user-facing tables
+- **Indexes**: Create indexes on frequently queried columns (user_id, game_id, etc.)
+- **Joins**: Use proper JOINs, avoid N+1 queries
+- **Pagination**: Always implement pagination for large result sets
+
+## Data Validation
+- **Constraints**: Use database constraints (NOT NULL, CHECK, UNIQUE)
+- **Types**: Use appropriate PostgreSQL types (UUID, TIMESTAMPTZ, JSONB)
+- **Validation**: Validate data in application layer before inserting
+
+# ============================================================================
+# TESTING CONVENTIONS
+# ============================================================================
+
+## Frontend Testing
+- **Framework**: Vitest for unit tests, Playwright for E2E
+- **Location**: Co-locate with components or in `tests/` directory
+- **Naming**: `*.test.tsx` or `*.test.ts`
+- **Coverage**: Aim for >80% coverage on critical paths
+- **Mocking**: Mock Supabase client and API calls
+
+## Backend Testing
+- **Framework**: pytest
+- **Location**: `python/tests/` directory
+- **Naming**: `test_*.py` files
+- **Fixtures**: Use pytest fixtures for common test data
+- **Isolation**: Each test should be independent, use test database if needed
+
+## E2E Testing
+- **Framework**: Playwright
+- **Location**: `tests/` directory
+- **Configuration**: `playwright.config.ts`
+- **Scenarios**: Test critical user flows (signup, login, analysis)
+
+# ============================================================================
+# CODE QUALITY & STYLE
+# ============================================================================
+
+## General Principles
+- **Readability**: Code should be self-documenting, use clear variable names
+- **DRY**: Don't Repeat Yourself - extract common logic into utilities
+- **SOLID**: Follow SOLID principles, especially Single Responsibility
+- **Comments**: Comment WHY, not WHAT - code should explain itself
+- **Documentation**: Update README and docs when adding features
+
+## Code Reviews
+- **Small PRs**: Keep pull requests focused and small
+- **Descriptive Commits**: Write clear commit messages
+- **Test Coverage**: Include tests for new features
+- **Breaking Changes**: Document breaking changes clearly
+
+## Performance
+- **Frontend**: Use React.memo, useMemo, useCallback appropriately
+- **Backend**: Cache expensive operations, use connection pooling
+- **Database**: Optimize queries, add indexes, avoid N+1 queries
+- **Bundle Size**: Monitor bundle size, use code splitting
+
+## Security
+- **Secrets**: Never commit secrets, use environment variables
+- **Input Validation**: Always validate and sanitize user input
+- **SQL Injection**: Use parameterized queries
+- **XSS**: Sanitize user-generated content before rendering
+- **CORS**: Configure CORS properly for production
+
+# ============================================================================
+# DEPLOYMENT & ENVIRONMENT
+# ============================================================================
+
+## Environment Files
+- **Frontend**: `.env.local` (gitignored), validated via `src/lib/env.ts`
+- **Backend**: `python/.env.local` (gitignored), loaded via `config.py`
+- **Priority**: `.env.local` > `.env` > defaults
+- **Validation**: Always validate env vars on startup
+
+## Deployment Targets
+- **Frontend**: Vercel (automatic from git push)
+- **Backend**: Railway (configured via `railway.toml` and `Procfile`)
+- **Database**: Supabase (managed service)
+
+## Environment Variables
+- **Required Frontend**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- **Required Backend**: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- **Optional**: `STOCKFISH_PATH`, `API_PORT`, `LOG_LEVEL`, etc.
+
+## Build Process
+- **Frontend**: `npm run build` → Vite production build
+- **Backend**: Python package, no build step needed
+- **Database**: Migrations run automatically on Supabase
+
+# ============================================================================
+# COMMON PATTERNS & UTILITIES
+# ============================================================================
+
+## Frontend Utilities
+- **Chess Utils**: `utils/chessUtils.ts` - Chess-specific helpers
+- **API Cache**: `utils/apiCache.ts` - Request caching
+- **Error Handling**: `lib/errorHandling.ts` - Error utilities
+- **Config**: `lib/config.ts` - Centralized configuration
+
+## Backend Utilities
+- **Config**: `core/config.py` - Centralized configuration
+- **Error Handlers**: `core/error_handlers.py` - Error handling
+- **Cache**: `core/cache_manager.py` - Caching utilities
+- **Engine Pool**: `core/engine_pool.py` - Stockfish engine management
+
+## Chess-Specific
+- **Move Classification**: Uses chess.com-style classifications (brilliant, best, great, excellent, good, acceptable, inaccuracy, mistake, blunder)
+- **Evaluation**: Centipawn loss calculation for move quality
+- **Game Phases**: Opening, Middlegame, Endgame detection
+- **Openings**: ECO code normalization and identification
+
+# ============================================================================
+# WHEN ADDING NEW FEATURES
+# ============================================================================
+
+## Checklist
+1. **Plan**: Understand the feature requirements
+2. **Design**: Consider architecture and data model
+3. **Database**: Create migrations if schema changes needed
+4. **Backend**: Add API endpoints if needed
+5. **Frontend**: Create components and integrate
+6. **Tests**: Write tests for new functionality
+7. **Documentation**: Update README/docs if needed
+8. **Environment**: Add new env vars if needed
+9. **Security**: Review security implications
+10. **Performance**: Consider performance impact
+
+## Code Review Checklist
+- [ ] TypeScript types are correct
+- [ ] Error handling is implemented
+- [ ] Tests are included
+- [ ] No console.logs in production code
+- [ ] Environment variables documented
+- [ ] Database migrations are idempotent
+- [ ] API endpoints are documented
+- [ ] Security considerations addressed
+
+# ============================================================================
+# COMMON PITFALLS TO AVOID
+# ============================================================================
+
+## Frontend
+- ❌ Don't use `any` type - use proper TypeScript types
+- ❌ Don't commit `.env.local` files
+- ❌ Don't hardcode API URLs - use config
+- ❌ Don't forget error handling for API calls
+- ❌ Don't use inline styles - use TailwindCSS classes
+
+## Backend
+- ❌ Don't expose internal errors to users
+- ❌ Don't log sensitive data (API keys, passwords)
+- ❌ Don't use string concatenation for SQL queries
+- ❌ Don't forget to handle database connection errors
+- ❌ Don't hardcode configuration values
+
+## Database
+- ❌ Don't forget to add indexes for frequently queried columns
+- ❌ Don't create migrations that aren't idempotent
+- ❌ Don't forget RLS policies for user data
+- ❌ Don't use SELECT * in production queries
+
+# ============================================================================
+# DEBUGGING & TROUBLESHOOTING
+# ============================================================================
+
+## Frontend Debugging
+- **React DevTools**: Use for component inspection
+- **Console**: Check browser console for errors
+- **Network Tab**: Inspect API requests/responses
+- **Source Maps**: Available in development mode
+
+## Backend Debugging
+- **Logs**: Check application logs (configured via LOG_LEVEL)
+- **Health Endpoint**: Use `/health` to check server status
+- **Stockfish**: Verify Stockfish path and version
+- **Database**: Check Supabase dashboard for query issues
+
+## Common Issues
+- **CORS Errors**: Check CORS configuration in `cors_security.py`
+- **Stockfish Not Found**: Verify `STOCKFISH_PATH` env var
+- **Database Connection**: Check Supabase credentials
+- **Port Conflicts**: Backend uses 8002, frontend uses 3000

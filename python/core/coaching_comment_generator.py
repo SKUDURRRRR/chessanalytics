@@ -225,14 +225,6 @@ class ChessCoachingGenerator:
         # These always take priority over generic position descriptions
         has_critical_tactical_issue = self._has_critical_tactical_issue(move_analysis)
 
-        # Debug logging
-        move_san = move_analysis.get('move_san', 'unknown')
-        move_number = move_analysis.get('fullmove_number', 0)
-        print(f"[COACHING] Move {move_number} ({move_san}): has_critical_tactical_issue={has_critical_tactical_issue}")
-        print(f"[COACHING]   - is_mistake={move_analysis.get('is_mistake', False)}")
-        print(f"[COACHING]   - is_blunder={move_analysis.get('is_blunder', False)}")
-        print(f"[COACHING]   - is_inaccuracy={move_analysis.get('is_inaccuracy', False)}")
-        print(f"[COACHING]   - centipawn_loss={move_analysis.get('centipawn_loss', 0)}")
 
         # Use board_after from move_analysis if available (position after the move), otherwise use board
         board_after = move_analysis.get('board_after', board)
@@ -242,10 +234,6 @@ class ChessCoachingGenerator:
         special_comment = None
         if not has_critical_tactical_issue:
             special_comment = self._check_for_special_comments(move_analysis, board_after, move, game_phase, previous_phase, is_user_move, player_skill_level)
-            if special_comment:
-                print(f"[COACHING] Using special comment (position description) for move {move_number}")
-        else:
-            print(f"[COACHING] Skipping special comment due to critical tactical issue for move {move_number}")
 
         if special_comment:
             # Use special comment (only if no critical tactical issues)
@@ -734,7 +722,6 @@ Write the phase transition comment now:"""
         """Generate the main coaching comment with detailed explanations."""
         # Check if this move warrants AI commentary
         should_use_ai = self._should_use_ai_comment(move_analysis, move_quality)
-        print(f"[COACHING] Move {move_analysis.get('move_san', 'unknown')}: quality={move_quality}, should_use_ai={should_use_ai}, ai_enabled={self.ai_generator.enabled if self.ai_generator else False}")
 
         # Try AI generation first if available and move is significant
         if should_use_ai and self.ai_generator and self.ai_generator.enabled:
@@ -868,61 +855,65 @@ Write the phase transition comment now:"""
         return result
 
     def _generate_opponent_move_comment(self, move_quality: MoveQuality, move_analysis: Dict[str, Any]) -> str:
-        """Generate coaching comment for opponent moves."""
+        """Generate coaching comment for opponent moves using color-based references."""
+        # Get opponent color from move_analysis
+        opponent_color = move_analysis.get('player_color', 'black')
+        color_name = opponent_color.capitalize()  # "White" or "Black"
+
         opponent_templates = {
             MoveQuality.BRILLIANT: [
-                "Your opponent played a brilliant move! This shows strong tactical vision.",
-                "Excellent move by your opponent. This demonstrates advanced chess understanding.",
-                "Your opponent found a very strong move. Study this position to understand the tactics.",
-                "Outstanding play by your opponent. This is the kind of move that wins games."
+                f"{color_name} played a brilliant move! This shows strong tactical vision.",
+                f"Excellent move by {color_name}. This demonstrates advanced chess understanding.",
+                f"{color_name} found a very strong move. Study this position to understand the tactics.",
+                f"Outstanding play by {color_name}. This is the kind of move that wins games."
             ],
             MoveQuality.BEST: [
-                "Your opponent played the best move available. This is solid, accurate play.",
-                "Strong move by your opponent. They found the optimal continuation.",
-                "Your opponent played precisely. This maintains their position well.",
-                "Good move by your opponent. They're playing accurately."
+                f"{color_name} played the best move available. This is solid, accurate play.",
+                f"Strong move by {color_name}. They found the optimal continuation.",
+                f"{color_name} played precisely. This maintains their position well.",
+                f"Good move by {color_name}. They're playing accurately."
             ],
             MoveQuality.GREAT: [
-                "Your opponent played a great move! This shows excellent chess understanding.",
-                "Very strong move by your opponent. They found a move that significantly improves their position.",
-                "Your opponent played excellently. This demonstrates advanced tactical awareness.",
-                "Great play by your opponent. This kind of move shows strong chess skills."
+                f"{color_name} played a great move! This shows excellent chess understanding.",
+                f"Very strong move by {color_name}. They found a move that significantly improves their position.",
+                f"{color_name} played excellently. This demonstrates advanced tactical awareness.",
+                f"Great play by {color_name}. This kind of move shows strong chess skills."
             ],
             MoveQuality.EXCELLENT: [
-                "Your opponent played an excellent move! This shows good chess fundamentals.",
-                "Very well played by your opponent. They found a move that maintains their position well.",
-                "Your opponent played excellently. This demonstrates solid chess understanding.",
-                "Excellent move by your opponent. This shows good tactical awareness."
+                f"{color_name} played an excellent move! This shows good chess fundamentals.",
+                f"Very well played by {color_name}. They found a move that maintains their position well.",
+                f"{color_name} played excellently. This demonstrates solid chess understanding.",
+                f"Excellent move by {color_name}. This shows good tactical awareness."
             ],
             MoveQuality.GOOD: [
-                "Your opponent made a good move. This maintains a solid position.",
-                "Decent move by your opponent. They're playing reasonably well.",
-                "Your opponent played a solid move. Nothing spectacular, but sound.",
-                "Good choice by your opponent. This keeps their position healthy."
+                f"{color_name} made a good move. This maintains a solid position.",
+                f"Decent move by {color_name}. They're playing reasonably well.",
+                f"{color_name} played a solid move. Nothing spectacular, but sound.",
+                f"Good choice by {color_name}. This keeps their position healthy."
             ],
             MoveQuality.ACCEPTABLE: [
-                "Your opponent's move is acceptable, but not the strongest choice.",
-                "Playable move by your opponent, though better options were available.",
-                "Your opponent's move works, but it's not optimal.",
-                "Acceptable move by your opponent, but room for improvement."
+                f"{color_name}'s move is acceptable, but not the strongest choice.",
+                f"Playable move by {color_name}, though better options were available.",
+                f"{color_name}'s move works, but it's not optimal.",
+                f"Acceptable move by {color_name}, but room for improvement."
             ],
             MoveQuality.INACCURACY: [
-                "Your opponent made an inaccuracy. This gives you an opportunity.",
-                "Your opponent's move has some issues. Look for ways to exploit this.",
-                "Inaccurate move by your opponent. This weakens their position slightly.",
-                "Your opponent missed a better move. Take advantage of this."
+                f"{color_name} made an inaccuracy. This creates an opportunity.",
+                f"{color_name}'s move has some issues. Look for ways to exploit this.",
+                f"Inaccurate move by {color_name}. This weakens their position slightly.",
+                f"{color_name} missed a better move. Take advantage of this."
             ],
             MoveQuality.MISTAKE: [
-                "Your opponent made a mistake! This significantly weakens their position.",
-                "Your opponent's move has problems. This is a good opportunity for you.",
-                "Mistake by your opponent. Look for tactical opportunities.",
-                "Your opponent's move creates difficulties for them. Exploit this."
+                f"{color_name} made a mistake! This significantly weakens their position.",
+                f"{color_name}'s move has problems. This is a good opportunity.",
+                f"Mistake by {color_name}. Look for tactical opportunities.",
+                f"{color_name}'s move creates difficulties for them. Exploit this."
             ],
             MoveQuality.BLUNDER: [
-                "Your opponent blundered! This is a major error that you can exploit.",
-                "Your opponent made a serious mistake. Look for winning tactics.",
-                "Blunder by your opponent! This could be game-changing.",
-                "Your opponent's move is a significant error. Find the refutation."
+                f"{color_name} blundered! This is a major error to exploit.",
+                f"{color_name} made a serious mistake. Look for winning tactics.",
+                f"Blunder by {color_name}! This could be game-changing.",
+                f"{color_name}'s move is a significant error. Find the refutation."
             ]
         }
 
@@ -996,12 +987,13 @@ Write the phase transition comment now:"""
             explanations.append("while delivering a powerful check")
 
         # Build the explanation
+        # Get player color for reference
+        player_color = move_analysis.get('player_color', 'white')
+        color_name = player_color.capitalize()  # "White" or "Black"
+
         if explanations:
             base = "🌟 Outstanding! This move demonstrates exceptional tactical vision. "
-            if is_user_move:
-                base += "You've found a brilliant resource that "
-            else:
-                base += "Your opponent found a brilliant resource that "
+            base += f"{color_name} found a brilliant resource that "
 
             base += " ".join(explanations) + ". "
 
@@ -1015,9 +1007,9 @@ Write the phase transition comment now:"""
             # Enhanced fallback for brilliant moves without specific indicators
             base = "🌟 Outstanding! This move demonstrates exceptional chess understanding and tactical mastery. "
             if is_user_move:
-                base += "You've found a brilliant resource that even strong players might miss. "
+                base += f"{color_name} found a brilliant resource that even strong players might miss. "
             else:
-                base += "Your opponent found a brilliant resource that shows advanced tactical vision. "
+                base += f"{color_name} found a brilliant resource that shows advanced tactical vision. "
 
             # Add context based on available data
             if move_analysis.get('gives_check', False):
