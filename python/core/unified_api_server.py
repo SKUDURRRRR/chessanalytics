@@ -380,7 +380,7 @@ async def startup_event():
     global _engine_pool_instance, _memory_monitor_instance, _cache_cleanup_task
 
     print("=" * 80)
-    print("🚀 Starting Chess Analytics API Server with Memory Optimizations")
+    print("[START] Starting Chess Analytics API Server with Memory Optimizations")
     print("=" * 80)
 
     # Initialize Stockfish engine pool
@@ -667,6 +667,15 @@ async def get_http_client():
             timeout=timeout
         )
     return _shared_http_client
+
+# ============================================================================
+# HELPER CLASSES
+# ============================================================================
+
+class MockSingleResult:
+    """Mock result object for converting list results to single-item results."""
+    def __init__(self, data):
+        self.data = data
 
 # ============================================================================
 # UNIFIED PYDANTIC MODELS
@@ -3238,38 +3247,58 @@ async def get_single_game(
         game = game_response.data[0]
         game_identifier = game.get('provider_game_id') or game.get('id')
 
-        # Fetch PGN
-        pgn_response = await asyncio.to_thread(
-            lambda: db_client.table('games_pgn')
-            .select('pgn')
-            .eq('user_id', canonical_user_id)
-            .eq('platform', platform)
-            .eq('provider_game_id', game_identifier)
-            .maybe_single()
-            .execute()
-        )
+        # Fetch PGN - use limit(1) instead of maybe_single() to avoid 204 errors
+        pgn_data = None
+        try:
+            pgn_response = await asyncio.to_thread(
+                lambda: db_client.table('games_pgn')
+                .select('pgn')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .eq('provider_game_id', game_identifier)
+                .limit(1)
+                .execute()
+            )
+            if pgn_response.data and len(pgn_response.data) > 0:
+                pgn_data = pgn_response.data[0].get('pgn') if isinstance(pgn_response.data[0], dict) else None
+        except Exception as pgn_error:
+            # Log but don't fail - PGN might not exist yet for unanalyzed games
+            print(f"PGN not found for game {game_identifier}: {pgn_error}")
+            pgn_data = None
 
-        # Fetch analysis (try both move_analyses and unified_analyses)
-        analysis_response = await asyncio.to_thread(
-            lambda: db_client.table('unified_analyses')
-            .select('*')
-            .eq('user_id', canonical_user_id)
-            .eq('platform', platform)
-            .eq('provider_game_id', game_identifier)
-            .maybe_single()
-            .execute()
-        )
+        # Fetch analysis - use limit(1) instead of maybe_single() to avoid 204 errors
+        analysis_data = None
+        try:
+            analysis_response = await asyncio.to_thread(
+                lambda: db_client.table('unified_analyses')
+                .select('*')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .eq('provider_game_id', game_identifier)
+                .limit(1)
+                .execute()
+            )
+            if analysis_response.data and len(analysis_response.data) > 0:
+                analysis_data = analysis_response.data[0]
+        except Exception as analysis_error:
+            # Log but don't fail - analysis might not exist yet for unanalyzed games
+            print(f"Analysis not found for game {game_identifier}: {analysis_error}")
+            analysis_data = None
 
         return {
             'game': game,
-            'pgn': pgn_response.data['pgn'] if pgn_response.data else None,
-            'analysis': analysis_response.data if analysis_response.data else None
+            'pgn': pgn_data,
+            'analysis': analysis_data
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching single game: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error fetching single game for user_id={user_id}, platform={platform}, game_id={game_id}")
+        print(f"Error: {e}")
+        print(f"Traceback: {error_details}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/v1/clear-cache/{user_id}/{platform}", response_model=ClearCacheResponse)
@@ -3367,10 +3396,20 @@ async def get_deep_analysis(
         ).order('played_at', desc=True).limit(100).execute()
         games = games_response.data or []
 
-        profile_response = db_client.table('user_profiles').select('current_rating').eq(
-            'user_id', canonical_user_id
-        ).eq('platform', platform).maybe_single().execute()
-        profile = getattr(profile_response, 'data', None) or {}
+        # Fetch user profile - handle Postgrest 204 errors gracefully
+        profile = {}
+        try:
+            profile_response = db_client.table('user_profiles').select('current_rating').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).limit(1).execute()
+            if profile_response.data and len(profile_response.data) > 0:
+                profile = profile_response.data[0] or {}
+            else:
+                profile = {}
+        except Exception as profile_error:
+            # Profile might not exist for new users
+            print(f"Profile not found for user {canonical_user_id}: {profile_error}")
+            profile = {}
 
         # PERFORMANCE: Try unified_analyses first, fallback to move_analyses
         # unified_analyses combines both tables but may have structure differences
@@ -6830,33 +6869,49 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
 
         print(f"Smart import for {user_id}: starting...")
 
-        # Get all existing game IDs to avoid duplicates
-        # Supabase has a 1000 row default limit, we need to paginate to get ALL games
-        existing_game_ids = set()
-        offset = 0
-        page_size = 1000
+        # Fetch the most recent games from the platform first to check against
+        print(f"[Smart import] ===== FETCHING GAMES FROM {platform.upper()} =====")
+        games_data = await _fetch_games_from_platform(user_id, platform, 100)
+        print(f"[Smart import] Fetched {len(games_data) if games_data else 0} games from platform API")
 
-        while True:
-            existing_games_response = await asyncio.to_thread(
-                lambda: db_client.table('games').select('provider_game_id').eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).range(offset, offset + page_size - 1).execute()
+        if not games_data:
+            print(f"[Smart import] No games returned from platform")
+            message = (
+                "No games were returned from the platform. Please verify the username "
+                "has recent games or try again later."
+            )
+            return BulkGameImportResponse(
+                success=False,
+                imported_games=0,
+                errors=[message],
+                error_count=1,
+                new_games_count=0,
+                had_existing_games=False,
+                message=message
             )
 
-            if not existing_games_response.data or len(existing_games_response.data) == 0:
-                break
+        # Get only the IDs of the fetched games to check against database
+        fetched_game_ids = [g.get('id') or g.get('provider_game_id') for g in games_data if g.get('id') or g.get('provider_game_id')]
 
-            for game in existing_games_response.data:
-                if game.get('provider_game_id'):
-                    existing_game_ids.add(game.get('provider_game_id'))
+        # Query database for only these specific game IDs (much more efficient than fetching ALL games)
+        existing_game_ids = set()
+        if fetched_game_ids:
+            # Split into chunks of 100 to avoid query size limits
+            chunk_size = 100
+            for i in range(0, len(fetched_game_ids), chunk_size):
+                chunk = fetched_game_ids[i:i+chunk_size]
+                existing_games_response = await asyncio.to_thread(
+                    lambda ids=chunk: db_client.table('games').select('provider_game_id').eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).in_('provider_game_id', ids).execute()
+                )
 
-            # If we got fewer results than page_size, we've reached the end
-            if len(existing_games_response.data) < page_size:
-                break
+                if existing_games_response.data:
+                    for game in existing_games_response.data:
+                        if game.get('provider_game_id'):
+                            existing_game_ids.add(game.get('provider_game_id'))
 
-            offset += page_size
-
-        print(f"[Smart import] Paginated through {offset + len(existing_games_response.data) if existing_games_response.data else offset} total game records")
+        print(f"[Smart import] Checked {len(fetched_game_ids)} fetched games, found {len(existing_game_ids)} already in database")
 
         # DEBUG: Write to file for diagnosis (only when DEBUG=true)
         if os.getenv("DEBUG", "false").lower() == "true":
@@ -6873,12 +6928,9 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
         if existing_game_ids:
             print(f"[Smart import] Sample existing game IDs (first 3): {list(existing_game_ids)[:3]}")
         else:
-            print(f"[Smart import] WARNING: No existing games found in database!")
+            print(f"[Smart import] No existing games found in database (first time import)")
 
-        # Fetch the most recent 100 games from the platform
-        print(f"[Smart import] ===== FETCHING GAMES FROM {platform.upper()} =====")
-        games_data = await _fetch_games_from_platform(user_id, platform, 100)
-        print(f"[Smart import] Fetched {len(games_data) if games_data else 0} games from platform API")
+        # Add detailed logging about fetched games
         if games_data:
             sample_ids = [g.get('id') or g.get('provider_game_id') for g in games_data[:3]]
             sample_dates = []
@@ -6889,33 +6941,6 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
             print(f"[Smart import] Sample fetched game DATES (first 3): {sample_dates}")
             print(f"[Smart import] Most recent game date: {games_data[0].get('played_at', 'No date') if games_data else 'N/A'}")
             print(f"[Smart import] Oldest game date in batch: {games_data[-1].get('played_at', 'No date') if games_data else 'N/A'}")
-
-        if not games_data:
-            if existing_game_ids:
-                message = "No new games found. You already have all recent games imported."
-                return BulkGameImportResponse(
-                    success=True,
-                    imported_games=0,
-                    errors=[],
-                    error_count=0,
-                    new_games_count=0,
-                    had_existing_games=True,
-                    message=message
-                )
-
-            message = (
-                "No games were returned from the platform. Please verify the username "
-                "has recent games or try again later."
-            )
-            return BulkGameImportResponse(
-                success=False,
-                imported_games=0,
-                errors=[message],
-                error_count=1,
-                new_games_count=0,
-                had_existing_games=False,
-                message=message
-            )
 
         # Filter to get only new games (games not in our database)
         new_games = []
@@ -8037,7 +8062,7 @@ async def get_import_status(user_id: str, platform: str):
             ).eq('platform', platform).execute()
         )
 
-        oldest_game = oldest_game_query.data[0]['played_at'] if oldest_game_query.data else None
+        oldest_game = oldest_game_query.data[0].get('played_at') if oldest_game_query.data and len(oldest_game_query.data) > 0 else None
         total_games = getattr(total_games_query, 'count', 0)
 
         return {
@@ -8306,12 +8331,23 @@ async def get_or_create_profile(request: dict):
         if not supabase_service:
             raise HTTPException(status_code=500, detail="Database service not available")
 
-        # Try to get existing profile
-        result = await asyncio.to_thread(
-            lambda: supabase_service.table("user_profiles").select("*").eq(
-                "user_id", canonical_user_id
-            ).eq("platform", platform).maybe_single().execute()
-        )
+        # Try to get existing profile - handle Postgrest 204 errors gracefully
+        result = None
+        try:
+            query_result = await asyncio.to_thread(
+                lambda: supabase_service.table("user_profiles").select("*").eq(
+                    "user_id", canonical_user_id
+                ).eq("platform", platform).limit(1).execute()
+            )
+            if query_result and query_result.data and len(query_result.data) > 0:
+                # Create a mock result object with data attribute
+                result = MockSingleResult(query_result.data[0])
+            else:
+                result = None
+        except Exception as query_error:
+            # Profile doesn't exist yet, will create it below
+            print(f"Profile query returned no results for {canonical_user_id}: {query_error}")
+            result = None
 
         if DEBUG:
             print(f"[get_or_create_profile] Query result: has_result={result is not None}, has_data={bool(result.data if result else False)}")
@@ -8347,7 +8383,7 @@ async def get_or_create_profile(request: dict):
         if DEBUG:
             print(f"[get_or_create_profile] Create result: has_result={create_result is not None}, has_data={bool(create_result.data if create_result else False)}")
 
-        if not create_result or not create_result.data:
+        if not create_result or not create_result.data or len(create_result.data) == 0:
             raise HTTPException(status_code=500, detail="Failed to create profile")
 
         return create_result.data[0]
@@ -8551,12 +8587,16 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             game_response = await asyncio.to_thread(
                 lambda: db_client.table('games_pgn').select('pgn, provider_game_id').eq(
                     'provider_game_id', game_id
-                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                ).eq('user_id', canonical_user_id).eq('platform', request.platform).limit(1).execute()
             )
             print(f"[SINGLE GAME ANALYSIS] Query result: {game_response}")
             print(f"[SINGLE GAME ANALYSIS] Has data: {game_response is not None and hasattr(game_response, 'data')}")
             if game_response and hasattr(game_response, 'data'):
                 print(f"[SINGLE GAME ANALYSIS] Data value: {game_response.data}")
+                if game_response.data and len(game_response.data) > 0:
+                    game_response.data = game_response.data[0]
+                else:
+                    game_response.data = None
         except Exception as query_error:
             print(f"[SINGLE GAME ANALYSIS] ERROR Database query error: {query_error}")
             return UnifiedAnalysisResponse(
@@ -8618,11 +8658,16 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         print(f"[SINGLE GAME ANALYSIS] Checking if game exists in games table: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
         games_check = None
         try:
-            games_check = await asyncio.to_thread(
+            games_check_result = await asyncio.to_thread(
                 lambda: db_client.table('games').select('id').eq(
                     'provider_game_id', game_id
-                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                ).eq('user_id', canonical_user_id).eq('platform', request.platform).limit(1).execute()
             )
+            if games_check_result and games_check_result.data and len(games_check_result.data) > 0:
+                # Create a mock result with single data item
+                games_check = MockSingleResult(games_check_result.data[0])
+            else:
+                games_check = None
             print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data if (games_check and hasattr(games_check, 'data')) else 'None'}")
         except Exception as check_error:
             print(f"[SINGLE GAME ANALYSIS] ERROR Error checking games table: {check_error}")
@@ -8749,11 +8794,16 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             # Validate foreign key constraint before saving
             print(f"[SINGLE GAME ANALYSIS] Validating foreign key constraint before saving...")
             try:
-                fk_validation = await asyncio.to_thread(
+                fk_validation_result = await asyncio.to_thread(
                     lambda: db_client.table('games').select('id').eq(
                         'provider_game_id', analysis_game_id
-                    ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                    ).eq('user_id', canonical_user_id).eq('platform', request.platform).limit(1).execute()
                 )
+                # Convert to expected format
+                if fk_validation_result and fk_validation_result.data and len(fk_validation_result.data) > 0:
+                    fk_validation = MockSingleResult(fk_validation_result.data[0])
+                else:
+                    fk_validation = None
             except Exception as fk_error:
                 print(f"[SINGLE GAME ANALYSIS] ERROR Error during FK validation: {fk_error}")
                 fk_validation = None
@@ -8839,11 +8889,17 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                             print(f"[SINGLE GAME ANALYSIS] SUCCESS Successfully created/updated game record: {analysis_game_id}")
 
                             # Re-validate foreign key constraint
-                            fk_validation = await asyncio.to_thread(
+                            fk_validation_result = await asyncio.to_thread(
                                 lambda: db_client.table('games').select('id').eq(
                                     'provider_game_id', analysis_game_id
-                                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                                ).eq('user_id', canonical_user_id).eq('platform', request.platform).limit(1).execute()
                             )
+
+                            # Convert to expected format
+                            if fk_validation_result and fk_validation_result.data and len(fk_validation_result.data) > 0:
+                                fk_validation = MockSingleResult(fk_validation_result.data[0])
+                            else:
+                                fk_validation = None
 
                             if fk_validation and hasattr(fk_validation, 'data') and fk_validation.data:
                                 print(f"[SINGLE GAME ANALYSIS] SUCCESS Foreign key validation passed after creating game record")
@@ -9730,7 +9786,7 @@ async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
             ).execute()
         )
 
-        if not result.data:
+        if not result.data or len(result.data) == 0:
             return JSONResponse(
                 status_code=404,
                 content={"success": False, "message": "User profile not found"}
