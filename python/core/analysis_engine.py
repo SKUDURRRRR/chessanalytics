@@ -1196,6 +1196,15 @@ class ChessAnalysisEngine:
         move_san = board.san(move)
         color_to_move = board.turn
 
+        # DEBUG: Check if this is actually a capture
+        is_capture_move = board.is_capture(move)
+        if is_capture_move:
+            captured_square = chess.square_name(move.to_square)
+            captured_piece = board.piece_at(move.to_square)
+            print(f"[MOVE_SAN DEBUG] Move {move.uci()} -> SAN: {move_san}, is_capture: {is_capture_move}, captured on {captured_square}: {captured_piece}")
+            if 'x' not in move_san:
+                print(f"[MOVE_SAN ERROR] Capture move but no 'x' in SAN! move_san={move_san}, should include 'x'")
+
         # Store FEN position before the move
         fen_before = board.fen()
 
@@ -1238,6 +1247,12 @@ class ChessAnalysisEngine:
         hanging_before = {entry['square'] for entry in before_features['hanging_pieces'][color_key]}
         hanging_after = after_features['hanging_pieces'][color_key]
         new_hanging = [entry for entry in hanging_after if entry['square'] not in hanging_before]
+
+        # DEBUG: Log hanging piece detection
+        if new_hanging:
+            print(f"[HANGING DEBUG] Move {move_san}: Detected {len(new_hanging)} new hanging pieces:")
+            for h in new_hanging:
+                print(f"  - {h['piece']} on {h['square']} (attackers={h.get('attackers', 0)}, defenders={h.get('defenders', 0)})")
 
         if color_to_move == chess.WHITE:
             delta = after_score - before_score
@@ -1629,12 +1644,31 @@ class ChessAnalysisEngine:
             # Determine game phase
             game_phase = self._determine_game_phase(board, move_number)
 
-            # Prepare enhanced move analysis data with board positions
+            # CRITICAL FIX: board is BEFORE the move at this point (already popped in _analyze_move_basic)
+            # We need to get both board states correctly
+            board_before = board.copy()
+            board.push(move)  # Apply the move to get board AFTER
+            board_after = board.copy()
+            board.pop()  # Restore board to BEFORE state
+
+            # Validate boards are different (catch bugs)
+            if board_before.fen() == board_after.fen():
+                print(f"[WARNING] board_before == board_after for {move_analysis.move_san}! This indicates a bug.")
+
+            # Prepare enhanced move analysis data with CORRECT board positions
             enhanced_move_data = move_analysis.__dict__.copy()
-            enhanced_move_data['board_before'] = board.copy()
-            enhanced_move_data['board_after'] = board.copy()
+            enhanced_move_data['board_before'] = board_before
+            enhanced_move_data['board_after'] = board_after
             enhanced_move_data['move'] = move
             enhanced_move_data['move_san'] = move_analysis.move_san
+
+            # Debug logging for capture validation
+            if board.is_capture(move):
+                captured = board_before.piece_at(move.to_square)
+                if captured:
+                    piece_names = {chess.PAWN: 'pawn', chess.KNIGHT: 'knight', chess.BISHOP: 'bishop',
+                                   chess.ROOK: 'rook', chess.QUEEN: 'queen', chess.KING: 'king'}
+                    print(f"[CAPTURE DEBUG] {move_analysis.move_san}: Captured {piece_names.get(captured.piece_type, 'piece')} on {chess.square_name(move.to_square)}")
 
             # Safely access heuristic_details with null checks
             heuristic_details = move_analysis.heuristic_details or {}
@@ -2884,7 +2918,7 @@ class ChessAnalysisEngine:
                     # We need to undo the move temporarily to get the correct move number
                     board.pop()  # Undo the move to get the original position
                     move_number = (board.fullmove_number - 1) * 2 + (0 if board.turn == chess.WHITE else 1)
-                    board.push(current_move)  # Restore the move for coaching analysis
+                    # DO NOT push the move here - _enhance_move_analysis_with_coaching expects board BEFORE the move
                     # For now, assume all moves are user moves - this will be determined by the frontend
                     return self._enhance_move_analysis_with_coaching(move_analysis, board, current_move, move_number, is_user_move=True)
             except Exception as e:

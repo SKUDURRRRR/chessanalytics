@@ -80,8 +80,6 @@ class ContextualExplanationGenerator:
             return self._generate_blunder_explanation(move, move_san, impact, centipawn_loss)
         elif impact.check_delivered:
             return self._generate_check_explanation(move, move_san, impact)
-        elif impact.material_change < 0:
-            return self._generate_sacrifice_explanation(move, move_san, impact)
         elif impact.tactical_patterns:
             return self._generate_tactical_explanation(move, move_san, impact)
         else:

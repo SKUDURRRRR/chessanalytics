@@ -209,21 +209,49 @@ class ChessCoachingGenerator:
         is_user_move: bool = True,
         previous_phase: Optional[GamePhase] = None
     ) -> CoachingComment:
-        """Generate comprehensive coaching comment for a move."""
+        """Generate comprehensive coaching comment for a move.
+
+        Priority hierarchy (highest to lowest):
+        1. Critical tactical issues (checkmate, hanging queen/rook, forced mate)
+        2. Major tactical issues (blunders, mistakes, hanging pieces)
+        3. Move-specific analysis (brilliant, inaccuracies, good moves)
+        4. Contextual commentary (position descriptions, phase transitions, generic advice)
+        """
 
         # Determine move quality
         move_quality = self._determine_move_quality(move_analysis)
 
-        # Check for special comments: move 1, moves 5-10, phase transitions
+        # PRIORITY 1 & 2: Check if this is a critical/major tactical move that MUST be highlighted
+        # These always take priority over generic position descriptions
+        has_critical_tactical_issue = self._has_critical_tactical_issue(move_analysis)
+
+        # Debug logging
+        move_san = move_analysis.get('move_san', 'unknown')
+        move_number = move_analysis.get('fullmove_number', 0)
+        print(f"[COACHING] Move {move_number} ({move_san}): has_critical_tactical_issue={has_critical_tactical_issue}")
+        print(f"[COACHING]   - is_mistake={move_analysis.get('is_mistake', False)}")
+        print(f"[COACHING]   - is_blunder={move_analysis.get('is_blunder', False)}")
+        print(f"[COACHING]   - is_inaccuracy={move_analysis.get('is_inaccuracy', False)}")
+        print(f"[COACHING]   - centipawn_loss={move_analysis.get('centipawn_loss', 0)}")
+
         # Use board_after from move_analysis if available (position after the move), otherwise use board
         board_after = move_analysis.get('board_after', board)
-        special_comment = self._check_for_special_comments(move_analysis, board_after, move, game_phase, previous_phase, is_user_move, player_skill_level)
+
+        # PRIORITY 3 & 4: Only use special comments (position descriptions, etc.) if no critical tactical issues
+        # This ensures tactical accuracy is always prioritized over generic commentary
+        special_comment = None
+        if not has_critical_tactical_issue:
+            special_comment = self._check_for_special_comments(move_analysis, board_after, move, game_phase, previous_phase, is_user_move, player_skill_level)
+            if special_comment:
+                print(f"[COACHING] Using special comment (position description) for move {move_number}")
+        else:
+            print(f"[COACHING] Skipping special comment due to critical tactical issue for move {move_number}")
 
         if special_comment:
-            # Use special comment as main comment
+            # Use special comment (only if no critical tactical issues)
             main_comment = special_comment
         else:
-            # Generate main comment (different for user vs opponent moves)
+            # Generate main comment (move-specific analysis or tactical commentary)
             main_comment = self._generate_main_comment(move_quality, move_analysis, is_user_move)
 
         # Generate detailed explanations (different perspective for opponent moves)
@@ -330,27 +358,31 @@ class ChessCoachingGenerator:
         return False
 
     def _is_significant_capture(self, move_analysis: Dict[str, Any]) -> bool:
-        """Check if this is a significant capture (piece capture, not simple pawn capture)."""
-        move_san = move_analysis.get('move_san', '')
-        if not move_san or 'x' not in move_san:
-            return False
+        """Check if this is a capture move.
 
-        # Check if it's a capture using the board
+        All captures are considered significant enough to warrant AI commentary,
+        as even pawn captures can have important tactical/positional implications.
+        """
+        move_san = move_analysis.get('move_san', '')
+
+        # Check for capture notation in SAN
+        if 'x' in move_san:
+            print(f"[CAPTURE DETECTION] {move_san} is a capture - will use AI commentary")
+            return True
+
+        # Double-check with board state if available
         board_before = move_analysis.get('board_before')
         move = move_analysis.get('move')
 
         if board_before and move:
             try:
-                # Check what piece was captured
+                # Check if there's a piece on the target square
                 captured_piece = board_before.piece_at(move.to_square)
                 if captured_piece:
-                    # Significant if capturing a piece (not a pawn)
-                    piece_value = captured_piece.piece_type
-                    # Piece types: 1=pawn, 2=knight, 3=bishop, 4=rook, 5=queen, 6=king
-                    if piece_value > 1:  # Not a pawn
-                        return True
-            except Exception:
-                pass
+                    print(f"[CAPTURE DETECTION] {move_san} captures piece on {chess.square_name(move.to_square)} - will use AI commentary")
+                    return True
+            except Exception as e:
+                print(f"[CAPTURE DETECTION] Error checking capture: {e}")
 
         return False
 
@@ -383,6 +415,64 @@ class ChessCoachingGenerator:
         if (centipawn_loss <= 25 and
             not tactical_insights and
             move_quality == MoveQuality.GOOD):
+            return True
+
+        return False
+
+    def _has_critical_tactical_issue(self, move_analysis: Dict[str, Any]) -> bool:
+        """Check if move has critical tactical issues that should override generic position descriptions.
+
+        These are moves that MUST be commented on tactically, not with generic positional descriptions:
+        - Blunders (hanging pieces, major material loss)
+        - Mistakes (significant evaluation drops)
+        - Inaccuracies (moderate evaluation drops)
+        - Brilliant moves (tactical sacrifices, forcing sequences)
+        """
+        # PRIORITY 1: Critical blunders (checkmate, hanging queen/rook)
+        if move_analysis.get('is_blunder', False):
+            return True
+
+        # PRIORITY 2: Major tactical issues (mistakes, hanging valuable pieces)
+        if move_analysis.get('is_mistake', False):
+            return True
+
+        # PRIORITY 2.5: Inaccuracies should be highlighted (not overridden by position descriptions)
+        if move_analysis.get('is_inaccuracy', False):
+            return True
+
+        # PRIORITY 3: Brilliant moves (always highlight these!)
+        if move_analysis.get('is_brilliant', False):
+            return True
+
+        # Check for hanging pieces (critical tactical issue)
+        heuristic_details = move_analysis.get('heuristic_details', {})
+        new_hanging = heuristic_details.get('new_hanging_pieces', [])
+        if new_hanging:
+            # Any hanging pieces should be highlighted (even pawns in some contexts)
+            for hanging in new_hanging:
+                piece_symbol = hanging.get('piece', '').upper()
+                # Critical: Queen, Rook always mentioned
+                if piece_symbol in ['Q', 'R']:
+                    return True
+                # Important: Knight, Bishop mentioned if it's a mistake/blunder
+                if piece_symbol in ['N', 'B'] and (move_analysis.get('is_mistake', False) or move_analysis.get('is_blunder', False)):
+                    return True
+
+        # Check for significant material loss (SEE < -100)
+        see_score = heuristic_details.get('see', 0)
+        if see_score < -100:  # Losing at least a pawn worth without compensation
+            return True
+
+        # CRITICAL: Captures should ALWAYS be highlighted with move-specific commentary
+        # (not generic position descriptions)
+        move_san = move_analysis.get('move_san', '')
+        if 'x' in move_san:
+            print(f"[CRITICAL_TACTICAL] {move_san} is a CAPTURE - must use move-specific commentary, not position description")
+            return True
+
+        # Check for significant evaluation drop (>100cp loss = inaccuracy threshold)
+        centipawn_loss = move_analysis.get('centipawn_loss', 0)
+        if centipawn_loss > 100:  # Inaccuracy threshold
             return True
 
         return False
@@ -433,6 +523,8 @@ class ChessCoachingGenerator:
                 return self._generate_move_1_welcome_comment(board, move, player_elo, move_analysis, is_user_move)
 
         # Position descriptions: Windows 5-10, 14-17, 21-24, 28-31, etc.
+        # NOTE: Tactical issues are already filtered at the top level (in generate_coaching_comment)
+        # So if we reach here, it's safe to use position descriptions
         if is_user_move and self._is_in_position_update_window(move_number):
             return self._generate_position_description_comment(move_analysis, board, move, move_number, player_elo)
 
@@ -864,20 +956,17 @@ Write the phase transition comment now:"""
         # Fallback to enhanced explanation if contextual analysis fails
         explanations = []
 
-        # Check for material sacrifice
-        # Avoid centipawn jargon in explanations; describe conceptually
-        if centipawn_loss > 0:
-            explanations.append("This move is a calculated material sacrifice")
-
-        # Check for tactical patterns
+        # Check for tactical patterns (SEE-based sacrifice detection)
         heuristic_details = move_analysis.get('heuristic_details', {})
         see_score = heuristic_details.get('see', 0)
 
+        # ONLY call it a sacrifice if SEE shows we're actually losing material in the exchange
+        # (not just playing a move that's slightly worse than the best move)
         if see_score < -100:  # Significant material sacrifice
-            explanations.append("in a brilliant tactical sacrifice")
+            explanations.append("This is a brilliant tactical sacrifice")
             explanations.append("that creates devastating threats")
-        elif see_score < 0:
-            explanations.append("in a calculated sacrifice")
+        elif see_score < -50:  # Moderate sacrifice (at least half a pawn worth)
+            explanations.append("with a calculated sacrifice")
             explanations.append("that gains significant positional advantages")
 
         # Check for king safety improvements
@@ -1228,7 +1317,7 @@ Write the phase transition comment now:"""
         if move_analysis.get('is_brilliant', False):
             heuristic_details = move_analysis.get('heuristic_details', {})
 
-            # Analyze sacrifice patterns
+            # Analyze sacrifice patterns (SEE shows actual material loss in exchange)
             see_score = heuristic_details.get('see', 0)
             if see_score < -200:
                 insights.append("This is a brilliant sacrifice that gives up significant material for devastating tactical compensation.")
@@ -1602,51 +1691,73 @@ Write the phase transition comment now:"""
         move_number = move_analysis.get('fullmove_number', 0)
         is_opening = move_number <= 15
 
+        # Check if this is a capture (to add to template comment as backup if AI failed)
+        move_san = move_analysis.get('move_san', '')
+        capture_prefix = ""
+        if 'x' in move_san and board and move:
+            try:
+                captured_piece = board.piece_at(move.to_square)
+                if captured_piece:
+                    piece_names = {
+                        chess.PAWN: "pawn",
+                        chess.KNIGHT: "knight",
+                        chess.BISHOP: "bishop",
+                        chess.ROOK: "rook",
+                        chess.QUEEN: "queen",
+                        chess.KING: "king"
+                    }
+                    piece_name = piece_names.get(captured_piece.piece_type, "piece")
+                    color = "white" if captured_piece.color == chess.WHITE else "black"
+                    capture_prefix = f"By capturing the {color} {piece_name}, "
+                    print(f"[TEMPLATE FALLBACK] Adding capture info to template comment: {capture_prefix}")
+            except Exception as e:
+                print(f"[TEMPLATE FALLBACK] Error adding capture info: {e}")
+
         if move_quality == MoveQuality.BEST:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
             elif abs(evaluation_change) < 10:
-                return "Best move. Keeps the position balanced and safe."
+                return f"{capture_prefix}this keeps the position balanced and safe. Best move."
             else:
-                return "Best move. Improves your position and follows sound principles."
+                return f"{capture_prefix}this improves your position and follows sound principles. Best move."
 
         elif move_quality == MoveQuality.GREAT:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
             elif abs(evaluation_change) < 10:
-                return "Great move. Maintains control and keeps things balanced."
+                return f"{capture_prefix}you maintain control and keep things balanced. Great move."
             elif evaluation_change > 0:
-                return "Great move that clearly improves your position."
+                return f"{capture_prefix}you clearly improve your position. Great move."
             else:
-                return "Great move that keeps your position solid."
+                return f"{capture_prefix}you keep your position solid. Great move."
 
         elif move_quality == MoveQuality.EXCELLENT:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
             elif abs(evaluation_change) < 10:
-                return "Excellent move. Solid and reliable, keeps everything under control."
+                return f"{capture_prefix}you keep everything under control. Excellent move."
             elif evaluation_change > 0:
-                return "Excellent move that strengthens your position."
+                return f"{capture_prefix}you strengthen your position. Excellent move."
             else:
-                return "Excellent move that holds the balance."
+                return f"{capture_prefix}you hold the balance well. Excellent move."
 
         elif move_quality == MoveQuality.GOOD:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
             elif abs(evaluation_change) < 10:
-                return "Good move. Keeps a playable position."
+                return f"{capture_prefix}you keep a playable position. Good move."
             elif evaluation_change > 0:
-                return "Good move that improves your position."
+                return f"{capture_prefix}you improve your position. Good move."
             else:
-                return "Good move that keeps the position safe."
+                return f"{capture_prefix}you keep the position safe. Good move."
 
         elif move_quality == MoveQuality.ACCEPTABLE:
             if is_opening:
                 return self._generate_opening_explanation(move_analysis, is_user_move)
             elif centipawn_loss > 0:
-                return "Playable, but a stronger option was available."
+                return f"{capture_prefix}this is playable, but a stronger option was available."
             else:
-                return "Acceptable move, though not the most accurate."
+                return f"{capture_prefix}this is acceptable, though not the most accurate."
 
         else:
             # Fall back to original templates for other qualities

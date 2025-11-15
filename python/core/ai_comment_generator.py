@@ -878,20 +878,36 @@ class AIChessCommentGenerator:
                 fen_before = board_before.fen()
                 # Check if this is a capture move
                 captured_piece = board_before.piece_at(move.to_square)
-                if captured_piece:
-                    is_capture = True
-                    piece_names = {
-                        chess.PAWN: "pawn",
-                        chess.KNIGHT: "knight",
-                        chess.BISHOP: "bishop",
-                        chess.ROOK: "rook",
-                        chess.QUEEN: "queen",
-                        chess.KING: "king"
-                    }
-                    piece_name = piece_names.get(captured_piece.piece_type, "piece")
-                    color = "white" if captured_piece.color == chess.WHITE else "black"
-                    captured_piece_name = f"{color} {piece_name}"
 
+                # VALIDATE: Cross-check capture detection
+                move_san = move_analysis.get('move_san', '')
+                has_capture_notation = 'x' in move_san
+
+                if captured_piece:
+                    # Board shows a piece on target square
+                    if not has_capture_notation:
+                        print(f"[AI WARNING] board_before shows piece on {chess.square_name(move.to_square)} but move_san '{move_san}' has no 'x' - possible board corruption")
+                        # Treat as non-capture to avoid false information
+                        is_capture = False
+                        captured_piece = None
+                    else:
+                        is_capture = True
+                        piece_names = {
+                            chess.PAWN: "pawn",
+                            chess.KNIGHT: "knight",
+                            chess.BISHOP: "bishop",
+                            chess.ROOK: "rook",
+                            chess.QUEEN: "queen",
+                            chess.KING: "king"
+                        }
+                        piece_name = piece_names.get(captured_piece.piece_type, "piece")
+                        color = "white" if captured_piece.color == chess.WHITE else "black"
+                        captured_piece_name = f"{color} {piece_name}"
+
+                        # Log successful capture detection
+                        print(f"[AI CAPTURE VALIDATED] {move_san} captures {color} {piece_name} on {chess.square_name(move.to_square)}")
+
+                if captured_piece and is_capture:
                     # Check if this is a sacrifice (using SEE score or heuristic_details)
                     heuristic_details = move_analysis.get('heuristic_details', {})
                     see_score = heuristic_details.get('see', 0)
@@ -910,6 +926,7 @@ class AIChessCommentGenerator:
 - This move ({move_san}) captures the {color} {piece_name} on {chess.square_name(move.to_square)}
 - This is the ONLY capture in this move
 - Do NOT mention any other captures or sacrifices"""
+                        print(f"[AI PROMPT] CAPTURE INFO for {move_san}: captures {color} {piece_name} on {chess.square_name(move.to_square)}")
                 else:
                     # Explicitly state when it's NOT a capture to prevent AI hallucination
                     capture_info = f"""
@@ -969,6 +986,36 @@ class AIChessCommentGenerator:
         filtered_tactical = self._filter_insights_for_move(tactical_insights, move_san, is_capture, is_user_move)
         filtered_positional = self._filter_insights_for_move(positional_insights, move_san, is_capture, is_user_move)
 
+        # Build hanging pieces context (CRITICAL for mistake detection)
+        hanging_pieces_context = ""
+        heuristic_details = move_analysis.get('heuristic_details', {})
+        new_hanging = heuristic_details.get('new_hanging_pieces', [])
+
+        # DEBUG: Log hanging pieces detection
+        print(f"[AI PROMPT DEBUG] Move {move_san}: new_hanging_pieces = {new_hanging}")
+
+        if new_hanging:
+            hanging_pieces_context = f"\n**CRITICAL TACTICAL ISSUE - HANGING PIECES:**\n"
+            for hanging in new_hanging:
+                piece_symbol = hanging.get('piece', '?')
+                square = hanging.get('square', '?')
+                piece_names = {
+                    'P': 'pawn', 'p': 'pawn',
+                    'N': 'knight', 'n': 'knight',
+                    'B': 'bishop', 'b': 'bishop',
+                    'R': 'rook', 'r': 'rook',
+                    'Q': 'queen', 'q': 'queen',
+                    'K': 'king', 'k': 'king'
+                }
+                piece_name = piece_names.get(piece_symbol, 'piece')
+                attackers = hanging.get('attackers', 0)
+                defenders = hanging.get('defenders', 0)
+                hanging_pieces_context += f"- {piece_name.title()} on {square} is hanging ({attackers} attackers vs {defenders} defenders)\n"
+            hanging_pieces_context += f"- This is the MOST IMPORTANT tactical issue in this position - MUST be mentioned!\n"
+            print(f"[AI PROMPT DEBUG] Hanging pieces context:\n{hanging_pieces_context}")
+        else:
+            print(f"[AI PROMPT DEBUG] No hanging pieces detected for move {move_san}")
+
         # Build tactical context
         tactical_context = ""
         if filtered_tactical:
@@ -981,6 +1028,39 @@ class AIChessCommentGenerator:
             positional_context = f"\n**POSITIONAL THEMES:**\n"
             for insight in filtered_positional:
                 positional_context += f"- {insight}\n"
+
+        # Build ACTUAL BOARD STATE context (CRITICAL for accuracy - prevents hallucination)
+        board_state_context = ""
+        if board:
+            try:
+                board_state_context = f"\n**ACTUAL BOARD STATE (VERIFY BEFORE MENTIONING ANY PIECE):**\n"
+
+                # List all pieces on the board with their exact locations
+                piece_locations = []
+                for square in chess.SQUARES:
+                    piece = board.piece_at(square)
+                    if piece:
+                        square_name = chess.square_name(square)
+                        piece_names_map = {
+                            chess.PAWN: "pawn", chess.KNIGHT: "knight", chess.BISHOP: "bishop",
+                            chess.ROOK: "rook", chess.QUEEN: "queen", chess.KING: "king"
+                        }
+                        piece_name = piece_names_map.get(piece.piece_type, "piece")
+                        color = "White" if piece.color == chess.WHITE else "Black"
+                        piece_locations.append(f"{color} {piece_name} on {square_name}")
+
+                # Add to context (show all pieces for accuracy)
+                board_state_context += "- " + "\n- ".join(piece_locations)
+                board_state_context += f"\n\n**CRITICAL ACCURACY RULES:**\n"
+                board_state_context += f"- ONLY mention pieces that are EXACTLY on the squares listed above\n"
+                board_state_context += f"- NEVER say 'knight on d4' unless you see 'knight on d4' in the list above\n"
+                board_state_context += f"- NEVER say 'bishop on e5' unless you see 'bishop on e5' in the list above\n"
+                board_state_context += f"- If you mention pinning/attacking/defending a piece, VERIFY its exact square from the list\n"
+                board_state_context += f"- If unsure about a piece location, DO NOT mention it - be vague instead\n"
+
+                print(f"[AI ACCURACY] Board state context generated with {len(piece_locations)} pieces for validation")
+            except Exception as e:
+                print(f"[AI ACCURACY] Warning: Could not generate board state context: {e}")
 
         # Build Stockfish analysis context
         stockfish_context = ""
@@ -1062,7 +1142,7 @@ Write the comment now:"""
                 move_san, move_number, player_elo, complexity, game_phase,
                 opening_context, previous_move_context, capture_info, is_capture,
                 move_quality, eval_verb, eval_description, eval_explanation,
-                stockfish_context, tactical_context, positional_context,
+                board_state_context, stockfish_context, hanging_pieces_context, tactical_context, positional_context,
                 fen_after, best_move_san, tal_style
             )
         else:
@@ -1070,7 +1150,7 @@ Write the comment now:"""
                 move_san, move_number, player_elo, complexity, game_phase,
                 opening_context, previous_move_context, capture_info, is_capture,
                 move_quality, eval_verb, eval_description, eval_explanation,
-                stockfish_context, tactical_context, positional_context,
+                board_state_context, stockfish_context, hanging_pieces_context, tactical_context, positional_context,
                 fen_after, best_move_san, tal_style
             )
 
@@ -1079,7 +1159,7 @@ Write the comment now:"""
         game_phase: str, opening_context: str, previous_move_context: str,
         capture_info: str, is_capture: bool, move_quality: MoveQuality,
         eval_verb: str, eval_description: str, eval_explanation: str,
-        stockfish_context: str, tactical_context: str, positional_context: str,
+        board_state_context: str, stockfish_context: str, hanging_pieces_context: str, tactical_context: str, positional_context: str,
         fen_after: str, best_move_san: str, tal_style: str
     ) -> str:
         """Build prompt specifically for opponent moves - analyze what opponent did."""
@@ -1092,9 +1172,10 @@ Write the comment now:"""
             task_description = "Analyze what your opponent did with this move and its purpose."
 
         prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
-{opening_context}{previous_move_context}{capture_info}
+{opening_context}{previous_move_context}{capture_info}{hanging_pieces_context}
 **MOVE QUALITY:** {move_quality.value} | opponent's move
 **EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
+{board_state_context}
 {stockfish_context}
 {tactical_context}{positional_context}
 **POSITION:** {fen_after}
@@ -1107,12 +1188,15 @@ Write the comment now:"""
 - Be specific: "weakens the position" not "is a good move"
 - Use "your opponent" when referring to the player who made this move
 - 2-3 sentences max, clear and instructive
+- CRITICAL: If HANGING PIECES are listed above, you MUST mention them in your comment - this is the most important tactical issue!
 - CRITICAL: Analyze what your opponent did, NOT what you should do next
 - CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
 - CRITICAL: Do NOT infer sacrifices from position context or previous moves
 - CRITICAL: The CAPTURE section above is the ONLY capture information - do not mention other captures
 - CRITICAL: If the move is NOT A CAPTURE, do NOT mention capturing anything
 - CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
+- CRITICAL: NEVER mention a piece on a square unless it's listed in the ACTUAL BOARD STATE section above
+- CRITICAL: If you say "knight on d4" or "bishop on e5", VERIFY that exact piece is on that exact square in the board state list
 {"Mention better move " + best_move_san + " if relevant (what opponent should have played)." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
 
 Write comment:"""
@@ -1123,14 +1207,15 @@ Write comment:"""
         game_phase: str, opening_context: str, previous_move_context: str,
         capture_info: str, is_capture: bool, move_quality: MoveQuality,
         eval_verb: str, eval_description: str, eval_explanation: str,
-        stockfish_context: str, tactical_context: str, positional_context: str,
+        board_state_context: str, stockfish_context: str, hanging_pieces_context: str, tactical_context: str, positional_context: str,
         fen_after: str, best_move_san: str, tal_style: str
     ) -> str:
         """Build prompt for user moves - explain the principle and idea behind the move."""
         prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
-{opening_context}{previous_move_context}{capture_info}
+{opening_context}{previous_move_context}{capture_info}{hanging_pieces_context}
 **MOVE QUALITY:** {move_quality.value} | player's move
 **EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
+{board_state_context}
 {stockfish_context}
 {tactical_context}{positional_context}
 **POSITION:** {fen_after}
@@ -1143,11 +1228,14 @@ Write comment:"""
 - Be specific: "loses the attack" not "is a good move"
 - Use 'your' not 'the player's'
 - 2-3 sentences max, clear and instructive
+- CRITICAL: If HANGING PIECES are listed above, you MUST mention them in your comment - this is the most important tactical issue!
 - CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
 - CRITICAL: Do NOT infer sacrifices from position context or previous moves
 - CRITICAL: The CAPTURE section above is the ONLY capture information - do not mention other captures
 - CRITICAL: If the move is NOT A CAPTURE, do NOT mention capturing anything
 - CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
+- CRITICAL: NEVER mention a piece on a square unless it's listed in the ACTUAL BOARD STATE section above
+- CRITICAL: If you say "knight on d4" or "bishop on e5", VERIFY that exact piece is on that exact square in the board state list
 {"Mention better move " + best_move_san + " if relevant." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
 
 Write comment:"""

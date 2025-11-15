@@ -1294,20 +1294,36 @@ export default function GameAnalysisPage() {
 
   // Re-analyze handler
   const handleReanalyze = async () => {
+    console.log('[REANALYZE] Button clicked!')
+    console.log('[REANALYZE] Checking data availability:', {
+      hasPgn: !!pgn,
+      pgnLength: pgn?.length,
+      platform,
+      decodedUserId,
+      decodedGameId
+    })
+
     if (!pgn || !platform || !decodedUserId) {
-      console.error('Missing required data for re-analysis')
+      console.error('[REANALYZE] ❌ Missing required data for re-analysis:', {
+        pgn: !!pgn,
+        platform: !!platform,
+        decodedUserId: !!decodedUserId
+      })
+      setAnalysisError('Missing required data for re-analysis. Please try refreshing the page.')
       return
     }
 
+    console.log('[REANALYZE] ✅ All data available, starting analysis...')
     setIsReanalyzing(true)
     setReanalyzeSuccess(false)
     setAnalysisError(null)
 
     try {
-      console.log('🔄 Starting re-analysis...', {
+      console.log('[REANALYZE] 🔄 Calling UnifiedAnalysisService.analyzeGame...', {
         user: decodedUserId,
         platform,
-        gameId: decodedGameId
+        gameId: decodedGameId,
+        pgnPreview: pgn.substring(0, 100)
       })
 
       // Call the analyzeGame API with DEEP analysis for better results
