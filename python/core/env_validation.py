@@ -50,15 +50,44 @@ class APIConfig(BaseModel):
     debug: bool = Field(default=False, description="Debug mode", alias='API_DEBUG')
     auth_enabled: bool = Field(default=True, description="Require auth on protected endpoints", alias='AUTH_ENABLED')
 
-    @field_validator('cors_origins')
+    @field_validator('cors_origins', mode='before')
     @classmethod
     def validate_cors_origins(cls, v):
+        """Parse CORS_ORIGINS from environment variable (comma-separated string) or list."""
+        # Handle string input (from environment variable)
+        if isinstance(v, str):
+            # Split by comma and strip whitespace
+            origins = [origin.strip() for origin in v.split(',') if origin.strip()]
+            if not origins:
+                raise ValueError('CORS origins cannot be empty')
+            return origins
+
+        # Handle list input (already parsed or default)
+        if isinstance(v, list):
+            # Filter out empty strings and strip whitespace
+            origins = [origin.strip() if isinstance(origin, str) else str(origin).strip()
+                      for origin in v if origin and str(origin).strip()]
+            if not origins:
+                raise ValueError('CORS origins cannot be empty')
+            return origins
+
         if not v:
             raise ValueError('CORS origins cannot be empty')
 
+        return v
+
+    @field_validator('cors_origins', mode='after')
+    @classmethod
+    def validate_cors_origins_format(cls, v):
+        """Validate CORS origins format after parsing."""
         # Security check: warn about wildcard origins in production
         if '*' in v:
             logger.warning('Warning: Wildcard CORS origins detected. This may be a security risk.')
+
+        # Validate each origin starts with http:// or https://
+        for origin in v:
+            if not origin.startswith(('http://', 'https://')):
+                logger.warning(f'Warning: CORS origin "{origin}" should start with http:// or https://')
 
         return v
 

@@ -6,7 +6,7 @@
 
 ## Problem
 
-User `baisustipas@gmail.com` visited the profile of `skudurrrrr` on ChessData, and the auto-import feature didn't work to fetch new games from Chess.com. The app showed games up to Nov 1, 2025, but Chess.com had newer games (Nov 2, 2025) that weren't imported.
+User `baisustipas@gmail.com` visited the profile of `skudurrrrr` on chessdata.app, and the auto-import feature didn't work to fetch new games from Chess.com. The app showed games up to Nov 1, 2025, but Chess.com had newer games (Nov 2, 2025) that weren't imported.
 
 ### Root Cause
 

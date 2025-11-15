@@ -76,6 +76,7 @@ function getShortenedEndpoint(
 /**
  * Calculate arrow head points
  * Size is proportional to board width for consistent appearance
+ * Includes minimum sizes for mobile visibility
  */
 function getArrowHead(
   x1: number,
@@ -87,8 +88,9 @@ function getArrowHead(
   const angle = Math.atan2(y2 - y1, x2 - x1)
 
   // Arrow head size scales with board size - larger and wider for better visibility
-  const headLength = boardWidth / 25 // Length of arrow head
-  const headWidth = boardWidth / 35 // Half-width at the base
+  // Minimum sizes ensure visibility on mobile devices
+  const headLength = Math.max(boardWidth / 25, 18) // Length of arrow head, minimum 18px
+  const headWidth = Math.max(boardWidth / 35, 12) // Half-width at the base, minimum 12px
 
   // Tip point should be exactly at the destination square center
   const tipX = x2
@@ -134,6 +136,7 @@ export function ModernChessArrows({
     let retryCount = 0
     const maxRetries = 10
     let resizeObserver: ResizeObserver | null = null
+    let isUnmounted = false
 
     const measure = (): boolean => {
       if (!svgRef.current) return false
@@ -147,7 +150,7 @@ export function ModernChessArrows({
 
       // If squares not found, retry
       if (!a1Square || !h8Square) {
-        if (retryCount < maxRetries) {
+        if (retryCount < maxRetries && !isUnmounted) {
           retryCount++
           timeoutId = setTimeout(measure, 100 * retryCount) // Exponential backoff
           return false
@@ -161,7 +164,7 @@ export function ModernChessArrows({
 
       // Verify squares are actually rendered and visible
       if (a1Rect.width <= 0 || svgRect.width <= 0 || a1Rect.width !== h8Rect.width) {
-        if (retryCount < maxRetries) {
+        if (retryCount < maxRetries && !isUnmounted) {
           retryCount++
           timeoutId = setTimeout(measure, 100 * retryCount)
           return false
@@ -173,11 +176,41 @@ export function ModernChessArrows({
       retryCount = 0
 
       const actualSquareSize = a1Rect.width
-      setSquareSize(actualSquareSize)
+      // Only update state if component is still mounted
+      if (!isUnmounted) {
+        setSquareSize(actualSquareSize)
+      }
 
       // Calculate where a1 center actually is in SVG coordinate space
-      const a1CenterX = a1Rect.left + a1Rect.width / 2 - svgRect.left
-      const a1CenterY = a1Rect.top + a1Rect.height / 2 - svgRect.top
+      // The SVG viewBox matches the measured board size, so coordinates should be 1:1
+      // No scaling needed if SVG size matches viewBox
+      const svgWidth = svgRect.width
+      const svgHeight = svgRect.height
+      const viewBoxSize = actualSquareSize * 8 // measuredBoardSize
+
+      // The SVG should match viewBox size exactly (1:1 mapping)
+      // If there's a mismatch, it means the SVG hasn't been resized yet - wait for next measurement
+      const sizeMismatch = Math.abs(svgWidth - viewBoxSize) > 1 || Math.abs(svgHeight - viewBoxSize) > 1
+      if (sizeMismatch) {
+        // Retry measurement after SVG is resized
+        if (retryCount < maxRetries && !isUnmounted) {
+          retryCount++
+          timeoutId = setTimeout(measure, 50)
+          return false
+        }
+      }
+
+      // No scaling needed - SVG size should match viewBox (1:1)
+      const scaleX = 1
+      const scaleY = 1
+
+      // Calculate square center in screen coordinates relative to SVG
+      const a1ScreenX = a1Rect.left + a1Rect.width / 2 - svgRect.left
+      const a1ScreenY = a1Rect.top + a1Rect.height / 2 - svgRect.top
+
+      // Convert to viewBox coordinates
+      const a1CenterX = a1ScreenX * scaleX
+      const a1CenterY = a1ScreenY * scaleY
 
       // Calculate where a1 center should be based on our coordinate system
       // For white orientation: a1 is at file 0, rank 0 (but displayed at bottom)
@@ -198,9 +231,11 @@ export function ModernChessArrows({
       let offsetX = a1CenterX - expectedA1X
       let offsetY = a1CenterY - expectedA1Y
 
-      // Verify with h8 for better accuracy
-      const h8CenterX = h8Rect.left + h8Rect.width / 2 - svgRect.left
-      const h8CenterY = h8Rect.top + h8Rect.height / 2 - svgRect.top
+      // Calculate h8 center in viewBox coordinates
+      const h8ScreenX = h8Rect.left + h8Rect.width / 2 - svgRect.left
+      const h8ScreenY = h8Rect.top + h8Rect.height / 2 - svgRect.top
+      const h8CenterX = h8ScreenX * scaleX
+      const h8CenterY = h8ScreenY * scaleY
 
       let expectedH8X: number, expectedH8Y: number
       if (boardOrientation === 'white') {
@@ -221,18 +256,27 @@ export function ModernChessArrows({
       offsetX = (offsetX + offsetXFromH8) / 2
       offsetY = (offsetY + offsetYFromH8) / 2
 
-      setBoardOffset({ x: offsetX, y: offsetY })
+
+      // Only update state if component is still mounted
+      if (!isUnmounted) {
+        setBoardOffset({ x: offsetX, y: offsetY })
+      }
       return true
     }
 
     const scheduleMeasure = () => {
+      // Don't schedule if component is unmounted
+      if (isUnmounted) return
+
       retryCount = 0 // Reset retry count on new measurement attempt
       if (timeoutId) clearTimeout(timeoutId)
       if (rafId) cancelAnimationFrame(rafId)
 
       // Use multiple RAF calls to ensure DOM is fully ready
       rafId = requestAnimationFrame(() => {
+        if (isUnmounted) return
         rafId = requestAnimationFrame(() => {
+          if (isUnmounted) return
           timeoutId = setTimeout(measure, 50)
         })
       })
@@ -259,6 +303,7 @@ export function ModernChessArrows({
     observerTimeoutId = setTimeout(setupObserver, 200)
 
     return () => {
+      isUnmounted = true
       if (rafId) cancelAnimationFrame(rafId)
       if (timeoutId) clearTimeout(timeoutId)
       if (observerTimeoutId) clearTimeout(observerTimeoutId)
@@ -270,16 +315,22 @@ export function ModernChessArrows({
   // Debug mode - can be enabled for troubleshooting
   const debugMode = false
 
+
   if (arrows.length === 0) {
     return null
   }
 
+  // Use measured board size (squareSize * 8) for accurate alignment
+  // If squareSize hasn't been measured yet, use boardWidth as fallback
+  const measuredBoardSize = squareSize > 0 ? squareSize * 8 : boardWidth
+
   return (
     <svg
       ref={svgRef}
-      width={boardWidth}
-      height={boardWidth}
-      viewBox={`0 0 ${boardWidth} ${boardWidth}`}
+      className="modern-chess-arrows"
+      width={measuredBoardSize}
+      height={measuredBoardSize}
+      viewBox={`0 0 ${measuredBoardSize} ${measuredBoardSize}`}
       style={{
         position: 'absolute',
         top: 0,
@@ -288,6 +339,8 @@ export function ModernChessArrows({
         zIndex: 10,
         overflow: 'visible'
       }}
+      data-arrows-count={arrows.length}
+      data-board-id={boardId}
     >
       <defs>
         {/* Define gradients for different classifications */}
@@ -319,19 +372,67 @@ export function ModernChessArrows({
         </filter>
       </defs>
 
+
       {arrows.map((arrow, index) => {
+        // Validate arrow data
+        if (!arrow.from || !arrow.to) {
+          console.warn('[ModernChessArrows] Invalid arrow data:', arrow)
+          return null
+        }
+
         const from = squareToPixels(arrow.from, boardOrientation, squareSize, boardOffset)
         const to = squareToPixels(arrow.to, boardOrientation, squareSize, boardOffset)
 
-        // Calculate arrow head pointing at the destination square center
-        const arrowHead = getArrowHead(from.x, from.y, to.x, to.y, boardWidth)
+        // Calculate arrow length
+        const dx = to.x - from.x
+        const dy = to.y - from.y
+        const arrowLength = Math.sqrt(dx * dx + dy * dy)
 
-        // Shorten the arrow body to end before the arrowhead begins
-        const shortenedEnd = getShortenedEndpoint(from.x, from.y, to.x, to.y, arrowHead.tipOffset)
+        // For suggestion arrows (best moves with no tail), use a larger arrowhead for better visibility
+        // Scale up the board size used for arrowhead calculation
+        const arrowHeadBoardSize = arrow.isBestMove ? measuredBoardSize * 1.2 : measuredBoardSize
+
+        // Calculate arrow head pointing at the destination square center
+        // Use measuredBoardSize for arrow head calculation to match viewBox
+        const arrowHead = getArrowHead(from.x, from.y, to.x, to.y, arrowHeadBoardSize)
+
+        // Start the arrow path exactly at the square center
+        // No backward extension - tail starts precisely at from.x, from.y
+        const startX = from.x
+        const startY = from.y
+
+        // Shorten end to prevent overlap with arrow head
+        // But ensure minimum path length for visibility
+        const shortenedEnd = getShortenedEndpoint(startX, startY, to.x, to.y, arrowHead.tipOffset)
+
+        // Calculate final path length and ensure it's visible
+        const finalPathLength = Math.sqrt((shortenedEnd.x - startX)**2 + (shortenedEnd.y - startY)**2)
+        const minPathLength = Math.max(squareSize * 0.3, 30) // Minimum 30px or 30% of square
+
+        // If path is too short after shortening, reduce the shortening amount
+        let actualShortenedEnd = shortenedEnd
+        if (finalPathLength < minPathLength && arrowLength > 0) {
+          // Reduce shortening to ensure minimum path length
+          const reduceShortening = minPathLength - finalPathLength
+          const angle = Math.atan2(to.y - startY, to.x - startX)
+          actualShortenedEnd = {
+            x: to.x - (arrowHead.tipOffset - reduceShortening) * Math.cos(angle),
+            y: to.y - (arrowHead.tipOffset - reduceShortening) * Math.sin(angle)
+          }
+        } else if (arrowLength === 0) {
+          // Same-square: create small horizontal arrow starting from center
+          const minTail = Math.max(squareSize * 0.3, 25)
+          actualShortenedEnd = {
+            x: startX + minTail,
+            y: startY
+          }
+        }
 
         // Determine stroke width based on classification (scales with board size)
         // Increased base width to be thicker like chess.com
-        const baseStrokeWidth = boardWidth / 50 // 2% of board width (was 1%)
+        // ENSURE MINIMUM STROKE WIDTH for visibility
+        // Use measuredBoardSize for consistent scaling
+        const baseStrokeWidth = Math.max(measuredBoardSize / 50, 4) // 2% of board width, minimum 4px
         const strokeWidth = arrow.isBestMove ? baseStrokeWidth * 1.3 :
                            arrow.classification === 'blunder' ? baseStrokeWidth * 1.1 :
                            baseStrokeWidth
@@ -341,31 +442,41 @@ export function ModernChessArrows({
 
         const pathId = `arrow-${boardId}-${index}`
 
+        // Determine tail visibility and color:
+        // - User-drawn arrows (orange, uncategorized): show tail with original color
+        // - All actual moves (user and opponent moves, not best move suggestions): show tail matching arrowhead color
+        // - Suggested moves (isBestMove === true): show tail for clarity - users need to see the full move
+        const isUserDrawnArrow = arrow.classification === 'uncategorized' && arrow.color === '#f97316'
+        const isActualMove = !arrow.isBestMove // Actual moves are not best move suggestions
+        // Show tail for all arrows to make moves clear (including suggestions)
+        const shouldShowTail = true
+        const tailColor = arrow.color // Tail color matches arrowhead color
+
         return (
           <g key={pathId}>
-            {/* Straight arrow path (like chess.com) - stops before arrowhead */}
-            <path
-              d={`M ${from.x},${from.y} L ${shortenedEnd.x},${shortenedEnd.y}`}
-              stroke={arrow.color}
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              fill="none"
-              opacity={0.85}
-              filter={filter}
-            />
+            {/* Straight arrow path starting exactly at square center */}
+            {shouldShowTail && (
+              <path
+                d={`M ${startX},${startY} L ${actualShortenedEnd.x},${actualShortenedEnd.y}`}
+                stroke={tailColor}
+                strokeWidth={strokeWidth}
+                strokeLinecap="round"
+                fill="none"
+                opacity={1.0}
+              />
+            )}
 
             {/* Arrow head */}
             <polygon
               points={arrowHead.points}
               fill={arrow.color}
-              opacity={0.9}
-              filter={filter}
+              opacity={0.95}
             />
 
-            {/* Pulsing glow animation for best moves */}
-            {arrow.isBestMove && (
+            {/* Pulsing glow animation for best moves - temporarily disabled */}
+            {/* {arrow.isBestMove && (
               <path
-                d={`M ${from.x},${from.y} L ${shortenedEnd.x},${shortenedEnd.y}`}
+                d={`M ${startX},${startY} L ${shortenedEnd.x},${shortenedEnd.y}`}
                 stroke={arrow.color}
                 strokeWidth={strokeWidth * 1.8}
                 strokeLinecap="round"
@@ -379,7 +490,7 @@ export function ModernChessArrows({
                   repeatCount="indefinite"
                 />
               </path>
-            )}
+            )} */}
           </g>
         )
       })}

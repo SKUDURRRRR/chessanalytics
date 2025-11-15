@@ -16,12 +16,31 @@ export default function ProfilePage() {
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [verifyingPayment, setVerifyingPayment] = useState(false)
+  const [showPasswordChange, setShowPasswordChange] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
+  const [hasPasswordAuth, setHasPasswordAuth] = useState(false)
 
   useEffect(() => {
     if (!user) {
       navigate('/login')
       return
     }
+
+    // Check if user has email/password authentication
+    const checkPasswordAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user?.identities) {
+        const hasEmailPassword = session.user.identities.some(
+          (identity: any) => identity.provider === 'email'
+        )
+        setHasPasswordAuth(hasEmailPassword)
+      }
+    }
+    checkPasswordAuth()
 
     // Check if we were redirected from Stripe checkout
     const urlParams = new URLSearchParams(window.location.search)
@@ -113,6 +132,84 @@ export default function ProfilePage() {
   const handleSignOut = async () => {
     await signOut()
     navigate('/')
+  }
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPasswordError('')
+    setChangingPassword(true)
+
+    // Validation
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('All fields are required')
+      setChangingPassword(false)
+      return
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters')
+      setChangingPassword(false)
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match')
+      setChangingPassword(false)
+      return
+    }
+
+    if (currentPassword === newPassword) {
+      setPasswordError('New password must be different from current password')
+      setChangingPassword(false)
+      return
+    }
+
+    try {
+      // Verify current password by attempting to sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user?.email || '',
+        password: currentPassword,
+      })
+
+      if (signInError) {
+        logger.warn('Current password verification failed:', signInError.message)
+        setPasswordError('Current password is incorrect')
+        setChangingPassword(false)
+        return
+      }
+
+      // Update password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      })
+
+      if (updateError) {
+        logger.warn('Password update failed:', updateError.message)
+        setPasswordError(updateError.message || 'Failed to update password')
+        setChangingPassword(false)
+        return
+      }
+
+      logger.log('Password updated successfully')
+      setNotification({
+        message: 'Password changed successfully',
+        type: 'success'
+      })
+
+      // Reset form
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setShowPasswordChange(false)
+
+      // Auto-dismiss notification after 5 seconds
+      setTimeout(() => setNotification(null), 5000)
+    } catch (error) {
+      logger.error('Error changing password:', error)
+      setPasswordError('An unexpected error occurred. Please try again.')
+    } finally {
+      setChangingPassword(false)
+    }
   }
 
   const handleCancelSubscription = async () => {
@@ -379,6 +476,7 @@ export default function ProfilePage() {
           </div>
         </div>
 
+
         {/* Usage Stats */}
         {usageStats && (
           <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
@@ -549,6 +647,107 @@ export default function ProfilePage() {
         <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
           <h2 className="text-xl font-bold text-white mb-4">Actions</h2>
           <div className="space-y-3">
+            {hasPasswordAuth && (
+              <>
+                {!showPasswordChange ? (
+                  <button
+                    onClick={() => {
+                      setShowPasswordChange(true)
+                      setPasswordError('')
+                      setCurrentPassword('')
+                      setNewPassword('')
+                      setConfirmPassword('')
+                    }}
+                    className="w-full rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30"
+                  >
+                    Change Password
+                  </button>
+                ) : (
+                  <form onSubmit={handleChangePassword} className="space-y-4 pt-2 border-t border-white/10">
+                    {passwordError && (
+                      <div className="bg-rose-900/50 border border-rose-500 text-rose-200 px-4 py-3 rounded-2xl text-sm">
+                        {passwordError}
+                      </div>
+                    )}
+
+                    <div>
+                      <label htmlFor="currentPassword" className="block text-sm font-medium text-slate-300 mb-2">
+                        Current Password
+                      </label>
+                      <input
+                        id="currentPassword"
+                        name="currentPassword"
+                        type="password"
+                        autoComplete="current-password"
+                        required
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                        placeholder="Enter your current password"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="newPassword" className="block text-sm font-medium text-slate-300 mb-2">
+                        New Password
+                      </label>
+                      <input
+                        id="newPassword"
+                        name="newPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        required
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                        placeholder="Enter your new password (min. 6 characters)"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-300 mb-2">
+                        Confirm New Password
+                      </label>
+                      <input
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                        placeholder="Confirm your new password"
+                      />
+                    </div>
+
+                    <div className="flex gap-3 justify-end pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowPasswordChange(false)
+                          setPasswordError('')
+                          setCurrentPassword('')
+                          setNewPassword('')
+                          setConfirmPassword('')
+                        }}
+                        disabled={changingPassword}
+                        className="rounded-2xl border border-white/10 bg-white/[0.05] px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={changingPassword}
+                        className="rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-2.5 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {changingPassword ? 'Changing...' : 'Change Password'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </>
+            )}
             <button
               onClick={handleSignOut}
               className="w-full rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30"

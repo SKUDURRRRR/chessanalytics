@@ -8,7 +8,7 @@ Security Features:
 - Fail-safe error handling
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 import logging
 import asyncio
@@ -103,6 +103,22 @@ class UsageTracker:
             return False, {'message': 'Usage check failed', 'is_anonymous': False}
 
         except Exception as e:
+            error_str = str(e)
+            # Check if this is a database schema error (column doesn't exist)
+            # In this case, allow the operation to proceed rather than blocking it
+            if 'does not exist' in error_str and ('column' in error_str.lower() or 'games_import_limit' in error_str):
+                logger.warning(
+                    f"Database schema error in usage limit check for user {user_id}: {e}. "
+                    "Allowing operation to proceed. Please update database schema."
+                )
+                # Allow operation to proceed when schema is outdated
+                return True, {
+                    'can_proceed': True,
+                    'schema_error': True,
+                    'message': 'Database schema needs update - allowing operation',
+                    'is_anonymous': False
+                }
+
             logger.error(f"Error checking usage limits for user {user_id}: {e}")
             # Fail closed - deny user if check fails (more secure than fail-open)
             return False, {'message': str(e)}
@@ -133,37 +149,52 @@ class UsageTracker:
             raise ValueError("count cannot exceed 1000 in a single operation")
 
         try:
-            today = datetime.now().date()
-            reset_at = datetime.now()
+            today = datetime.now(timezone.utc).date()
+            reset_at = datetime.now(timezone.utc)
+            cutoff_time = reset_at - timedelta(hours=24)
 
             # Determine which field to increment
             field_name = 'games_imported' if action_type == 'import' else 'games_analyzed'
 
-            # Try to get existing record
-            existing = await asyncio.to_thread(
+            # Try to get existing record within 24-hour window (matching check_usage_limits logic)
+            # Query for most recent record and filter by reset_at in Python since Supabase doesn't support
+            # complex date arithmetic in queries easily
+            all_records = await asyncio.to_thread(
                 lambda: self.supabase.table('usage_tracking').select('*').eq(
                     'user_id', user_id
-                ).eq('date', str(today)).execute()
+                ).order('reset_at', desc=True).limit(10).execute()
             )
 
-            if existing.data and len(existing.data) > 0:
+            # Find the most recent record within 24-hour window
+            record = None
+            if all_records.data and len(all_records.data) > 0:
+                for r in all_records.data:
+                    record_reset_at = datetime.fromisoformat(r['reset_at'].replace('Z', '+00:00'))
+                    if record_reset_at > cutoff_time:
+                        record = r
+                        break
+
+            if record:
                 # Update existing record
-                record = existing.data[0]
                 current_value = record.get(field_name, 0)
 
-                # Check if we need to reset (24 hours passed)
+                # Check if we need to reset (24 hours passed - should not happen due to filter above, but keep for safety)
                 record_reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
-                if datetime.now() - record_reset_at > timedelta(hours=24):
+                # Use timezone-aware datetime to avoid "can't subtract offset-naive and offset-aware datetimes" error
+                if datetime.now(timezone.utc) - record_reset_at > timedelta(hours=24):
                     # Reset both counters when window expires
                     update_data = {
                         'games_imported': count if action_type == 'import' else 0,
                         'games_analyzed': count if action_type == 'analyze' else 0,
-                        'reset_at': reset_at.isoformat()
+                        'reset_at': reset_at.isoformat(),
+                        'date': str(today)  # Update date to today
                     }
                 else:
                     # Increment the counter
+                    # Also update date to today to keep it consistent (in case record is from yesterday)
                     update_data = {
-                        field_name: current_value + count
+                        field_name: current_value + count,
+                        'date': str(today)  # Update date to today to keep consistency
                     }
 
                 await asyncio.to_thread(
@@ -249,29 +280,29 @@ class UsageTracker:
             # Debug logging
             logger.info(f"[USAGE_STATS] User {user_id}: tier={account_tier}, name={tier_name}, import_limit={import_limit}, analysis_limit={analysis_limit}")
 
-            # Get current usage (within 24-hour window)
-            today = datetime.now().date()
+            # Get current usage (within 24-hour rolling window)
+            # Query all recent records and filter by reset_at to match check_usage_limits logic
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
             usage_result = await asyncio.to_thread(
                 lambda: self.supabase.table('usage_tracking').select('*').eq(
                     'user_id', user_id
-                ).eq('date', str(today)).execute()
+                ).order('reset_at', desc=True).limit(10).execute()
             )
 
             current_imports = 0
             current_analyses = 0
             reset_at = None
 
+            # Find the most recent record within 24-hour window (matching check_usage_limits logic)
             if usage_result.data and len(usage_result.data) > 0:
-                record = usage_result.data[0]
-                reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
-
-                # Check if 24 hours have passed
-                if datetime.now() - reset_at <= timedelta(hours=24):
-                    current_imports = record.get('games_imported', 0)
-                    current_analyses = record.get('games_analyzed', 0)
-                else:
-                    # Usage has reset
-                    reset_at = None
+                for record in usage_result.data:
+                    record_reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
+                    if record_reset_at > cutoff_time:
+                        # Found valid record within 24-hour window
+                        reset_at = record_reset_at
+                        current_imports = record.get('games_imported', 0)
+                        current_analyses = record.get('games_analyzed', 0)
+                        break
 
             # Calculate remaining
             imports_remaining = None if import_limit is None else max(0, import_limit - current_imports)
@@ -297,7 +328,7 @@ class UsageTracker:
                 },
                 'reset_at': reset_at.isoformat() if reset_at else None,
                 'resets_in_hours': (
-                    round((reset_at + timedelta(hours=24) - datetime.now()).total_seconds() / 3600, 1)
+                    round((reset_at + timedelta(hours=24) - datetime.now(timezone.utc)).total_seconds() / 3600, 1)
                     if reset_at else 24.0
                 )
             }
@@ -362,3 +393,133 @@ class UsageTracker:
         except Exception as e:
             logger.error(f"Error claiming anonymous data: {e}")
             return {'success': False, 'message': str(e)}
+
+    # ============================================================================
+    # ANONYMOUS USER LIMIT CHECKING (IP-based)
+    # ============================================================================
+
+    async def check_anonymous_import_limit(self, ip_address: str) -> Tuple[bool, Dict]:
+        """
+        Check if anonymous user (by IP) can import more games.
+
+        Args:
+            ip_address: Client IP address
+
+        Returns:
+            Tuple of (can_proceed: bool, stats: dict)
+        """
+        if not ip_address or not isinstance(ip_address, str) or not ip_address.strip():
+            logger.error("Invalid IP address provided to check_anonymous_import_limit")
+            return False, {'error': 'Invalid IP address'}
+
+        return await self._check_anonymous_limit(ip_address, 'import')
+
+    async def check_anonymous_analysis_limit(self, ip_address: str) -> Tuple[bool, Dict]:
+        """
+        Check if anonymous user (by IP) can analyze more games.
+
+        Args:
+            ip_address: Client IP address
+
+        Returns:
+            Tuple of (can_proceed: bool, stats: dict)
+        """
+        if not ip_address or not isinstance(ip_address, str) or not ip_address.strip():
+            logger.error("Invalid IP address provided to check_anonymous_analysis_limit")
+            return False, {'error': 'Invalid IP address'}
+
+        return await self._check_anonymous_limit(ip_address, 'analyze')
+
+    async def _check_anonymous_limit(self, ip_address: str, action_type: str) -> Tuple[bool, Dict]:
+        """
+        Internal method to check anonymous usage limits.
+
+        Args:
+            ip_address: Client IP address
+            action_type: 'import' or 'analyze'
+
+        Returns:
+            Tuple of (can_proceed: bool, stats: dict)
+        """
+        if action_type not in ('import', 'analyze'):
+            logger.error(f"Invalid action_type: {action_type}")
+            return False, {'error': 'Invalid action type'}
+
+        try:
+            # Call database function to check limits
+            result = await asyncio.to_thread(
+                lambda: self.supabase.rpc(
+                    'check_anonymous_usage_limits',
+                    {'p_ip_address': ip_address, 'p_action_type': action_type}
+                ).execute()
+            )
+
+            if result.data:
+                can_proceed = result.data.get('can_proceed', False)
+                logger.info(
+                    f"Anonymous {action_type} limit check for IP {ip_address}: "
+                    f"can_proceed={can_proceed}, "
+                    f"current={result.data.get('current_imports' if action_type == 'import' else 'current_analyses', 0)}, "
+                    f"limit={result.data.get('import_limit' if action_type == 'import' else 'analysis_limit', 0)}"
+                )
+                return can_proceed, result.data
+
+            logger.warning(f"Anonymous usage limit check failed for IP {ip_address}, denying by default")
+            return False, {'message': 'Usage check failed'}
+
+        except Exception as e:
+            logger.error(f"Error checking anonymous usage limits for IP {ip_address}: {e}")
+            # Fail open for anonymous users (allow operation) to avoid blocking legitimate users
+            # Anonymous users can bypass by changing IP anyway, so fail-open is acceptable
+            logger.warning("Allowing anonymous operation due to limit check error (fail-open)")
+            return True, {'message': 'Limit check error - allowing operation', 'error': str(e)}
+
+    async def increment_anonymous_usage(self, ip_address: str, action_type: str, count: int = 1) -> bool:
+        """
+        Increment usage counter for anonymous user (by IP).
+
+        Args:
+            ip_address: Client IP address
+            action_type: 'import' or 'analyze'
+            count: Number to increment by (default: 1)
+
+        Returns:
+            bool: True if increment succeeded, False otherwise
+        """
+        if not ip_address or not isinstance(ip_address, str) or not ip_address.strip():
+            logger.error("Invalid IP address provided to increment_anonymous_usage")
+            return False
+
+        if action_type not in ('import', 'analyze'):
+            logger.error(f"Invalid action_type: {action_type}")
+            return False
+
+        if not isinstance(count, int) or count < 1:
+            logger.error(f"Invalid count: {count}")
+            return False
+
+        try:
+            result = await asyncio.to_thread(
+                lambda: self.supabase.rpc(
+                    'increment_anonymous_usage',
+                    {
+                        'p_ip_address': ip_address,
+                        'p_action_type': action_type,
+                        'p_count': count
+                    }
+                ).execute()
+            )
+
+            if result.data and result.data.get('success'):
+                logger.info(
+                    f"Incremented anonymous {action_type} usage for IP {ip_address}: "
+                    f"+{count}, new_value={result.data.get('new_value', '?')}"
+                )
+                return True
+
+            logger.warning(f"Failed to increment anonymous usage for IP {ip_address}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error incrementing anonymous usage for IP {ip_address}: {e}")
+            return False

@@ -12,6 +12,7 @@ export interface ModernArrow {
   color: string
   classification: string
   isBestMove: boolean
+  isUserMove?: boolean // Optional to maintain backward compatibility
 }
 
 export type MoveClassification =
@@ -249,7 +250,8 @@ export function generateModernMoveArrows(
       to: actualMove.to,
       color: ARROW_COLORS[moveAnalysis.classification],
       classification: moveAnalysis.classification,
-      isBestMove: false
+      isBestMove: false,
+      isUserMove: moveAnalysis.isUserMove
     })
   } else {
     // Enhanced logging for brilliant moves specifically

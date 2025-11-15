@@ -5,9 +5,8 @@ import { AutoImportService, ImportProgress } from '../../services/autoImportServ
 import { getRecentPlayers, addRecentPlayer, clearRecentPlayers, RecentPlayer } from '../../utils/recentPlayers'
 import { retryWithBackoff } from '../../lib/errorHandling'
 import { useAuth } from '../../contexts/AuthContext'
-import UsageLimitModal from '../UsageLimitModal'
 import { AnonymousUsageTracker } from '../../services/anonymousUsageTracker'
-import AnonymousLimitModal from '../AnonymousLimitModal'
+import LimitReachedModal from '../LimitReachedModal'
 
 // Add custom pulse animation style
 const customPulseStyle = `
@@ -21,6 +20,9 @@ const customPulseStyle = `
   }
   .animate-custom-pulse {
     animation: customPulse 3s ease-in-out infinite;
+  }
+  input::placeholder {
+    color: #B0B8C4 !important;
   }
 `
 
@@ -45,10 +47,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   // Auth and usage tracking
   const { user, usageStats, refreshUsageStats } = useAuth()
   const [showLimitModal, setShowLimitModal] = useState(false)
-
-  // Anonymous user tracking
-  const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
-  const [anonymousLimitType, setAnonymousLimitType] = useState<'import' | 'analyze'>('import')
+  const [limitType, setLimitType] = useState<'import' | 'analyze'>('import')
 
   // Load recent players on mount
   useEffect(() => {
@@ -73,6 +72,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       )
 
       // If no results on selected platform, also search other platforms
+      let otherResults: any[] = []
       if (filtered.length === 0) {
         const otherPlatform = selectedPlatform === 'lichess' ? 'chess.com' : 'lichess'
         const otherProfiles = await ProfileService.getProfilesByPlatform(otherPlatform)
@@ -84,7 +84,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
         )
 
         // Add a note to results from other platform
-        const otherResults = otherFiltered.map(profile => ({
+        otherResults = otherFiltered.map(profile => ({
           ...profile,
           platform_mismatch: true,
           original_platform: profile.platform,
@@ -97,9 +97,11 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       setShowResults(true)
 
-      // If no results found on any platform, show import prompt instead of auto-importing
-      if (filtered.length === 0) {
-        setShowImportPrompt(true)
+      // If no results found on any platform, automatically trigger import
+      if (filtered.length === 0 && otherResults.length === 0) {
+        setShowImportPrompt(false)
+        // Automatically start import process for player not in database
+        await handleAutoImport()
       } else {
         setShowImportPrompt(false)
       }
@@ -107,7 +109,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       console.error('Error searching players:', error)
       setSearchResults([])
       setShowResults(true)
-      // If there's an error, show import prompt
+      // If there's an error, show import prompt as fallback
       setShowImportPrompt(true)
     } finally {
       setIsSearching(false)
@@ -184,27 +186,9 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
     }
   }
 
-  const handleManualImport = async () => {
+  // Shared import logic for both manual and automatic imports
+  const performImport = async () => {
     if (!searchQuery.trim()) return
-
-    // Check anonymous user limits first
-    if (!user) {
-      if (!AnonymousUsageTracker.canImport()) {
-        console.log('[PlayerSearch] Anonymous user reached import limit')
-        setAnonymousLimitType('import')
-        setAnonymousLimitModalOpen(true)
-        return
-      }
-    }
-
-    // Check usage limits for authenticated users
-    if (user && usageStats) {
-      // Check if user has remaining imports
-      if (usageStats.imports && !usageStats.imports.unlimited && usageStats.imports.remaining === 0) {
-        setShowLimitModal(true)
-        return
-      }
-    }
 
     setIsAutoImporting(true)
     setShowImportPrompt(false)
@@ -217,6 +201,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
     try {
       // First validate that the user exists on the platform
+      // This ensures we show proper error messages even if limits are reached
       let validation
       try {
         validation = await AutoImportService.validateUserOnPlatform(
@@ -243,6 +228,47 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           importedGames: 0,
         })
         return
+      }
+
+      console.log('[PlayerSearch] User validated successfully, checking limits...', { user: !!user, usageStats })
+
+      // User exists on platform - now check limits before importing
+      // Check anonymous user limits first
+      if (!user) {
+        const canImport = AnonymousUsageTracker.canImport()
+        console.log('[PlayerSearch] Anonymous user limit check:', { canImport })
+        if (!canImport) {
+          console.log('[PlayerSearch] Anonymous user reached import limit - showing modal')
+          // Clear import progress and show modal popup (same as guest users)
+          setImportProgress(null)
+          setIsAutoImporting(false)
+          setLimitType('import')
+          setShowLimitModal(true)
+          console.log('[PlayerSearch] Modal state set:', { showLimitModal: true })
+          return
+        }
+      }
+
+      // Check usage limits for authenticated users
+      if (user && usageStats) {
+        const hasRemaining = usageStats.imports && !usageStats.imports.unlimited && usageStats.imports.remaining === 0
+        console.log('[PlayerSearch] Authenticated user limit check:', {
+          hasImports: !!usageStats.imports,
+          unlimited: usageStats.imports?.unlimited,
+          remaining: usageStats.imports?.remaining,
+          hasRemaining
+        })
+        // Check if user has remaining imports
+        if (hasRemaining) {
+          console.log('[PlayerSearch] Authenticated user reached import limit - showing modal')
+          // Clear import progress and show modal popup (same as guest users)
+          setImportProgress(null)
+          setIsAutoImporting(false)
+          setLimitType('import')
+          setShowLimitModal(true)
+          console.log('[PlayerSearch] Modal state set:', { showLimitModal: true })
+          return
+        }
       }
 
       // Check if user already exists in our database
@@ -295,6 +321,16 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
     }
   }
 
+  // Automatic import when player is not found in database
+  const handleAutoImport = async () => {
+    await performImport()
+  }
+
+  // Manual import triggered by button click
+  const handleManualImport = async () => {
+    await performImport()
+  }
+
   const getPlatformIcon = (platform: 'lichess' | 'chess.com') => {
     return platform === 'chess.com' ? '♞' : '♟'
   }
@@ -309,15 +345,15 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       {/* Notification */}
       {notification && (
-        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 flex items-start justify-between rounded-2xl border px-4 py-3 text-sm shadow-2xl ${notification.type === 'error' ? 'border-rose-400/40 bg-rose-500/10 text-rose-100' : 'border-sky-400/40 bg-sky-500/10 text-sky-100'}`}>
-          <div className="flex items-start gap-3">
-            <span className="text-lg leading-none">{notification.type === 'error' ? '⚠' : 'ℹ'}</span>
-            <span>{notification.message}</span>
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 flex items-center justify-between rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur-sm ${notification.type === 'error' ? 'border-rose-400/30 bg-rose-500/10 text-rose-100' : 'border-sky-400/30 bg-sky-500/10 text-sky-100'}`}>
+          <div className="flex items-center gap-3 flex-1">
+            <span className="text-lg leading-none flex-shrink-0">{notification.type === 'error' ? '⚠' : 'ℹ'}</span>
+            <span className="flex-1">{notification.message}</span>
           </div>
           <button
             type="button"
             onClick={() => setNotification(null)}
-            className="ml-3 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+            className="ml-3 text-xs font-medium text-slate-300 hover:text-white transition-colors flex-shrink-0"
           >
             OK
           </button>
@@ -327,7 +363,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       {/* Clear Confirmation Modal */}
       {showClearConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
-          <div className="max-w-md w-full rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+          <div className="max-w-md w-full rounded-[2rem] border border-white/[0.02] bg-slate-900/95 p-6 shadow-2xl backdrop-blur-sm">
             <h3 className="text-lg font-bold text-white mb-3">Clear Recent Players</h3>
             <p className="text-slate-300 text-sm mb-6">
               Are you sure you want to clear all recent players?
@@ -335,7 +371,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowClearConfirm(false)}
-                className="rounded-2xl border border-white/10 bg-white/[0.05] px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.08]"
+                className="rounded-3xl border border-white/[0.02] bg-white/[0.03] px-6 py-2.5 text-sm font-semibold text-slate-200 transition-all hover:bg-white/[0.06]"
               >
                 Cancel
               </button>
@@ -346,7 +382,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                   setShowRecentPlayers(false)
                   setShowClearConfirm(false)
                 }}
-                className="rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-2.5 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30"
+                className="rounded-3xl border border-rose-400/25 bg-rose-500/15 px-6 py-2.5 text-sm font-semibold text-rose-100 transition-all hover:border-rose-300/40 hover:bg-rose-500/25"
               >
                 Clear
               </button>
@@ -355,10 +391,10 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
         </div>
       )}
 
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
+      <div className="relative text-slate-100">
         <div className="mb-6 text-center">
           <h2 className="text-2xl font-semibold text-white">Search Player</h2>
-          <p className="mt-2 text-sm text-slate-300">Find and analyze any chess player's games</p>
+          <p className="mt-2 text-sm" style={{ color: '#B0B8C4' }}>Find and analyze any chess player's games</p>
         </div>
 
       <form onSubmit={handleSearch} className="space-y-4">
@@ -368,8 +404,19 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+              className="w-full rounded-2xl border px-4 py-3 text-white focus:outline-none focus:ring-2 transition-all"
+              style={{
+                backgroundColor: '#2D3748',
+                borderColor: 'rgba(176, 184, 196, 0.1)',
+                color: '#FFFFFF',
+              }}
               placeholder="Enter player username..."
+              onFocus={(e) => {
+                e.target.style.borderColor = 'rgba(176, 184, 196, 0.2)';
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = 'rgba(176, 184, 196, 0.1)';
+              }}
               required
             />
           </div>
@@ -377,10 +424,10 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
             <button
               type="button"
               onClick={() => setSelectedPlatform('lichess')}
-              className={`flex-1 md:w-32 rounded-2xl px-6 py-3 text-sm font-semibold transition ${
+              className={`flex-1 md:w-32 rounded-full px-6 py-3 text-sm font-semibold transition-all ${
                 selectedPlatform === 'lichess'
-                  ? 'border border-yellow-400/40 bg-yellow-500/20 text-yellow-200 shadow-[0_0_8px_rgba(250,204,21,0.15),inset_0_2px_4px_rgba(161,98,7,0.15)] animate-custom-pulse'
-                  : 'border border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10'
+                  ? 'border border-yellow-500/30 bg-yellow-600/20 text-yellow-100 shadow-[0_0_12px_rgba(234,179,8,0.2)]'
+                  : 'border border-slate-700/50 bg-slate-800/40 text-slate-300 hover:border-slate-600 hover:bg-slate-800/60'
               }`}
               title="Lichess"
             >
@@ -389,10 +436,10 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
             <button
               type="button"
               onClick={() => setSelectedPlatform('chess.com')}
-              className={`flex-1 md:w-32 rounded-2xl px-6 py-3 text-sm font-semibold transition ${
+              className={`flex-1 md:w-32 rounded-full px-6 py-3 text-sm font-semibold transition-all ${
                 selectedPlatform === 'chess.com'
-                  ? 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200 shadow-[0_0_8px_rgba(52,211,153,0.15),inset_0_2px_4px_rgba(5,150,105,0.15)] animate-custom-pulse'
-                  : 'border border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10'
+                  ? 'border border-green-500/30 bg-green-600/20 text-green-100 shadow-[0_0_12px_rgba(34,197,94,0.2)]'
+                  : 'border border-slate-700/50 bg-slate-800/40 text-slate-300 hover:border-slate-600 hover:bg-slate-800/60'
               }`}
               title="Chess.com"
             >
@@ -405,11 +452,11 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           <button
             type="submit"
             disabled={isSearching || isAutoImporting || !searchQuery.trim()}
-            className="w-full md:w-44 rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full md:w-44 rounded-full border border-slate-600/50 bg-slate-700/50 px-6 py-3 text-sm font-semibold text-slate-100 transition-all hover:border-slate-500 hover:bg-slate-700/70 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSearching || isAutoImporting ? (
               <div className="flex items-center justify-center space-x-2">
-                <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-sky-200"></div>
+                <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-slate-200"></div>
                 <span>{isAutoImporting ? 'Importing...' : 'Searching...'}</span>
               </div>
             ) : (
@@ -426,7 +473,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               setImportProgress(null)
               setShowImportPrompt(false)
             }}
-            className="w-full md:w-44 rounded-2xl border border-white/10 bg-white/10 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20"
+            className="w-full md:w-44 rounded-full border border-slate-700/50 bg-slate-800/40 px-6 py-3 text-sm font-semibold text-slate-300 transition-all hover:border-slate-600 hover:bg-slate-800/60"
           >
             Clear
           </button>
@@ -460,7 +507,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                     <button
                       onClick={handleManualImport}
                       disabled={isAutoImporting}
-                      className="w-full md:w-44 rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-2 text-sm font-semibold text-sky-100 shadow-[0_0_8px_rgba(56,189,248,0.15),inset_0_2px_4px_rgba(14,165,233,0.15)] animate-custom-pulse transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:animate-none"
+                      className="w-full md:w-44 rounded-full border border-slate-600/50 bg-slate-700/50 px-6 py-2 text-sm font-semibold text-slate-100 transition-all hover:border-slate-500 hover:bg-slate-700/70 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Import 100 Games
                     </button>
@@ -471,7 +518,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                         setSearchResults([])
                         setShowResults(false)
                       }}
-                      className="w-full md:w-44 rounded-2xl border border-white/10 bg-white/10 px-6 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/20"
+                      className="w-full md:w-44 rounded-full border border-slate-700/50 bg-slate-800/40 px-6 py-2 text-sm font-semibold text-slate-300 transition-all hover:border-slate-600 hover:bg-slate-800/60"
                     >
                       Cancel
                     </button>
@@ -490,7 +537,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                 <div
                   key={`${player.user_id}-${player.platform}`}
                   onClick={() => handlePlayerSelect(player.user_id, player.platform, player.display_name, player.current_rating)}
-                  className="cursor-pointer rounded-2xl border border-white/10 bg-white/5 p-4 text-slate-100 transition hover:border-white/30 hover:bg-white/10"
+                  className="cursor-pointer rounded-2xl border border-slate-700/30 bg-slate-800/30 p-4 text-slate-100 transition-all hover:border-slate-600/50 hover:bg-slate-800/50"
                 >
                   <div className="flex items-center space-x-3">
                     <div className={`text-2xl ${getPlatformColor(player.platform)}`}>
@@ -517,7 +564,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       {/* Import Progress */}
       {importProgress && (
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="mt-6 rounded-2xl border border-slate-700/30 bg-slate-800/30 p-4">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-lg font-semibold text-white">
               {importProgress.status === 'starting' && 'Starting Import...'}
@@ -585,7 +632,8 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           {recentPlayers.length > 0 && (
             <button
               onClick={() => setShowClearConfirm(true)}
-              className="text-xs text-slate-400 hover:text-slate-200"
+              className="text-xs hover:opacity-80 transition-opacity"
+              style={{ color: '#B0B8C4' }}
             >
               Clear All
             </button>
@@ -601,7 +649,8 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
             <div className="text-center mb-3">
               <button
                 onClick={() => setShowRecentPlayers(!showRecentPlayers)}
-                className="font-medium text-sky-300 hover:text-sky-200 text-sm"
+                className="font-medium hover:opacity-80 text-sm transition-opacity"
+                style={{ color: '#4299E1' }}
               >
                 {showRecentPlayers ? 'Hide' : 'Show'} Recent Players ({recentPlayers.length})
               </button>
@@ -613,7 +662,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                   <div
                     key={`${player.userId}-${player.platform}`}
                     onClick={() => handlePlayerSelect(player.userId, player.platform, player.displayName, player.rating)}
-                    className="cursor-pointer rounded-xl border border-white/10 bg-white/5 p-3 transition hover:border-white/30 hover:bg-white/10"
+                    className="cursor-pointer rounded-2xl border border-slate-700/30 bg-slate-800/30 p-3 transition-all hover:border-slate-600/50 hover:bg-slate-800/50"
                   >
                     <div className="flex items-center space-x-3">
                       <div className={`text-xl ${getPlatformColor(player.platform)}`}>
@@ -638,24 +687,10 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       </div>
 
       {/* Usage Limit Modal */}
-      <UsageLimitModal
+      <LimitReachedModal
         isOpen={showLimitModal}
         onClose={() => setShowLimitModal(false)}
-        limitType="import"
-        isAuthenticated={!!user}
-        currentUsage={usageStats?.imports ? {
-          used: usageStats.imports.used,
-          limit: usageStats.imports.limit,
-          remaining: usageStats.imports.remaining,
-          unlimited: usageStats.imports.unlimited
-        } : undefined}
-      />
-
-      {/* Anonymous User Limit Modal */}
-      <AnonymousLimitModal
-        isOpen={anonymousLimitModalOpen}
-        onClose={() => setAnonymousLimitModalOpen(false)}
-        limitType={anonymousLimitType}
+        limitType={limitType}
       />
     </>
   )
