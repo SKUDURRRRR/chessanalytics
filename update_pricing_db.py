@@ -18,16 +18,24 @@ if not key:
 supabase: Client = create_client(url, key)
 
 try:
-    # Update Pro Monthly price to $5.45
+    # Update Free tier with same features as Pro Monthly, but with limits at top
+    result = supabase.table('payment_tiers').update({
+        'features': ["5 game analyses per day", "100 game imports per day", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions"]
+    }).eq('id', 'free').execute()
+    print(f"✅ Updated Free tier features: {result.data}")
+
+    # Update Pro Monthly price to $5.45 with updated features
     result = supabase.table('payment_tiers').update({
         'price_monthly': 5.45,
+        'features': ["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions"]
     }).eq('id', 'pro_monthly').execute()
     print(f"✅ Updated Pro Monthly: {result.data}")
 
-    # Update Pro Yearly price to $49.05
+    # Update Pro Yearly price to $49.05 with updated features
     result = supabase.table('payment_tiers').update({
         'price_yearly': 49.05,
-        'description': 'Save 25% with annual billing'
+        'description': 'Save 25% with annual billing',
+        'features': ["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions", "25% savings vs monthly"]
     }).eq('id', 'pro_yearly').execute()
     print(f"✅ Updated Pro Yearly: {result.data}")
 

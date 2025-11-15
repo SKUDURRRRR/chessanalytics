@@ -17,6 +17,7 @@ import { config } from '../lib/config'
 import { withCache, generateCacheKey, apiCache } from '../utils/apiCache'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
+import { supabase } from '../lib/supabase'
 
 const UNIFIED_API_URL = config.getApi().baseUrl
 logger.log('🔧 UNIFIED_API_URL configured as:', UNIFIED_API_URL)
@@ -175,16 +176,35 @@ export class UnifiedAnalysisService {
         limit: requestBody.limit
       })
 
+      // Get auth token if user is logged in
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+          logger.log('🌐 Added Authorization header for authenticated user')
+        }
+      } catch (error) {
+        // Log but don't fail - allow request to proceed without auth (for anonymous users)
+        logger.log('🌐 No auth session found, proceeding without Authorization header')
+      }
+
+      // Use longer timeout for deep analysis (can take 3-5 minutes for complex games)
+      const timeout = requestBody.analysis_type === 'deep'
+        ? TIMEOUT_CONFIG.DEEP_ANALYSIS
+        : TIMEOUT_CONFIG.LONG
+
       const response = await fetchWithTimeout(
         `${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
           body: JSON.stringify(requestBody),
         },
-        TIMEOUT_CONFIG.LONG // Use long timeout for analysis operations
+        timeout
       )
 
       logger.log('🌐 API Response status:', response.status)
@@ -200,7 +220,17 @@ export class UnifiedAnalysisService {
       return data
     } catch (error) {
       logger.error('Error in unified analysis:', error)
-      throw new Error('Failed to perform analysis')
+
+      // Preserve the original error message for better debugging
+      if (error instanceof Error) {
+        // If it's already a detailed error (like from fetchWithTimeout), throw it as-is
+        if (error.message.includes('Network error') || error.message.includes('Request timeout')) {
+          throw error;
+        }
+        throw new Error(`Failed to perform analysis: ${error.message}`)
+      }
+
+      throw new Error('Failed to perform analysis: Unknown error')
     }
   }
 
@@ -442,6 +472,65 @@ export class UnifiedAnalysisService {
     } catch (error) {
       console.error('Error fetching game analyses count:', error)
       return 0
+    }
+  }
+
+  /**
+   * Efficiently check which games from a list are already analyzed.
+   * This is optimized for Match History to quickly check analyze button states.
+   * Only fetches game_id, provider_game_id, and accuracy - not full analysis data.
+   */
+  static async checkGamesAnalyzed(
+    userId: string,
+    platform: Platform,
+    gameIds: string[],
+    analysisType: 'stockfish' | 'deep' = 'stockfish'
+  ): Promise<Map<string, { game_id: string; provider_game_id: string | null; accuracy: number | null }>> {
+    if (!gameIds || gameIds.length === 0) {
+      return new Map()
+    }
+
+    try {
+      const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}/check?analysis_type=${analysisType}`
+      console.log(`Checking analyzed games from: ${url}`)
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gameIds),
+      })
+
+      if (!response.ok) {
+        console.error(`HTTP error! status: ${response.status} for user ${userId}`)
+        return new Map()
+      }
+
+      const data = await response.json()
+      const analyzedGames = data.analyzed_games || []
+
+      // Create a map for fast lookups by both game_id and provider_game_id
+      const resultMap = new Map<string, { game_id: string; provider_game_id: string | null; accuracy: number | null }>()
+
+      analyzedGames.forEach((game: any) => {
+        const gameData = {
+          game_id: game.game_id,
+          provider_game_id: game.provider_game_id,
+          accuracy: game.accuracy
+        }
+
+        if (game.game_id) {
+          resultMap.set(game.game_id, gameData)
+        }
+        if (game.provider_game_id) {
+          resultMap.set(game.provider_game_id, gameData)
+        }
+      })
+
+      console.log(`Found ${analyzedGames.length} analyzed games out of ${gameIds.length} requested`)
+      return resultMap
+    } catch (error) {
+      console.error('Error checking analyzed games:', error)
+      return new Map()
     }
   }
 
@@ -716,36 +805,48 @@ export class UnifiedAnalysisService {
       }
     }
 
-    try {
-      const response = await fetch(
-        `${UNIFIED_API_URL}/api/v1/comprehensive-analytics/${userId}/${platform}?limit=${limit}`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      )
+    const cacheKey = generateCacheKey('comprehensive', userId, platform, { limit })
 
-      if (!response.ok) {
-        console.error(`Failed to fetch comprehensive analytics: ${response.status}`)
+    // Validator: ensure we have valid comprehensive analytics data
+    const comprehensiveValidator = (data: any) => {
+      return data !== null &&
+        typeof data.total_games === 'number' &&
+        Array.isArray(data.games) &&
+        data.games.length > 0
+    }
+
+    return withCache(cacheKey, async () => {
+      try {
+        const response = await fetch(
+          `${UNIFIED_API_URL}/api/v1/comprehensive-analytics/${userId}/${platform}?limit=${limit}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
+        )
+
+        if (!response.ok) {
+          console.error(`Failed to fetch comprehensive analytics: ${response.status}`)
+          return {
+            total_games: 0,
+            games: [],
+            sample_size: 0
+          }
+        }
+
+        const data = await response.json()
+        return data
+      } catch (error) {
+        console.error('Error fetching comprehensive analytics:', error)
         return {
           total_games: 0,
           games: [],
           sample_size: 0
         }
       }
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Error fetching comprehensive analytics:', error)
-      return {
-        total_games: 0,
-        games: [],
-        sample_size: 0
-      }
-    }
+    }, 30 * 60 * 1000, comprehensiveValidator) // 30 minute cache for comprehensive analytics
   }
 
   /**

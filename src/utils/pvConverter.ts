@@ -28,29 +28,41 @@ export function convertPvToSan(fen: string, pvUci: string[]): string[] {
 
     for (let i = 0; i < pvUci.length; i++) {
       const uciMove = pvUci[i]
+
+      // Validate UCI format before attempting conversion
+      if (!uciMove || typeof uciMove !== 'string' || uciMove.length < 4) {
+        console.warn(`❌ Invalid UCI format at index ${i}:`, {
+          uciMove,
+          currentFen: chess.fen(),
+          convertedSoFar: sanMoves
+        })
+        // Skip invalid format but continue with rest of PV
+        continue
+      }
+
       try {
         // Convert UCI to SAN by making the move
         const move = chess.move(uciMove)
         if (!move) {
-          // If move is illegal, stop conversion here
+          // If move is illegal, skip it but continue with rest of PV
           console.warn(`❌ Illegal UCI move in PV at index ${i}:`, {
             uciMove,
             currentFen: chess.fen(),
             convertedSoFar: sanMoves
           })
-          break
+          continue
         }
         sanMoves.push(move.san)
         console.log(`✅ Converted move ${i}:`, uciMove, '→', move.san)
       } catch (error) {
-        // If any error occurs, stop conversion
+        // If any error occurs, skip this move but continue with rest of PV
         console.warn(`❌ Error converting UCI move at index ${i}:`, {
           uciMove,
           error,
           currentFen: chess.fen(),
           convertedSoFar: sanMoves
         })
-        break
+        continue
       }
     }
 

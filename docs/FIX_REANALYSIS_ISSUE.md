@@ -22,6 +22,10 @@ The database has an old unique constraint on `(user_id, platform, game_id)` that
 ## Solution
 Apply the SQL migration to update the database constraint. This is a **one-time operation** that takes less than 1 minute.
 
+**Migration File:** `supabase/migrations/20250111000001_fix_game_analyses_constraint.sql`
+
+> **Note:** For complete step-by-step instructions with verification steps and troubleshooting, see `docs/APPLY_REANALYSIS_FIX.md`
+
 ### Step 1: Open Supabase Dashboard
 1. Go to https://supabase.com/dashboard
 2. Select your project
@@ -43,10 +47,10 @@ DECLARE
     constraint_name TEXT;
 BEGIN
     -- Find and drop any unique constraint on (user_id, platform, game_id)
-    FOR constraint_name IN 
-        SELECT conname 
-        FROM pg_constraint 
-        WHERE conrelid = 'public.game_analyses'::regclass 
+    FOR constraint_name IN
+        SELECT conname
+        FROM pg_constraint
+        WHERE conrelid = 'public.game_analyses'::regclass
         AND contype = 'u' -- unique constraint
         AND array_length(conkey, 1) = 3 -- 3 columns
     LOOP
@@ -60,15 +64,15 @@ DROP INDEX IF EXISTS idx_game_analyses_user_platform_game;
 DROP INDEX IF EXISTS game_analyses_user_id_platform_game_id_key;
 
 -- Add the correct constraint with analysis_type included
-ALTER TABLE public.game_analyses 
+ALTER TABLE public.game_analyses
 DROP CONSTRAINT IF EXISTS game_analyses_user_platform_game_id_analysis_type_key;
 
-ALTER TABLE public.game_analyses 
-ADD CONSTRAINT game_analyses_user_platform_game_id_analysis_type_key 
+ALTER TABLE public.game_analyses
+ADD CONSTRAINT game_analyses_user_platform_game_id_analysis_type_key
 UNIQUE (user_id, platform, game_id, analysis_type);
 
 -- Create index for common queries
-CREATE INDEX IF NOT EXISTS idx_game_analyses_user_platform_game 
+CREATE INDEX IF NOT EXISTS idx_game_analyses_user_platform_game
 ON public.game_analyses (user_id, platform, game_id);
 
 COMMIT;
@@ -128,4 +132,3 @@ However, this is NOT recommended as:
 - It's not a proper solution
 
 Apply the migration above for the permanent fix.
-

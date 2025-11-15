@@ -66,11 +66,18 @@ export function FollowUpExplorer({
   }, [explorationMoves])
 
   // Check if this move has a better alternative
-  // Show for any move that is NOT "best" or "brilliant"
+  // Show for any move that has a different best move, excluding truly best moves (centipawnLoss === 0)
   const hasBetterMove = useMemo(() => {
-    return currentMove.bestMoveSan &&
-           currentMove.bestMoveSan !== currentMove.san &&
-           !['best', 'brilliant'].includes(currentMove.classification)
+    const hasDifferentBestMove = currentMove.bestMoveSan &&
+                                currentMove.bestMoveSan !== currentMove.san
+
+    // If classified as "best" or "brilliant", only show if it has centipawn loss (not truly best)
+    if (['best', 'brilliant'].includes(currentMove.classification)) {
+      return hasDifferentBestMove && (currentMove.centipawnLoss ?? 0) > 0
+    }
+
+    // For all other classifications, show if there's a different best move
+    return hasDifferentBestMove
   }, [currentMove])
 
   // Calculate current exploration position and generate analysis

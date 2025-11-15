@@ -1,5 +1,6 @@
 // Auto Import Service - Handles importing games from external platforms
 import { config } from '../lib/config'
+import { sanitizeErrorMessage, sanitizeHttpError } from '../utils/errorSanitizer'
 
 const API_URL = config.getApi().baseUrl
 
@@ -83,13 +84,14 @@ export class AutoImportService {
           }
         } else if (response.status === 503) {
           // External API error - throw to let user know it's a connectivity issue
-          throw new Error(`Cannot connect to ${platform === 'chess.com' ? 'Chess.com' : 'Lichess'} right now. Please try again. (${errorMessage})`)
+          throw new Error(`Cannot connect to ${platform === 'chess.com' ? 'Chess.com' : 'Lichess'} right now. Please try again later.`)
         } else if (response.status === 504) {
           // Timeout
           throw new Error(`${platform === 'chess.com' ? 'Chess.com' : 'Lichess'} is taking too long to respond. Please try again.`)
         } else if (response.status >= 500) {
-          // Server error
-          throw new Error(`Server error: ${errorMessage}`)
+          // Server error - don't expose internal error details in production
+          console.error('Server error details:', errorMessage)
+          throw new Error(`We're experiencing technical difficulties. Please try again later.`)
         } else {
           throw new Error(errorMessage || `HTTP error! status: ${response.status}`)
         }
@@ -164,7 +166,18 @@ export class AutoImportService {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        let errorMessage
+
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorMessage = errorJson.detail || errorJson.message || errorText
+        } catch {
+          errorMessage = errorText
+        }
+
+        console.error('Import error details:', errorMessage)
+        throw new Error(response.status >= 500 ? 'Server error' : errorMessage)
       }
 
       const data = await response.json()
@@ -185,12 +198,12 @@ export class AutoImportService {
       }
     } catch (error) {
       console.error('Error importing games:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      const sanitizedMessage = sanitizeErrorMessage(error)
 
       if (onProgress) {
         onProgress({
           status: 'error',
-          message: `Import failed: ${errorMessage}`,
+          message: sanitizedMessage,
           progress: 0,
           importedGames: 0,
         })
@@ -198,7 +211,7 @@ export class AutoImportService {
 
       return {
         success: false,
-        message: `Import failed: ${errorMessage}`,
+        message: sanitizedMessage,
       }
     }
   }
@@ -235,7 +248,18 @@ export class AutoImportService {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        let errorMessage
+
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorMessage = errorJson.detail || errorJson.message || errorText
+        } catch {
+          errorMessage = errorText
+        }
+
+        console.error('Import error details:', errorMessage)
+        throw new Error(response.status >= 500 ? 'Server error' : errorMessage)
       }
 
       const data = await response.json()
@@ -284,12 +308,12 @@ export class AutoImportService {
       }
     } catch (error) {
       console.error('Error importing games:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      const sanitizedMessage = sanitizeErrorMessage(error)
 
       if (onProgress) {
         onProgress({
           status: 'error',
-          message: `Import failed: ${errorMessage}`,
+          message: sanitizedMessage,
           progress: 0,
           importedGames: 0,
         })
@@ -297,7 +321,7 @@ export class AutoImportService {
 
       return {
         success: false,
-        message: `Import failed: ${errorMessage}`,
+        message: sanitizedMessage,
       }
     }
   }

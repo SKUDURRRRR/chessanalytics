@@ -12,6 +12,8 @@ import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
 import { normalizeOpeningName } from '../../utils/openingUtils'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
+import { getOpeningColor } from '../../utils/openingColorClassification'
+import { getPlayerPerspectiveOpeningShort } from '../../utils/playerPerspectiveOpening'
 import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { PersonalityRadar } from '../deep/PersonalityRadar'
 import { LongTermPlanner } from '../deep/LongTermPlanner'
@@ -96,19 +98,22 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         ),
         // Use backend API for player stats instead of direct Supabase query
         UnifiedAnalysisService.getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
+        // Reduced from 50 to 20 - only need a small sample for quick stats
+        // Most data comes from comprehensive analytics which is much more efficient
         UnifiedAnalysisService.getGameAnalyses(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
           'stockfish',
-          50,
+          20,  // Reduced from 50 for faster loading
           0
         ),
         // Use backend API for comprehensive analytics instead of direct Supabase queries
+        // Fetch all games for accurate color/opening stats (backend supports up to 10,000)
         (async () => {
           const backendData = await UnifiedAnalysisService.getComprehensiveAnalytics(
             userId,
             (platform as 'lichess' | 'chess.com') || 'lichess',
-            10000  // Analyze ALL games for complete historical data
+            10000  // Fetch all games (up to 10,000 limit) for accurate color/opening statistics
           )
           // Return the full backend response with all the new analytics
           return backendData
@@ -455,6 +460,15 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     const fallbackFamilies = fallback?.openingFamily ? [fallback.openingFamily] : []
     const fallbackOpenings = fallback?.opening ? [fallback.opening] : []
 
+    // Auto-determine color if not explicitly provided
+    // This ensures we only show games where the player actually played this opening
+    const determinedColor = color || (() => {
+      const openingColor = getOpeningColor(normalizedName)
+      // If the opening is neutral (e.g., "King's Pawn Game"), don't filter by color
+      // If it's white or black, filter to only show games where player played that color
+      return openingColor === 'neutral' ? undefined : openingColor
+    })()
+
     return {
       normalized: normalizedName,
       identifiers: hasIdentifiers
@@ -463,7 +477,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             openingFamilies: fallbackFamilies,
             openings: fallbackOpenings,
           },
-      color,
+      color: determinedColor,
     }
   }
 
@@ -515,11 +529,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               </p>
               <div className="rounded-xl border border-amber-300/30 bg-amber-500/15 p-4">
                 <p className="mb-2 text-sm font-medium text-amber-100">To see your real analytics:</p>
-                <ol className="list-decimal space-y-1 text-xs text-amber-100/90">
-                  <li>Click the "Analyze My Games" button above</li>
-                  <li>Wait for the analysis to complete (this may take a few minutes)</li>
-                  <li>Refresh the page to see your real analytics data</li>
-                </ol>
+                <p className="text-xs text-amber-100/90">
+                  Games need to be analyzed to show real analytics data. Analysis can be triggered from individual games in the match history.
+                </p>
               </div>
             </div>
           </div>
@@ -689,11 +701,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Opening Performance - Winning vs Losing */}
           <div className={cardClass}>
-            <h3 className="mb-6 text-lg font-semibold text-white">Opening Performance</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <h3 className="mb-4 text-lg font-semibold text-white">Opening Performance</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Winning Openings */}
               <div>
-                <h4 className="mb-4 text-sm font-semibold text-emerald-200">Winning Openings</h4>
+                <h4 className="mb-3 text-sm font-semibold text-emerald-200">Winning Openings</h4>
                 <div className="space-y-3">
                   {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
                     safeOpeningStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
@@ -710,8 +722,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       }
                       title="Click to view games with this opening"
                     >
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="font-medium text-white">
+                      <div className="mb-2 flex items-start justify-between">
+                        <span className="text-sm font-medium leading-tight text-white">
                           {normalizeOpeningName(stat.opening)}
                         </span>
                         <span className="text-xs uppercase tracking-wide text-emerald-100/80">{stat.games} games</span>
@@ -739,7 +751,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
               {/* Losing Openings */}
               <div>
-                <h4 className="mb-4 text-sm font-semibold text-amber-200">Losing Openings</h4>
+                <h4 className="mb-3 text-sm font-semibold text-amber-200">Losing Openings</h4>
                 <div className="space-y-3">
                   {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate < 50).length > 0 ? (
                     safeOpeningStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => b.games - a.games).slice(0, 3).map((stat: any, index: number) => (
@@ -756,8 +768,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         }
                         title="Click to view games with this opening"
                       >
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="font-medium text-white">
+                        <div className="mb-2 flex items-start justify-between">
+                          <span className="text-sm font-medium leading-tight text-white">
                             {normalizeOpeningName(stat.opening)}
                           </span>
                           <span className="text-xs uppercase tracking-wide text-amber-100/80">{stat.games} games</span>
@@ -809,7 +821,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       >
                         <div className="mb-2 flex items-start justify-between">
                           <span className="text-sm font-medium leading-tight text-white">
-                            {normalizeOpeningName(stat.opening)}
+                            {stat.opening}
                           </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
@@ -852,7 +864,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       >
                         <div className="mb-2 flex items-start justify-between">
                           <span className="text-sm font-medium leading-tight text-white">
-                            {normalizeOpeningName(stat.opening)}
+                            {stat.opening}
                           </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
