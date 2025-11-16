@@ -233,7 +233,7 @@ SELECT * FROM pg_stat_activity WHERE state = 'active';
    ```sql
    -- Check stuck jobs
    SELECT * FROM analysis_jobs WHERE status = 'in_progress' AND updated_at < NOW() - INTERVAL '1 hour';
-   
+
    -- Reset stuck jobs
    UPDATE analysis_jobs SET status = 'pending' WHERE status = 'in_progress' AND updated_at < NOW() - INTERVAL '1 hour';
    ```
@@ -242,7 +242,7 @@ SELECT * FROM pg_stat_activity WHERE state = 'active';
    ```bash
    # Check connection pool
    curl https://your-api-domain.com/health/db
-   
+
    # Restart backend
    systemctl restart chess-analytics-api
    ```
@@ -251,7 +251,7 @@ SELECT * FROM pg_stat_activity WHERE state = 'active';
    ```bash
    # Test Stockfish
    ./stockfish/stockfish
-   
+
    # Check permissions
    ls -la stockfish/stockfish
    ```

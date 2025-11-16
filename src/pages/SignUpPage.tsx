@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Upload, BarChart3, BookOpen, Brain, TrendingUp, CheckCircle2 } from 'lucide-react'
 
@@ -12,7 +12,6 @@ export default function SignUpPage() {
   const [success, setSuccess] = useState(false)
   const [searchParams] = useSearchParams()
   const { signUp, signInWithOAuth } = useAuth()
-  const navigate = useNavigate()
 
   // Get the return URL from query params, default to home
   // Sanitize returnTo to prevent open redirects - only accept relative paths

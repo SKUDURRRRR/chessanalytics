@@ -12,9 +12,7 @@ import { clearUserCache } from '../utils/apiCache'
 import { useAuth } from '../contexts/AuthContext'
 import { AnonymousUsageTracker } from '../services/anonymousUsageTracker'
 import LimitReachedModal from '../components/LimitReachedModal'
-// DatabaseDiagnosticsComponent is development-only, imported conditionally below
 // Debug components removed from production
-// import { EloGapFiller } from '../components/debug/EloGapFiller' // Debug component - commented out for production
 import { OpeningFilter, OpeningIdentifierSets } from '../types'
 
 const serializeOpeningIdentifiers = (identifiers: OpeningIdentifierSets): string => {
