@@ -1980,12 +1980,69 @@ class ChessAnalysisEngine:
                 is_best = is_book_move  # Book moves are considered "best"
                 centipawn_loss = 0.0 if is_book_move else 30.0  # Slight penalty for non-book
 
+                # For inaccuracies (non-book moves), we still need to provide a best move
+                # Run a very quick Stockfish lookup just to get the best move suggestion
+                best_move_uci = None
+                best_move_san = None
+                if is_book_move:
+                    # Book move - the played move is the best move
+                    best_move_uci = move.uci()
+                    best_move_san = move_san
+                else:
+                    # Non-book move (inaccuracy) - get best move from quick Stockfish analysis
+                    try:
+                        # Quick Stockfish lookup: very low depth (5) and short time (0.1s) just to get best move
+                        # Note: chess.engine is already imported at module level
+                        with chess.engine.SimpleEngine.popen_uci(self.stockfish_path) as engine:
+                            # Configure for speed
+                            try:
+                                engine.configure({
+                                    'Skill Level': 20,
+                                    'Threads': 1,
+                                    'Hash': 32,  # Small hash for speed
+                                })
+                            except:
+                                pass  # Some engines don't support all options
+
+                            # Analyze position BEFORE the move to get best move
+                            info_before = engine.analyse(board, chess.engine.Limit(depth=5, time=0.1))
+                            pv_before = info_before.get("pv", [])
+
+                            if pv_before and len(pv_before) > 0:
+                                best_move_before = pv_before[0]
+                                best_move_uci = best_move_before.uci()
+
+                                # CRITICAL: Only set best move if it's different from the played move
+                                if best_move_uci == move.uci():
+                                    # Best move is the same as played move - don't set it
+                                    logger.info(f"Opening inaccuracy {move_san}: Stockfish suggests same move, not setting best_move")
+                                    best_move_uci = None
+                                    best_move_san = None
+                                else:
+                                    # Convert to SAN
+                                    try:
+                                        best_move_san = board.san(best_move_before)
+                                        logger.info(f"Opening inaccuracy {move_san}: Found best move {best_move_san} (UCI: {best_move_uci})")
+                                    except Exception as san_error:
+                                        # Fallback: use UCI if SAN conversion fails
+                                        logger.warning(f"Failed to convert best move {best_move_uci} to SAN: {san_error}")
+                                        best_move_san = best_move_uci
+                            else:
+                                logger.warning(f"Opening inaccuracy {move_san}: Stockfish returned empty PV")
+                                best_move_uci = None
+                                best_move_san = None
+                    except Exception as e:
+                        # If Stockfish lookup fails, log but don't fail the analysis
+                        logger.warning(f"Quick Stockfish lookup failed for opening inaccuracy {move_san}: {e}")
+                        best_move_uci = None
+                        best_move_san = None
+
                 book_move_analysis = MoveAnalysis(
                     move=move.uci(),  # UCI notation (required field)
                     move_san=move_san,
                     evaluation={'value': eval_cp, 'type': 'cp'},  # Required evaluation dict
-                    best_move=move.uci() if is_book_move else None,  # UCI notation
-                    best_move_san=move_san if is_book_move else None,
+                    best_move=best_move_uci,  # UCI notation (now includes best move for inaccuracies)
+                    best_move_san=best_move_san,  # SAN notation (now includes best move for inaccuracies)
                     best_move_pv=[],
                     is_best=is_best,
                     is_brilliant=False,
@@ -1997,8 +2054,8 @@ class ChessAnalysisEngine:
                     is_mistake=False,
                     is_inaccuracy=not is_book_move,
                     centipawn_loss=centipawn_loss,
-                    depth_analyzed=0,  # No Stockfish analysis
-                    analysis_time_ms=0,  # Instant
+                    depth_analyzed=5 if not is_book_move else 0,  # Low depth for inaccuracies, 0 for book moves
+                    analysis_time_ms=100 if not is_book_move else 0,  # Quick lookup for inaccuracies
                     explanation=None,
                     heuristic_details={},
                     accuracy_score=100.0 if is_book_move else 97.0,
@@ -2037,9 +2094,11 @@ class ChessAnalysisEngine:
         loop = asyncio.get_event_loop()
 
         def run_stockfish_analysis():
-            # Capture move and time_limit in local scope to avoid UnboundLocalError
+            # Capture variables from outer scope to avoid UnboundLocalError
             current_move = move
-            current_time_limit = time_limit  # Capture from outer scope
+            current_time_limit = time_limit
+            captured_is_user_move = is_user_move  # Capture is_user_move
+            captured_ply_index = ply_index  # Capture ply_index
             try:
                 # Use engine pool to avoid startup overhead (100-200ms per engine creation)
                 # For 65 moves, this saves 6.5-13 seconds!
@@ -3247,14 +3306,21 @@ class ChessAnalysisEngine:
                         evaluation_after=float(eval_after_cp)     # CRITICAL: for personality scoring
                     )
 
+                    # Set is_user_move and ply_index if provided (from analyze_game context)
+                    if captured_is_user_move is not None:
+                        move_analysis.is_user_move = captured_is_user_move
+                    if captured_ply_index is not None:
+                        move_analysis.ply_index = captured_ply_index
+
                     # Enhance with coaching comments
                     # Calculate move number BEFORE the move was made
                     # We need to undo the move temporarily to get the correct move number
                     board.pop()  # Undo the move to get the original position
                     move_number = (board.fullmove_number - 1) * 2 + (0 if board.turn == chess.WHITE else 1)
                     # DO NOT push the move here - _enhance_move_analysis_with_coaching expects board BEFORE the move
-                    # For now, assume all moves are user moves - this will be determined by the frontend
-                    return self._enhance_move_analysis_with_coaching(move_analysis, board, current_move, move_number, is_user_move=True)
+                    # Use captured is_user_move if provided, otherwise default to True
+                    actual_is_user_move = captured_is_user_move if captured_is_user_move is not None else True
+                    return self._enhance_move_analysis_with_coaching(move_analysis, board, current_move, move_number, is_user_move=actual_is_user_move)
             except Exception as e:
                 error_msg = str(e)
                 if "exit code: -9" in error_msg or "died unexpectedly" in error_msg:

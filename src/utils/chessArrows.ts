@@ -224,13 +224,6 @@ export function generateModernMoveArrows(
   moveAnalysis: MoveAnalysis,
   chess: Chess
 ): ModernArrow[] {
-  console.log('[generateModernMoveArrows] Called with:', {
-    san: moveAnalysis.san,
-    classification: moveAnalysis.classification,
-    bestMoveSan: moveAnalysis.bestMoveSan,
-    fen: chess.fen()
-  })
-
   const arrows: ModernArrow[] = []
 
   // Determine if we should show the best move suggestion
@@ -244,7 +237,6 @@ export function generateModernMoveArrows(
   const actualMove = sanToUci(moveAnalysis.san, chess)
 
   if (actualMove) {
-    console.log('[generateModernMoveArrows] Adding arrow for actual move:', actualMove, 'classification:', moveAnalysis.classification)
     arrows.push({
       from: actualMove.from,
       to: actualMove.to,
@@ -281,7 +273,6 @@ export function generateModernMoveArrows(
     const bestMove = sanToUci(moveAnalysis.bestMoveSan!, chess)
 
     if (bestMove) {
-      console.log('[generateModernMoveArrows] Adding arrow for best move:', bestMove)
       arrows.push({
         from: bestMove.from,
         to: bestMove.to,
@@ -292,7 +283,6 @@ export function generateModernMoveArrows(
     }
   }
 
-  console.log('[generateModernMoveArrows] Returning', arrows.length, 'arrows:', arrows)
   return arrows
 }
 
