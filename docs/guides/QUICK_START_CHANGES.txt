@@ -48,4 +48,3 @@ TWO FIXES APPLIED:
 1. Time management now calculated (not hardcoded 50)
 2. Patient scoring recalibrated (less generous)
 ================================================================
-

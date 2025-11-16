@@ -25,16 +25,16 @@ This deployment adds `opening_normalized` column to the database and updates fro
 **Verification**:
 ```sql
 -- Check column exists
-SELECT column_name, data_type, is_nullable 
-FROM information_schema.columns 
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
 WHERE table_name = 'games' AND column_name = 'opening_normalized';
 
 -- Check index exists
 SELECT indexname FROM pg_indexes WHERE tablename = 'games' AND indexname = 'idx_games_opening_normalized';
 
 -- Check sample data
-SELECT opening, opening_family, opening_normalized 
-FROM games 
+SELECT opening, opening_family, opening_normalized
+FROM games
 LIMIT 10;
 ```
 
@@ -159,10 +159,10 @@ This will restore client-side filtering temporarily while keeping the database c
    ```sql
    -- Drop constraint
    ALTER TABLE games DROP CONSTRAINT IF EXISTS opening_normalized_valid;
-   
+
    -- Drop index
    DROP INDEX IF EXISTS idx_games_opening_normalized;
-   
+
    -- Drop column
    ALTER TABLE games DROP COLUMN IF EXISTS opening_normalized;
    ```
@@ -220,4 +220,3 @@ For deployment issues or questions:
 - Check: `OPENING_FILTER_FIX_IMPLEMENTATION.md`
 - Check: `docs/OPENING_NORMALIZED_REPROCESSING.md`
 - Review: Migration file comments
-

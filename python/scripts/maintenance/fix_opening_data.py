@@ -30,10 +30,10 @@ def fetch_lichess_game_opening(game_id: str):
         url = f"https://lichess.org/game/export/{game_id}"
         headers = {'Accept': 'application/x-chess-pgn'}
         response = requests.get(url, headers=headers, timeout=10)
-        
+
         if response.status_code == 200:
             pgn = response.text
-            
+
             # Parse opening from PGN headers
             opening = None
             eco = None
@@ -42,7 +42,7 @@ def fetch_lichess_game_opening(game_id: str):
                     opening = line.split('"')[1]
                 elif line.startswith('[ECO "'):
                     eco = line.split('"')[1]
-            
+
             return opening, eco
         return None, None
     except Exception as e:
@@ -54,32 +54,32 @@ def fix_openings_for_player(user_id: str, platform: str, limit: int = 50):
     print(f"\n{'='*70}")
     print(f"FIXING OPENINGS: {user_id.upper()}")
     print(f"{'='*70}")
-    
+
     # Get games with missing opening data
     response = supabase.table('games').select('provider_game_id, opening, opening_family').eq('user_id', user_id).eq('platform', platform).limit(limit).execute()
-    
+
     games = response.data if response.data else []
     print(f"\nFound {len(games)} games to check")
-    
+
     missing_count = sum(1 for g in games if not g.get('opening') or g.get('opening') == 'Unknown')
     print(f"Games with missing/unknown opening: {missing_count}")
-    
+
     if missing_count == 0:
         print("✅ All games have opening data!")
         return
-    
+
     # Fix each game
     fixed = 0
     errors = 0
-    
+
     for i, game in enumerate(games, 1):
         if not game.get('opening') or game.get('opening') == 'Unknown':
             game_id = game['provider_game_id']
-            
+
             print(f"\n[{i}/{len(games)}] Fetching opening for game {game_id}...")
-            
+
             opening, eco = fetch_lichess_game_opening(game_id)
-            
+
             if opening or eco:
                 # Update database
                 try:
@@ -87,7 +87,7 @@ def fix_openings_for_player(user_id: str, platform: str, limit: int = 50):
                         'opening': opening or 'Unknown',
                         'opening_family': eco or 'Unknown'
                     }).eq('provider_game_id', game_id).eq('user_id', user_id).execute()
-                    
+
                     fixed += 1
                     print(f"    ✅ Updated: {opening} ({eco})")
                 except Exception as e:
@@ -96,10 +96,10 @@ def fix_openings_for_player(user_id: str, platform: str, limit: int = 50):
             else:
                 errors += 1
                 print(f"    ❌ No opening data found")
-            
+
             # Rate limit: Lichess allows 1 request per second
             time.sleep(1.1)
-    
+
     print(f"\n{'='*70}")
     print(f"RESULTS: {user_id.upper()}")
     print(f"{'='*70}")
@@ -135,4 +135,3 @@ print("\n3. Re-analyze all games:")
 print("   python reanalyze_test_players.py")
 print("\n4. Check personality scores:")
 print("   Refresh your browser!")
-
