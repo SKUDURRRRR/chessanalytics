@@ -49,6 +49,7 @@ interface UnifiedChessAnalysisProps {
   onUndoExplorationMove?: () => void
   onAddExplorationMove?: (move: string) => void
   onPieceDrop?: (sourceSquare: string, targetSquare: string) => boolean
+  isLoadingAIComments?: boolean
   className?: string
 }
 
@@ -579,6 +580,7 @@ export function UnifiedChessAnalysis({
   onUndoExplorationMove,
   onAddExplorationMove,
   onPieceDrop,
+  isLoadingAIComments = false,
   className = ''
 }: UnifiedChessAnalysisProps) {
 
@@ -1374,7 +1376,15 @@ export function UnifiedChessAnalysis({
             <div className="mb-6">
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div className="flex-1">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
+                    {isLoadingAIComments && (
+                      <div className="flex items-center gap-1.5">
+                        <div className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-transparent"></div>
+                        <span className="text-xs text-purple-300">Coach Tal loading...</span>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3 mt-2">
                     <div className={`text-3xl font-semibold ${
                       currentMove ? getMoveTextColor(currentMove.classification) :

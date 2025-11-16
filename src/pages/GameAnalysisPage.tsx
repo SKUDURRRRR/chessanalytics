@@ -437,6 +437,7 @@ export default function GameAnalysisPage() {
   const decodedGameId = gameParam ? decodeURIComponent(gameParam) : ''
 
   const [loading, setLoading] = useState(true)
+  const [isLoadingAIComments, setIsLoadingAIComments] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [gameRecord, setGameRecord] = useState<any | null>(locationState.game ?? null)
   const [analysisRecord, setAnalysisRecord] = useState<any | null>(null)
@@ -617,8 +618,12 @@ export default function GameAnalysisPage() {
     let attempts = 0
     let isCancelled = false
 
+    // Set loading state to true when polling starts
+    setIsLoadingAIComments(true)
+
     const poll = async () => {
       if (isCancelled || attempts >= maxAttempts) {
+        setIsLoadingAIComments(false)
         return
       }
 
@@ -636,6 +641,9 @@ export default function GameAnalysisPage() {
           if (hasComments) {
             // AI comments are ready!
             console.log('✅ AI comments ready! Refreshing data...')
+
+            // Hide loading indicator
+            setIsLoadingAIComments(false)
 
             // Show notification
             if (typeof window !== 'undefined' && (window as any).toast) {
@@ -659,6 +667,7 @@ export default function GameAnalysisPage() {
         setTimeout(poll, 5000) // Poll every 5 seconds
       } catch (error) {
         console.error('Error polling for AI comments:', error)
+        setIsLoadingAIComments(false)
         isCancelled = true
       }
     }
@@ -669,6 +678,7 @@ export default function GameAnalysisPage() {
     // Return cleanup function
     return () => {
       isCancelled = true
+      setIsLoadingAIComments(false)
     }
   }
 
@@ -2054,6 +2064,7 @@ export default function GameAnalysisPage() {
           onUndoExplorationMove={handleUndoExplorationMove}
           onAddExplorationMove={handleAddExplorationMove}
           onPieceDrop={handlePieceDrop}
+          isLoadingAIComments={isLoadingAIComments}
         />
 
         <div className="mt-8">
