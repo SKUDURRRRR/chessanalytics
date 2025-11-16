@@ -42,15 +42,17 @@ def _should_generate_ai_comment(move_analysis: MoveAnalysis, config: CommentGene
 
     If selective mode is enabled, only generate for significant moves:
     - Player's first move (always - greeting)
-    - Blunders, mistakes, brilliant moves, inaccuracies
+    - Brilliant moves (exceptional plays worth celebrating)
+    - Learning moments (blunders, mistakes, inaccuracies) - error correction
 
-    This reduces API calls by ~70% (only ~12-18 moves per game instead of 60).
+    This reduces API calls by ~70-80% (only ~8-15 moves per game instead of 60).
+    Regular good/excellent moves don't need AI commentary - players know they're doing well.
     """
     if not config.enabled:
         return False
 
     if not config.selective:
-        # Generate for all moves (not recommended - slow)
+        # Generate for all moves (not recommended - slow and expensive)
         return True
 
     # Skip AI generation for first move - we already have instant greeting
@@ -63,12 +65,14 @@ def _should_generate_ai_comment(move_analysis: MoveAnalysis, config: CommentGene
             # Skip - instant greeting already added during analysis
             return False
 
-    # Selective: Only significant moves
+    # Selective: ONLY critical moments
+    # Focus on learning moments (errors) and exceptional plays (brilliant)
+    # Skip routine good/excellent moves - they don't need commentary
     return (
-        move_analysis.is_blunder or
-        move_analysis.is_mistake or
-        move_analysis.is_brilliant or
-        move_analysis.is_inaccuracy
+        move_analysis.is_blunder or      # Critical error - needs explanation
+        move_analysis.is_mistake or      # Significant error - teaching moment
+        move_analysis.is_inaccuracy or   # Minor error - gentle correction
+        move_analysis.is_brilliant       # Exceptional play - celebrate it!
     )
 
 

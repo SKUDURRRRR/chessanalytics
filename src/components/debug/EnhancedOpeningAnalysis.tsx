@@ -21,6 +21,20 @@ interface ProcessedMove {
   explanation: string
   fenBefore: string
   fenAfter: string
+  gamePhase?: string
+
+  // Enhanced coaching fields
+  coachingComment?: string
+  whatWentRight?: string
+  whatWentWrong?: string
+  howToImprove?: string
+  tacticalInsights?: string[]
+  positionalInsights?: string[]
+  risks?: string[]
+  benefits?: string[]
+  learningPoints?: string[]
+  encouragementLevel?: number
+  moveQuality?: string
 }
 
 interface EnhancedOpeningAnalysisProps {

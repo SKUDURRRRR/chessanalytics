@@ -618,33 +618,55 @@ export default function GameAnalysisPage() {
   const pollForAIComments = () => {
     if (!decodedUserId || !decodedGameId || !platform) return
 
-    const maxAttempts = 12 // Poll for up to 60 seconds (12 * 5 seconds)
+    const maxAttempts = 20 // Poll for up to 100 seconds (20 * 5 seconds)
     let attempts = 0
     let isCancelled = false
 
     // Set loading state to true when polling starts
     setIsLoadingAIComments(true)
 
+    // Wait 5 seconds before starting to poll (give AI generation time to start)
+    console.log('⏳ Waiting 5 seconds before starting AI comment polling...')
+
     const poll = async () => {
       if (isCancelled || attempts >= maxAttempts) {
+        console.log(`🛑 Polling stopped. Attempts: ${attempts}, Cancelled: ${isCancelled}`)
         setIsLoadingAIComments(false)
         return
       }
 
+      attempts++
+      console.log(`🔄 Polling attempt ${attempts}/${maxAttempts} for AI comments...`)
+
       try {
-        // Force fresh data fetch
+        // Force fresh data fetch by invalidating cache
         ;(window as any)._forceRefreshGameAnalysis = true
         const result = await fetchGameAnalysisData(decodedUserId, platform, decodedGameId)
 
         if (result.analysis?.moves_analysis) {
-          // Check if any moves have coaching_comment
-          const hasComments = result.analysis.moves_analysis.some(
+          // Check if moves beyond the first move have coaching_comment
+          // (First move has instant greeting, we need to check if AI comments are generated for other significant moves)
+          const movesWithComments = result.analysis.moves_analysis.filter(
             (move: any) => move.coaching_comment && move.coaching_comment.trim()
           )
 
+          // Count user moves to see how many could potentially have comments
+          const userMoves = result.analysis.moves_analysis.filter((move: any) => move.is_user_move)
+
+          // Consider comments ready if we have at least 2 comments (greeting + at least one AI comment)
+          // OR if we've been polling and have some comments (meaning background generation completed)
+          const hasComments = movesWithComments.length >= 2
+
           if (hasComments) {
             // AI comments are ready!
-            console.log('✅ AI comments ready! Refreshing data...')
+            console.log(`✅ AI comments ready! Found ${movesWithComments.length} moves with comments out of ${userMoves.length} user moves. Refreshing data...`)
+
+            // Log sample comments for debugging
+            const sampleComments = movesWithComments.slice(0, 3).map((m: any) => ({
+              move: m.move_san,
+              comment: m.coaching_comment?.substring(0, 50)
+            }))
+            console.log('Sample comments:', sampleComments)
 
             // Hide loading indicator
             setIsLoadingAIComments(false)
@@ -657,17 +679,24 @@ export default function GameAnalysisPage() {
               console.log('✅ AI insights ready!')
             }
 
-            // Update the analysis record (force new object reference for React)
-            setAnalysisRecord({ ...result.analysis })
-            console.log('📝 Updated analysis record with AI comments')
+            // Force a complete state update with new data
+            // This ensures React detects the change and re-renders all components
+            setGameRecord(prev => ({ ...prev, ...result.game }))
+            setAnalysisRecord(result.analysis) // Set fresh analysis data
+            setPgn(result.pgn ?? null)
 
-            isCancelled = true
+            console.log('📝 Updated analysis record with AI comments')
+            console.log('🔄 Triggering re-render...')
+
+            // Force a small delay to ensure state propagates, then stop polling
+            setTimeout(() => {
+              isCancelled = true
+            }, 100)
             return
           }
         }
 
         // Continue polling
-        attempts++
         setTimeout(poll, 5000) // Poll every 5 seconds
       } catch (error) {
         console.error('Error polling for AI comments:', error)
@@ -717,14 +746,22 @@ export default function GameAnalysisPage() {
 
         // Check if analysis exists but no AI comments yet - start polling
         if (result.analysis?.moves_analysis) {
-          const hasComments = result.analysis.moves_analysis.some(
+          const movesWithComments = result.analysis.moves_analysis.filter(
             (move: any) => move.coaching_comment && move.coaching_comment.trim()
           )
 
+          // Count user moves to see how many could potentially have comments
+          const userMoves = result.analysis.moves_analysis.filter((move: any) => move.is_user_move)
+
+          // Start polling if we only have 0-1 comments (need to wait for AI generation)
+          const hasComments = movesWithComments.length >= 2
+
           if (!hasComments) {
             // Analysis exists but no AI comments yet - start polling
-            console.log('📊 Analysis loaded but no AI comments yet, starting polling...')
+            console.log(`📊 Analysis loaded with ${movesWithComments.length} commented moves out of ${userMoves.length} user moves, starting polling for AI comments...`)
             pollForAIComments()
+          } else {
+            console.log(`✅ Analysis already has ${movesWithComments.length} moves with AI comments, no polling needed`)
           }
         }
 
@@ -917,16 +954,24 @@ export default function GameAnalysisPage() {
       const bestMoveSan = bestMoveSanRaw || (move.best_move ? convertUciToSan(fenBefore, move.best_move) : null) || null
       const classification = determineClassification(move)
 
-      // Debug logging for inaccuracies
-      if (classification === 'inaccuracy' && import.meta.env.DEV) {
-        console.log(`[GameAnalysis] Inaccuracy Move ${idx + 1}:`, {
-          san: move.move_san,
+      // Debug logging for all moves with centipawn loss or suboptimal moves
+      if (import.meta.env.DEV && (
+        (move.centipawn_loss && move.centipawn_loss > 50) ||
+        move.is_inaccuracy || move.is_mistake || move.is_blunder
+      )) {
+        console.log(`[GameAnalysis] Move ${idx + 1} (${move.move_san}):`, {
           classification,
+          is_inaccuracy_flag: move.is_inaccuracy,
+          is_mistake_flag: move.is_mistake,
+          is_blunder_flag: move.is_blunder,
           best_move_san_raw: move.best_move_san,
           best_move_uci: move.best_move,
-          bestMoveSan,
+          bestMoveSan_computed: bestMoveSan,
+          bestMoveSan_isNull: bestMoveSan === null,
+          bestMoveSan_isEmpty: bestMoveSan === '',
           centipawn_loss: move.centipawn_loss,
-          is_inaccuracy: move.is_inaccuracy
+          is_user_move: isUserMove,
+          fenBefore: fenBefore
         })
       }
 
@@ -1225,6 +1270,20 @@ export default function GameAnalysisPage() {
     }
 
     // Generate modern arrows for the current move
+    // Debug logging to understand why best move arrows might not show
+    if (import.meta.env.DEV && currentMove.classification !== 'best' && currentMove.classification !== 'brilliant') {
+      console.log('[GameAnalysisPage] Generating arrows for move:', {
+        moveNumber: currentMove.moveNumber,
+        san: currentMove.san,
+        bestMoveSan: currentMove.bestMoveSan,
+        bestMoveSanType: typeof currentMove.bestMoveSan,
+        bestMoveSanLength: currentMove.bestMoveSan?.length,
+        classification: currentMove.classification,
+        isUserMove: currentMove.isUserMove,
+        fen: chess.fen()
+      })
+    }
+
     const arrows = generateModernMoveArrows({
       san: currentMove.san,
       bestMoveSan: currentMove.bestMoveSan,

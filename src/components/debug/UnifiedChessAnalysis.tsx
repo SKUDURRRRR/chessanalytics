@@ -28,6 +28,19 @@ interface ProcessedMove {
   fenBefore: string
   fenAfter: string
   gamePhase?: string  // Optional: 'OPENING', 'MIDDLEGAME', 'ENDGAME'
+
+  // Enhanced coaching fields
+  coachingComment?: string
+  whatWentRight?: string
+  whatWentWrong?: string
+  howToImprove?: string
+  tacticalInsights?: string[]
+  positionalInsights?: string[]
+  risks?: string[]
+  benefits?: string[]
+  learningPoints?: string[]
+  encouragementLevel?: number
+  moveQuality?: string
 }
 
 interface UnifiedChessAnalysisProps {

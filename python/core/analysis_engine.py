@@ -1980,7 +1980,7 @@ class ChessAnalysisEngine:
                 is_best = is_book_move  # Book moves are considered "best"
                 centipawn_loss = 0.0 if is_book_move else 30.0  # Slight penalty for non-book
 
-                return MoveAnalysis(
+                book_move_analysis = MoveAnalysis(
                     move=move.uci(),  # UCI notation (required field)
                     move_san=move_san,
                     evaluation={'value': eval_cp, 'type': 'cp'},  # Required evaluation dict
@@ -2005,6 +2005,16 @@ class ChessAnalysisEngine:
                     evaluation_before=0.0,
                     evaluation_after=eval_cp
                 )
+
+                # Set is_user_move and ply_index if provided (from analyze_game context)
+                if is_user_move is not None:
+                    book_move_analysis.is_user_move = is_user_move
+                if ply_index is not None:
+                    book_move_analysis.ply_index = ply_index
+
+                # Enhance with coaching comments (including instant Tal greeting for first move)
+                actual_is_user_move = is_user_move if is_user_move is not None else True
+                return self._enhance_move_analysis_with_coaching(book_move_analysis, board, move, fullmove_number, is_user_move=actual_is_user_move)
 
         # Use adaptive depth based on position complexity (30% speedup on average)
         depth = self._get_adaptive_depth(board, move)
