@@ -8934,8 +8934,20 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         # Count moves
                         move_count = sum(1 for _ in game.mainline_moves())
 
+                        # Identify opening from actual moves (more accurate than PGN headers)
+                        from .opening_utils import identify_opening_from_pgn_moves
+                        identified_opening, identified_eco = identify_opening_from_pgn_moves(pgn_data, color)
+
+                        # Use identified opening if available, otherwise fall back to PGN headers
                         opening_value = headers.get('Opening', 'Unknown')
                         eco_value = headers.get('ECO', 'Unknown')
+
+                        # If we identified a specific opening from moves, use it
+                        if identified_opening and identified_opening != 'Unknown Opening':
+                            opening_value = identified_opening
+                            if identified_eco:
+                                eco_value = identified_eco
+
                         # Prioritize ECO code for normalization as it's more reliable
                         raw_opening_for_normalization = eco_value if eco_value != 'Unknown' else opening_value
                         # Normalize opening name to family for consistent filtering
