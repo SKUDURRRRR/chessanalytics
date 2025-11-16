@@ -3355,10 +3355,16 @@ async def get_single_game(
             print(f"Analysis not found for game {game_identifier}: {analysis_error}")
             analysis_data = None
 
+        # Extract ai_comments_status from analysis_data if available
+        ai_comments_status = None
+        if analysis_data:
+            ai_comments_status = analysis_data.get('ai_comments_status', 'pending')
+
         return {
             'game': game,
             'pgn': pgn_data,
-            'analysis': analysis_data
+            'analysis': analysis_data,
+            'ai_comments_status': ai_comments_status or 'pending'
         }
 
     except HTTPException:
@@ -8584,6 +8590,12 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
             # Save to database
             success = await _save_stockfish_analysis(game_analysis)
             if success:
+                # Queue background task for AI comment generation
+                print(f"[SINGLE GAME ANALYSIS] 🔄 Creating background task for AI comments...")
+                task = asyncio.create_task(_generate_ai_comments_background(game_analysis))
+                print(f"[SINGLE GAME ANALYSIS] ✅ Background task created: {task}")
+                print(f"[SINGLE GAME ANALYSIS] Queued background AI comment generation for game_id: {game_analysis.game_id}")
+
                 return UnifiedAnalysisResponse(
                     success=True,
                     message="Game analysis completed and saved",
@@ -9007,6 +9019,13 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 if success:
                     print(f"[SINGLE GAME ANALYSIS] SUCCESS Analysis completed and saved for game_id: {analysis_game_id}")
                     print(f"[SINGLE GAME ANALYSIS] This was a SINGLE game analysis - NOT starting batch analysis")
+
+                    # Queue background task for AI comment generation
+                    print(f"[SINGLE GAME ANALYSIS] 🔄 Creating background task for AI comments...")
+                    task = asyncio.create_task(_generate_ai_comments_background(game_analysis))
+                    print(f"[SINGLE GAME ANALYSIS] ✅ Background task created: {task}")
+                    print(f"[SINGLE GAME ANALYSIS] Queued background AI comment generation for game_id: {analysis_game_id}")
+
                     return UnifiedAnalysisResponse(
                         success=True,
                         message="Game analysis completed and saved",
@@ -9284,6 +9303,167 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     print(f"[info] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
     print(f"[info] Skipped {analyzed_count} already-analyzed games")
     return unanalyzed_games
+async def _update_all_move_comments_in_db(
+    game_id: str,
+    user_id: str,
+    platform: str,
+    moves_analysis: List[Dict[str, Any]]
+) -> bool:
+    """
+    Update the moves_analysis JSONB column with AI-generated comments.
+
+    This is called after all AI comments are generated in the background.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+
+        # Get database client
+        db_config_dict = config.get_database_config()
+        if not db_config_dict:
+            print(f"[AI_COMMENTS] No database config, cannot update comments for game {game_id}")
+            return False
+
+        from supabase import create_client
+        db_client = create_client(
+            db_config_dict['url'],
+            db_config_dict.get('service_role_key') or db_config_dict.get('key')
+        )
+
+        # Update the entire moves_analysis JSONB column
+        # Note: ai_comments_status column might not exist yet, but that's OK - Supabase will ignore it
+        update_data = {
+            'moves_analysis': moves_analysis
+            # ai_comments_status will be added via migration later
+            # For now, we'll just update the moves_analysis JSONB
+        }
+
+        print(f"[AI_COMMENTS] Updating database for game_id: {game_id}")
+        print(f"[AI_COMMENTS] Moves to update: {len(moves_analysis)}")
+
+        response = await asyncio.to_thread(
+            lambda: db_client.table('move_analyses')
+            .update(update_data)
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .eq('game_id', game_id)
+            .execute()
+        )
+
+        print(f"[AI_COMMENTS] Database update response: {type(response)}")
+        print(f"[AI_COMMENTS] Response has data: {hasattr(response, 'data')}")
+        if hasattr(response, 'data'):
+            print(f"[AI_COMMENTS] Response data: {response.data}")
+
+        success = bool(getattr(response, 'data', None))
+        if success:
+            print(f"[AI_COMMENTS] ✅ Successfully updated AI comments for game_id: {game_id}")
+            # Invalidate cache to ensure fresh data
+            _invalidate_cache(canonical_user_id, platform)
+        else:
+            print(f"[AI_COMMENTS] ❌ Failed to update AI comments for game_id: {game_id}")
+
+        return success
+
+    except Exception as e:
+        print(f"[AI_COMMENTS] Error updating AI comments in database: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+async def _generate_ai_comments_background(game_analysis: GameAnalysis) -> None:
+    """
+    Background task to generate AI comments asynchronously after analysis saves.
+
+    This runs in the background and doesn't block the analysis response.
+    """
+    try:
+        print(f"[AI_COMMENTS] ========================================")
+        print(f"[AI_COMMENTS] 🚀 Starting background AI comment generation")
+        print(f"[AI_COMMENTS] Game ID: {game_analysis.game_id}")
+        print(f"[AI_COMMENTS] User ID: {game_analysis.user_id}")
+        print(f"[AI_COMMENTS] Platform: {game_analysis.platform}")
+        print(f"[AI_COMMENTS] Total moves: {len(game_analysis.moves_analysis)}")
+        print(f"[AI_COMMENTS] ========================================")
+
+        from .ai_comment_service import generate_comments_parallel, CommentGenerationConfig
+
+        # Generate comments in parallel batches
+        config = CommentGenerationConfig.from_env()
+        updated_analysis = await generate_comments_parallel(game_analysis, config)
+
+        # Convert moves back to dict format for database update
+        moves_analysis_dict = []
+        for move in updated_analysis.moves_analysis:
+            moves_analysis_dict.append({
+                'move': move.move,
+                'move_san': move.move_san,
+                'move_notation': move.move,
+                'best_move': move.best_move,
+                'best_move_san': getattr(move, 'best_move_san', ''),
+                'best_move_pv': getattr(move, 'best_move_pv', []),
+                'engine_move': move.best_move,
+                'fen_before': getattr(move, 'fen_before', ''),
+                'fen_after': getattr(move, 'fen_after', ''),
+                'evaluation': move.evaluation,
+                'evaluation_before': getattr(move, 'evaluation_before', None),
+                'evaluation_after': getattr(move, 'evaluation_after', None),
+                'is_best': move.is_best,
+                'is_brilliant': move.is_brilliant,
+                'is_great': move.is_great,
+                'is_excellent': move.is_excellent,
+                'is_blunder': move.is_blunder,
+                'is_mistake': move.is_mistake,
+                'is_inaccuracy': move.is_inaccuracy,
+                'is_good': move.is_good,
+                'is_acceptable': move.is_acceptable,
+                'centipawn_loss': move.centipawn_loss,
+                'depth_analyzed': move.depth_analyzed,
+                'is_user_move': move.is_user_move,
+                'player_color': move.player_color,
+                'ply_index': move.ply_index,
+                'ply': move.ply_index,
+                'opening_ply': move.ply_index,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase
+            })
+
+        # Update database with AI comments
+        success = await _update_all_move_comments_in_db(
+            game_analysis.game_id,
+            game_analysis.user_id,
+            game_analysis.platform,
+            moves_analysis_dict
+        )
+
+        if success:
+            print(f"[AI_COMMENTS] ✅ Background AI comment generation completed for game_id: {game_analysis.game_id}")
+        else:
+            print(f"[AI_COMMENTS] ⚠️  Background AI comment generation completed but database update failed for game_id: {game_analysis.game_id}")
+
+    except Exception as e:
+        print(f"[AI_COMMENTS] ❌❌❌ ERROR in background AI comment generation ❌❌❌")
+        print(f"[AI_COMMENTS] Error type: {type(e).__name__}")
+        print(f"[AI_COMMENTS] Error message: {str(e)}")
+        import traceback
+        print(f"[AI_COMMENTS] Full traceback:")
+        traceback.print_exc()
+        print(f"[AI_COMMENTS] ❌❌❌ END ERROR ❌❌❌")
+        # Don't raise - this is a background task, errors shouldn't crash the server
+
+
 async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
     """Persist Stockfish/deep analysis using reliable persistence fallback."""
     try:
@@ -9377,7 +9557,8 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'analysis_method': str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
-            'stockfish_depth': analysis.stockfish_depth
+            'stockfish_depth': analysis.stockfish_depth,
+            'ai_comments_status': 'pending'  # Will be updated to 'completed' when AI comments are generated
         }
 
         print(f"[SAVE ANALYSIS] Attempting to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")

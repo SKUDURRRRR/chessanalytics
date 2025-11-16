@@ -608,6 +608,70 @@ export default function GameAnalysisPage() {
     }
   }
 
+  // Simple polling: Check if moves have coaching_comment
+  // If analysis exists but no comments yet, poll until they appear
+  const pollForAIComments = () => {
+    if (!decodedUserId || !decodedGameId || !platform) return
+
+    const maxAttempts = 12 // Poll for up to 60 seconds (12 * 5 seconds)
+    let attempts = 0
+    let isCancelled = false
+
+    const poll = async () => {
+      if (isCancelled || attempts >= maxAttempts) {
+        return
+      }
+
+      try {
+        // Force fresh data fetch
+        ;(window as any)._forceRefreshGameAnalysis = true
+        const result = await fetchGameAnalysisData(decodedUserId, platform, decodedGameId)
+
+        if (result.analysis?.moves_analysis) {
+          // Check if any moves have coaching_comment
+          const hasComments = result.analysis.moves_analysis.some(
+            (move: any) => move.coaching_comment && move.coaching_comment.trim()
+          )
+
+          if (hasComments) {
+            // AI comments are ready!
+            console.log('✅ AI comments ready! Refreshing data...')
+
+            // Show notification
+            if (typeof window !== 'undefined' && (window as any).toast) {
+              (window as any).toast.success('AI insights ready!')
+            } else {
+              // Fallback notification
+              console.log('✅ AI insights ready!')
+            }
+
+            // Update the analysis record (force new object reference for React)
+            setAnalysisRecord({ ...result.analysis })
+            console.log('📝 Updated analysis record with AI comments')
+
+            isCancelled = true
+            return
+          }
+        }
+
+        // Continue polling
+        attempts++
+        setTimeout(poll, 5000) // Poll every 5 seconds
+      } catch (error) {
+        console.error('Error polling for AI comments:', error)
+        isCancelled = true
+      }
+    }
+
+    // Start polling after a short delay
+    setTimeout(poll, 5000)
+
+    // Return cleanup function
+    return () => {
+      isCancelled = true
+    }
+  }
+
   useEffect(() => {
     if (!platform) {
       setError('Unsupported platform provided.')
@@ -636,6 +700,19 @@ export default function GameAnalysisPage() {
         setGameRecord(prev => prev ?? result.game)
         setAnalysisRecord(result.analysis)
         setPgn(result.pgn ?? null)
+
+        // Check if analysis exists but no AI comments yet - start polling
+        if (result.analysis?.moves_analysis) {
+          const hasComments = result.analysis.moves_analysis.some(
+            (move: any) => move.coaching_comment && move.coaching_comment.trim()
+          )
+
+          if (!hasComments) {
+            // Analysis exists but no AI comments yet - start polling
+            console.log('📊 Analysis loaded but no AI comments yet, starting polling...')
+            pollForAIComments()
+          }
+        }
 
         // Auto-analysis disabled - users should click "Analyze" button in match history
         // This prevents automatic analysis when navigating to game details
@@ -844,6 +921,9 @@ export default function GameAnalysisPage() {
           !move.coaching_comment.toLowerCase().includes('centipawn') &&
           !move.coaching_comment.toLowerCase().includes('cp')) {
         explanation = move.coaching_comment
+        if (idx < 5) { // Debug: log first 5 moves
+          console.log(`[AI_COMMENT] Move ${idx} (${move.move_san}): Using coaching_comment:`, move.coaching_comment.substring(0, 50) + '...')
+        }
       } else {
         // Fallback to Chess.com-style comments for moves without backend comments
         try {
@@ -1025,7 +1105,7 @@ export default function GameAnalysisPage() {
         pvMoves,  // Include converted PV moves for follow-up feature
 
         // Enhanced coaching fields
-        coachingComment: move.coaching_comment,
+        coachingComment: move.coaching_comment || undefined,
         whatWentRight: move.what_went_right,
         whatWentWrong: move.what_went_wrong,
         howToImprove: move.how_to_improve,

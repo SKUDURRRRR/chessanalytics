@@ -6,6 +6,7 @@ export interface GameAnalysisFetchResult {
   game: any | null
   analysis: any | null
   pgn: string | null
+  ai_comments_status?: 'pending' | 'generating' | 'completed'
 }
 
 // Simple in-memory cache to avoid redundant queries
@@ -50,10 +51,12 @@ export async function fetchGameAnalysisData(
     normalizedGameId = gameIdentifier
   }
 
-  // Check cache first
+  // Check cache first (but allow bypass for fresh data)
   const cacheKey = `${canonicalUserId}:${platform}:${normalizedGameId}`
   const cached = cache.get(cacheKey)
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+  // Don't use cache if we're checking for AI comments (force fresh data)
+  const forceRefresh = (window as any)?._forceRefreshGameAnalysis
+  if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data
   }
 
@@ -74,6 +77,24 @@ export async function fetchGameAnalysisData(
       gameRecord = data.game
       analysisRecord = data.analysis
       pgnText = data.pgn
+
+      // Return result with ai_comments_status
+      const result: GameAnalysisFetchResult = {
+        game: gameRecord,
+        analysis: analysisRecord,
+        pgn: pgnText,
+        ai_comments_status: data.ai_comments_status || (analysisRecord?.ai_comments_status) || 'pending'
+      }
+
+      // Update cache
+      cache.set(cacheKey, { data: result, timestamp: Date.now() })
+
+      // Clear force refresh flag
+      if ((window as any)?._forceRefreshGameAnalysis) {
+        delete (window as any)._forceRefreshGameAnalysis
+      }
+
+      return result
     } else {
       // Backend API failed - fall back to direct Supabase queries
       // This only works for authenticated users with UUID-based user_ids
@@ -206,10 +227,16 @@ export async function fetchGameAnalysisData(
     console.error('Failed to fetch game analysis data', error)
   }
 
-  const result = {
+  const result: GameAnalysisFetchResult = {
     game: gameRecord,
     analysis: analysisRecord,
     pgn: pgnText,
+    ai_comments_status: analysisRecord?.ai_comments_status || 'pending'
+  }
+
+  // Clear force refresh flag
+  if ((window as any)?._forceRefreshGameAnalysis) {
+    delete (window as any)._forceRefreshGameAnalysis
   }
 
   // Cache the result

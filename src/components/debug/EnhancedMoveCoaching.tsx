@@ -13,6 +13,11 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
 
   const text = move.coachingComment || move.explanation || ''
 
+  // Debug: log if we have a coaching comment
+  if (move.coachingComment && !move.coachingComment.includes('centipawn')) {
+    console.log(`[EnhancedMoveCoaching] Move ${move.moveNumber} (${move.san}): Has coaching comment:`, move.coachingComment.substring(0, 50) + '...')
+  }
+
   const getEncouragementColor = (level: number) => {
     if (level >= 4) return 'text-emerald-300'
     if (level >= 3) return 'text-sky-300'

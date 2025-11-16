@@ -728,14 +728,29 @@ Write the phase transition comment now:"""
             try:
                 # Get board from move_analysis - it should be the board AFTER the move
                 board = move_analysis.get('board_after')
-                move = move_analysis.get('move')
+                move_raw = move_analysis.get('move')
                 player_elo = move_analysis.get('player_elo', 1200)  # Default to middle of target range
+
+                # Convert move to chess.Move object if it's a string
+                move = None
+                if move_raw:
+                    try:
+                        if isinstance(move_raw, str):
+                            move = chess.Move.from_uci(move_raw)
+                        elif hasattr(move_raw, 'to_square'):
+                            # Already a chess.Move object
+                            move = move_raw
+                        else:
+                            move = chess.Move.from_uci(str(move_raw))
+                    except Exception as e:
+                        print(f"[AI] Warning: Could not convert move to chess.Move: {e}, move={move_raw}")
+                        move = None
 
                 # Debug logging
                 if not board:
                     print("[AI] Warning: board_after not found in move_analysis, skipping AI generation")
                 elif not move:
-                    print("[AI] Warning: move not found in move_analysis, skipping AI generation")
+                    print("[AI] Warning: move not found or invalid in move_analysis, skipping AI generation")
                 elif board and move:
                     # Check if AI comment was pre-generated in parallel
                     pre_generated = move_analysis.get('_pre_generated_ai_comment')

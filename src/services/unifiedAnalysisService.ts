@@ -535,6 +535,96 @@ export class UnifiedAnalysisService {
   }
 
   /**
+   * Poll for AI comments status on a specific game.
+   * Returns the ai_comments_status: 'pending', 'generating', or 'completed'
+   */
+  static async getAICommentsStatus(
+    userId: string,
+    platform: Platform,
+    gameId: string
+  ): Promise<'pending' | 'generating' | 'completed' | null> {
+    try {
+      const sanitizedUserId = encodeURIComponent(userId.trim())
+      const sanitizedPlatform = encodeURIComponent(platform.toLowerCase())
+      const sanitizedGameId = encodeURIComponent(gameId.trim())
+      // Use the same endpoint as fetchGameAnalysisData
+      const url = `${UNIFIED_API_URL}/api/v1/game/${sanitizedUserId}/${sanitizedPlatform}/${sanitizedGameId}`
+
+      const response = await fetch(url)
+      if (!response.ok) {
+        return null
+      }
+
+      const data = await response.json()
+      return data.ai_comments_status || 'pending'
+    } catch (error) {
+      console.error('Error fetching AI comments status:', error)
+      return null
+    }
+  }
+
+  /**
+   * Poll for AI comments to be ready, with automatic retries.
+   * Shows toast notification when comments are ready.
+   *
+   * @param gameId - The game ID to poll for
+   * @param maxAttempts - Maximum number of polling attempts (default: 12 = ~60 seconds)
+   * @param pollInterval - Polling interval in milliseconds (default: 5000 = 5 seconds)
+   * @param onComplete - Callback when comments are ready
+   * @param onError - Callback on error
+   */
+  static async pollForAIComments(
+    userId: string,
+    platform: Platform,
+    gameId: string,
+    maxAttempts: number = 12,
+    pollInterval: number = 5000,
+    onComplete?: () => void,
+    onError?: (error: Error) => void
+  ): Promise<void> {
+    let attempts = 0
+
+    const poll = async (): Promise<void> => {
+      attempts++
+
+      try {
+        const status = await this.getAICommentsStatus(userId, platform, gameId)
+
+        if (status === 'completed') {
+          // Comments are ready!
+          if (onComplete) {
+            onComplete()
+          }
+          // Show toast notification
+          if (typeof window !== 'undefined' && (window as any).toast) {
+            (window as any).toast.success('AI insights ready!')
+          } else {
+            console.log('✅ AI insights ready!')
+          }
+          return
+        }
+
+        if (attempts >= maxAttempts) {
+          // Max attempts reached, stop polling
+          console.log(`⏱️ AI comments polling stopped after ${attempts} attempts`)
+          return
+        }
+
+        // Continue polling
+        setTimeout(poll, pollInterval)
+      } catch (error) {
+        console.error('Error polling for AI comments:', error)
+        if (onError) {
+          onError(error as Error)
+        }
+      }
+    }
+
+    // Start polling
+    poll()
+  }
+
+  /**
    * Get analysis progress for a user.
    * Replaces: AnalysisService.getAnalysisProgress
    */
