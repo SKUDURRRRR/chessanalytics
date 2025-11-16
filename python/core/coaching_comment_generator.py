@@ -221,26 +221,41 @@ class ChessCoachingGenerator:
         # Determine move quality
         move_quality = self._determine_move_quality(move_analysis)
 
-        # PRIORITY 1 & 2: Check if this is a critical/major tactical move that MUST be highlighted
-        # These always take priority over generic position descriptions
-        has_critical_tactical_issue = self._has_critical_tactical_issue(move_analysis)
-
-
         # Use board_after from move_analysis if available (position after the move), otherwise use board
         board_after = move_analysis.get('board_after', board)
 
-        # PRIORITY 3 & 4: Only use special comments (position descriptions, etc.) if no critical tactical issues
-        # This ensures tactical accuracy is always prioritized over generic commentary
-        special_comment = None
-        if not has_critical_tactical_issue:
-            special_comment = self._check_for_special_comments(move_analysis, board_after, move, game_phase, previous_phase, is_user_move, player_skill_level)
+        # PRIORITY 0: Player's first move greeting - ALWAYS show greeting for player's first move
+        move_number = move_analysis.get('fullmove_number', 0)
+        ply_index = move_analysis.get('ply_index', None)
+        is_player_first_move = is_user_move and move_number == 1 and (ply_index is None or ply_index in [1, 2])
 
-        if special_comment:
-            # Use special comment (only if no critical tactical issues)
-            main_comment = special_comment
+        if is_player_first_move:
+            # Get player_elo from move_analysis if available, otherwise use a default
+            player_elo = move_analysis.get('player_elo', 1200)
+            greeting = self._generate_move_1_welcome_comment(board_after, move, player_elo, move_analysis, is_user_move)
+            if greeting:
+                # Use greeting as main comment, skip tactical analysis for first move
+                main_comment = greeting
+            else:
+                # Fallback if greeting generation fails
+                main_comment = "Welcome to the game! The pieces are ready, and so are you. Let's see what magic you create today!"
         else:
-            # Generate main comment (move-specific analysis or tactical commentary)
-            main_comment = self._generate_main_comment(move_quality, move_analysis, is_user_move)
+            # PRIORITY 1 & 2: Check if this is a critical/major tactical move that MUST be highlighted
+            # These always take priority over generic position descriptions
+            has_critical_tactical_issue = self._has_critical_tactical_issue(move_analysis)
+
+            # PRIORITY 3 & 4: Only use special comments (position descriptions, etc.) if no critical tactical issues
+            # This ensures tactical accuracy is always prioritized over generic commentary
+            special_comment = None
+            if not has_critical_tactical_issue:
+                special_comment = self._check_for_special_comments(move_analysis, board_after, move, game_phase, previous_phase, is_user_move, player_skill_level)
+
+            if special_comment:
+                # Use special comment (only if no critical tactical issues)
+                main_comment = special_comment
+            else:
+                # Generate main comment (move-specific analysis or tactical commentary)
+                main_comment = self._generate_main_comment(move_quality, move_analysis, is_user_move)
 
         # Generate detailed explanations (different perspective for opponent moves)
         what_went_right = self._analyze_what_went_right(move_analysis, board, move, move_quality, is_user_move)
@@ -548,11 +563,47 @@ class ChessCoachingGenerator:
             except:
                 move_san = move.uci() if hasattr(move, 'uci') else str(move)
 
+        # Get player color - CRITICAL for correct greeting
+        player_color = move_analysis.get('player_color', 'white') if move_analysis else 'white'
+        color_name = player_color.capitalize()  # "White" or "Black"
+
         fen_after = board.fen()  # Board is already after the move
 
         # Build special prompt for move 1
-        move_owner = "the player" if is_user_move else "the opponent"
-        prompt = f"""Welcome! {move_owner.capitalize()} rated {player_elo} ELO has just made their first move: {move_san}.
+        if is_user_move:
+            # Personal greeting for the player's first move
+            prompt = f"""The player is playing as {color_name} (rated {player_elo} ELO) and has just made their first move: {move_san}.
+
+**YOUR MISSION:**
+Write a warm, personal GREETING to the player (1-2 sentences MAXIMUM, 20-30 words total).
+
+**CRITICAL RULES:**
+- This is a GREETING, NOT move analysis
+- The player is playing as {color_name}, but DO NOT mention "{color_name}" or "White" or "Black" in your greeting
+- ALWAYS use "you", "your", "yours" - never mention the color name
+- Do NOT say "White" or "Black" anywhere in the greeting
+- Do NOT say "It's wonderful to see {color_name}" or "{color_name}'s moment" or anything like that
+- Do NOT mention the move name ({move_san}) or analyze what it does
+- Do NOT include meta-descriptions like "*Mikhail Tal's voice*" or stage directions
+- Do NOT explain chess concepts or the position
+- Just write a direct, warm greeting using "you/your" as if you're welcoming a friend to play chess
+- Be encouraging, playful, and make them feel good about starting the game
+
+**EXAMPLES OF GOOD GREETINGS:**
+- "Welcome to the board! The pieces are ready, and so are you. Let's see what magic you create today!"
+- "The adventure begins! Every game is a new story waiting to unfold. Enjoy the journey!"
+- "Welcome! The board is your canvas, and these pieces are your tools. Let's make this game memorable!"
+
+**BAD EXAMPLES (DO NOT DO THIS):**
+- "*Mikhail Tal's voice greets you*" (no meta-text)
+- "e4 is a strong opening move" (no move analysis)
+- "This move controls the center" (no chess explanations)
+
+Write ONLY the greeting text, nothing else:"""
+        else:
+            # For opponent's first move, keep it simpler
+            move_owner = "the opponent"
+            prompt = f"""Welcome! {move_owner.capitalize()} rated {player_elo} ELO has just made their first move: {move_san}.
 
 **THE POSITION AFTER {move_san}:**
 {fen_after}
@@ -563,7 +614,7 @@ Write a warm, inspiring, Tal-style welcome comment (2 sentences MAXIMUM) that:
 - Uses Tal's playful, imaginative language
 - Makes chess feel like an exciting adventure about to begin
 - Avoids being too long or instructional - just a warm welcome
-- {"Focus on the player starting their game" if is_user_move else "Acknowledge the opponent's first move and the game beginning"}
+- Acknowledge the opponent's first move and the game beginning
 
 **STYLE:** Channel Mikhail Tal's energy: "Welcome to the deep dark forest where 2+2=5! The pieces are ready, the board awaits. Let's see what adventure unfolds."
 
@@ -571,15 +622,84 @@ Write the welcome comment now:"""
 
         try:
             # Use the helper method with fallback
+            if is_user_move:
+                # Personal greeting system prompt for player's first move
+                system_prompt = """You are greeting a chess player as they start their game. Write a warm, direct greeting (1-2 sentences, 20-30 words).
+
+CRITICAL:
+- Write ONLY the greeting text, no meta-descriptions, no stage directions, no move analysis
+- Do NOT mention the move name or what it does
+- Do NOT include text like "*Mikhail Tal's voice*" or any meta-commentary
+- Just write a simple, warm, encouraging greeting as if welcoming a friend to play chess
+- Be playful and energetic, but keep it concise and direct"""
+            else:
+                # Standard welcome for opponent's move
+                system_prompt = "You are Mikhail Tal, the Magician from Riga. You welcome players to chess with warmth and enthusiasm, helping them understand the game. Focus on teaching and building chess understanding rather than flowery language."
+
             comment = self.ai_generator._call_api_with_fallback(
                 prompt=prompt,
-                system="You are Mikhail Tal, the Magician from Riga. You welcome players to chess with warmth and enthusiasm, helping them understand the game. Focus on teaching and building chess understanding rather than flowery language.",
+                system=system_prompt,
                 max_tokens=150,  # Reduced for welcome comments (2 sentences max)
                 temperature=0.9  # Higher creativity for welcome
             )
 
             if comment:
                 comment = self.ai_generator._clean_comment(comment)
+                # Remove meta-text patterns (stage directions, voice descriptions, etc.)
+                # Remove patterns like "*Mikhail Tal's voice*" or "*...*" at the start
+                import re
+                comment = re.sub(r'^\*[^*]+\*', '', comment, flags=re.IGNORECASE)
+                # Remove any remaining asterisk-wrapped meta-text anywhere in the comment
+                comment = re.sub(r'\*[^*]+\*', '', comment, flags=re.IGNORECASE)
+
+                # CRITICAL: Replace ALL color references with "you/your"
+                # First, replace possessive forms
+                comment = re.sub(r'\b(White|Black)\'?s\b', 'your', comment, flags=re.IGNORECASE)
+
+                # Replace "the White" or "the Black" with "you"
+                comment = re.sub(r'\bthe\s+(White|Black)\b', 'you', comment, flags=re.IGNORECASE)
+
+                # Replace color + verb patterns (most common issue)
+                # Catch patterns like "White weave", "White create", "White play", "White has", etc.
+                verbs = r'(weave|creates?|makes?|plays?|starts?|begins?|shows?|demonstrates?|brings?|builds?|develops?|forms?|takes?|gains?|loses?|controls?|dominates?|attacks?|defends?|moves?|advances?|retreats?|sacrifices?|exchanges?|trades?|improves?|weakens?|strengthens?|establishes?|challenges?|undermines?|maintains?|has|have|had|do|does|did|will|would|could|should|can|may|might|is|are|was|were|be|been|being)'
+                comment = re.sub(r'\b(White|Black)\s+' + verbs, r'you \2', comment, flags=re.IGNORECASE)
+
+                # Special case: "White has in store" -> "you have in store"
+                comment = re.sub(r'\b(White|Black)\s+has\s+in\s+store\b', 'you have in store', comment, flags=re.IGNORECASE)
+                comment = re.sub(r'\b(White|Black)\s+have\s+in\s+store\b', 'you have in store', comment, flags=re.IGNORECASE)
+
+                # Replace color + noun patterns
+                nouns = r'(moment|turn|move|game|adventure|journey|magic|pieces?|board|side|position|strategy|plan|idea|concept|approach|style|way|path|road|story|tale|tale|narrative|experience|challenge|opportunity|chance|time|day|night|opening|middlegame|endgame|phase|stage)'
+                comment = re.sub(r'\b(White|Black)\s+' + nouns, r'your \2', comment, flags=re.IGNORECASE)
+
+                # Replace "see White" or "see Black" with "see you"
+                comment = re.sub(r'\bsee\s+(White|Black)\b', 'see you', comment, flags=re.IGNORECASE)
+
+                # Replace "watch White" or "watch Black" with "watch you"
+                comment = re.sub(r'\bwatch\s+(White|Black)\b', 'watch you', comment, flags=re.IGNORECASE)
+
+                # Replace standalone "White" or "Black" at start of sentences/clauses
+                comment = re.sub(r'^(White|Black)\s+', 'You ', comment, flags=re.IGNORECASE)
+                comment = re.sub(r'[.!?]\s+(White|Black)\s+', r'. You ', comment, flags=re.IGNORECASE)
+
+                # Catch any remaining standalone "White" or "Black" that might refer to the player
+                # This is a catch-all for edge cases
+                comment = re.sub(r'\b(White|Black)\s+(in|on|at|with|for|to|from)\s+', r'you \2 ', comment, flags=re.IGNORECASE)
+
+                # Final aggressive pass: Replace any remaining "White" or "Black" in common greeting contexts
+                # Patterns like "magic White" or "magic Black" -> "magic you"
+                comment = re.sub(r'\b(magic|adventure|journey|game|story|tale|brilliant|great|excellent|good|amazing|wonderful|fantastic|incredible|spectacular)\s+(White|Black)\b', r'\1 you', comment, flags=re.IGNORECASE)
+                # Patterns like "White in this game" -> "you in this game"
+                comment = re.sub(r'\b(White|Black)\s+in\s+(this|the)\s+game\b', r'you in \2 game', comment, flags=re.IGNORECASE)
+                # Patterns like "see the moves White has" -> "see the moves you have"
+                comment = re.sub(r'\b(moves?|strategies?|plans?|ideas?|concepts?|approaches?)\s+(White|Black)\s+has\b', r'\1 you have', comment, flags=re.IGNORECASE)
+                comment = re.sub(r'\b(White|Black)\s+has\s+(moves?|strategies?|plans?|ideas?|concepts?|approaches?)\b', r'you have \2', comment, flags=re.IGNORECASE)
+
+                # Clean up extra spaces
+                comment = re.sub(r'\s+', ' ', comment).strip()
+                # Remove leading/trailing punctuation artifacts
+                comment = re.sub(r'^[,\s\.]+', '', comment)
+                comment = re.sub(r'[,\s\.]+$', '', comment)
                 print(f"[AI] ✅ Generated move 1 welcome comment: {comment[:50]}...")
                 return comment
         except Exception as e:

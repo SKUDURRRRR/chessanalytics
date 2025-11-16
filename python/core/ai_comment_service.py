@@ -41,6 +41,7 @@ def _should_generate_ai_comment(move_analysis: MoveAnalysis, config: CommentGene
     Determine if AI comment should be generated for this move.
 
     If selective mode is enabled, only generate for significant moves:
+    - Player's first move (always - greeting)
     - Blunders, mistakes, brilliant moves, inaccuracies
 
     This reduces API calls by ~70% (only ~12-18 moves per game instead of 60).
@@ -51,6 +52,13 @@ def _should_generate_ai_comment(move_analysis: MoveAnalysis, config: CommentGene
     if not config.selective:
         # Generate for all moves (not recommended - slow)
         return True
+
+    # Always generate greeting for player's first move
+    if move_analysis.is_user_move and move_analysis.fullmove_number == 1:
+        # Additional check: ensure it's actually one of the first two moves (ply 1 or 2)
+        # ply_index starts at 1, so check for 1 or 2 (or None if not set)
+        if move_analysis.ply_index is None or move_analysis.ply_index in [1, 2]:
+            return True
 
     # Selective: Only significant moves
     return (
@@ -209,7 +217,12 @@ async def _generate_single_comment(
             'board_before': board.copy(),
             'board_after': board.copy(),  # Will be updated after move
             'heuristic_details': move.heuristic_details or {},
-            'player_color': move.player_color or 'white'
+            'player_color': move.player_color or 'white',
+            # CRITICAL: Add these fields so greeting logic can detect first move
+            'fullmove_number': move.fullmove_number,
+            'ply_index': move.ply_index,
+            'is_user_move': move.is_user_move,
+            'player_elo': getattr(move, 'player_elo', 1200)  # Default ELO if not set
         }
 
         # Apply the move to get board_after
