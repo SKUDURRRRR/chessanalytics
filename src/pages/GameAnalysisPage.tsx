@@ -224,7 +224,9 @@ const buildFallbackExplanation = (
     case 'acceptable':
       return '👍 Solid move that maintained a playable position. This shows reasonable chess understanding and keeps your position healthy.'
     case 'inaccuracy':
-      return '⚠️ Inaccuracy. This move weakens your position and allows your opponent to improve. Look for stronger moves that maintain your advantage better.'
+      return bestMoveSan
+        ? `⚠️ Inaccuracy. The engine suggests ${bestMoveSan} would have been a stronger choice. This move slightly weakens your position, but the game remains competitive.`
+        : '⚠️ Inaccuracy. This move weakens your position and allows your opponent to improve. Look for stronger moves that maintain your advantage better.'
     case 'mistake':
       return bestMoveSan
         ? `❌ Mistake. Consider ${bestMoveSan} next time - it would have been much stronger and maintained your advantage. This move creates difficulties for your position.`
@@ -293,7 +295,9 @@ const buildEnhancedFallbackExplanation = (
       case 'acceptable':
         return `⚠️ ${colorName}'s move is acceptable, but not the strongest choice. Better options were available that could have improved their position more significantly. This creates an opportunity.`
       case 'inaccuracy':
-        return `❌ ${colorName} made an inaccuracy. This creates an opportunity to improve the position. Look for ways to exploit this weakness.`
+        return bestMoveSan
+          ? `⚠️ ${colorName} made an inaccuracy. The engine suggests ${bestMoveSan} would have been stronger. This creates a small opportunity to improve the position.`
+          : `❌ ${colorName} made an inaccuracy. This creates an opportunity to improve the position. Look for ways to exploit this weakness.`
       case 'mistake':
         return bestMoveSan
           ? `❌ ${colorName} made a mistake! They should have played ${bestMoveSan} instead. This creates tactical opportunities - look for ways to take advantage of their error and gain a significant advantage.`
@@ -908,8 +912,23 @@ export default function GameAnalysisPage() {
 
       // Use best_move_san from backend if available, otherwise convert UCI to SAN using the correct FEN
       // Don't fall back to UCI notation - if SAN conversion fails, use null
-      const bestMoveSan = move.best_move_san || convertUciToSan(fenBefore, move.best_move) || null
+      // Treat empty strings as null (backend may send "" instead of null)
+      const bestMoveSanRaw = move.best_move_san && move.best_move_san.trim() ? move.best_move_san : null
+      const bestMoveSan = bestMoveSanRaw || (move.best_move ? convertUciToSan(fenBefore, move.best_move) : null) || null
       const classification = determineClassification(move)
+
+      // Debug logging for inaccuracies
+      if (classification === 'inaccuracy' && import.meta.env.DEV) {
+        console.log(`[GameAnalysis] Inaccuracy Move ${idx + 1}:`, {
+          san: move.move_san,
+          classification,
+          best_move_san_raw: move.best_move_san,
+          best_move_uci: move.best_move,
+          bestMoveSan,
+          centipawn_loss: move.centipawn_loss,
+          is_inaccuracy: move.is_inaccuracy
+        })
+      }
 
       // Convert UCI move to SAN if move_san is not available or looks incorrect
       // This ensures we always show proper SAN notation like "Rxd5" instead of "exd5"

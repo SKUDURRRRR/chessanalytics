@@ -53,12 +53,15 @@ def _should_generate_ai_comment(move_analysis: MoveAnalysis, config: CommentGene
         # Generate for all moves (not recommended - slow)
         return True
 
-    # Always generate greeting for player's first move
+    # Skip AI generation for first move - we already have instant greeting
+    # The instant greeting shows immediately, and AI can optionally enhance it later
+    # but we don't want to regenerate it since instant one is already shown
     if move_analysis.is_user_move and move_analysis.fullmove_number == 1:
         # Additional check: ensure it's actually one of the first two moves (ply 1 or 2)
         # ply_index starts at 1, so check for 1 or 2 (or None if not set)
         if move_analysis.ply_index is None or move_analysis.ply_index in [1, 2]:
-            return True
+            # Skip - instant greeting already added during analysis
+            return False
 
     # Selective: Only significant moves
     return (
@@ -257,7 +260,13 @@ async def _generate_single_comment(
 
         if coaching_result:
             # Update move with AI comment data
-            move.coaching_comment = coaching_result.main_comment
+            # BUT: Don't overwrite instant greeting for first move - keep the instant one
+            is_first_move = move.is_user_move and move.fullmove_number == 1 and (move.ply_index is None or move.ply_index in [1, 2])
+            if is_first_move and move.coaching_comment:
+                # Keep the instant greeting, don't overwrite with AI
+                print(f"[AI_COMMENTS] Keeping instant greeting for first move, skipping AI replacement")
+            else:
+                move.coaching_comment = coaching_result.main_comment
             move.what_went_right = coaching_result.what_went_right or ""
             move.what_went_wrong = coaching_result.what_went_wrong or ""
             move.how_to_improve = coaching_result.how_to_improve or ""

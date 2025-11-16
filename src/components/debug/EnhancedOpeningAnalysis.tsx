@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { Chess } from 'chess.js'
 import { identifyOpening } from '../../utils/openingIdentification'
+import { getPlayerPerspectiveOpeningShort } from '../../utils/playerPerspectiveOpening'
 import { EnhancedOpeningAnalysis, OpeningMistake, StudyRecommendation, PeerComparison, RepertoireAnalysis } from '../../types'
 import { calculateOpeningAccuracyChessCom } from '../../utils/accuracyCalculator'
 
@@ -50,6 +51,10 @@ export function EnhancedOpeningAnalysis({
 
   const userMoves = moves.filter(move => move.isUserMove)
   const openingMoves = userMoves.slice(0, 10) // First 10 moves typically cover opening
+
+  // For opening identification, we need ALL moves (both colors) to properly detect openings
+  // The identification logic expects alternating White-Black move sequences
+  const allOpeningMoves = moves.slice(0, 20).map(m => m.san) // First ~20 moves (10 per player)
 
   // Use database values if available, otherwise calculate from moves
   const hasDbValues = analysisRecord?.middle_game_accuracy !== undefined || analysisRecord?.endgame_accuracy !== undefined
@@ -117,7 +122,34 @@ export function EnhancedOpeningAnalysis({
       }
     }
 
-    const identifiedVariation = identifyOpening(gameRecord, openingMoves.map(m => m.san), playerColor)
+    // Use the same opening identification function as Game Overview to ensure consistency
+    // This ensures both sections use the same source of truth for opening names
+    const openingInput = gameRecord?.opening_family ?? gameRecord?.opening ?? gameRecord?.opening_normalized
+    console.log('🔍 EnhancedOpeningAnalysis - Opening input:', {
+      opening_family: gameRecord?.opening_family,
+      opening: gameRecord?.opening,
+      opening_normalized: gameRecord?.opening_normalized,
+      selectedInput: openingInput,
+      playerColor,
+      userMovesOnly: openingMoves.map(m => m.san),
+      allMoves: allOpeningMoves,
+      movesCount: moves.length
+    })
+
+    // IMPORTANT: Pass ALL moves (both colors), not just user moves
+    // The opening detection logic needs to see the full move sequence
+    const openingName = getPlayerPerspectiveOpeningShort(
+      openingInput,
+      playerColor,
+      gameRecord,
+      allOpeningMoves // Use all moves instead of just user moves
+    )
+
+    console.log('🎯 EnhancedOpeningAnalysis - Computed opening name:', openingName)
+
+    // Also get the full identification result for additional metadata if needed
+    // Pass all moves for proper identification
+    const identifiedVariation = identifyOpening(gameRecord, allOpeningMoves, playerColor)
 
     // Calculate basic metrics using Chess.com method
     const openingAccuracy = calculateOpeningAccuracyChessCom(openingMoves)
@@ -155,14 +187,16 @@ export function EnhancedOpeningAnalysis({
     const { strengths, weaknesses } = identifyStrengthsAndWeaknesses(userMoves, specificMistakes)
 
     // Generate study recommendations
+    // Use the consistent opening name for user-facing content
     const studyRecommendations: StudyRecommendation[] = generateStudyRecommendations(
-      identifiedVariation.name,
+      openingName,
       specificMistakes,
       openingAccuracy
     )
 
     // Generate practice positions
-    const practicePositions = generatePracticePositions(identifiedVariation.name, specificMistakes)
+    // Use the consistent opening name for user-facing content
+    const practicePositions = generatePracticePositions(openingName, specificMistakes)
 
     // Calculate peer comparison
     const peerComparison: PeerComparison = calculatePeerComparison(openingAccuracy, totalGames)
@@ -178,8 +212,8 @@ export function EnhancedOpeningAnalysis({
     const focusAreas = generateFocusAreas(specificMistakes, commonPatterns)
 
     return {
-      openingName: identifiedVariation.name,
-      openingFamily: identifiedVariation.name,
+      openingName: openingName, // Use the same function as Game Overview for consistency
+      openingFamily: identifiedVariation.name, // Keep original for internal use
       accuracy: openingAccuracy,
       middlegameAccuracy,
       endgameAccuracy,

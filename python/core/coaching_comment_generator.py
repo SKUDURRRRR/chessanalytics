@@ -14,6 +14,8 @@ import random
 from .advanced_chess_analysis import AdvancedChessAnalyzer, TacticalPattern, PositionalConcept
 from .contextual_explanation_generator import ContextualExplanationGenerator
 from .ai_comment_generator import AIChessCommentGenerator
+from .tal_greetings import TAL_GREETINGS
+import random
 
 
 class MoveQuality(Enum):
@@ -544,9 +546,9 @@ class ChessCoachingGenerator:
     def _generate_move_1_welcome_comment(self, board: chess.Board, move: chess.Move, player_elo: int, move_analysis: Optional[Dict[str, Any]] = None, is_user_move: bool = True) -> Optional[str]:
         """Generate a Tal-inspired welcoming comment for the first move."""
         if not self.ai_generator or not self.ai_generator.enabled:
-            # Fallback template
+            # Use instant Tal greetings instead of waiting for AI
             if is_user_move:
-                return "Welcome to the game! The pieces are ready, the board awaits. Let's see what adventure unfolds."
+                return random.choice(TAL_GREETINGS)
             else:
                 return "The game begins! Your opponent makes their first move. The adventure is underway!"
 
@@ -634,7 +636,7 @@ CRITICAL:
 - Be playful and energetic, but keep it concise and direct"""
             else:
                 # Standard welcome for opponent's move
-                system_prompt = "You are Mikhail Tal, the Magician from Riga. You welcome players to chess with warmth and enthusiasm, helping them understand the game. Focus on teaching and building chess understanding rather than flowery language."
+                system_prompt = "You are Mikhail Tal, the Magician from Riga. You welcome players to chess with warmth and enthusiasm, helping them understand the game with your creative, tactical spirit. Focus on teaching and building chess understanding while appreciating the adventure and tactical possibilities ahead."
 
             comment = self.ai_generator._call_api_with_fallback(
                 prompt=prompt,
@@ -644,7 +646,8 @@ CRITICAL:
             )
 
             if comment:
-                comment = self.ai_generator._clean_comment(comment)
+                # Don't convert to color - keep "you/your" pronouns
+                comment = self.ai_generator._clean_comment(comment, convert_to_color=False)
                 # Remove meta-text patterns (stage directions, voice descriptions, etc.)
                 # Remove patterns like "*Mikhail Tal's voice*" or "*...*" at the start
                 import re
@@ -653,16 +656,31 @@ CRITICAL:
                 comment = re.sub(r'\*[^*]+\*', '', comment, flags=re.IGNORECASE)
 
                 # CRITICAL: Replace ALL color references with "you/your"
-                # First, replace possessive forms
+                # First, replace contractions like "White'll", "White'd", "White've"
+                comment = re.sub(r'\b(White|Black)\'ll\b', r"you'll", comment, flags=re.IGNORECASE)
+                comment = re.sub(r'\b(White|Black)\'d\b', r"you'd", comment, flags=re.IGNORECASE)
+                comment = re.sub(r'\b(White|Black)\'ve\b', r"you've", comment, flags=re.IGNORECASE)
+                comment = re.sub(r'\b(White|Black)\'re\b', r"you're", comment, flags=re.IGNORECASE)
+
+                # Replace possessive forms
                 comment = re.sub(r'\b(White|Black)\'?s\b', 'your', comment, flags=re.IGNORECASE)
 
                 # Replace "the White" or "the Black" with "you"
                 comment = re.sub(r'\bthe\s+(White|Black)\b', 'you', comment, flags=re.IGNORECASE)
 
+                # Replace "have White here" or "have Black here" with "have you here"
+                comment = re.sub(r'\bhave\s+(White|Black)\s+here\b', 'have you here', comment, flags=re.IGNORECASE)
+                comment = re.sub(r'\bto\s+have\s+(White|Black)\s+here\b', 'to have you here', comment, flags=re.IGNORECASE)
+
                 # Replace color + verb patterns (most common issue)
                 # Catch patterns like "White weave", "White create", "White play", "White has", etc.
-                verbs = r'(weave|creates?|makes?|plays?|starts?|begins?|shows?|demonstrates?|brings?|builds?|develops?|forms?|takes?|gains?|loses?|controls?|dominates?|attacks?|defends?|moves?|advances?|retreats?|sacrifices?|exchanges?|trades?|improves?|weakens?|strengthens?|establishes?|challenges?|undermines?|maintains?|has|have|had|do|does|did|will|would|could|should|can|may|might|is|are|was|were|be|been|being)'
+                verbs = r'(weave|creates?|makes?|plays?|starts?|begins?|shows?|demonstrates?|brings?|builds?|develops?|forms?|takes?|gains?|loses?|controls?|dominates?|attacks?|defends?|moves?|advances?|retreats?|sacrifices?|exchanges?|trades?|improves?|weakens?|strengthens?|establishes?|challenges?|undermines?|maintains?|unleashes?|unleash|has|have|had|do|does|did|will|would|could|should|can|may|might|is|are|was|were|be|been|being)'
                 comment = re.sub(r'\b(White|Black)\s+' + verbs, r'you \2', comment, flags=re.IGNORECASE)
+
+                # Fix grammar: "you has" -> "you have" (third person to second person)
+                comment = re.sub(r'\byou\s+has\b', 'you have', comment, flags=re.IGNORECASE)
+                comment = re.sub(r'\byou\s+does\b', 'you do', comment, flags=re.IGNORECASE)
+                comment = re.sub(r'\byou\s+is\b', 'you are', comment, flags=re.IGNORECASE)
 
                 # Special case: "White has in store" -> "you have in store"
                 comment = re.sub(r'\b(White|Black)\s+has\s+in\s+store\b', 'you have in store', comment, flags=re.IGNORECASE)
@@ -695,6 +713,42 @@ CRITICAL:
                 comment = re.sub(r'\b(moves?|strategies?|plans?|ideas?|concepts?|approaches?)\s+(White|Black)\s+has\b', r'\1 you have', comment, flags=re.IGNORECASE)
                 comment = re.sub(r'\b(White|Black)\s+has\s+(moves?|strategies?|plans?|ideas?|concepts?|approaches?)\b', r'you have \2', comment, flags=re.IGNORECASE)
 
+                # Final aggressive pass: Replace any remaining standalone "White" or "Black"
+                # in contexts that clearly refer to the player (after "see", "watch", "masterpiece", etc.)
+                # This catches patterns like "see the masterpiece White'll create" -> "see the masterpiece you'll create"
+                comment = re.sub(r'\b(the|a|an)\s+(masterpiece|magic|adventure|journey|game|story|tale|brilliance|genius|skill|talent|artistry|creativity|strategy|plan|idea|concept|approach|style|way|path|road|narrative|experience|challenge|opportunity|chance)\s+(White|Black)\b', r'\1 \2 you', comment, flags=re.IGNORECASE)
+
+                # Catch remaining standalone "White" or "Black" before verbs (most common remaining case)
+                # This is a very aggressive catch-all for any remaining color references
+                comment = re.sub(r'\b(White|Black)\s+(will|would|could|should|can|may|might|shall)\s+', r'you \2 ', comment, flags=re.IGNORECASE)
+
+                # ULTRA-AGGRESSIVE: Catch any remaining "White" or "Black" followed by any word
+                # This is a final safety net for any color references we might have missed
+                # Only apply if it's clearly referring to the player (after "see", "watch", "brilliance", etc.)
+                comment = re.sub(r'\b(brilliance|brilliant|magic|adventure|masterpiece|genius|skill|talent|artistry|creativity)\s+(White|Black)\s+(\w+)', r'\1 you \3', comment, flags=re.IGNORECASE)
+
+                # Final catch-all: Replace any standalone "White" or "Black" that appears in contexts
+                # where it clearly refers to the player (after "see", "watch", "let's see", etc.)
+                comment = re.sub(r'\b(see|watch|let\'?s\s+see|can\'?t\s+wait\s+to\s+see)\s+(the\s+)?(brilliance|brilliant|magic|adventure|masterpiece|genius|skill|talent|artistry|creativity|what)\s+(White|Black)\s+', r'\1 \2\3 you ', comment, flags=re.IGNORECASE)
+
+                # Specific pattern for "Let's see the brilliance White unleash" -> "Let's see the brilliance you unleash"
+                comment = re.sub(r'\blet\'?s\s+see\s+(the\s+)?(brilliance|brilliant|magic|adventure|masterpiece|genius|skill|talent|artistry|creativity|what)\s+(White|Black)\s+', r"let's see \1\2 you ", comment, flags=re.IGNORECASE)
+
+                # Ultra-final catch-all: Any "White" or "Black" that's clearly the subject of a sentence
+                # and appears before a verb (catches remaining cases like "White unleash")
+                comment = re.sub(r'\b(White|Black)\s+([a-z]+)\s+(today|tomorrow|now|here|there)', r'you \2 \3', comment, flags=re.IGNORECASE)
+
+                # FINAL FINAL catch-all: Replace ANY remaining "White" or "Black" that appears
+                # as a standalone word in contexts that suggest it's the player
+                # This is the absolute last resort to catch anything we missed
+                # Only apply to patterns that clearly refer to the player (not opponent)
+                # This catches "White unleash", "White create", etc. in any context
+                comment = re.sub(r'\b(White|Black)\s+([a-z]{2,})\s+', r'you \2 ', comment, flags=re.IGNORECASE)
+
+                # EXTRA SAFETY: One more pass for "brilliance White" -> "brilliance you"
+                # (catches cases where there's no space or different spacing)
+                comment = re.sub(r'\b(brilliance|brilliant|magic|adventure|masterpiece|genius|skill|talent|artistry|creativity)\s+(White|Black)\s+', r'\1 you ', comment, flags=re.IGNORECASE)
+
                 # Clean up extra spaces
                 comment = re.sub(r'\s+', ' ', comment).strip()
                 # Remove leading/trailing punctuation artifacts
@@ -702,12 +756,21 @@ CRITICAL:
                 comment = re.sub(r'[,\s\.]+$', '', comment)
                 print(f"[AI] ✅ Generated move 1 welcome comment: {comment[:50]}...")
                 return comment
+            else:
+                # AI generation failed, fallback to instant Tal greeting
+                if is_user_move:
+                    print(f"[AI] ⚠️ AI generation returned empty, using instant Tal greeting")
+                    return random.choice(TAL_GREETINGS)
+                return None
         except Exception as e:
             print(f"[AI] Failed to generate move 1 welcome: {e}")
             import traceback
             print(f"[AI] Traceback: {traceback.format_exc()}")
-
-        return None
+            # Fallback to instant Tal greeting on error
+            if is_user_move:
+                print(f"[AI] ⚠️ Using instant Tal greeting as fallback")
+                return random.choice(TAL_GREETINGS)
+            return None
 
     def _generate_position_description_comment(
         self,
@@ -756,7 +819,7 @@ Write the position description now:"""
             # Use the helper method with fallback
             comment = self.ai_generator._call_api_with_fallback(
                 prompt=prompt,
-                system="You are Mikhail Tal, the Magician from Riga. You analyze chess positions clearly, explaining their key features and teaching what matters. Focus on concrete chess concepts rather than flowery language.",
+                system="You are Mikhail Tal, the Magician from Riga. You analyze chess positions clearly, explaining their key features and teaching what matters with your tactical vision. Focus on concrete chess concepts while appreciating the tactical possibilities and creative opportunities in the position.",
                 max_tokens=150,  # Reduced for position descriptions (2 sentences max)
                 temperature=0.85
             )
@@ -822,7 +885,7 @@ Write the phase transition comment now:"""
             # Use the helper method with fallback
             comment = self.ai_generator._call_api_with_fallback(
                 prompt=prompt,
-                system="You are Mikhail Tal, the Magician from Riga. You explain chess phases clearly, teaching what each phase means strategically. Focus on the principles and priorities for each phase.",
+                system="You are Mikhail Tal, the Magician from Riga. You explain chess phases clearly, teaching what each phase means strategically with your creative, tactical perspective. Focus on the principles and priorities for each phase while appreciating the tactical opportunities each phase offers.",
                 max_tokens=150,  # Reduced for phase transitions (2 sentences max)
                 temperature=0.85
             )

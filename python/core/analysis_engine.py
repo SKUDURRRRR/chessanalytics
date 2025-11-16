@@ -910,13 +910,15 @@ class ChessAnalysisEngine:
 
     async def analyze_move(self, board: chess.Board, move: chess.Move,
                           analysis_type: Optional[AnalysisType] = None,
-                          fullmove_number: Optional[int] = None) -> MoveAnalysis:
+                          fullmove_number: Optional[int] = None,
+                          is_user_move: Optional[bool] = None,
+                          ply_index: Optional[int] = None) -> MoveAnalysis:
         """Analyze a specific move in a position."""
         analysis_type = analysis_type or self.config.analysis_type
         start_time = datetime.now()
 
         try:
-            return await self._analyze_move_stockfish(board, move, analysis_type, fullmove_number)
+            return await self._analyze_move_stockfish(board, move, analysis_type, fullmove_number, is_user_move, ply_index)
         finally:
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
             print(f"Move analysis completed in {processing_time:.1f}ms")
@@ -1035,11 +1037,12 @@ class ChessAnalysisEngine:
                     data['board'],
                     data['move'],
                     analysis_type,
-                    fullmove_number=data['fullmove_number']
+                    fullmove_number=data['fullmove_number'],
+                    is_user_move=data['is_user_move'],  # Pass is_user_move so greeting can be added immediately
+                    ply_index=data['ply_index']  # Pass ply_index so greeting can be added immediately
                 )
                 move_analysis.player_color = data['player_color']
-                move_analysis.is_user_move = data['is_user_move']
-                move_analysis.ply_index = data['ply_index']
+                # is_user_move and ply_index already set in analyze_move
                 move_analysis.fullmove_number = data['fullmove_number']
                 return move_analysis
 
@@ -1231,7 +1234,16 @@ class ChessAnalysisEngine:
         ]
         best_candidate = move_candidates[0] if move_candidates else None
         best_move_uci = best_candidate['uci'] if best_candidate else move.uci()
-        best_move_san = best_candidate['san'] if best_candidate else move_san
+        # For inaccuracies/mistakes/blunders, always show the best move even if it's different from played move
+        # Only set best_move_san to move_san if the best move is actually the same as the played move
+        if best_candidate and best_candidate['uci'] != move.uci():
+            best_move_san = best_candidate['san']
+        elif best_candidate and best_candidate['uci'] == move.uci():
+            # Best move is the same as played move - set to empty string so frontend knows there's no alternative
+            best_move_san = ""
+        else:
+            # No candidates found - shouldn't happen, but fallback to move_san
+            best_move_san = move_san
 
         see_score = self._static_exchange_evaluation(board, move)
         is_capture = board.is_capture(move)
@@ -1598,10 +1610,17 @@ class ChessAnalysisEngine:
             evaluation_after=float(after_score)     # CRITICAL: for personality scoring
         )
 
+        # Set is_user_move and ply_index if provided (from analyze_game context)
+        if is_user_move is not None:
+            move_analysis.is_user_move = is_user_move
+        if ply_index is not None:
+            move_analysis.ply_index = ply_index
+
         # Enhance with coaching comments
         # Move number was already calculated before the move was made
-        # For now, assume all moves are user moves - this will be determined by the frontend
-        return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=True)
+        # Use is_user_move parameter if provided, otherwise default to True (for backward compatibility)
+        actual_is_user_move = is_user_move if is_user_move is not None else True
+        return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=actual_is_user_move)
 
     def _summarize_move_classifications(self, moves_analysis: List[MoveAnalysis]) -> Dict[str, int]:
         summary = {
@@ -1693,6 +1712,42 @@ class ChessAnalysisEngine:
             # Can be generated separately after analysis completes
             skip_ai_comments = True  # TODO: Make this configurable
 
+            # INSTANT GREETING: Always add instant Tal greeting for player's first move
+            # This shows immediately, even before AI comments are generated
+            # Check both fullmove_number == 1 and ply_index (1 for White, 2 for Black)
+            # Use ply_index from move_analysis if available, otherwise rely on move_number
+            ply_index = move_analysis.ply_index if move_analysis.ply_index > 0 else None
+            # Check if this is actually a user move
+            # If ply_index is set (> 0), then move_analysis.is_user_move has been set correctly
+            # Otherwise, use the parameter (which is correct when called from analyze_game context)
+            if move_analysis.ply_index > 0:
+                # move_analysis has been fully initialized, use its is_user_move value
+                actual_is_user_move = move_analysis.is_user_move
+            else:
+                # move_analysis not fully initialized yet, use parameter
+                actual_is_user_move = is_user_move
+            # For first move: fullmove_number == 1, and ply_index should be 1 (White) or 2 (Black)
+            # If ply_index is not set (None or 0), we can still check if it's the first user move by fullmove_number == 1
+            is_player_first_move = (
+                actual_is_user_move and
+                move_number == 1 and
+                (ply_index is None or ply_index in [1, 2])
+            )
+
+            if is_player_first_move:
+                from .tal_greetings import TAL_GREETINGS
+                import random
+                instant_greeting = random.choice(TAL_GREETINGS)
+                move_analysis.coaching_comment = instant_greeting
+                move_analysis.move_quality = "good"  # Default quality for greeting
+                move_analysis.game_phase = game_phase.value
+                move_analysis.encouragement_level = 5  # High encouragement for greeting
+                print(f"[INSTANT_GREETING] ✅ Added instant Tal greeting for first move (ply={ply_index}, fullmove={move_number}, is_user_move={is_user_move}, move_san={move_analysis.move_san}): {instant_greeting[:50]}...")
+            else:
+                # Only log if it's a user move with fullmove_number == 1 (to avoid spam)
+                if is_user_move and move_number == 1:
+                    print(f"[INSTANT_GREETING] ⚠️ Skipped greeting: is_user_move={is_user_move}, move_number={move_number}, ply_index={ply_index}, move_san={move_analysis.move_san}")
+
             if not skip_ai_comments:
                 # Generate coaching comment
                 coaching_comment = self.coaching_generator.generate_coaching_comment(
@@ -1719,7 +1774,9 @@ class ChessAnalysisEngine:
                 move_analysis.game_phase = coaching_comment.game_phase.value
             else:
                 # Set default values when skipping AI comments
-                move_analysis.coaching_comment = ""
+                # BUT: Don't overwrite instant greeting if it was already set
+                if not move_analysis.coaching_comment:
+                    move_analysis.coaching_comment = ""
                 move_analysis.what_went_right = ""
                 move_analysis.what_went_wrong = ""
                 move_analysis.how_to_improve = ""
@@ -1902,7 +1959,9 @@ class ChessAnalysisEngine:
 
     async def _analyze_move_stockfish(self, board: chess.Board, move: chess.Move,
                                     analysis_type: AnalysisType,
-                                    fullmove_number: Optional[int] = None) -> MoveAnalysis:
+                                    fullmove_number: Optional[int] = None,
+                                    is_user_move: Optional[bool] = None,
+                                    ply_index: Optional[int] = None) -> MoveAnalysis:
         """Stockfish move analysis - runs in thread pool for true parallelism."""
         if not self.stockfish_path:
             raise ValueError("Stockfish executable not found")
@@ -3128,22 +3187,28 @@ class ChessAnalysisEngine:
                     # Convert best move to SAN notation for frontend display
                     best_move_san = ""
                     if best_move_before:
-                        try:
-                            # Method 1: Try using board.pop() to get back to "before" state
-                            board.pop()
-                            best_move_san = board.san(best_move_before)
-                            board.push(move)
-                        except Exception as e:
-                            # Method 2: If pop fails, try reconstructing from FEN
+                        # Check if best move is different from played move
+                        if best_move_before.uci() == move.uci():
+                            # Best move is the same as played move - set to empty string
+                            best_move_san = ""
+                        else:
+                            # Best move is different - convert to SAN
                             try:
-                                fen_before = board.fen().rsplit(' ', 2)[0] + ' ' + ('w' if player_color == chess.WHITE else 'b') + ' ' + board.fen().rsplit(' ', 2)[1]
-                                temp_board = chess.Board(fen_before)
-                                best_move_san = temp_board.san(best_move_before)
-                                logger.info(f"Successfully converted best move using FEN reconstruction: {best_move_before.uci()} -> {best_move_san}")
-                            except Exception as e2:
-                                logger.warning(f"Failed to convert best move to SAN (both methods): pop error={e}, fen error={e2}, move={best_move_before.uci()}")
-                                # Leave best_move_san empty if both methods fail
-                                best_move_san = ""
+                                # Method 1: Try using board.pop() to get back to "before" state
+                                board.pop()
+                                best_move_san = board.san(best_move_before)
+                                board.push(move)
+                            except Exception as e:
+                                # Method 2: If pop fails, try reconstructing from FEN
+                                try:
+                                    fen_before = board.fen().rsplit(' ', 2)[0] + ' ' + ('w' if player_color == chess.WHITE else 'b') + ' ' + board.fen().rsplit(' ', 2)[1]
+                                    temp_board = chess.Board(fen_before)
+                                    best_move_san = temp_board.san(best_move_before)
+                                    logger.info(f"Successfully converted best move using FEN reconstruction: {best_move_before.uci()} -> {best_move_san}")
+                                except Exception as e2:
+                                    logger.warning(f"Failed to convert best move to SAN (both methods): pop error={e}, fen error={e2}, move={best_move_before.uci()}")
+                                    # Leave best_move_san empty if both methods fail
+                                    best_move_san = ""
 
                     # Create basic move analysis
                     move_analysis = MoveAnalysis(
