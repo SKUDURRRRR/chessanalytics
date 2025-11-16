@@ -1127,6 +1127,7 @@ class AIChessCommentGenerator:
 
             except Exception as e:
                 # Could not generate board state context - continue without it
+                pass
 
         # Build Stockfish analysis context
         stockfish_context = ""
