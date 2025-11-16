@@ -1425,21 +1425,29 @@ async def get_analysis_stats(
         # Stats are representative with 100 analyses and this is 5-10x faster!
         db_client = supabase_service or supabase
         if db_client:
+            # Try move_analyses first (where new analyses are saved)
             response = await asyncio.to_thread(
-                lambda: db_client.table('unified_analyses').select('*').eq(
+                lambda: db_client.table('move_analyses').select('*').eq(
                     'user_id', canonical_user_id
                 ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
             )
 
+            # Fallback to unified_analyses if no data in move_analyses
+            if not response.data or len(response.data) == 0:
+                response = await asyncio.to_thread(
+                    lambda: db_client.table('unified_analyses').select('*').eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+                )
+
             if os.getenv("DEBUG", "false").lower() == "true":
-                print(f"[DEBUG] Stats query from unified_analyses: {len(response.data or [])} records (limited to 100 for performance)")
+                print(f"[DEBUG] Stats query: {len(response.data or [])} records (limited to 100 for performance)")
         else:
             response = type('MockResponse', (), {'data': []})()
 
         if not response.data or len(response.data) == 0:
             # Return mock data for development when no real data is available
             print(f"[stats] No data found for user {canonical_user_id} on {platform}, returning mock stats for development")
-            print(f"[stats] Query was: unified_analyses where user_id={canonical_user_id} AND platform={platform}")
             return _get_mock_stats()
 
         if DEBUG:
@@ -1482,19 +1490,28 @@ async def get_game_analyses(
             print("[ERROR] No database connection available")
             return []
 
-        # Query unified_analyses view which combines game_analyses and move_analyses
-        # This view properly handles data priority and eliminates duplicates
+        # Query move_analyses first (where new analyses are saved), then fall back to unified_analyses
         db_client = supabase_service or supabase
         response = await asyncio.to_thread(
-            lambda: db_client.table("unified_analyses").select("*").eq(
+            lambda: db_client.table("move_analyses").select("*").eq(
                 "user_id", canonical_user_id
             ).eq("platform", platform).order("analysis_date", desc=True).range(
                 offset, offset + limit - 1
             ).execute()
         )
 
+        # Fallback to unified_analyses if no data in move_analyses
+        if not response.data or len(response.data) == 0:
+            response = await asyncio.to_thread(
+                lambda: db_client.table("unified_analyses").select("*").eq(
+                    "user_id", canonical_user_id
+                ).eq("platform", platform).order("analysis_date", desc=True).range(
+                    offset, offset + limit - 1
+                ).execute()
+            )
+
         if os.getenv("DEBUG", "false").lower() == "true":
-            print(f"[DEBUG] Query response from unified_analyses: {len(response.data) if response.data else 0} records found")
+            print(f"[DEBUG] Query response: {len(response.data) if response.data else 0} records found")
             if response.data:
                 print(f"[DEBUG] First record keys: {list(response.data[0].keys()) if response.data[0] else 'No keys'}")
                 print(f"[DEBUG] Sample record: {str(response.data[0])[:200]}..." if response.data[0] else "No sample")
@@ -1566,17 +1583,26 @@ async def get_game_analyses_count(
             print("[ERROR] No database connection available")
             return {"count": 0}
 
-        # Get count from unified_analyses view which handles deduplication
+        # Get count from move_analyses (primary storage), fall back to unified_analyses
         db_client = supabase_service or supabase
         response = await asyncio.to_thread(
-            lambda: db_client.table("unified_analyses").select("*", count="exact").eq(
+            lambda: db_client.table("move_analyses").select("*", count="exact").eq(
                 "user_id", canonical_user_id
             ).eq("platform", platform).execute()
         )
 
         total_count = response.count if hasattr(response, 'count') and response.count is not None else 0
 
-        print(f"[DEBUG] Total analyses count from unified_analyses: {total_count}")
+        # Fallback to unified_analyses if no data
+        if total_count == 0:
+            response = await asyncio.to_thread(
+                lambda: db_client.table("unified_analyses").select("*", count="exact").eq(
+                    "user_id", canonical_user_id
+                ).eq("platform", platform).execute()
+            )
+            total_count = response.count if hasattr(response, 'count') and response.count is not None else 0
+
+        print(f"[DEBUG] Total analyses count: {total_count}")
 
         return {"count": total_count}
     except Exception as e:
@@ -1610,15 +1636,44 @@ async def check_games_analyzed(
 
         # Query only the fields we need: game_id, provider_game_id, and accuracy
         # This is much faster than fetching all analysis data
+        # Check move_analyses first (where new analyses are saved), then fall back to unified_analyses
         db_client = supabase_service or supabase
+
+        print(f"[CHECK ANALYZED] Checking {len(game_ids)} games for user={canonical_user_id}, platform={platform}")
+        print(f"[CHECK ANALYZED] Game IDs to check: {game_ids[:5]}...")  # Show first 5
+
+        # Try move_analyses first (game_id in move_analyses IS the provider_game_id)
         response = await asyncio.to_thread(
-            lambda: db_client.table("unified_analyses")
-            .select("game_id,provider_game_id,accuracy")
+            lambda: db_client.table("move_analyses")
+            .select("game_id,accuracy")
             .eq("user_id", canonical_user_id)
             .eq("platform", platform)
             .in_("game_id", game_ids)
             .execute()
         )
+
+        print(f"[CHECK ANALYZED] move_analyses query returned {len(response.data) if response.data else 0} results")
+        if response.data:
+            print(f"[CHECK ANALYZED] Found in move_analyses: {[r.get('game_id') for r in response.data[:5]]}")
+
+        # If no results, try unified_analyses
+        if not response.data or len(response.data) == 0:
+            print(f"[CHECK ANALYZED] No results in move_analyses, trying unified_analyses...")
+            response = await asyncio.to_thread(
+                lambda: db_client.table("unified_analyses")
+                .select("game_id,provider_game_id,accuracy")
+                .eq("user_id", canonical_user_id)
+                .eq("platform", platform)
+                .in_("game_id", game_ids)
+                .execute()
+            )
+            print(f"[CHECK ANALYZED] unified_analyses query returned {len(response.data) if response.data else 0} results")
+        else:
+            # For move_analyses, game_id IS the provider_game_id
+            # Add provider_game_id field for consistency with unified_analyses format
+            for row in response.data:
+                if 'provider_game_id' not in row:
+                    row['provider_game_id'] = row.get('game_id')
 
         analyzed_games = []
         if response.data:
@@ -3267,19 +3322,34 @@ async def get_single_game(
             pgn_data = None
 
         # Fetch analysis - use limit(1) instead of maybe_single() to avoid 204 errors
+        # Try move_analyses table first (where analyses are actually saved)
         analysis_data = None
         try:
+            # First try move_analyses table (primary storage)
             analysis_response = await asyncio.to_thread(
-                lambda: db_client.table('unified_analyses')
+                lambda: db_client.table('move_analyses')
                 .select('*')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
-                .eq('provider_game_id', game_identifier)
+                .eq('game_id', game_identifier)
                 .limit(1)
                 .execute()
             )
             if analysis_response.data and len(analysis_response.data) > 0:
                 analysis_data = analysis_response.data[0]
+            else:
+                # Fallback to unified_analyses table for backwards compatibility
+                analysis_response = await asyncio.to_thread(
+                    lambda: db_client.table('unified_analyses')
+                    .select('*')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .eq('provider_game_id', game_identifier)
+                    .limit(1)
+                    .execute()
+                )
+                if analysis_response.data and len(analysis_response.data) > 0:
+                    analysis_data = analysis_response.data[0]
         except Exception as analysis_error:
             # Log but don't fail - analysis might not exist yet for unanalyzed games
             print(f"Analysis not found for game {game_identifier}: {analysis_error}")
@@ -9310,6 +9380,10 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'stockfish_depth': analysis.stockfish_depth
         }
 
+        print(f"[SAVE ANALYSIS] Attempting to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+        print(f"[SAVE ANALYSIS] Data keys: {list(data.keys())}")
+        print(f"[SAVE ANALYSIS] Number of moves: {len(moves_analysis_dict)}")
+
         response = supabase_service.table('move_analyses').upsert(
             data,
             on_conflict='user_id,platform,game_id,analysis_method'
@@ -9317,8 +9391,20 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
 
         success = bool(getattr(response, 'data', None))
         if success:
+            print(f"[SAVE ANALYSIS] ✅ Successfully saved analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+            print(f"[SAVE ANALYSIS] Saved data game_id: {data.get('game_id')}")
+            print(f"[SAVE ANALYSIS] Response data exists: {bool(response.data)}")
+            if response.data:
+                print(f"[SAVE ANALYSIS] Response data game_id: {response.data[0].get('game_id') if isinstance(response.data, list) and len(response.data) > 0 else 'N/A'}")
             # Invalidate cache for this user/platform to ensure fresh stats
             _invalidate_cache(canonical_user_id, analysis.platform)
+        else:
+            print(f"[SAVE ANALYSIS] ❌ Failed to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+            print(f"[SAVE ANALYSIS] Response type: {type(response)}")
+            print(f"[SAVE ANALYSIS] Response has data attr: {hasattr(response, 'data')}")
+            if hasattr(response, 'data'):
+                print(f"[SAVE ANALYSIS] Response.data: {response.data}")
+            print(f"[SAVE ANALYSIS] Response str: {str(response)[:500]}")
             if DEBUG:
                 print(f"[CACHE] Invalidated cache for {canonical_user_id}:{analysis.platform} after successful analysis save (fallback path)")
         return success
