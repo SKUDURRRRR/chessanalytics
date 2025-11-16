@@ -722,6 +722,15 @@ class AIChessCommentGenerator:
         if comment and not comment.endswith(('.', '!', '?')):
             comment += "."
 
+        # Fix comments that start with "'s move" (missing color name)
+        # This can happen if the AI generates malformed text or if replacement logic fails
+        if comment and comment.strip().startswith("'s move"):
+            # Add the color name at the beginning
+            comment = f"{color_name}'s move" + comment[7:]  # Remove "'s move" and add "{color_name}'s move"
+        elif comment and comment.strip().startswith("'s "):
+            # Handle other cases where "'s " appears at the start
+            comment = f"{color_name}'s " + comment[3:]  # Remove "'s " and add "{color_name}'s "
+
         return comment.strip()
 
     def _call_api_with_fallback(
