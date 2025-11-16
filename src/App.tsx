@@ -7,7 +7,7 @@ import { ChessSoundProvider } from './contexts/ChessSoundContext'
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
 import { Navigation } from './components/Navigation'
 import { Footer } from './components/Footer'
-import './index.css'
+import LoadingModal from './components/LoadingModal'
 
 // Helper function to retry chunk loading with auto-reload on persistent failure
 const lazyWithRetry = (componentImport: () => Promise<any>) => {
@@ -48,17 +48,21 @@ const SignUpPage = lazyWithRetry(() => import('./pages/SignUpPage'))
 const ForgotPasswordPage = lazyWithRetry(() => import('./pages/ForgotPasswordPage'))
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'))
 const PricingPage = lazyWithRetry(() => import('./pages/PricingPage'))
+const TermsOfServicePage = lazyWithRetry(() => import('./pages/TermsOfServicePage'))
+const PrivacyPolicyPage = lazyWithRetry(() => import('./pages/PrivacyPolicyPage'))
 const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'))
 
 // Loading component shown while pages load
 function PageLoader() {
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-      <div className="text-center">
-        <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-        <p className="mt-4 text-slate-400">Loading...</p>
-      </div>
-    </div>
+    <>
+      <div className="min-h-screen bg-slate-950" />
+      <LoadingModal
+        isOpen={true}
+        message="Loading page..."
+        subtitle="Please wait"
+      />
+    </>
   )
 }
 
@@ -82,6 +86,8 @@ function App() {
                   <Route path="/forgot-password" element={<ComponentErrorBoundary><ForgotPasswordPage /></ComponentErrorBoundary>} />
                   <Route path="/profile" element={<ComponentErrorBoundary><ProfilePage /></ComponentErrorBoundary>} />
                   <Route path="/pricing" element={<ComponentErrorBoundary><PricingPage /></ComponentErrorBoundary>} />
+                  <Route path="/terms" element={<ComponentErrorBoundary><TermsOfServicePage /></ComponentErrorBoundary>} />
+                  <Route path="/privacy" element={<ComponentErrorBoundary><PrivacyPolicyPage /></ComponentErrorBoundary>} />
                   <Route path="*" element={<ComponentErrorBoundary><NotFoundPage /></ComponentErrorBoundary>} />
                 </Routes>
               </Suspense>

@@ -328,6 +328,120 @@ export function EnhancedOpeningPlayerCard({
 
   const insights = getOpeningInsights()
 
+  // Generate personalized Style Match explanation (compressed)
+  const getStyleMatchExplanation = () => {
+    const styleMatchScore = enhancedAnalysis?.repertoireAnalysis?.styleMatchScore ?? 0
+    const aggressive = personalityScores.aggressive || 0
+    const tactical = personalityScores.tactical || 0
+    const positional = personalityScores.positional || 0
+    const patient = personalityScores.patient || 0
+
+    // Get dominant trait
+    const traits = [
+      { name: 'aggressive', score: aggressive, label: 'aggressive' },
+      { name: 'tactical', score: tactical, label: 'tactical' },
+      { name: 'positional', score: positional, label: 'positional' },
+      { name: 'patient', score: patient, label: 'patient' }
+    ].sort((a, b) => b.score - a.score)
+
+    const dominantTrait = traits[0]
+    const hasStrongTrait = dominantTrait.score >= 65
+
+    // Get opening insights
+    const mostSuccessful = enhancedAnalysis?.repertoireAnalysis?.mostSuccessful
+    const needsWork = enhancedAnalysis?.repertoireAnalysis?.needsWork
+    const whiteOpenings = enhancedAnalysis?.repertoireAnalysis?.whiteOpenings || []
+    const blackOpenings = enhancedAnalysis?.repertoireAnalysis?.blackOpenings || []
+    const totalOpenings = whiteOpenings.length + blackOpenings.length
+
+    // Helper to determine if an opening is actually underperforming (win rate < 50%)
+    const isActuallyUnderperforming = (winRate: number) => winRate < 50
+
+    // Determine explanation based on score
+    let explanation = {
+      message: '',
+      insight: '',
+      advice: '',
+      color: 'text-purple-300',
+      bgColor: 'bg-purple-500/10',
+      borderColor: 'border-purple-400/50'
+    }
+
+    if (styleMatchScore >= 75) {
+      explanation = {
+        message: hasStrongTrait
+          ? `Your ${dominantTrait.label} style (${Math.round(dominantTrait.score)}/100) aligns well with your openings.`
+          : 'Your openings match your balanced playing style.',
+        insight: mostSuccessful?.opening && mostSuccessful.opening !== 'None'
+          ? `Your ${mostSuccessful.opening} performs strongly at ${Math.round(mostSuccessful.winRate)}% win rate.`
+          : totalOpenings > 0
+          ? `You have ${totalOpenings} opening${totalOpenings !== 1 ? 's' : ''} that suit your style.`
+          : 'Your repertoire is well-suited to your playing approach.',
+        advice: hasStrongTrait
+          ? `Continue playing ${dominantTrait.label === 'aggressive' ? 'sharp, attacking' : dominantTrait.label === 'tactical' ? 'tactically complex' : dominantTrait.label === 'positional' ? 'strategic' : 'solid'} openings.`
+          : 'Maintain your versatility while deepening your knowledge.',
+        color: 'text-emerald-300',
+        bgColor: 'bg-emerald-500/10',
+        borderColor: 'border-emerald-400/50'
+      }
+    } else if (styleMatchScore >= 60) {
+      explanation = {
+        message: hasStrongTrait
+          ? `Your ${dominantTrait.label} strength (${Math.round(dominantTrait.score)}/100) could be better utilized.`
+          : 'Some openings may not highlight your strengths.',
+        insight: needsWork?.opening && needsWork.opening !== 'None'
+          ? isActuallyUnderperforming(needsWork.winRate)
+            ? `Your ${needsWork.opening} (${Math.round(needsWork.winRate)}% win rate) may not align with your style.`
+            : `Your ${needsWork.opening} may not fully match your ${dominantTrait.label} style, despite a ${Math.round(needsWork.winRate)}% win rate.`
+          : totalOpenings > 0
+          ? `Consider whether all ${totalOpenings} opening${totalOpenings !== 1 ? 's' : ''} match your ${dominantTrait.label} preferences.`
+          : 'Explore openings that better match your playing style.',
+        advice: `Check the Study tab for ${hasStrongTrait ? dominantTrait.label : 'compatible'} openings that could improve your match.`,
+        color: 'text-sky-300',
+        bgColor: 'bg-sky-500/10',
+        borderColor: 'border-sky-400/50'
+      }
+    } else if (styleMatchScore >= 45) {
+      explanation = {
+        message: hasStrongTrait
+          ? `Your ${dominantTrait.label} style (${Math.round(dominantTrait.score)}/100) isn't being fully utilized by your current openings.`
+          : 'Your openings may conflict with your natural playing tendencies.',
+        insight: needsWork?.opening && needsWork.opening !== 'None'
+          ? isActuallyUnderperforming(needsWork.winRate)
+            ? `Your ${needsWork.opening} is underperforming (${Math.round(needsWork.winRate)}% win rate) - likely a style mismatch.`
+            : `Your ${needsWork.opening} may not match your ${dominantTrait.label} style, though it has a ${Math.round(needsWork.winRate)}% win rate.`
+          : totalOpenings > 0
+          ? `Some of your ${totalOpenings} opening${totalOpenings !== 1 ? 's' : ''} may conflict with your ${dominantTrait.label} style.`
+          : 'Consider exploring openings that better suit your style.',
+        advice: `Prioritize openings that match your ${hasStrongTrait ? dominantTrait.label : 'style'}. See the Study tab for recommendations.`,
+        color: 'text-amber-300',
+        bgColor: 'bg-amber-500/10',
+        borderColor: 'border-amber-400/50'
+      }
+    } else {
+      explanation = {
+        message: hasStrongTrait
+          ? `Your ${dominantTrait.label} strength (${Math.round(dominantTrait.score)}/100) is being underutilized.`
+          : 'There\'s a clear disconnect between your style and opening choices.',
+        insight: needsWork?.opening && needsWork.opening !== 'None'
+          ? isActuallyUnderperforming(needsWork.winRate)
+            ? `Your ${needsWork.opening} is struggling (${Math.round(needsWork.winRate)}% win rate) - this is likely a style conflict.`
+            : `Your ${needsWork.opening} doesn't match your ${dominantTrait.label} style, despite a ${Math.round(needsWork.winRate)}% win rate.`
+          : totalOpenings > 0
+          ? `Your ${totalOpenings} opening${totalOpenings !== 1 ? 's' : ''} may be working against your ${dominantTrait.label} style.`
+          : 'Your overall opening performance suggests style mismatches across your repertoire.',
+        advice: `Visit the Study tab to find openings that match your ${hasStrongTrait ? dominantTrait.label : 'playing style'}.`,
+        color: 'text-rose-300',
+        bgColor: 'bg-rose-500/10',
+        borderColor: 'border-rose-400/50'
+      }
+    }
+
+    return explanation
+  }
+
+  const styleMatchExplanation = getStyleMatchExplanation()
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: '📊' },
     { id: 'mistakes', label: 'Mistakes', icon: '🎯' },
@@ -431,46 +545,23 @@ export function EnhancedOpeningPlayerCard({
             </div>
           </div>
 
-          {/* Opening Statistics - Use backend repertoire analysis if available, otherwise use calculated insights */}
-          {(enhancedAnalysis?.repertoireAnalysis &&
-            (enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening !== 'None' ||
-             enhancedAnalysis.repertoireAnalysis.needsWork.opening !== 'None')) ? (
-            <div className="bg-slate-800/30 rounded-xl p-4">
-              <h5 className="font-semibold text-white mb-3">Your Opening Performance</h5>
-              <div className="space-y-3">
-                {enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening !== 'None' && (
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm space-y-1 sm:space-y-0">
-                    <span className="text-slate-200">Best: {enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening}</span>
-                    <span className="font-semibold text-emerald-300">{enhancedAnalysis.repertoireAnalysis.mostSuccessful.winRate.toFixed(0)}% ({enhancedAnalysis.repertoireAnalysis.mostSuccessful.games} games)</span>
-                  </div>
-                )}
-                {enhancedAnalysis.repertoireAnalysis.needsWork.opening !== 'None' && (
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm space-y-1 sm:space-y-0">
-                    <span className="text-slate-200">Needs work: {enhancedAnalysis.repertoireAnalysis.needsWork.opening}</span>
-                    <span className="font-semibold text-rose-300">{enhancedAnalysis.repertoireAnalysis.needsWork.winRate.toFixed(0)}% ({enhancedAnalysis.repertoireAnalysis.needsWork.games} games)</span>
-                  </div>
-                )}
+          {/* Personalized Style Match Explanation */}
+          {enhancedAnalysis?.repertoireAnalysis?.styleMatchScore !== undefined && (
+            <div className={`${styleMatchExplanation.bgColor} border ${styleMatchExplanation.borderColor} rounded-lg p-3`}>
+              <div className="flex items-start gap-3">
+                <span className={`${styleMatchExplanation.color} text-lg`}>🎯</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-slate-200 mb-1">{styleMatchExplanation.message}</div>
+                  <div className={`text-xs text-slate-300 mb-1`}>{styleMatchExplanation.insight}</div>
+                  <div className={`text-xs ${styleMatchExplanation.color}`}>{styleMatchExplanation.advice}</div>
+                </div>
+                <div className={`text-base font-bold ${styleMatchExplanation.color} shrink-0`}>
+                  {enhancedAnalysis.repertoireAnalysis.styleMatchScore.toFixed(0)}%
+                </div>
               </div>
             </div>
-          ) : insights.totalOpeningGames > 0 ? (
-            <div className="bg-slate-800/30 rounded-xl p-4">
-              <h5 className="font-semibold text-white mb-3">Your Opening Performance</h5>
-              <div className="space-y-3">
-                {insights.bestOpening && (
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm space-y-1 sm:space-y-0">
-                    <span className="text-slate-200">Best: {insights.bestOpening.opening}</span>
-                    <span className="font-semibold text-emerald-300">{insights.bestOpening.winRate.toFixed(0)}% ({insights.bestOpening.games} games)</span>
-                  </div>
-                )}
-                {insights.worstOpening && insights.worstOpening.games >= 3 && (
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm space-y-1 sm:space-y-0">
-                    <span className="text-slate-200">Needs work: {insights.worstOpening.opening}</span>
-                    <span className="font-semibold text-rose-300">{insights.worstOpening.winRate.toFixed(0)}% ({insights.worstOpening.games} games)</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : null}
+          )}
+
         </div>
       )}
 

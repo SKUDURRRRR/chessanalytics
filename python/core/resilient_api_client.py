@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 import hashlib
 import json
+from urllib.parse import quote
 
 
 class CircuitState(Enum):
@@ -241,7 +242,10 @@ class ResilientAPIClient:
     async def get_httpx_client(self) -> httpx.AsyncClient:
         """Get or create httpx client"""
         if self._httpx_client is None:
-            self._httpx_client = httpx.AsyncClient(timeout=10.0)
+            self._httpx_client = httpx.AsyncClient(
+                timeout=10.0,
+                follow_redirects=True  # Explicitly follow redirects (e.g., 301, 302)
+            )
             print("[SESSION] Created new httpx client")
         return self._httpx_client
 
@@ -379,7 +383,8 @@ class ResilientAPIClient:
         Returns:
             Tuple of (exists: bool, message: str)
         """
-        cache_key = self._get_cache_key("GET", f"chesscom_user_{username}")
+        # Use original username for cache key (case-sensitive for cache, but API is case-insensitive)
+        cache_key = self._get_cache_key("GET", f"chesscom_user_{username.strip()}")
 
         # Check cache
         cached = self._get_cached(cache_key)
@@ -406,8 +411,13 @@ class ResilientAPIClient:
             # Make request with retry
             async def request_func():
                 client = await self.get_httpx_client()
-                canonical_username = username.strip().lower()
-                url = f"https://api.chess.com/pub/player/{canonical_username}"
+                # Chess.com API is case-insensitive, but preserve original case for better error messages
+                # Strip whitespace but don't lowercase - let Chess.com API handle case insensitivity
+                canonical_username = username.strip()
+                # URL encode the username, but keep hyphens and underscores safe (they're valid in URLs)
+                # This handles special characters while preserving common username characters
+                encoded_username = quote(canonical_username, safe='-_')
+                url = f"https://api.chess.com/pub/player/{encoded_username}"
                 headers = {
                     'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
                 }

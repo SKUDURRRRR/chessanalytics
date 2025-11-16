@@ -223,7 +223,6 @@ function generateExplorationComment(
   } else if (positionType === 'middlegame') {
     const middlegameAdvice = [
       'Look for tactical opportunities and threats.',
-      'Consider piece coordination and activity.',
       'Evaluate pawn structure and weak squares.',
       'Look for ways to improve piece placement.',
       'Search for tactical motifs like pins, forks, or skewers.'

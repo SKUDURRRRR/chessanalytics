@@ -1,0 +1,128 @@
+================================================================================
+🧪 MAINTEST PRE-DEPLOYMENT TEST SUITE
+================================================================================
+Mode: Quick
+Started: 2025-01-15 14:30:00
+API URL: http://localhost:8002
+Frontend URL: http://localhost:3000
+================================================================================
+
+================================================================================
+ENVIRONMENT CHECK
+================================================================================
+✅ .env file found
+✅ All required environment variables set
+
+================================================================================
+SECURITY & CREDENTIALS
+================================================================================
+
+📋 Checking environment variables...
+✅ PASS: Environment Variables Exist - All 5 required environment variables are set
+
+✅ PASS: Environment Variables Not Placeholders - All environment variables have actual values (not placeholders)
+
+📋 Checking Stockfish...
+✅ PASS: Stockfish Executable Exists - Stockfish found at ./stockfish/stockfish.exe
+
+📋 Scanning for exposed secrets (quick mode)...
+✅ PASS: No Exposed Secrets in Code - No exposed secrets found (scanned 156 files)
+
+================================================================================
+SECURITY TEST RESULTS
+================================================================================
+
+✅ PASS: Environment Variables Exist - All 5 required environment variables are set
+
+✅ PASS: Environment Variables Not Placeholders - All environment variables have actual values (not placeholders)
+
+✅ PASS: Stockfish Executable Exists - Stockfish found at ./stockfish/stockfish.exe
+
+✅ PASS: No Exposed Secrets in Code - No exposed secrets found (scanned 156 files)
+
+================================================================================
+SUMMARY: 4 passed, 0 failed out of 4 tests
+================================================================================
+
+================================================================================
+RUNNING BACKEND TESTS
+================================================================================
+
+📋 Testing API health...
+✅ API is healthy (HTTP 200)
+
+📦 Testing Game Imports...
+
+📥 Testing Lichess import for penkinisShachmatistas...
+✅ Imported 10 games (total: 145)
+
+🧠 Testing smart import for penkinisShachmatistas...
+✅ Smart import completed: 2 games imported, 2 were new
+
+🔄 Testing duplicate prevention for penkinisShachmatistas...
+✅ Duplicate prevention works (only 0 new games added)
+
+🔬 Testing Game Analysis...
+
+🔬 Testing bulk analysis for penkinisShachmatistas (2 games)...
+✅ Analyzed 2 games successfully
+
+🔬 Testing single game analysis for penkinisShachmatistas...
+✅ Game abc123def analyzed successfully
+
+✅ Testing Data Correctness...
+
+✅ Testing data correctness for penkinisShachmatistas...
+✅ Found 145 games in database
+✅ All 42 analyses have valid accuracy (0-100)
+✅ 98.6% of games have opening names
+✅ All personality scores are in valid range (0-100)
+
+================================================================================
+FRONTEND TESTS (PLAYWRIGHT)
+================================================================================
+
+🎭 Running Playwright tests...
+   Test file: tests/MAINTEST_frontend.spec.ts
+
+Running 8 tests using 1 worker
+
+  ✓  [chromium] › MAINTEST_frontend.spec.ts:20:5 › MAINTEST Frontend Suite › Player Search › should search for existing Lichess player (5.2s)
+  ✓  [chromium] › MAINTEST_frontend.spec.ts:34:5 › MAINTEST Frontend Suite › Player Search › should search for existing Chess.com player (4.8s)
+  ✓  [chromium] › MAINTEST_frontend.spec.ts:48:5 › MAINTEST Frontend Suite › Player Search › should show import prompt for non-existent player (3.1s)
+  ✓  [chromium] › MAINTEST_frontend.spec.ts:65:5 › MAINTEST Frontend Suite › Analytics Page › should display ELO graph (2.4s)
+  ✓  [chromium] › MAINTEST_frontend.spec.ts:72:5 › MAINTEST Frontend Suite › Analytics Page › should display win rate chart (1.9s)
+  ✓  [chromium] › MAINTEST_frontend.spec.ts:78:5 › MAINTEST Frontend Suite › Analytics Page › should display opening performance (2.1s)
+  ✓  [chromium] › MAINTEST_frontend.spec.ts:85:5 › MAINTEST Frontend Suite › Analytics Page › should display personality radar (2.3s)
+  ✓  [chromium] › MAINTEST_frontend.spec.ts:92:5 › MAINTEST Frontend Suite › Analytics Page › should not show null or zero values in key metrics (1.8s)
+
+  8 passed (23.6s)
+
+✅ Frontend tests passed!
+
+================================================================================
+GENERATING REPORT
+================================================================================
+
+================================================================================
+TEST SUMMARY
+================================================================================
+Total Tests: 20
+Passed: 20 ✅
+Failed: 0 ❌
+
+By Category:
+  Security & Credentials: 4 passed, 0 failed
+  API Health: 1 passed, 0 failed
+  Game Import: 4 passed, 0 failed
+  Game Analysis: 2 passed, 0 failed
+  Data Correctness: 4 passed, 0 failed
+  Frontend Tests: 8 passed, 0 failed
+================================================================================
+
+📄 HTML Report saved to: C:\my files\Projects\chess-analytics\MAINTEST_results_20250115_143045.html
+⏱️  Total duration: 156.4 seconds
+
+================================================================================
+✅ ALL TESTS PASSED - READY FOR PRODUCTION
+================================================================================

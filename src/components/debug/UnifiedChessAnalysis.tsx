@@ -1,4 +1,5 @@
-import { useMemo, useRef, useEffect, useState } from 'react'
+import React, { useMemo, useRef, useEffect, useState } from 'react'
+import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
 import type { ModernArrow } from '../../utils/chessArrows'
@@ -55,6 +56,25 @@ const EVAL_CAP = 1000
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
+// Classification label mapping - used across components
+const classificationLabels = {
+  brilliant: 'Brilliant',  // Spectacular tactical move with sacrifice or forced mate
+  best: 'Best',            // Chess.com: The chess engine's top choice
+  excellent: 'Excellent',  // Merged: Nearly optimal (5-25cp loss)
+  great: 'Excellent',      // Alias: Maps to excellent
+  good: 'Good',            // Merged: Solid play (25-100cp loss)
+  acceptable: 'Good',      // Alias: Maps to good
+  inaccuracy: 'Inaccuracy', // Chess.com: A weak move
+  mistake: 'Mistake',      // Chess.com: A bad move that immediately worsens your position
+  blunder: 'Blunder',      // Chess.com: A very bad move that loses material or the game
+  uncategorized: 'Move'    // Fallback for uncategorized moves
+}
+
+// Helper function to get classification display label
+const getClassificationLabel = (classification: string): string => {
+  return classificationLabels[classification as keyof typeof classificationLabels] || classification
+}
+
 const MoveClassificationBadge = ({ classification }: { classification: string }) => {
   const classificationColors = {
     brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
@@ -69,22 +89,9 @@ const MoveClassificationBadge = ({ classification }: { classification: string })
     uncategorized: 'border border-slate-400/30 bg-slate-500/10 text-slate-200'
   }
 
-  const classificationLabels = {
-    brilliant: 'Brilliant',  // Spectacular tactical move with sacrifice or forced mate
-    best: 'Best',            // Chess.com: The chess engine's top choice
-    excellent: 'Excellent',  // Merged: Nearly optimal (5-25cp loss)
-    great: 'Excellent',      // Alias: Maps to excellent
-    good: 'Good',            // Merged: Solid play (25-100cp loss)
-    acceptable: 'Good',      // Alias: Maps to good
-    inaccuracy: 'Inaccuracy', // Chess.com: A weak move
-    mistake: 'Mistake',      // Chess.com: A bad move that immediately worsens your position
-    blunder: 'Blunder',      // Chess.com: A very bad move that loses material or the game
-    uncategorized: 'Move'    // Fallback for uncategorized moves
-  }
-
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${classificationColors[classification as keyof typeof classificationColors]}`}>
-      {classificationLabels[classification as keyof typeof classificationLabels]}
+      {getClassificationLabel(classification)}
     </span>
   )
 }
@@ -574,14 +581,6 @@ export function UnifiedChessAnalysis({
   onPieceDrop,
   className = ''
 }: UnifiedChessAnalysisProps) {
-  // Debug log
-  console.log('🔍 UnifiedChessAnalysis rendered:', {
-    onPieceDrop: typeof onPieceDrop,
-    currentPosition,
-    currentIndex,
-    isExploringFollowUp,
-    isFreeExploration
-  })
 
   // Chess sound integration
   const { soundEnabled, volume } = useChessSoundSettings()
@@ -589,59 +588,193 @@ export function UnifiedChessAnalysis({
   const prevIndexRef = useRef(currentIndex)
   const [isMoveListOpen, setIsMoveListOpen] = useState(false)
   const [showMoveAnalysis, setShowMoveAnalysis] = useState(true)
+  // State to track user-drawn arrows (right-click drag) - these will be rendered via ModernChessArrows
+  const [userDrawnArrows, setUserDrawnArrows] = useState<ModernArrow[]>([])
+  const desktopBoardContainerRef = useRef<HTMLDivElement>(null)
+  const mobileBoardContainerRef = useRef<HTMLDivElement>(null)
 
   // Use exploration analysis if available, otherwise use current move
   const currentScore = useMemo(() => {
     // If exploring, use the exploration analysis evaluation
     if ((isExploringFollowUp || isFreeExploration) && explorationAnalysis && !explorationAnalysis.isAnalyzing) {
       const score = explorationAnalysis.evaluation.scoreForWhite * 100
-      console.log('🎯 Using exploration eval:', {
-        scoreForWhite: explorationAnalysis.evaluation.scoreForWhite,
-        score,
-        isExploringFollowUp,
-        isFreeExploration,
-        explorationAnalysis: explorationAnalysis
-      })
       return score
     }
 
-    // Otherwise use current move evaluation
-    if (!currentMove?.evaluation) {
-      console.log('🎯 No evaluation available, returning 0')
+    // The evaluation bar should show the position evaluation from White's perspective
+    // evaluation.value is ALWAYS from White's perspective (positive = white ahead)
+    // scoreForPlayer is calculated for the move's player, not the viewing player
+    // So we should use evaluation.value directly, NOT scoreForPlayer
+    if (!currentMove) {
       return 0
     }
-    const score = currentMove.evaluation.type === 'mate'
-      ? (currentMove.evaluation.value > 0 ? 1000 : -1000)
-      : currentMove.evaluation.value
-    console.log('🎯 Using current move eval:', { score, currentMove: currentMove.san })
-    return score
-  }, [currentMove, isExploringFollowUp, isFreeExploration, explorationAnalysis])
+
+    // CRITICAL: Check if the position after the move is in checkmate
+    // If so, the winning side should show dominance in the evaluation bar
+    try {
+      if (currentMove.fenAfter) {
+        const chess = new Chess(currentMove.fenAfter)
+        if (chess.isCheckmate()) {
+          // The side to move is the one in checkmate (the losing side)
+          // If it's White's turn, White is in checkmate, so Black wins -> return -1000
+          // If it's Black's turn, Black is in checkmate, so White wins -> return +1000
+          const isWhiteToMove = chess.turn() === 'w'
+          return isWhiteToMove ? -1000 : 1000
+        }
+      }
+    } catch (error) {
+      // If FEN parsing fails, fall through to normal evaluation logic
+      console.warn('Failed to parse FEN for checkmate detection:', error)
+    }
+
+    // For mate positions, evaluation.value is the mate value from White's perspective
+    // Positive = white wins (mate in N), negative = black wins (mate in -N)
+    // If value is 0 (old bug), treat as unknown and use a neutral score
+    if (currentMove.evaluation?.type === 'mate') {
+      const mateValue = currentMove.evaluation.value
+      if (mateValue === 0) {
+        // Old bug: mate evaluations were stored as 0, fallback to checking if it's actually a mate
+        // Try to detect checkmate from FEN if available
+        try {
+          if (currentMove.fenAfter) {
+            const chess = new Chess(currentMove.fenAfter)
+            if (chess.isCheckmate()) {
+              const isWhiteToMove = chess.turn() === 'w'
+              return isWhiteToMove ? -1000 : 1000
+            }
+          }
+        } catch (error) {
+          // Ignore errors, fall through to neutral
+        }
+        return 0
+      }
+      return mateValue > 0 ? 1000 : -1000
+    }
+
+    // Use evaluation.value directly - it's always from White's perspective
+    // This is what the EvaluationBar expects (positive = white ahead, negative = black ahead)
+    return currentMove.evaluation?.value || 0
+  }, [currentMove, isExploringFollowUp, isFreeExploration, explorationAnalysis, playerColor])
 
   // Generate arrows from exploration analysis if available
   const displayArrows = useMemo(() => {
-    console.log('[UnifiedChessAnalysis] Computing displayArrows:', {
-      isExploringFollowUp,
-      isFreeExploration,
-      hasExplorationAnalysis: !!explorationAnalysis,
-      explorationBestMove: explorationAnalysis?.bestMove,
-      currentMoveArrows: currentMoveArrows,
-      currentMoveArrowsLength: currentMoveArrows?.length || 0
-    })
+
+    const arrows: ModernArrow[] = []
+
+    // Add user-drawn arrows (right-click drag) - these are orange
+    arrows.push(...userDrawnArrows)
 
     // If exploring and we have analysis with a best move, show arrow for that
     if ((isExploringFollowUp || isFreeExploration) && explorationAnalysis?.bestMove) {
-      console.log('[UnifiedChessAnalysis] Using exploration arrow')
-      return [{
+      arrows.push({
         from: explorationAnalysis.bestMove.from,
         to: explorationAnalysis.bestMove.to,
-        color: 'rgb(74, 222, 128)' // Green for exploration best move
-      }]
+        color: 'rgb(74, 222, 128)', // Green for exploration best move
+        classification: 'best',
+        isBestMove: true
+      })
+    } else {
+      // Otherwise use the current move arrows
+      arrows.push(...currentMoveArrows)
     }
 
-    // Otherwise use the current move arrows
-    console.log('[UnifiedChessAnalysis] Using currentMoveArrows:', currentMoveArrows)
-    return currentMoveArrows
-  }, [isExploringFollowUp, isFreeExploration, explorationAnalysis, currentMoveArrows])
+    return arrows
+  }, [isExploringFollowUp, isFreeExploration, explorationAnalysis, currentMoveArrows, userDrawnArrows])
+
+  // Handler to intercept user-drawn arrows from react-chessboard
+  // This will be called when user right-clicks and drags to draw an arrow
+  const handleArrowsChange = React.useCallback((arrows: Array<[string, string, string?]>) => {
+
+    const modernArrows: ModernArrow[] = arrows.map(([from, to, color]) => ({
+      from: from as any,
+      to: to as any,
+      color: color || 'rgb(255, 170, 0)', // Default to orange
+      classification: 'uncategorized',
+      isBestMove: false,
+      isUserMove: true
+    }))
+
+    setUserDrawnArrows(modernArrows)
+  }, [])
+
+  // Clear user-drawn arrows when position changes
+  useEffect(() => {
+    setUserDrawnArrows([])
+  }, [currentPosition])
+
+  // Effect to actively hide react-chessboard's native arrow rendering
+  // This ensures native arrows are always hidden, even if CSS doesn't catch them
+  useEffect(() => {
+    const hideNativeArrows = (container: HTMLElement | null) => {
+      if (!container) return
+
+      // Find all SVG elements that are not our ModernChessArrows
+      const allSvgs = container.querySelectorAll('svg')
+
+      allSvgs.forEach((svg) => {
+        // Skip our ModernChessArrows
+        if (svg.classList.contains('modern-chess-arrows')) {
+          return
+        }
+
+        // Check if it contains arrow elements
+        const hasArrowPath = svg.querySelector('path[stroke]')
+        const hasArrowPolygon = svg.querySelector('polygon[fill]')
+        const hasArrowLine = svg.querySelector('line[stroke]')
+
+        // If it has arrow-like elements and is positioned absolutely, hide it
+        if ((hasArrowPath || hasArrowPolygon || hasArrowLine) &&
+            (svg.getAttribute('style')?.includes('position: absolute') ||
+             svg.getAttribute('style')?.includes('position:absolute'))) {
+          ;(svg as HTMLElement).style.display = 'none'
+          // Also hide all children just in case
+          svg.querySelectorAll('path, polygon, line').forEach((el) => {
+            ;(el as HTMLElement).style.display = 'none'
+          })
+        }
+      })
+    }
+
+    const hideAllNativeArrows = () => {
+      hideNativeArrows(desktopBoardContainerRef.current)
+      hideNativeArrows(mobileBoardContainerRef.current)
+    }
+
+    // Hide arrows immediately
+    hideAllNativeArrows()
+
+    // Use MutationObserver to watch for new arrows being added
+    const observers: MutationObserver[] = []
+
+    if (desktopBoardContainerRef.current) {
+      const observer = new MutationObserver(hideAllNativeArrows)
+      observer.observe(desktopBoardContainerRef.current, {
+        childList: true,
+        subtree: true
+      })
+      observers.push(observer)
+    }
+
+    if (mobileBoardContainerRef.current) {
+      const observer = new MutationObserver(hideAllNativeArrows)
+      observer.observe(mobileBoardContainerRef.current, {
+        childList: true,
+        subtree: true
+      })
+      observers.push(observer)
+    }
+
+    // Also check periodically as a fallback
+    const interval = setInterval(hideAllNativeArrows, 50)
+
+    return () => {
+      observers.forEach(obs => obs.disconnect())
+      clearInterval(interval)
+    }
+  }, [currentPosition, boardWidth])
+
+  // Note: Native arrow hiding is now handled purely by CSS in index.css
+  // DOM manipulation via JS was causing coordinate calculation issues during piece drags
 
   const mobileBoardSize = Math.min(boardWidth, 400)
   const mobileEvaluationBarWidth = Math.max(12, Math.round(mobileBoardSize * 0.04))
@@ -685,14 +818,13 @@ export function UnifiedChessAnalysis({
 
   // Play sound when navigating to a new move
   useEffect(() => {
-    // Don't play sound on initial mount or when going backwards
-    if (prevIndexRef.current === currentIndex || currentIndex === 0) {
-      prevIndexRef.current = currentIndex
+    // Don't play sound on initial mount or if index hasn't changed
+    if (prevIndexRef.current === currentIndex) {
       return
     }
 
-    // Only play sound when moving forward or when there's an actual move
-    if (currentMove && currentIndex > prevIndexRef.current) {
+    // Play sound when navigating to a move (forward or backward)
+    if (currentMove && currentIndex > 0) {
       const soundType = getMoveSoundSimple(currentMove.san)
       playSound(soundType)
     }
@@ -705,19 +837,28 @@ export function UnifiedChessAnalysis({
       <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 lg:p-6 shadow-2xl shadow-black/50 ${className}`}>
         {/* Mobile Layout: Stacked */}
         <div className="flex flex-col gap-4 lg:hidden">
-
-        {/* Mobile: Game Phase Indicator */}
-        {currentMove && (() => {
-          const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
-          const gamePhase = normalizeGamePhase(rawPhase)
-          return (
-            <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/50 w-fit mx-auto">
-              <span className={`text-sm font-semibold ${getGamePhaseColor(gamePhase)}`}>
-                {gamePhase}
-              </span>
+        {/* Mobile: chessdata.app Badge */}
+        <div className="flex items-center justify-center mb-2">
+          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
+                 style={{
+                   background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
+                   animation: 'liquid-glow 4s ease-in-out infinite',
+                 }}>
+              {/* Liquid shimmer effect */}
+              <div className="absolute inset-0 opacity-40"
+                   style={{
+                     background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
+                     animation: 'liquid-shimmer 3s ease-in-out infinite',
+                   }}></div>
+              {/* Floating bubble effect */}
+              <div className="absolute inset-0 opacity-30"
+                   style={{
+                     background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
+                     animation: 'liquid-bubble 4s ease-in-out infinite',
+                   }}></div>
+              <span className="relative z-10">chessdata.app</span>
             </div>
-          )
-        })()}
+        </div>
 
         {/* Mobile: Evaluation Bar + Chess Board */}
         <div className="flex justify-center gap-5">
@@ -738,7 +879,7 @@ export function UnifiedChessAnalysis({
 
           {/* Mobile: Chess Board */}
           <div className="flex-shrink-0">
-            <div className="relative" style={{ width: `${mobileBoardSize}px`, height: `${mobileBoardSize}px` }}>
+            <div ref={mobileBoardContainerRef} className="relative" style={{ width: `${mobileBoardSize}px`, height: `${mobileBoardSize}px` }}>
               <Chessboard
                 id="unified-analysis-board-mobile"
                 position={currentPosition}
@@ -747,17 +888,19 @@ export function UnifiedChessAnalysis({
                 boardOrientation={playerColor}
                 boardWidth={mobileBoardSize}
                 showBoardNotation={true}
+                  onArrowsChange={handleArrowsChange}
+
                 {...getDarkChessBoardTheme('default')}
               />
-              {/* Show arrows unless in follow-up mode (follow-up has its own UI) */}
-              {!isExploringFollowUp && (
-                <ModernChessArrows
-                  arrows={displayArrows}
-                  boardWidth={mobileBoardSize}
-                  boardOrientation={playerColor}
-                  boardId="unified-mobile"
-                />
-              )}
+                {/* Show arrows unless in follow-up mode (follow-up has its own UI) */}
+                {!isExploringFollowUp && (
+                  <ModernChessArrows
+                    arrows={displayArrows}
+                    boardWidth={mobileBoardSize}
+                    boardOrientation={playerColor}
+                    squareSize={mobileBoardSize / 8}
+                  />
+                )}
             </div>
           </div>
 
@@ -841,7 +984,7 @@ export function UnifiedChessAnalysis({
                     {currentMove.san}
                   </h3>
                   <span className="text-xs text-slate-400">
-                    Move {currentMove.moveNumber} • {currentMove.player === 'white' ? 'White' : 'Black'}
+                    Move {currentMove.moveNumber} • {currentMove.isUserMove ? 'You' : 'Opponent'}
                   </span>
                 </div>
                 <button
@@ -1033,46 +1176,52 @@ export function UnifiedChessAnalysis({
                     <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10">
                       <tr className="text-xs uppercase text-slate-400 border-b border-white/10">
                         <th className="w-12 py-2 px-1">No.</th>
-                        <th className="w-1/2 py-2 px-1">White</th>
-                        <th className="w-1/2 py-2 px-1">Black</th>
+                        <th className="w-1/2 py-2 px-1">You</th>
+                        <th className="w-1/2 py-2 px-1">Opponent</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Array.from({ length: Math.ceil(allMoves.length / 2) }).map((_, row) => {
-                        const whiteMove = allMoves[row * 2]
-                        const blackMove = allMoves[row * 2 + 1]
+                        const move1 = allMoves[row * 2]
+                        const move2 = allMoves[row * 2 + 1]
+
+                        // Determine which move is the user's and which is the opponent's
+                        // based on isUserMove flag, not just color (white/black)
+                        const userMove = move1?.isUserMove ? move1 : move2
+                        const opponentMove = move1?.isUserMove ? move2 : move1
+
                         return (
                           <tr key={row} className="border-b border-white/5 last:border-b-0">
                             <td className="py-2 px-1 text-xs text-slate-400 font-medium">{row + 1}</td>
                             <td className="py-2 px-1">
-                              {whiteMove ? (
+                              {userMove ? (
                                 <button
-                                  onClick={() => onMoveNavigation(whiteMove.index + 1)}
+                                  onClick={() => onMoveNavigation(userMove.index + 1)}
                                   className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
-                                    currentIndex === whiteMove.index + 1
+                                    currentIndex === userMove.index + 1
                                       ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
                                       : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
                                   }`}
                                 >
-                                  <span className="text-xs font-medium truncate">{whiteMove.san}</span>
-                                  <MoveClassificationBadge classification={whiteMove.classification} />
+                                  <span className="text-xs font-medium truncate">{userMove.san}</span>
+                                  <MoveClassificationBadge classification={userMove.classification} />
                                 </button>
                               ) : (
                                 <span className="text-slate-600 text-xs">—</span>
                               )}
                             </td>
                             <td className="py-2 px-1">
-                              {blackMove ? (
+                              {opponentMove ? (
                                 <button
-                                  onClick={() => onMoveNavigation(blackMove.index + 1)}
+                                  onClick={() => onMoveNavigation(opponentMove.index + 1)}
                                   className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
-                                    currentIndex === blackMove.index + 1
+                                    currentIndex === opponentMove.index + 1
                                       ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
                                       : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
                                   }`}
                                 >
-                                  <span className="text-xs font-medium truncate">{blackMove.san}</span>
-                                  <MoveClassificationBadge classification={blackMove.classification} />
+                                  <span className="text-xs font-medium truncate">{opponentMove.san}</span>
+                                  <MoveClassificationBadge classification={opponentMove.classification} />
                                 </button>
                               ) : (
                                 <span className="text-slate-600 text-xs">—</span>
@@ -1090,35 +1239,51 @@ export function UnifiedChessAnalysis({
         </div>
 
         {/* Desktop Layout: Side by Side */}
-        <div className="hidden lg:flex gap-8">
+        <div className="hidden lg:flex gap-8 items-start">
         {/* Left: Evaluation Bar */}
-        <div className="flex-shrink-0 flex items-center" style={{ height: `${boardWidth}px` }}>
-          <EvaluationBar
-            score={currentScore}
-            playerColor={playerColor}
-            width={desktopEvaluationBarWidth}
-            className="relative"
-            height={desktopEvaluationBarHeight}
-            offsetTop={desktopEvaluationBarOffset}
-          />
+        <div className="flex-shrink-0 flex flex-col">
+          {/* Spacer to match Game Phase Indicator height */}
+          {currentMove && (
+            <div className="h-[40px] mb-4"></div>
+          )}
+          <div className="flex items-center justify-center" style={{ height: `${boardWidth}px` }}>
+            <EvaluationBar
+              score={currentScore}
+              playerColor={playerColor}
+              width={desktopEvaluationBarWidth}
+              className="relative"
+              height={desktopEvaluationBarHeight}
+              offsetTop={desktopEvaluationBarOffset}
+            />
+          </div>
         </div>
 
         {/* Center: Chess Board */}
-        <div className="flex-shrink-0">
-          {/* Desktop: Game Phase Indicator */}
-          {currentMove && (() => {
-            const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
-            const gamePhase = normalizeGamePhase(rawPhase)
-            return (
-              <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/50 w-fit mx-auto mb-4">
-                <span className={`text-sm font-semibold ${getGamePhaseColor(gamePhase)}`}>
-                  {gamePhase}
-                </span>
-              </div>
-            )
-          })()}
+        <div className="flex-shrink-0 flex flex-col items-center">
+          {/* Desktop: chessdata.app Badge */}
+          <div className="flex items-center justify-center mb-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-4 py-1.5 text-sm uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
+                 style={{
+                   background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
+                   animation: 'liquid-glow 4s ease-in-out infinite',
+                 }}>
+              {/* Liquid shimmer effect */}
+              <div className="absolute inset-0 opacity-40"
+                   style={{
+                     background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
+                     animation: 'liquid-shimmer 3s ease-in-out infinite',
+                   }}></div>
+              {/* Floating bubble effect */}
+              <div className="absolute inset-0 opacity-30"
+                   style={{
+                     background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
+                     animation: 'liquid-bubble 4s ease-in-out infinite',
+                   }}></div>
+              <span className="relative z-10">chessdata.app</span>
+            </div>
+          </div>
 
-          <div className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
+          <div ref={desktopBoardContainerRef} className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
             <Chessboard
               id="unified-analysis-board"
               position={currentPosition}
@@ -1127,17 +1292,19 @@ export function UnifiedChessAnalysis({
               boardOrientation={playerColor}
               boardWidth={boardWidth}
               showBoardNotation={true}
+                  onArrowsChange={handleArrowsChange}
+
               {...getDarkChessBoardTheme('default')}
             />
-            {/* Modern Chess Arrows */}
-            {!isExploringFollowUp && (
-              <ModernChessArrows
-                arrows={displayArrows}
-                boardWidth={boardWidth}
-                boardOrientation={playerColor}
-                boardId="unified-desktop"
-              />
-            )}
+              {/* Modern Chess Arrows */}
+              {!isExploringFollowUp && (
+                <ModernChessArrows
+                  arrows={displayArrows}
+                  boardWidth={boardWidth}
+                  boardOrientation={playerColor}
+                  squareSize={boardWidth / 8}
+                />
+              )}
           </div>
 
           {/* Navigation Controls */}
@@ -1243,9 +1410,19 @@ export function UnifiedChessAnalysis({
                     {/* Show classification badge for normal moves */}
                     {currentMove && (
                       <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getMoveQualityColor(currentMove.classification)}`}>
-                        {currentMove.classification.charAt(0).toUpperCase() + currentMove.classification.slice(1)}
+                        {getClassificationLabel(currentMove.classification)}
                       </span>
                     )}
+                    {/* Show game phase badge */}
+                    {currentMove && (() => {
+                      const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
+                      const gamePhase = normalizeGamePhase(rawPhase)
+                      return (
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold border border-slate-700/50 bg-slate-800/40 ${getGamePhaseColor(gamePhase)}`}>
+                          {gamePhase}
+                        </span>
+                      )
+                    })()}
                   </div>
                 </div>
               </div>
@@ -1253,7 +1430,7 @@ export function UnifiedChessAnalysis({
               {currentMove ? (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
-                    <span>{currentMove.player === 'white' ? 'White move' : 'Black move'}</span>
+                    <span>{currentMove.isUserMove ? 'Your move' : 'Opponent move'}</span>
                     <span className="h-px w-8 bg-white/20" />
                     <span>Move {currentMove.moveNumber}</span>
                   </div>
@@ -1433,52 +1610,58 @@ export function UnifiedChessAnalysis({
                   </thead>
                   <tbody>
                     {Array.from({ length: Math.ceil(allMoves.length / 2) }).map((_, row) => {
-                      const whiteMove = allMoves[row * 2]
-                      const blackMove = allMoves[row * 2 + 1]
+                      const move1 = allMoves[row * 2]
+                      const move2 = allMoves[row * 2 + 1]
+
+                      // Determine which move is the user's and which is the opponent's
+                      // based on isUserMove flag, not just color (white/black)
+                      const userMove = move1?.isUserMove ? move1 : move2
+                      const opponentMove = move1?.isUserMove ? move2 : move1
+
                       return (
                         <tr key={row} className="border-b border-white/10 last:border-b-0">
                           <td className="py-2 pr-2 text-xs text-slate-400">{row + 1}</td>
                           <td className="py-2 pr-2">
-                            {whiteMove ? (
+                            {userMove ? (
                               <button
-                                onClick={() => onMoveNavigation(whiteMove.index + 1)}
+                                onClick={() => onMoveNavigation(userMove.index + 1)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault()
-                                    onMoveNavigation(whiteMove.index + 1)
+                                    onMoveNavigation(userMove.index + 1)
                                   }
                                 }}
                                 className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
-                                  currentIndex === whiteMove.index + 1
+                                  currentIndex === userMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
                                     : 'bg-white/10 text-slate-200 hover:bg-white/20'
                                 }`}
                               >
-                                <span className="text-xs font-medium truncate">{whiteMove.san}</span>
-                                <MoveClassificationBadge classification={whiteMove.classification} />
+                                <span className="text-xs font-medium truncate">{userMove.san}</span>
+                                <MoveClassificationBadge classification={userMove.classification} />
                               </button>
                             ) : (
                               <span className="text-slate-600">—</span>
                             )}
                           </td>
                           <td className="py-2 pr-2">
-                            {blackMove ? (
+                            {opponentMove ? (
                               <button
-                                onClick={() => onMoveNavigation(blackMove.index + 1)}
+                                onClick={() => onMoveNavigation(opponentMove.index + 1)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault()
-                                    onMoveNavigation(blackMove.index + 1)
+                                    onMoveNavigation(opponentMove.index + 1)
                                   }
                                 }}
                                 className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
-                                  currentIndex === blackMove.index + 1
+                                  currentIndex === opponentMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
                                     : 'bg-white/10 text-slate-200 hover:bg-white/20'
                                 }`}
                               >
-                                <span className="text-xs font-medium truncate">{blackMove.san}</span>
-                                <MoveClassificationBadge classification={blackMove.classification} />
+                                <span className="text-xs font-medium truncate">{opponentMove.san}</span>
+                                <MoveClassificationBadge classification={opponentMove.classification} />
                               </button>
                             ) : (
                               <span className="text-slate-600">—</span>

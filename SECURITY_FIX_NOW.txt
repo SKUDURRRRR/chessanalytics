@@ -1,0 +1,63 @@
+======================================================================
+🚨 CRITICAL SECURITY FIX - QUICK REFERENCE
+======================================================================
+
+WHAT'S WRONG:
+✗ RLS is DISABLED on authenticated_users table (exposes user data)
+✗ Unknown view "user_registration_status" exposes auth.users data
+
+WHAT'S AT RISK:
+• User subscription data
+• Stripe customer/subscription IDs
+• Account tiers and status
+
+TIME TO FIX: < 5 minutes
+
+======================================================================
+IMMEDIATE FIX - Copy/paste into Supabase SQL Editor
+======================================================================
+
+-- 1. Re-enable RLS
+ALTER TABLE public.authenticated_users ENABLE ROW LEVEL SECURITY;
+
+-- 2. Drop unsafe view
+DROP VIEW IF EXISTS public.user_registration_status CASCADE;
+
+-- 3. Verify fix
+SELECT
+    'RLS Enabled' as check,
+    CASE WHEN rowsecurity THEN '✅ YES' ELSE '❌ NO' END as status
+FROM pg_tables
+WHERE tablename = 'authenticated_users'
+UNION ALL
+SELECT
+    'Policies Count' as check,
+    COUNT(*)::text || ' policies' as status
+FROM pg_policies
+WHERE tablename = 'authenticated_users'
+UNION ALL
+SELECT
+    'Unsafe View' as check,
+    CASE WHEN COUNT(*) = 0 THEN '✅ REMOVED' ELSE '❌ EXISTS' END as status
+FROM pg_views
+WHERE viewname = 'user_registration_status';
+
+======================================================================
+EXPECTED RESULT:
+======================================================================
+check             | status
+------------------+-----------
+RLS Enabled       | ✅ YES
+Policies Count    | 4 policies
+Unsafe View       | ✅ REMOVED
+
+======================================================================
+AFTER FIX:
+======================================================================
+1. Re-run Supabase linter to verify all errors cleared
+2. Read SECURITY_ISSUES_ANALYSIS.md for full details
+3. Investigate how RLS was disabled
+
+======================================================================
+RISK LEVEL: CRITICAL (but caught early - only 2 days exposure)
+======================================================================
