@@ -113,7 +113,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           const backendData = await UnifiedAnalysisService.getComprehensiveAnalytics(
             userId,
             (platform as 'lichess' | 'chess.com') || 'lichess',
-            10000  // Fetch all games (up to 10,000 limit) for accurate color/opening statistics
+            100  // Use 100 to avoid backend batch fetching timeout
           )
           // Return the full backend response with all the new analytics
           return backendData
