@@ -954,27 +954,6 @@ export default function GameAnalysisPage() {
       const bestMoveSan = bestMoveSanRaw || (move.best_move ? convertUciToSan(fenBefore, move.best_move) : null) || null
       const classification = determineClassification(move)
 
-      // Debug logging for all moves with centipawn loss or suboptimal moves
-      if (import.meta.env.DEV && (
-        (move.centipawn_loss && move.centipawn_loss > 50) ||
-        move.is_inaccuracy || move.is_mistake || move.is_blunder
-      )) {
-        console.log(`[GameAnalysis] Move ${idx + 1} (${move.move_san}):`, {
-          classification,
-          is_inaccuracy_flag: move.is_inaccuracy,
-          is_mistake_flag: move.is_mistake,
-          is_blunder_flag: move.is_blunder,
-          best_move_san_raw: move.best_move_san,
-          best_move_uci: move.best_move,
-          bestMoveSan_computed: bestMoveSan,
-          bestMoveSan_isNull: bestMoveSan === null,
-          bestMoveSan_isEmpty: bestMoveSan === '',
-          centipawn_loss: move.centipawn_loss,
-          is_user_move: isUserMove,
-          fenBefore: fenBefore
-        })
-      }
-
       // Convert UCI move to SAN if move_san is not available or looks incorrect
       // This ensures we always show proper SAN notation like "Rxd5" instead of "exd5"
       let displaySan = move.move_san
@@ -1270,20 +1249,6 @@ export default function GameAnalysisPage() {
     }
 
     // Generate modern arrows for the current move
-    // Debug logging to understand why best move arrows might not show
-    if (import.meta.env.DEV && currentMove.classification !== 'best' && currentMove.classification !== 'brilliant') {
-      console.log('[GameAnalysisPage] Generating arrows for move:', {
-        moveNumber: currentMove.moveNumber,
-        san: currentMove.san,
-        bestMoveSan: currentMove.bestMoveSan,
-        bestMoveSanType: typeof currentMove.bestMoveSan,
-        bestMoveSanLength: currentMove.bestMoveSan?.length,
-        classification: currentMove.classification,
-        isUserMove: currentMove.isUserMove,
-        fen: chess.fen()
-      })
-    }
-
     const arrows = generateModernMoveArrows({
       san: currentMove.san,
       bestMoveSan: currentMove.bestMoveSan,
