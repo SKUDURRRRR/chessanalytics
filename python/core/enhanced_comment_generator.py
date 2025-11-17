@@ -79,6 +79,11 @@ class EnhancedCommentGenerator:
                     "{move_san} is the best move available. {specific_detail}",
                     "Perfect! {move_san} maintains the position well. {specific_detail}",
                     "Excellent! {move_san} shows good chess understanding. {specific_detail}"
+                ],
+                'general': [
+                    "Excellent! {move_san} {specific_detail}",
+                    "Great move! {move_san} {specific_detail}",
+                    "Well played! {move_san} {specific_detail}"
                 ]
             },
             MoveQuality.GREAT: {
@@ -291,7 +296,7 @@ class EnhancedCommentGenerator:
         specific_details = self._generate_specific_details(move_analysis, context, move, board)
 
         # Select appropriate template category
-        template_category = self._select_template_category(move_quality, context, specific_details)
+        template_category = self._select_template_category(move_quality, context, specific_details, move_analysis)
 
         # Get template and fill it with specific details
         template = random.choice(self.comment_templates[move_quality][template_category])
@@ -367,14 +372,68 @@ class EnhancedCommentGenerator:
         # Specific impact details with more descriptive explanations
         centipawn_loss = move_analysis.get('centipawn_loss', 0)
         evaluation_change = context.evaluation_change
+        is_best = move_analysis.get('is_best', False)
+        best_move_san = move_analysis.get('best_move_san', '')
+        best_move = move_analysis.get('best_move', '')
+        best_move_pv = move_analysis.get('best_move_pv', [])
 
-        if centipawn_loss > 0:
+        # Try to get best_move_san if not already available
+        if not best_move_san and best_move:
+            try:
+                best_move_obj = chess.Move.from_uci(best_move)
+                best_move_san = board.san(best_move_obj)
+            except:
+                pass
+
+        # Convert PV from UCI to SAN for display (first move is best move, rest is continuation)
+        # PV is calculated from the position BEFORE the move, so we need to use fen_before
+        pv_san = []
+        if best_move_pv and len(best_move_pv) > 0:
+            try:
+                # Use fen_before if available, otherwise use current board (which is after the move)
+                fen_before = move_analysis.get('fen_before', '')
+                if fen_before:
+                    temp_board = chess.Board(fen_before)
+                else:
+                    # Fallback: assume board is at position before move (shouldn't happen but safe fallback)
+                    temp_board = board.copy()
+                    # Try to undo the move if we're at the position after
+                    try:
+                        temp_board.pop()
+                    except:
+                        pass
+
+                for uci_move in best_move_pv[:8]:  # Show up to 8 moves in PV
+                    try:
+                        move_obj = chess.Move.from_uci(uci_move)
+                        san_move = temp_board.san(move_obj)
+                        pv_san.append(san_move)
+                        temp_board.push(move_obj)
+                    except:
+                        break
+            except:
+                pass
+
+        if centipawn_loss == 0:
+            # Truly the best move - describe it in terms of principles
+            details['specific_detail'] = "This is the strongest move and maintains optimal play"
+        elif centipawn_loss > 0:
+            # Not the best move - show what the best move is and its follow-up sequence
+            best_move_text = f" {best_move_san} was the best move here." if best_move_san else " A better move was available."
+
+            # Add PV follow-up sequence if available
+            pv_text = ""
+            if pv_san and len(pv_san) > 1:
+                # Skip first move (best move itself), show continuation
+                continuation = " ".join(pv_san[1:6])  # Show up to 5 follow-up moves
+                pv_text = f" Follow-up: {continuation}"
+
             if centipawn_loss < 10:
-                details['specific_detail'] = "Loses only a tiny amount compared to the best move; this is nearly perfect play"
+                details['specific_detail'] = f"Excellent move, but loses only a tiny amount compared to the best move.{best_move_text}{pv_text}"
             elif centipawn_loss < 25:
-                details['specific_detail'] = "Loses only a small amount compared to the best move; this is excellent play"
+                details['specific_detail'] = f"Great move, but loses a small amount compared to the best move.{best_move_text}{pv_text}"
             else:
-                details['specific_detail'] = "Loses material compared to the best move"
+                details['specific_detail'] = f"Loses material compared to the best move.{best_move_text}{pv_text}"
         elif evaluation_change > 100:
             details['specific_detail'] = "This is a brilliant sacrifice that gains massive positional compensation and creates winning chances"
         elif evaluation_change > 50:
@@ -402,7 +461,7 @@ class EnhancedCommentGenerator:
         return details
 
     def _select_template_category(self, move_quality: MoveQuality, context: PositionContext,
-                                details: Dict[str, str]) -> str:
+                                details: Dict[str, str], move_analysis: Dict[str, Any]) -> str:
         """Select the most appropriate template category based on context."""
 
         if move_quality == MoveQuality.BRILLIANT:
@@ -414,14 +473,31 @@ class EnhancedCommentGenerator:
                 return 'general'
 
         elif move_quality == MoveQuality.BEST:
-            if context.game_phase == 'opening' and context.move_number <= 15:
-                return 'opening'
-            elif 'tactical_detail' in details:
-                return 'tactical'
-            elif 'positional_detail' in details:
-                return 'positional'
+            # Check if this is truly the best move (centipawn_loss == 0) or just classified as best due to threshold
+            centipawn_loss = move_analysis.get('centipawn_loss', 0)
+            is_truly_best = centipawn_loss == 0
+
+            if not is_truly_best:
+                # Not truly best - use a template that doesn't claim it's "the best move available"
+                if context.game_phase == 'opening' and context.move_number <= 15:
+                    return 'opening'
+                elif 'tactical_detail' in details:
+                    return 'tactical'
+                elif 'positional_detail' in details:
+                    return 'positional'
+                else:
+                    # Use 'general' instead of 'balanced' to avoid "is the best move available" phrasing
+                    return 'general'
             else:
-                return 'balanced'
+                # Truly best move
+                if context.game_phase == 'opening' and context.move_number <= 15:
+                    return 'opening'
+                elif 'tactical_detail' in details:
+                    return 'tactical'
+                elif 'positional_detail' in details:
+                    return 'positional'
+                else:
+                    return 'balanced'
 
         elif move_quality in [MoveQuality.GREAT, MoveQuality.EXCELLENT, MoveQuality.GOOD]:
             if 'tactical_detail' in details:

@@ -24,9 +24,9 @@ INSERT INTO payment_tiers (
     'Perfect for trying out chess analytics',
     0.00,
     0.00,
-    100, -- 100 imports per 24 hours
-    5,   -- 5 analyses per 24 hours
-    '["100 game imports per day", "5 game analyses per day", "Basic chess analytics", "Opening analysis", "Personality scores", "Performance tracking"]'::jsonb,
+    100, -- 100 imports per day
+    5,   -- 5 analyses per day
+    '["5 game analyses per day", "100 game imports per day", "New Games Auto Import", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions"]'::jsonb,
     1,
     true
 ) ON CONFLICT (id) DO UPDATE SET
@@ -61,7 +61,7 @@ INSERT INTO payment_tiers (
     NULL,
     NULL, -- Unlimited imports
     NULL, -- Unlimited analyses
-    '["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Opponent preparation", "Personality insights"]'::jsonb,
+    '["Unlimited game imports", "Unlimited game analyses", "New Games Auto Import", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions"]'::jsonb,
     NULL, -- To be filled in after Stripe setup
     2,
     true
@@ -94,7 +94,7 @@ INSERT INTO payment_tiers (
     49.05, -- ~$4.09/month (25% discount from $5.45)
     NULL, -- Unlimited imports
     NULL, -- Unlimited analyses
-    '["Unlimited game imports", "Unlimited game analyses", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Opponent preparation", "Personality insights", "25% savings vs monthly"]'::jsonb,
+    '["Unlimited game imports", "Unlimited game analyses", "New Games Auto Import", "Advanced chess analytics", "Deep analysis with Stockfish", "Opening repertoire analysis", "Personality insights", "Position exploration", "Tal inspired comments", "Playstyle analysis", "Learning suggestions", "25% savings vs monthly"]'::jsonb,
     NULL, -- To be filled in after Stripe setup
     3,
     true

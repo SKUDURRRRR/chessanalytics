@@ -7,6 +7,7 @@ const envSchema = z.object({
   VITE_SUPABASE_URL: z.string().url('VITE_SUPABASE_URL must be a valid URL'),
   VITE_SUPABASE_ANON_KEY: z.string().min(1, 'VITE_SUPABASE_ANON_KEY is required'),
   VITE_API_URL: z.string().url('VITE_API_URL must be a valid URL').optional(),
+  VITE_ANALYSIS_API_URL: z.string().url('VITE_ANALYSIS_API_URL must be a valid URL').optional(),
 
   // Node environment
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

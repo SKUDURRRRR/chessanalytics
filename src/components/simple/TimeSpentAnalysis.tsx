@@ -3,13 +3,11 @@
  * Displays comprehensive statistics about time spent playing chess
  */
 
-import React, { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Game } from '../../types'
 import {
   calculateTimeSpent,
-  getTimeSpentTrend,
-  type TimeSpentStats,
-  type TimeSpentTrend
+  getTimeSpentTrend
 } from '../../utils/timeSpentCalculator'
 import { getTimeControlColor } from '../../utils/timeControlUtils'
 import { supabase } from '../../lib/supabase'

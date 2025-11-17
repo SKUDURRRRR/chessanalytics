@@ -72,6 +72,9 @@ export default {
           '100%': { transform: 'scale(1)', opacity: '1' },
         },
       },
+      backgroundImage: {
+        'gradient-radial': 'radial-gradient(ellipse at center, var(--tw-gradient-stops))',
+      },
     },
   },
   plugins: [],
