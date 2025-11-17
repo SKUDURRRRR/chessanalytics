@@ -137,6 +137,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
         console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.total_games)
         console.log('Comprehensive analytics full data:', comprehensiveAnalytics)
+        console.log('Opening Color Stats (camelCase):', comprehensiveAnalytics?.openingColorStats)
+        console.log('Opening Color Stats (snake_case):', comprehensiveAnalytics?.opening_color_stats)
+        console.log('Opening Stats:', comprehensiveAnalytics?.openingStats)
         console.log('ELO stats from backend:', eloStats)
         console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
         console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
@@ -205,13 +208,21 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       setData(enhancedData)
       // Merge ELO stats from backend API into comprehensive data
+      // IMPORTANT: Preserve all fields from backend, including openingColorStats
       setComprehensiveData({
         ...comprehensiveAnalytics,
         // Override with backend API data if available (more reliable)
         highestElo: eloStats.highest_elo || comprehensiveAnalytics?.highestElo,
         timeControlWithHighestElo: eloStats.time_control || comprehensiveAnalytics?.timeControlWithHighestElo,
-        totalGames: eloStats.total_games || comprehensiveAnalytics?.totalGames || 0
+        totalGames: eloStats.total_games || comprehensiveAnalytics?.totalGames || 0,
+        // Ensure openingColorStats is preserved (handle both camelCase and snake_case)
+        openingColorStats: comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats || { white: [], black: [] }
       })
+
+      // Debug: Log opening color stats after setting state
+      if (import.meta.env.DEV) {
+        console.log('Setting comprehensiveData with openingColorStats:', comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats)
+      }
       if (comprehensiveAnalytics?.performanceTrends) {
         setSelectedTimeControl(prev => {
           const perTimeControl = comprehensiveAnalytics.performanceTrends.perTimeControl || {}
@@ -369,7 +380,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         },
         timeControlStats: comprehensiveData.timeControlStats || [],
         openingStats: comprehensiveData.openingStats || [],
-        openingColorStats: comprehensiveData.openingColorStats || { white: [], black: [] },
+        openingColorStats: comprehensiveData.openingColorStats || comprehensiveData.opening_color_stats || { white: [], black: [] },
         opponentStats: comprehensiveData.opponentStats || null,
         temporalStats: comprehensiveData.temporalStats || null,
         gameLengthStats: comprehensiveData.gameLengthStats || null
@@ -383,7 +394,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
   const safeTimeControlStats = safeComprehensive?.timeControlStats || []
   const safeOpeningStats = safeComprehensive?.openingStats || []
-  const safeOpeningColorStats = safeComprehensive?.openingColorStats || { white: [], black: [] }
+  const safeOpeningColorStats = safeComprehensive?.openingColorStats || safeComprehensive?.opening_color_stats || { white: [], black: [] }
+
+  // Debug: Log what we're using for opening color stats
+  if (import.meta.env.DEV && safeOpeningColorStats) {
+    console.log('Safe Opening Color Stats:', {
+      whiteCount: safeOpeningColorStats.white?.length || 0,
+      blackCount: safeOpeningColorStats.black?.length || 0,
+      whiteSample: safeOpeningColorStats.white?.slice(0, 3),
+      blackSample: safeOpeningColorStats.black?.slice(0, 3)
+    })
+  }
   const safeOpponentStats = safeComprehensive?.opponentStats || null
   const safeTemporalStats = safeComprehensive?.temporalStats || {
     firstGame: null,

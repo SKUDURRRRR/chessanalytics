@@ -672,9 +672,11 @@ function calculateOpeningColorStats(games: any[]): {
     }>
 } {
   // Filter out games without proper opening names and normalize them
+  // NOTE: We now include 'Unknown' openings to show them in color stats
+  // This allows users to see games that don't have identified openings
   const validGames = games.filter(game => {
     const opening = game.opening_normalized || game.opening_family || game.opening
-    return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
+    return opening && opening.trim() !== '' && opening !== 'null'
   })
 
   if (DEBUG) console.log(`Opening Color Stats: ${validGames.length} games with valid openings out of ${games.length} total games`)
@@ -1575,9 +1577,11 @@ export async function getOpeningColorPerformance(
   }
 
   // Filter out games without proper opening names
+  // NOTE: We now include 'Unknown' openings to show them in color stats
+  // This allows users to see games that don't have identified openings
   const validGames = games.filter(game => {
     const opening = game.opening_normalized || game.opening_family || game.opening
-    return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
+    return opening && opening.trim() !== '' && opening !== 'null'
   })
 
   // Separate games by color

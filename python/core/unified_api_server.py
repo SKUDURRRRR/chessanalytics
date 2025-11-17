@@ -2487,10 +2487,12 @@ async def get_comprehensive_analytics(
         # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
         effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
 
-        # PERFORMANCE: Fetch first 500 games for fast response, rest in background
-        initial_limit = 500
-        needs_background = effective_limit > initial_limit
-        fetch_limit = min(initial_limit, effective_limit) if needs_background else effective_limit
+        # PERFORMANCE: Always fetch all requested games upfront for accurate stats
+        # This ensures Color Performance and Opening Performance show full numbers
+        # Previously only fetched 500 games initially, which caused incomplete stats
+        initial_limit = effective_limit
+        needs_background = False
+        fetch_limit = effective_limit
 
         # Paginate through games in chunks of 1000 (Supabase's max per query)
         # Match the pattern from import_games_smart which works correctly
@@ -2521,7 +2523,7 @@ async def get_comprehensive_analytics(
                 # Optimized: Select only fields needed for analytics (reduces data transfer by 60-70%)
                 games_response = await asyncio.to_thread(
                     lambda start=range_start, end=range_end: db_client.table('games')
-                        .select('id,user_id,platform,provider_game_id,result,color,opening,opening_normalized,my_rating,opponent_rating,time_control,total_moves,opponent_name,played_at')
+                        .select('id,user_id,platform,provider_game_id,result,color,opening,opening_family,opening_normalized,my_rating,opponent_rating,time_control,total_moves,opponent_name,played_at')
                         .eq('user_id', canonical_user_id)
                         .eq('platform', platform)
                         .order('played_at', desc=True)
@@ -2908,19 +2910,52 @@ async def get_comprehensive_analytics(
         # DO NOT remove the _should_count_opening_for_color check or Caro-Kann will appear under White openings
         # games_for_color_stats was already fetched in parallel above
 
+        # FALLBACK: If games_for_color_stats is empty, use the main games list
+        # This ensures we always have data to calculate opening color stats
+        games_to_use_for_color_stats = games_for_color_stats if games_for_color_stats else games
+
+        if DEBUG:
+            print(f"[DEBUG] Using {len(games_to_use_for_color_stats)} games for opening color stats calculation")
+            if not games_for_color_stats:
+                print(f"[DEBUG] WARNING: games_for_color_stats was empty, using main games list as fallback")
+
         opening_color_performance = {'white': {}, 'black': {}}
         filtered_white_openings = {}  # Debug: track what we filtered out for white
-        for game in games_for_color_stats:  # Use all games, not just the limited sample
+        games_without_opening = 0  # Debug: track games without opening data
+        total_games_processed = 0  # Debug: track total games
+
+        for game in games_to_use_for_color_stats:  # Use all games, not just the limited sample
             color = game.get('color')
             if color not in ['white', 'black']:
                 continue
 
-            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+            total_games_processed += 1
+
+            # Get opening with proper fallback - handle empty strings and None
+            opening_normalized = game.get('opening_normalized')
+            opening_raw = game.get('opening')
+            opening_family = game.get('opening_family')
+
+            # Normalize empty strings to None for proper fallback
+            if opening_normalized == '':
+                opening_normalized = None
+            if opening_raw == '':
+                opening_raw = None
+            if opening_family == '':
+                opening_family = None
+
+            # Use opening_normalized first, then opening_family, then opening, then 'Unknown'
+            opening = opening_normalized or opening_family or opening_raw or 'Unknown'
+
+            # Track games without proper opening data
+            if opening == 'Unknown':
+                games_without_opening += 1
 
             # 🚨 CRITICAL FIX: Filter out opponent's openings
             # Only count openings that the player actually chose to play
             # e.g., skip "Caro-Kann Defense" when player is white (that's opponent's opening)
             # This bug has been reported multiple times - see docs/CARO_KANN_FIX_2025.md
+            # NOTE: 'Unknown' openings are considered neutral and should be counted for both colors
             if not _should_count_opening_for_color(opening, color):
                 # Track filtered openings for debugging
                 if color == 'white':
@@ -2990,11 +3025,28 @@ async def get_comprehensive_analytics(
             # Sort by number of games
             opening_color_stats[color].sort(key=lambda x: x['games'], reverse=True)
 
-        # Debug logging for filtered white openings
-        if filtered_white_openings:
-            print(f"[DEBUG] Filtered {len(filtered_white_openings)} unique openings from White stats:")
-            for opening, count in sorted(filtered_white_openings.items(), key=lambda x: x[1], reverse=True)[:10]:
-                print(f"  - {opening}: {count} games")
+        # Debug logging for opening color stats
+        if DEBUG:
+            print(f"[DEBUG] Opening Color Stats Summary:")
+            print(f"  - Total games processed: {total_games_processed}")
+            print(f"  - Games without opening data (Unknown): {games_without_opening}")
+            print(f"  - White openings found: {len(opening_color_performance['white'])}")
+            print(f"  - Black openings found: {len(opening_color_performance['black'])}")
+            print(f"  - White stats entries: {len(opening_color_stats['white'])}")
+            print(f"  - Black stats entries: {len(opening_color_stats['black'])}")
+
+            if filtered_white_openings:
+                print(f"[DEBUG] Filtered {len(filtered_white_openings)} unique openings from White stats:")
+                for opening, count in sorted(filtered_white_openings.items(), key=lambda x: x[1], reverse=True)[:10]:
+                    print(f"  - {opening}: {count} games")
+
+            # Show sample of openings found
+            if opening_color_performance['white']:
+                sample_white = list(opening_color_performance['white'].keys())[:5]
+                print(f"[DEBUG] Sample white openings: {sample_white}")
+            if opening_color_performance['black']:
+                sample_black = list(opening_color_performance['black'].keys())[:5]
+                print(f"[DEBUG] Sample black openings: {sample_black}")
 
         # Highest ELO
         highest_elo = None
