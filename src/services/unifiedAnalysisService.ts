@@ -896,7 +896,8 @@ export class UnifiedAnalysisService {
     }
 
     // Include version in cache key to force refresh after backend fix for full game stats
-    const cacheKey = generateCacheKey('comprehensive', userId, platform, { limit, v: '7' })
+    // Bumped to v8 to force production refresh - production was showing incorrect data (likely cached with different limit)
+    const cacheKey = generateCacheKey('comprehensive', userId, platform, { limit, v: '8' })
 
     // Validator: ensure we have valid comprehensive analytics data
     const comprehensiveValidator = (data: any) => {
@@ -908,8 +909,12 @@ export class UnifiedAnalysisService {
 
     return withCache(cacheKey, async () => {
       try {
+        const url = `${UNIFIED_API_URL}/api/v1/comprehensive-analytics/${userId}/${platform}?limit=${limit}`
+        if (import.meta.env.DEV) {
+          logger.log(`[getComprehensiveAnalytics] Fetching with limit=${limit} from ${url}`)
+        }
         const response = await fetch(
-          `${UNIFIED_API_URL}/api/v1/comprehensive-analytics/${userId}/${platform}?limit=${limit}`,
+          url,
           {
             method: 'GET',
             headers: {
