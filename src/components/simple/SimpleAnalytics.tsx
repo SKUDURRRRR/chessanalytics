@@ -90,7 +90,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       setError(null)
 
       // Optimized data fetching - fetch ALL data in parallel for maximum speed
-      const [analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis, eloStats] = await Promise.all([
+      const [analysisResult, playerStats, gamesData, basicStatsData, analysisOnlyData, deepAnalysis, eloStats] = await Promise.all([
         UnifiedAnalysisService.getAnalysisStats(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
@@ -107,16 +107,23 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           20,  // Reduced from 50 for faster loading
           0
         ),
-        // Use backend API for comprehensive analytics instead of direct Supabase queries
-        // Fetch all games for accurate color/opening stats (backend supports up to 10,000)
+        // Fetch basic stats (color/opening) from ALL games
         (async () => {
-          const backendData = await UnifiedAnalysisService.getComprehensiveAnalytics(
+          const basicStats = await UnifiedAnalysisService.getComprehensiveAnalytics(
             userId,
             (platform as 'lichess' | 'chess.com') || 'lichess',
-            250  // Use 250 - works reliably on both local and production, gives better stats
+            10000  // Fetch all games for accurate color/opening statistics
           )
-          // Return the full backend response with all the new analytics
-          return backendData
+          return basicStats
+        })(),
+        // Fetch analysis data from recent games only
+        (async () => {
+          const analysisData = await UnifiedAnalysisService.getComprehensiveAnalytics(
+            userId,
+            (platform as 'lichess' | 'chess.com') || 'lichess',
+            100  // Only 100 games for analysis data (marathon, records, resignation)
+          )
+          return analysisData
         })(),
         UnifiedAnalysisService.fetchDeepAnalysis(
           userId,
@@ -129,14 +136,25 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         )
       ])
 
+      // Merge comprehensive analytics: color/opening from all games + analysis data from 100 games
+      const comprehensiveAnalytics = {
+        ...basicStatsData,
+        // Override with analysis-specific data from the 100-game fetch
+        marathon_performance: analysisOnlyData?.marathon_performance,
+        personal_records: analysisOnlyData?.personal_records,
+        resignation_timing: analysisOnlyData?.resignation_timing,
+        recent_trend: analysisOnlyData?.recent_trend,
+      }
+
       // Set default values for removed services
       const optimizedEloStats = null
 
       // Only log diagnostics in development mode
       if (import.meta.env.DEV) {
         console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
-        console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.total_games)
-        console.log('Comprehensive analytics full data:', comprehensiveAnalytics)
+        console.log('Basic stats (10000) - total games:', basicStatsData?.total_games)
+        console.log('Analysis data (100) - marathon analyzed:', analysisOnlyData?.marathon_performance?.analyzed_count)
+        console.log('Merged comprehensive analytics:', comprehensiveAnalytics)
         console.log('Opening Color Stats (camelCase):', comprehensiveAnalytics?.openingColorStats)
         console.log('Opening Color Stats (snake_case):', comprehensiveAnalytics?.opening_color_stats)
         console.log('Opening Stats:', comprehensiveAnalytics?.openingStats)
