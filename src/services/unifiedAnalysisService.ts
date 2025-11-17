@@ -896,7 +896,7 @@ export class UnifiedAnalysisService {
     }
 
     // Include version in cache key to force refresh after backend fix for full game stats
-    const cacheKey = generateCacheKey('comprehensive', userId, platform, { limit, v: '2' })
+    const cacheKey = generateCacheKey('comprehensive', userId, platform, { limit, v: '3' })
 
     // Validator: ensure we have valid comprehensive analytics data
     const comprehensiveValidator = (data: any) => {
