@@ -2510,7 +2510,9 @@ async def get_comprehensive_analytics(
             print(f"[DEBUG] canonical_user_id={canonical_user_id}")
 
         # Check cache first
-        cache_key = f"comprehensive_analytics:{canonical_user_id}:{platform}:{limit}"
+        # Added v2 to cache key to force refresh - production was missing Enhanced Game Length Insights data
+        # This ensures fresh data is fetched for both limit=100 and limit=10000 calls
+        cache_key = f"comprehensive_analytics_v2:{canonical_user_id}:{platform}:{limit}"
         cached_data = _get_from_cache(cache_key)
         if cached_data is not None:
             return cached_data
