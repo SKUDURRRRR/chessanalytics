@@ -1421,11 +1421,36 @@ async def get_analysis_stats(
             print("[warn]  Database not available. Returning empty stats.")
             return _get_empty_stats()
 
-        # PERFORMANCE FIX: Limit to recent 100 analyses instead of ALL
+        # PERFORMANCE FIX: Limit to recent 100 analyses instead of ALL for calculating averages
         # Stats are representative with 100 analyses and this is 5-10x faster!
+        # However, we still need the TOTAL count for accurate "Total Games Analyzed" display
         db_client = supabase_service or supabase
         data_source = None  # Track which table the data came from
+        total_count = 0  # Total count of all analyzed games
+
         if db_client:
+            # First, get the total count from the database
+            # Try move_analyses first (where new analyses are saved)
+            count_response = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('*', count='exact', head=True).eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).execute()
+            )
+            total_count = getattr(count_response, 'count', 0) or 0
+
+            # Fallback to unified_analyses if no data in move_analyses
+            if total_count == 0:
+                count_response = await asyncio.to_thread(
+                    lambda: db_client.table('unified_analyses').select('*', count='exact', head=True).eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).execute()
+                )
+                total_count = getattr(count_response, 'count', 0) or 0
+
+            if DEBUG:
+                print(f"[DEBUG] Total analyzed games count: {total_count}")
+
+            # Now fetch the sample of 100 analyses for calculating averages
             # Try move_analyses first (where new analyses are saved)
             response = await asyncio.to_thread(
                 lambda: db_client.table('move_analyses').select('*').eq(
@@ -1460,15 +1485,16 @@ async def get_analysis_stats(
             return _get_mock_stats()
 
         if DEBUG:
-            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses from {data_source}")
+            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses from {data_source} (total count: {total_count})")
 
         # Use the appropriate calculation function based on data source
         # move_analyses has moves_analysis array that needs to be processed
         # unified_analyses has pre-calculated fields
+        # Pass total_count so it can be used for total_games_analyzed
         if data_source == 'move_analyses':
-            result = _calculate_move_analysis_stats(response.data)
+            result = _calculate_move_analysis_stats(response.data, total_count)
         else:
-            result = _calculate_unified_analysis_stats(response.data)
+            result = _calculate_unified_analysis_stats(response.data, total_count)
         _set_in_cache(cache_key, result)
         return result
     except Exception as e:
@@ -9973,12 +9999,19 @@ def _calculate_unified_stats(analyses: list, analysis_type: str) -> AnalysisStat
             brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
             material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
         )
-def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
-    """Calculate statistics from unified_analyses view data."""
+def _calculate_unified_analysis_stats(analyses: list, total_count: int = None) -> AnalysisStats:
+    """Calculate statistics from unified_analyses view data.
+
+    Args:
+        analyses: List of analysis records (limited sample for performance)
+        total_count: Total count of all analyzed games in database. If None, uses len(analyses)
+    """
     if not analyses:
         return _get_empty_stats()
 
-    total_games = len(analyses)
+    # Use total_count if provided, otherwise fall back to sample size
+    total_games = total_count if total_count is not None else len(analyses)
+    sample_size = len(analyses)  # Use sample for calculating averages
 
     # Helper function to safely get numeric values, handling None
     def safe_get_numeric(data, key, default=0):
@@ -9992,15 +10025,16 @@ def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
     total_brilliant_moves = sum(safe_get_numeric(a, 'brilliant_moves') for a in analyses)
     total_material_sacrifices = sum(safe_get_numeric(a, 'material_sacrifices') for a in analyses)
 
-    # Calculate averages, handling None values
-    average_accuracy = round(sum(safe_get_numeric(a, 'accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_opening_accuracy = round(sum(safe_get_numeric(a, 'opening_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_middle_game_accuracy = round(sum(safe_get_numeric(a, 'middle_game_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_endgame_accuracy = round(sum(safe_get_numeric(a, 'endgame_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_aggressiveness_index = round(sum(safe_get_numeric(a, 'aggressiveness_index') for a in analyses) / total_games, 1) if total_games > 0 else 0
+    # Calculate averages from the sample (not total_games)
+    # Averages are calculated from the sample, but total_games_analyzed shows the real total
+    average_accuracy = round(sum(safe_get_numeric(a, 'accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_opening_accuracy = round(sum(safe_get_numeric(a, 'opening_accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_middle_game_accuracy = round(sum(safe_get_numeric(a, 'middle_game_accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_endgame_accuracy = round(sum(safe_get_numeric(a, 'endgame_accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_aggressiveness_index = round(sum(safe_get_numeric(a, 'aggressiveness_index') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
 
     return AnalysisStats(
-        total_games_analyzed=total_games,
+        total_games_analyzed=total_games,  # Use total_count for accurate display
         average_accuracy=average_accuracy,
         total_blunders=total_blunders,
         total_mistakes=total_mistakes,
@@ -10011,14 +10045,14 @@ def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
         average_middle_game_accuracy=average_middle_game_accuracy,
         average_endgame_accuracy=average_endgame_accuracy,
         average_aggressiveness_index=average_aggressiveness_index,
-        blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
-        mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
-        inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
-        brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
-        material_sacrifices_per_game=round(total_material_sacrifices / total_games, 2) if total_games > 0 else 0
+        blunders_per_game=round(total_blunders / sample_size, 2) if sample_size > 0 else 0,
+        mistakes_per_game=round(total_mistakes / sample_size, 2) if sample_size > 0 else 0,
+        inaccuracies_per_game=round(total_inaccuracies / sample_size, 2) if sample_size > 0 else 0,
+        brilliant_moves_per_game=round(total_brilliant_moves / sample_size, 2) if sample_size > 0 else 0,
+        material_sacrifices_per_game=round(total_material_sacrifices / sample_size, 2) if sample_size > 0 else 0
     )
 
-def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
+def _calculate_move_analysis_stats(analyses: list, total_count: int = None) -> AnalysisStats:
     """Calculate statistics from move_analyses table data.
 
     The move_analyses table has both:
@@ -10026,11 +10060,17 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
     2. moves_analysis JSONB array (for detailed move-by-move data)
 
     We prefer stored fields when available, but calculate from moves_analysis as fallback.
+
+    Args:
+        analyses: List of analysis records (limited sample for performance)
+        total_count: Total count of all analyzed games in database. If None, uses len(analyses)
     """
     if not analyses:
         return _get_empty_stats()
 
-    total_games = len(analyses)
+    # Use total_count if provided, otherwise fall back to sample size
+    total_games = total_count if total_count is not None else len(analyses)
+    sample_size = len(analyses)  # Use sample for calculating averages
     total_blunders = 0
     total_mistakes = 0
     total_inaccuracies = 0
@@ -10149,7 +10189,7 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
         final_endgame_accuracy = 0
 
     return AnalysisStats(
-        total_games_analyzed=total_games,
+        total_games_analyzed=total_games,  # Use total_count for accurate display
         average_accuracy=final_accuracy,
         total_blunders=total_blunders,
         total_mistakes=total_mistakes,
@@ -10159,12 +10199,12 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
         average_opening_accuracy=round(total_opening_accuracy / games_with_opening_moves, 1) if games_with_opening_moves > 0 else 0,
         average_middle_game_accuracy=final_middle_game_accuracy,
         average_endgame_accuracy=final_endgame_accuracy,
-        average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0,
-        blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
-        mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
-        inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
-        brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
-        material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
+        average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / sample_size, 1) if sample_size > 0 else 0,
+        blunders_per_game=round(total_blunders / sample_size, 2) if sample_size > 0 else 0,
+        mistakes_per_game=round(total_mistakes / sample_size, 2) if sample_size > 0 else 0,
+        inaccuracies_per_game=round(total_inaccuracies / sample_size, 2) if sample_size > 0 else 0,
+        brilliant_moves_per_game=round(total_brilliant_moves / sample_size, 2) if sample_size > 0 else 0,
+        material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / sample_size, 2) if sample_size > 0 else 0
     )
 
 def _get_empty_stats() -> AnalysisStats:
