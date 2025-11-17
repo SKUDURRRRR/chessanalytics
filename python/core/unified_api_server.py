@@ -2553,16 +2553,20 @@ async def get_comprehensive_analytics(
             if len(games) >= fetch_limit:
                 break
 
-        # Always log if we got no games or if DEBUG is enabled
-        if DEBUG or len(games) == 0:
-            if needs_background:
-                print(f"[DEBUG] Fetched {len(games)} initial games (will fetch remaining {effective_limit - len(games)} in background)")
-            else:
-                print(f"[DEBUG] Fetched {len(games)} games out of {total_games_count} total games (requested limit={limit}, effective_limit={effective_limit})")
-            if len(games) == 0 and total_games_count > 0:
-                print(f"[ERROR] CRITICAL: No games fetched despite {total_games_count} total games available!")
-                print(f"[ERROR] Query params: user_id={canonical_user_id}, platform={platform}")
-                print(f"[ERROR] This indicates the pagination query is failing. Check Supabase connection and query syntax.")
+        # Always log game fetching details for debugging
+        if needs_background:
+            print(f"[DEBUG] Fetched {len(games)} initial games (will fetch remaining {effective_limit - len(games)} in background)")
+        else:
+            print(f"[DEBUG] Fetched {len(games)} games out of {total_games_count} total games (requested limit={limit}, effective_limit={effective_limit})")
+        if len(games) == 0 and total_games_count > 0:
+            print(f"[ERROR] CRITICAL: No games fetched despite {total_games_count} total games available!")
+            print(f"[ERROR] Query params: user_id={canonical_user_id}, platform={platform}")
+            print(f"[ERROR] This indicates the pagination query is failing. Check Supabase connection and query syntax.")
+
+        # Log color stats calculation for verification
+        white_count = len([g for g in games if g.get('color') == 'white'])
+        black_count = len([g for g in games if g.get('color') == 'black'])
+        print(f"[DEBUG] Color stats will be calculated from {len(games)} games: {white_count} white, {black_count} black")
 
         if not games:
             return {
@@ -3290,6 +3294,15 @@ async def get_match_history(
         page_start = (page - 1) * limit
         page_end = page * limit - 1
 
+        # Supabase has a default limit of 1000 rows per query.
+        # If we're requesting rows beyond 1000, we need to explicitly set a higher limit.
+        # Add a small buffer to ensure we can access the requested range.
+        if page_end >= 1000:
+            # Set limit to at least page_end + 1, with a reasonable maximum
+            # This ensures we can access rows beyond the default 1000 limit
+            required_limit = min(page_end + 1, 10000)  # Cap at 10000 for performance
+            query = query.limit(required_limit)
+
         response = query.order('played_at', desc=True).range(page_start, page_end).execute()
 
         if not response.data:
@@ -3518,11 +3531,61 @@ async def get_deep_analysis(
         # Recent games are more relevant for personality analysis
         # IMPORTANT: Also fetch 'id' field for proper game-analysis matching
         games_response = db_client.table('games').select(
-            'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at'
+            'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
         ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
             'my_rating', 'null'
         ).order('played_at', desc=True).limit(100).execute()
         games = games_response.data or []
+
+        # Fetch ALL games for accurate repertoire analysis (win rates, needs_work, etc.)
+        # This ensures repertoire stats match the opening performance stats shown elsewhere
+        all_games_for_repertoire = []
+        page_size = 1000
+        offset = 0
+        while True:
+            try:
+                all_games_response = await asyncio.to_thread(
+                    lambda start=offset, size=page_size: db_client.table('games').select(
+                        'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
+                    ).eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .not_.is_('color', 'null')
+                    .order('played_at', desc=True)
+                    .range(start, start + size - 1)
+                    .execute()
+                )
+                batch = all_games_response.data or []
+                if not batch:
+                    break
+                all_games_for_repertoire.extend(batch)
+                if len(batch) < page_size:
+                    break
+                offset += page_size
+            except Exception as e:
+                if DEBUG:
+                    print(f"[WARN] Error fetching all games for repertoire at offset {offset}: {e}")
+                break
+
+        if DEBUG:
+            print(f"[DEBUG] Fetched {len(games)} games for personality analysis, {len(all_games_for_repertoire)} games for repertoire analysis")
+
+        # Get total games count from database (for accurate stats display)
+        total_games_count = 0
+        try:
+            count_response = await asyncio.to_thread(
+                lambda: db_client.table('games').select('id', count='exact', head=True)
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            total_games_count = getattr(count_response, 'count', 0) or 0
+            if DEBUG:
+                print(f"[DEBUG] Total games in database: {total_games_count}")
+        except Exception as e:
+            if DEBUG:
+                print(f"[WARN] Could not get total games count: {e}")
+            # Fallback to len(games) if count fails
+            total_games_count = len(games)
 
         # Fetch user profile - handle Postgrest 204 errors gracefully
         profile = {}
@@ -3616,10 +3679,10 @@ async def get_deep_analysis(
 
         if not analyses:
             print(f"[INFO] No analyses found for {canonical_user_id} - returning fallback data")
-            result = _build_fallback_deep_analysis(canonical_user_id, games, profile)
+            result = _build_fallback_deep_analysis(canonical_user_id, games, profile, total_games_count)
         else:
             print(f"[INFO] Building deep analysis from {len(analyses)} analysis records")
-            result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile)
+            result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile, all_games_for_repertoire, total_games_count)
 
         # Cache the result before returning (15 minute TTL via CACHE_TTL_SECONDS)
         _set_in_cache(cache_key, result)
@@ -5842,8 +5905,9 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
         if not opening or opening == 'Unknown':
             continue
 
-        # Convert ECO codes to full opening names for better display
-        display_opening = get_opening_name_from_eco_code(opening)
+        # Normalize opening name - handles both ECO codes and already-normalized names
+        # This ensures consistent grouping (e.g., "D00" and "Queen's Pawn Game" both become "Queen's Pawn Game")
+        display_opening = normalize_opening_name(opening)
 
         color = game.get('color')
         result = game.get('result')
@@ -5886,7 +5950,9 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
 
         if win_rate > most_successful['win_rate']:
             most_successful = {'opening': opening, 'win_rate': win_rate, 'games': stats['total']}
-        if win_rate < needs_work['win_rate']:
+        # For needs_work, require at least 5 games to avoid small sample size issues
+        # This prevents misleading recommendations based on very few games
+        if stats['total'] >= 5 and win_rate < needs_work['win_rate']:
             needs_work = {'opening': opening, 'win_rate': win_rate, 'games': stats['total']}
 
     # Calculate style match score
@@ -6043,9 +6109,20 @@ def _generate_quick_tip(mistakes: List[OpeningMistake], patterns: List[str]) -> 
 def _generate_enhanced_opening_analysis(
     games: List[Dict[str, Any]],
     analyses: List[Dict[str, Any]],
-    personality_scores: Dict[str, float]
+    personality_scores: Dict[str, float],
+    all_games_for_repertoire: Optional[List[Dict[str, Any]]] = None
 ) -> EnhancedOpeningAnalysis:
-    """Generate comprehensive enhanced opening analysis."""
+    """Generate comprehensive enhanced opening analysis.
+
+    Args:
+        games: Limited games for personality/mistake analysis (typically 100 most recent)
+        analyses: Analysis records corresponding to games
+        personality_scores: Computed personality scores
+        all_games_for_repertoire: All games for accurate repertoire analysis (optional, defaults to games)
+    """
+    # Use all games for repertoire analysis if provided, otherwise use limited games
+    repertoire_games = all_games_for_repertoire if all_games_for_repertoire is not None else games
+
     opening_win_rate = _compute_opening_win_rate(analyses)
     specific_mistakes = _extract_opening_mistakes(analyses, games)
 
@@ -6053,8 +6130,8 @@ def _generate_enhanced_opening_analysis(
     patterns = _detect_mistake_patterns(specific_mistakes, games)
     quick_tip = _generate_quick_tip(specific_mistakes, patterns)
 
-    style_recommendations = _generate_style_recommendations(personality_scores, games)
-    base_insights = _generate_actionable_insights(personality_scores, games, analyses)
+    style_recommendations = _generate_style_recommendations(personality_scores, repertoire_games)
+    base_insights = _generate_actionable_insights(personality_scores, repertoire_games, analyses)
 
     # Combine patterns, quick tip, and style insights
     actionable_insights = []
@@ -6064,7 +6141,8 @@ def _generate_enhanced_opening_analysis(
     actionable_insights.extend(base_insights)
 
     improvement_trend = _generate_improvement_trend(games, analyses)
-    repertoire_analysis = _analyze_repertoire(games, personality_scores)
+    # Use all games for accurate repertoire analysis (win rates, needs_work, etc.)
+    repertoire_analysis = _analyze_repertoire(repertoire_games, personality_scores)
 
     return EnhancedOpeningAnalysis(
         opening_win_rate=opening_win_rate,
@@ -6080,9 +6158,15 @@ def _build_deep_analysis_response(
     canonical_user_id: str,
     games: List[Dict[str, Any]],
     analyses: List[Dict[str, Any]],
-    profile: Dict[str, Any]
+    profile: Dict[str, Any],
+    all_games_for_repertoire: Optional[List[Dict[str, Any]]] = None,
+    total_games_count: Optional[int] = None
 ) -> DeepAnalysisData:
-    total_games = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')}) or len(games)
+    # Use total_games_count if provided (from database), otherwise fall back to unique analyses or games length
+    if total_games_count is not None and total_games_count > 0:
+        total_games = total_games_count
+    else:
+        total_games = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')}) or len(games)
     accuracy_values = [_coerce_float(analysis.get('best_move_percentage', analysis.get('accuracy'))) for analysis in analyses]
     average_accuracy = _round2(_safe_average([v for v in accuracy_values if v is not None]))
     current_rating = _infer_current_rating(games, profile)
@@ -6102,7 +6186,7 @@ def _build_deep_analysis_response(
         try:
             if DEBUG:
                 print(f"Generating enhanced opening analysis for {len(games)} games, {len(analyses)} analyses")
-            enhanced_opening_analysis = _generate_enhanced_opening_analysis(games, analyses, personality_scores)
+            enhanced_opening_analysis = _generate_enhanced_opening_analysis(games, analyses, personality_scores, all_games_for_repertoire)
             if DEBUG:
                 print(f"Enhanced opening analysis generated successfully")
             if DEBUG and enhanced_opening_analysis:
@@ -6139,9 +6223,11 @@ def _build_deep_analysis_response(
 def _build_fallback_deep_analysis(
     canonical_user_id: str,
     games: List[Dict[str, Any]],
-    profile: Dict[str, Any]
+    profile: Dict[str, Any],
+    total_games_count: Optional[int] = None
 ) -> DeepAnalysisData:
-    total_games = len(games)
+    # Use total_games_count if provided (from database), otherwise fall back to len(games)
+    total_games = total_games_count if total_games_count is not None and total_games_count > 0 else len(games)
     average_accuracy = _round2(_safe_average([
         _coerce_float(game.get('accuracy')) for game in games if _coerce_float(game.get('accuracy')) is not None
     ]))
