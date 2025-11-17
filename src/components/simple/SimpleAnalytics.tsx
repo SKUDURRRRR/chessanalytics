@@ -208,7 +208,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       setData(enhancedData)
       // Merge ELO stats from backend API into comprehensive data
-      // IMPORTANT: Preserve all fields from backend, including openingColorStats
+      // IMPORTANT: Preserve all fields from backend, including openingColorStats and game length insights
       setComprehensiveData({
         ...comprehensiveAnalytics,
         // Override with backend API data if available (more reliable)
@@ -216,7 +216,16 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         timeControlWithHighestElo: eloStats.time_control || comprehensiveAnalytics?.timeControlWithHighestElo,
         totalGames: eloStats.total_games || comprehensiveAnalytics?.totalGames || 0,
         // Ensure openingColorStats is preserved (handle both camelCase and snake_case)
-        openingColorStats: comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats || { white: [], black: [] }
+        openingColorStats: comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats || { white: [], black: [] },
+        // Preserve all game length insight fields (these come from comprehensive analytics endpoint)
+        game_length_distribution: comprehensiveAnalytics?.game_length_distribution,
+        quick_victory_breakdown: comprehensiveAnalytics?.quick_victory_breakdown,
+        marathon_performance: comprehensiveAnalytics?.marathon_performance,
+        recent_trend: comprehensiveAnalytics?.recent_trend,
+        personal_records: comprehensiveAnalytics?.personal_records,
+        patience_rating: comprehensiveAnalytics?.patience_rating,
+        comeback_potential: comprehensiveAnalytics?.comeback_potential,
+        resignation_timing: comprehensiveAnalytics?.resignation_timing
       })
 
       // Debug: Log opening color stats after setting state
@@ -1090,7 +1099,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       <div className="lg:col-span-2">
                         <h5 className="mb-3 text-sm font-semibold text-emerald-200">Personal Records</h5>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-2">
-                          {comprehensiveData.personal_records.fastest_win && (
+                          {comprehensiveData.personal_records.fastest_win && comprehensiveData.personal_records.fastest_win.moves > 0 && (
                             <div
                               className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
                               onClick={() => {
@@ -1122,7 +1131,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                               </div>
                             </div>
                           )}
-                          {comprehensiveData.personal_records.longest_game && (
+                          {comprehensiveData.personal_records.longest_game && comprehensiveData.personal_records.longest_game.moves > 0 && (
                             <div
                               className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
                               onClick={() => {
@@ -1146,13 +1155,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               )}
 
               {/* Resignation Timing - Full Width */}
-              {comprehensiveData?.resignation_timing && (
+              {comprehensiveData?.resignation_timing && comprehensiveData.resignation_timing.my_average_resignation_move != null && (
                 <div className="mt-6 pt-6 border-t border-white/10">
                   <h4 className="mb-3 text-sm font-semibold text-rose-200">Resignation Timing</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <span className="block text-xs text-slate-400 mb-1">Last 50 Games</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">{formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move || 0, 1)} <span className="text-base sm:text-sm">moves</span></div>
+                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">
+                        {comprehensiveData.resignation_timing.recent_average_resignation_move != null
+                          ? `${formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move, 1)} moves`
+                          : 'N/A'}
+                      </div>
                       {comprehensiveData.resignation_timing.insight && (
                         <div className="text-sm text-slate-400 mt-2 flex items-center gap-1">
                           <span>{comprehensiveData.resignation_timing.insight}</span>
@@ -1161,18 +1174,20 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     </div>
                     <div>
                       <span className="block text-xs text-slate-400 mb-1">Baseline</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move || 0, 1)} <span className="text-base sm:text-sm">moves</span></div>
+                      <div className="text-2xl sm:text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} <span className="text-base sm:text-sm">moves</span></div>
                     </div>
                     <div>
                       <span className="block text-xs text-slate-400 mb-1">Change</span>
                       <div className={`text-2xl sm:text-xl font-semibold ${
-                        comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change > 0
+                        comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change > 0
                           ? 'text-amber-300'
-                          : comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change < 0
+                          : comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change < 0
                             ? 'text-emerald-300'
                             : 'text-slate-300'
                       }`}>
-                        {comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change > 0 ? '+' : ''}{comprehensiveData.resignation_timing.change || 0}
+                        {comprehensiveData.resignation_timing.change != null
+                          ? `${comprehensiveData.resignation_timing.change > 0 ? '+' : ''}${comprehensiveData.resignation_timing.change}`
+                          : 'N/A'}
                       </div>
                     </div>
                   </div>

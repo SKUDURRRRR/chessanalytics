@@ -1424,6 +1424,7 @@ async def get_analysis_stats(
         # PERFORMANCE FIX: Limit to recent 100 analyses instead of ALL
         # Stats are representative with 100 analyses and this is 5-10x faster!
         db_client = supabase_service or supabase
+        data_source = None  # Track which table the data came from
         if db_client:
             # Try move_analyses first (where new analyses are saved)
             response = await asyncio.to_thread(
@@ -1432,6 +1433,10 @@ async def get_analysis_stats(
                 ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
             )
 
+            # Track that data came from move_analyses if we have data
+            if response.data and len(response.data) > 0:
+                data_source = 'move_analyses'
+
             # Fallback to unified_analyses if no data in move_analyses
             if not response.data or len(response.data) == 0:
                 response = await asyncio.to_thread(
@@ -1439,9 +1444,13 @@ async def get_analysis_stats(
                         'user_id', canonical_user_id
                     ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
                 )
+                # Track that data came from unified_analyses
+                if response.data and len(response.data) > 0:
+                    data_source = 'unified_analyses'
 
             if os.getenv("DEBUG", "false").lower() == "true":
                 print(f"[DEBUG] Stats query: {len(response.data or [])} records (limited to 100 for performance)")
+                print(f"[DEBUG] Data source: {data_source}")
         else:
             response = type('MockResponse', (), {'data': []})()
 
@@ -1451,9 +1460,15 @@ async def get_analysis_stats(
             return _get_mock_stats()
 
         if DEBUG:
-            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses")
+            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses from {data_source}")
 
-        result = _calculate_unified_analysis_stats(response.data)
+        # Use the appropriate calculation function based on data source
+        # move_analyses has moves_analysis array that needs to be processed
+        # unified_analyses has pre-calculated fields
+        if data_source == 'move_analyses':
+            result = _calculate_move_analysis_stats(response.data)
+        else:
+            result = _calculate_unified_analysis_stats(response.data)
         _set_in_cache(cache_key, result)
         return result
     except Exception as e:
@@ -1999,29 +2014,34 @@ def _compute_personal_records(existing_records: Dict[str, Any], game: Dict[str, 
     result = game.get('result')
     accuracy = analysis.get('accuracy') if analysis else game.get('accuracy')
 
-    if result == 'win':
-        if records.get('fastest_win') is None or total_moves < records['fastest_win']['moves']:
-            records['fastest_win'] = {
-                'moves': total_moves,
-                'game_id': game.get('provider_game_id'),
-                'played_at': game.get('played_at')
-            }
-
-        if accuracy is not None:
-            if records.get('highest_accuracy_win') is None or accuracy > records['highest_accuracy_win']['accuracy']:
-                records['highest_accuracy_win'] = {
-                    'accuracy': round(float(accuracy), 2),
+    # Only process games with valid move counts (> 0)
+    if total_moves > 0:
+        if result == 'win':
+            # Fastest win: only update if we have a valid move count and it's better than existing
+            if records.get('fastest_win') is None or total_moves < records['fastest_win']['moves']:
+                records['fastest_win'] = {
+                    'moves': total_moves,
                     'game_id': game.get('provider_game_id'),
                     'played_at': game.get('played_at')
                 }
 
-    if total_moves and (records.get('longest_game') is None or total_moves > records['longest_game']['moves']):
-        records['longest_game'] = {
-            'moves': total_moves,
-            'result': result,
-            'game_id': game.get('provider_game_id'),
-            'played_at': game.get('played_at')
-        }
+            # Highest accuracy win: only if we have accuracy data
+            if accuracy is not None:
+                if records.get('highest_accuracy_win') is None or accuracy > records['highest_accuracy_win']['accuracy']:
+                    records['highest_accuracy_win'] = {
+                        'accuracy': round(float(accuracy), 2),
+                        'game_id': game.get('provider_game_id'),
+                        'played_at': game.get('played_at')
+                    }
+
+        # Longest game: update if this game is longer than existing record
+        if records.get('longest_game') is None or total_moves > records['longest_game']['moves']:
+            records['longest_game'] = {
+                'moves': total_moves,
+                'result': result,
+                'game_id': game.get('provider_game_id'),
+                'played_at': game.get('played_at')
+            }
 
     return records
 
@@ -3569,23 +3589,57 @@ async def get_deep_analysis(
         if DEBUG:
             print(f"[DEBUG] Fetched {len(games)} games for personality analysis, {len(all_games_for_repertoire)} games for repertoire analysis")
 
-        # Get total games count from database (for accurate stats display)
-        total_games_count = 0
+        # Get count of analyzed games (games with analysis records) from database
+        analyzed_games_count = 0
         try:
-            count_response = await asyncio.to_thread(
-                lambda: db_client.table('games').select('id', count='exact', head=True)
+            # Count unique game_ids from move_analyses table
+            move_analyses_count_response = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('game_id', count='exact', head=True)
                     .eq('user_id', canonical_user_id)
                     .eq('platform', platform)
                     .execute()
             )
-            total_games_count = getattr(count_response, 'count', 0) or 0
+            move_analyses_count = getattr(move_analyses_count_response, 'count', 0) or 0
+
+            # Count unique game_ids from game_analyses table
+            game_analyses_count_response = await asyncio.to_thread(
+                lambda: db_client.table('game_analyses').select('game_id', count='exact', head=True)
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            game_analyses_count = getattr(game_analyses_count_response, 'count', 0) or 0
+
+            # Get unique game_ids from both tables to avoid double-counting
+            # Fetch distinct game_ids from move_analyses
+            move_analyses_games = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('game_id')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            analyzed_game_ids = set()
+            if move_analyses_games.data:
+                analyzed_game_ids.update(row.get('game_id') for row in move_analyses_games.data if row.get('game_id'))
+
+            # Fetch distinct game_ids from game_analyses
+            game_analyses_games = await asyncio.to_thread(
+                lambda: db_client.table('game_analyses').select('game_id')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            if game_analyses_games.data:
+                analyzed_game_ids.update(row.get('game_id') for row in game_analyses_games.data if row.get('game_id'))
+
+            analyzed_games_count = len(analyzed_game_ids)
             if DEBUG:
-                print(f"[DEBUG] Total games in database: {total_games_count}")
+                print(f"[DEBUG] Analyzed games count: {analyzed_games_count} (from {move_analyses_count} move_analyses + {game_analyses_count} game_analyses records)")
         except Exception as e:
             if DEBUG:
-                print(f"[WARN] Could not get total games count: {e}")
-            # Fallback to len(games) if count fails
-            total_games_count = len(games)
+                print(f"[WARN] Could not get analyzed games count: {e}")
+            # Fallback: will be set after analyses are fetched
+            analyzed_games_count = None
 
         # Fetch user profile - handle Postgrest 204 errors gracefully
         profile = {}
@@ -3677,12 +3731,21 @@ async def get_deep_analysis(
                 else:
                     print(f"[DEBUG] First analysis keys: {list(first_analysis.keys())}")
 
+        # If analyzed_games_count wasn't set (query failed), calculate from analyses list
+        if analyzed_games_count is None:
+            if analyses:
+                analyzed_games_count = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')})
+                if DEBUG:
+                    print(f"[DEBUG] Fallback: calculated analyzed games count from analyses list: {analyzed_games_count}")
+            else:
+                analyzed_games_count = 0
+
         if not analyses:
             print(f"[INFO] No analyses found for {canonical_user_id} - returning fallback data")
-            result = _build_fallback_deep_analysis(canonical_user_id, games, profile, total_games_count)
+            result = _build_fallback_deep_analysis(canonical_user_id, games, profile, analyzed_games_count)
         else:
             print(f"[INFO] Building deep analysis from {len(analyses)} analysis records")
-            result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile, all_games_for_repertoire, total_games_count)
+            result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile, all_games_for_repertoire, analyzed_games_count)
 
         # Cache the result before returning (15 minute TTL via CACHE_TTL_SECONDS)
         _set_in_cache(cache_key, result)
@@ -6160,11 +6223,11 @@ def _build_deep_analysis_response(
     analyses: List[Dict[str, Any]],
     profile: Dict[str, Any],
     all_games_for_repertoire: Optional[List[Dict[str, Any]]] = None,
-    total_games_count: Optional[int] = None
+    analyzed_games_count: Optional[int] = None
 ) -> DeepAnalysisData:
-    # Use total_games_count if provided (from database), otherwise fall back to unique analyses or games length
-    if total_games_count is not None and total_games_count > 0:
-        total_games = total_games_count
+    # Use analyzed_games_count if provided (from database), otherwise fall back to unique analyses or games length
+    if analyzed_games_count is not None and analyzed_games_count > 0:
+        total_games = analyzed_games_count
     else:
         total_games = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')}) or len(games)
     accuracy_values = [_coerce_float(analysis.get('best_move_percentage', analysis.get('accuracy'))) for analysis in analyses]
@@ -6224,10 +6287,10 @@ def _build_fallback_deep_analysis(
     canonical_user_id: str,
     games: List[Dict[str, Any]],
     profile: Dict[str, Any],
-    total_games_count: Optional[int] = None
+    analyzed_games_count: Optional[int] = None
 ) -> DeepAnalysisData:
-    # Use total_games_count if provided (from database), otherwise fall back to len(games)
-    total_games = total_games_count if total_games_count is not None and total_games_count > 0 else len(games)
+    # Use analyzed_games_count if provided (from database), otherwise fall back to len(games)
+    total_games = analyzed_games_count if analyzed_games_count is not None and analyzed_games_count > 0 else len(games)
     average_accuracy = _round2(_safe_average([
         _coerce_float(game.get('accuracy')) for game in games if _coerce_float(game.get('accuracy')) is not None
     ]))
@@ -9956,7 +10019,14 @@ def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
     )
 
 def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
-    """Calculate statistics from move_analyses table data."""
+    """Calculate statistics from move_analyses table data.
+
+    The move_analyses table has both:
+    1. Pre-calculated fields (best_move_percentage, middle_game_accuracy, endgame_accuracy)
+    2. moves_analysis JSONB array (for detailed move-by-move data)
+
+    We prefer stored fields when available, but calculate from moves_analysis as fallback.
+    """
     if not analyses:
         return _get_empty_stats()
 
@@ -9966,12 +10036,46 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
     total_inaccuracies = 0
     total_brilliant_moves = 0
     total_opening_accuracy = 0
+    games_with_opening_moves = 0
+
+    # Track accuracies - use stored values when available, calculate from moves otherwise
+    total_accuracy = 0
+    games_with_stored_accuracy = 0
+    total_accuracy_from_moves = 0
+    games_with_accuracy_from_moves = 0
+
+    total_middle_game_accuracy_stored = 0
+    games_with_middle_game_stored = 0
+    total_middle_game_accuracy_calculated = 0
+    games_with_middle_game_calculated = 0
+
+    total_endgame_accuracy_stored = 0
+    games_with_endgame_stored = 0
+    total_endgame_accuracy_calculated = 0
+    games_with_endgame_calculated = 0
 
     for analysis in analyses:
+        # Use stored accuracy if available (preferred)
+        stored_accuracy = analysis.get('best_move_percentage') or analysis.get('accuracy')
+        if stored_accuracy is not None and stored_accuracy > 0:
+            total_accuracy += stored_accuracy
+            games_with_stored_accuracy += 1
+
+        # Count move quality metrics from moves_analysis array
         moves_analysis = analysis.get('moves_analysis', [])
-        if isinstance(moves_analysis, list):
+        if isinstance(moves_analysis, list) and len(moves_analysis) > 0:
+            # Get all user moves for calculation fallbacks
+            user_moves = [move for move in moves_analysis if move.get('is_user_move', False)]
+
+            # Calculate overall accuracy from moves if we don't have stored value
+            if not stored_accuracy and user_moves:
+                centipawn_losses = [move.get('centipawn_loss', 0) for move in user_moves]
+                game_accuracy = _calculate_accuracy_from_cpl(centipawn_losses)
+                total_accuracy_from_moves += game_accuracy
+                games_with_accuracy_from_moves += 1
+
+            # Count move quality metrics
             for move in moves_analysis:
-                # Only count user moves, not opponent moves
                 if move.get('is_user_move', False):
                     if move.get('is_blunder', False):
                         total_blunders += 1
@@ -9982,25 +10086,80 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
                     if move.get('is_brilliant', False):
                         total_brilliant_moves += 1
 
-            # Calculate opening accuracy for this game (user moves only)
+            # Calculate opening accuracy from moves (always calculate, not stored)
             opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 20 and move.get('is_user_move', False)]
             if opening_moves:
-                # Use Chess.com win probability method for opening accuracy
                 opening_accuracy = _calculate_opening_accuracy_chesscom(opening_moves)
                 total_opening_accuracy += opening_accuracy
+                games_with_opening_moves += 1
+
+            # Use stored middle game accuracy if available, otherwise calculate from moves
+            stored_middle_game = analysis.get('middle_game_accuracy')
+            if stored_middle_game is not None and stored_middle_game > 0:
+                total_middle_game_accuracy_stored += stored_middle_game
+                games_with_middle_game_stored += 1
+            elif user_moves:
+                user_move_count = len(user_moves)
+                if user_move_count > 15:
+                    opening_end = min(10, user_move_count)
+                    endgame_start = max(opening_end, user_move_count - 10)
+                    middle_game_moves = user_moves[opening_end:endgame_start]
+                    if middle_game_moves:
+                        middle_game_cpl = [move.get('centipawn_loss', 0) for move in middle_game_moves]
+                        middle_game_acc = _calculate_accuracy_from_cpl(middle_game_cpl)
+                        total_middle_game_accuracy_calculated += middle_game_acc
+                        games_with_middle_game_calculated += 1
+
+            # Use stored endgame accuracy if available, otherwise calculate from moves
+            stored_endgame = analysis.get('endgame_accuracy')
+            if stored_endgame is not None and stored_endgame > 0:
+                total_endgame_accuracy_stored += stored_endgame
+                games_with_endgame_stored += 1
+            elif user_moves:
+                user_move_count = len(user_moves)
+                if user_move_count > 10:
+                    endgame_start = max(0, user_move_count - 10)
+                    endgame_moves = user_moves[endgame_start:]
+                    if endgame_moves:
+                        endgame_cpl = [move.get('centipawn_loss', 0) for move in endgame_moves]
+                        endgame_acc = _calculate_accuracy_from_cpl(endgame_cpl)
+                        total_endgame_accuracy_calculated += endgame_acc
+                        games_with_endgame_calculated += 1
+
+    # Calculate final accuracies - prefer stored, fall back to calculated
+    if games_with_stored_accuracy > 0:
+        final_accuracy = round(total_accuracy / games_with_stored_accuracy, 1)
+    elif games_with_accuracy_from_moves > 0:
+        final_accuracy = round(total_accuracy_from_moves / games_with_accuracy_from_moves, 1)
+    else:
+        final_accuracy = 0
+
+    if games_with_middle_game_stored > 0:
+        final_middle_game_accuracy = round(total_middle_game_accuracy_stored / games_with_middle_game_stored, 1)
+    elif games_with_middle_game_calculated > 0:
+        final_middle_game_accuracy = round(total_middle_game_accuracy_calculated / games_with_middle_game_calculated, 1)
+    else:
+        final_middle_game_accuracy = 0
+
+    if games_with_endgame_stored > 0:
+        final_endgame_accuracy = round(total_endgame_accuracy_stored / games_with_endgame_stored, 1)
+    elif games_with_endgame_calculated > 0:
+        final_endgame_accuracy = round(total_endgame_accuracy_calculated / games_with_endgame_calculated, 1)
+    else:
+        final_endgame_accuracy = 0
 
     return AnalysisStats(
         total_games_analyzed=total_games,
-        average_accuracy=round(sum(a.get('best_move_percentage', a.get('accuracy', 0)) for a in analyses) / total_games, 1),
+        average_accuracy=final_accuracy,
         total_blunders=total_blunders,
         total_mistakes=total_mistakes,
         total_inaccuracies=total_inaccuracies,
         total_brilliant_moves=total_brilliant_moves,
         total_material_sacrifices=sum(a.get('material_sacrifices', 0) for a in analyses),
-        average_opening_accuracy=round(total_opening_accuracy / total_games, 1) if total_games > 0 else 0,
-        average_middle_game_accuracy=round(sum(a.get('middle_game_accuracy', 0) for a in analyses) / total_games, 1),
-        average_endgame_accuracy=round(sum(a.get('endgame_accuracy', 0) for a in analyses) / total_games, 1),
-        average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / total_games, 1),
+        average_opening_accuracy=round(total_opening_accuracy / games_with_opening_moves, 1) if games_with_opening_moves > 0 else 0,
+        average_middle_game_accuracy=final_middle_game_accuracy,
+        average_endgame_accuracy=final_endgame_accuracy,
+        average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / total_games, 1) if total_games > 0 else 0,
         blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
         mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
         inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
