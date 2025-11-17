@@ -67,7 +67,7 @@ export default function SimpleAnalyticsPage() {
   const location = useLocation()
   const [userId, setUserId] = useState('')
   const [platform, setPlatform] = useState<'lichess' | 'chess.com'>('lichess')
-  const [activeTab, setActiveTab] = useState<'analytics' | 'matchHistory'>(
+  const [activeTab, setActiveTab] = useState<'analytics' | 'matchHistory' | 'coach'>(
     'analytics'
   )
   const [refreshKey, setRefreshKey] = useState(0)
@@ -120,7 +120,7 @@ export default function SimpleAnalyticsPage() {
     const routePlatform = params.platform as 'lichess' | 'chess.com'
     const urlUser = searchParams.get('user')
     const urlPlatform = searchParams.get('platform') as 'lichess' | 'chess.com'
-    const urlTab = searchParams.get('tab') as 'analytics' | 'matchHistory'
+    const urlTab = searchParams.get('tab') as 'analytics' | 'matchHistory' | 'coach'
     const urlOpening = searchParams.get('opening')
     const urlOpeningIdentifiers = searchParams.get('openingIdentifiers')
 
@@ -128,6 +128,11 @@ export default function SimpleAnalyticsPage() {
     const finalPlatform = routePlatform || urlPlatform
 
     // Set tab from URL parameter, default to 'analytics' if not specified or invalid
+    // If Coach tab is selected, redirect to Coach route
+    if (urlTab === 'coach' && finalUser && finalPlatform) {
+      navigate(`/coach?userId=${encodeURIComponent(finalUser)}&platform=${finalPlatform}`, { replace: true })
+      return
+    }
     if (urlTab && ['analytics', 'matchHistory'].includes(urlTab)) {
       setActiveTab(urlTab)
     }
@@ -268,7 +273,12 @@ export default function SimpleAnalyticsPage() {
     setLastRefresh(new Date())
   }
 
-  const handleTabChange = (tab: 'analytics' | 'matchHistory') => {
+  const handleTabChange = (tab: 'analytics' | 'matchHistory' | 'coach') => {
+    // Redirect to Coach route if Coach tab is selected
+    if (tab === 'coach') {
+      navigate(`/coach?userId=${encodeURIComponent(userId)}&platform=${platform}`)
+      return
+    }
     setActiveTab(tab)
     // Update URL search params to persist tab state
     const newSearchParams = new URLSearchParams(searchParams)
@@ -657,9 +667,9 @@ export default function SimpleAnalyticsPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="container-responsive space-responsive py-8 content-fade">
         {userId && (
-          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-6 py-6 shadow-2xl shadow-black/60 sm:px-8 sm:py-8">
-            <div className="absolute inset-x-10 top-0 h-40 rounded-full bg-sky-400/10 blur-3xl" />
-            <div className="relative flex flex-col gap-6">
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-6 py-4 shadow-2xl shadow-black/60 sm:px-8 sm:py-5">
+            <div className="absolute inset-x-10 top-0 h-32 rounded-full bg-sky-400/10 blur-3xl" />
+            <div className="relative flex flex-col gap-4">
               <div className="flex items-center justify-end">
                 <button
                   onClick={() => navigate('/')}
@@ -673,11 +683,15 @@ export default function SimpleAnalyticsPage() {
               </div>
 
               <div className="text-center">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-1 text-xs uppercase tracking-wide text-slate-300">
-                  {platform}
+                <div className={`inline-flex items-center gap-2 rounded-full border px-4 py-1 text-xs uppercase tracking-wide font-semibold ${
+                  platform === 'lichess'
+                    ? 'border-yellow-500/30 bg-yellow-600/20 text-yellow-100'
+                    : 'border-green-500/30 bg-green-600/20 text-green-100'
+                }`}>
+                  {platform === 'lichess' ? 'Lichess' : 'Chess.com'}
                 </div>
-                <h1 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">{userId}</h1>
-                <p className="mt-2 text-sm text-slate-300">
+                <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">{userId}</h1>
+                <p className="mt-1.5 text-sm text-slate-300">
                   Import games, trigger fresh Stockfish evaluations, and explore openings without leaving this dashboard.
                 </p>
               </div>
@@ -838,7 +852,7 @@ export default function SimpleAnalyticsPage() {
           </div>
         )}
 
-        <div className="mx-auto flex max-w-md items-center justify-between rounded-full border border-white/10 bg-white/[0.08] p-1 shadow-lg shadow-black/40">
+        <div className="mx-auto flex max-w-2xl items-center justify-between rounded-full border border-white/10 bg-white/[0.08] p-1 shadow-lg shadow-black/40">
           <button
             onClick={() => handleTabChange('analytics')}
             className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
@@ -857,7 +871,17 @@ export default function SimpleAnalyticsPage() {
                 : 'text-slate-300 hover:text-white'
             }`}
           >
-            Match History
+            Games Analysis
+          </button>
+          <button
+            onClick={() => handleTabChange('coach')}
+            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+              activeTab === 'coach'
+                ? 'bg-white text-slate-900 shadow-inner'
+                : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            Coach
           </button>
         </div>
 
@@ -904,6 +928,22 @@ export default function SimpleAnalyticsPage() {
                 }
               }}
             />
+          </ErrorBoundary>
+        )}
+
+        {activeTab === 'coach' && (
+          <ErrorBoundary>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-8 text-center text-slate-200">
+              <div className="text-4xl text-slate-500 mb-4">♔</div>
+              <h3 className="text-lg font-semibold text-white mb-2">Coach</h3>
+              <p className="text-sm text-slate-400 mb-4">Redirecting to Coach dashboard...</p>
+              <button
+                onClick={() => navigate(`/coach?userId=${encodeURIComponent(userId)}&platform=${platform}`)}
+                className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-6 rounded-xl transition-colors"
+              >
+                Go to Coach →
+              </button>
+            </div>
           </ErrorBoundary>
         )}
 

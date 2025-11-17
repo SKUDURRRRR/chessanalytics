@@ -611,7 +611,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6 shadow-xl shadow-black/50">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-xl font-semibold text-white">Match History</h2>
+            <h2 className="text-xl font-semibold text-white">Games Analysis</h2>
             {openingFilter && (
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-200">
                 <span>

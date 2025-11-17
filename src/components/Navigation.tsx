@@ -73,6 +73,10 @@ export function Navigation() {
       // Active for both /simple-analytics and /profile/:userId/:platform routes
       return location.pathname === '/simple-analytics' || location.pathname.startsWith('/profile/')
     }
+    if (path === '/coach') {
+      // Active for all coach routes
+      return location.pathname.startsWith('/coach')
+    }
     return location.pathname === path
   }
 
@@ -201,6 +205,13 @@ export function Navigation() {
                           Pricing
                         </Link>
                         <Link
+                          to="/coach"
+                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Coach
+                        </Link>
+                        <Link
                           to="/profile"
                           className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
                           onClick={() => setIsDropdownOpen(false)}
@@ -242,6 +253,12 @@ export function Navigation() {
                     className={getButtonClass('/pricing')}
                   >
                     Pricing
+                  </Link>
+                  <Link
+                    to="/coach"
+                    className={getButtonClass('/coach')}
+                  >
+                    Coach
                   </Link>
                   <Link
                     to="/profile"

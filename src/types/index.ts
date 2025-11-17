@@ -549,3 +549,121 @@ export interface PeerComparison {
   gamesPlayed: number
   ratingRange: string
 }
+
+// ============================================================================
+// COACH TAB TYPES
+// ============================================================================
+
+// Coach Dashboard Types
+export interface DashboardData {
+  daily_lesson: Lesson | null
+  top_weaknesses: Weakness[]
+  top_strengths: Strength[]
+  recent_activity: Activity[]
+}
+
+export interface Weakness {
+  category: string
+  title: string
+  description: string
+  score: number
+  severity: 'critical' | 'important'
+  recommendation: string
+}
+
+export interface Strength {
+  category: string
+  title: string
+  description: string
+  score: number
+  icon: string
+}
+
+export interface Activity {
+  type: 'lesson_completed' | 'puzzle_attempted' | 'puzzle_solved'
+  title: string
+  completed_at?: string
+  attempted_at?: string
+  was_correct?: boolean
+}
+
+// Lesson Types
+export interface Lesson {
+  id: string
+  user_id: string
+  platform: 'lichess' | 'chess.com'
+  lesson_type: 'opening' | 'tactical' | 'positional' | 'time_management' | 'style'
+  lesson_title: string
+  lesson_description?: string
+  lesson_content: LessonContent
+  priority: 'critical' | 'important' | 'enhancement'
+  estimated_time_minutes: number
+  generated_from_games?: string[]
+  status?: 'not_started' | 'in_progress' | 'completed'
+  completion_percentage?: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface LessonContent {
+  theory?: string
+  common_mistakes?: GameExample[]
+  practice_positions?: PracticePosition[]
+  action_items?: string[]
+}
+
+export interface GameExample {
+  game_id?: string
+  blunders?: number
+  mistakes?: number
+  accuracy?: number
+  tactical_score?: number
+}
+
+export interface PracticePosition {
+  fen: string
+  description: string
+  correct_move?: string
+}
+
+export interface LessonDetail extends Lesson {
+  theory_content: string
+  your_games_examples: GameExample[]
+  practice_positions: PracticePosition[]
+  action_items: string[]
+}
+
+// Puzzle Types
+export interface Puzzle {
+  id: string
+  user_id: string
+  platform: 'lichess' | 'chess.com'
+  fen_position: string
+  correct_move: string
+  solution_line: string[]
+  puzzle_category: 'tactical' | 'positional' | 'opening' | 'endgame' | 'time_management'
+  tactical_theme?: string
+  difficulty_rating: number
+  source_game_id?: string
+  source_move_number?: number
+  explanation: string
+  created_at?: string
+}
+
+export interface PuzzleAttempt {
+  puzzle_id: string
+  was_correct: boolean
+  time_to_solve_seconds?: number
+  moves_made: string[]
+}
+
+export interface PuzzleSet {
+  puzzles: Puzzle[]
+  categorized: {
+    tactical: Puzzle[]
+    positional: Puzzle[]
+    opening: Puzzle[]
+    endgame: Puzzle[]
+  }
+  total: number
+}

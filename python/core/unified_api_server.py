@@ -85,6 +85,11 @@ from .opening_utils import normalize_opening_name, get_opening_name_from_eco_cod
 # Import resilient API client
 from .resilient_api_client import get_api_client as get_resilient_api_client
 
+# Import Coach modules
+from .lesson_generator import LessonGenerator
+from .puzzle_generator import PuzzleGenerator
+from .progress_analyzer import ProgressAnalyzer
+
 # Load environment configuration
 from .config import get_config
 config = get_config()
@@ -10365,6 +10370,650 @@ async def get_payment_tiers():
     except Exception as e:
         logger.error(f"Error getting payment tiers: {e}")
         raise HTTPException(status_code=500, detail="Failed to get payment tiers")
+
+
+# ============================================================================
+# COACH API ENDPOINTS
+# ============================================================================
+
+async def _check_premium_access(user_id: str, platform: Optional[str] = None) -> bool:
+    """
+    Check if user has premium access (pro or enterprise tier).
+
+    Args:
+        user_id: User ID (should be UUID for authenticated users, or username for anonymous)
+        platform: Platform (optional, used for username -> UUID lookup if user_id is username)
+
+    Returns:
+        True if user has premium access, False otherwise
+    """
+    if not supabase_service:
+        return False
+
+    try:
+        # Determine if user_id is a UUID or username
+        is_uuid = len(user_id) == 36 and '-' in user_id and user_id.count('-') == 4
+
+        if is_uuid:
+            # It's already a UUID, use it directly
+            check_user_id = user_id
+        elif platform:
+            # It's a username, need to look up the UUID from user_profiles
+            canonical_username = _canonical_user_id(user_id, platform)
+
+            # Look up auth_user_id from user_profiles
+            profile_result = await asyncio.to_thread(
+                lambda: supabase_service.table('user_profiles')
+                .select('auth_user_id')
+                .eq('platform', platform)
+                .eq('user_id', canonical_username)
+                .limit(1)
+                .execute()
+            )
+
+            if profile_result.data and profile_result.data[0].get('auth_user_id'):
+                check_user_id = profile_result.data[0]['auth_user_id']
+                logger.info(f"Found auth_user_id {check_user_id} for username {canonical_username} on {platform}")
+            else:
+                logger.warning(f"No auth_user_id found for username {canonical_username} on {platform}")
+                return False
+        else:
+            # No platform provided and not a UUID - can't look up
+            logger.warning(f"Cannot check premium access: user_id={user_id} is not a UUID and no platform provided")
+            return False
+
+        # Now check premium status using the UUID
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users')
+            .select('account_tier, subscription_status')
+            .eq('id', check_user_id)
+            .execute()
+        )
+
+        logger.info(f"[PREMIUM_CHECK] Query result for user_id={check_user_id}: found={bool(result.data)}")
+        if result.data:
+            logger.info(f"[PREMIUM_CHECK] User data: {result.data[0]}")
+
+        if not result.data:
+            logger.warning(f"[PREMIUM_CHECK] User not found in authenticated_users table: {check_user_id}")
+            return False
+
+        user = result.data[0]
+        account_tier = user.get('account_tier', 'free')
+        subscription_status = user.get('subscription_status', 'expired')
+
+        # Log for debugging
+        logger.info(f"[PREMIUM_CHECK] user_id={check_user_id}, account_tier={account_tier}, subscription_status={subscription_status}")
+
+        # Premium tiers
+        premium_tiers = ['pro', 'pro_monthly', 'pro_yearly', 'enterprise']
+        is_premium_tier = account_tier in premium_tiers
+        logger.info(f"[PREMIUM_CHECK] is_premium_tier={is_premium_tier} (account_tier={account_tier} in {premium_tiers})")
+
+        # Check subscription is active for premium tiers
+        if is_premium_tier:
+            is_active = subscription_status in ['active', 'trialing']
+            logger.info(f"[PREMIUM_CHECK] subscription_status={subscription_status}, is_active={is_active} (checking if in ['active', 'trialing'])")
+            if is_active:
+                logger.info(f"[PREMIUM_CHECK] ✅ ACCESS GRANTED for user {check_user_id}")
+            else:
+                logger.warning(f"[PREMIUM_CHECK] ❌ ACCESS DENIED: Premium tier but subscription not active. status={subscription_status}")
+            return is_active
+
+        logger.warning(f"[PREMIUM_CHECK] ❌ ACCESS DENIED: Not a premium tier. account_tier={account_tier}, premium_tiers={premium_tiers}")
+        return False
+    except Exception as e:
+        logger.error(f"Error checking premium access: {e}")
+        return False
+
+
+@app.get("/api/v1/coach/dashboard/{user_id}/{platform}")
+async def get_coach_dashboard(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+):
+    """
+    Get Coach dashboard data (daily lesson, weaknesses, strengths).
+    Premium-only endpoint.
+    """
+    # Premium check: Always use authenticated user's UUID if provided
+    logger.info(f"[COACH_DASHBOARD] Request: user_id={user_id}, platform={platform}, auth_user_id={auth_user_id}")
+    if auth_user_id:
+        logger.info(f"[COACH_DASHBOARD] Using auth_user_id for premium check: {auth_user_id}")
+        premium_result = await _check_premium_access(auth_user_id, None)
+        logger.info(f"[COACH_DASHBOARD] Premium check result: {premium_result}")
+        if not premium_result:
+            logger.warning(f"[COACH_DASHBOARD] ❌ Premium check failed for auth_user_id={auth_user_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+        logger.info(f"[COACH_DASHBOARD] ✅ Premium check passed for auth_user_id={auth_user_id}")
+    else:
+        logger.info(f"[COACH_DASHBOARD] No auth_user_id provided, using user_id={user_id} with platform={platform}")
+        premium_result = await _check_premium_access(user_id, platform)
+        logger.info(f"[COACH_DASHBOARD] Premium check result: {premium_result}")
+        if not premium_result:
+            logger.warning(f"[COACH_DASHBOARD] ❌ Premium check failed for user_id={user_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+        logger.info(f"[COACH_DASHBOARD] ✅ Premium check passed for user_id={user_id}")
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+
+        # For Coach tables, we need the authenticated user's UUID, not the canonical username
+        # The lessons/puzzles tables use UUID user_id that references auth.users
+        coach_user_id = auth_user_id if auth_user_id else None
+
+        if not coach_user_id:
+            # Try to look up UUID from user_profiles if auth_user_id not provided
+            profile_result = await asyncio.to_thread(
+                lambda: supabase_service.table('user_profiles')
+                .select('auth_user_id')
+                .eq('platform', platform)
+                .eq('user_id', canonical_user_id)
+                .limit(1)
+                .execute()
+            )
+            if profile_result.data and profile_result.data[0].get('auth_user_id'):
+                coach_user_id = profile_result.data[0]['auth_user_id']
+                logger.info(f"[COACH_DASHBOARD] Found auth_user_id {coach_user_id} for username {canonical_user_id}")
+            else:
+                logger.warning(f"[COACH_DASHBOARD] No auth_user_id found for {canonical_user_id}, cannot generate lessons")
+                coach_user_id = None
+
+        # Initialize Coach modules
+        lesson_generator = LessonGenerator(supabase_service)
+        progress_analyzer = ProgressAnalyzer(supabase_service)
+        puzzle_generator = PuzzleGenerator(supabase_service)
+
+        # Fetch recent game analyses (use canonical_user_id for game_analyses table)
+        analyses_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('*')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(100)
+            .execute()
+        )
+
+        game_analyses = analyses_result.data or []
+
+        # Generate daily lesson (use coach_user_id UUID for lessons table, but pass game_analyses fetched with canonical_user_id)
+        all_lessons = []
+        if coach_user_id:
+            logger.info(f"[COACH_DASHBOARD] Generating lessons for coach_user_id={coach_user_id}, found {len(game_analyses)} game analyses")
+            all_lessons = await lesson_generator.get_all_lessons(
+                coach_user_id,  # UUID for lessons table
+                platform,
+                force_regenerate=False,
+                game_analyses=game_analyses  # Pass pre-fetched analyses (fetched with canonical_user_id)
+            )
+            logger.info(f"[COACH_DASHBOARD] Generated {len(all_lessons)} lessons")
+        daily_lesson = all_lessons[0] if all_lessons else None
+
+        # Get weaknesses and strengths
+        weaknesses = await progress_analyzer.get_user_weaknesses(canonical_user_id, platform, game_analyses)
+        strengths = await progress_analyzer.get_user_strengths(canonical_user_id, platform, game_analyses)
+
+        # Get recent activity (lesson completions, puzzle attempts)
+        recent_activity = []
+
+        # Get recent lesson completions (use coach_user_id UUID)
+        if coach_user_id:
+            try:
+                lesson_progress_result = await asyncio.to_thread(
+                    lambda: supabase_service.table('lesson_progress')
+                    .select('*, lessons(lesson_title)')
+                    .eq('user_id', coach_user_id)
+                    .eq('status', 'completed')
+                    .order('completed_at', desc=True)
+                    .limit(5)
+                    .execute()
+                )
+
+                for progress in (lesson_progress_result.data or [])[:3]:
+                    recent_activity.append({
+                        'type': 'lesson_completed',
+                        'title': progress.get('lessons', {}).get('lesson_title', 'Lesson'),
+                        'completed_at': progress.get('completed_at'),
+                    })
+            except Exception as e:
+                logger.warning(f"[COACH_DASHBOARD] Could not fetch lesson progress: {e}")
+
+            # Get recent puzzle attempts (use coach_user_id UUID)
+            try:
+                puzzle_attempts_result = await asyncio.to_thread(
+                    lambda: supabase_service.table('puzzle_attempts')
+                    .select('*, puzzles(fen_position, puzzle_category)')
+                    .eq('user_id', coach_user_id)
+                    .order('attempted_at', desc=True)
+                    .limit(5)
+                    .execute()
+                )
+
+                for attempt in (puzzle_attempts_result.data or [])[:3]:
+                    puzzle_data = attempt.get('puzzles', {})
+                    # Create a title from FEN or category
+                    category = puzzle_data.get('puzzle_category', 'Tactical')
+                    puzzle_title = f"{category.title()} Puzzle"
+                    recent_activity.append({
+                        'type': 'puzzle_attempted',
+                        'title': puzzle_title,
+                        'attempted_at': attempt.get('attempted_at'),
+                        'was_correct': attempt.get('was_correct', False),
+                    })
+            except Exception as e:
+                logger.warning(f"[COACH_DASHBOARD] Could not fetch puzzle attempts: {e}")
+
+        return {
+            'daily_lesson': daily_lesson,
+            'top_weaknesses': weaknesses,
+            'top_strengths': strengths,
+            'recent_activity': recent_activity,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting coach dashboard: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get coach dashboard")
+
+
+@app.get("/api/v1/coach/lessons/{user_id}/{platform}")
+async def get_lessons(
+    user_id: str,
+    platform: str,
+    category: Optional[str] = Query(None, description="Filter by lesson category"),
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+):
+    """
+    Get all lessons for user with progress status.
+    Premium-only endpoint.
+    """
+    # Premium check: Always use authenticated user's UUID if provided
+    if auth_user_id:
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+    else:
+        if not await _check_premium_access(user_id, platform):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        lesson_generator = LessonGenerator(supabase_service)
+
+        # Get all lessons
+        lessons = await lesson_generator.get_all_lessons(canonical_user_id, platform, force_regenerate=False)
+
+        # Filter by category if provided
+        if category:
+            lessons = [l for l in lessons if l.get('lesson_type') == category]
+
+        return {'lessons': lessons}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting lessons: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get lessons")
+
+
+@app.get("/api/v1/coach/lessons/{lesson_id}")
+async def get_lesson_detail(lesson_id: str):
+    """
+    Get full lesson content by ID.
+    Premium-only endpoint.
+    """
+    logger.info(f"[LESSON_DETAIL] Request for lesson_id={lesson_id}")
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Get lesson
+        lesson_result = await asyncio.to_thread(
+            lambda: supabase_service.table('lessons')
+            .select('*')
+            .eq('id', lesson_id)
+            .execute()
+        )
+
+        logger.info(f"[LESSON_DETAIL] Lesson query result: found={bool(lesson_result.data)}")
+
+        if not lesson_result.data:
+            logger.warning(f"[LESSON_DETAIL] Lesson not found: {lesson_id}")
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        lesson = lesson_result.data[0]
+        lesson_user_id = lesson.get('user_id')
+        logger.info(f"[LESSON_DETAIL] Found lesson '{lesson.get('lesson_title')}' for user_id={lesson_user_id}")
+
+        # Premium check for lesson owner (user_id from lesson is already UUID)
+        premium_check = await _check_premium_access(lesson_user_id, None)
+        logger.info(f"[LESSON_DETAIL] Premium check result: {premium_check}")
+
+        if not premium_check:
+            logger.warning(f"[LESSON_DETAIL] Premium check failed for user_id={lesson_user_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+        # Get progress if exists
+        try:
+            progress_result = await asyncio.to_thread(
+                lambda: supabase_service.table('lesson_progress')
+                .select('*')
+                .eq('user_id', lesson_user_id)
+                .eq('lesson_id', lesson_id)
+                .execute()
+            )
+
+            if progress_result.data:
+                lesson['status'] = progress_result.data[0]['status']
+                lesson['completion_percentage'] = progress_result.data[0]['completion_percentage']
+                logger.info(f"[LESSON_DETAIL] Found progress: status={lesson['status']}, completion={lesson['completion_percentage']}")
+            else:
+                lesson['status'] = 'not_started'
+                lesson['completion_percentage'] = 0
+                logger.info(f"[LESSON_DETAIL] No progress found, using defaults")
+        except Exception as e:
+            logger.warning(f"[LESSON_DETAIL] Could not fetch progress: {e}")
+            lesson['status'] = 'not_started'
+            lesson['completion_percentage'] = 0
+
+        # Ensure lesson_content is a dict if it's stored as JSONB
+        if isinstance(lesson.get('lesson_content'), str):
+            import json
+            try:
+                lesson['lesson_content'] = json.loads(lesson['lesson_content'])
+            except:
+                lesson['lesson_content'] = {}
+
+        logger.info(f"[LESSON_DETAIL] Returning lesson data for lesson_id={lesson_id}")
+        return lesson
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[LESSON_DETAIL] Error getting lesson detail: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get lesson detail: {str(e)}")
+
+
+@app.post("/api/v1/coach/lessons/{lesson_id}/complete")
+async def complete_lesson(lesson_id: str, completion_data: Dict[str, Any]):
+    """
+    Mark lesson as complete and record progress.
+    Premium-only endpoint.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Get lesson to verify ownership
+        lesson_result = await asyncio.to_thread(
+            lambda: supabase_service.table('lessons')
+            .select('user_id')
+            .eq('id', lesson_id)
+            .execute()
+        )
+
+        if not lesson_result.data:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        user_id = lesson_result.data[0]['user_id']
+
+        # Premium check (user_id from lesson is already UUID)
+        if not await _check_premium_access(user_id):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+        # Update or create lesson progress
+        time_spent = completion_data.get('time_spent_seconds', 0)
+        quiz_score = completion_data.get('quiz_score')
+
+        progress_data = {
+            'user_id': user_id,
+            'lesson_id': lesson_id,
+            'status': 'completed',
+            'completion_percentage': 100,
+            'time_spent_seconds': time_spent,
+            'quiz_score': quiz_score,
+            'completed_at': datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Upsert progress
+        await asyncio.to_thread(
+            lambda: supabase_service.table('lesson_progress')
+            .upsert(progress_data, on_conflict='user_id,lesson_id')
+            .execute()
+        )
+
+        return {'success': True, 'message': 'Lesson marked as complete'}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing lesson: {e}")
+        raise HTTPException(status_code=500, detail="Failed to complete lesson")
+
+
+@app.get("/api/v1/coach/puzzles/{user_id}/{platform}")
+async def get_puzzles(
+    user_id: str,
+    platform: str,
+    category: Optional[str] = Query(None, description="Filter by puzzle category"),
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+):
+    """
+    Get personalized puzzles for user.
+    Premium-only endpoint.
+    """
+    # Premium check: Always use authenticated user's UUID if provided
+    if auth_user_id:
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+    else:
+        if not await _check_premium_access(user_id, platform):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        puzzle_generator = PuzzleGenerator(supabase_service)
+
+        # Check if puzzles already exist
+        puzzles_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzles')
+            .select('*')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .execute()
+        )
+
+        puzzles = puzzles_result.data or []
+
+        # Generate puzzles if none exist
+        if not puzzles:
+            # Fetch game analyses
+            analyses_result = await asyncio.to_thread(
+                lambda: supabase_service.table('game_analyses')
+                .select('*')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .order('created_at', desc=True)
+                .limit(100)
+                .execute()
+            )
+
+            game_analyses = analyses_result.data or []
+
+            # Generate puzzles
+            puzzles = await puzzle_generator.generate_puzzles_from_blunders(
+                canonical_user_id, platform, game_analyses
+            )
+
+            # Save puzzles to database
+            for puzzle in puzzles:
+                try:
+                    await asyncio.to_thread(
+                        lambda p=puzzle: supabase_service.table('puzzles')
+                        .insert(p)
+                        .execute()
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to save puzzle: {e}")
+
+        # Filter by category if provided
+        if category:
+            puzzles = [p for p in puzzles if p.get('puzzle_category') == category]
+
+        # Categorize puzzles
+        categorized = puzzle_generator.categorize_puzzles(puzzles)
+
+        return {
+            'puzzles': puzzles,
+            'categorized': categorized,
+            'total': len(puzzles),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting puzzles: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get puzzles")
+
+
+@app.get("/api/v1/coach/puzzles/daily/{user_id}/{platform}")
+async def get_daily_puzzle(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+):
+    """
+    Get or generate one daily puzzle for the user.
+    Premium-only endpoint.
+    """
+    # Premium check: Always use authenticated user's UUID if provided
+    if auth_user_id:
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+    else:
+        if not await _check_premium_access(user_id, platform):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        puzzle_generator = PuzzleGenerator(supabase_service)
+
+        daily_puzzle = await puzzle_generator.get_daily_puzzle(canonical_user_id, platform)
+
+        if not daily_puzzle:
+            raise HTTPException(status_code=404, detail="No daily puzzle available")
+
+        return daily_puzzle
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting daily puzzle: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get daily puzzle")
+
+
+@app.post("/api/v1/coach/puzzles/{puzzle_id}/attempt")
+async def record_puzzle_attempt(puzzle_id: str, attempt_data: Dict[str, Any]):
+    """
+    Record a puzzle solving attempt.
+    Premium-only endpoint.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Get puzzle to verify ownership
+        puzzle_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzles')
+            .select('user_id')
+            .eq('id', puzzle_id)
+            .execute()
+        )
+
+        if not puzzle_result.data:
+            raise HTTPException(status_code=404, detail="Puzzle not found")
+
+        user_id = puzzle_result.data[0]['user_id']
+
+        # Premium check (user_id from lesson is already UUID)
+        if not await _check_premium_access(user_id):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+        # Record attempt
+        was_correct = attempt_data.get('was_correct', False)
+        time_taken = attempt_data.get('time_to_solve_seconds')
+        moves_made = attempt_data.get('moves_made', [])
+
+        attempt_record = {
+            'user_id': user_id,
+            'puzzle_id': puzzle_id,
+            'was_correct': was_correct,
+            'time_to_solve_seconds': time_taken,
+            'moves_made': moves_made,
+        }
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_attempts')
+            .insert(attempt_record)
+            .execute()
+        )
+
+        return {'success': True, 'message': 'Puzzle attempt recorded'}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recording puzzle attempt: {e}")
+        raise HTTPException(status_code=500, detail="Failed to record puzzle attempt")
+
 
 if __name__ == "__main__":
     import argparse
