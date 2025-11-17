@@ -67,6 +67,11 @@
 # PROJECT ARCHITECTURE & STRUCTURE
 # ============================================================================
 
+## Project Location
+- **Main Project Folder**: `C:\my files\Projects\chess-analytics`
+- All file paths in this project are relative to this root directory
+- When referencing project files, use paths relative to this root unless absolute paths are explicitly required
+
 ## Project Overview
 This is a Chess Analytics application with:
 - **Frontend**: React + TypeScript + Vite (port 3000)
