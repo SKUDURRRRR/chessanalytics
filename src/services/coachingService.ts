@@ -24,7 +24,7 @@ export class CoachingService {
    */
   static async getDashboard(userId: string, platform: Platform, authUserId?: string): Promise<DashboardData> {
     try {
-      const url = new URL(`${API_URL}/api/v1/coach/dashboard/${encodeURIComponent(userId)}/${platform}`)
+      const url = new URL(`${API_URL}/api/v1/coach/dashboard/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
       if (authUserId) {
         url.searchParams.append('auth_user_id', authUserId)
       }
@@ -65,7 +65,7 @@ export class CoachingService {
     authUserId?: string
   ): Promise<Lesson[]> {
     try {
-      const url = new URL(`${API_URL}/api/v1/coach/lessons/${encodeURIComponent(userId)}/${platform}`)
+      const url = new URL(`${API_URL}/api/v1/coach/lessons/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
       if (category) {
         url.searchParams.append('category', category)
       }
@@ -185,7 +185,7 @@ export class CoachingService {
     authUserId?: string
   ): Promise<PuzzleSet> {
     try {
-      const url = new URL(`${API_URL}/api/v1/coach/puzzles/${encodeURIComponent(userId)}/${platform}`)
+      const url = new URL(`${API_URL}/api/v1/coach/puzzles/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
       if (category) {
         url.searchParams.append('category', category)
       }
@@ -224,7 +224,7 @@ export class CoachingService {
    */
   static async getDailyPuzzle(userId: string, platform: Platform, authUserId?: string): Promise<Puzzle> {
     try {
-      const url = new URL(`${API_URL}/api/v1/coach/puzzles/daily/${encodeURIComponent(userId)}/${platform}`)
+      const url = new URL(`${API_URL}/api/v1/coach/puzzles/daily/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
       if (authUserId) {
         url.searchParams.append('auth_user_id', authUserId)
       }
