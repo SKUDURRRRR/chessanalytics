@@ -27,21 +27,33 @@ export function TalCoachIcon({ size = 40, className = '' }: TalCoachIconProps) {
       {/* Hair - grey, longer on sides, completely bald on top */}
       {/* Left side hair - longer */}
       <path
-        d="M 25 32 Q 20 28 18 35 Q 20 42 25 50 Q 28 62 32 70 Q 30 72 28 70 Q 26 68 25 65"
+        d="M 25 32 Q 20 28 18 35 Q 20 42 25 50 Q 28 62 32 70 Q 35 78 33 82 Q 30 80 28 78 Q 26 76 24 74"
         fill="#9E9E9E"
       />
       <path
-        d="M 25 32 Q 22 30 20 35 Q 22 40 25 48 Q 28 58 30 65 Q 28 67 26 65"
+        d="M 25 32 Q 22 30 20 35 Q 22 40 25 48 Q 28 58 30 65 Q 32 72 30 78 Q 28 76 26 74"
         fill="#757575"
+      />
+      {/* Additional left side hair layer for more volume */}
+      <path
+        d="M 23 35 Q 20 32 18 38 Q 20 45 23 52 Q 26 60 28 68 Q 30 75 28 80 Q 26 78 24 76"
+        fill="#B0B0B0"
+        opacity="0.7"
       />
       {/* Right side hair - longer */}
       <path
-        d="M 75 32 Q 80 28 82 35 Q 80 42 75 50 Q 72 62 68 70 Q 70 72 72 70 Q 74 68 75 65"
+        d="M 75 32 Q 80 28 82 35 Q 80 42 75 50 Q 72 62 68 70 Q 65 78 67 82 Q 70 80 72 78 Q 74 76 76 74"
         fill="#9E9E9E"
       />
       <path
-        d="M 75 32 Q 78 30 80 35 Q 78 40 75 48 Q 72 58 70 65 Q 72 67 74 65"
+        d="M 75 32 Q 78 30 80 35 Q 78 40 75 48 Q 72 58 70 65 Q 68 72 70 78 Q 72 76 74 74"
         fill="#757575"
+      />
+      {/* Additional right side hair layer for more volume */}
+      <path
+        d="M 77 35 Q 80 32 82 38 Q 80 45 77 52 Q 74 60 72 68 Q 70 75 72 80 Q 74 78 76 76"
+        fill="#B0B0B0"
+        opacity="0.7"
       />
 
       {/* Eyebrows - dark and bushy, simplified */}
