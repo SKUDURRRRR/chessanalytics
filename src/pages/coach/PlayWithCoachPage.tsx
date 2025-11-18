@@ -3,12 +3,13 @@
  * Interactive chess game against AI coach
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Chessboard } from 'react-chessboard'
 import { Chess } from 'chess.js'
 import { CoachingService } from '../../services/coachingService'
 import UnifiedAnalysisService from '../../services/unifiedAnalysisService'
+import { fetchGameAnalysisData } from '../../services/gameAnalysisService'
 import { PremiumGate } from '../../components/coach/PremiumGate'
 import LoadingModal from '../../components/LoadingModal'
 import { GameResultModal } from '../../components/coach/GameResultModal'
@@ -16,8 +17,22 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
 import { config } from '../../lib/config'
 import { supabase } from '../../lib/supabase'
+import { EnhancedMoveCoaching } from '../../components/debug/EnhancedMoveCoaching'
+import { ProcessedMove } from '../GameAnalysisPage'
+import { TalCoachIcon } from '../../components/ui/TalCoachIcon'
 
 type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'resignation'
+
+interface MoveWithComment {
+  moveNumber: number
+  san: string
+  isUserMove: boolean
+  coachingComment?: string
+  processedMove?: ProcessedMove
+}
+
+// Change Map type from number to string (SAN-based)
+type CoachingCommentsMap = Map<string, MoveWithComment>
 
 export default function PlayWithCoachPage() {
   const navigate = useNavigate()
@@ -32,6 +47,70 @@ export default function PlayWithCoachPage() {
   const [error, setError] = useState<string | null>(null)
   const [showResultModal, setShowResultModal] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [analyzedGameId, setAnalyzedGameId] = useState<string | null>(null)
+  const [coachingComments, setCoachingComments] = useState<CoachingCommentsMap>(new Map())
+  const [isLoadingComments, setIsLoadingComments] = useState(false)
+  const [currentMoveComment, setCurrentMoveComment] = useState<MoveWithComment | null>(null)
+  const [isAnalyzingMove, setIsAnalyzingMove] = useState(false)
+  const analyzingMoveRef = useRef<{ moveNumber: number; san: string } | null>(null)
+  const [showInitialGreeting, setShowInitialGreeting] = useState(true)
+  const lastCommentRef = useRef<MoveWithComment | null>(null) // Persist comment through re-renders
+
+  // Sync ref with state to persist comments through re-renders
+  useEffect(() => {
+    if (currentMoveComment) {
+      lastCommentRef.current = currentMoveComment
+    }
+  }, [currentMoveComment])
+
+  // Restore comment from move history if it disappears (e.g., after engine move)
+  useEffect(() => {
+    // Only restore if we don't have a current comment but have moves
+    if (!currentMoveComment && moveHistory.length > 0 && !showInitialGreeting && !isAnalyzingMove) {
+      // Find the last user move and restore its comment
+      for (let i = moveHistory.length - 1; i >= 0; i--) {
+        const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
+        if (isUserMove) {
+          const moveNumber = Math.floor(i / 2) + 1
+          const savedComment = coachingComments.get(moveNumber.toString()) ||
+                              coachingComments.get(moveNumber)
+          if (savedComment) {
+            console.log('[TAL_COACH] 🔄 Auto-restoring comment from move history for move', moveNumber, {
+              hasProcessedMove: !!savedComment.processedMove,
+              commentPreview: savedComment.coachingComment?.substring(0, 50)
+            })
+            setCurrentMoveComment(savedComment)
+            lastCommentRef.current = savedComment
+            break
+          }
+        }
+      }
+    }
+  }, [moveHistory.length, currentMoveComment, coachingComments, playerColor, showInitialGreeting, isAnalyzingMove])
+
+  // Also restore when game state changes (e.g., after engine move)
+  useEffect(() => {
+    if (!currentMoveComment && !lastCommentRef.current && moveHistory.length > 0 && !showInitialGreeting) {
+      // Small delay to ensure state has settled after engine move
+      const timer = setTimeout(() => {
+        for (let i = moveHistory.length - 1; i >= 0; i--) {
+          const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
+          if (isUserMove) {
+            const moveNumber = Math.floor(i / 2) + 1
+            const savedComment = coachingComments.get(moveNumber.toString()) ||
+                                coachingComments.get(moveNumber)
+            if (savedComment && savedComment.processedMove) {
+              console.log('[TAL_COACH] 🔄 Delayed restore after state change for move', moveNumber)
+              setCurrentMoveComment(savedComment)
+              lastCommentRef.current = savedComment
+              break
+            }
+          }
+        }
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [gamePosition, currentMoveComment, coachingComments, moveHistory.length, playerColor, showInitialGreeting])
 
   // Check if it's engine's turn
   // Engine plays the opposite color of the player
@@ -66,9 +145,29 @@ export default function PlayWithCoachPage() {
       })
 
       if (move) {
+        // Preserve current comment in ref before state updates
+        const commentToPreserve = currentMoveComment || lastCommentRef.current
+        if (commentToPreserve) {
+          lastCommentRef.current = commentToPreserve
+          console.log('[TAL_COACH] 💾 Preserving comment before engine move:', commentToPreserve.moveNumber)
+        }
+
         setGame(gameCopy)
         setGamePosition(gameCopy.fen())
         setMoveHistory(prev => [...prev, result.move.san])
+
+        // Restore comment after state update using ref (ensures we have the latest)
+        setTimeout(() => {
+          const preservedComment = lastCommentRef.current
+          // Use functional update to get current state
+          setCurrentMoveComment(prev => {
+            if (!prev && preservedComment) {
+              console.log('[TAL_COACH] 🔄 Restored preserved comment after engine move')
+              return preservedComment
+            }
+            return prev
+          })
+        }, 50) // Small delay to let state settle
 
         // Check game status
         if (gameCopy.isCheckmate()) {
@@ -162,10 +261,23 @@ export default function PlayWithCoachPage() {
       })
 
       if (move) {
+        // Store FEN before move for analysis
+        const fenBefore = game.fen()
+        const moveNumber = Math.floor(moveHistory.length / 2) + 1
+
         // Update game state first
         setGame(gameCopy)
         setGamePosition(gameCopy.fen())
         setMoveHistory(prev => [...prev, move.san])
+
+        // Hide initial greeting once player makes first move
+        if (showInitialGreeting) {
+          setShowInitialGreeting(false)
+        }
+
+        // Analyze the move in real-time for coaching feedback
+        // Don't clear current comment - let it show until new analysis completes
+        analyzeMoveForCoaching(fenBefore, move, moveNumber)
 
         // Check game status
         if (gameCopy.isCheckmate()) {
@@ -198,6 +310,14 @@ export default function PlayWithCoachPage() {
     setMoveHistory([])
     setError(null)
     setShowResultModal(false)
+    setAnalyzedGameId(null)
+    setCoachingComments(new Map())
+    setIsLoadingComments(false)
+    setCurrentMoveComment(null)
+    lastCommentRef.current = null
+    setIsAnalyzingMove(false)
+    analyzingMoveRef.current = null
+    setShowInitialGreeting(true)
   }
 
   // Determine if player won
@@ -209,6 +329,336 @@ export default function PlayWithCoachPage() {
     // If it's the engine's turn now, that means the engine is in checkmate, so player won
     return currentTurn === engineColor
   }, [gameStatus, game, playerColor])
+
+  // Helper to parse UCI move (matches GameAnalysisPage implementation)
+  const parseUciMove = (uci: string) => {
+    // Validate UCI format
+    if (!uci || typeof uci !== 'string' || uci.length < 4) {
+      throw new Error(`Invalid UCI format: ${uci}`)
+    }
+
+    const from = uci.slice(0, 2)
+    const to = uci.slice(2, 4)
+    const promotion = uci.length > 4 ? uci.slice(4) : undefined
+
+    // Validate square format (should be like 'e2', 'a1', etc.)
+    const squareRegex = /^[a-h][1-8]$/
+    if (!squareRegex.test(from) || !squareRegex.test(to)) {
+      throw new Error(`Invalid square format in UCI: ${uci}`)
+    }
+
+    return { from, to, promotion }
+  }
+
+  // Normalize SAN string for matching (remove check/mate symbols, etc.)
+  const normalizeSan = (san: string): string => {
+    if (!san) return ''
+    // Remove check (+), checkmate (#), and other annotations
+    return san.replace(/[+#!?]/g, '').trim()
+  }
+
+  // Analyze a move in real-time for coaching feedback
+  const analyzeMoveForCoaching = useCallback(async (fenBefore: string, move: any, moveNumber: number) => {
+    if (!user?.id) return
+
+    // Check if we're already analyzing this exact move
+    if (analyzingMoveRef.current?.moveNumber === moveNumber &&
+        analyzingMoveRef.current?.san === move.san) {
+      return // Already analyzing this move
+    }
+
+    // Mark that we're analyzing this move
+    analyzingMoveRef.current = { moveNumber, san: move.san }
+    setIsAnalyzingMove(true)
+    // IMPORTANT: Don't clear current comment - let it show until new one is ready
+    // This ensures comments persist through engine moves
+
+    try {
+      // Convert move to UCI format
+      const moveUci = `${move.from}${move.to}${move.promotion || ''}`
+
+      // Call the backend to analyze this single move
+      const baseUrl = config.getApi().baseUrl
+      const response = await fetch(`${baseUrl}/api/v1/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          platform: 'lichess',
+          analysis_type: 'deep',
+          fen: fenBefore,
+          move: moveUci,
+          depth: 8, // Faster analysis for real-time feedback
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('[TAL_COACH] Analysis response:', {
+          hasData: !!data.data,
+          hasMovesAnalysis: !!data.data?.moves_analysis,
+          movesCount: data.data?.moves_analysis?.length || 0,
+          responseKeys: Object.keys(data)
+        })
+
+        // Extract move analysis from response - check multiple possible response formats
+        const movesAnalysis = data.data?.moves_analysis || data.moves_analysis || []
+
+        if (movesAnalysis.length > 0) {
+          const moveAnalysis = movesAnalysis[0]
+          console.log('[TAL_COACH] Move analysis:', {
+            hasComment: !!moveAnalysis.coaching_comment,
+            commentPreview: moveAnalysis.coaching_comment?.substring(0, 50),
+            moveNumber,
+            san: move.san
+          })
+
+          if (moveAnalysis.coaching_comment &&
+              !moveAnalysis.coaching_comment.toLowerCase().includes('centipawn') &&
+              !moveAnalysis.coaching_comment.toLowerCase().includes('cp')) {
+
+            // Create ProcessedMove-like object for display
+            const processedMove: ProcessedMove = {
+              index: moveNumber * 2 - 2,
+              ply: moveNumber * 2 - 1,
+              moveNumber,
+              player: playerColor,
+              isUserMove: true,
+              san: move.san,
+              bestMoveSan: moveAnalysis.best_move_san || null,
+              evaluation: moveAnalysis.evaluation || null,
+              scoreForPlayer: moveAnalysis.evaluation?.value || 0,
+              displayEvaluation: '',
+              centipawnLoss: moveAnalysis.centipawn_loss || null,
+              classification: moveAnalysis.is_brilliant ? 'brilliant' :
+                             moveAnalysis.is_best ? 'best' :
+                             moveAnalysis.is_great ? 'great' :
+                             moveAnalysis.is_excellent ? 'excellent' :
+                             moveAnalysis.is_good ? 'good' :
+                             moveAnalysis.is_acceptable ? 'acceptable' :
+                             moveAnalysis.is_inaccuracy ? 'inaccuracy' :
+                             moveAnalysis.is_mistake ? 'mistake' :
+                             moveAnalysis.is_blunder ? 'blunder' : 'acceptable',
+              explanation: moveAnalysis.explanation || '',
+              fenBefore: fenBefore,
+              fenAfter: '', // Will be set after analysis
+              coachingComment: moveAnalysis.coaching_comment,
+              whatWentRight: moveAnalysis.what_went_right,
+              whatWentWrong: moveAnalysis.what_went_wrong,
+              howToImprove: moveAnalysis.how_to_improve,
+              tacticalInsights: moveAnalysis.tactical_insights,
+              positionalInsights: moveAnalysis.positional_insights,
+              risks: moveAnalysis.risks,
+              benefits: moveAnalysis.benefits,
+              learningPoints: moveAnalysis.learning_points,
+              encouragementLevel: moveAnalysis.encouragement_level,
+              moveQuality: moveAnalysis.move_quality,
+              gamePhase: moveAnalysis.game_phase,
+            }
+
+            const moveComment: MoveWithComment = {
+              moveNumber,
+              san: move.san,
+              isUserMove: true,
+              coachingComment: moveAnalysis.coaching_comment,
+              processedMove,
+            }
+
+            // Always save to comments map first (for persistence)
+            setCoachingComments(prev => {
+              const newMap = new Map(prev)
+              newMap.set(moveNumber.toString(), moveComment) // Use string key for consistency
+              newMap.set(moveNumber, moveComment) // Also keep number key for backward compatibility
+              console.log('[TAL_COACH] 💾 Saved comment to map for move', moveNumber, 'Total comments:', newMap.size)
+              return newMap
+            })
+
+            // Update current comment if this is still the move we're analyzing
+            // BUT: Also update if we don't have a current comment (to restore lost comments)
+            const shouldUpdate = (analyzingMoveRef.current?.moveNumber === moveNumber &&
+                                 analyzingMoveRef.current?.san === move.san) ||
+                                 !currentMoveComment // Always set if we don't have one
+
+            if (shouldUpdate) {
+              console.log('[TAL_COACH] ✅ Setting comment for move', moveNumber, move.san, {
+                matchesRef: analyzingMoveRef.current?.moveNumber === moveNumber,
+                noCurrentComment: !currentMoveComment
+              })
+              setCurrentMoveComment(moveComment)
+              lastCommentRef.current = moveComment // Persist in ref
+            } else {
+              console.log('[TAL_COACH] ⚠️ Comment saved but not displayed - move changed', {
+                expected: analyzingMoveRef.current,
+                actual: { moveNumber, san: move.san },
+                hasCurrentComment: !!currentMoveComment
+              })
+            }
+          } else {
+            console.log('[TAL_COACH] ⚠️ No valid coaching comment in response')
+          }
+        } else {
+          console.log('[TAL_COACH] ⚠️ No moves_analysis in response')
+        }
+      } else {
+        console.error('[TAL_COACH] ❌ API response not OK:', response.status, response.statusText)
+      }
+    } catch (err) {
+      console.error('[TAL_COACH] ❌ Error analyzing move for coaching:', err)
+      // Don't show error to user - just silently fail
+    } finally {
+      // Only clear analyzing state if this is still the current move being analyzed
+      if (analyzingMoveRef.current?.moveNumber === moveNumber &&
+          analyzingMoveRef.current?.san === move.san) {
+        setIsAnalyzingMove(false)
+        analyzingMoveRef.current = null
+      }
+    }
+  }, [user?.id, playerColor])
+
+  // Fetch coaching comments for analyzed game
+  const fetchCoachingComments = useCallback(async (gameId: string) => {
+    if (!user?.id) return
+
+    setIsLoadingComments(true)
+    try {
+      // Poll for analysis to be ready with AI comments
+      let attempts = 0
+      const maxAttempts = 20 // Wait up to 100 seconds (5s intervals)
+      let analysisData = null
+
+      while (attempts < maxAttempts) {
+        try {
+          const result = await fetchGameAnalysisData(user.id, 'lichess', gameId)
+
+          if (result.analysis?.moves_analysis) {
+            const movesWithComments = result.analysis.moves_analysis.filter(
+              (move: any) => move.coaching_comment && move.coaching_comment.trim() &&
+                !move.coaching_comment.toLowerCase().includes('centipawn') &&
+                !move.coaching_comment.toLowerCase().includes('cp')
+            )
+
+            // If we have comments, process them
+            if (movesWithComments.length > 0 || attempts >= 5) {
+              analysisData = result
+              break
+            }
+          }
+
+          // Wait before next attempt
+          await new Promise(resolve => setTimeout(resolve, 5000))
+          attempts++
+        } catch (err) {
+          console.error('Error fetching analysis:', err)
+          attempts++
+          if (attempts >= maxAttempts) break
+          await new Promise(resolve => setTimeout(resolve, 5000))
+        }
+      }
+
+      if (analysisData?.analysis?.moves_analysis) {
+        // Process moves and create a map of SAN strings to coaching data
+        // We use SAN as key because moveHistory stores SAN strings
+        const commentsMap = new Map<string, MoveWithComment>()
+        const moves = analysisData.analysis.moves_analysis
+
+        // Reconstruct move history with coaching data
+        const chess = new Chess()
+        moves.forEach((move: any, idx: number) => {
+          try {
+            const moveNumber = Math.floor(idx / 2) + 1
+            const isUserMove = move.is_user_move ?? (idx % 2 === (playerColor === 'white' ? 0 : 1))
+
+            let moveResult = null
+            let san = move.move_san || ''
+
+            // Try to apply move using UCI first
+            try {
+              const { from, to, promotion } = parseUciMove(move.move)
+              moveResult = chess.move({ from, to, promotion })
+              if (moveResult) {
+                san = moveResult.san
+              }
+            } catch (uciErr) {
+              // If UCI parsing fails, try using SAN directly
+              if (move.move_san) {
+                try {
+                  moveResult = chess.move(move.move_san)
+                  san = move.move_san
+                } catch (sanErr) {
+                  console.warn(`Failed to apply move ${move.move} (SAN: ${move.move_san}):`, sanErr)
+                }
+              }
+            }
+
+            if (moveResult && san) {
+              // Create ProcessedMove-like object for EnhancedMoveCoaching
+              const processedMove: ProcessedMove = {
+                index: idx,
+                ply: idx + 1,
+                moveNumber,
+                player: idx % 2 === 0 ? 'white' : 'black',
+                isUserMove,
+                san: san,
+                bestMoveSan: move.best_move_san || null,
+                evaluation: move.evaluation || null,
+                scoreForPlayer: move.evaluation?.value || 0,
+                displayEvaluation: '',
+                centipawnLoss: move.centipawn_loss || null,
+                classification: move.is_brilliant ? 'brilliant' :
+                               move.is_best ? 'best' :
+                               move.is_great ? 'great' :
+                               move.is_excellent ? 'excellent' :
+                               move.is_good ? 'good' :
+                               move.is_acceptable ? 'acceptable' :
+                               move.is_inaccuracy ? 'inaccuracy' :
+                               move.is_mistake ? 'mistake' :
+                               move.is_blunder ? 'blunder' : 'acceptable',
+                explanation: move.explanation || '',
+                fenBefore: move.fen_before || '',
+                fenAfter: chess.fen(),
+                coachingComment: move.coaching_comment,
+                whatWentRight: move.what_went_right,
+                whatWentWrong: move.what_went_wrong,
+                howToImprove: move.how_to_improve,
+                tacticalInsights: move.tactical_insights,
+                positionalInsights: move.positional_insights,
+                risks: move.risks,
+                benefits: move.benefits,
+                learningPoints: move.learning_points,
+                encouragementLevel: move.encouragement_level,
+                moveQuality: move.move_quality,
+                gamePhase: move.game_phase,
+              }
+
+              // Store by normalized SAN string for matching with moveHistory
+              if (isUserMove && move.coaching_comment) {
+                const normalizedSan = normalizeSan(san)
+                commentsMap.set(normalizedSan, {
+                  moveNumber,
+                  san: san,
+                  isUserMove: true,
+                  coachingComment: move.coaching_comment,
+                  processedMove,
+                })
+                console.log(`[COACHING] Stored comment for move: ${san} (normalized: ${normalizedSan})`)
+              }
+            }
+          } catch (err) {
+            console.warn('Error processing move for coaching:', err)
+          }
+        })
+
+        console.log(`[COACHING] Loaded ${commentsMap.size} coaching comments for game ${gameId}`)
+        setCoachingComments(commentsMap)
+      }
+    } catch (err) {
+      console.error('Error fetching coaching comments:', err)
+    } finally {
+      setIsLoadingComments(false)
+    }
+  }, [user?.id, playerColor])
 
   // Convert game to PGN and analyze it
   const reviewGame = useCallback(async () => {
@@ -281,6 +731,48 @@ ${pgn} ${result}`
       const moveText = fullPgn.split('\n\n')[1] || ''
       const moveCount = moveText.trim().split(/\s+/).filter(m => m && !m.match(/^\d+\./)).length
 
+      // Validate and parse date from headers
+      const parseDate = (dateStr: string | undefined): string => {
+        if (!dateStr) return new Date().toISOString()
+
+        // Check for invalid date patterns
+        if (dateStr.includes('?') || dateStr === '????.??.??' || dateStr.trim() === '') {
+          return new Date().toISOString()
+        }
+
+        // Try to parse the date
+        try {
+          // Handle YYYY.MM.DD format
+          if (dateStr.match(/^\d{4}\.\d{2}\.\d{2}$/)) {
+            const [year, month, day] = dateStr.split('.')
+            const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+            if (!isNaN(date.getTime())) {
+              return date.toISOString()
+            }
+          }
+          // Handle YYYY-MM-DD format
+          else if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const date = new Date(dateStr + 'T00:00:00Z')
+            if (!isNaN(date.getTime())) {
+              return date.toISOString()
+            }
+          }
+          // Try parsing as ISO string
+          else {
+            const date = new Date(dateStr)
+            if (!isNaN(date.getTime())) {
+              return date.toISOString()
+            }
+          }
+        } catch (e) {
+          // If parsing fails, use current date
+        }
+
+        return new Date().toISOString()
+      }
+
+      const playedAt = parseDate(headers.Date)
+
       // Create game record in database first (required for analysis to save)
       const { error: gameError } = await supabase
         .from('games')
@@ -297,18 +789,18 @@ ${pgn} ${result}`
           opponent_rating: null,
           my_rating: null,
           total_moves: moveCount,
-          played_at: headers.Date || new Date().toISOString(),
+          played_at: playedAt,
           opponent_name: userIsWhite ? headers.Black : headers.White,
         }, {
           onConflict: 'user_id,platform,provider_game_id'
         })
 
       if (gameError) {
-        console.warn('Failed to create game record:', gameError)
-        // Continue anyway - backend might create it
+        console.error('Failed to create game record:', gameError)
+        throw new Error(`Failed to create game record: ${gameError.message}`)
       }
 
-      // Save PGN to database
+      // Save PGN to database (only if game creation succeeded)
       const { error: pgnError } = await supabase
         .from('games_pgn')
         .upsert({
@@ -321,31 +813,35 @@ ${pgn} ${result}`
         })
 
       if (pgnError) {
-        console.warn('Failed to save PGN:', pgnError)
-        // Continue anyway - backend might handle it
+        console.error('Failed to save PGN:', pgnError)
+        throw new Error(`Failed to save PGN: ${pgnError.message}`)
       }
 
       // Analyze the game with a specific game_id so it can be saved
       const analysisResponse = await UnifiedAnalysisService.analyze({
         user_id: user.id,
         platform: 'lichess',
-        analysis_type: 'stockfish',
+        analysis_type: 'deep', // Use deep analysis to get coaching comments
         pgn: fullPgn,
         depth: 10,
         game_id: gameId,
         provider_game_id: gameId,
       })
 
+      // Store the game ID for fetching comments
+      setAnalyzedGameId(gameId)
+
       // Check if analysis was successful
-      if (analysisResponse.analysis_id) {
-        // Navigate to analysis page using the analysis_id
-        navigate(`/analysis/lichess/${user.id}/${analysisResponse.analysis_id}`)
-      } else if (analysisResponse.success === false) {
+      if (analysisResponse.analysis_id || analysisResponse.success !== false) {
+        // Start fetching coaching comments
+        fetchCoachingComments(gameId)
+
+        // Optionally navigate to analysis page, or stay here to see comments
+        // Uncomment the line below if you want to navigate immediately
+        // navigate(`/analysis/lichess/${user.id}/${analysisResponse.analysis_id || gameId}`)
+      } else {
         // If analysis failed, show error
         throw new Error(analysisResponse.message || 'Failed to analyze game')
-      } else {
-        // Fallback: try using the game_id even if analysis_id is missing
-        navigate(`/analysis/lichess/${user.id}/${gameId}`)
       }
     } catch (err) {
       console.error('Error reviewing game:', err)
@@ -354,7 +850,7 @@ ${pgn} ${result}`
     } finally {
       setIsAnalyzing(false)
     }
-  }, [game, moveHistory, playerColor, gameStatus, playerWon, user, navigate])
+  }, [game, moveHistory, playerColor, gameStatus, playerWon, user, navigate, fetchCoachingComments])
 
   // Change player color
   const changeColor = () => {
@@ -366,6 +862,12 @@ ${pgn} ${result}`
     setGameStatus('playing')
     setMoveHistory([])
     setError(null)
+    setShowInitialGreeting(true)
+    setCurrentMoveComment(null)
+    lastCommentRef.current = null
+    setIsAnalyzingMove(false)
+    analyzingMoveRef.current = null
+    setCoachingComments(new Map())
   }
 
   // Get status message
@@ -463,6 +965,77 @@ ${pgn} ${result}`
 
             {/* Sidebar */}
             <div className="space-y-6">
+              {/* Initial Tal Coach Greeting */}
+              {showInitialGreeting && moveHistory.length === 0 && (
+                <div className="rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-shrink-0">
+                      <TalCoachIcon size={40} />
+                    </div>
+                    <h2 className="text-xl font-bold text-sky-300">Tal Coach Says</h2>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400">
+                      <p className="text-slate-200 leading-relaxed text-base">
+                        Welcome to the board! The pieces are ready, and so are you. I'm Tal Coach, and I'm here to challenge you and help you grow. Every move is a learning opportunity, and I'll be with you every step of the way. Let's see what magic you create today!
+                      </p>
+                    </div>
+                    <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-4">
+                      <h4 className="text-emerald-300 font-semibold mb-2 flex items-center gap-2">
+                        <span className="text-lg">⚔️</span>
+                        Ready to Play?
+                      </h4>
+                      <p className="text-emerald-100 text-sm leading-relaxed">
+                        Make your first move and I'll analyze it in real-time, giving you instant feedback on your decisions. Whether it's brilliant or needs improvement, we'll learn together!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tal Coach Live Commentary */}
+              {/* Show comment if we have one, regardless of whether we're analyzing a new move */}
+              {/* Use ref as fallback to ensure comment persists through re-renders */}
+              {!showInitialGreeting && (currentMoveComment || lastCommentRef.current) && (currentMoveComment?.processedMove || lastCommentRef.current?.processedMove) && (
+                <div className="rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-shrink-0">
+                      <TalCoachIcon size={40} />
+                    </div>
+                    <h2 className="text-xl font-bold text-sky-300">Tal Coach Says</h2>
+                  </div>
+                  <EnhancedMoveCoaching
+                    move={(currentMoveComment || lastCommentRef.current)!.processedMove!}
+                    className="text-sm"
+                  />
+                </div>
+              )}
+              {/* Show "thinking" only if we're analyzing AND don't have a comment yet */}
+              {!showInitialGreeting && isAnalyzingMove && !currentMoveComment && (
+                <div className="rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0 animate-pulse">
+                      <TalCoachIcon size={40} />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-sky-300">Tal Coach is thinking...</h2>
+                      <p className="text-sm text-slate-400 mt-1">Analyzing your move...</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Show "thinking" overlay if analyzing a new move while previous comment is still visible */}
+              {!showInitialGreeting && isAnalyzingMove && (currentMoveComment || lastCommentRef.current) && (
+                <div className="rounded-3xl border border-amber-400/30 bg-gradient-to-br from-amber-900/20 to-orange-900/20 p-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl animate-pulse">⏳</span>
+                    <div>
+                      <p className="text-sm text-amber-300 font-medium">Analyzing your latest move...</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Game Info */}
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
                 <h2 className="text-xl font-bold text-white mb-4">Game Info</h2>
@@ -491,18 +1064,54 @@ ${pgn} ${result}`
                 </div>
               </div>
 
-              {/* Move History */}
+              {/* Move History with Coaching Comments */}
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
                 <h2 className="text-xl font-bold text-white mb-4">Move History</h2>
                 {moveHistory.length === 0 ? (
                   <p className="text-slate-400 text-sm">No moves yet</p>
                 ) : (
-                  <div className="space-y-1 max-h-64 overflow-y-auto">
-                    {moveHistory.map((move, index) => (
-                      <div key={index} className="text-slate-300 text-sm font-mono">
-                        {index + 1}. {move}
-                      </div>
-                    ))}
+                  <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                    {moveHistory.map((move, index) => {
+                      const moveNumber = Math.floor(index / 2) + 1
+                      const isUserMove = index % 2 === (playerColor === 'white' ? 0 : 1)
+                      // Try to get comment by move number (primary) or normalized SAN (fallback)
+                      const normalizedMove = normalizeSan(move)
+                      const moveComment = coachingComments.get(moveNumber.toString()) ||
+                                          coachingComments.get(moveNumber) ||
+                                          coachingComments.get(normalizedMove)
+                      const hasComment = moveComment && moveComment.isUserMove && isUserMove
+
+                      // Debug logging for first few moves
+                      if (index < 4 && isUserMove) {
+                        console.log(`[COACHING] Move ${index}: ${move} (normalized: ${normalizedMove}), hasComment: ${!!moveComment}`)
+                      }
+
+                      return (
+                        <div key={index} className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-300 text-sm font-mono min-w-[60px]">
+                              {moveNumber}.{index % 2 === 0 ? '' : '..'} {move}
+                            </span>
+                            {isUserMove && (
+                              <span className="text-xs text-slate-500">(You)</span>
+                            )}
+                          </div>
+                          {hasComment && moveComment.processedMove && (
+                            <div className="ml-0 mt-2">
+                              <EnhancedMoveCoaching
+                                move={moveComment.processedMove}
+                                className="text-sm"
+                              />
+                            </div>
+                          )}
+                          {isLoadingComments && isUserMove && !hasComment && (
+                            <div className="ml-0 mt-1 text-xs text-slate-500 italic">
+                              Loading coaching comment...
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
