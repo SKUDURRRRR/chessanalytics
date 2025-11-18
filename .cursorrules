@@ -4,6 +4,27 @@
 ## CRITICAL SAFETY RULES
 
 ### Git Commands - EXTREME CAUTION REQUIRED
+
+#### MANDATORY: Git Repository Verification (Before ANY Git Command)
+- **ALWAYS verify working directory first**: Run `Get-Location` (PowerShell) or `pwd` (bash) to confirm current directory
+- **ALWAYS verify git repository root**: Run `git rev-parse --show-toplevel` before ANY git command
+- **Expected project path**: `C:\my files\Projects\chess-analytics` (Windows) or equivalent
+- **If git root doesn't match project directory**: STOP, navigate to correct directory, then retry
+- **If git root is in user profile** (like `C:\Users\Username`): STOP immediately and warn the user - this is likely the wrong repository
+- **Verification pattern**:
+  ```powershell
+  # Step 1: Check current directory
+  Get-Location  # Should be: C:\my files\Projects\chess-analytics
+
+  # Step 2: Check git root
+  git rev-parse --show-toplevel  # Should be: C:/my files/Projects/chess-analytics
+
+  # Step 3: If either doesn't match, navigate and verify again
+  cd "C:\my files\Projects\chess-analytics"
+  git rev-parse --show-toplevel
+  ```
+
+#### Destructive Git Commands
 - NEVER run `git clean -fd` without explicit user confirmation and understanding of scope
 - ALWAYS run `git clean -nd` first to show what would be deleted
 - ALWAYS verify the repository root with `git rev-parse --show-toplevel` before destructive commands
@@ -25,8 +46,11 @@
 
 ### Project Directory Safety
 - ALWAYS verify you're in the correct project directory before running commands
-- If the current directory seems wrong, ask the user to confirm
-- NEVER assume the working directory is correct for destructive operations
+- **For git commands**: Follow the MANDATORY Git Repository Verification steps above
+- **For other commands**: Use `Get-Location` or `pwd` to verify current directory matches project path
+- If the current directory seems wrong, navigate to correct directory and verify again
+- NEVER assume the working directory is correct for ANY operations
+- **Expected project path**: `C:\my files\Projects\chess-analytics`
 
 ### Recovery Commands
 - When suggesting file recovery, always recommend free tools first (Recuva, PhotoRec, Windows File Recovery)
@@ -58,10 +82,12 @@
 - Never minimize the impact of data loss
 
 ## REMEMBER
+- **ALWAYS verify working directory and git repository root before ANY git command** - this prevents working in the wrong repository
 - It's better to ask too many questions than to cause data loss
 - When in doubt, don't run the command
 - Always prioritize user data safety over convenience
 - A few extra steps to be safe is always worth it
+- Multiple git repositories can exist on a system - always verify you're in the correct one
 
 # ============================================================================
 # PROJECT ARCHITECTURE & STRUCTURE
