@@ -129,7 +129,15 @@ function CoachDashboardContent({
         {/* Quick Links */}
         <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
           <h2 className="text-xl font-bold text-white mb-4">Quick Links</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Link
+              to="/coach/play"
+              className="rounded-xl border border-emerald-400/40 bg-emerald-500/20 p-6 hover:bg-emerald-500/30 transition-colors text-center shadow-[0_0_8px_rgba(16,185,129,0.15)]"
+            >
+              <div className="text-3xl mb-2">♟️</div>
+              <h3 className="font-semibold text-emerald-100 mb-1">Play with Tal Coach</h3>
+              <p className="text-sm text-emerald-200/80">Practice against AI</p>
+            </Link>
             <Link
               to="/coach/lessons"
               className="rounded-xl border border-white/10 bg-white/[0.05] p-6 hover:bg-white/[0.08] transition-colors text-center"

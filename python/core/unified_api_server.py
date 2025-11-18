@@ -11015,6 +11015,149 @@ async def record_puzzle_attempt(puzzle_id: str, attempt_data: Dict[str, Any]):
         raise HTTPException(status_code=500, detail="Failed to record puzzle attempt")
 
 
+class PlayMoveRequest(BaseModel):
+    """Request for getting engine move in play mode."""
+    fen: str = Field(..., description="FEN string of current position")
+    skill_level: int = Field(10, ge=0, le=20, description="Engine skill level (0-20)")
+    depth: int = Field(10, ge=1, le=20, description="Analysis depth")
+
+
+class PlayMoveResponse(BaseModel):
+    """Response with engine move."""
+    move: Dict[str, str]  # {san, uci, from, to}
+    evaluation: Dict[str, Any]
+    pv_line: List[str] = []
+
+
+@app.post("/api/v1/coach/play-move", response_model=PlayMoveResponse)
+async def get_engine_move(
+    request: PlayMoveRequest,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+):
+    """
+    Get engine move for playing against Tal Coach.
+    Premium-only endpoint.
+    """
+    import chess
+    import chess.engine
+    from concurrent.futures import ThreadPoolExecutor
+
+    # Premium check
+    if auth_user_id and not await _check_premium_access(auth_user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Coach features require premium subscription. Please upgrade to access."
+        )
+
+    def _get_engine_move(fen: str, skill_level: int, depth: int):
+        """Synchronous function to get engine move."""
+        try:
+            # Validate FEN
+            board = chess.Board(fen)
+
+            # Get Stockfish path
+            from .analysis_engine import ChessAnalysisEngine, AnalysisConfig
+            temp_engine = ChessAnalysisEngine(config=AnalysisConfig())
+            stockfish_path = temp_engine.stockfish_path
+
+            if not stockfish_path:
+                raise ValueError("Stockfish not available")
+
+            # Get engine move
+            with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
+                # Configure skill level
+                try:
+                    engine.configure({
+                        'Skill Level': skill_level,
+                        'Threads': 1,
+                        'Hash': 64,
+                    })
+                except:
+                    pass  # Some engines don't support all options
+
+                # Get best move
+                result = engine.play(board, chess.engine.Limit(depth=depth))
+                move = result.move
+
+                # Get evaluation and PV
+                info = engine.analyse(board, chess.engine.Limit(depth=depth))
+                score = info.get("score")
+                eval_dict = {"type": "cp", "value": 0, "score_for_white": 0}
+
+                if score:
+                    if score.is_mate():
+                        mate_value = score.relative.mate()
+                        score_for_white = 10000 if mate_value > 0 else -10000
+                        if not board.turn:
+                            score_for_white = -score_for_white
+                        eval_dict = {
+                            "type": "mate",
+                            "value": mate_value,
+                            "score_for_white": score_for_white / 100
+                        }
+                    else:
+                        cp_value = score.relative.score()
+                        score_for_white = cp_value if board.turn else -cp_value
+                        eval_dict = {
+                            "type": "cp",
+                            "value": cp_value,
+                            "score_for_white": score_for_white / 100
+                        }
+
+                # Extract PV
+                pv = info.get("pv", [])
+                pv_san = []
+                temp_board = board.copy()
+                for pv_move in pv[:5]:
+                    try:
+                        pv_san.append(temp_board.san(pv_move))
+                        temp_board.push(pv_move)
+                    except:
+                        break
+
+                # Convert move to dict
+                move_dict = {
+                    "san": board.san(move),
+                    "uci": move.uci(),
+                    "from": chess.square_name(move.from_square),
+                    "to": chess.square_name(move.to_square)
+                }
+
+                return {
+                    "move": move_dict,
+                    "evaluation": eval_dict,
+                    "pv_line": pv_san
+                }
+
+        except Exception as e:
+            print(f"Error getting engine move: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    try:
+        # Run in thread pool
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = await loop.run_in_executor(
+                executor,
+                _get_engine_move,
+                request.fen,
+                request.skill_level,
+                request.depth
+            )
+
+        return PlayMoveResponse(**result)
+
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except chess.InvalidMoveError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid FEN: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error getting engine move: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get engine move: {str(e)}")
+
+
 if __name__ == "__main__":
     import argparse
 

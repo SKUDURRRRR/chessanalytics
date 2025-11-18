@@ -54,6 +54,7 @@ const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'))
 const CoachDashboardPage = lazyWithRetry(() => import('./pages/coach/CoachDashboardPage'))
 const LessonsPage = lazyWithRetry(() => import('./pages/coach/LessonsPage'))
 const PuzzlesPage = lazyWithRetry(() => import('./pages/coach/PuzzlesPage'))
+const PlayWithCoachPage = lazyWithRetry(() => import('./pages/coach/PlayWithCoachPage'))
 const LessonViewer = lazyWithRetry(() => import('./components/coach/LessonViewer').then(m => ({ default: m.LessonViewer })))
 
 // Loading component shown while pages load
@@ -93,6 +94,7 @@ function App() {
                   <Route path="/terms" element={<ComponentErrorBoundary><TermsOfServicePage /></ComponentErrorBoundary>} />
                   <Route path="/privacy" element={<ComponentErrorBoundary><PrivacyPolicyPage /></ComponentErrorBoundary>} />
                   <Route path="/coach" element={<ComponentErrorBoundary><CoachDashboardPage /></ComponentErrorBoundary>} />
+                  <Route path="/coach/play" element={<ComponentErrorBoundary><PlayWithCoachPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/lessons" element={<ComponentErrorBoundary><LessonsPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/lessons/:lessonId" element={<ComponentErrorBoundary><LessonViewer /></ComponentErrorBoundary>} />
                   <Route path="/coach/puzzles" element={<ComponentErrorBoundary><PuzzlesPage /></ComponentErrorBoundary>} />

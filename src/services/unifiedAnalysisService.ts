@@ -125,6 +125,8 @@ export interface UnifiedAnalysisRequest {
   pgn?: string
   fen?: string
   move?: string
+  game_id?: string
+  provider_game_id?: string
 }
 
 export interface UnifiedAnalysisResponse {
@@ -163,6 +165,8 @@ export class UnifiedAnalysisService {
         ...(request.pgn && { pgn: request.pgn }),
         ...(request.fen && { fen: request.fen }),
         ...(request.move && { move: request.move }),
+        ...(request.game_id && { game_id: request.game_id }),
+        ...(request.provider_game_id && { provider_game_id: request.provider_game_id }),
       }
 
       logger.log('🌐 API Request:', {

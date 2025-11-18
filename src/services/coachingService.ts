@@ -299,4 +299,50 @@ export class CoachingService {
       throw error
     }
   }
+
+  /**
+   * Get engine move for playing against Tal Coach
+   */
+  static async getEngineMove(
+    fen: string,
+    skillLevel: number = 10,
+    depth: number = 10,
+    authUserId?: string
+  ): Promise<{ move: { san: string; uci: string; from: string; to: string }; evaluation: any; pv_line: string[] }> {
+    try {
+      const url = new URL(`${API_URL}/api/v1/coach/play-move`)
+      if (authUserId) {
+        url.searchParams.append('auth_user_id', authUserId)
+      }
+
+      const response = await fetchWithTimeout(
+        url.toString(),
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fen,
+            skill_level: skillLevel,
+            depth,
+          }),
+        },
+        TIMEOUT_CONFIG.DEFAULT
+      )
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Coach features require premium subscription')
+        }
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      logger.error('Error getting engine move:', error)
+      throw error
+    }
+  }
 }
