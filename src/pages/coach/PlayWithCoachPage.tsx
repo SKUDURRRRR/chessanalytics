@@ -399,20 +399,44 @@ export default function PlayWithCoachPage() {
         console.log('[TAL_COACH] Analysis response:', {
           hasData: !!data.data,
           hasMovesAnalysis: !!data.data?.moves_analysis,
-          movesCount: data.data?.moves_analysis?.length || 0,
-          responseKeys: Object.keys(data)
+          hasMoveField: !!data.data?.move,
+          hasMoveSan: !!data.data?.move_san,
+          responseKeys: Object.keys(data),
+          dataKeys: data.data ? Object.keys(data.data) : []
         })
 
-        // Extract move analysis from response - check multiple possible response formats
-        const movesAnalysis = data.data?.moves_analysis || data.moves_analysis || []
+        // Extract move analysis from response
+        // Single move analysis returns MoveAnalysis object directly in data.data
+        // Game analysis returns GameAnalysis with moves_analysis array
+        let moveAnalysis = null
 
-        if (movesAnalysis.length > 0) {
-          const moveAnalysis = movesAnalysis[0]
-          console.log('[TAL_COACH] Move analysis:', {
+        if (data.data) {
+          // Check if this is a single move analysis (has 'move' or 'move_san' field directly)
+          if (data.data.move || data.data.move_san) {
+            // Single move analysis - data.data IS the MoveAnalysis object
+            moveAnalysis = data.data
+            console.log('[TAL_COACH] ✅ Detected single move analysis format')
+          }
+          // Check if this is a game analysis with moves_analysis array
+          else if (data.data.moves_analysis && Array.isArray(data.data.moves_analysis) && data.data.moves_analysis.length > 0) {
+            // Game analysis format - extract first move from array
+            moveAnalysis = data.data.moves_analysis[0]
+            console.log('[TAL_COACH] ✅ Detected game analysis format with moves_analysis array')
+          }
+          // Fallback: check if moves_analysis is at root level
+          else if (data.moves_analysis && Array.isArray(data.moves_analysis) && data.moves_analysis.length > 0) {
+            moveAnalysis = data.moves_analysis[0]
+            console.log('[TAL_COACH] ✅ Detected moves_analysis at root level')
+          }
+        }
+
+        if (moveAnalysis) {
+          console.log('[TAL_COACH] Move analysis extracted:', {
             hasComment: !!moveAnalysis.coaching_comment,
             commentPreview: moveAnalysis.coaching_comment?.substring(0, 50),
             moveNumber,
-            san: move.san
+            san: move.san,
+            moveFromResponse: moveAnalysis.move_san || moveAnalysis.move
           })
 
           if (moveAnalysis.coaching_comment &&
@@ -496,10 +520,17 @@ export default function PlayWithCoachPage() {
               })
             }
           } else {
-            console.log('[TAL_COACH] ⚠️ No valid coaching comment in response')
+            console.log('[TAL_COACH] ⚠️ No valid coaching comment in response', {
+              hasComment: !!moveAnalysis.coaching_comment,
+              commentValue: moveAnalysis.coaching_comment?.substring(0, 100)
+            })
           }
         } else {
-          console.log('[TAL_COACH] ⚠️ No moves_analysis in response')
+          console.log('[TAL_COACH] ⚠️ Could not extract move analysis from response', {
+            hasData: !!data.data,
+            dataType: typeof data.data,
+            dataKeys: data.data ? Object.keys(data.data) : []
+          })
         }
       } else {
         console.error('[TAL_COACH] ❌ API response not OK:', response.status, response.statusText)
@@ -972,7 +1003,7 @@ ${pgn} ${result}`
                     <div className="flex-shrink-0">
                       <TalCoachIcon size={40} />
                     </div>
-                    <h2 className="text-xl font-bold text-sky-300">Tal Coach Says</h2>
+                    <h2 className="text-xl font-bold text-sky-300">Coach Tal</h2>
                   </div>
                   <div className="space-y-4">
                     <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400">
@@ -1002,7 +1033,7 @@ ${pgn} ${result}`
                     <div className="flex-shrink-0">
                       <TalCoachIcon size={40} />
                     </div>
-                    <h2 className="text-xl font-bold text-sky-300">Tal Coach Says</h2>
+                    <h2 className="text-xl font-bold text-sky-300">Coach Tal</h2>
                   </div>
                   <EnhancedMoveCoaching
                     move={(currentMoveComment || lastCommentRef.current)!.processedMove!}
@@ -1011,7 +1042,7 @@ ${pgn} ${result}`
                 </div>
               )}
               {/* Show "thinking" only if we're analyzing AND don't have a comment yet */}
-              {!showInitialGreeting && isAnalyzingMove && !currentMoveComment && (
+              {!showInitialGreeting && isAnalyzingMove && !currentMoveComment && !lastCommentRef.current && (
                 <div className="rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-6">
                   <div className="flex items-center gap-3">
                     <div className="flex-shrink-0 animate-pulse">
