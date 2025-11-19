@@ -40,14 +40,9 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
 
   // Check if we have any coaching data to display
   const hasCoachingData = text ||
-    move.whatWentRight ||
     move.whatWentWrong ||
     move.howToImprove ||
-    (move.tacticalInsights && move.tacticalInsights.length > 0) ||
-    (move.positionalInsights && move.positionalInsights.length > 0) ||
-    (move.risks && move.risks.length > 0) ||
-    (move.benefits && move.benefits.length > 0) ||
-    (move.learningPoints && move.learningPoints.length > 0)
+    (move.risks && move.risks.length > 0)
 
   if (!hasCoachingData) return null
 
@@ -73,19 +68,6 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
           </div>
           <p className="text-slate-200 leading-relaxed">
             {text}
-          </p>
-        </div>
-      )}
-
-      {/* What Went Right */}
-      {move.whatWentRight && (
-        <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-4">
-          <h4 className="text-emerald-300 font-semibold mb-2 flex items-center gap-2">
-            <span className="text-lg">✓</span>
-            What Went Right
-          </h4>
-          <p className="text-emerald-100 text-sm leading-relaxed">
-            {move.whatWentRight}
           </p>
         </div>
       )}
@@ -116,42 +98,6 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
         </div>
       )}
 
-      {/* Tactical Insights */}
-      {move.tacticalInsights && move.tacticalInsights.length > 0 && (
-        <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
-          <h4 className="text-purple-300 font-semibold mb-2 flex items-center gap-2">
-            <span className="text-lg">⚔️</span>
-            Tactical Insights
-          </h4>
-          <ul className="space-y-1">
-            {move.tacticalInsights.map((insight, idx) => (
-              <li key={idx} className="text-purple-100 text-sm leading-relaxed flex items-start gap-2">
-                <span className="text-purple-400 mt-1">•</span>
-                <span>{insight}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Positional Insights */}
-      {move.positionalInsights && move.positionalInsights.length > 0 && (
-        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
-          <h4 className="text-blue-300 font-semibold mb-2 flex items-center gap-2">
-            <span className="text-lg">🎯</span>
-            Positional Insights
-          </h4>
-          <ul className="space-y-1">
-            {move.positionalInsights.map((insight, idx) => (
-              <li key={idx} className="text-blue-100 text-sm leading-relaxed flex items-start gap-2">
-                <span className="text-blue-400 mt-1">•</span>
-                <span>{insight}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {/* Risks */}
       {move.risks && move.risks.length > 0 && (
         <div className="bg-orange-900/20 border border-orange-500/30 rounded-lg p-4">
@@ -170,41 +116,6 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
         </div>
       )}
 
-      {/* Benefits */}
-      {move.benefits && move.benefits.length > 0 && (
-        <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-4">
-          <h4 className="text-emerald-300 font-semibold mb-2 flex items-center gap-2">
-            <span className="text-lg">✨</span>
-            Benefits
-          </h4>
-          <ul className="space-y-1">
-            {move.benefits.map((benefit, idx) => (
-              <li key={idx} className="text-emerald-100 text-sm leading-relaxed flex items-start gap-2">
-                <span className="text-emerald-400 mt-1">•</span>
-                <span>{benefit}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Learning Points */}
-      {move.learningPoints && move.learningPoints.length > 0 && (
-        <div className="bg-amber-900/20 border border-amber-500/30 rounded-lg p-4">
-          <h4 className="text-amber-300 font-semibold mb-2 flex items-center gap-2">
-            <span className="text-lg">📚</span>
-            Learning Points
-          </h4>
-          <ul className="space-y-1">
-            {move.learningPoints.map((point, idx) => (
-              <li key={idx} className="text-amber-100 text-sm leading-relaxed flex items-start gap-2">
-                <span className="text-amber-400 mt-1">•</span>
-                <span>{point}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   )
 }
