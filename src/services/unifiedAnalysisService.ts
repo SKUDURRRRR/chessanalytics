@@ -110,9 +110,66 @@ function validateDeepAnalysisData(data: any): DeepAnalysisData | null {
       leverage: data.recommendations?.leverage || 'Review your most accurate games once analysis is ready.',
     },
     famous_players: data.famous_players || null,
-    ai_style_analysis: data.ai_style_analysis || null,
+    ai_style_analysis: parseAiStyleAnalysis(data.ai_style_analysis),
     personality_insights: data.personality_insights || null,
   }
+}
+
+/**
+ * Parse ai_style_analysis if it's a string, otherwise return as-is.
+ * Handles cases where the backend might return it as a JSON string.
+ */
+function parseAiStyleAnalysis(aiStyleAnalysis: any): DeepAnalysisData['ai_style_analysis'] | null {
+  if (!aiStyleAnalysis) {
+    return null
+  }
+
+  // If it's already an object with the expected structure, return it
+  if (typeof aiStyleAnalysis === 'object' && !Array.isArray(aiStyleAnalysis)) {
+    // Validate it has the expected fields
+    if (
+      typeof aiStyleAnalysis.style_summary === 'string' &&
+      typeof aiStyleAnalysis.characteristics === 'string' &&
+      typeof aiStyleAnalysis.strengths === 'string' &&
+      typeof aiStyleAnalysis.playing_patterns === 'string' &&
+      typeof aiStyleAnalysis.improvement_focus === 'string'
+    ) {
+      return aiStyleAnalysis as DeepAnalysisData['ai_style_analysis']
+    }
+  }
+
+  // If it's a string, try to parse it as JSON
+  if (typeof aiStyleAnalysis === 'string') {
+    try {
+      // Remove any markdown code blocks if present
+      let jsonString = aiStyleAnalysis.trim()
+      if (jsonString.startsWith('```')) {
+        const lines = jsonString.split('\n')
+        jsonString = lines.slice(1, -1).join('\n').trim()
+      }
+
+      // Try to find and parse JSON object
+      if (jsonString.startsWith('{')) {
+        const parsed = JSON.parse(jsonString)
+        // Validate parsed object has required fields
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          typeof parsed.style_summary === 'string' &&
+          typeof parsed.characteristics === 'string' &&
+          typeof parsed.strengths === 'string' &&
+          typeof parsed.playing_patterns === 'string' &&
+          typeof parsed.improvement_focus === 'string'
+        ) {
+          return parsed as DeepAnalysisData['ai_style_analysis']
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse ai_style_analysis as JSON:', e)
+    }
+  }
+
+  return null
 }
 
 export interface UnifiedAnalysisRequest {
