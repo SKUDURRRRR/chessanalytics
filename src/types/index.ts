@@ -186,6 +186,94 @@ export interface AnalysisStats {
   total_games_with_elo?: number // Total games with ELO data processed
 }
 
+// Comprehensive Analytics Types - supports both camelCase and snake_case for backwards compatibility
+export interface ComprehensiveAnalytics {
+  totalGames: number
+  total_games?: number  // Backwards compatibility
+  winRate: number
+  win_rate?: number  // Backwards compatibility
+  drawRate: number
+  draw_rate?: number  // Backwards compatibility
+  lossRate: number
+  loss_rate?: number  // Backwards compatibility
+  colorStats: {
+    white: { games: number; winRate: number; averageElo: number }
+    black: { games: number; winRate: number; averageElo: number }
+  }
+  openingStats: Array<{
+    opening: string
+    games: number
+    winRate: number
+    averageElo: number
+    identifiers?: { openingFamilies: string[]; openings: string[] }
+  }>
+  openingColorStats: {
+    white: Array<{
+      opening: string
+      games: number
+      wins: number
+      losses: number
+      draws: number
+      winRate: number
+      averageElo: number
+      identifiers?: { openingFamilies: string[]; openings: string[] }
+    }>
+    black: Array<{
+      opening: string
+      games: number
+      wins: number
+      losses: number
+      draws: number
+      winRate: number
+      averageElo: number
+      identifiers?: { openingFamilies: string[]; openings: string[] }
+    }>
+  }
+  highestElo: number | null
+  highest_elo?: number | null  // Backwards compatibility
+  timeControlWithHighestElo: string | null
+  time_control_with_highest_elo?: string | null  // Backwards compatibility
+  currentElo: number | null
+  currentEloPerTimeControl: Record<string, number>
+  current_elo_per_time_control?: Record<string, number>  // Backwards compatibility
+  performanceTrends: any | null
+  // New fields - support both naming conventions
+  resignationTiming: {
+    my_average_resignation_move: number | null
+    recent_average_resignation_move: number | null
+    change: number | null
+    insight: string | null
+  } | null
+  resignation_timing?: any  // Backwards compatibility
+  personalRecords: {
+    fastest_win: { game_id: string; moves: number } | null
+    highest_accuracy_win: { game_id: string; accuracy: number } | null
+    longest_game: { game_id: string; moves: number } | null
+  } | null
+  personal_records?: any  // Backwards compatibility
+  marathonPerformance: {
+    count: number
+    average_accuracy: number | null
+    average_blunders: number | null
+    analyzed_count: number | null
+  } | null
+  marathon_performance?: any  // Backwards compatibility
+  recentTrend: {
+    recent_average_moves: number
+    baseline_average_moves: number
+    difference: number
+  } | null
+  recent_trend?: any  // Backwards compatibility
+  gameLengthStats: any | null
+  game_length_distribution?: any  // Backwards compatibility
+  quickVictoryBreakdown: any | null
+  quick_victory_breakdown?: any  // Backwards compatibility
+  patienceRating: number | null
+  patience_rating?: number | null  // Backwards compatibility
+  comebackPotential: any | null
+  comeback_potential?: any  // Backwards compatibility
+}
+
 export interface DeepAnalysisData {
   total_games: number;
   average_accuracy: number;

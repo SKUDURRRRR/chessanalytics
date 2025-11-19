@@ -450,6 +450,16 @@ async def startup_event():
         logger.warning(f"[STARTUP] ⚠️  AI Generation: CHECK FAILED - {ai_error}")
         logger.info("[STARTUP]    AI features will use template-based fallback")
 
+    # Clear analysis stats cache on startup to prevent stale data from wrong calculation function
+    print("[STARTUP] Clearing analysis stats cache to ensure fresh calculations...")
+    cleared_count = 0
+    for key in list(_analytics_cache.keys()):
+        if key.startswith('analysis_stats:'):
+            _analytics_cache.pop(key, None)
+            cleared_count += 1
+    if cleared_count > 0:
+        print(f"[STARTUP] ✅ Cleared {cleared_count} cached analysis stats entries")
+
     # Start cache cleanup background task
     async def cache_cleanup_loop():
         print("[STARTUP] Starting cache cleanup task (interval: 5 minutes)")
@@ -1486,7 +1496,23 @@ async def get_analysis_stats(
         if DEBUG:
             print(f"[DEBUG] Calculating stats for {len(response.data)} analyses")
 
-        result = _calculate_unified_analysis_stats(response.data)
+        # Determine which table we got data from and use the appropriate calculation function
+        if response.data:
+            # Check if this is move_analyses data (has moves_analysis array) or unified_analyses (has pre-calculated fields)
+            first_record = response.data[0]
+            if 'moves_analysis' in first_record and isinstance(first_record.get('moves_analysis'), list):
+                # Use move_analysis stats calculation (parses moves_analysis array)
+                if DEBUG:
+                    print(f"[DEBUG] Using move_analysis stats calculation (data has moves_analysis array)")
+                result = _calculate_move_analysis_stats(response.data)
+            else:
+                # Use unified_analysis stats calculation (expects pre-calculated fields)
+                if DEBUG:
+                    print(f"[DEBUG] Using unified_analysis stats calculation (data has pre-calculated fields)")
+                result = _calculate_unified_analysis_stats(response.data)
+        else:
+            result = _get_empty_stats()
+
         _set_in_cache(cache_key, result)
         return result
     except Exception as e:
@@ -2520,10 +2546,14 @@ async def get_comprehensive_analytics(
         # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
         effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
 
-        # PERFORMANCE: Fetch first 500 games for fast response, rest in background
-        initial_limit = 500
+        # PERFORMANCE: For analytics accuracy, fetch all games when limit > 1000
+        # Only use background loading for very large datasets (> 5000 games)
+        initial_limit = 5000  # Increased from 500 to ensure accurate color/opening stats
         needs_background = effective_limit > initial_limit
         fetch_limit = min(initial_limit, effective_limit) if needs_background else effective_limit
+
+        if DEBUG:
+            print(f"[DEBUG] Fetching {fetch_limit} games (effective_limit={effective_limit}, needs_background={needs_background})")
 
         # Paginate through games in chunks of 1000 (Supabase's max per query)
         # Match the pattern from import_games_smart which works correctly
@@ -2639,7 +2669,7 @@ async def get_comprehensive_analytics(
         draw_rate = _safe_divide(draws, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
         loss_rate = _safe_divide(losses, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
 
-        # Color stats
+        # Color stats - use whatever games we fetched (frontend requests limit=10000 for all games)
         white_games = [g for g in games if g.get('color') == 'white']
         black_games = [g for g in games if g.get('color') == 'black']
 
@@ -2662,7 +2692,7 @@ async def get_comprehensive_analytics(
             }
         }
 
-        # Opening stats
+        # Opening stats - use whatever games we fetched (frontend requests limit=10000 for all games)
         opening_performance = {}
         for game in games:
             opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
@@ -2785,9 +2815,9 @@ async def get_comprehensive_analytics(
         }
         comeback_summaries: List[Dict[str, Any]] = []
 
-        last_fifty = games[:50]
-        last_fifty_moves = [g['total_moves'] for g in last_fifty if g.get('total_moves')]
-        baseline_moves = [g['total_moves'] for g in games[50:200] if g.get('total_moves')]
+        last_hundred = games[:100]
+        last_hundred_moves = [g['total_moves'] for g in last_hundred if g.get('total_moves')]
+        baseline_moves = [g['total_moves'] for g in games[100:300] if g.get('total_moves')]
 
         for game in games:
             bucket = _bucket_game_length(game.get('total_moves'))
@@ -2872,8 +2902,8 @@ async def get_comprehensive_analytics(
             }
 
         recent_trend = {}
-        if last_fifty_moves:
-            recent_avg = sum(last_fifty_moves) / len(last_fifty_moves)
+        if last_hundred_moves:
+            recent_avg = sum(last_hundred_moves) / len(last_hundred_moves)
             baseline_avg = sum(baseline_moves) / len(baseline_moves) if baseline_moves else recent_avg
             recent_trend = {
                 'recent_average_moves': round(recent_avg, 2),
@@ -2893,71 +2923,78 @@ async def get_comprehensive_analytics(
                 )
             }
 
-        resignation_summary = None
-        if resignation_moves or opponent_resignation_moves:
-            # Calculate recent resignation timing (last 50 games)
-            recent_resignation_moves = []
-            for i, game in enumerate(games[:50]):
-                game_id = game.get('provider_game_id')
-                termination = _parse_termination_from_pgn(pgn_map.get(game_id)) if pgn_map else None
-                result = game.get('result')
-                if termination and 'resign' in termination.lower():
-                    # Determine if this is my resignation or opponent's
-                    if ('opponent' in termination.lower() or 'resigned' in termination.lower()) and result == 'win':
-                        # Opponent resigned
-                        pass
-                    else:
-                        # I resigned
-                        recent_resignation_moves.append(game.get('total_moves') or 0)
-
-            recent_avg = round(sum(recent_resignation_moves) / len(recent_resignation_moves), 2) if recent_resignation_moves else None
-            overall_avg = round(sum(resignation_moves) / len(resignation_moves), 2) if resignation_moves else None
-
-            # Calculate change and insight
-            change = round(recent_avg - overall_avg, 1) if (recent_avg and overall_avg) else None
-            insight = None
-            if change is not None:
-                abs_change = abs(change)
-                if change < 0:
-                    insight = f"You're resigning {abs_change} moves earlier than usual"
-                elif change > 0:
-                    insight = f"You're fighting {abs_change} moves longer before resigning"
+        # ALWAYS calculate resignation summary to ensure section renders consistently
+        # Calculate recent resignation timing (last 100 games)
+        recent_resignation_moves = []
+        for i, game in enumerate(games[:100]):
+            game_id = game.get('provider_game_id')
+            termination = _parse_termination_from_pgn(pgn_map.get(game_id)) if pgn_map else None
+            result = game.get('result')
+            if termination and 'resign' in termination.lower():
+                # Determine if this is my resignation or opponent's
+                if ('opponent' in termination.lower() or 'resigned' in termination.lower()) and result == 'win':
+                    # Opponent resigned
+                    pass
                 else:
-                    insight = "Your resignation timing is consistent"
+                    # I resigned
+                    recent_resignation_moves.append(game.get('total_moves') or 0)
 
-            resignation_summary = {
-                'my_average_resignation_move': overall_avg,
-                'opponent_average_resignation_move': round(sum(opponent_resignation_moves) / len(opponent_resignation_moves), 2) if opponent_resignation_moves else None,
-                'my_resignations': len(resignation_moves),
-                'opponent_resignations': len(opponent_resignation_moves),
-                'recent_average_resignation_move': recent_avg,
-                'recent_resignations': len(recent_resignation_moves),
-                'change': change,
-                'insight': insight
-            }
+        recent_avg = round(sum(recent_resignation_moves) / len(recent_resignation_moves), 2) if recent_resignation_moves else None
+        overall_avg = round(sum(resignation_moves) / len(resignation_moves), 2) if resignation_moves else None
+
+        # Calculate change and insight
+        change = round(recent_avg - overall_avg, 1) if (recent_avg and overall_avg) else None
+        insight = None
+        if change is not None:
+            abs_change = abs(change)
+            if change < 0:
+                insight = f"You're resigning {abs_change} moves earlier than usual"
+            elif change > 0:
+                insight = f"You're fighting {abs_change} moves longer before resigning"
+            else:
+                insight = "Your resignation timing is consistent"
+
+        # CRITICAL: Always return resignation_summary (even if null values) so frontend section always renders
+        resignation_summary = {
+            'my_average_resignation_move': overall_avg,
+            'opponent_average_resignation_move': round(sum(opponent_resignation_moves) / len(opponent_resignation_moves), 2) if opponent_resignation_moves else None,
+            'my_resignations': len(resignation_moves),
+            'opponent_resignations': len(opponent_resignation_moves),
+            'recent_average_resignation_move': recent_avg,
+            'recent_resignations': len(recent_resignation_moves),
+            'change': change,
+            'insight': insight
+        }
 
         # Opening stats by color
-        # 🚨 CRITICAL: This filter MUST remain in place - see docs/OPENING_COLOR_BUG_PREVENTION.md
-        # DO NOT remove the _should_count_opening_for_color check or Caro-Kann will appear under White openings
-        # games_for_color_stats was already fetched in parallel above
+        # Show all openings for each color - this shows what positions the player encountered
+        # For white: shows all openings (both what white played and what defenses they faced)
+        # For black: shows all defenses and systems the player used
+        # games_for_color_stats was already fetched in parallel above, but fall back to games if empty
+
+        games_for_opening_color = games_for_color_stats if games_for_color_stats else games
+        if DEBUG:
+            print(f"[DEBUG] Using {len(games_for_opening_color)} games for opening color stats (games_for_color_stats={len(games_for_color_stats)}, games={len(games)})")
 
         opening_color_performance = {'white': {}, 'black': {}}
-        filtered_white_openings = {}  # Debug: track what we filtered out for white
-        for game in games_for_color_stats:  # Use all games, not just the limited sample
+        for game in games_for_opening_color:  # Use all games, not just the limited sample
             color = game.get('color')
             if color not in ['white', 'black']:
                 continue
 
             opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
 
-            # 🚨 CRITICAL FIX: Filter out opponent's openings
-            # Only count openings that the player actually chose to play
-            # e.g., skip "Caro-Kann Defense" when player is white (that's opponent's opening)
-            # This bug has been reported multiple times - see docs/CARO_KANN_FIX_2025.md
-            if not _should_count_opening_for_color(opening, color):
-                # Track filtered openings for debugging
-                if color == 'white':
-                    filtered_white_openings[opening] = filtered_white_openings.get(opening, 0) + 1
+            # Skip games without valid opening names
+            if not opening or opening == 'Unknown' or opening.lower() == 'null':
+                continue
+
+            # CRITICAL: Filter openings by who played them
+            # Don't show opponent's openings (e.g., skip "Caro-Kann" when player is white)
+            should_count = _should_count_opening_for_color(opening, color)
+            if not should_count:
+                if DEBUG and color == 'white':
+                    # Log filtered white openings for debugging
+                    pass  # Reduce noise, only log if needed
                 continue
 
             if opening not in opening_color_performance[color]:
@@ -2992,15 +3029,6 @@ async def get_comprehensive_analytics(
         opening_color_stats = {'white': [], 'black': []}
         for color in ['white', 'black']:
             for opening, stats in opening_color_performance[color].items():
-                # 🚨 DEFENSIVE CHECK: Double-verify that opening matches color
-                # This is a safety net in case the filter above missed something
-                if not _should_count_opening_for_color(opening, color):
-                    # This should never happen if the filter worked correctly above
-                    # But if it does, skip it to prevent bugs like Caro-Kann under white
-                    if DEBUG:
-                        print(f"[WARNING] Defensive filter caught {opening} for {color} - this should have been filtered earlier!")
-                    continue
-
                 avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
 
                 # Convert sets to lists for JSON serialization (sets are not JSON serializable)
@@ -3023,11 +3051,19 @@ async def get_comprehensive_analytics(
             # Sort by number of games
             opening_color_stats[color].sort(key=lambda x: x['games'], reverse=True)
 
-        # Debug logging for filtered white openings
-        if filtered_white_openings:
-            print(f"[DEBUG] Filtered {len(filtered_white_openings)} unique openings from White stats:")
-            for opening, count in sorted(filtered_white_openings.items(), key=lambda x: x[1], reverse=True)[:10]:
-                print(f"  - {opening}: {count} games")
+        if DEBUG:
+            print(f"[DEBUG] ========== COMPREHENSIVE ANALYTICS DATA SUMMARY ==========")
+            print(f"[DEBUG] Total games fetched: {len(games)}")
+            print(f"[DEBUG] Games for opening color stats: {len(games_for_opening_color)}")
+            print(f"[DEBUG] PGN data available for: {len(pgn_map)} games")
+            print(f"[DEBUG] Opening color stats: white={len(opening_color_stats['white'])}, black={len(opening_color_stats['black'])}")
+            print(f"[DEBUG] Resignation data: my_resignations={len(resignation_moves)}, recent={len(recent_resignation_moves)}")
+            print(f"[DEBUG] Resignation summary: {resignation_summary}")
+            if opening_color_stats['white']:
+                print(f"[DEBUG] Top white opening: {opening_color_stats['white'][0]['opening']} ({opening_color_stats['white'][0]['games']} games)")
+            if opening_color_stats['black']:
+                print(f"[DEBUG] Top black opening: {opening_color_stats['black'][0]['opening']} ({opening_color_stats['black'][0]['games']} games)")
+            print(f"[DEBUG] ==========================================================")
 
         # Highest ELO
         highest_elo = None
@@ -3087,14 +3123,23 @@ async def get_comprehensive_analytics(
             'performanceTrends': performance_trends,
             'games': games,
             'sample_size': len(games),
-            'game_length_distribution': distribution_summary,
-            'quick_victory_breakdown': quick_victory_summary,
-            'marathon_performance': marathon_summary,
-            'recent_trend': recent_trend,
-            'personal_records': records,
-            'patience_rating': patience_rating,
-            'comeback_potential': comeback_summary,
-            'resignation_timing': resignation_summary
+            # Standardized to camelCase for consistency (support both during transition)
+            'gameLengthDistribution': distribution_summary,
+            'game_length_distribution': distribution_summary,  # Backwards compatibility
+            'quickVictoryBreakdown': quick_victory_summary,
+            'quick_victory_breakdown': quick_victory_summary,  # Backwards compatibility
+            'marathonPerformance': marathon_summary,
+            'marathon_performance': marathon_summary,  # Backwards compatibility
+            'recentTrend': recent_trend,
+            'recent_trend': recent_trend,  # Backwards compatibility
+            'personalRecords': records,
+            'personal_records': records,  # Backwards compatibility
+            'patienceRating': patience_rating,
+            'patience_rating': patience_rating,  # Backwards compatibility
+            'comebackPotential': comeback_summary,
+            'comeback_potential': comeback_summary,  # Backwards compatibility
+            'resignationTiming': resignation_summary,
+            'resignation_timing': resignation_summary  # Backwards compatibility
         }
 
         # Only cache complete results (not partial)
@@ -5780,15 +5825,16 @@ def _should_count_opening_for_color(opening: str, player_color: str) -> bool:
     # White openings (systems/attacks) - only count when player is white
     white_openings = [
         'italian', 'ruy lopez', 'spanish', 'scotch', 'four knights', 'vienna',
-        "king's gambit", "bishop's opening", 'center game', 'giuoco piano',
-        "queen's gambit", 'london', 'colle', 'torre', 'trompowsky',
+        "king's gambit", "king's pawn", "bishop's opening", 'center game', 'giuoco piano',
+        "queen's gambit", "queen's pawn", 'london', 'colle', 'torre', 'trompowsky',
         'blackmar-diemer', 'english', 'reti', 'réti', "bird's", "larsen's",
         'catalan', 'benko gambit declined', 'ponziani', 'danish gambit',
         'alapin', 'morra', 'smith-morra', 'wing gambit', 'evans gambit',
         'fried liver', 'max lange', 'greco', 'italian gambit',
         'mieses opening', 'barnes opening', 'polish', 'orangutan', 'sokolsky',
         'nimzowitsch-larsen', 'zukertort', 'old indian attack',
-        'kingside fianchetto', 'queenside fianchetto', 'stonewall'
+        'kingside fianchetto', 'queenside fianchetto', 'stonewall',
+        'van geet', 'king pawn game', 'queen pawn game'
     ]
 
     # Check if it's a black opening
@@ -5804,6 +5850,11 @@ def _should_count_opening_for_color(opening: str, player_color: str) -> bool:
     # Heuristics
     if 'defense' in opening_lower or 'defence' in opening_lower:
         return player_color == 'black'
+
+    # Most things with "Opening" in the name are white's first move
+    # e.g., "King's Pawn Opening", "Italian Opening"
+    if ' opening' in opening_lower:
+        return player_color == 'white'
 
     if 'attack' in opening_lower or 'system' in opening_lower or 'gambit' in opening_lower:
         return player_color == 'white'
