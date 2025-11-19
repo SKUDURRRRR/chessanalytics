@@ -544,6 +544,22 @@ async def shutdown_event():
     print("✅ Shutdown complete")
     print("=" * 80)
 
+# Add specific exception handler for rate limit errors (returns 429)
+@app.exception_handler(RateLimitError)
+async def rate_limit_exception_handler(request: Request, exc: RateLimitError):
+    """Handle rate limit errors with proper 429 status."""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": {
+                "code": "RATE_LIMIT_ERROR",
+                "message": str(exc),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "request_id": getattr(getattr(request, "state", None), "request_id", "unknown")
+            }
+        }
+    )
+
 # Add global exception handler
 app.add_exception_handler(Exception, global_exception_handler)
 
@@ -701,6 +717,10 @@ class UnifiedAnalysisRequest(BaseModel):
     move: Optional[str] = Field(None, max_length=10, description="Move in UCI format for move analysis")
     game_id: Optional[str] = Field(None, max_length=100, description="Game ID for single game analysis")
     provider_game_id: Optional[str] = Field(None, max_length=100, description="Provider game ID for single game analysis")
+
+    # Single move coaching analysis parameters
+    fullmove_number: Optional[int] = Field(None, description="Full move number for coaching context (enables AI comments)")
+    is_user_move: Optional[bool] = Field(None, description="Whether this is a user move (enables AI comments)")
 
     @validator('user_id')
     def validate_user_id(cls, v):
@@ -1281,9 +1301,11 @@ async def unified_analyze(
                 # Log but allow anonymous user to proceed (fail-open)
                 logger.warning(f"Anonymous analysis limit check failed for IP {client_ip} (non-critical): {e}")
 
-        # Enforce rate limit per user
-        user_key = f"analysis:{request.user_id}:{request.platform}"
-        _enforce_rate_limit(user_key, ANALYSIS_RATE_LIMIT)
+        # Enforce rate limit per user (skip for authenticated premium users who already passed usage check)
+        # Premium users are not rate limited since they already passed check_analysis_limit
+        if not auth_user_id:
+            user_key = f"analysis:{request.user_id}:{request.platform}"
+            _enforce_rate_limit(user_key, ANALYSIS_RATE_LIMIT)
 
         # Normalize and validate analysis type
         original_type = request.analysis_type
@@ -1345,7 +1367,13 @@ async def unified_analyze(
             # since batch analysis is async and the count is determined when it completes
             return await _handle_batch_analysis(request, background_tasks, use_parallel, auth_user_id)
 
+    except RateLimitError as e:
+        # Re-raise rate limit errors with proper 429 status
+        raise HTTPException(status_code=429, detail=str(e))
     except ValidationError as e:
+        raise e
+    except HTTPException as e:
+        # Re-raise HTTP exceptions (already have proper status codes)
         raise e
     except Exception as e:
         raise AnalysisError(f"Failed to process analysis request: {str(e)}", "unified")
@@ -9129,7 +9157,14 @@ async def _handle_move_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnaly
         board = chess.Board(request.fen)
         move = chess.Move.from_uci(request.move)
 
-        result = await engine.analyze_move(board, move, analysis_type_enum)
+        # Pass fullmove_number and is_user_move to enable AI coaching comments
+        result = await engine.analyze_move(
+            board,
+            move,
+            analysis_type_enum,
+            fullmove_number=request.fullmove_number,
+            is_user_move=request.is_user_move
+        )
 
         return UnifiedAnalysisResponse(
             success=True,

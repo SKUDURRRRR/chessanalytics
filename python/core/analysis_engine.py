@@ -1709,8 +1709,13 @@ class ChessAnalysisEngine:
 
             # OPTIMIZATION: Skip AI coaching comments during fast analysis
             # AI comments add 2+ seconds per move due to API rate limits
-            # Can be generated separately after analysis completes
-            skip_ai_comments = True  # TODO: Make this configurable
+            # For real-time coaching (single move analysis), we want AI comments enabled
+            # For batch game analysis, comments can be generated separately
+            # Check if this is single-move analysis (move_number and is_user_move provided)
+            is_single_move_analysis = move_number is not None and is_user_move is not None
+            skip_ai_comments = not is_single_move_analysis  # Enable AI comments for single move analysis only
+
+            print(f"[COACHING] Checking AI comments: move_number={move_number}, is_user_move={is_user_move}, is_single_move_analysis={is_single_move_analysis}, skip_ai_comments={skip_ai_comments}")
 
             # INSTANT GREETING: Always add instant Tal greeting for player's first move
             # This shows immediately, even before AI comments are generated
@@ -2071,6 +2076,7 @@ class ChessAnalysisEngine:
 
                 # Enhance with coaching comments (including instant Tal greeting for first move)
                 actual_is_user_move = is_user_move if is_user_move is not None else True
+                print(f"[OPENING_BOOK] Calling _enhance_move_analysis_with_coaching with fullmove_number={fullmove_number}, is_user_move={actual_is_user_move}")
                 return self._enhance_move_analysis_with_coaching(book_move_analysis, board, move, fullmove_number, is_user_move=actual_is_user_move)
 
         # Use adaptive depth based on position complexity (30% speedup on average)
@@ -3320,6 +3326,7 @@ class ChessAnalysisEngine:
                     # DO NOT push the move here - _enhance_move_analysis_with_coaching expects board BEFORE the move
                     # Use captured is_user_move if provided, otherwise default to True
                     actual_is_user_move = captured_is_user_move if captured_is_user_move is not None else True
+                    print(f"[REGULAR_PATH] Calling _enhance_move_analysis_with_coaching with move_number={move_number}, is_user_move={actual_is_user_move}")
                     return self._enhance_move_analysis_with_coaching(move_analysis, board, current_move, move_number, is_user_move=actual_is_user_move)
             except Exception as e:
                 error_msg = str(e)

@@ -720,12 +720,31 @@ export default function PlayWithCoachPage() {
     setShowResultModal(false)
 
     try {
-      // Use the current game state which already has all moves
-      // Get PGN from chess.js - it will include all moves from the game
-      const pgn = game.pgn({
+      // Rebuild the game from move history to ensure we have all moves
+      // This is necessary because the game state might have been reset
+      const fullGame = new Chess()
+
+      console.log('[REVIEW] Move history state:', moveHistory)
+      console.log('[REVIEW] Rebuilding game from', moveHistory.length, 'moves')
+
+      // Apply all moves from history to reconstruct the complete game
+      for (let i = 0; i < moveHistory.length; i++) {
+        try {
+          fullGame.move(moveHistory[i])
+        } catch (err) {
+          console.error(`[REVIEW] Failed to apply move ${i}: ${moveHistory[i]}`, err)
+        }
+      }
+
+      // Get PGN from the reconstructed game - it will include all moves
+      const pgn = fullGame.pgn({
         max_width: 80,
         newline: '\n'
       })
+
+      console.log('[REVIEW] Reconstructed game history:', fullGame.history())
+      console.log('[REVIEW] Generated PGN:', pgn)
+      console.log('[REVIEW] Full game has', fullGame.history().length, 'moves')
 
       // Add game headers
       const playerName = user.email?.split('@')[0] || 'Player'
@@ -881,12 +900,10 @@ ${pgn} ${result}`
 
       // Check if analysis was successful
       if (analysisResponse.analysis_id || analysisResponse.success !== false) {
-        // Start fetching coaching comments
-        fetchCoachingComments(gameId)
-
-        // Optionally navigate to analysis page, or stay here to see comments
-        // Uncomment the line below if you want to navigate immediately
-        // navigate(`/analysis/lichess/${user.id}/${analysisResponse.analysis_id || gameId}`)
+        // Navigate to analysis page to see full game review
+        const analysisId = analysisResponse.analysis_id || gameId
+        console.log(`[REVIEW] Navigating to analysis page: /analysis/lichess/${user.id}/${analysisId}`)
+        navigate(`/analysis/lichess/${user.id}/${analysisId}`)
       } else {
         // If analysis failed, show error
         throw new Error(analysisResponse.message || 'Failed to analyze game')
@@ -1110,6 +1127,40 @@ ${pgn} ${result}`
                     <div className="text-white text-sm mt-1">{skillLevel}/20</div>
                   </div>
                 </div>
+
+                {/* Action Buttons */}
+                {moveHistory.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-white/10 space-y-2">
+                    <button
+                      onClick={reviewGame}
+                      disabled={isAnalyzing}
+                      className="w-full px-4 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
+                    >
+                      {isAnalyzing ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="animate-spin">⏳</span>
+                          Analyzing...
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center gap-2">
+                          <span>📊</span>
+                          Review Game
+                        </span>
+                      )}
+                    </button>
+                    {gameStatus !== 'playing' && (
+                      <button
+                        onClick={resetGame}
+                        className="w-full px-4 py-3 rounded-lg border border-white/20 bg-white/5 hover:bg-white/10 text-white font-semibold transition-all"
+                      >
+                        <span className="flex items-center justify-center gap-2">
+                          <span>🔄</span>
+                          New Game
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Move History with Coaching Comments */}
