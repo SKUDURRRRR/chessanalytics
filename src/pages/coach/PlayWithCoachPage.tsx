@@ -20,6 +20,9 @@ import { supabase } from '../../lib/supabase'
 import { EnhancedMoveCoaching } from '../../components/debug/EnhancedMoveCoaching'
 import { ProcessedMove } from '../GameAnalysisPage'
 import { TalCoachIcon } from '../../components/ui/TalCoachIcon'
+import { useChessSound } from '../../hooks/useChessSound'
+import { useChessSoundSettings } from '../../contexts/ChessSoundContext'
+import { getMoveSoundSimple } from '../../utils/chessSounds'
 
 type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'resignation'
 
@@ -55,6 +58,10 @@ export default function PlayWithCoachPage() {
   const analyzingMoveRef = useRef<{ moveNumber: number; san: string } | null>(null)
   const [showInitialGreeting, setShowInitialGreeting] = useState(true)
   const lastCommentRef = useRef<MoveWithComment | null>(null) // Persist comment through re-renders
+
+  // Chess sound support
+  const { soundEnabled, volume } = useChessSoundSettings()
+  const { playSound } = useChessSound({ enabled: soundEnabled, volume })
 
   // Sync ref with state to persist comments through re-renders
   useEffect(() => {
@@ -151,6 +158,10 @@ export default function PlayWithCoachPage() {
           lastCommentRef.current = commentToPreserve
           console.log('[TAL_COACH] 💾 Preserving comment before engine move:', commentToPreserve.moveNumber)
         }
+
+        // Play sound for engine move
+        const soundType = getMoveSoundSimple(result.move.san)
+        playSound(soundType)
 
         setGame(gameCopy)
         setGamePosition(gameCopy.fen())
@@ -264,6 +275,10 @@ export default function PlayWithCoachPage() {
         // Store FEN before move for analysis
         const fenBefore = game.fen()
         const moveNumber = Math.floor(moveHistory.length / 2) + 1
+
+        // Play sound for player move
+        const soundType = getMoveSoundSimple(move.san)
+        playSound(soundType)
 
         // Update game state first
         setGame(gameCopy)
@@ -391,6 +406,8 @@ export default function PlayWithCoachPage() {
           fen: fenBefore,
           move: moveUci,
           depth: 8, // Faster analysis for real-time feedback
+          fullmove_number: moveNumber, // Required for AI coaching comments
+          is_user_move: true, // This is always a user move in coaching context
         }),
       })
 
