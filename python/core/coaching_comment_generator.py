@@ -819,7 +819,7 @@ Write the position description now:"""
             # Use the helper method with fallback
             comment = self.ai_generator._call_api_with_fallback(
                 prompt=prompt,
-                system="You are Mikhail Tal, the Magician from Riga. You analyze chess positions clearly, explaining their key features and teaching what matters with your tactical vision. Focus on concrete chess concepts while appreciating the tactical possibilities and creative opportunities in the position.",
+                system="You are Mikhail Tal, the Magician from Riga. You analyze chess positions with energy and directness, explaining their key features with your tactical vision. Be enthusiastic about the possibilities—show genuine interest in tactics and creative play. Keep it real and engaging, not flowery—explain concrete chess concepts clearly while appreciating the tactical opportunities in the position.",
                 max_tokens=150,  # Reduced for position descriptions (2 sentences max)
                 temperature=0.85
             )
@@ -1567,55 +1567,48 @@ Write the phase transition comment now:"""
 
     def _generate_positional_insights(self, move_analysis: Dict[str, Any], board: chess.Board,
                                     move: chess.Move, game_phase: GamePhase) -> List[str]:
-        """Generate positional insights about the move."""
+        """Generate specific, non-repetitive positional insights about the move."""
         insights = []
 
         # Use advanced analyzer for positional concepts
         positional_analysis = self.advanced_analyzer.analyze_positional_concepts(board, move)
 
-        # Add insights for improved concepts
-        for concept in positional_analysis.concepts_improved:
-            concept_name = concept.value.replace('_', ' ').title()
-            insights.append(f"This move improves {concept_name} - an important positional principle.")
+        # Only add the most significant improved concepts (top 2)
+        improved_concepts = list(positional_analysis.concepts_improved)[:2]
+        concept_messages = {
+            'center_control': "Strengthens control of the central squares",
+            'piece_activity': "Activates pieces, bringing them into the game",
+            'pawn_structure': "Improves pawn structure and creates a solid foundation",
+            'piece_coordination': "Better coordinates pieces for combined effect",
+            'king_safety': "Enhances king safety",
+            'development': "Advances piece development"
+        }
 
-        # Add insights for weakened concepts
-        for concept in positional_analysis.concepts_weakened:
-            concept_name = concept.value.replace('_', ' ').title()
-            insights.append(f"This move weakens {concept_name} - be careful about this in future positions.")
+        for concept in improved_concepts:
+            message = concept_messages.get(concept.value, f"Improves {concept.value.replace('_', ' ')}")
+            insights.append(message)
 
-        # Add positional advantages
-        insights.extend(positional_analysis.positional_advantages)
+        # Add specific positional advantages (already descriptive from analyzer)
+        insights.extend(positional_analysis.positional_advantages[:2])
 
-        # Add positional weaknesses
-        insights.extend(positional_analysis.positional_weaknesses)
+        # Add critical weaknesses only (not generic ones)
+        if positional_analysis.positional_weaknesses:
+            insights.extend(positional_analysis.positional_weaknesses[:1])
 
-        # Add space advantage insights
-        if positional_analysis.space_advantage > 5:
-            insights.append("You have a space advantage. Use it to restrict your opponent's pieces and create threats.")
-        elif positional_analysis.space_advantage < -5:
-            insights.append("Your opponent has more space. Look for ways to break through or create counterplay.")
+        # Only add space/coordination insights if they're extreme
+        if positional_analysis.space_advantage > 10:
+            insights.append("Seizes significant space advantage to restrict opponent's pieces")
+        elif positional_analysis.space_advantage < -10:
+            insights.append("Opponent gains space - consider pawn breaks for counterplay")
 
-        # Add piece coordination insights
-        if positional_analysis.piece_coordination_score > 60:
-            insights.append("Your pieces are well coordinated. This creates powerful attacking and defensive possibilities.")
-        elif positional_analysis.piece_coordination_score < 40:
-            insights.append("Your pieces could work together better. Look for ways to improve their coordination.")
+        # Only mention coordination if exceptionally good or bad
+        if positional_analysis.piece_coordination_score > 75:
+            insights.append("Pieces harmonize beautifully for attack and defense")
+        elif positional_analysis.piece_coordination_score < 30:
+            insights.append("Piece coordination needs improvement")
 
-        # Add pawn structure insights
-        if positional_analysis.pawn_structure_score > 60:
-            insights.append("Your pawn structure is solid. This provides a strong foundation for your pieces.")
-        elif positional_analysis.pawn_structure_score < 40:
-            insights.append("Your pawn structure has weaknesses. Be careful about pawn moves and consider pawn breaks.")
-
-        # Game phase specific insights
-        if game_phase == GamePhase.OPENING:
-            insights.append("In the opening, focus on rapid development and controlling the center.")
-        elif game_phase == GamePhase.MIDDLEGAME:
-            insights.append("In the middlegame, look for tactical opportunities and improve your piece placement.")
-        elif game_phase == GamePhase.ENDGAME:
-            insights.append("In the endgame, king activity and pawn promotion become crucial.")
-
-        return insights
+        # Limit total insights to 3 most important ones
+        return insights[:3]
 
     def _analyze_risks(self, move_analysis: Dict[str, Any], board: chess.Board,
                       move: chess.Move, move_quality: MoveQuality) -> List[str]:

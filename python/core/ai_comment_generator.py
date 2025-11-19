@@ -121,6 +121,15 @@ class AIChessCommentGenerator:
         self.client = None
         self.enabled = False
 
+        # Initialize chess knowledge retriever for enhanced teaching
+        try:
+            from .chess_knowledge_retriever import ChessKnowledgeRetriever
+            self.knowledge_retriever = ChessKnowledgeRetriever()
+            print("[AI] ✅ Chess knowledge retriever initialized - enhanced teaching enabled")
+        except Exception as e:
+            print(f"[AI] ⚠️  Could not initialize knowledge retriever: {e}")
+            self.knowledge_retriever = None
+
         # Rate limiting: track last API call time to prevent overwhelming the API
         self._last_api_call_time = 0.0
         self._rate_limit_lock = threading.Lock()
@@ -292,7 +301,34 @@ class AIChessCommentGenerator:
             prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
 
             print(f"[AI] Calling Anthropic API with model {self.config.ai_model}")
-            system_prompt = "You are Mikhail Tal, the Magician from Riga. You teach chess with energy and insight, explaining the principles behind each move. Your comments are engaging and instructive—you help players understand why moves work or fail. Focus on teaching chess concepts clearly: piece coordination, tactical patterns, positional understanding. Use occasional metaphors when they help explain, but prioritize clear analysis and principle-based teaching. You encourage creative thinking while building solid chess understanding. Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly with your commentary."
+            # Get enhanced system prompt with chess teaching methodology and Tal's authentic style
+            base_system_prompt = """You are Mikhail Tal, the Magician from Riga. You teach chess with the energy and passion that made you a World Champion. Your style is direct, engaging, and enthusiastic—you see the beauty in tactics and the power in creative play.
+
+**YOUR AUTHENTIC VOICE:**
+- Be energetic and direct—show genuine excitement about chess
+- Speak with confidence and clarity—you know what you're talking about
+- Be passionate about tactics and creative possibilities
+- Keep it real—no flowery language, just clear, engaging explanations
+- Show enthusiasm for good moves and tactical opportunities
+- Be encouraging but honest—celebrate brilliance, explain mistakes clearly
+
+**YOUR TEACHING STYLE:**
+- Explain chess concepts clearly and directly
+- Connect moves to fundamental principles
+- Show why tactics work—the logic behind combinations
+- Help players see the possibilities in positions
+- Encourage creative thinking and tactical awareness
+- Build understanding through clear, concrete examples
+
+Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly with your commentary. Write with the energy and insight that made you the Magician from Riga."""
+
+            if self.knowledge_retriever:
+                system_prompt = self.knowledge_retriever.get_enhanced_system_prompt(
+                    player_elo=player_elo,
+                    base_prompt=base_system_prompt
+                )
+            else:
+                system_prompt = base_system_prompt
 
             # Use the helper method with fallback
             comment = self._call_api_with_fallback(
@@ -406,7 +442,34 @@ class AIChessCommentGenerator:
                 prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
 
                 print(f"[AI] Calling Anthropic API (async) with model {self.config.ai_model}")
-                system_prompt = "You are Mikhail Tal, the Magician from Riga. You teach chess with energy and insight, explaining the principles behind each move. Your comments are engaging and instructive—you help players understand why moves work or fail. Focus on teaching chess concepts clearly: piece coordination, tactical patterns, positional understanding. Use occasional metaphors when they help explain, but prioritize clear analysis and principle-based teaching. You encourage creative thinking while building solid chess understanding. Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly with your commentary."
+                # Get enhanced system prompt with chess teaching methodology and Tal's authentic style
+                base_system_prompt = """You are Mikhail Tal, the Magician from Riga. You teach chess with the energy and passion that made you a World Champion. Your style is direct, engaging, and enthusiastic—you see the beauty in tactics and the power in creative play.
+
+**YOUR AUTHENTIC VOICE:**
+- Be energetic and direct—show genuine excitement about chess
+- Speak with confidence and clarity—you know what you're talking about
+- Be passionate about tactics and creative possibilities
+- Keep it real—no flowery language, just clear, engaging explanations
+- Show enthusiasm for good moves and tactical opportunities
+- Be encouraging but honest—celebrate brilliance, explain mistakes clearly
+
+**YOUR TEACHING STYLE:**
+- Explain chess concepts clearly and directly
+- Connect moves to fundamental principles
+- Show why tactics work—the logic behind combinations
+- Help players see the possibilities in positions
+- Encourage creative thinking and tactical awareness
+- Build understanding through clear, concrete examples
+
+Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly with your commentary. Write with the energy and insight that made you the Magician from Riga."""
+
+                if self.knowledge_retriever:
+                    system_prompt = self.knowledge_retriever.get_enhanced_system_prompt(
+                        player_elo=player_elo,
+                        base_prompt=base_system_prompt
+                    )
+                else:
+                    system_prompt = base_system_prompt
 
                 # Use async API call
                 comment = await self._call_api_async(prompt, system_prompt)
@@ -1201,12 +1264,12 @@ class AIChessCommentGenerator:
                 prompt = f"""{move_owner.capitalize()} just started the game with {move_san} (move 1).
 
 **YOUR MISSION (Tal-Style Commentary):**
-Write ONE short, encouraging sentence (maximum 15 words) that captures the excitement of starting a game. Channel Mikhail Tal's playful, energetic spirit. Be brief, cheerful, and inspiring—something like "The adventure begins!" or "Time to bring out your forces!" Keep it light and encouraging, not technical or educational.
+Write ONE short, encouraging sentence (maximum 15 words) that captures the excitement of starting a game. Channel Mikhail Tal's direct, energetic spirit. Be brief, enthusiastic, and real—something like "The game begins!" or "Time to play!" Keep it light and encouraging, not technical or flowery.
 
 **CRITICAL RULES:**
 - ONE sentence maximum, 15 words or less
-- Be encouraging and energetic, like Tal
-- NO technical explanations, NO long descriptions
+- Be direct and energetic, like Tal—genuine enthusiasm, not poetry
+- NO technical explanations, NO long descriptions, NO flowery language
 - {"Just cheer them on for starting the game!" if is_user_move else "Acknowledge the game beginning with enthusiasm!"}
 
 Write the comment now:"""
@@ -1215,6 +1278,23 @@ Write the comment now:"""
         # Get player color from move analysis
         player_color = move_analysis.get('player_color', 'white')
 
+        # Retrieve relevant chess knowledge for enhanced teaching
+        chess_knowledge = ""
+        if self.knowledge_retriever:
+            try:
+                chess_knowledge = self.knowledge_retriever.retrieve_relevant_knowledge(
+                    move_analysis=move_analysis,
+                    board=board,
+                    move=move,
+                    game_phase=game_phase,
+                    player_elo=player_elo
+                )
+                if chess_knowledge:
+                    print(f"[AI] ✅ Retrieved chess knowledge for enhanced teaching ({len(chess_knowledge)} chars)")
+            except Exception as e:
+                print(f"[AI] ⚠️  Could not retrieve chess knowledge: {e}")
+                chess_knowledge = ""
+
         # Route to appropriate prompt builder based on move type
         if not is_user_move:
             return self._build_opponent_move_prompt(
@@ -1222,7 +1302,7 @@ Write the comment now:"""
                 opening_context, previous_move_context, capture_info, is_capture,
                 move_quality, eval_verb, eval_description, eval_explanation,
                 board_state_context, stockfish_context, hanging_pieces_context, tactical_context, positional_context,
-                fen_after, best_move_san, tal_style, player_color
+                fen_after, best_move_san, tal_style, player_color, chess_knowledge
             )
         else:
             return self._build_user_move_prompt(
@@ -1230,7 +1310,7 @@ Write the comment now:"""
                 opening_context, previous_move_context, capture_info, is_capture,
                 move_quality, eval_verb, eval_description, eval_explanation,
                 board_state_context, stockfish_context, hanging_pieces_context, tactical_context, positional_context,
-                fen_after, best_move_san, tal_style, player_color
+                fen_after, best_move_san, tal_style, player_color, chess_knowledge
             )
 
     def _build_opponent_move_prompt(
@@ -1239,7 +1319,7 @@ Write the comment now:"""
         capture_info: str, is_capture: bool, move_quality: MoveQuality,
         eval_verb: str, eval_description: str, eval_explanation: str,
         board_state_context: str, stockfish_context: str, hanging_pieces_context: str, tactical_context: str, positional_context: str,
-        fen_after: str, best_move_san: str, tal_style: str, player_color: str
+        fen_after: str, best_move_san: str, tal_style: str, player_color: str, chess_knowledge: str = ""
     ) -> str:
         """Build prompt specifically for opponent moves - analyze what opponent did."""
         color_name = player_color.capitalize()  # "White" or "Black"
@@ -1252,16 +1332,21 @@ Write the comment now:"""
         else:
             task_description = f"Analyze what {color_name} did with this move and its purpose."
 
+        # Inject chess knowledge if available
+        knowledge_section = f"\n{chess_knowledge}\n" if chess_knowledge else ""
+
         prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
 {opening_context}{previous_move_context}{capture_info}{hanging_pieces_context}
 **MOVE QUALITY:** {move_quality.value} | {color_name}'s move
 **EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
 {board_state_context}
 {stockfish_context}
-{tactical_context}{positional_context}
+{tactical_context}{positional_context}{knowledge_section}
 **POSITION:** {fen_after}
 
-**TASK:** Write 2-3 sentences analyzing what {color_name} did with this move. {task_description} Style: {tal_style}. Focus on analyzing their move's purpose and consequences.
+**TASK:** Write 2-3 sentences analyzing what {color_name} did with this move. {task_description} Style: {tal_style}. Focus on analyzing their move's purpose and consequences. Use the chess knowledge above to provide deeper insights and teaching points.
+
+**TAL'S VOICE:** Write with energy and directness. Show genuine interest in the position—be enthusiastic about tactics, clear about principles, and honest about mistakes. Keep it real and engaging, not poetic or flowery.
 
 **RULES:**
 - Start directly (no "Ah," "Oh,")
@@ -1289,10 +1374,13 @@ Write comment:"""
         capture_info: str, is_capture: bool, move_quality: MoveQuality,
         eval_verb: str, eval_description: str, eval_explanation: str,
         board_state_context: str, stockfish_context: str, hanging_pieces_context: str, tactical_context: str, positional_context: str,
-        fen_after: str, best_move_san: str, tal_style: str, player_color: str
+        fen_after: str, best_move_san: str, tal_style: str, player_color: str, chess_knowledge: str = ""
     ) -> str:
         """Build prompt for user moves - explain the principle and idea behind the move."""
         color_name = player_color.capitalize()  # "White" or "Black"
+
+        # Inject chess knowledge if available
+        knowledge_section = f"\n{chess_knowledge}\n" if chess_knowledge else ""
 
         prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
 {opening_context}{previous_move_context}{capture_info}{hanging_pieces_context}
@@ -1300,10 +1388,12 @@ Write comment:"""
 **EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
 {board_state_context}
 {stockfish_context}
-{tactical_context}{positional_context}
+{tactical_context}{positional_context}{knowledge_section}
 **POSITION:** {fen_after}
 
-**TASK:** Write 2-3 sentences explaining the *principle* and *idea* behind this move. Style: {tal_style}. {"Focus on brilliant reasoning and principles demonstrated." if move_quality == MoveQuality.BRILLIANT else "Explain what went wrong tactically/positionally and what should be played instead." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Explain the reasoning and how it improves the position."} Focus on what {color_name} did.
+**TASK:** Write 2-3 sentences explaining the *principle* and *idea* behind this move. Style: {tal_style}. {"Focus on brilliant reasoning and principles demonstrated." if move_quality == MoveQuality.BRILLIANT else "Explain what went wrong tactically/positionally and what should be played instead." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Explain the reasoning and how it improves the position."} Focus on what {color_name} did. Use the chess knowledge above to provide deeper insights and teaching points.
+
+**TAL'S VOICE:** Write with energy and directness. {"Celebrate this brilliant move—show genuine enthusiasm for the tactical vision!" if move_quality == MoveQuality.BRILLIANT else "Be honest but constructive—explain the mistake clearly and help them learn." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Show appreciation for good chess—explain why this works."} Keep it real, engaging, and educational.
 
 **RULES:**
 - Start directly (no "Ah," "Oh,")
