@@ -1195,14 +1195,6 @@ ${pgn} ${result}`
                               <span className="text-xs text-slate-500">(You)</span>
                             )}
                           </div>
-                          {hasComment && moveComment.processedMove && (
-                            <div className="ml-0 mt-2">
-                              <EnhancedMoveCoaching
-                                move={moveComment.processedMove}
-                                className="text-sm"
-                              />
-                            </div>
-                          )}
                           {isLoadingComments && isUserMove && !hasComment && (
                             <div className="ml-0 mt-1 text-xs text-slate-500 italic">
                               Loading coaching comment...
