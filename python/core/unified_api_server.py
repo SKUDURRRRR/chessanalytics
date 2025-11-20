@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Unified Chess Analysis API Server
 A single, comprehensive API that consolidates all analysis functionality.
@@ -404,9 +404,9 @@ async def startup_event():
             }
         )
         await _engine_pool_instance.start_cleanup_task()
-        print(f"[STARTUP] ✅ Engine pool initialized: {_engine_pool_instance}")
+        print(f"[STARTUP] [OK] Engine pool initialized: {_engine_pool_instance}")
     else:
-        print("[STARTUP] ⚠️  Stockfish path not configured - engine pool disabled")
+        print("[STARTUP] [WARNING] Stockfish path not configured - engine pool disabled")
 
     # Initialize memory monitor
     print("[STARTUP] Initializing memory monitor...")
@@ -416,15 +416,15 @@ async def startup_event():
         critical_threshold=0.85 # Critical at 85%
     )
     await _memory_monitor_instance.start()
-    print(f"[STARTUP] ✅ Memory monitor started")
+    print(f"[STARTUP] [OK] Memory monitor started")
 
     # Initialize analysis engine early to trigger AI comment generator initialization
     logger.info("[STARTUP] Pre-initializing analysis engine (this will initialize AI comment generator)...")
     try:
         get_analysis_engine()
-        logger.info("[STARTUP] ✅ Analysis engine pre-initialized successfully")
+        logger.info("[STARTUP] [OK] Analysis engine pre-initialized successfully")
     except Exception as e:
-        logger.warning(f"[STARTUP] ⚠️  Analysis engine pre-initialization failed: {e}")
+        logger.warning(f"[STARTUP] [WARNING] Analysis engine pre-initialization failed: {e}")
         import traceback
         logger.debug(f"[STARTUP] Traceback: {traceback.format_exc()}")
 
@@ -435,19 +435,24 @@ async def startup_event():
         ai_check = AIChessCommentGenerator()
         if ai_check and ai_check.enabled:
             model = ai_check.config.ai_model if hasattr(ai_check, 'config') else 'unknown'
-            logger.info(f"[STARTUP] ✅ AI Generation: ENABLED (Model: {model})")
-            logger.info("[STARTUP] ✅ AI-powered style analysis and move comments are available")
+            logger.info(f"[STARTUP] [OK] AI Generation: ENABLED (Model: {model})")
+            logger.info("[STARTUP] [OK] AI-powered style analysis and move comments are available")
         else:
             if ai_check:
                 ai_enabled = ai_check.config.ai_enabled if hasattr(ai_check, 'config') else False
-                has_api_key = bool(ai_check.config.anthropic_api_key if hasattr(ai_check, 'config') else False)
-                logger.warning(f"[STARTUP] ⚠️  AI Generation: DISABLED")
-                logger.info(f"[STARTUP]    AI_ENABLED={ai_enabled}, API_KEY present={has_api_key}")
+                # Check for the correct API key based on provider
+                provider = ai_check.config.ai_provider if hasattr(ai_check, 'config') else 'anthropic'
+                if provider == 'gemini':
+                    has_api_key = bool(ai_check.config.gemini_api_key if hasattr(ai_check, 'config') else False)
+                else:
+                    has_api_key = bool(ai_check.config.anthropic_api_key if hasattr(ai_check, 'config') else False)
+                logger.warning(f"[STARTUP] [WARNING] AI Generation: DISABLED")
+                logger.info(f"[STARTUP]    Provider={provider}, AI_ENABLED={ai_enabled}, API_KEY present={has_api_key}")
             else:
-                logger.warning("[STARTUP] ⚠️  AI Generation: NOT AVAILABLE (generator failed to initialize)")
+                logger.warning("[STARTUP] [WARNING] AI Generation: NOT AVAILABLE (generator failed to initialize)")
             logger.info("[STARTUP]    Falling back to template-based generation")
     except Exception as ai_error:
-        logger.warning(f"[STARTUP] ⚠️  AI Generation: CHECK FAILED - {ai_error}")
+        logger.warning(f"[STARTUP] [WARNING] AI Generation: CHECK FAILED - {ai_error}")
         logger.info("[STARTUP]    AI features will use template-based fallback")
 
     # Clear analysis stats cache on startup to prevent stale data from wrong calculation function
@@ -499,7 +504,7 @@ async def startup_event():
         logger.warning("STRIPE_SECRET_KEY not found in environment")
 
     print("=" * 80)
-    print("✅ Server startup complete!")
+    print("[OK] Server startup complete!")
     print("=" * 80)
 
 

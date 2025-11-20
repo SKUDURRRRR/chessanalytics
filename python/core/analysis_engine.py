@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Unified Chess Analysis Engine
 Provides a single, configurable interface for all chess analysis operations.

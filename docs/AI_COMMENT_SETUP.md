@@ -1,46 +1,98 @@
 # AI-Powered Comment Generation Setup Guide
 
-This guide explains how to set up Claude 3.5 Sonnet (Anthropic) for generating human-like chess comments tailored for players rated 600-1800 ELO.
+This guide explains how to set up AI providers (Anthropic/Claude or Google/Gemini) for generating human-like chess comments tailored for players rated 600-1800 ELO.
 
 ## Overview
 
-The system now uses **Claude 3.5 Sonnet** (Anthropic) to generate natural, educational chess comments. The AI:
+The system supports multiple AI providers to generate natural, educational chess comments:
+- **Anthropic (Claude)**: Claude 3 Haiku, Claude 3 Sonnet, Claude 3.5 Sonnet
+- **Google (Gemini)**: Gemini 2.5 Flash (recommended for cost-effectiveness)
+
+The AI:
 - Explains moves in simple, clear language
 - Adjusts complexity based on player ELO
 - Provides encouraging, educational feedback
 - Falls back to template-based comments if AI is unavailable
 
-## Why Claude 3.5 Sonnet?
+## Provider Comparison
 
-**Claude 3.5 Sonnet** is recommended because:
+### Gemini 2.5 Flash (Recommended for Cost)
+
+**Why Gemini 2.5 Flash?**
+- ✅ **Extremely affordable** (~$0.075-0.15 per 1M input tokens, ~$0.30-0.60 per 1M output tokens)
+- ✅ **75% cheaper than Claude** for high-volume usage
+- ✅ Strong reasoning capabilities (86.7% AIME 2025)
+- ✅ Good chess understanding
+- ✅ Excellent for educational content
+- ✅ Google's reliable infrastructure
+- ✅ Free tier available for testing
+
+**Pricing:**
+- Input: ~$0.075-0.15 per 1M tokens
+- Output: ~$0.30-0.60 per 1M tokens
+- **Per comment:** ~$0.0001-0.0002 (extremely cheap)
+- **10,000 comments:** ~$1-2
+
+### Claude 3.5 Sonnet (Higher Quality)
+
+**Why Claude 3.5 Sonnet?**
 - ✅ Excellent at explaining complex concepts simply
 - ✅ Designed to be helpful and educational
 - ✅ Good at adjusting tone/complexity for different skill levels
 - ✅ Natural, conversational language
-- ✅ **More cost-effective than GPT-4 Turbo**
-- ✅ Reasonable pricing (~$3 per 1M input tokens, ~$15 per 1M output tokens)
+- ✅ More cost-effective than GPT-4 Turbo
+
+**Pricing:**
+- Input: $3 per 1M tokens
+- Output: $15 per 1M tokens
+- **Per comment:** ~$0.001-0.002
+- **10,000 comments:** ~$10-20
 
 ## Cost Comparison
 
-**Claude 3.5 Sonnet:**
-- Input: $3 per 1M tokens
-- Output: $15 per 1M tokens
-- **Per comment:** ~$0.001-0.002 (less than a penny)
-- **1000 comments:** ~$1-2
-- **10,000 comments:** ~$10-20
+| Provider | Input (per 1M) | Output (per 1M) | 10K Comments | Best For |
+|----------|----------------|-----------------|--------------|----------|
+| **Gemini 2.5 Flash** | $0.075-0.15 | $0.30-0.60 | **$1-2** | Budget-conscious, high volume |
+| **Claude 3.5 Sonnet** | $3 | $15 | **$10-20** | Higher quality, established |
+| **GPT-4 Turbo** | $10 | $30 | **$60-90** | (Not recommended - expensive) |
 
-**GPT-4 Turbo (for comparison):**
-- Input: $10 per 1M tokens
-- Output: $30 per 1M tokens
-- **Per comment:** ~$0.006-0.009
-- **1000 comments:** ~$6-9
-- **10,000 comments:** ~$60-90
-
-**Savings:** Claude is approximately **3-4x cheaper** than GPT-4 Turbo for this use case!
+**Recommendation:** Start with **Gemini 2.5 Flash** for 75% cost savings. If quality is insufficient, upgrade to Claude 3.5 Sonnet.
 
 ## Setup Steps
 
-### 1. Get Anthropic API Key
+### Option 1: Gemini 2.5 Flash (Recommended)
+
+#### 1. Get Gemini API Key
+
+1. Go to [Google AI Studio](https://aistudio.google.com/)
+2. Sign up or log in with your Google account
+3. Click **"Get API Key"** or navigate to **API Keys** section
+4. Create a new API key
+5. Copy the key
+6. **Important:** Save it immediately - you can view it again but it's easier to save now!
+
+#### 2. Add Environment Variables
+
+**For Local Development:**
+```bash
+# In your .env file (or .env.local)
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_api_key_here
+AI_ENABLED=true
+AI_MODEL=gemini-2.5-flash
+```
+
+**For Production (Railway):**
+1. Go to Railway Dashboard → Your Service → Variables
+2. Add:
+   - `AI_PROVIDER` = `gemini`
+   - `GEMINI_API_KEY` = `your_gemini_api_key_here`
+   - `AI_ENABLED` = `true`
+   - `AI_MODEL` = `gemini-2.5-flash`
+
+### Option 2: Anthropic (Claude)
+
+#### 1. Get Anthropic API Key
 
 1. Go to [Anthropic Console](https://console.anthropic.com/)
 2. Sign up or log in
@@ -49,13 +101,12 @@ The system now uses **Claude 3.5 Sonnet** (Anthropic) to generate natural, educa
 5. Copy the key (starts with `sk-ant-api03-...`)
 6. **Important:** Save it immediately - you won't be able to see it again!
 
-### 2. Add Environment Variable
-
-Add the API key to your environment:
+#### 2. Add Environment Variables
 
 **For Local Development:**
 ```bash
 # In your .env file (or .env.local)
+AI_PROVIDER=anthropic  # or omit (defaults to anthropic)
 ANTHROPIC_API_KEY=sk-ant-api03-your_actual_key_here
 AI_ENABLED=true
 AI_MODEL=claude-3-5-sonnet-20240620
@@ -64,6 +115,7 @@ AI_MODEL=claude-3-5-sonnet-20240620
 **For Production (Railway):**
 1. Go to Railway Dashboard → Your Service → Variables
 2. Add:
+   - `AI_PROVIDER` = `anthropic` (optional, defaults to anthropic)
    - `ANTHROPIC_API_KEY` = `sk-ant-api03-your_actual_key_here`
    - `AI_ENABLED` = `true`
    - `AI_MODEL` = `claude-3-5-sonnet-20240620` (or `claude-3-5-sonnet` for latest)
@@ -75,7 +127,9 @@ cd python
 pip install -r requirements.txt
 ```
 
-This will install the `anthropic` package (version 0.18.0+).
+This will install:
+- `anthropic>=0.18.0` (for Claude)
+- `google-generativeai>=0.8.0` (for Gemini)
 
 ### 4. Verify Setup
 
@@ -190,20 +244,33 @@ The system will continue using template-based comments.
 Available environment variables:
 
 ```bash
-# Required
-ANTHROPIC_API_KEY=sk-ant-api03-...
+# Provider Selection (required)
+AI_PROVIDER=gemini                  # or "anthropic" (default: anthropic)
 
-# Optional
+# Gemini Configuration
+GEMINI_API_KEY=your_gemini_key     # Required if AI_PROVIDER=gemini
+AI_GEMINI_API_KEY=your_key         # Alternative env var name
+GOOGLE_AI_API_KEY=your_key         # Alternative env var name
+
+# Anthropic Configuration
+ANTHROPIC_API_KEY=sk-ant-api03-... # Required if AI_PROVIDER=anthropic
+AI_ANTHROPIC_API_KEY=your_key      # Alternative env var name
+
+# Common Options
 AI_ENABLED=true                    # Enable/disable AI (default: true)
-AI_MODEL=claude-3-5-sonnet-20240620 # Model to use
-AI_MAX_TOKENS=500                   # Max tokens per response
-AI_TEMPERATURE=0.7                  # Creativity (0.0-1.0, default: 0.7)
+AI_MODEL=gemini-2.5-flash          # Model to use (provider-specific)
+AI_MAX_TOKENS=200                   # Max tokens per response (default: 200)
+AI_TEMPERATURE=0.75                 # Creativity (0.0-1.0, default: 0.75)
+AI_API_TIMEOUT=30.0                 # API timeout in seconds (default: 30.0)
+AI_RATE_LIMIT_DELAY=2.0             # Delay between API calls in seconds (default: 2.0)
 ```
 
 ### Available Models
 
-You can use different Anthropic models by changing `AI_MODEL`:
+**Gemini Models:**
+- `gemini-2.5-flash` - Recommended, fastest, cheapest, excellent for educational content
 
+**Anthropic (Claude) Models:**
 - `claude-3-5-sonnet` - Recommended, latest version, best balance of quality and cost
 - `claude-3-5-sonnet-20240620` - June 2024 version, best balance of quality and cost
 - `claude-3-opus-20240229` - Highest quality (more expensive)
@@ -229,12 +296,13 @@ You can use different Anthropic models by changing `AI_MODEL`:
 
 Potential improvements:
 - [x] Support for Claude 3.5 Sonnet
+- [x] Support for Gemini 2.5 Flash
 - [ ] Caching layer for common positions
 - [ ] Rate limiting per user
 - [ ] Batch processing for multiple moves
 - [ ] Custom prompts per user preference
 - [ ] Multi-language support
-- [ ] Support for Claude 3.7 (when available)
+- [ ] Support for additional providers (DeepSeek, Grok, etc.)
 
 ## Support
 

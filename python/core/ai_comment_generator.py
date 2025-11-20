@@ -1,4 +1,4 @@
-"""
+﻿"""
 AI-Powered Chess Comment Generator using Claude (Anthropic)
 
 This module uses Anthropic's Claude models to generate human-like,
@@ -36,6 +36,20 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     Anthropic = None  # type: ignore
 
+# Try to import Google Generative AI (Gemini), but make it optional
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+    print(f"[AI] Google Generative AI package is available (version {genai.__version__})")
+except ImportError as e:
+    GEMINI_AVAILABLE = False
+    genai = None  # type: ignore
+    print(f"[AI] Error importing google.generativeai: {e}")
+except Exception as e:
+    GEMINI_AVAILABLE = False
+    genai = None  # type: ignore
+    print(f"[AI] Unexpected error importing google.generativeai: {e}")
+
 # Load environment variables from .env.local files
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Load from python/.env.local first (highest priority)
@@ -48,35 +62,59 @@ load_dotenv(BASE_DIR.parent / '.env.local', override=False)
 load_dotenv(BASE_DIR.parent / '.env', override=False)
 
 
+class AIProvider(Enum):
+    """AI provider options."""
+    ANTHROPIC = "anthropic"
+    GEMINI = "gemini"
+
+
 class AIConfig(BaseSettings):
     """Configuration for AI comment generation.
 
-    Model options:
-    - claude-3-haiku-20240307 (recommended: fastest, cheapest, most reliable)
-    - claude-3-sonnet-20240229 (good balance of quality and cost)
-    - claude-3-5-sonnet-20240620 (best quality, may not be available to all API keys)
-    - claude-3-5-sonnet (latest version, best quality)
+    Supports multiple AI providers:
+    - Anthropic (Claude): claude-3-haiku-20240307, claude-3-sonnet, etc.
+    - Gemini: gemini-2.0-flash-exp, gemini-1.5-flash (recommended for cost-effectiveness)
 
-    The system will automatically fall back to working models if the configured
-    model is not available.
+    The system will automatically use the appropriate client based on AI_PROVIDER env var.
     """
+    ai_provider: str = "gemini"  # Default provider: "anthropic" or "gemini"
     anthropic_api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
     ai_enabled: bool = True
-    ai_model: str = "claude-3-haiku-20240307"  # Recommended: most reliable, fastest, cheapest
-    max_tokens: int = 200  # Increased: more room for educational content with simplified prompts
-    temperature: float = 0.75  # Slightly reduced from 0.85 to reduce variability and token usage
-    api_timeout: float = 30.0  # API call timeout in seconds (reduced from 60s to 30s to prevent blocking)
-    rate_limit_delay: float = 2.0  # Delay between AI API calls in seconds (increased to prevent 429 errors)
+    ai_model: str = "gemini-2.0-flash-exp"  # Default model (provider-specific)
+    max_tokens: int = 200  # Increased: more room for educational content
+    temperature: float = 0.75  # Slightly reduced from 0.85 to reduce variability
+    api_timeout: float = 30.0  # API call timeout in seconds
+    rate_limit_delay: float = 2.0  # Delay between AI API calls in seconds
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Manual override: Check for AI_MODEL (without double prefix) as fallback
-        # Pydantic with env_prefix="AI_" looks for AI_AI_MODEL, but we also support AI_MODEL
-        # Always check AI_MODEL directly from environment (common in .env.local files)
+
+        # Check for AI_PROVIDER from environment (without prefix)
+        direct_provider = os.getenv("AI_PROVIDER")
+        if direct_provider:
+            self.ai_provider = direct_provider.lower()
+            print(f"[AI] Using AI_PROVIDER from environment: {self.ai_provider}")
+
+        # Set provider-specific default model if not explicitly set
+        if not os.getenv("AI_MODEL"):
+            if self.ai_provider == AIProvider.GEMINI.value:
+                self.ai_model = "gemini-2.0-flash-exp"
+            elif self.ai_provider == AIProvider.ANTHROPIC.value:
+                self.ai_model = "claude-3-haiku-20240307"
+
+        # Manual override: Check for AI_MODEL (without double prefix)
         direct_model = os.getenv("AI_MODEL")
         if direct_model:
             self.ai_model = direct_model
             print(f"[AI] Using AI_MODEL from environment: {direct_model}")
+
+        # Check for API keys from environment (support both prefixed and non-prefixed)
+        if not self.anthropic_api_key:
+            self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("AI_ANTHROPIC_API_KEY")
+
+        if not self.gemini_api_key:
+            self.gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("AI_GEMINI_API_KEY") or os.getenv("GOOGLE_AI_API_KEY")
 
     class Config:
         env_prefix = "AI_"
@@ -97,9 +135,13 @@ class MoveQuality(Enum):
 
 class AIChessCommentGenerator:
     """
-    Generates human-like chess comments using Claude (Anthropic) models.
+    Generates human-like chess comments using AI models from multiple providers.
 
-    Features automatic model fallback - if the configured model is unavailable,
+    Supported providers:
+    - Anthropic (Claude): claude-3-haiku, claude-3-sonnet, claude-3-5-sonnet
+    - Gemini: gemini-2.0-flash-exp, gemini-1.5-flash (recommended for cost-effectiveness)
+
+    Features automatic model fallback for Anthropic - if the configured model is unavailable,
     it will automatically try working alternatives in order of reliability.
 
     Designed for players rated 600-1800 ELO, providing:
@@ -116,8 +158,8 @@ class AIChessCommentGenerator:
     def __init__(self):
         print("[AI] Initializing AIChessCommentGenerator...")
         self.config = AIConfig()
-        print(f"[AI] Config loaded - Model: {self.config.ai_model}, Enabled: {self.config.ai_enabled}")
-        print(f"[AI] API Key present: {bool(self.config.anthropic_api_key)}")
+        self.provider = self.config.ai_provider.lower()
+        print(f"[AI] Config loaded - Provider: {self.provider}, Model: {self.config.ai_model}, Enabled: {self.config.ai_enabled}")
         self.client = None
         self.enabled = False
 
@@ -125,9 +167,9 @@ class AIChessCommentGenerator:
         try:
             from .chess_knowledge_retriever import ChessKnowledgeRetriever
             self.knowledge_retriever = ChessKnowledgeRetriever()
-            print("[AI] ✅ Chess knowledge retriever initialized - enhanced teaching enabled")
+            print("[AI] Chess knowledge retriever initialized - enhanced teaching enabled")
         except Exception as e:
-            print(f"[AI] ⚠️  Could not initialize knowledge retriever: {e}")
+            print(f"[AI] Could not initialize knowledge retriever: {e}")
             self.knowledge_retriever = None
 
         # Rate limiting: track last API call time to prevent overwhelming the API
@@ -136,20 +178,32 @@ class AIChessCommentGenerator:
         self._rate_limit_delay = self.config.rate_limit_delay
 
         # Async rate limiting: token bucket rate limiter for parallel calls
-        # Anthropic limit: 50 requests per minute
+        # Provider-specific rate limits
         try:
             from .resilient_api_client import RateLimiter
+            if self.provider == AIProvider.GEMINI.value:
+                # Gemini limit: 15 requests per second (free tier)
+                capacity = 15
+                refill_rate = 15.0  # 15 requests per second
+                max_concurrent = 10  # Lower for Gemini
+                print(f"[AI] Async rate limiter initialized for Gemini (15 req/sec, 10 concurrent)")
+            else:
+                # Anthropic limit: 50 requests per minute
+                capacity = 50
+                refill_rate = 50.0 / 60.0  # Refill at 50/60 requests per second
+                max_concurrent = 15  # Max 15 concurrent calls
+                print(f"[AI] Async rate limiter initialized for Anthropic (50 req/min, 15 concurrent)")
+
             self._async_rate_limiter = RateLimiter(
-                capacity=50,  # Anthropic limit: 50 requests/minute
-                refill_rate=50.0 / 60.0  # Refill at 50/60 requests per second
+                capacity=capacity,
+                refill_rate=refill_rate
             )
             # Semaphore to limit concurrent API calls (prevent overwhelming)
-            self._api_semaphore = asyncio.Semaphore(15)  # Max 15 concurrent calls
-            print("[AI] ✅ Async rate limiter initialized (50 req/min, 15 concurrent)")
+            self._api_semaphore = asyncio.Semaphore(max_concurrent)
         except ImportError:
             self._async_rate_limiter = None
             self._api_semaphore = None
-            print("[AI] ⚠️  RateLimiter not available, async parallel calls disabled")
+            print("[AI] RateLimiter not available, async parallel calls disabled")
 
         # Initialize comment cache to avoid regenerating identical comments
         # Cache key: hash of (FEN + move + quality + ELO_range)
@@ -158,101 +212,134 @@ class AIChessCommentGenerator:
         try:
             from .cache_manager import LRUCache
             self._comment_cache = LRUCache(maxsize=500, ttl=86400, name="ai_comment_cache")
-            print("[AI] ✅ Comment cache initialized (500 entries, 24h TTL)")
+            print("[AI] Comment cache initialized (500 entries, 24h TTL)")
         except ImportError:
             # Fallback to simple dict if cache_manager not available
             self._comment_cache = {}
-            print("[AI] ⚠️  Cache manager not available, using simple dict cache")
+            print("[AI] Cache manager not available, using simple dict cache")
 
+        # Initialize provider-specific client
+        if self.provider == AIProvider.GEMINI.value:
+            self._init_gemini_client()
+        else:
+            # Default to Anthropic for backward compatibility
+            self._init_anthropic_client()
+
+    def _init_anthropic_client(self):
+        """Initialize Anthropic (Claude) client."""
         # Check if Anthropic package is available
         if not ANTHROPIC_AVAILABLE:
-            print("[AI] ❌ Warning: Anthropic package not installed. AI comments will be disabled.")
+            print("[AI] Warning: Anthropic package not installed. AI comments will be disabled.")
             print("[AI] Install with: pip install anthropic>=0.18.0")
             return
 
-        print("[AI] ✅ Anthropic package is available")
+        print("[AI] Anthropic package is available")
 
-        # Initialize Anthropic client if API key is available
-        api_key = None
-        if self.config.anthropic_api_key:
-            api_key = self.config.anthropic_api_key
-            print("[AI] Found API key in config.anthropic_api_key")
-        else:
-            # Try to get from environment variable directly
-            api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("AI_ANTHROPIC_API_KEY")
-            if api_key:
-                print("[AI] Found API key in environment variable")
-            else:
-                print("[AI] ⚠️  No API key found in config or environment variables")
+        # Get API key
+        api_key = self.config.anthropic_api_key
+        if not api_key:
+            print("[AI] No Anthropic API key found, AI comments will be disabled")
+            print("[AI] Check your .env.local file for ANTHROPIC_API_KEY or AI_ANTHROPIC_API_KEY")
+            return
 
-        if api_key:
+        try:
+            # Mask API key for logging
+            masked_key = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***"
+            print(f"[AI] Attempting to initialize Anthropic client with key: {masked_key}")
+            print(f"[AI] Model from config: {self.config.ai_model}")
+            print(f"[AI] AI_ENABLED from config: {self.config.ai_enabled}")
+            print(f"[AI] API timeout: {self.config.api_timeout}s")
+
+            # Initialize Anthropic client with httpx timeout configuration
             try:
-                # Mask API key for logging (show first 10 and last 4 chars)
-                masked_key = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***"
-                print(f"[AI] Attempting to initialize Anthropic client with key: {masked_key}")
-                print(f"[AI] Model from config: {self.config.ai_model}")
-                print(f"[AI] AI_ENABLED from config: {self.config.ai_enabled}")
-                print(f"[AI] API timeout: {self.config.api_timeout}s")
-
-                # Initialize Anthropic client with httpx timeout configuration
-                # This prevents the SDK from hanging indefinitely on slow API responses
-                # Reduced timeout to fail fast and prevent blocking analysis
+                import httpx
+                timeout = httpx.Timeout(
+                    connect=10.0,
+                    read=self.config.api_timeout,
+                    write=10.0,
+                    pool=10.0
+                )
+                http_client = httpx.Client(timeout=timeout)
                 try:
-                    import httpx
-                    timeout = httpx.Timeout(
-                        connect=10.0,  # Connection timeout: 10 seconds
-                        read=self.config.api_timeout,  # Read timeout: configurable (default 30s, reduced from 60s)
-                        write=10.0,  # Write timeout: 10 seconds
-                        pool=10.0  # Pool timeout: 10 seconds
+                    self.client = Anthropic(
+                        api_key=api_key,
+                        http_client=http_client,
+                        max_retries=0
                     )
-                    # Create httpx client with timeout configuration
-                    http_client = httpx.Client(timeout=timeout)
-                    # Pass the custom http_client to Anthropic SDK
-                    # The SDK will use this client for all HTTP requests
-                    # Set max_retries=0 to disable automatic retries on 429 errors
-                    # We handle rate limits manually with delays to prevent blocking
-                    try:
-                        self.client = Anthropic(
-                            api_key=api_key,
-                            http_client=http_client,
-                            max_retries=0  # Disable automatic retries - we handle rate limits manually
-                        )
-                    except TypeError:
-                        # Older SDK versions might not support max_retries parameter
-                        self.client = Anthropic(
-                            api_key=api_key,
-                            http_client=http_client
-                        )
-                    print(f"[AI] ✅ Anthropic client initialized with httpx timeout: {self.config.api_timeout}s, max_retries=0")
-                except (ImportError, TypeError) as e:
-                    # Fallback if httpx is not available or http_client parameter not supported
-                    # (shouldn't happen with modern Anthropic SDK, but be defensive)
-                    print(f"[AI] ⚠️  Could not configure custom http_client: {e}")
-                    print(f"[AI] ⚠️  Using default client (timeout may not be configurable)")
-                    try:
-                        self.client = Anthropic(api_key=api_key, max_retries=0)
-                    except TypeError:
-                        # Older SDK versions might not support max_retries parameter
-                        self.client = Anthropic(api_key=api_key)
+                except TypeError:
+                    self.client = Anthropic(
+                        api_key=api_key,
+                        http_client=http_client
+                    )
+                print(f"[AI] Anthropic client initialized with httpx timeout: {self.config.api_timeout}s, max_retries=0")
+            except (ImportError, TypeError) as e:
+                print(f"[AI] Could not configure custom http_client: {e}")
+                print(f"[AI] Using default client (timeout may not be configurable)")
+                try:
+                    self.client = Anthropic(api_key=api_key, max_retries=0)
+                except TypeError:
+                    self.client = Anthropic(api_key=api_key)
 
-                self.enabled = self.config.ai_enabled
-                if self.enabled:
-                    print(f"[AI] ✅ Anthropic client initialized successfully!")
-                    print(f"[AI] ✅ Model: {self.config.ai_model}")
-                    print(f"[AI] ✅ AI enabled: {self.enabled}")
-                    # Test the model by trying to list available models (if possible) or just confirm setup
-                    print(f"[AI] Ready to generate comments with model: {self.config.ai_model}")
-                else:
-                    print(f"[AI] ⚠️  Anthropic client initialized but AI is disabled (AI_ENABLED={self.config.ai_enabled})")
-                    print(f"[AI] ⚠️  Set AI_ENABLED=true in your .env file to enable AI comments")
-            except Exception as e:
-                print(f"[AI] ❌ Warning: Failed to initialize Anthropic client: {e}")
-                import traceback
-                print(f"[AI] Traceback: {traceback.format_exc()}")
-                self.enabled = False
-        else:
-            print("[AI] ⚠️  No API key available, AI comments will be disabled")
-            print("[AI] ⚠️  Check your .env.local file for ANTHROPIC_API_KEY")
+            self.enabled = self.config.ai_enabled
+            if self.enabled:
+                print(f"[AI] Anthropic client initialized successfully!")
+                print(f"[AI] Model: {self.config.ai_model}")
+                print(f"[AI] AI enabled: {self.enabled}")
+                print(f"[AI] Ready to generate comments with model: {self.config.ai_model}")
+            else:
+                print(f"[AI] Anthropic client initialized but AI is disabled (AI_ENABLED={self.config.ai_enabled})")
+                print(f"[AI] Set AI_ENABLED=true in your .env file to enable AI comments")
+        except Exception as e:
+            print(f"[AI] Warning: Failed to initialize Anthropic client: {e}")
+            import traceback
+            print(f"[AI] Traceback: {traceback.format_exc()}")
+            self.enabled = False
+
+    def _init_gemini_client(self):
+        """Initialize Google Gemini client."""
+        # Check if Gemini package is available
+        if not GEMINI_AVAILABLE:
+            print("[AI] Warning: Google Generative AI package not installed. AI comments will be disabled.")
+            print("[AI] Install with: pip install google-generativeai>=0.8.0")
+            return
+
+        print("[AI] Google Generative AI package is available")
+
+        # Get API key
+        api_key = self.config.gemini_api_key
+        if not api_key:
+            print("[AI] No Gemini API key found, AI comments will be disabled")
+            print("[AI] Check your .env.local file for GEMINI_API_KEY, AI_GEMINI_API_KEY, or GOOGLE_AI_API_KEY")
+            return
+
+        try:
+            # Mask API key for logging
+            masked_key = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***"
+            print(f"[AI] Attempting to initialize Gemini client with key: {masked_key}")
+            print(f"[AI] Model from config: {self.config.ai_model}")
+            print(f"[AI] AI_ENABLED from config: {self.config.ai_enabled}")
+            print(f"[AI] API timeout: {self.config.api_timeout}s")
+
+            # Configure Gemini API
+            genai.configure(api_key=api_key)
+
+            # Initialize Gemini model
+            self.client = genai.GenerativeModel(self.config.ai_model)
+
+            self.enabled = self.config.ai_enabled
+            if self.enabled:
+                print(f"[AI] Gemini client initialized successfully!")
+                print(f"[AI] Model: {self.config.ai_model}")
+                print(f"[AI] AI enabled: {self.enabled}")
+                print(f"[AI] Ready to generate comments with model: {self.config.ai_model}")
+            else:
+                print(f"[AI] Gemini client initialized but AI is disabled (AI_ENABLED={self.config.ai_enabled})")
+                print(f"[AI] Set AI_ENABLED=true in your .env file to enable AI comments")
+        except Exception as e:
+            print(f"[AI] Warning: Failed to initialize Gemini client: {e}")
+            import traceback
+            print(f"[AI] Traceback: {traceback.format_exc()}")
+            self.enabled = False
 
     def generate_comment(
         self,
@@ -520,12 +607,23 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
 
     async def _call_api_async(self, prompt: str, system: str) -> Optional[str]:
         """
-        Async API call to Anthropic.
-        Uses httpx.AsyncClient for non-blocking HTTP requests.
+        Async API call (provider-specific).
+        Routes to appropriate async implementation based on provider.
         """
         if not self.enabled or not self.client:
             return None
 
+        # Route to provider-specific async implementation
+        if self.provider == AIProvider.GEMINI.value:
+            return await self._call_gemini_api_async(prompt, system)
+        else:
+            return await self._call_anthropic_api_async(prompt, system)
+
+    async def _call_anthropic_api_async(self, prompt: str, system: str) -> Optional[str]:
+        """
+        Async API call to Anthropic.
+        Uses httpx.AsyncClient for non-blocking HTTP requests.
+        """
         try:
             import httpx
 
@@ -564,14 +662,53 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
                     if "content" in data and len(data["content"]) > 0:
                         return data["content"][0].get("text", "")
                 elif response.status_code == 429:
-                    print(f"[AI] ⚠️  Rate limit exceeded (429), skipping AI comment")
+                    print(f"[AI] Rate limit exceeded (429), skipping AI comment")
                     return None
                 else:
                     print(f"[AI] API call failed with status {response.status_code}: {response.text}")
                     return None
 
         except Exception as e:
-            print(f"[AI] Error in async API call: {e}")
+            print(f"[AI] Error in async Anthropic API call: {e}")
+            return None
+
+    async def _call_gemini_api_async(self, prompt: str, system: str) -> Optional[str]:
+        """
+        Async API call to Gemini.
+        Uses asyncio.to_thread to run synchronous Gemini calls in async context.
+        """
+        try:
+            # Gemini SDK doesn't have native async, so we use asyncio.to_thread
+            def _generate_sync():
+                generation_config = {
+                    "max_output_tokens": self.config.max_tokens,
+                    "temperature": self.config.temperature,
+                }
+
+                return self.client.generate_content(
+                    contents=[prompt],
+                    system_instruction=system,
+                    generation_config=generation_config
+                )
+
+            response = await asyncio.to_thread(_generate_sync)
+
+            if response and hasattr(response, 'text'):
+                return response.text.strip()
+            else:
+                print(f"[AI] Response from Gemini had no text content")
+                return None
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[AI] Gemini async API call failed: {error_msg}")
+
+            # Handle Gemini-specific errors
+            if "429" in error_msg or "rate_limit" in error_msg.lower() or "quota" in error_msg.lower():
+                print(f"[AI] Rate limit/quota exceeded for Gemini. Skipping AI comment.")
+            elif "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                print(f"[AI] API call timeout for Gemini. Skipping to prevent blocking.")
+
             return None
 
     def _filter_insights_for_move(self, insights: list, move_san: str, is_capture: bool, is_user_move: bool) -> list:
@@ -851,7 +988,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
         temperature: float = None
     ) -> Optional[str]:
         """
-        Call Anthropic API with automatic model fallback on 404 errors.
+        Call AI API with automatic fallback (provider-specific).
         Includes rate limiting to prevent overwhelming the API.
 
         Args:
@@ -878,6 +1015,86 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
 
         max_tokens = max_tokens or self.config.max_tokens
         temperature = temperature if temperature is not None else self.config.temperature
+
+        # Route to provider-specific implementation
+        if self.provider == AIProvider.GEMINI.value:
+            return self._call_gemini_api(prompt, system, max_tokens, temperature)
+        else:
+            return self._call_anthropic_api(prompt, system, max_tokens, temperature)
+
+    def _call_gemini_api(
+        self,
+        prompt: str,
+        system: str,
+        max_tokens: int,
+        temperature: float
+    ) -> Optional[str]:
+        """
+        Call Gemini API with the configured model.
+
+        Args:
+            prompt: The user prompt
+            system: The system prompt (used as system_instruction for Gemini)
+            max_tokens: Maximum tokens (max_output_tokens for Gemini)
+            temperature: Temperature
+
+        Returns:
+            Generated text or None if failed
+        """
+        try:
+            print(f"[AI] Attempting Gemini API call with model: {self.config.ai_model}")
+
+            generation_config = {
+                "max_output_tokens": max_tokens,
+                "temperature": temperature,
+            }
+
+            # Use system_instruction for Gemini
+            response = self.client.generate_content(
+                contents=[prompt],
+                system_instruction=system,
+                generation_config=generation_config
+            )
+
+            if response and hasattr(response, 'text'):
+                return response.text.strip()
+            else:
+                print(f"[AI] Response from Gemini had no text content")
+                return None
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[AI] Gemini API call failed: {error_msg}")
+
+            # Handle Gemini-specific errors
+            if "429" in error_msg or "rate_limit" in error_msg.lower() or "quota" in error_msg.lower():
+                print(f"[AI] Rate limit/quota exceeded for Gemini. Skipping AI comment.")
+            elif "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                print(f"[AI] API call timeout for Gemini. Skipping to prevent blocking.")
+            else:
+                print(f"[AI] Please check your Gemini API key and account status.")
+
+            return None
+
+    def _call_anthropic_api(
+        self,
+        prompt: str,
+        system: str,
+        max_tokens: int,
+        temperature: float
+    ) -> Optional[str]:
+        """
+        Call Anthropic API with automatic model fallback on 404 errors.
+
+        Args:
+            prompt: The user prompt
+            system: The system prompt
+            max_tokens: Maximum tokens
+            temperature: Temperature
+
+        Returns:
+            Generated text or None if all attempts failed
+        """
 
         # List of models to try (in order of preference)
         # Known working models that should be available to all API keys

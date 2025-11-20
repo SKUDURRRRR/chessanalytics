@@ -1,4 +1,4 @@
-"""
+﻿"""
 AI Coaching Comment Generator for Chess Move Analysis
 
 This module provides comprehensive coaching comments that help players learn from their moves,
@@ -95,18 +95,18 @@ class ChessCoachingGenerator:
             print("[COACHING] Attempting to initialize AI comment generator...")
             self.ai_generator = AIChessCommentGenerator()
             if self.ai_generator and self.ai_generator.enabled:
-                print(f"[COACHING] ✅ AI comment generator initialized successfully!")
-                print(f"[COACHING] ✅ Model: {self.ai_generator.config.ai_model}")
-                print(f"[COACHING] ✅ Ready to generate Tal-style comments")
+                print(f"[COACHING] [OK] AI comment generator initialized successfully!")
+                print(f"[COACHING] [OK] Model: {self.ai_generator.config.ai_model}")
+                print(f"[COACHING] [OK] Ready to generate Tal-style comments")
             elif self.ai_generator:
-                print("[COACHING] ⚠️  AI comment generator created but disabled")
-                print(f"[COACHING] ⚠️  Check: AI_ENABLED={self.ai_generator.config.ai_enabled}")
-                print(f"[COACHING] ⚠️  Check: API key present={bool(self.ai_generator.config.anthropic_api_key)}")
+                print("[COACHING] [WARNING] AI comment generator created but disabled")
+                print(f"[COACHING] [WARNING] Check: AI_ENABLED={self.ai_generator.config.ai_enabled}")
+                print(f"[COACHING] [WARNING] Check: API key present={bool(self.ai_generator.config.anthropic_api_key)}")
             else:
-                print("[COACHING] ❌ AI comment generator not available")
+                print("[COACHING] [ERROR] AI comment generator not available")
         except Exception as e:
             import traceback
-            print(f"[COACHING] ❌ AI comment generator not available: {e}")
+            print(f"[COACHING] [ERROR] AI comment generator not available: {e}")
             print(f"[COACHING] Traceback: {traceback.format_exc()}")
             self.ai_generator = None
         self.encouragement_templates = {
