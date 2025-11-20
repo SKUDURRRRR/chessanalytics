@@ -89,14 +89,15 @@ class ChessKnowledgeRetriever:
             skill_level
         )
 
-        # Format all knowledge for prompt injection
-        knowledge_text = self.knowledge_base.format_knowledge_for_prompt(
+        # Format knowledge for prompt injection
+        # Use condensed format to stay within token budget (300 chars max)
+        knowledge_text = self.knowledge_base.format_condensed_knowledge(
             tactical_patterns=tactical_knowledge,
             positional_concepts=positional_knowledge,
             endgame_knowledge=endgame_knowledge,
             opening_knowledge=opening_knowledge,
             common_mistakes=common_mistakes,
-            teaching_guidance=teaching_guidance
+            max_chars=300
         )
 
         return knowledge_text
@@ -109,6 +110,7 @@ class ChessKnowledgeRetriever:
     ) -> List[str]:
         """
         Detect tactical patterns present in the position.
+        Analyzes board directly first, then checks move_analysis insights.
 
         Args:
             move_analysis: Move analysis dictionary
@@ -120,11 +122,39 @@ class ChessKnowledgeRetriever:
         """
         patterns = []
 
-        # Check move_analysis for detected patterns
+        # PRIORITY 1: Analyze board position directly for tactical patterns
+        try:
+            # Detect pins
+            if self._detect_pins(board):
+                patterns.append('pin')
+
+            # Detect forks (piece attacking 2+ pieces)
+            if self._detect_forks(board, move):
+                patterns.append('fork')
+
+            # Detect hanging pieces (critical tactical issue)
+            heuristic_details = move_analysis.get('heuristic_details', {})
+            if heuristic_details.get('new_hanging_pieces', []):
+                patterns.append('hanging_pieces')
+        except Exception as e:
+            print(f"[KNOWLEDGE] Warning: Direct pattern detection failed: {e}")
+
+        # PRIORITY 2: Use advanced analyzer to detect patterns
+        try:
+            analysis = self.advanced_analyzer.analyze_position(board)
+            if hasattr(analysis, 'tactical_patterns'):
+                for pattern in analysis.tactical_patterns:
+                    if isinstance(pattern, TacticalPattern):
+                        patterns.append(pattern.value)
+                    else:
+                        patterns.append(str(pattern))
+        except Exception:
+            pass
+
+        # PRIORITY 3: Check move_analysis for detected patterns (fallback)
         tactical_insights = move_analysis.get('tactical_insights', [])
         for insight in tactical_insights:
             insight_lower = insight.lower()
-            # Map insight text to pattern names
             if 'pin' in insight_lower:
                 patterns.append('pin')
             elif 'fork' in insight_lower:
@@ -137,31 +167,8 @@ class ChessKnowledgeRetriever:
                 patterns.append('double_attack')
             elif 'deflection' in insight_lower:
                 patterns.append('deflection')
-            elif 'decoy' in insight_lower:
-                patterns.append('decoy')
-            elif 'overload' in insight_lower:
-                patterns.append('overloading')
-            elif 'interference' in insight_lower:
-                patterns.append('interference')
-            elif 'zwischenzug' in insight_lower or 'in-between' in insight_lower:
-                patterns.append('zwischenzug')
-            elif 'clearance' in insight_lower:
-                patterns.append('clearance')
-            elif 'defender' in insight_lower:
+            elif 'removal' in insight_lower and 'defender' in insight_lower:
                 patterns.append('removal_of_defender')
-
-        # Use advanced analyzer to detect patterns
-        try:
-            analysis = self.advanced_analyzer.analyze_position(board)
-            if hasattr(analysis, 'tactical_patterns'):
-                for pattern in analysis.tactical_patterns:
-                    if isinstance(pattern, TacticalPattern):
-                        patterns.append(pattern.value)
-                    else:
-                        patterns.append(str(pattern))
-        except Exception:
-            # If analysis fails, continue with patterns from move_analysis
-            pass
 
         # Remove duplicates while preserving order
         seen = set()
@@ -170,6 +177,9 @@ class ChessKnowledgeRetriever:
             if pattern not in seen:
                 seen.add(pattern)
                 unique_patterns.append(pattern)
+
+        if unique_patterns:
+            print(f"[KNOWLEDGE] Detected tactical patterns: {', '.join(unique_patterns)}")
 
         return unique_patterns
 
@@ -181,6 +191,7 @@ class ChessKnowledgeRetriever:
     ) -> List[str]:
         """
         Detect positional concepts present in the position.
+        Analyzes board directly first, then checks move_analysis insights.
 
         Args:
             move_analysis: Move analysis dictionary
@@ -192,11 +203,42 @@ class ChessKnowledgeRetriever:
         """
         concepts = []
 
-        # Check move_analysis for detected concepts
+        # PRIORITY 1: Analyze board position directly for positional concepts
+        try:
+            # Detect center control
+            if self._detect_center_control(board, move):
+                concepts.append('center_control')
+
+            # Detect king safety issues
+            if self._detect_king_safety_relevance(board):
+                concepts.append('king_safety')
+
+            # Detect pawn structure features
+            if self._detect_pawn_structure_features(board):
+                concepts.append('pawn_structure')
+
+            # Detect piece activity
+            if self._detect_piece_activity(board, move):
+                concepts.append('piece_activity')
+        except Exception as e:
+            print(f"[KNOWLEDGE] Warning: Direct concept detection failed: {e}")
+
+        # PRIORITY 2: Use advanced analyzer to detect concepts
+        try:
+            analysis = self.advanced_analyzer.analyze_position(board)
+            if hasattr(analysis, 'positional_concepts'):
+                for concept in analysis.positional_concepts:
+                    if isinstance(concept, PositionalConcept):
+                        concepts.append(concept.value)
+                    else:
+                        concepts.append(str(concept))
+        except Exception:
+            pass
+
+        # PRIORITY 3: Check move_analysis for detected concepts (fallback)
         positional_insights = move_analysis.get('positional_insights', [])
         for insight in positional_insights:
             insight_lower = insight.lower().replace(' ', '_')
-            # Map insight text to concept names
             if 'center' in insight_lower or 'central' in insight_lower:
                 concepts.append('center_control')
             elif 'activity' in insight_lower or 'active' in insight_lower:
@@ -209,27 +251,6 @@ class ChessKnowledgeRetriever:
                 concepts.append('space_advantage')
             elif 'coordination' in insight_lower or 'coordinate' in insight_lower:
                 concepts.append('piece_coordination')
-            elif 'weak' in insight_lower and 'square' in insight_lower:
-                concepts.append('weak_squares')
-            elif 'outpost' in insight_lower:
-                concepts.append('outpost')
-            elif 'pawn' in insight_lower and 'break' in insight_lower:
-                concepts.append('pawn_breaks')
-            elif 'placement' in insight_lower or 'place' in insight_lower:
-                concepts.append('piece_placement')
-
-        # Use advanced analyzer to detect concepts
-        try:
-            analysis = self.advanced_analyzer.analyze_position(board)
-            if hasattr(analysis, 'positional_concepts'):
-                for concept in analysis.positional_concepts:
-                    if isinstance(concept, PositionalConcept):
-                        concepts.append(concept.value)
-                    else:
-                        concepts.append(str(concept))
-        except Exception:
-            # If analysis fails, continue with concepts from move_analysis
-            pass
 
         # Remove duplicates while preserving order
         seen = set()
@@ -239,7 +260,142 @@ class ChessKnowledgeRetriever:
                 seen.add(concept)
                 unique_concepts.append(concept)
 
+        if unique_concepts:
+            print(f"[KNOWLEDGE] Detected positional concepts: {', '.join(unique_concepts)}")
+
         return unique_concepts
+
+    def _detect_pins(self, board: chess.Board) -> bool:
+        """Detect if there are pins in the position."""
+        # Look for pieces on same rank/file/diagonal with king/queen
+        for square in chess.SQUARES:
+            piece = board.piece_at(square)
+            if not piece:
+                continue
+
+            # Check if this piece could be pinning something
+            if piece.piece_type in [chess.BISHOP, chess.ROOK, chess.QUEEN]:
+                # Get squares this piece attacks
+                attacks = board.attacks(square)
+                for attacked_sq in attacks:
+                    attacked_piece = board.piece_at(attacked_sq)
+                    if attacked_piece and attacked_piece.color != piece.color:
+                        # Check if there's a more valuable piece behind
+                        direction = self._get_direction(square, attacked_sq)
+                        if direction:
+                            behind_sq = attacked_sq + direction
+                            if chess.square_name(behind_sq) in chess.SQUARE_NAMES:
+                                behind_piece = board.piece_at(behind_sq)
+                                if behind_piece and behind_piece.color == attacked_piece.color:
+                                    if behind_piece.piece_type > attacked_piece.piece_type or behind_piece.piece_type == chess.KING:
+                                        return True
+        return False
+
+    def _get_direction(self, from_sq: int, to_sq: int) -> Optional[int]:
+        """Get direction vector between two squares."""
+        from_rank, from_file = divmod(from_sq, 8)
+        to_rank, to_file = divmod(to_sq, 8)
+
+        rank_diff = to_rank - from_rank
+        file_diff = to_file - from_file
+
+        if rank_diff == 0 and file_diff != 0:  # Same rank
+            return 1 if file_diff > 0 else -1
+        elif file_diff == 0 and rank_diff != 0:  # Same file
+            return 8 if rank_diff > 0 else -8
+        elif abs(rank_diff) == abs(file_diff):  # Diagonal
+            return (8 if rank_diff > 0 else -8) + (1 if file_diff > 0 else -1)
+        return None
+
+    def _detect_forks(self, board: chess.Board, move: chess.Move) -> bool:
+        """Detect if a piece is forking (attacking 2+ pieces)."""
+        # Check if the moved piece attacks 2+ enemy pieces
+        moved_piece = board.piece_at(move.to_square)
+        if not moved_piece:
+            return False
+
+        attacks = board.attacks(move.to_square)
+        attacked_pieces = []
+        for attacked_sq in attacks:
+            piece = board.piece_at(attacked_sq)
+            if piece and piece.color != moved_piece.color:
+                attacked_pieces.append(piece)
+
+        return len(attacked_pieces) >= 2
+
+    def _detect_center_control(self, board: chess.Board, move: chess.Move) -> bool:
+        """Detect if move involves center control (d4, d5, e4, e5)."""
+        center_squares = [chess.D4, chess.D5, chess.E4, chess.E5]
+
+        # Check if move targets or involves center
+        if move.to_square in center_squares or move.from_square in center_squares:
+            return True
+
+        # Check if moved piece attacks center
+        attacks = board.attacks(move.to_square)
+        for center_sq in center_squares:
+            if center_sq in attacks:
+                return True
+
+        return False
+
+    def _detect_king_safety_relevance(self, board: chess.Board) -> bool:
+        """Detect if king safety is relevant (castling rights, king exposure)."""
+        # Check if either king has castling rights
+        if board.has_kingside_castling_rights(chess.WHITE) or board.has_queenside_castling_rights(chess.WHITE):
+            return True
+        if board.has_kingside_castling_rights(chess.BLACK) or board.has_queenside_castling_rights(chess.BLACK):
+            return True
+
+        # Check if king is in center (exposed)
+        white_king_sq = board.king(chess.WHITE)
+        black_king_sq = board.king(chess.BLACK)
+
+        center_files = [chess.FILE_D, chess.FILE_E]
+        if white_king_sq and chess.square_file(white_king_sq) in center_files:
+            if chess.square_rank(white_king_sq) < 2:  # King still in starting area
+                return True
+        if black_king_sq and chess.square_file(black_king_sq) in center_files:
+            if chess.square_rank(black_king_sq) > 5:  # King still in starting area
+                return True
+
+        return False
+
+    def _detect_pawn_structure_features(self, board: chess.Board) -> bool:
+        """Detect notable pawn structure features."""
+        # Simple check: look for doubled pawns or isolated pawns
+        for color in [chess.WHITE, chess.BLACK]:
+            pawns = board.pieces(chess.PAWN, color)
+            files_with_pawns = {}
+            for sq in pawns:
+                file = chess.square_file(sq)
+                if file not in files_with_pawns:
+                    files_with_pawns[file] = 0
+                files_with_pawns[file] += 1
+
+            # Doubled pawns
+            if any(count >= 2 for count in files_with_pawns.values()):
+                return True
+
+        return False
+
+    def _detect_piece_activity(self, board: chess.Board, move: chess.Move) -> bool:
+        """Detect if move improves piece activity (mobility)."""
+        piece = board.piece_at(move.to_square)
+        if not piece:
+            return False
+
+        # Check if piece is now more centralized or more mobile
+        to_rank = chess.square_rank(move.to_square)
+        to_file = chess.square_file(move.to_square)
+
+        # Central squares are more active
+        is_centralized = to_rank in [2, 3, 4, 5] and to_file in [2, 3, 4, 5]
+
+        # Check mobility (number of squares piece can move to)
+        mobility = len(list(board.attacks(move.to_square)))
+
+        return is_centralized or mobility >= 6  # Arbitrary threshold for "active"
 
     def get_enhanced_system_prompt(
         self,
@@ -248,6 +404,7 @@ class ChessKnowledgeRetriever:
     ) -> str:
         """
         Get an enhanced system prompt with chess teaching methodology.
+        Simplified to avoid conflicts with user prompts.
 
         Args:
             player_elo: Player's ELO rating
@@ -259,36 +416,17 @@ class ChessKnowledgeRetriever:
         skill_level = self.knowledge_base.get_skill_level_from_elo(player_elo)
         teaching_guidance = self.knowledge_base.get_teaching_guidance(skill_level)
 
-        # Build enhanced prompt
+        # Build simplified enhanced prompt
         enhanced_parts = []
 
         if base_prompt:
             enhanced_parts.append(base_prompt)
         else:
             enhanced_parts.append(
-                "You are Mikhail Tal, the Magician from Riga. You teach chess with energy and insight, "
-                "explaining the principles behind each move. Your comments are engaging and instructive—"
-                "you help players understand why moves work or fail."
+                "You are Mikhail Tal teaching chess. Focus on clear, educational explanations of chess concepts."
             )
 
-        enhanced_parts.append("\n**YOUR TEACHING APPROACH:**")
-        enhanced_parts.append(f"- {teaching_guidance.get('explanation_style', 'Explain clearly and instructively')}")
-        enhanced_parts.append(f"- Focus on: {', '.join(teaching_guidance.get('focus_points', [])[:3])}")
-
-        enhanced_parts.append("\n**KEY TEACHING PRINCIPLES:**")
-        enhanced_parts.append("- Explain chess concepts clearly and directly—show genuine enthusiasm")
-        enhanced_parts.append("- Use concrete examples from the position—make it real and tangible")
-        enhanced_parts.append("- Connect moves to fundamental chess principles—show the logic")
-        enhanced_parts.append("- Help players understand the 'why' behind moves—the reasoning matters")
-        enhanced_parts.append("- Encourage learning and improvement—be supportive but honest")
-        enhanced_parts.append("- Show passion for tactics and creative possibilities—this is what makes chess exciting")
-        enhanced_parts.append("- Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly with your commentary")
-
-        enhanced_parts.append("\n**TAL'S AUTHENTIC STYLE:**")
-        enhanced_parts.append("- Be direct and energetic—no unnecessary words, just clear insights")
-        enhanced_parts.append("- Show enthusiasm for good moves and tactical opportunities")
-        enhanced_parts.append("- Be passionate about chess but keep explanations grounded in reality")
-        enhanced_parts.append("- Celebrate brilliant moves—acknowledge when players find something special")
-        enhanced_parts.append("- Explain mistakes honestly but constructively—help players learn")
+        enhanced_parts.append(f"\n**SKILL LEVEL FOCUS:** {teaching_guidance.get('explanation_style', 'Explain clearly')}")
+        enhanced_parts.append(f"**TEACHING TOPICS:** {', '.join(teaching_guidance.get('focus_points', [])[:3])}")
 
         return "\n".join(enhanced_parts)

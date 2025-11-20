@@ -876,6 +876,83 @@ class ChessKnowledgeBase:
 
         return "\n".join(sections) if sections else ""
 
+    def format_condensed_knowledge(
+        self,
+        tactical_patterns: List[Dict] = None,
+        positional_concepts: List[Dict] = None,
+        endgame_knowledge: Dict = None,
+        opening_knowledge: Dict = None,
+        common_mistakes: List[Dict] = None,
+        max_chars: int = 300
+    ) -> str:
+        """
+        Format chess knowledge in condensed format for token-constrained prompts.
+        Limits output to max_chars (default 300) with only essential teaching points.
+
+        Args:
+            tactical_patterns: List of tactical pattern knowledge
+            positional_concepts: List of positional concept knowledge
+            endgame_knowledge: Endgame knowledge dictionary
+            opening_knowledge: Opening knowledge dictionary
+            common_mistakes: List of common mistakes
+            max_chars: Maximum characters to include (default 300)
+
+        Returns:
+            Condensed formatted string with chess knowledge
+        """
+        parts = []
+
+        # Tactical patterns - ultra-condensed format
+        if tactical_patterns:
+            pattern_strs = []
+            for pattern in tactical_patterns[:2]:  # Max 2 patterns
+                # Format: "Pin: Immobilizes pieces"
+                teaching_point = pattern.get('teaching_points', [''])[0]
+                if teaching_point:
+                    pattern_strs.append(f"{pattern['name']}: {teaching_point[:40]}")
+            if pattern_strs:
+                parts.append("Tactics: " + "; ".join(pattern_strs))
+
+        # Positional concepts - ultra-condensed format
+        if positional_concepts:
+            concept_strs = []
+            for concept in positional_concepts[:2]:  # Max 2 concepts
+                teaching_point = concept.get('teaching_points', [''])[0]
+                if teaching_point:
+                    concept_strs.append(f"{concept['name']}: {teaching_point[:40]}")
+            if concept_strs:
+                parts.append("Position: " + "; ".join(concept_strs))
+
+        # Opening principles - condensed
+        if opening_knowledge:
+            for key, principle in list(opening_knowledge.items())[:1]:  # Max 1
+                teaching_point = principle.get('teaching_points', [''])[0]
+                if teaching_point:
+                    parts.append(f"Opening: {teaching_point[:50]}")
+                    break
+
+        # Endgame principles - condensed
+        if endgame_knowledge:
+            for key, principle in list(endgame_knowledge.items())[:1]:  # Max 1
+                teaching_point = principle.get('teaching_points', [''])[0]
+                if teaching_point:
+                    parts.append(f"Endgame: {teaching_point[:50]}")
+                    break
+
+        # Common mistakes - condensed (only for poor moves)
+        if common_mistakes:
+            mistake = common_mistakes[0]  # Only first mistake
+            teaching_point = mistake.get('teaching_points', [''])[0]
+            if teaching_point:
+                parts.append(f"Avoid: {teaching_point[:50]}")
+
+        # Join and enforce character limit
+        result = " | ".join(parts)
+        if len(result) > max_chars:
+            result = result[:max_chars-3] + "..."
+
+        return result
+
     def _is_appropriate_for_skill_level(
         self,
         concept_level: SkillLevel,

@@ -63,7 +63,7 @@ class AIConfig(BaseSettings):
     anthropic_api_key: Optional[str] = None
     ai_enabled: bool = True
     ai_model: str = "claude-3-haiku-20240307"  # Recommended: most reliable, fastest, cheapest
-    max_tokens: int = 150  # Optimized: 2-3 sentences max (reduced from 200 to save costs)
+    max_tokens: int = 200  # Increased: more room for educational content with simplified prompts
     temperature: float = 0.75  # Slightly reduced from 0.85 to reduce variability and token usage
     api_timeout: float = 30.0  # API call timeout in seconds (reduced from 60s to 30s to prevent blocking)
     rate_limit_delay: float = 2.0  # Delay between AI API calls in seconds (increased to prevent 429 errors)
@@ -301,26 +301,23 @@ class AIChessCommentGenerator:
             prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
 
             print(f"[AI] Calling Anthropic API with model {self.config.ai_model}")
-            # Get enhanced system prompt with chess teaching methodology and Tal's authentic style
-            base_system_prompt = """You are Mikhail Tal, the Magician from Riga. You teach chess with the energy and passion that made you a World Champion. Your style is direct, engaging, and enthusiastic—you see the beauty in tactics and the power in creative play.
+            # Simplified system prompt focused on technical/educational content
+            base_system_prompt = """You are Mikhail Tal teaching chess. Your focus is on clear, educational explanations.
 
-**YOUR AUTHENTIC VOICE:**
-- Be energetic and direct—show genuine excitement about chess
-- Speak with confidence and clarity—you know what you're talking about
-- Be passionate about tactics and creative possibilities
-- Keep it real—no flowery language, just clear, engaging explanations
-- Show enthusiasm for good moves and tactical opportunities
-- Be encouraging but honest—celebrate brilliance, explain mistakes clearly
+**YOUR TEACHING APPROACH:**
+- Technical and educational - explain concepts clearly and specifically
+- Focus on chess principles: tactics, strategy, pawn structure, piece activity
+- Direct and professional - no flowery language or unnecessary interjections
+- Grammatically correct and well-structured sentences
+- Connect moves to fundamental chess concepts
 
-**YOUR TEACHING STYLE:**
-- Explain chess concepts clearly and directly
-- Connect moves to fundamental principles
-- Show why tactics work—the logic behind combinations
-- Help players see the possibilities in positions
-- Encourage creative thinking and tactical awareness
-- Build understanding through clear, concrete examples
+**WHEN TEACHING:**
+- For good moves: Explain the chess principles that make them strong
+- For mistakes: Clearly identify what went wrong and suggest improvements
+- For brilliant moves: Show enthusiasm and explain the tactical vision
+- Always focus on helping players understand WHY moves work or fail
 
-Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly with your commentary. Write with the energy and insight that made you the Magician from Riga."""
+Write clear, educational comments that teach chess concepts."""
 
             if self.knowledge_retriever:
                 system_prompt = self.knowledge_retriever.get_enhanced_system_prompt(
@@ -361,8 +358,9 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
 
                 move_san = move_analysis.get('move_san', '')
                 player_color = move_analysis.get('player_color', 'white')
-                # Clean and validate comment
+                # Clean, ensure grammar consistency, and validate comment
                 comment = self._clean_comment(comment, is_user_move, player_color)
+                comment = self._ensure_grammar_consistency(comment)
                 comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
                 print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
 
@@ -497,8 +495,9 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
 
                     move_san = move_analysis.get('move_san', '')
                     player_color = move_analysis.get('player_color', 'white')
-                    # Clean and validate comment
+                    # Clean, ensure grammar consistency, and validate comment
                     comment = self._clean_comment(comment, is_user_move, player_color)
+                    comment = self._ensure_grammar_consistency(comment)
                     comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
                     print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
 
@@ -795,6 +794,54 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
             comment = f"{color_name}'s " + comment[3:]  # Remove "'s " and add "{color_name}'s "
 
         return comment.strip()
+
+    def _ensure_grammar_consistency(self, comment: str) -> str:
+        """
+        Ensure grammatical consistency and proper formatting.
+        Post-processing to fix common AI quirks and ensure professional output.
+
+        Args:
+            comment: The comment to process
+
+        Returns:
+            Grammatically consistent comment
+        """
+        if not comment:
+            return comment
+
+        comment = comment.strip()
+
+        # Capitalize first letter
+        if comment and comment[0].islower():
+            comment = comment[0].upper() + comment[1:]
+
+        # Ensure proper punctuation at end
+        if comment and not comment.endswith(('.', '!', '?')):
+            comment += '.'
+
+        # Fix common spacing issues
+        comment = re.sub(r'\s+', ' ', comment)  # Multiple spaces to single space
+        comment = re.sub(r'\s+([.,!?])', r'\1', comment)  # Remove space before punctuation
+        comment = re.sub(r'([.,!?])([A-Za-z])', r'\1 \2', comment)  # Add space after punctuation if missing
+
+        # Ensure consistent capitalization of chess terms
+        # "white" and "black" should be capitalized when referring to players
+        comment = re.sub(r'\bwhite\b', 'White', comment)
+        comment = re.sub(r'\bblack\b', 'Black', comment)
+
+        # Fix double periods
+        comment = re.sub(r'\.\.+', '.', comment)
+
+        # Remove redundant spaces around dashes
+        comment = re.sub(r'\s*-\s*', ' - ', comment)
+
+        # Fix "White's's" or "Black's's" (double possessive)
+        comment = re.sub(r"(White|Black)'s's", r"\1's", comment)
+
+        # Ensure no trailing spaces before final punctuation
+        comment = comment.strip()
+
+        return comment
 
     def _call_api_with_fallback(
         self,
@@ -1289,8 +1336,28 @@ Write the comment now:"""
                     game_phase=game_phase,
                     player_elo=player_elo
                 )
-                if chess_knowledge:
-                    print(f"[AI] ✅ Retrieved chess knowledge for enhanced teaching ({len(chess_knowledge)} chars)")
+
+                # Validate knowledge quality
+                if chess_knowledge and len(chess_knowledge) > 20:
+                    print(f"[AI] ✅ Retrieved chess knowledge ({len(chess_knowledge)} chars)")
+                elif not chess_knowledge or len(chess_knowledge) < 20:
+                    # Fallback: If no useful knowledge detected but move is poor quality, add common mistakes
+                    if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY]:
+                        print(f"[AI] ⚠️  Limited knowledge retrieved for {move_quality.value} move, adding common mistakes context")
+                        skill_level = self.knowledge_retriever.knowledge_base.get_skill_level_from_elo(player_elo)
+                        common_mistakes = self.knowledge_retriever.knowledge_base.get_common_mistakes_context(
+                            move_quality.value,
+                            skill_level
+                        )
+                        if common_mistakes:
+                            chess_knowledge = self.knowledge_retriever.knowledge_base.format_condensed_knowledge(
+                                common_mistakes=common_mistakes,
+                                max_chars=200
+                            )
+                            print(f"[AI] ✅ Added common mistakes fallback knowledge ({len(chess_knowledge)} chars)")
+                    else:
+                        print(f"[AI] ⚠️  No relevant knowledge detected for this position")
+
             except Exception as e:
                 print(f"[AI] ⚠️  Could not retrieve chess knowledge: {e}")
                 chess_knowledge = ""
@@ -1321,51 +1388,54 @@ Write the comment now:"""
         board_state_context: str, stockfish_context: str, hanging_pieces_context: str, tactical_context: str, positional_context: str,
         fen_after: str, best_move_san: str, tal_style: str, player_color: str, chess_knowledge: str = ""
     ) -> str:
-        """Build prompt specifically for opponent moves - analyze what opponent did."""
+        """Build simplified prompt for opponent moves - analyze what opponent did."""
         color_name = player_color.capitalize()  # "White" or "Black"
 
-        task_description = ""
+        # Task description based on move quality
         if move_quality == MoveQuality.BRILLIANT:
-            task_description = f"Analyze what {color_name} did with this brilliant move and why it's strong."
+            task_focus = "Explain why this brilliant move is strong."
         elif move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY]:
-            task_description = f"Analyze what {color_name} did with this move and why it's problematic."
+            task_focus = "Explain what went wrong and suggest a better move."
         else:
-            task_description = f"Analyze what {color_name} did with this move and its purpose."
+            task_focus = "Explain the purpose and ideas behind this move."
 
-        # Inject chess knowledge if available
-        knowledge_section = f"\n{chess_knowledge}\n" if chess_knowledge else ""
+        # Build condensed context (only essential information)
+        context_parts = []
 
-        prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
-{opening_context}{previous_move_context}{capture_info}{hanging_pieces_context}
-**MOVE QUALITY:** {move_quality.value} | {color_name}'s move
-**EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
-{board_state_context}
-{stockfish_context}
-{tactical_context}{positional_context}{knowledge_section}
-**POSITION:** {fen_after}
+        # CRITICAL: Include condensed board state to prevent hallucinations
+        if board_state_context:
+            context_parts.append(board_state_context[:500])  # Limit to 500 chars but keep it
 
-**TASK:** Write 2-3 sentences analyzing what {color_name} did with this move. {task_description} Style: {tal_style}. Focus on analyzing their move's purpose and consequences. Use the chess knowledge above to provide deeper insights and teaching points.
+        if capture_info:
+            context_parts.append(capture_info)
+        if hanging_pieces_context:
+            context_parts.append(hanging_pieces_context)
+        if tactical_context:
+            context_parts.append(tactical_context)
+        if positional_context:
+            context_parts.append(positional_context)
+        if chess_knowledge:
+            context_parts.append(f"**CHESS CONCEPTS:** {chess_knowledge}")
 
-**TAL'S VOICE:** Write with energy and directness. Show genuine interest in the position—be enthusiastic about tactics, clear about principles, and honest about mistakes. Keep it real and engaging, not poetic or flowery.
+        context = "\n".join(context_parts) if context_parts else ""
 
-**RULES:**
-- Start directly (no "Ah," "Oh,")
-- Use chess terms, not numbers or "centipawns/evaluation/engine"
-- Be specific: "weakens the position" not "is a good move"
-- Use "{color_name}" when referring to the player who made this move (never "you" or "your opponent")
-- 2-3 sentences max, clear and instructive
-- CRITICAL: If HANGING PIECES are listed above, you MUST mention them in your comment - this is the most important tactical issue!
-- CRITICAL: Analyze what {color_name} did, NOT what the other player should do in response
-- CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
-- CRITICAL: Do NOT infer sacrifices from position context or previous moves
-- CRITICAL: The CAPTURE section above is the ONLY capture information - do not mention other captures
-- CRITICAL: If the move is NOT A CAPTURE, do NOT mention capturing anything
-- CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
-- CRITICAL: NEVER mention a piece on a square unless it's listed in the ACTUAL BOARD STATE section above
-- CRITICAL: If you say "knight on d4" or "bishop on e5", VERIFY that exact piece is on that exact square in the board state list
-{"Mention better move " + best_move_san + " if relevant (what " + color_name + " should have played)." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
+        # Better move suggestion
+        better_move = f"\nSuggest {best_move_san} as better alternative." if best_move_san and move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else ""
 
-Write comment:"""
+        prompt = f"""CONTEXT: {color_name} (rated {player_elo}) just played {move_san} in the {game_phase} (move {move_number}).
+{context}
+
+TASK: Write 2-3 educational sentences explaining {color_name}'s move. {task_focus}
+Focus on chess principles - do NOT mention the player's rating or "Player {player_elo}".{better_move}
+
+RULES:
+- Start directly with chess analysis
+- ONLY mention pieces listed in ACTUAL BOARD STATE above
+- Refer to the player as "{color_name}" (never "Player {player_elo}" or "the player")
+- Use past tense: "{color_name} played" not "{color_name} is attempting"
+- Be specific and educational
+"""
+
         return prompt
 
     def _build_user_move_prompt(
@@ -1376,42 +1446,54 @@ Write comment:"""
         board_state_context: str, stockfish_context: str, hanging_pieces_context: str, tactical_context: str, positional_context: str,
         fen_after: str, best_move_san: str, tal_style: str, player_color: str, chess_knowledge: str = ""
     ) -> str:
-        """Build prompt for user moves - explain the principle and idea behind the move."""
+        """Build simplified prompt for user moves - explain the principle and idea behind the move."""
         color_name = player_color.capitalize()  # "White" or "Black"
 
-        # Inject chess knowledge if available
-        knowledge_section = f"\n{chess_knowledge}\n" if chess_knowledge else ""
+        # Task description based on move quality
+        if move_quality == MoveQuality.BRILLIANT:
+            task_focus = "Celebrate this brilliant move! Explain the tactical vision and principles demonstrated."
+        elif move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY]:
+            task_focus = "Explain what went wrong tactically/positionally and what should be played instead."
+        else:
+            task_focus = "Explain the chess principles behind this move and how it improves the position."
 
-        prompt = f"""Player {player_elo} ELO ({complexity}) played {move_san} in {game_phase} (move {move_number}).
-{opening_context}{previous_move_context}{capture_info}{hanging_pieces_context}
-**MOVE QUALITY:** {move_quality.value} | {color_name}'s move
-**EVALUATION:** This move {eval_verb} {eval_description}. {eval_explanation}
-{board_state_context}
-{stockfish_context}
-{tactical_context}{positional_context}{knowledge_section}
-**POSITION:** {fen_after}
+        # Build condensed context (only essential information)
+        context_parts = []
 
-**TASK:** Write 2-3 sentences explaining the *principle* and *idea* behind this move. Style: {tal_style}. {"Focus on brilliant reasoning and principles demonstrated." if move_quality == MoveQuality.BRILLIANT else "Explain what went wrong tactically/positionally and what should be played instead." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Explain the reasoning and how it improves the position."} Focus on what {color_name} did. Use the chess knowledge above to provide deeper insights and teaching points.
+        # CRITICAL: Include condensed board state to prevent hallucinations
+        if board_state_context:
+            context_parts.append(board_state_context[:500])  # Limit to 500 chars but keep it
 
-**TAL'S VOICE:** Write with energy and directness. {"Celebrate this brilliant move—show genuine enthusiasm for the tactical vision!" if move_quality == MoveQuality.BRILLIANT else "Be honest but constructive—explain the mistake clearly and help them learn." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Show appreciation for good chess—explain why this works."} Keep it real, engaging, and educational.
+        if capture_info:
+            context_parts.append(capture_info)
+        if hanging_pieces_context:
+            context_parts.append(hanging_pieces_context)
+        if tactical_context:
+            context_parts.append(tactical_context)
+        if positional_context:
+            context_parts.append(positional_context)
+        if chess_knowledge:
+            context_parts.append(f"**CHESS CONCEPTS:** {chess_knowledge}")
 
-**RULES:**
-- Start directly (no "Ah," "Oh,")
-- Use chess terms, not numbers or "centipawns/evaluation/engine"
-- Be specific: "loses the attack" not "is a good move"
-- Use "{color_name}" when referring to the player who made this move (never "you" or "your")
-- 2-3 sentences max, clear and instructive
-- CRITICAL: If HANGING PIECES are listed above, you MUST mention them in your comment - this is the most important tactical issue!
-- CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
-- CRITICAL: Do NOT infer sacrifices from position context or previous moves
-- CRITICAL: The CAPTURE section above is the ONLY capture information - do not mention other captures
-- CRITICAL: If the move is NOT A CAPTURE, do NOT mention capturing anything
-- CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
-- CRITICAL: NEVER mention a piece on a square unless it's listed in the ACTUAL BOARD STATE section above
-- CRITICAL: If you say "knight on d4" or "bishop on e5", VERIFY that exact piece is on that exact square in the board state list
-{"Mention better move " + best_move_san + " if relevant (what " + color_name + " should have played)." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
+        context = "\n".join(context_parts) if context_parts else ""
 
-Write comment:"""
+        # Better move suggestion
+        better_move = f"\nSuggest {best_move_san} as better alternative." if best_move_san and move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else ""
+
+        prompt = f"""CONTEXT: {color_name} (rated {player_elo}) just played {move_san} in the {game_phase} (move {move_number}).
+{context}
+
+TASK: Write 2-3 educational sentences explaining {color_name}'s move. {task_focus}
+Focus on chess principles - do NOT mention the player's rating or "Player {player_elo}".{better_move}
+
+RULES:
+- Start directly with chess analysis
+- ONLY mention pieces listed in ACTUAL BOARD STATE above
+- Refer to the player as "{color_name}" (never "Player {player_elo}" or "the player")
+- Use past tense: "{color_name} played" not "{color_name} is attempting"
+- Be specific and educational
+"""
+
         return prompt
 
     def _get_move_quality(self, move_analysis: Dict[str, Any]) -> MoveQuality:
