@@ -383,19 +383,19 @@ async def startup_event():
     print("[START] Starting Chess Analytics API Server with Memory Optimizations")
     print("=" * 80)
 
-    # Initialize Stockfish engine pool
+    # Initialize Stockfish engine pool (cost-optimized for scale-to-zero)
     stockfish_path = config.stockfish.path
     if stockfish_path:
         print(f"[STARTUP] Initializing Stockfish engine pool...")
         _engine_pool_instance = get_engine_pool(
             stockfish_path=stockfish_path,
-            max_size=4,  # 4 engines max (Phase 1 - Stage 1: increased from 3)
-            ttl=300.0,   # 5-minute TTL
+            max_size=2,  # Reduced from 4 to 2 for cost optimization (sufficient for 15-25 users)
+            ttl=60.0,    # Reduced from 5 min to 1 min for faster cleanup when idle
             config={
                 'Skill Level': 20,
                 'UCI_LimitStrength': False,
                 'Threads': 1,
-                'Hash': 96
+                'Hash': 32  # Reduced from 96 MB for lower memory footprint
             }
         )
         await _engine_pool_instance.start_cleanup_task()

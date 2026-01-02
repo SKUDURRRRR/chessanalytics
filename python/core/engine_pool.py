@@ -34,14 +34,14 @@ class StockfishEnginePool:
     Thread-safe pool of Stockfish engines with TTL-based cleanup.
 
     Features:
-    - Pool size limit (2-3 engines)
-    - TTL-based eviction (5 minutes idle)
+    - Pool size limit (default: 2 engines, cost-optimized)
+    - TTL-based eviction (1 minute idle for faster cleanup)
     - Async context manager for safe acquisition
     - Automatic cleanup of unused engines
     - Memory efficient
 
     Usage:
-        pool = StockfishEnginePool(stockfish_path, max_size=3, ttl=300)
+        pool = StockfishEnginePool(stockfish_path, max_size=2, ttl=60)
 
         async with pool.acquire() as engine:
             result = await engine.analyze(board, limit)
@@ -50,8 +50,8 @@ class StockfishEnginePool:
     def __init__(
         self,
         stockfish_path: str,
-        max_size: int = 4,  # Increased from 3 to 4 for Railway Pro
-        ttl: float = 300.0,  # 5 minutes
+        max_size: int = 2,  # Reduced from 4 to 2 for cost optimization
+        ttl: float = 60.0,  # Reduced from 5 minutes to 1 minute for faster cleanup
         config: Optional[dict] = None
     ):
         """
@@ -81,7 +81,7 @@ class StockfishEnginePool:
             'Skill Level': 20,
             'UCI_LimitStrength': False,
             'Threads': 1,
-            'Hash': 96
+            'Hash': 32  # Reduced from 96 MB for cost optimization
         }
 
         self._pool: list[EngineInfo] = []
@@ -328,8 +328,8 @@ _engine_pool: Optional[StockfishEnginePool] = None
 
 def get_engine_pool(
     stockfish_path: str,
-    max_size: int = 3,
-    ttl: float = 300.0,
+    max_size: int = 2,  # Reduced from 3 for cost optimization
+    ttl: float = 60.0,  # Reduced from 300s for faster cleanup
     config: Optional[dict] = None
 ) -> StockfishEnginePool:
     """
