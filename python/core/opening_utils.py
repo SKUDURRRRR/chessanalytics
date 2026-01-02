@@ -736,3 +736,101 @@ def identify_a00_opening_from_moves(pgn: str) -> str:
     }
 
     return a00_openings.get(first_move_clean, 'Uncommon Opening')
+
+
+def identify_opening_from_pgn_moves(pgn: str, user_color: str = 'white') -> tuple[str, str]:
+    """
+    Identify chess opening from PGN moves.
+    Returns tuple: (opening_name, eco_code)
+
+    Args:
+        pgn: PGN string containing the game
+        user_color: The color the user played ('white' or 'black')
+
+    Returns:
+        Tuple of (opening_name, eco_code) where eco_code can be None
+    """
+    import chess
+    import chess.pgn
+    from io import StringIO
+
+    try:
+        pgn_io = StringIO(pgn)
+        game = chess.pgn.read_game(pgn_io)
+
+        if not game:
+            return "Unknown Opening", None
+
+        # Extract first 6 moves
+        moves = []
+        board = game.board()
+        for move in game.mainline_moves():
+            moves.append(board.san(move))
+            board.push(move)
+            if len(moves) >= 6:
+                break
+
+        if len(moves) < 2:
+            return "Unknown Opening", None
+
+        # Convert to lowercase for matching
+        first_moves = [m.lower() for m in moves[:6]]
+
+        # Check for specific openings
+        # Italian Game: 1.e4 e5 2.Nf3 Nc6 3.Bc4
+        if len(first_moves) >= 5:
+            if (first_moves[0] in ['e4', 'e2e4'] and
+                first_moves[1] in ['e5', 'e7e5'] and
+                first_moves[2] in ['nf3', 'g1f3']):
+
+                # Philidor Defense: 1.e4 e5 2.Nf3 d6
+                if len(first_moves) >= 4 and first_moves[3] in ['d6', 'd7d6']:
+                    # But if White plays Bc4, it's still Italian Game from White's perspective
+                    if len(first_moves) >= 5 and first_moves[4] in ['bc4', 'f1c4']:
+                        return "Italian Game", "C50"
+                    return "Philidor Defense", "C41"
+
+                # Italian Game: 1.e4 e5 2.Nf3 Nc6 3.Bc4
+                if (len(first_moves) >= 5 and
+                    first_moves[3] in ['nc6', 'b8c6'] and
+                    first_moves[4] in ['bc4', 'f1c4']):
+                    return "Italian Game", "C50"
+
+                # Ruy Lopez: 1.e4 e5 2.Nf3 Nc6 3.Bb5
+                if (len(first_moves) >= 5 and
+                    first_moves[3] in ['nc6', 'b8c6'] and
+                    first_moves[4] in ['bb5', 'f1b5']):
+                    return "Ruy Lopez", "C60"
+
+                # Scotch Game: 1.e4 e5 2.Nf3 Nc6 3.d4
+                if (len(first_moves) >= 5 and
+                    first_moves[3] in ['nc6', 'b8c6'] and
+                    first_moves[4] in ['d4', 'd2d4']):
+                    return "Scotch Game", "C45"
+
+                # Petrov Defense: 1.e4 e5 2.Nf3 Nf6
+                if len(first_moves) >= 4 and first_moves[3] in ['nf6', 'g8f6']:
+                    return "Petrov Defense", "C42"
+
+        # General Open Game (1.e4 e5)
+        if len(first_moves) >= 2:
+            if (first_moves[0] in ['e4', 'e2e4'] and
+                first_moves[1] in ['e5', 'e7e5']):
+                return "King's Pawn Game", "C20"
+            elif first_moves[0] in ['e4', 'e2e4']:
+                if first_moves[1] in ['c5', 'c7c5']:
+                    return "Sicilian Defense", "B20"
+                elif first_moves[1] in ['e6', 'e7e6']:
+                    return "French Defense", "C00"
+                elif first_moves[1] in ['c6', 'c7c6']:
+                    return "Caro-Kann Defense", "B10"
+                elif first_moves[1] in ['d5', 'd7d5']:
+                    return "Scandinavian Defense", "B01"
+                elif first_moves[1] in ['nf6', 'g8f6']:
+                    return "Alekhine Defense", "B02"
+
+        return "Unknown Opening", None
+
+    except Exception as e:
+        print(f"Error identifying opening from moves: {e}")
+        return "Unknown Opening", None

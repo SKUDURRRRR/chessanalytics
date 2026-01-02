@@ -108,11 +108,12 @@ RAILWAY_HOBBY_CONFIG = TierConfig(
 # Railway Pro Tier Configuration (Railway Pro: Unlimited hours, scalable resources)
 # Optimized configuration with memory-efficient engine pooling and caching
 # After memory optimizations: baseline ~400 MB (down from 1.4 GB)
+# Speed optimizations: Phase-based time limits, skip redundant analysis, opening book, caching
 RAILWAY_PRO_CONFIG = TierConfig(
-    # Analysis settings - optimized for Railway Pro with memory efficiency
+    # Analysis settings - optimized for Railway Pro with memory efficiency and speed
     analysis_depth=14,          # High accuracy
     skill_level=20,             # Maximum strength
-    time_limit=0.8,             # Fast analysis
+    time_limit=0.3,             # Base time limit (phase-based system uses 0.1s-0.5s dynamically)
     threads=1,                  # Deterministic results
     hash_size=96,               # Balanced for pooled engines
     max_concurrent_analyses=4,  # Conservative start (can increase to 6-8 after monitoring)

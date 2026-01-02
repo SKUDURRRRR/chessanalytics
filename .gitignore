@@ -48,9 +48,10 @@ Thumbs.db
 *.log
 logs/
 
-# Temporary files
+# Temporary files and test data
 *.tmp
 *.temp
+temp/
 python/.env
 python/.env.local
 fix_*_simple.py

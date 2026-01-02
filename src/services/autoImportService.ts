@@ -1,6 +1,6 @@
 // Auto Import Service - Handles importing games from external platforms
 import { config } from '../lib/config'
-import { sanitizeErrorMessage, sanitizeHttpError } from '../utils/errorSanitizer'
+import { sanitizeErrorMessage } from '../utils/errorSanitizer'
 
 const API_URL = config.getApi().baseUrl
 

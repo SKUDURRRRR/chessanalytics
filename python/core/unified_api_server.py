@@ -1421,31 +1421,80 @@ async def get_analysis_stats(
             print("[warn]  Database not available. Returning empty stats.")
             return _get_empty_stats()
 
-        # PERFORMANCE FIX: Limit to recent 100 analyses instead of ALL
+        # PERFORMANCE FIX: Limit to recent 100 analyses instead of ALL for calculating averages
         # Stats are representative with 100 analyses and this is 5-10x faster!
+        # However, we still need the TOTAL count for accurate "Total Games Analyzed" display
         db_client = supabase_service or supabase
+        data_source = None  # Track which table the data came from
+        total_count = 0  # Total count of all analyzed games
+
         if db_client:
+            # First, get the total count from the database
+            # Try move_analyses first (where new analyses are saved)
+            count_response = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('*', count='exact', head=True).eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).execute()
+            )
+            total_count = getattr(count_response, 'count', 0) or 0
+
+            # Fallback to unified_analyses if no data in move_analyses
+            if total_count == 0:
+                count_response = await asyncio.to_thread(
+                    lambda: db_client.table('unified_analyses').select('*', count='exact', head=True).eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).execute()
+                )
+                total_count = getattr(count_response, 'count', 0) or 0
+
+            if DEBUG:
+                print(f"[DEBUG] Total analyzed games count: {total_count}")
+
+            # Now fetch the sample of 100 analyses for calculating averages
+            # Try move_analyses first (where new analyses are saved)
             response = await asyncio.to_thread(
-                lambda: db_client.table('unified_analyses').select('*').eq(
+                lambda: db_client.table('move_analyses').select('*').eq(
                     'user_id', canonical_user_id
                 ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
             )
 
+            # Track that data came from move_analyses if we have data
+            if response.data and len(response.data) > 0:
+                data_source = 'move_analyses'
+
+            # Fallback to unified_analyses if no data in move_analyses
+            if not response.data or len(response.data) == 0:
+                response = await asyncio.to_thread(
+                    lambda: db_client.table('unified_analyses').select('*').eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+                )
+                # Track that data came from unified_analyses
+                if response.data and len(response.data) > 0:
+                    data_source = 'unified_analyses'
+
             if os.getenv("DEBUG", "false").lower() == "true":
-                print(f"[DEBUG] Stats query from unified_analyses: {len(response.data or [])} records (limited to 100 for performance)")
+                print(f"[DEBUG] Stats query: {len(response.data or [])} records (limited to 100 for performance)")
+                print(f"[DEBUG] Data source: {data_source}")
         else:
             response = type('MockResponse', (), {'data': []})()
 
         if not response.data or len(response.data) == 0:
             # Return mock data for development when no real data is available
             print(f"[stats] No data found for user {canonical_user_id} on {platform}, returning mock stats for development")
-            print(f"[stats] Query was: unified_analyses where user_id={canonical_user_id} AND platform={platform}")
             return _get_mock_stats()
 
         if DEBUG:
-            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses")
+            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses from {data_source} (total count: {total_count})")
 
-        result = _calculate_unified_analysis_stats(response.data)
+        # Use the appropriate calculation function based on data source
+        # move_analyses has moves_analysis array that needs to be processed
+        # unified_analyses has pre-calculated fields
+        # Pass total_count so it can be used for total_games_analyzed
+        if data_source == 'move_analyses':
+            result = _calculate_move_analysis_stats(response.data, total_count)
+        else:
+            result = _calculate_unified_analysis_stats(response.data, total_count)
         _set_in_cache(cache_key, result)
         return result
     except Exception as e:
@@ -1482,19 +1531,28 @@ async def get_game_analyses(
             print("[ERROR] No database connection available")
             return []
 
-        # Query unified_analyses view which combines game_analyses and move_analyses
-        # This view properly handles data priority and eliminates duplicates
+        # Query move_analyses first (where new analyses are saved), then fall back to unified_analyses
         db_client = supabase_service or supabase
         response = await asyncio.to_thread(
-            lambda: db_client.table("unified_analyses").select("*").eq(
+            lambda: db_client.table("move_analyses").select("*").eq(
                 "user_id", canonical_user_id
             ).eq("platform", platform).order("analysis_date", desc=True).range(
                 offset, offset + limit - 1
             ).execute()
         )
 
+        # Fallback to unified_analyses if no data in move_analyses
+        if not response.data or len(response.data) == 0:
+            response = await asyncio.to_thread(
+                lambda: db_client.table("unified_analyses").select("*").eq(
+                    "user_id", canonical_user_id
+                ).eq("platform", platform).order("analysis_date", desc=True).range(
+                    offset, offset + limit - 1
+                ).execute()
+            )
+
         if os.getenv("DEBUG", "false").lower() == "true":
-            print(f"[DEBUG] Query response from unified_analyses: {len(response.data) if response.data else 0} records found")
+            print(f"[DEBUG] Query response: {len(response.data) if response.data else 0} records found")
             if response.data:
                 print(f"[DEBUG] First record keys: {list(response.data[0].keys()) if response.data[0] else 'No keys'}")
                 print(f"[DEBUG] Sample record: {str(response.data[0])[:200]}..." if response.data[0] else "No sample")
@@ -1566,17 +1624,26 @@ async def get_game_analyses_count(
             print("[ERROR] No database connection available")
             return {"count": 0}
 
-        # Get count from unified_analyses view which handles deduplication
+        # Get count from move_analyses (primary storage), fall back to unified_analyses
         db_client = supabase_service or supabase
         response = await asyncio.to_thread(
-            lambda: db_client.table("unified_analyses").select("*", count="exact").eq(
+            lambda: db_client.table("move_analyses").select("*", count="exact").eq(
                 "user_id", canonical_user_id
             ).eq("platform", platform).execute()
         )
 
         total_count = response.count if hasattr(response, 'count') and response.count is not None else 0
 
-        print(f"[DEBUG] Total analyses count from unified_analyses: {total_count}")
+        # Fallback to unified_analyses if no data
+        if total_count == 0:
+            response = await asyncio.to_thread(
+                lambda: db_client.table("unified_analyses").select("*", count="exact").eq(
+                    "user_id", canonical_user_id
+                ).eq("platform", platform).execute()
+            )
+            total_count = response.count if hasattr(response, 'count') and response.count is not None else 0
+
+        print(f"[DEBUG] Total analyses count: {total_count}")
 
         return {"count": total_count}
     except Exception as e:
@@ -1610,15 +1677,44 @@ async def check_games_analyzed(
 
         # Query only the fields we need: game_id, provider_game_id, and accuracy
         # This is much faster than fetching all analysis data
+        # Check move_analyses first (where new analyses are saved), then fall back to unified_analyses
         db_client = supabase_service or supabase
+
+        print(f"[CHECK ANALYZED] Checking {len(game_ids)} games for user={canonical_user_id}, platform={platform}")
+        print(f"[CHECK ANALYZED] Game IDs to check: {game_ids[:5]}...")  # Show first 5
+
+        # Try move_analyses first (game_id in move_analyses IS the provider_game_id)
         response = await asyncio.to_thread(
-            lambda: db_client.table("unified_analyses")
-            .select("game_id,provider_game_id,accuracy")
+            lambda: db_client.table("move_analyses")
+            .select("game_id,accuracy")
             .eq("user_id", canonical_user_id)
             .eq("platform", platform)
             .in_("game_id", game_ids)
             .execute()
         )
+
+        print(f"[CHECK ANALYZED] move_analyses query returned {len(response.data) if response.data else 0} results")
+        if response.data:
+            print(f"[CHECK ANALYZED] Found in move_analyses: {[r.get('game_id') for r in response.data[:5]]}")
+
+        # If no results, try unified_analyses
+        if not response.data or len(response.data) == 0:
+            print(f"[CHECK ANALYZED] No results in move_analyses, trying unified_analyses...")
+            response = await asyncio.to_thread(
+                lambda: db_client.table("unified_analyses")
+                .select("game_id,provider_game_id,accuracy")
+                .eq("user_id", canonical_user_id)
+                .eq("platform", platform)
+                .in_("game_id", game_ids)
+                .execute()
+            )
+            print(f"[CHECK ANALYZED] unified_analyses query returned {len(response.data) if response.data else 0} results")
+        else:
+            # For move_analyses, game_id IS the provider_game_id
+            # Add provider_game_id field for consistency with unified_analyses format
+            for row in response.data:
+                if 'provider_game_id' not in row:
+                    row['provider_game_id'] = row.get('game_id')
 
         analyzed_games = []
         if response.data:
@@ -1944,29 +2040,34 @@ def _compute_personal_records(existing_records: Dict[str, Any], game: Dict[str, 
     result = game.get('result')
     accuracy = analysis.get('accuracy') if analysis else game.get('accuracy')
 
-    if result == 'win':
-        if records.get('fastest_win') is None or total_moves < records['fastest_win']['moves']:
-            records['fastest_win'] = {
-                'moves': total_moves,
-                'game_id': game.get('provider_game_id'),
-                'played_at': game.get('played_at')
-            }
-
-        if accuracy is not None:
-            if records.get('highest_accuracy_win') is None or accuracy > records['highest_accuracy_win']['accuracy']:
-                records['highest_accuracy_win'] = {
-                    'accuracy': round(float(accuracy), 2),
+    # Only process games with valid move counts (> 0)
+    if total_moves > 0:
+        if result == 'win':
+            # Fastest win: only update if we have a valid move count and it's better than existing
+            if records.get('fastest_win') is None or total_moves < records['fastest_win']['moves']:
+                records['fastest_win'] = {
+                    'moves': total_moves,
                     'game_id': game.get('provider_game_id'),
                     'played_at': game.get('played_at')
                 }
 
-    if total_moves and (records.get('longest_game') is None or total_moves > records['longest_game']['moves']):
-        records['longest_game'] = {
-            'moves': total_moves,
-            'result': result,
-            'game_id': game.get('provider_game_id'),
-            'played_at': game.get('played_at')
-        }
+            # Highest accuracy win: only if we have accuracy data
+            if accuracy is not None:
+                if records.get('highest_accuracy_win') is None or accuracy > records['highest_accuracy_win']['accuracy']:
+                    records['highest_accuracy_win'] = {
+                        'accuracy': round(float(accuracy), 2),
+                        'game_id': game.get('provider_game_id'),
+                        'played_at': game.get('played_at')
+                    }
+
+        # Longest game: update if this game is longer than existing record
+        if records.get('longest_game') is None or total_moves > records['longest_game']['moves']:
+            records['longest_game'] = {
+                'moves': total_moves,
+                'result': result,
+                'game_id': game.get('provider_game_id'),
+                'played_at': game.get('played_at')
+            }
 
     return records
 
@@ -2409,7 +2510,9 @@ async def get_comprehensive_analytics(
             print(f"[DEBUG] canonical_user_id={canonical_user_id}")
 
         # Check cache first
-        cache_key = f"comprehensive_analytics:{canonical_user_id}:{platform}:{limit}"
+        # Added v2 to cache key to force refresh - production was missing Enhanced Game Length Insights data
+        # This ensures fresh data is fetched for both limit=100 and limit=10000 calls
+        cache_key = f"comprehensive_analytics_v2:{canonical_user_id}:{platform}:{limit}"
         cached_data = _get_from_cache(cache_key)
         if cached_data is not None:
             return cached_data
@@ -2432,10 +2535,12 @@ async def get_comprehensive_analytics(
         # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
         effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
 
-        # PERFORMANCE: Fetch first 500 games for fast response, rest in background
-        initial_limit = 500
-        needs_background = effective_limit > initial_limit
-        fetch_limit = min(initial_limit, effective_limit) if needs_background else effective_limit
+        # PERFORMANCE: Always fetch all requested games upfront for accurate stats
+        # This ensures Color Performance and Opening Performance show full numbers
+        # Previously only fetched 500 games initially, which caused incomplete stats
+        initial_limit = effective_limit
+        needs_background = False
+        fetch_limit = effective_limit
 
         # Paginate through games in chunks of 1000 (Supabase's max per query)
         # Match the pattern from import_games_smart which works correctly
@@ -2466,7 +2571,7 @@ async def get_comprehensive_analytics(
                 # Optimized: Select only fields needed for analytics (reduces data transfer by 60-70%)
                 games_response = await asyncio.to_thread(
                     lambda start=range_start, end=range_end: db_client.table('games')
-                        .select('id,user_id,platform,provider_game_id,result,color,opening,opening_normalized,my_rating,opponent_rating,time_control,total_moves,opponent_name,played_at')
+                        .select('id,user_id,platform,provider_game_id,result,color,opening,opening_family,opening_normalized,my_rating,opponent_rating,time_control,total_moves,opponent_name,played_at')
                         .eq('user_id', canonical_user_id)
                         .eq('platform', platform)
                         .order('played_at', desc=True)
@@ -2496,16 +2601,20 @@ async def get_comprehensive_analytics(
             if len(games) >= fetch_limit:
                 break
 
-        # Always log if we got no games or if DEBUG is enabled
-        if DEBUG or len(games) == 0:
-            if needs_background:
-                print(f"[DEBUG] Fetched {len(games)} initial games (will fetch remaining {effective_limit - len(games)} in background)")
-            else:
-                print(f"[DEBUG] Fetched {len(games)} games out of {total_games_count} total games (requested limit={limit}, effective_limit={effective_limit})")
-            if len(games) == 0 and total_games_count > 0:
-                print(f"[ERROR] CRITICAL: No games fetched despite {total_games_count} total games available!")
-                print(f"[ERROR] Query params: user_id={canonical_user_id}, platform={platform}")
-                print(f"[ERROR] This indicates the pagination query is failing. Check Supabase connection and query syntax.")
+        # Always log game fetching details for debugging
+        if needs_background:
+            print(f"[DEBUG] Fetched {len(games)} initial games (will fetch remaining {effective_limit - len(games)} in background)")
+        else:
+            print(f"[DEBUG] Fetched {len(games)} games out of {total_games_count} total games (requested limit={limit}, effective_limit={effective_limit})")
+        if len(games) == 0 and total_games_count > 0:
+            print(f"[ERROR] CRITICAL: No games fetched despite {total_games_count} total games available!")
+            print(f"[ERROR] Query params: user_id={canonical_user_id}, platform={platform}")
+            print(f"[ERROR] This indicates the pagination query is failing. Check Supabase connection and query syntax.")
+
+        # Log color stats calculation for verification
+        white_count = len([g for g in games if g.get('color') == 'white'])
+        black_count = len([g for g in games if g.get('color') == 'black'])
+        print(f"[DEBUG] Color stats will be calculated from {len(games)} games: {white_count} white, {black_count} black")
 
         if not games:
             return {
@@ -2853,19 +2962,52 @@ async def get_comprehensive_analytics(
         # DO NOT remove the _should_count_opening_for_color check or Caro-Kann will appear under White openings
         # games_for_color_stats was already fetched in parallel above
 
+        # FALLBACK: If games_for_color_stats is empty, use the main games list
+        # This ensures we always have data to calculate opening color stats
+        games_to_use_for_color_stats = games_for_color_stats if games_for_color_stats else games
+
+        if DEBUG:
+            print(f"[DEBUG] Using {len(games_to_use_for_color_stats)} games for opening color stats calculation")
+            if not games_for_color_stats:
+                print(f"[DEBUG] WARNING: games_for_color_stats was empty, using main games list as fallback")
+
         opening_color_performance = {'white': {}, 'black': {}}
         filtered_white_openings = {}  # Debug: track what we filtered out for white
-        for game in games_for_color_stats:  # Use all games, not just the limited sample
+        games_without_opening = 0  # Debug: track games without opening data
+        total_games_processed = 0  # Debug: track total games
+
+        for game in games_to_use_for_color_stats:  # Use all games, not just the limited sample
             color = game.get('color')
             if color not in ['white', 'black']:
                 continue
 
-            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+            total_games_processed += 1
+
+            # Get opening with proper fallback - handle empty strings and None
+            opening_normalized = game.get('opening_normalized')
+            opening_raw = game.get('opening')
+            opening_family = game.get('opening_family')
+
+            # Normalize empty strings to None for proper fallback
+            if opening_normalized == '':
+                opening_normalized = None
+            if opening_raw == '':
+                opening_raw = None
+            if opening_family == '':
+                opening_family = None
+
+            # Use opening_normalized first, then opening_family, then opening, then 'Unknown'
+            opening = opening_normalized or opening_family or opening_raw or 'Unknown'
+
+            # Track games without proper opening data
+            if opening == 'Unknown':
+                games_without_opening += 1
 
             # 🚨 CRITICAL FIX: Filter out opponent's openings
             # Only count openings that the player actually chose to play
             # e.g., skip "Caro-Kann Defense" when player is white (that's opponent's opening)
             # This bug has been reported multiple times - see docs/CARO_KANN_FIX_2025.md
+            # NOTE: 'Unknown' openings are considered neutral and should be counted for both colors
             if not _should_count_opening_for_color(opening, color):
                 # Track filtered openings for debugging
                 if color == 'white':
@@ -2935,11 +3077,28 @@ async def get_comprehensive_analytics(
             # Sort by number of games
             opening_color_stats[color].sort(key=lambda x: x['games'], reverse=True)
 
-        # Debug logging for filtered white openings
-        if filtered_white_openings:
-            print(f"[DEBUG] Filtered {len(filtered_white_openings)} unique openings from White stats:")
-            for opening, count in sorted(filtered_white_openings.items(), key=lambda x: x[1], reverse=True)[:10]:
-                print(f"  - {opening}: {count} games")
+        # Debug logging for opening color stats
+        if DEBUG:
+            print(f"[DEBUG] Opening Color Stats Summary:")
+            print(f"  - Total games processed: {total_games_processed}")
+            print(f"  - Games without opening data (Unknown): {games_without_opening}")
+            print(f"  - White openings found: {len(opening_color_performance['white'])}")
+            print(f"  - Black openings found: {len(opening_color_performance['black'])}")
+            print(f"  - White stats entries: {len(opening_color_stats['white'])}")
+            print(f"  - Black stats entries: {len(opening_color_stats['black'])}")
+
+            if filtered_white_openings:
+                print(f"[DEBUG] Filtered {len(filtered_white_openings)} unique openings from White stats:")
+                for opening, count in sorted(filtered_white_openings.items(), key=lambda x: x[1], reverse=True)[:10]:
+                    print(f"  - {opening}: {count} games")
+
+            # Show sample of openings found
+            if opening_color_performance['white']:
+                sample_white = list(opening_color_performance['white'].keys())[:5]
+                print(f"[DEBUG] Sample white openings: {sample_white}")
+            if opening_color_performance['black']:
+                sample_black = list(opening_color_performance['black'].keys())[:5]
+                print(f"[DEBUG] Sample black openings: {sample_black}")
 
         # Highest ELO
         highest_elo = None
@@ -3183,6 +3342,15 @@ async def get_match_history(
         page_start = (page - 1) * limit
         page_end = page * limit - 1
 
+        # Supabase has a default limit of 1000 rows per query.
+        # If we're requesting rows beyond 1000, we need to explicitly set a higher limit.
+        # Add a small buffer to ensure we can access the requested range.
+        if page_end >= 1000:
+            # Set limit to at least page_end + 1, with a reasonable maximum
+            # This ensures we can access rows beyond the default 1000 limit
+            required_limit = min(page_end + 1, 10000)  # Cap at 10000 for performance
+            query = query.limit(required_limit)
+
         response = query.order('played_at', desc=True).range(page_start, page_end).execute()
 
         if not response.data:
@@ -3267,28 +3435,49 @@ async def get_single_game(
             pgn_data = None
 
         # Fetch analysis - use limit(1) instead of maybe_single() to avoid 204 errors
+        # Try move_analyses table first (where analyses are actually saved)
         analysis_data = None
         try:
+            # First try move_analyses table (primary storage)
             analysis_response = await asyncio.to_thread(
-                lambda: db_client.table('unified_analyses')
+                lambda: db_client.table('move_analyses')
                 .select('*')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
-                .eq('provider_game_id', game_identifier)
+                .eq('game_id', game_identifier)
                 .limit(1)
                 .execute()
             )
             if analysis_response.data and len(analysis_response.data) > 0:
                 analysis_data = analysis_response.data[0]
+            else:
+                # Fallback to unified_analyses table for backwards compatibility
+                analysis_response = await asyncio.to_thread(
+                    lambda: db_client.table('unified_analyses')
+                    .select('*')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .eq('provider_game_id', game_identifier)
+                    .limit(1)
+                    .execute()
+                )
+                if analysis_response.data and len(analysis_response.data) > 0:
+                    analysis_data = analysis_response.data[0]
         except Exception as analysis_error:
             # Log but don't fail - analysis might not exist yet for unanalyzed games
             print(f"Analysis not found for game {game_identifier}: {analysis_error}")
             analysis_data = None
 
+        # Extract ai_comments_status from analysis_data if available
+        ai_comments_status = None
+        if analysis_data:
+            ai_comments_status = analysis_data.get('ai_comments_status', 'pending')
+
         return {
             'game': game,
             'pgn': pgn_data,
-            'analysis': analysis_data
+            'analysis': analysis_data,
+            'ai_comments_status': ai_comments_status or 'pending'
         }
 
     except HTTPException:
@@ -3390,11 +3579,95 @@ async def get_deep_analysis(
         # Recent games are more relevant for personality analysis
         # IMPORTANT: Also fetch 'id' field for proper game-analysis matching
         games_response = db_client.table('games').select(
-            'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at'
+            'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
         ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
             'my_rating', 'null'
         ).order('played_at', desc=True).limit(100).execute()
         games = games_response.data or []
+
+        # Fetch ALL games for accurate repertoire analysis (win rates, needs_work, etc.)
+        # This ensures repertoire stats match the opening performance stats shown elsewhere
+        all_games_for_repertoire = []
+        page_size = 1000
+        offset = 0
+        while True:
+            try:
+                all_games_response = await asyncio.to_thread(
+                    lambda start=offset, size=page_size: db_client.table('games').select(
+                        'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
+                    ).eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .not_.is_('color', 'null')
+                    .order('played_at', desc=True)
+                    .range(start, start + size - 1)
+                    .execute()
+                )
+                batch = all_games_response.data or []
+                if not batch:
+                    break
+                all_games_for_repertoire.extend(batch)
+                if len(batch) < page_size:
+                    break
+                offset += page_size
+            except Exception as e:
+                if DEBUG:
+                    print(f"[WARN] Error fetching all games for repertoire at offset {offset}: {e}")
+                break
+
+        if DEBUG:
+            print(f"[DEBUG] Fetched {len(games)} games for personality analysis, {len(all_games_for_repertoire)} games for repertoire analysis")
+
+        # Get count of analyzed games (games with analysis records) from database
+        analyzed_games_count = 0
+        try:
+            # Count unique game_ids from move_analyses table
+            move_analyses_count_response = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('game_id', count='exact', head=True)
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            move_analyses_count = getattr(move_analyses_count_response, 'count', 0) or 0
+
+            # Count unique game_ids from game_analyses table
+            game_analyses_count_response = await asyncio.to_thread(
+                lambda: db_client.table('game_analyses').select('game_id', count='exact', head=True)
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            game_analyses_count = getattr(game_analyses_count_response, 'count', 0) or 0
+
+            # Get unique game_ids from both tables to avoid double-counting
+            # Fetch distinct game_ids from move_analyses
+            move_analyses_games = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('game_id')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            analyzed_game_ids = set()
+            if move_analyses_games.data:
+                analyzed_game_ids.update(row.get('game_id') for row in move_analyses_games.data if row.get('game_id'))
+
+            # Fetch distinct game_ids from game_analyses
+            game_analyses_games = await asyncio.to_thread(
+                lambda: db_client.table('game_analyses').select('game_id')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            if game_analyses_games.data:
+                analyzed_game_ids.update(row.get('game_id') for row in game_analyses_games.data if row.get('game_id'))
+
+            analyzed_games_count = len(analyzed_game_ids)
+            if DEBUG:
+                print(f"[DEBUG] Analyzed games count: {analyzed_games_count} (from {move_analyses_count} move_analyses + {game_analyses_count} game_analyses records)")
+        except Exception as e:
+            if DEBUG:
+                print(f"[WARN] Could not get analyzed games count: {e}")
+            # Fallback: will be set after analyses are fetched
+            analyzed_games_count = None
 
         # Fetch user profile - handle Postgrest 204 errors gracefully
         profile = {}
@@ -3486,12 +3759,21 @@ async def get_deep_analysis(
                 else:
                     print(f"[DEBUG] First analysis keys: {list(first_analysis.keys())}")
 
+        # If analyzed_games_count wasn't set (query failed), calculate from analyses list
+        if analyzed_games_count is None:
+            if analyses:
+                analyzed_games_count = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')})
+                if DEBUG:
+                    print(f"[DEBUG] Fallback: calculated analyzed games count from analyses list: {analyzed_games_count}")
+            else:
+                analyzed_games_count = 0
+
         if not analyses:
             print(f"[INFO] No analyses found for {canonical_user_id} - returning fallback data")
-            result = _build_fallback_deep_analysis(canonical_user_id, games, profile)
+            result = _build_fallback_deep_analysis(canonical_user_id, games, profile, analyzed_games_count)
         else:
             print(f"[INFO] Building deep analysis from {len(analyses)} analysis records")
-            result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile)
+            result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile, all_games_for_repertoire, analyzed_games_count)
 
         # Cache the result before returning (15 minute TTL via CACHE_TTL_SECONDS)
         _set_in_cache(cache_key, result)
@@ -5714,8 +5996,9 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
         if not opening or opening == 'Unknown':
             continue
 
-        # Convert ECO codes to full opening names for better display
-        display_opening = get_opening_name_from_eco_code(opening)
+        # Normalize opening name - handles both ECO codes and already-normalized names
+        # This ensures consistent grouping (e.g., "D00" and "Queen's Pawn Game" both become "Queen's Pawn Game")
+        display_opening = normalize_opening_name(opening)
 
         color = game.get('color')
         result = game.get('result')
@@ -5758,7 +6041,9 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
 
         if win_rate > most_successful['win_rate']:
             most_successful = {'opening': opening, 'win_rate': win_rate, 'games': stats['total']}
-        if win_rate < needs_work['win_rate']:
+        # For needs_work, require at least 5 games to avoid small sample size issues
+        # This prevents misleading recommendations based on very few games
+        if stats['total'] >= 5 and win_rate < needs_work['win_rate']:
             needs_work = {'opening': opening, 'win_rate': win_rate, 'games': stats['total']}
 
     # Calculate style match score
@@ -5915,9 +6200,20 @@ def _generate_quick_tip(mistakes: List[OpeningMistake], patterns: List[str]) -> 
 def _generate_enhanced_opening_analysis(
     games: List[Dict[str, Any]],
     analyses: List[Dict[str, Any]],
-    personality_scores: Dict[str, float]
+    personality_scores: Dict[str, float],
+    all_games_for_repertoire: Optional[List[Dict[str, Any]]] = None
 ) -> EnhancedOpeningAnalysis:
-    """Generate comprehensive enhanced opening analysis."""
+    """Generate comprehensive enhanced opening analysis.
+
+    Args:
+        games: Limited games for personality/mistake analysis (typically 100 most recent)
+        analyses: Analysis records corresponding to games
+        personality_scores: Computed personality scores
+        all_games_for_repertoire: All games for accurate repertoire analysis (optional, defaults to games)
+    """
+    # Use all games for repertoire analysis if provided, otherwise use limited games
+    repertoire_games = all_games_for_repertoire if all_games_for_repertoire is not None else games
+
     opening_win_rate = _compute_opening_win_rate(analyses)
     specific_mistakes = _extract_opening_mistakes(analyses, games)
 
@@ -5925,8 +6221,8 @@ def _generate_enhanced_opening_analysis(
     patterns = _detect_mistake_patterns(specific_mistakes, games)
     quick_tip = _generate_quick_tip(specific_mistakes, patterns)
 
-    style_recommendations = _generate_style_recommendations(personality_scores, games)
-    base_insights = _generate_actionable_insights(personality_scores, games, analyses)
+    style_recommendations = _generate_style_recommendations(personality_scores, repertoire_games)
+    base_insights = _generate_actionable_insights(personality_scores, repertoire_games, analyses)
 
     # Combine patterns, quick tip, and style insights
     actionable_insights = []
@@ -5936,7 +6232,8 @@ def _generate_enhanced_opening_analysis(
     actionable_insights.extend(base_insights)
 
     improvement_trend = _generate_improvement_trend(games, analyses)
-    repertoire_analysis = _analyze_repertoire(games, personality_scores)
+    # Use all games for accurate repertoire analysis (win rates, needs_work, etc.)
+    repertoire_analysis = _analyze_repertoire(repertoire_games, personality_scores)
 
     return EnhancedOpeningAnalysis(
         opening_win_rate=opening_win_rate,
@@ -5952,9 +6249,15 @@ def _build_deep_analysis_response(
     canonical_user_id: str,
     games: List[Dict[str, Any]],
     analyses: List[Dict[str, Any]],
-    profile: Dict[str, Any]
+    profile: Dict[str, Any],
+    all_games_for_repertoire: Optional[List[Dict[str, Any]]] = None,
+    analyzed_games_count: Optional[int] = None
 ) -> DeepAnalysisData:
-    total_games = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')}) or len(games)
+    # Use analyzed_games_count if provided (from database), otherwise fall back to unique analyses or games length
+    if analyzed_games_count is not None and analyzed_games_count > 0:
+        total_games = analyzed_games_count
+    else:
+        total_games = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')}) or len(games)
     accuracy_values = [_coerce_float(analysis.get('best_move_percentage', analysis.get('accuracy'))) for analysis in analyses]
     average_accuracy = _round2(_safe_average([v for v in accuracy_values if v is not None]))
     current_rating = _infer_current_rating(games, profile)
@@ -5974,7 +6277,7 @@ def _build_deep_analysis_response(
         try:
             if DEBUG:
                 print(f"Generating enhanced opening analysis for {len(games)} games, {len(analyses)} analyses")
-            enhanced_opening_analysis = _generate_enhanced_opening_analysis(games, analyses, personality_scores)
+            enhanced_opening_analysis = _generate_enhanced_opening_analysis(games, analyses, personality_scores, all_games_for_repertoire)
             if DEBUG:
                 print(f"Enhanced opening analysis generated successfully")
             if DEBUG and enhanced_opening_analysis:
@@ -6011,9 +6314,11 @@ def _build_deep_analysis_response(
 def _build_fallback_deep_analysis(
     canonical_user_id: str,
     games: List[Dict[str, Any]],
-    profile: Dict[str, Any]
+    profile: Dict[str, Any],
+    analyzed_games_count: Optional[int] = None
 ) -> DeepAnalysisData:
-    total_games = len(games)
+    # Use analyzed_games_count if provided (from database), otherwise fall back to len(games)
+    total_games = analyzed_games_count if analyzed_games_count is not None and analyzed_games_count > 0 else len(games)
     average_accuracy = _round2(_safe_average([
         _coerce_float(game.get('accuracy')) for game in games if _coerce_float(game.get('accuracy')) is not None
     ]))
@@ -8514,6 +8819,12 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
             # Save to database
             success = await _save_stockfish_analysis(game_analysis)
             if success:
+                # Queue background task for AI comment generation
+                print(f"[SINGLE GAME ANALYSIS] 🔄 Creating background task for AI comments...")
+                task = asyncio.create_task(_generate_ai_comments_background(game_analysis))
+                print(f"[SINGLE GAME ANALYSIS] ✅ Background task created: {task}")
+                print(f"[SINGLE GAME ANALYSIS] Queued background AI comment generation for game_id: {game_analysis.game_id}")
+
                 return UnifiedAnalysisResponse(
                     success=True,
                     message="Game analysis completed and saved",
@@ -8852,8 +9163,20 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         # Count moves
                         move_count = sum(1 for _ in game.mainline_moves())
 
+                        # Identify opening from actual moves (more accurate than PGN headers)
+                        from .opening_utils import identify_opening_from_pgn_moves
+                        identified_opening, identified_eco = identify_opening_from_pgn_moves(pgn_data, color)
+
+                        # Use identified opening if available, otherwise fall back to PGN headers
                         opening_value = headers.get('Opening', 'Unknown')
                         eco_value = headers.get('ECO', 'Unknown')
+
+                        # If we identified a specific opening from moves, use it
+                        if identified_opening and identified_opening != 'Unknown Opening':
+                            opening_value = identified_opening
+                            if identified_eco:
+                                eco_value = identified_eco
+
                         # Prioritize ECO code for normalization as it's more reliable
                         raw_opening_for_normalization = eco_value if eco_value != 'Unknown' else opening_value
                         # Normalize opening name to family for consistent filtering
@@ -8937,6 +9260,13 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 if success:
                     print(f"[SINGLE GAME ANALYSIS] SUCCESS Analysis completed and saved for game_id: {analysis_game_id}")
                     print(f"[SINGLE GAME ANALYSIS] This was a SINGLE game analysis - NOT starting batch analysis")
+
+                    # Queue background task for AI comment generation
+                    print(f"[SINGLE GAME ANALYSIS] 🔄 Creating background task for AI comments...")
+                    task = asyncio.create_task(_generate_ai_comments_background(game_analysis))
+                    print(f"[SINGLE GAME ANALYSIS] ✅ Background task created: {task}")
+                    print(f"[SINGLE GAME ANALYSIS] Queued background AI comment generation for game_id: {analysis_game_id}")
+
                     return UnifiedAnalysisResponse(
                         success=True,
                         message="Game analysis completed and saved",
@@ -9214,6 +9544,167 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     print(f"[info] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
     print(f"[info] Skipped {analyzed_count} already-analyzed games")
     return unanalyzed_games
+async def _update_all_move_comments_in_db(
+    game_id: str,
+    user_id: str,
+    platform: str,
+    moves_analysis: List[Dict[str, Any]]
+) -> bool:
+    """
+    Update the moves_analysis JSONB column with AI-generated comments.
+
+    This is called after all AI comments are generated in the background.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+
+        # Get database client
+        db_config_dict = config.get_database_config()
+        if not db_config_dict:
+            print(f"[AI_COMMENTS] No database config, cannot update comments for game {game_id}")
+            return False
+
+        from supabase import create_client
+        db_client = create_client(
+            db_config_dict['url'],
+            db_config_dict.get('service_role_key') or db_config_dict.get('key')
+        )
+
+        # Update the entire moves_analysis JSONB column
+        # Note: ai_comments_status column might not exist yet, but that's OK - Supabase will ignore it
+        update_data = {
+            'moves_analysis': moves_analysis
+            # ai_comments_status will be added via migration later
+            # For now, we'll just update the moves_analysis JSONB
+        }
+
+        print(f"[AI_COMMENTS] Updating database for game_id: {game_id}")
+        print(f"[AI_COMMENTS] Moves to update: {len(moves_analysis)}")
+
+        response = await asyncio.to_thread(
+            lambda: db_client.table('move_analyses')
+            .update(update_data)
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .eq('game_id', game_id)
+            .execute()
+        )
+
+        print(f"[AI_COMMENTS] Database update response: {type(response)}")
+        print(f"[AI_COMMENTS] Response has data: {hasattr(response, 'data')}")
+        if hasattr(response, 'data'):
+            print(f"[AI_COMMENTS] Response data: {response.data}")
+
+        success = bool(getattr(response, 'data', None))
+        if success:
+            print(f"[AI_COMMENTS] ✅ Successfully updated AI comments for game_id: {game_id}")
+            # Invalidate cache to ensure fresh data
+            _invalidate_cache(canonical_user_id, platform)
+        else:
+            print(f"[AI_COMMENTS] ❌ Failed to update AI comments for game_id: {game_id}")
+
+        return success
+
+    except Exception as e:
+        print(f"[AI_COMMENTS] Error updating AI comments in database: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+async def _generate_ai_comments_background(game_analysis: GameAnalysis) -> None:
+    """
+    Background task to generate AI comments asynchronously after analysis saves.
+
+    This runs in the background and doesn't block the analysis response.
+    """
+    try:
+        print(f"[AI_COMMENTS] ========================================")
+        print(f"[AI_COMMENTS] 🚀 Starting background AI comment generation")
+        print(f"[AI_COMMENTS] Game ID: {game_analysis.game_id}")
+        print(f"[AI_COMMENTS] User ID: {game_analysis.user_id}")
+        print(f"[AI_COMMENTS] Platform: {game_analysis.platform}")
+        print(f"[AI_COMMENTS] Total moves: {len(game_analysis.moves_analysis)}")
+        print(f"[AI_COMMENTS] ========================================")
+
+        from .ai_comment_service import generate_comments_parallel, CommentGenerationConfig
+
+        # Generate comments in parallel batches
+        config = CommentGenerationConfig.from_env()
+        updated_analysis = await generate_comments_parallel(game_analysis, config)
+
+        # Convert moves back to dict format for database update
+        moves_analysis_dict = []
+        for move in updated_analysis.moves_analysis:
+            moves_analysis_dict.append({
+                'move': move.move,
+                'move_san': move.move_san,
+                'move_notation': move.move,
+                'best_move': move.best_move,
+                'best_move_san': getattr(move, 'best_move_san', ''),
+                'best_move_pv': getattr(move, 'best_move_pv', []),
+                'engine_move': move.best_move,
+                'fen_before': getattr(move, 'fen_before', ''),
+                'fen_after': getattr(move, 'fen_after', ''),
+                'evaluation': move.evaluation,
+                'evaluation_before': getattr(move, 'evaluation_before', None),
+                'evaluation_after': getattr(move, 'evaluation_after', None),
+                'is_best': move.is_best,
+                'is_brilliant': move.is_brilliant,
+                'is_great': move.is_great,
+                'is_excellent': move.is_excellent,
+                'is_blunder': move.is_blunder,
+                'is_mistake': move.is_mistake,
+                'is_inaccuracy': move.is_inaccuracy,
+                'is_good': move.is_good,
+                'is_acceptable': move.is_acceptable,
+                'centipawn_loss': move.centipawn_loss,
+                'depth_analyzed': move.depth_analyzed,
+                'is_user_move': move.is_user_move,
+                'player_color': move.player_color,
+                'ply_index': move.ply_index,
+                'ply': move.ply_index,
+                'opening_ply': move.ply_index,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase
+            })
+
+        # Update database with AI comments
+        success = await _update_all_move_comments_in_db(
+            game_analysis.game_id,
+            game_analysis.user_id,
+            game_analysis.platform,
+            moves_analysis_dict
+        )
+
+        if success:
+            print(f"[AI_COMMENTS] ✅ Background AI comment generation completed for game_id: {game_analysis.game_id}")
+        else:
+            print(f"[AI_COMMENTS] ⚠️  Background AI comment generation completed but database update failed for game_id: {game_analysis.game_id}")
+
+    except Exception as e:
+        print(f"[AI_COMMENTS] ❌❌❌ ERROR in background AI comment generation ❌❌❌")
+        print(f"[AI_COMMENTS] Error type: {type(e).__name__}")
+        print(f"[AI_COMMENTS] Error message: {str(e)}")
+        import traceback
+        print(f"[AI_COMMENTS] Full traceback:")
+        traceback.print_exc()
+        print(f"[AI_COMMENTS] ❌❌❌ END ERROR ❌❌❌")
+        # Don't raise - this is a background task, errors shouldn't crash the server
+
+
 async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
     """Persist Stockfish/deep analysis using reliable persistence fallback."""
     try:
@@ -9307,8 +9798,13 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'analysis_method': str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
-            'stockfish_depth': analysis.stockfish_depth
+            'stockfish_depth': analysis.stockfish_depth,
+            'ai_comments_status': 'pending'  # Will be updated to 'completed' when AI comments are generated
         }
+
+        print(f"[SAVE ANALYSIS] Attempting to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+        print(f"[SAVE ANALYSIS] Data keys: {list(data.keys())}")
+        print(f"[SAVE ANALYSIS] Number of moves: {len(moves_analysis_dict)}")
 
         response = supabase_service.table('move_analyses').upsert(
             data,
@@ -9317,8 +9813,20 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
 
         success = bool(getattr(response, 'data', None))
         if success:
+            print(f"[SAVE ANALYSIS] ✅ Successfully saved analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+            print(f"[SAVE ANALYSIS] Saved data game_id: {data.get('game_id')}")
+            print(f"[SAVE ANALYSIS] Response data exists: {bool(response.data)}")
+            if response.data:
+                print(f"[SAVE ANALYSIS] Response data game_id: {response.data[0].get('game_id') if isinstance(response.data, list) and len(response.data) > 0 else 'N/A'}")
             # Invalidate cache for this user/platform to ensure fresh stats
             _invalidate_cache(canonical_user_id, analysis.platform)
+        else:
+            print(f"[SAVE ANALYSIS] ❌ Failed to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+            print(f"[SAVE ANALYSIS] Response type: {type(response)}")
+            print(f"[SAVE ANALYSIS] Response has data attr: {hasattr(response, 'data')}")
+            if hasattr(response, 'data'):
+                print(f"[SAVE ANALYSIS] Response.data: {response.data}")
+            print(f"[SAVE ANALYSIS] Response str: {str(response)[:500]}")
             if DEBUG:
                 print(f"[CACHE] Invalidated cache for {canonical_user_id}:{analysis.platform} after successful analysis save (fallback path)")
         return success
@@ -9493,12 +10001,19 @@ def _calculate_unified_stats(analyses: list, analysis_type: str) -> AnalysisStat
             brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
             material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
         )
-def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
-    """Calculate statistics from unified_analyses view data."""
+def _calculate_unified_analysis_stats(analyses: list, total_count: int = None) -> AnalysisStats:
+    """Calculate statistics from unified_analyses view data.
+
+    Args:
+        analyses: List of analysis records (limited sample for performance)
+        total_count: Total count of all analyzed games in database. If None, uses len(analyses)
+    """
     if not analyses:
         return _get_empty_stats()
 
-    total_games = len(analyses)
+    # Use total_count if provided, otherwise fall back to sample size
+    total_games = total_count if total_count is not None else len(analyses)
+    sample_size = len(analyses)  # Use sample for calculating averages
 
     # Helper function to safely get numeric values, handling None
     def safe_get_numeric(data, key, default=0):
@@ -9512,15 +10027,16 @@ def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
     total_brilliant_moves = sum(safe_get_numeric(a, 'brilliant_moves') for a in analyses)
     total_material_sacrifices = sum(safe_get_numeric(a, 'material_sacrifices') for a in analyses)
 
-    # Calculate averages, handling None values
-    average_accuracy = round(sum(safe_get_numeric(a, 'accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_opening_accuracy = round(sum(safe_get_numeric(a, 'opening_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_middle_game_accuracy = round(sum(safe_get_numeric(a, 'middle_game_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_endgame_accuracy = round(sum(safe_get_numeric(a, 'endgame_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_aggressiveness_index = round(sum(safe_get_numeric(a, 'aggressiveness_index') for a in analyses) / total_games, 1) if total_games > 0 else 0
+    # Calculate averages from the sample (not total_games)
+    # Averages are calculated from the sample, but total_games_analyzed shows the real total
+    average_accuracy = round(sum(safe_get_numeric(a, 'accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_opening_accuracy = round(sum(safe_get_numeric(a, 'opening_accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_middle_game_accuracy = round(sum(safe_get_numeric(a, 'middle_game_accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_endgame_accuracy = round(sum(safe_get_numeric(a, 'endgame_accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_aggressiveness_index = round(sum(safe_get_numeric(a, 'aggressiveness_index') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
 
     return AnalysisStats(
-        total_games_analyzed=total_games,
+        total_games_analyzed=total_games,  # Use total_count for accurate display
         average_accuracy=average_accuracy,
         total_blunders=total_blunders,
         total_mistakes=total_mistakes,
@@ -9531,30 +10047,77 @@ def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
         average_middle_game_accuracy=average_middle_game_accuracy,
         average_endgame_accuracy=average_endgame_accuracy,
         average_aggressiveness_index=average_aggressiveness_index,
-        blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
-        mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
-        inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
-        brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
-        material_sacrifices_per_game=round(total_material_sacrifices / total_games, 2) if total_games > 0 else 0
+        blunders_per_game=round(total_blunders / sample_size, 2) if sample_size > 0 else 0,
+        mistakes_per_game=round(total_mistakes / sample_size, 2) if sample_size > 0 else 0,
+        inaccuracies_per_game=round(total_inaccuracies / sample_size, 2) if sample_size > 0 else 0,
+        brilliant_moves_per_game=round(total_brilliant_moves / sample_size, 2) if sample_size > 0 else 0,
+        material_sacrifices_per_game=round(total_material_sacrifices / sample_size, 2) if sample_size > 0 else 0
     )
 
-def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
-    """Calculate statistics from move_analyses table data."""
+def _calculate_move_analysis_stats(analyses: list, total_count: int = None) -> AnalysisStats:
+    """Calculate statistics from move_analyses table data.
+
+    The move_analyses table has both:
+    1. Pre-calculated fields (best_move_percentage, middle_game_accuracy, endgame_accuracy)
+    2. moves_analysis JSONB array (for detailed move-by-move data)
+
+    We prefer stored fields when available, but calculate from moves_analysis as fallback.
+
+    Args:
+        analyses: List of analysis records (limited sample for performance)
+        total_count: Total count of all analyzed games in database. If None, uses len(analyses)
+    """
     if not analyses:
         return _get_empty_stats()
 
-    total_games = len(analyses)
+    # Use total_count if provided, otherwise fall back to sample size
+    total_games = total_count if total_count is not None else len(analyses)
+    sample_size = len(analyses)  # Use sample for calculating averages
     total_blunders = 0
     total_mistakes = 0
     total_inaccuracies = 0
     total_brilliant_moves = 0
     total_opening_accuracy = 0
+    games_with_opening_moves = 0
+
+    # Track accuracies - use stored values when available, calculate from moves otherwise
+    total_accuracy = 0
+    games_with_stored_accuracy = 0
+    total_accuracy_from_moves = 0
+    games_with_accuracy_from_moves = 0
+
+    total_middle_game_accuracy_stored = 0
+    games_with_middle_game_stored = 0
+    total_middle_game_accuracy_calculated = 0
+    games_with_middle_game_calculated = 0
+
+    total_endgame_accuracy_stored = 0
+    games_with_endgame_stored = 0
+    total_endgame_accuracy_calculated = 0
+    games_with_endgame_calculated = 0
 
     for analysis in analyses:
+        # Use stored accuracy if available (preferred)
+        stored_accuracy = analysis.get('best_move_percentage') or analysis.get('accuracy')
+        if stored_accuracy is not None and stored_accuracy > 0:
+            total_accuracy += stored_accuracy
+            games_with_stored_accuracy += 1
+
+        # Count move quality metrics from moves_analysis array
         moves_analysis = analysis.get('moves_analysis', [])
-        if isinstance(moves_analysis, list):
+        if isinstance(moves_analysis, list) and len(moves_analysis) > 0:
+            # Get all user moves for calculation fallbacks
+            user_moves = [move for move in moves_analysis if move.get('is_user_move', False)]
+
+            # Calculate overall accuracy from moves if we don't have stored value
+            if not stored_accuracy and user_moves:
+                centipawn_losses = [move.get('centipawn_loss', 0) for move in user_moves]
+                game_accuracy = _calculate_accuracy_from_cpl(centipawn_losses)
+                total_accuracy_from_moves += game_accuracy
+                games_with_accuracy_from_moves += 1
+
+            # Count move quality metrics
             for move in moves_analysis:
-                # Only count user moves, not opponent moves
                 if move.get('is_user_move', False):
                     if move.get('is_blunder', False):
                         total_blunders += 1
@@ -9565,30 +10128,85 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
                     if move.get('is_brilliant', False):
                         total_brilliant_moves += 1
 
-            # Calculate opening accuracy for this game (user moves only)
+            # Calculate opening accuracy from moves (always calculate, not stored)
             opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 20 and move.get('is_user_move', False)]
             if opening_moves:
-                # Use Chess.com win probability method for opening accuracy
                 opening_accuracy = _calculate_opening_accuracy_chesscom(opening_moves)
                 total_opening_accuracy += opening_accuracy
+                games_with_opening_moves += 1
+
+            # Use stored middle game accuracy if available, otherwise calculate from moves
+            stored_middle_game = analysis.get('middle_game_accuracy')
+            if stored_middle_game is not None and stored_middle_game > 0:
+                total_middle_game_accuracy_stored += stored_middle_game
+                games_with_middle_game_stored += 1
+            elif user_moves:
+                user_move_count = len(user_moves)
+                if user_move_count > 15:
+                    opening_end = min(10, user_move_count)
+                    endgame_start = max(opening_end, user_move_count - 10)
+                    middle_game_moves = user_moves[opening_end:endgame_start]
+                    if middle_game_moves:
+                        middle_game_cpl = [move.get('centipawn_loss', 0) for move in middle_game_moves]
+                        middle_game_acc = _calculate_accuracy_from_cpl(middle_game_cpl)
+                        total_middle_game_accuracy_calculated += middle_game_acc
+                        games_with_middle_game_calculated += 1
+
+            # Use stored endgame accuracy if available, otherwise calculate from moves
+            stored_endgame = analysis.get('endgame_accuracy')
+            if stored_endgame is not None and stored_endgame > 0:
+                total_endgame_accuracy_stored += stored_endgame
+                games_with_endgame_stored += 1
+            elif user_moves:
+                user_move_count = len(user_moves)
+                if user_move_count > 10:
+                    endgame_start = max(0, user_move_count - 10)
+                    endgame_moves = user_moves[endgame_start:]
+                    if endgame_moves:
+                        endgame_cpl = [move.get('centipawn_loss', 0) for move in endgame_moves]
+                        endgame_acc = _calculate_accuracy_from_cpl(endgame_cpl)
+                        total_endgame_accuracy_calculated += endgame_acc
+                        games_with_endgame_calculated += 1
+
+    # Calculate final accuracies - prefer stored, fall back to calculated
+    if games_with_stored_accuracy > 0:
+        final_accuracy = round(total_accuracy / games_with_stored_accuracy, 1)
+    elif games_with_accuracy_from_moves > 0:
+        final_accuracy = round(total_accuracy_from_moves / games_with_accuracy_from_moves, 1)
+    else:
+        final_accuracy = 0
+
+    if games_with_middle_game_stored > 0:
+        final_middle_game_accuracy = round(total_middle_game_accuracy_stored / games_with_middle_game_stored, 1)
+    elif games_with_middle_game_calculated > 0:
+        final_middle_game_accuracy = round(total_middle_game_accuracy_calculated / games_with_middle_game_calculated, 1)
+    else:
+        final_middle_game_accuracy = 0
+
+    if games_with_endgame_stored > 0:
+        final_endgame_accuracy = round(total_endgame_accuracy_stored / games_with_endgame_stored, 1)
+    elif games_with_endgame_calculated > 0:
+        final_endgame_accuracy = round(total_endgame_accuracy_calculated / games_with_endgame_calculated, 1)
+    else:
+        final_endgame_accuracy = 0
 
     return AnalysisStats(
-        total_games_analyzed=total_games,
-        average_accuracy=round(sum(a.get('best_move_percentage', a.get('accuracy', 0)) for a in analyses) / total_games, 1),
+        total_games_analyzed=total_games,  # Use total_count for accurate display
+        average_accuracy=final_accuracy,
         total_blunders=total_blunders,
         total_mistakes=total_mistakes,
         total_inaccuracies=total_inaccuracies,
         total_brilliant_moves=total_brilliant_moves,
         total_material_sacrifices=sum(a.get('material_sacrifices', 0) for a in analyses),
-        average_opening_accuracy=round(total_opening_accuracy / total_games, 1) if total_games > 0 else 0,
-        average_middle_game_accuracy=round(sum(a.get('middle_game_accuracy', 0) for a in analyses) / total_games, 1),
-        average_endgame_accuracy=round(sum(a.get('endgame_accuracy', 0) for a in analyses) / total_games, 1),
-        average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / total_games, 1),
-        blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
-        mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
-        inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
-        brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
-        material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
+        average_opening_accuracy=round(total_opening_accuracy / games_with_opening_moves, 1) if games_with_opening_moves > 0 else 0,
+        average_middle_game_accuracy=final_middle_game_accuracy,
+        average_endgame_accuracy=final_endgame_accuracy,
+        average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / sample_size, 1) if sample_size > 0 else 0,
+        blunders_per_game=round(total_blunders / sample_size, 2) if sample_size > 0 else 0,
+        mistakes_per_game=round(total_mistakes / sample_size, 2) if sample_size > 0 else 0,
+        inaccuracies_per_game=round(total_inaccuracies / sample_size, 2) if sample_size > 0 else 0,
+        brilliant_moves_per_game=round(total_brilliant_moves / sample_size, 2) if sample_size > 0 else 0,
+        material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / sample_size, 2) if sample_size > 0 else 0
     )
 
 def _get_empty_stats() -> AnalysisStats:

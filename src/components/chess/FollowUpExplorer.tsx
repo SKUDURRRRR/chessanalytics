@@ -71,6 +71,19 @@ export function FollowUpExplorer({
     const hasDifferentBestMove = currentMove.bestMoveSan &&
                                 currentMove.bestMoveSan !== currentMove.san
 
+    // Debug logging for inaccuracies without follow-up
+    if (import.meta.env.DEV && !hasDifferentBestMove &&
+        ['inaccuracy', 'mistake', 'blunder'].includes(currentMove.classification)) {
+      console.log(`[FollowUpExplorer] Move ${currentMove.san} (${currentMove.classification}) - No follow-up button:`, {
+        bestMoveSan: currentMove.bestMoveSan,
+        actualMove: currentMove.san,
+        sameAsBest: currentMove.bestMoveSan === currentMove.san,
+        reason: !currentMove.bestMoveSan ? 'bestMoveSan is null/empty' :
+                currentMove.bestMoveSan === currentMove.san ? 'best move same as played move' :
+                'unknown'
+      })
+    }
+
     // If classified as "best" or "brilliant", only show if it has centipawn loss (not truly best)
     if (['best', 'brilliant'].includes(currentMove.classification)) {
       return hasDifferentBestMove && (currentMove.centipawnLoss ?? 0) > 0

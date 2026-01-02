@@ -28,6 +28,19 @@ interface ProcessedMove {
   fenBefore: string
   fenAfter: string
   gamePhase?: string  // Optional: 'OPENING', 'MIDDLEGAME', 'ENDGAME'
+
+  // Enhanced coaching fields
+  coachingComment?: string
+  whatWentRight?: string
+  whatWentWrong?: string
+  howToImprove?: string
+  tacticalInsights?: string[]
+  positionalInsights?: string[]
+  risks?: string[]
+  benefits?: string[]
+  learningPoints?: string[]
+  encouragementLevel?: number
+  moveQuality?: string
 }
 
 interface UnifiedChessAnalysisProps {
@@ -49,6 +62,7 @@ interface UnifiedChessAnalysisProps {
   onUndoExplorationMove?: () => void
   onAddExplorationMove?: (move: string) => void
   onPieceDrop?: (sourceSquare: string, targetSquare: string) => boolean
+  isLoadingAIComments?: boolean
   className?: string
 }
 
@@ -579,16 +593,9 @@ export function UnifiedChessAnalysis({
   onUndoExplorationMove,
   onAddExplorationMove,
   onPieceDrop,
+  isLoadingAIComments = false,
   className = ''
 }: UnifiedChessAnalysisProps) {
-  // Debug log
-  console.log('🔍 UnifiedChessAnalysis rendered:', {
-    onPieceDrop: typeof onPieceDrop,
-    currentPosition,
-    currentIndex,
-    isExploringFollowUp,
-    isFreeExploration
-  })
 
   // Chess sound integration
   const { soundEnabled, volume } = useChessSoundSettings()
@@ -666,14 +673,6 @@ export function UnifiedChessAnalysis({
 
   // Generate arrows from exploration analysis if available
   const displayArrows = useMemo(() => {
-    console.log('[UnifiedChessAnalysis] Computing displayArrows:', {
-      isExploringFollowUp,
-      isFreeExploration,
-      hasExplorationAnalysis: !!explorationAnalysis,
-      explorationBestMove: explorationAnalysis?.bestMove,
-      currentMoveArrows: currentMoveArrows,
-      currentMoveArrowsLength: currentMoveArrows?.length || 0,
-    })
 
     const arrows: ModernArrow[] = []
 
@@ -682,7 +681,6 @@ export function UnifiedChessAnalysis({
 
     // If exploring and we have analysis with a best move, show arrow for that
     if ((isExploringFollowUp || isFreeExploration) && explorationAnalysis?.bestMove) {
-      console.log('[UnifiedChessAnalysis] Using exploration arrow')
       arrows.push({
         from: explorationAnalysis.bestMove.from,
         to: explorationAnalysis.bestMove.to,
@@ -692,7 +690,6 @@ export function UnifiedChessAnalysis({
       })
     } else {
       // Otherwise use the current move arrows
-      console.log('[UnifiedChessAnalysis] Using currentMoveArrows:', currentMoveArrows)
       arrows.push(...currentMoveArrows)
     }
 
@@ -702,7 +699,6 @@ export function UnifiedChessAnalysis({
   // Handler to intercept user-drawn arrows from react-chessboard
   // This will be called when user right-clicks and drags to draw an arrow
   const handleArrowsChange = React.useCallback((arrows: Array<[string, string, string?]>) => {
-    console.log('[UnifiedChessAnalysis] Raw arrows from react-chessboard:', arrows)
 
     const modernArrows: ModernArrow[] = arrows.map(([from, to, color]) => ({
       from: from as any,
@@ -714,7 +710,6 @@ export function UnifiedChessAnalysis({
     }))
 
     setUserDrawnArrows(modernArrows)
-    console.log('[UnifiedChessAnalysis] User drew arrows (converted):', modernArrows)
   }, [])
 
   // Clear user-drawn arrows when position changes
@@ -1394,7 +1389,15 @@ export function UnifiedChessAnalysis({
             <div className="mb-6">
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div className="flex-1">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
+                    {isLoadingAIComments && (
+                      <div className="flex items-center gap-1.5">
+                        <div className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-transparent"></div>
+                        <span className="text-xs text-purple-300">Coach Tal loading...</span>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3 mt-2">
                     <div className={`text-3xl font-semibold ${
                       currentMove ? getMoveTextColor(currentMove.classification) :
