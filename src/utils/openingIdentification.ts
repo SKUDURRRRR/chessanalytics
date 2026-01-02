@@ -243,10 +243,13 @@ export function identifyOpening(
 
   // Priority 1: Use ECO code from game record (highest confidence)
   // ECO codes can be in gameRecord.eco or gameRecord.opening_family (if it looks like an ECO code)
+  // BUT: Skip generic openings (like A00 -> "Uncommon Opening") to allow move-based detection
+  const genericOpenings = ['Unknown', 'Unknown Opening', 'Uncommon Opening', 'Rare Opening', 'Irregular Opening']
   const ecoCode = gameRecord?.eco || (gameRecord?.opening_family && /^[A-E]\d{2}/.test(gameRecord.opening_family) ? gameRecord.opening_family : null)
   if (ecoCode) {
     const ecoName = getOpeningNameFromECOCode(ecoCode)
-    if (ecoName && ecoName !== ecoCode) {
+    // Only use ECO code if it gives us a specific opening (not a generic placeholder)
+    if (ecoName && ecoName !== ecoCode && !genericOpenings.includes(ecoName)) {
       return {
         name: ecoName,
         description: `ECO: ${ecoCode} - Opening from ${gameRecord.platform || 'game data'}`,
@@ -259,12 +262,17 @@ export function identifyOpening(
   }
 
   // Priority 2: Use opening data from game record
-  // Skip if opening_family is an ECO code (we already tried that)
+  // BUT: Skip generic placeholders like "Uncommon Opening", "Unknown", etc.
+  // These generic names prevent proper move-based detection
+  // (genericOpenings already defined above for Priority 1)
   if (gameRecord?.opening || (gameRecord?.opening_family && !/^[A-E]\d{2}/.test(gameRecord.opening_family))) {
     const rawOpening = (gameRecord.opening_family && !/^[A-E]\d{2}/.test(gameRecord.opening_family)) ? gameRecord.opening_family : gameRecord.opening
     const normalizedOpening = normalizeOpeningName(rawOpening)
-    
-    if (normalizedOpening && normalizedOpening !== 'Unknown') {
+
+    // Only use game record data if it's a specific opening (not a generic placeholder)
+    if (normalizedOpening &&
+        normalizedOpening !== 'Unknown' &&
+        !genericOpenings.includes(normalizedOpening)) {
       return {
         name: normalizedOpening,
         description: `Opening from ${gameRecord.platform || 'game data'}`,
@@ -278,9 +286,67 @@ export function identifyOpening(
 
   // Priority 3: Match against comprehensive opening database
   if (firstMoves.length > 0) {
+    // First, try to detect KID/Pirc by Black's setup (run before move-by-move matching)
+    // This catches cases where White starts with unusual moves like g3, but Black sets up KID/Pirc
+    if (firstMoves.length >= 4) {
+      const blackMoves = firstMoves.filter((_, index) => index % 2 === 1) // Black moves (odd indices)
+      const whiteMoves = firstMoves.filter((_, index) => index % 2 === 0) // White moves (even indices)
+
+      // Check if Black is setting up King's Indian Defense structure
+      // KID characteristic moves: Nf6, g6, Bg7 (and sometimes d6, but not always)
+      if (blackMoves.length >= 2) {
+        const hasD6 = blackMoves.includes('d6')
+        const hasNf6 = blackMoves.includes('Nf6')
+        const hasG6 = blackMoves.includes('g6')
+        const hasBg7 = blackMoves.includes('Bg7')
+
+        // King's Indian Defense: Nf6 + g6 + Bg7 (typically vs d4, but can occur vs other moves)
+        // Can also have d6 or castling
+        if (hasNf6 && hasG6 && hasBg7) {
+          // Distinguish between KID and Pirc based on White's first move
+          const whiteFirstMove = whiteMoves[0] || ''
+          if (whiteFirstMove === 'e4' && hasD6) {
+            // Pirc Defense: e4 d6 Nf6 g6 Bg7
+            return {
+              name: 'Pirc Defense',
+              description: 'Pirc Defense setup by Black',
+              popularity: 'common',
+              evaluation: 'equal',
+              source: 'move_matching',
+              confidence: 'medium'
+            }
+          } else {
+            // King's Indian Defense: typically vs d4, but can occur vs other moves
+            return {
+              name: 'King\'s Indian Defense',
+              description: 'King\'s Indian Defense setup by Black',
+              popularity: 'common',
+              evaluation: 'equal',
+              source: 'move_matching',
+              confidence: 'medium'
+            }
+          }
+        }
+
+        // Pirc Defense: e4 d6 (then typically Nf6, g6, Bg7)
+        // If White played e4 and Black has d6 + (Nf6 or g6), it's likely Pirc
+        if (whiteMoves[0] === 'e4' && hasD6 && (hasNf6 || hasG6)) {
+          return {
+            name: 'Pirc Defense',
+            description: 'Pirc Defense setup by Black',
+            popularity: 'common',
+            evaluation: 'equal',
+            source: 'move_matching',
+            confidence: 'medium'
+          }
+        }
+      }
+    }
+
+    // Then try move-by-move matching against opening database
     for (const [firstMove, variations] of Object.entries(OPENING_VARIATIONS)) {
       for (const variation of variations) {
-        if (variation.moves.every((move, index) => 
+        if (variation.moves.every((move, index) =>
           index < firstMoves.length && firstMoves[index] === move
         )) {
           return {
@@ -295,39 +361,12 @@ export function identifyOpening(
       }
     }
 
-    // Special case: King's Indian Defense recognition by Black's setup
-    // Look for characteristic KID moves: d6, Nf6, g6, Bg7 pattern
-    if (firstMoves.length >= 4) {
-      const blackMoves = firstMoves.filter((_, index) => index % 2 === 1) // Black moves (odd indices)
-      const whiteMoves = firstMoves.filter((_, index) => index % 2 === 0) // White moves (even indices)
-      
-      // Check if Black is setting up King's Indian structure
-      if (blackMoves.length >= 2) {
-        const hasD6 = blackMoves.includes('d6')
-        const hasNf6 = blackMoves.includes('Nf6')
-        const hasG6 = blackMoves.includes('g6')
-        const hasBg7 = blackMoves.includes('Bg7')
-        
-        // If Black has the characteristic KID setup moves
-        if ((hasD6 && hasNf6 && hasG6) || (hasNf6 && hasG6 && hasBg7)) {
-          return {
-            name: 'King\'s Indian Defense',
-            description: 'King\'s Indian setup by Black against unusual White opening',
-            popularity: 'uncommon',
-            evaluation: 'equal',
-            source: 'move_matching',
-            confidence: 'medium'
-          }
-        }
-      }
-    }
-
     // Priority 4: Try partial matching (first 3 moves)
     const firstThreeMoves = firstMoves.slice(0, 3)
     for (const [firstMove, variations] of Object.entries(OPENING_VARIATIONS)) {
       for (const variation of variations) {
-        if (variation.moves.length >= 3 && 
-            variation.moves.slice(0, 3).every((move, index) => 
+        if (variation.moves.length >= 3 &&
+            variation.moves.slice(0, 3).every((move, index) =>
               index < firstThreeMoves.length && firstThreeMoves[index] === move
             )) {
           return {
@@ -436,6 +475,17 @@ export function getOpeningName(
 /**
  * Get opening name with fallback to normalizeOpeningName for backward compatibility
  * This maintains the existing API while using the improved logic
+ *
+ * ⚠️ WARNING: This function returns the RAW opening name from database (board perspective).
+ * For DISPLAY purposes on Game Analysis Page or Match History, use getPlayerPerspectiveOpeningShort() instead!
+ *
+ * This function should only be used for:
+ * - Opening identification/classification (not display)
+ * - Internal data processing
+ * - Fallback when player color is unknown
+ *
+ * ❌ DO NOT USE for displaying openings to users - use getPlayerPerspectiveOpeningShort() instead!
+ * See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md for details.
  */
 export function getOpeningNameWithFallback(
   opening: string | null | undefined,
@@ -444,10 +494,11 @@ export function getOpeningNameWithFallback(
   playerColor?: 'white' | 'black'
 ): string {
   // If we have a game record, use the comprehensive identification
+  // Pass moves explicitly if provided (this allows move-based identification even when DB has generic opening)
   if (gameRecord) {
     return getOpeningName(gameRecord, moves, playerColor)
   }
-  
+
   // Fallback to the original normalizeOpeningName for backward compatibility
   return normalizeOpeningName(opening || 'Unknown')
 }

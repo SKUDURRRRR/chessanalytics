@@ -204,7 +204,14 @@ export function buildHumanComment(context: HumanReasonContext): string {
   if (isOpeningMove) {
     // Generate more specific opening move explanations based on move number
     const moveNumber = context.moveNumber || 0
-    if (moveNumber <= 3) {
+    if (moveNumber === 1) {
+      // First move - keep it short and Tal'ish to cheer up the player
+      if (isUserMove) {
+        return 'The adventure begins! Time to bring out your forces and claim the center.'
+      } else {
+        return 'The game begins! Your opponent makes their first move. The adventure is underway!'
+      }
+    } else if (moveNumber <= 3) {
       return 'Book move. This is a fundamental opening move that helps control the center and develop your position.'
     } else if (moveNumber <= 6) {
       return 'Book move. This follows established opening theory and helps develop your pieces effectively.'

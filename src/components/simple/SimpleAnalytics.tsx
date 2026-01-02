@@ -12,6 +12,8 @@ import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
 import { normalizeOpeningName } from '../../utils/openingUtils'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
+import { getOpeningColor } from '../../utils/openingColorClassification'
+import { getPlayerPerspectiveOpeningShort } from '../../utils/playerPerspectiveOpening'
 import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { PersonalityRadar } from '../deep/PersonalityRadar'
 import { LongTermPlanner } from '../deep/LongTermPlanner'
@@ -88,7 +90,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       setError(null)
 
       // Optimized data fetching - fetch ALL data in parallel for maximum speed
-      const [analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis, eloStats] = await Promise.all([
+      const [analysisResult, playerStats, gamesData, basicStatsData, analysisOnlyData, deepAnalysis, eloStats] = await Promise.all([
         UnifiedAnalysisService.getAnalysisStats(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
@@ -96,22 +98,32 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         ),
         // Use backend API for player stats instead of direct Supabase query
         UnifiedAnalysisService.getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
+        // Reduced from 50 to 20 - only need a small sample for quick stats
+        // Most data comes from comprehensive analytics which is much more efficient
         UnifiedAnalysisService.getGameAnalyses(
           userId,
           (platform as 'lichess' | 'chess.com') || 'lichess',
           'stockfish',
-          50,
+          20,  // Reduced from 50 for faster loading
           0
         ),
-        // Use backend API for comprehensive analytics instead of direct Supabase queries
+        // Fetch basic stats (color/opening) from ALL games
         (async () => {
-          const backendData = await UnifiedAnalysisService.getComprehensiveAnalytics(
+          const basicStats = await UnifiedAnalysisService.getComprehensiveAnalytics(
             userId,
             (platform as 'lichess' | 'chess.com') || 'lichess',
-            10000  // Analyze ALL games for complete historical data
+            10000  // Fetch all games for accurate color/opening statistics
           )
-          // Return the full backend response with all the new analytics
-          return backendData
+          return basicStats
+        })(),
+        // Fetch analysis data from recent games only
+        (async () => {
+          const analysisData = await UnifiedAnalysisService.getComprehensiveAnalytics(
+            userId,
+            (platform as 'lichess' | 'chess.com') || 'lichess',
+            100  // Only 100 games for analysis data (marathon, records, resignation)
+          )
+          return analysisData
         })(),
         UnifiedAnalysisService.fetchDeepAnalysis(
           userId,
@@ -124,14 +136,28 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         )
       ])
 
+      // Merge comprehensive analytics: color/opening from all games + analysis data from 100 games
+      const comprehensiveAnalytics = {
+        ...basicStatsData,
+        // Override with analysis-specific data from the 100-game fetch
+        marathon_performance: analysisOnlyData?.marathon_performance,
+        personal_records: analysisOnlyData?.personal_records,
+        resignation_timing: analysisOnlyData?.resignation_timing,
+        recent_trend: analysisOnlyData?.recent_trend,
+      }
+
       // Set default values for removed services
       const optimizedEloStats = null
 
       // Only log diagnostics in development mode
       if (import.meta.env.DEV) {
         console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
-        console.log('Comprehensive analytics - total games:', comprehensiveAnalytics?.total_games)
-        console.log('Comprehensive analytics full data:', comprehensiveAnalytics)
+        console.log('Basic stats (10000) - total games:', basicStatsData?.total_games)
+        console.log('Analysis data (100) - marathon analyzed:', analysisOnlyData?.marathon_performance?.analyzed_count)
+        console.log('Merged comprehensive analytics:', comprehensiveAnalytics)
+        console.log('Opening Color Stats (camelCase):', comprehensiveAnalytics?.openingColorStats)
+        console.log('Opening Color Stats (snake_case):', comprehensiveAnalytics?.opening_color_stats)
+        console.log('Opening Stats:', comprehensiveAnalytics?.openingStats)
         console.log('ELO stats from backend:', eloStats)
         console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
         console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
@@ -200,13 +226,30 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       setData(enhancedData)
       // Merge ELO stats from backend API into comprehensive data
+      // IMPORTANT: Preserve all fields from backend, including openingColorStats and game length insights
       setComprehensiveData({
         ...comprehensiveAnalytics,
         // Override with backend API data if available (more reliable)
         highestElo: eloStats.highest_elo || comprehensiveAnalytics?.highestElo,
         timeControlWithHighestElo: eloStats.time_control || comprehensiveAnalytics?.timeControlWithHighestElo,
-        totalGames: eloStats.total_games || comprehensiveAnalytics?.totalGames || 0
+        totalGames: eloStats.total_games || comprehensiveAnalytics?.totalGames || 0,
+        // Ensure openingColorStats is preserved (handle both camelCase and snake_case)
+        openingColorStats: comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats || { white: [], black: [] },
+        // Preserve all game length insight fields (these come from comprehensive analytics endpoint)
+        game_length_distribution: comprehensiveAnalytics?.game_length_distribution,
+        quick_victory_breakdown: comprehensiveAnalytics?.quick_victory_breakdown,
+        marathon_performance: comprehensiveAnalytics?.marathon_performance,
+        recent_trend: comprehensiveAnalytics?.recent_trend,
+        personal_records: comprehensiveAnalytics?.personal_records,
+        patience_rating: comprehensiveAnalytics?.patience_rating,
+        comeback_potential: comprehensiveAnalytics?.comeback_potential,
+        resignation_timing: comprehensiveAnalytics?.resignation_timing
       })
+
+      // Debug: Log opening color stats after setting state
+      if (import.meta.env.DEV) {
+        console.log('Setting comprehensiveData with openingColorStats:', comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats)
+      }
       if (comprehensiveAnalytics?.performanceTrends) {
         setSelectedTimeControl(prev => {
           const perTimeControl = comprehensiveAnalytics.performanceTrends.perTimeControl || {}
@@ -364,7 +407,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         },
         timeControlStats: comprehensiveData.timeControlStats || [],
         openingStats: comprehensiveData.openingStats || [],
-        openingColorStats: comprehensiveData.openingColorStats || { white: [], black: [] },
+        openingColorStats: comprehensiveData.openingColorStats || comprehensiveData.opening_color_stats || { white: [], black: [] },
         opponentStats: comprehensiveData.opponentStats || null,
         temporalStats: comprehensiveData.temporalStats || null,
         gameLengthStats: comprehensiveData.gameLengthStats || null
@@ -378,7 +421,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
   const safeTimeControlStats = safeComprehensive?.timeControlStats || []
   const safeOpeningStats = safeComprehensive?.openingStats || []
-  const safeOpeningColorStats = safeComprehensive?.openingColorStats || { white: [], black: [] }
+  const safeOpeningColorStats = safeComprehensive?.openingColorStats || safeComprehensive?.opening_color_stats || { white: [], black: [] }
+
+  // Debug: Log what we're using for opening color stats
+  if (import.meta.env.DEV && safeOpeningColorStats) {
+    console.log('Safe Opening Color Stats:', {
+      whiteCount: safeOpeningColorStats.white?.length || 0,
+      blackCount: safeOpeningColorStats.black?.length || 0,
+      whiteSample: safeOpeningColorStats.white?.slice(0, 3),
+      blackSample: safeOpeningColorStats.black?.slice(0, 3)
+    })
+  }
   const safeOpponentStats = safeComprehensive?.opponentStats || null
   const safeTemporalStats = safeComprehensive?.temporalStats || {
     firstGame: null,
@@ -455,6 +508,15 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     const fallbackFamilies = fallback?.openingFamily ? [fallback.openingFamily] : []
     const fallbackOpenings = fallback?.opening ? [fallback.opening] : []
 
+    // Auto-determine color if not explicitly provided
+    // This ensures we only show games where the player actually played this opening
+    const determinedColor = color || (() => {
+      const openingColor = getOpeningColor(normalizedName)
+      // If the opening is neutral (e.g., "King's Pawn Game"), don't filter by color
+      // If it's white or black, filter to only show games where player played that color
+      return openingColor === 'neutral' ? undefined : openingColor
+    })()
+
     return {
       normalized: normalizedName,
       identifiers: hasIdentifiers
@@ -463,7 +525,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             openingFamilies: fallbackFamilies,
             openings: fallbackOpenings,
           },
-      color,
+      color: determinedColor,
     }
   }
 
@@ -515,11 +577,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               </p>
               <div className="rounded-xl border border-amber-300/30 bg-amber-500/15 p-4">
                 <p className="mb-2 text-sm font-medium text-amber-100">To see your real analytics:</p>
-                <ol className="list-decimal space-y-1 text-xs text-amber-100/90">
-                  <li>Click the "Analyze My Games" button above</li>
-                  <li>Wait for the analysis to complete (this may take a few minutes)</li>
-                  <li>Refresh the page to see your real analytics data</li>
-                </ol>
+                <p className="text-xs text-amber-100/90">
+                  Games need to be analyzed to show real analytics data. Analysis can be triggered from individual games in the match history.
+                </p>
               </div>
             </div>
           </div>
@@ -689,11 +749,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
           {/* Opening Performance - Winning vs Losing */}
           <div className={cardClass}>
-            <h3 className="mb-6 text-lg font-semibold text-white">Opening Performance</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <h3 className="mb-4 text-lg font-semibold text-white">Opening Performance</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Winning Openings */}
               <div>
-                <h4 className="mb-4 text-sm font-semibold text-emerald-200">Winning Openings</h4>
+                <h4 className="mb-3 text-sm font-semibold text-emerald-200">Winning Openings</h4>
                 <div className="space-y-3">
                   {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
                     safeOpeningStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
@@ -710,8 +770,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       }
                       title="Click to view games with this opening"
                     >
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="font-medium text-white">
+                      <div className="mb-2 flex items-start justify-between">
+                        <span className="text-sm font-medium leading-tight text-white">
                           {normalizeOpeningName(stat.opening)}
                         </span>
                         <span className="text-xs uppercase tracking-wide text-emerald-100/80">{stat.games} games</span>
@@ -739,7 +799,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
               {/* Losing Openings */}
               <div>
-                <h4 className="mb-4 text-sm font-semibold text-amber-200">Losing Openings</h4>
+                <h4 className="mb-3 text-sm font-semibold text-amber-200">Losing Openings</h4>
                 <div className="space-y-3">
                   {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate < 50).length > 0 ? (
                     safeOpeningStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => b.games - a.games).slice(0, 3).map((stat: any, index: number) => (
@@ -756,8 +816,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                         }
                         title="Click to view games with this opening"
                       >
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className="font-medium text-white">
+                        <div className="mb-2 flex items-start justify-between">
+                          <span className="text-sm font-medium leading-tight text-white">
                             {normalizeOpeningName(stat.opening)}
                           </span>
                           <span className="text-xs uppercase tracking-wide text-amber-100/80">{stat.games} games</span>
@@ -809,7 +869,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       >
                         <div className="mb-2 flex items-start justify-between">
                           <span className="text-sm font-medium leading-tight text-white">
-                            {normalizeOpeningName(stat.opening)}
+                            {stat.opening}
                           </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
@@ -852,7 +912,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       >
                         <div className="mb-2 flex items-start justify-between">
                           <span className="text-sm font-medium leading-tight text-white">
-                            {normalizeOpeningName(stat.opening)}
+                            {stat.opening}
                           </span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
@@ -1057,7 +1117,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       <div className="lg:col-span-2">
                         <h5 className="mb-3 text-sm font-semibold text-emerald-200">Personal Records</h5>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-2">
-                          {comprehensiveData.personal_records.fastest_win && (
+                          {comprehensiveData.personal_records.fastest_win && comprehensiveData.personal_records.fastest_win.moves > 0 && (
                             <div
                               className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
                               onClick={() => {
@@ -1089,7 +1149,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                               </div>
                             </div>
                           )}
-                          {comprehensiveData.personal_records.longest_game && (
+                          {comprehensiveData.personal_records.longest_game && comprehensiveData.personal_records.longest_game.moves > 0 && (
                             <div
                               className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
                               onClick={() => {
@@ -1113,13 +1173,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               )}
 
               {/* Resignation Timing - Full Width */}
-              {comprehensiveData?.resignation_timing && (
+              {comprehensiveData?.resignation_timing && comprehensiveData.resignation_timing.my_average_resignation_move != null && (
                 <div className="mt-6 pt-6 border-t border-white/10">
                   <h4 className="mb-3 text-sm font-semibold text-rose-200">Resignation Timing</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <span className="block text-xs text-slate-400 mb-1">Last 50 Games</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">{formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move || 0, 1)} <span className="text-base sm:text-sm">moves</span></div>
+                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">
+                        {comprehensiveData.resignation_timing.recent_average_resignation_move != null
+                          ? `${formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move, 1)} moves`
+                          : 'N/A'}
+                      </div>
                       {comprehensiveData.resignation_timing.insight && (
                         <div className="text-sm text-slate-400 mt-2 flex items-center gap-1">
                           <span>{comprehensiveData.resignation_timing.insight}</span>
@@ -1128,18 +1192,20 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     </div>
                     <div>
                       <span className="block text-xs text-slate-400 mb-1">Baseline</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move || 0, 1)} <span className="text-base sm:text-sm">moves</span></div>
+                      <div className="text-2xl sm:text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} <span className="text-base sm:text-sm">moves</span></div>
                     </div>
                     <div>
                       <span className="block text-xs text-slate-400 mb-1">Change</span>
                       <div className={`text-2xl sm:text-xl font-semibold ${
-                        comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change > 0
+                        comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change > 0
                           ? 'text-amber-300'
-                          : comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change < 0
+                          : comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change < 0
                             ? 'text-emerald-300'
                             : 'text-slate-300'
                       }`}>
-                        {comprehensiveData.resignation_timing.change && comprehensiveData.resignation_timing.change > 0 ? '+' : ''}{comprehensiveData.resignation_timing.change || 0}
+                        {comprehensiveData.resignation_timing.change != null
+                          ? `${comprehensiveData.resignation_timing.change > 0 ? '+' : ''}${comprehensiveData.resignation_timing.change}`
+                          : 'N/A'}
                       </div>
                     </div>
                   </div>

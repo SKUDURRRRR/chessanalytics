@@ -33,6 +33,7 @@ class AnalysisJob:
     limit: int
     depth: int
     skill_level: int
+    auth_user_id: Optional[str] = None  # Authenticated user UUID for usage tracking
     status: AnalysisStatus = AnalysisStatus.PENDING
     created_at: datetime = field(default_factory=datetime.now)
     started_at: Optional[datetime] = None
@@ -63,6 +64,7 @@ class AnalysisQueue:
         self.jobs: Dict[str, AnalysisJob] = {}
         self.queue: asyncio.Queue = asyncio.Queue()
         self.running_jobs: Dict[str, AnalysisJob] = {}
+        self.running_tasks: Dict[str, asyncio.Task] = {}  # Track background tasks
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=max_concurrent_jobs)
         self._queue_processor_task: Optional[asyncio.Task] = None
@@ -100,12 +102,31 @@ class AnalysisQueue:
                     print(f"[QUEUE] Skipping cancelled job {job.job_id}")
                     continue
 
-                # Start the job
-                await self._start_job(job)
+                # Start the job in the background (non-blocking)
+                # This allows the queue processor to continue processing other jobs
+                task = asyncio.create_task(self._start_job_wrapper(job))
+                self.running_tasks[job.job_id] = task  # Keep reference to prevent GC
+                print(f"[QUEUE] Started job {job.job_id} in background, continuing queue processing...")
 
             except Exception as e:
                 print(f"Error in queue processor: {e}")
+                import traceback
+                traceback.print_exc()
                 await asyncio.sleep(1)
+
+    async def _start_job_wrapper(self, job: AnalysisJob):
+        """Wrapper for _start_job that handles cleanup."""
+        try:
+            await self._start_job(job)
+        except Exception as e:
+            print(f"[QUEUE] Error in job {job.job_id}: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Clean up task reference
+            if job.job_id in self.running_tasks:
+                del self.running_tasks[job.job_id]
+                print(f"[QUEUE] Cleaned up task reference for job {job.job_id}")
 
     async def _start_job(self, job: AnalysisJob):
         """Start a single analysis job."""
@@ -153,6 +174,26 @@ class AnalysisQueue:
                 job.result = result
                 if job.job_id in self.running_jobs:
                     del self.running_jobs[job.job_id]
+
+            # Increment usage for authenticated users when batch analysis completes
+            if job.auth_user_id:
+                try:
+                    from .unified_api_server import usage_tracker
+                    if usage_tracker:
+                        # Increment by the number of games actually analyzed
+                        # Use analyzed_games if available and > 0, otherwise use total_games, fallback to limit
+                        analyzed_count = job.analyzed_games if job.analyzed_games > 0 else (job.total_games if job.total_games > 0 else job.limit)
+                        if analyzed_count > 0:
+                            await usage_tracker.increment_usage(job.auth_user_id, 'analyze', count=analyzed_count)
+                            print(f"[QUEUE] Incremented usage for user {job.auth_user_id} by {analyzed_count} analyses")
+                        else:
+                            print(f"[QUEUE] Warning: No games analyzed (analyzed_games={job.analyzed_games}, total_games={job.total_games}), skipping usage increment")
+                    else:
+                        print(f"[QUEUE] Warning: usage_tracker not available, skipping usage increment")
+                except Exception as e:
+                    print(f"[QUEUE] Warning: Could not increment usage on completion: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             # Update in-memory progress to completed
             try:
@@ -204,7 +245,15 @@ class AnalysisQueue:
                         job.analyzed_games = completed
                         job.total_games = total
                         job.progress_percentage = percentage
-                        job.current_phase = "analyzing"
+                        # Update phase based on progress:
+                        # - If total > 0, we've found games and are analyzing
+                        # - If total == 0 and completed == 0, we're still fetching
+                        if total > 0:
+                            job.current_phase = "analyzing"
+                        elif completed == 0:
+                            job.current_phase = "fetching"
+                        else:
+                            job.current_phase = job.current_phase or "starting"
 
                         # Also update the in-memory progress for realtime endpoint
                         try:
@@ -213,18 +262,29 @@ class AnalysisQueue:
                             canonical_user_id = _canonical_user_id(job.user_id, job.platform)
                             platform_key = job.platform.strip().lower()
                             progress_key = f"{canonical_user_id}_{platform_key}"
+
+                            # Determine phase based on progress
+                            if total > 0:
+                                phase = "analyzing"
+                            elif completed == 0:
+                                phase = "fetching"
+                            else:
+                                phase = job.current_phase or "starting"
+
                             progress_data = {
                                 "analyzed_games": completed,
                                 "total_games": total,
                                 "progress_percentage": percentage,
                                 "is_complete": False,
-                                "current_phase": "analyzing",
+                                "current_phase": phase,
                                 "estimated_time_remaining": None
                             }
                             analysis_progress[progress_key] = progress_data
-                            print(f"[QUEUE] Progress update for job {job.job_id} -> key '{progress_key}': {progress_data}")
+                            print(f"[QUEUE] ✅ Progress update for job {job.job_id} -> key '{progress_key}': analyzed={completed}/{total}, phase={phase}, percentage={percentage}%")
                         except Exception as e:
-                            print(f"Warning: Could not update in-memory progress: {e}")
+                            print(f"[QUEUE] ❌ ERROR: Could not update in-memory progress: {e}")
+                            import traceback
+                            traceback.print_exc()
 
             # Run analysis (this is synchronous within the thread)
             loop = asyncio.new_event_loop()
@@ -256,14 +316,26 @@ class AnalysisQueue:
         analysis_type: str = "stockfish",
         limit: int = 5,
         depth: int = 14,
-        skill_level: int = 20
+        skill_level: int = 20,
+        auth_user_id: Optional[str] = None
     ) -> str:
         """
         Submit a new analysis job to the queue.
+        Prevents duplicate jobs for the same user+platform combination.
 
         Returns:
             job_id: Unique identifier for the job
         """
+        # Check for existing pending or running jobs for this user+platform
+        with self.lock:
+            for existing_job in self.jobs.values():
+                if (existing_job.user_id == user_id and
+                    existing_job.platform == platform and
+                    existing_job.status in [AnalysisStatus.PENDING, AnalysisStatus.RUNNING]):
+                    print(f"[QUEUE] Job already exists for {user_id} on {platform} (job_id: {existing_job.job_id}, status: {existing_job.status.value})")
+                    print(f"[QUEUE] Returning existing job_id instead of creating duplicate")
+                    return existing_job.job_id
+
         job_id = str(uuid.uuid4())
         job = AnalysisJob(
             job_id=job_id,
@@ -272,7 +344,8 @@ class AnalysisQueue:
             analysis_type=analysis_type,
             limit=limit,
             depth=depth,
-            skill_level=skill_level
+            skill_level=skill_level,
+            auth_user_id=auth_user_id
         )
 
         with self.lock:

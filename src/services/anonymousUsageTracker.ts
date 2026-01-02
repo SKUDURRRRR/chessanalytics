@@ -3,22 +3,22 @@
  * Tracks anonymous user usage in localStorage with 24-hour rolling window
  *
  * Limits (reset every 24 hours):
- * - 100 game imports per 24 hours
- * - 5 analyses per 24 hours
+ * - 50 game imports per 24 hours
+ * - 2 analyses per 24 hours
  *
  * Note: Can be bypassed by clearing localStorage, which is acceptable.
  * The goal is to provide friction and encourage registration, not perfect security.
  */
 
 interface AnonymousUsage {
-  imports: number
+  imports: number // Games imported (daily limit)
   analyses: number
   resetAt: string // ISO timestamp when the limits will reset
 }
 
 const STORAGE_KEY = 'chess_analytics_anonymous_usage'
-const IMPORT_LIMIT = 100
-const ANALYSIS_LIMIT = 5
+const IMPORT_LIMIT = 50 // Per day
+const ANALYSIS_LIMIT = 2 // Per day
 const RESET_WINDOW_HOURS = 24
 
 export class AnonymousUsageTracker {
@@ -38,12 +38,20 @@ export class AnonymousUsageTracker {
 
       const usage = JSON.parse(stored) as AnonymousUsage
 
+      // Migrate old format if needed
+      if ('totalImports' in usage && !('imports' in usage)) {
+        usage.imports = (usage as any).totalImports || 0
+      }
+      if ('analysisResetAt' in usage && !('resetAt' in usage)) {
+        usage.resetAt = (usage as any).analysisResetAt || new Date().toISOString()
+      }
+
       // Check if 24 hours have passed since resetAt
       const resetTime = new Date(usage.resetAt)
       const now = new Date()
 
       if (now >= resetTime) {
-        // Reset the limits
+        // Reset both limits when window expires
         console.log('Anonymous usage limits reset (24 hours passed)')
         const newResetAt = new Date()
         newResetAt.setHours(newResetAt.getHours() + RESET_WINDOW_HOURS)
@@ -72,6 +80,7 @@ export class AnonymousUsageTracker {
 
   /**
    * Check if anonymous user can import more games
+   * Note: This checks localStorage, but backend also enforces the limit
    */
   static canImport(): boolean {
     const usage = this.getUsage()
@@ -87,23 +96,23 @@ export class AnonymousUsageTracker {
   }
 
   /**
-   * Increment import count
+   * Increment import count (daily)
    */
   static incrementImports(count: number): void {
     const usage = this.getUsage()
     usage.imports += count
     this.saveUsage(usage)
-    console.log(`Anonymous usage: ${usage.imports}/${IMPORT_LIMIT} imports used`)
+    console.log(`Anonymous usage: ${usage.imports}/${IMPORT_LIMIT} imports used today`)
   }
 
   /**
-   * Increment analysis count
+   * Increment analysis count (daily)
    */
   static incrementAnalyses(): void {
     const usage = this.getUsage()
     usage.analyses += 1
     this.saveUsage(usage)
-    console.log(`Anonymous usage: ${usage.analyses}/${ANALYSIS_LIMIT} analyses used`)
+    console.log(`Anonymous usage: ${usage.analyses}/${ANALYSIS_LIMIT} analyses used today`)
   }
 
   /**

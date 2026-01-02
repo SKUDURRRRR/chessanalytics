@@ -6,10 +6,12 @@ import { supabase } from '../lib/supabase'
 import { getTimeControlCategory } from './timeControlUtils'
 import { getOpeningNameWithFallback } from './openingIdentification'
 import { OpeningIdentifierSets } from '../types'
-import { shouldCountOpeningForColor } from './openingColorClassification'
+import { shouldCountOpeningForColor, getOpeningColor } from './openingColorClassification'
+import { getOpeningNameFromECOCode } from './openingUtils'
+import { getPlayerPerspectiveOpeningShort } from './playerPerspectiveOpening'
 
 // Debug logging flag - set to true for development debugging
-const DEBUG = false
+const DEBUG = true // Temporarily enabled to debug Caro-Kann issue
 
 export interface GameAnalytics {
   // Basic Statistics
@@ -253,12 +255,11 @@ export async function getComprehensiveGameAnalytics(
     if (DEBUG) console.log(`Canonicalized user ID: "${canonicalUserId}"`)
 
     // PERFORMANCE: First get total count
-    const { count: totalGamesCount, error: countError } = await supabase
+    const { count: totalGamesCount, error: countError} = await supabase
       .from('games')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', canonicalUserId)
       .eq('platform', platform)
-      .not('my_rating', 'is', null)
 
     if (countError) {
       if (DEBUG) console.error('Error fetching game count:', countError)
@@ -281,7 +282,6 @@ export async function getComprehensiveGameAnalytics(
         .select('*')
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
-        .not('my_rating', 'is', null)
         .order('played_at', { ascending: false })
         .range(offset, offset + currentLimit - 1)
 
@@ -338,12 +338,15 @@ export function calculateAnalyticsFromGames(games: any[], totalGamesInDB?: numbe
   const draws = games.filter(g => g.result === 'draw').length
   const losses = games.filter(g => g.result === 'loss').length
 
-  // IMPORTANT: Calculate rates based on ANALYZED games, not total games in database
+  // IMPORTANT: Only count games with valid results (win/loss/draw) for percentage calculations
+  // This prevents percentages from exceeding 100% when some games have null/invalid results
+  const gamesWithValidResults = wins + draws + losses
+
+  // IMPORTANT: Calculate rates based on ANALYZED games with valid results, not total games
   // Using totalGames (from database count) with wins from limited sample creates incorrect percentages
-  const analyzedGames = games.length
-  const winRate = analyzedGames > 0 ? (wins / analyzedGames) * 100 : 0
-  const drawRate = analyzedGames > 0 ? (draws / analyzedGames) * 100 : 0
-  const lossRate = analyzedGames > 0 ? (losses / analyzedGames) * 100 : 0
+  const winRate = gamesWithValidResults > 0 ? (wins / gamesWithValidResults) * 100 : 0
+  const drawRate = gamesWithValidResults > 0 ? (draws / gamesWithValidResults) * 100 : 0
+  const lossRate = gamesWithValidResults > 0 ? (losses / gamesWithValidResults) * 100 : 0
 
   // ELO Statistics
   // Only filter out games with 'null' string literal (actual corruption)
@@ -669,9 +672,11 @@ function calculateOpeningColorStats(games: any[]): {
     }>
 } {
   // Filter out games without proper opening names and normalize them
+  // NOTE: We now include 'Unknown' openings to show them in color stats
+  // This allows users to see games that don't have identified openings
   const validGames = games.filter(game => {
     const opening = game.opening_normalized || game.opening_family || game.opening
-    return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
+    return opening && opening.trim() !== '' && opening !== 'null'
   })
 
   if (DEBUG) console.log(`Opening Color Stats: ${validGames.length} games with valid openings out of ${games.length} total games`)
@@ -687,19 +692,42 @@ function calculateOpeningColorStats(games: any[]): {
   whiteGames.forEach(game => {
     // Use opening_normalized first (which has consolidated opening names)
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    if (!rawOpening || rawOpening.trim() === '' || rawOpening === 'Unknown' || rawOpening === 'null') {
+      return // Skip games without valid opening data
+    }
+
+    // 🚨 CRITICAL FIX: Normalize FIRST, then filter on the ACTUAL normalized result
+    // The issue: getOpeningNameWithFallback ignores the rawOpening parameter when game object is provided
+    // It calls identifyOpening(gameRecord) which reads from game.opening or game.opening_family directly!
+    // So we MUST normalize first to see what we're actually dealing with
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
 
-    // Filter: Only include if this opening belongs to white
-    // (e.g., exclude "Caro-Kann" when player played white against it)
+    // 🚨 IMMEDIATE CHECK: Filter black openings right after normalization
+    // This is THE critical check - if normalizedOpening is "Caro-Kann Defense", this catches it
+    const normalizedOpeningColor = getOpeningColor(normalizedOpening)
+
+    if (normalizedOpeningColor === 'black') {
+      whiteFilteredOut[normalizedOpening] = (whiteFilteredOut[normalizedOpening] || 0) + 1
+      return // Skip this game - it's a black opening (Caro-Kann, Sicilian, etc.)
+    }
+
+    // Additional safety check using shouldCountOpeningForColor
     if (!shouldCountOpeningForColor(normalizedOpening, 'white')) {
       whiteFilteredOut[normalizedOpening] = (whiteFilteredOut[normalizedOpening] || 0) + 1
       return // Skip this game for white opening stats
     }
 
-    if (!whiteOpeningMap.has(normalizedOpening)) {
-      whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
+    // 🚨 KEY FIX: Group by player perspective opening name to merge duplicates
+    // Multiple board-perspective openings (e.g., "Caro-Kann Defense", "Sicilian Defense")
+    // should merge into one player-perspective entry (e.g., "King's Pawn Opening")
+    // CRITICAL: Pass rawOpening (not normalizedOpening) because getPlayerPerspectiveOpeningShort
+    // internally re-normalizes, and we need the original DB value to avoid double-normalization bugs
+    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(rawOpening, 'white', game)
+
+    if (!whiteOpeningMap.has(playerPerspectiveOpening)) {
+      whiteOpeningMap.set(playerPerspectiveOpening, { games: [], openings: new Set(), families: new Set() })
     }
-    const entry = whiteOpeningMap.get(normalizedOpening)!
+    const entry = whiteOpeningMap.get(playerPerspectiveOpening)!
     entry.games.push(game)
     if (game.opening) {
       entry.openings.add(game.opening)
@@ -713,18 +741,54 @@ function calculateOpeningColorStats(games: any[]): {
   blackGames.forEach(game => {
     // Use opening_normalized first (which has consolidated opening names)
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    if (!rawOpening || rawOpening.trim() === '' || rawOpening === 'Unknown' || rawOpening === 'null') {
+      return // Skip games without valid opening data
+    }
+
+    // 🚨 CRITICAL FIX: Check opening color BEFORE normalization to catch any transformation issues
+    // First check the raw opening name to see if it's a white opening
+    // IMPORTANT: We need to normalize ECO codes first (e.g., "C50" → "Italian Game") to get accurate color
+    let preNormalizedOpening = rawOpening
+    // Check if it's an ECO code (format: A00-E99)
+    if (/^[A-E]\d{2}$/.test(rawOpening.trim())) {
+      const ecoName = getOpeningNameFromECOCode(rawOpening.trim())
+      if (ecoName && ecoName !== rawOpening) {
+        preNormalizedOpening = ecoName
+      }
+    }
+    const rawOpeningColor = getOpeningColor(preNormalizedOpening)
+    if (rawOpeningColor === 'white') {
+      return // Skip this game - it's a white opening (Italian, Ruy Lopez, etc.)
+    }
+
+    // Now normalize the opening name
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
 
-    // Filter: Only include if this opening belongs to black
-    // (e.g., exclude "Italian Game" when player played black against it)
+    // 🚨 CRITICAL: Filter: Only include if this opening belongs to black
+    // (e.g., exclude "Italian Game", "Ruy Lopez" when player played black against them)
+    // This prevents White openings from appearing in "Most Played Black Openings"
+    // See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md
     if (!shouldCountOpeningForColor(normalizedOpening, 'black')) {
       return // Skip this game for black opening stats
     }
 
-    if (!blackOpeningMap.has(normalizedOpening)) {
-      blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
+    // Double-check: Defensive verification that opening is actually black
+    // This catches cases where getOpeningNameWithFallback might return unexpected names
+    const openingColor = getOpeningColor(normalizedOpening)
+    if (openingColor === 'white') {
+      return // Skip this game - it's a white opening
     }
-    const entry = blackOpeningMap.get(normalizedOpening)!
+
+    // 🚨 KEY FIX: Group by player perspective opening name to merge duplicates
+    // Multiple board-perspective openings should merge into one player-perspective entry
+    // CRITICAL: Pass rawOpening (not normalizedOpening) because getPlayerPerspectiveOpeningShort
+    // internally re-normalizes, and we need the original DB value to avoid double-normalization bugs
+    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(rawOpening, 'black', game)
+
+    if (!blackOpeningMap.has(playerPerspectiveOpening)) {
+      blackOpeningMap.set(playerPerspectiveOpening, { games: [], openings: new Set(), families: new Set() })
+    }
+    const entry = blackOpeningMap.get(playerPerspectiveOpening)!
     entry.games.push(game)
     if (game.opening) {
       entry.openings.add(game.opening)
@@ -762,16 +826,16 @@ function calculateOpeningColorStats(games: any[]): {
         openings: Array.from(details.openings).filter(Boolean) as string[]
       }
     }
-  }).filter(stat => stat.games >= 3) // Lower threshold for color-specific stats (3 games provides meaningful data)
+  }) // Show ALL openings by color regardless of game count for better user feedback
     .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
 
   if (DEBUG) {
     console.log('White games filtered out by shouldCountOpeningForColor:', whiteFilteredOut)
-    console.log('White Opening Stats (before 3-game filter):', Array.from(whiteOpeningMap.entries()).map(([opening, details]) => ({
+    console.log('White Opening Stats (before game filter):', Array.from(whiteOpeningMap.entries()).map(([opening, details]) => ({
       opening,
       games: details.games.length
     })))
-    console.log('White Opening Stats (after 3+ game filter):', whiteStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
+    console.log('White Opening Stats (all games):', whiteStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
   }
 
   // Optimized: Calculate stats in single pass for black openings
@@ -802,15 +866,15 @@ function calculateOpeningColorStats(games: any[]): {
         openings: Array.from(details.openings).filter(Boolean) as string[]
       }
     }
-  }).filter(stat => stat.games >= 3) // Lower threshold for color-specific stats (3 games provides meaningful data)
+  }) // Show ALL openings by color regardless of game count for better user feedback
     .sort((a, b) => b.games - a.games) // Sort by games descending - most played first
 
   if (DEBUG) {
-    console.log('Black Opening Stats (before 3-game filter):', Array.from(blackOpeningMap.entries()).map(([opening, details]) => ({
+    console.log('Black Opening Stats (before game filter):', Array.from(blackOpeningMap.entries()).map(([opening, details]) => ({
       opening,
       games: details.games.length
     })))
-    console.log('Black Opening Stats (after 3+ game filter):', blackStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
+    console.log('Black Opening Stats (all games):', blackStats.map(s => ({ opening: s.opening, games: s.games, winRate: s.winRate.toFixed(1) + '%' })))
   }
 
   return {
@@ -1513,9 +1577,11 @@ export async function getOpeningColorPerformance(
   }
 
   // Filter out games without proper opening names
+  // NOTE: We now include 'Unknown' openings to show them in color stats
+  // This allows users to see games that don't have identified openings
   const validGames = games.filter(game => {
     const opening = game.opening_normalized || game.opening_family || game.opening
-    return opening && opening.trim() !== '' && opening !== 'Unknown' && opening !== 'null'
+    return opening && opening.trim() !== '' && opening !== 'null'
   })
 
   // Separate games by color
@@ -1527,18 +1593,39 @@ export async function getOpeningColorPerformance(
   const whiteOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   whiteGames.forEach(game => {
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    if (!rawOpening || rawOpening.trim() === '' || rawOpening === 'Unknown' || rawOpening === 'null') {
+      return // Skip games without valid opening data
+    }
+
+    // 🚨 CRITICAL FIX: Normalize FIRST, then filter on the ACTUAL normalized result
+    // The issue: getOpeningNameWithFallback ignores the rawOpening parameter when game object is provided
+    // It calls identifyOpening(gameRecord) which reads from game.opening or game.opening_family directly!
+    // So we MUST normalize first to see what we're actually dealing with
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
 
-    // Filter: Only include if this opening belongs to white
-    // (e.g., exclude "Caro-Kann" when player played white against it)
+    // 🚨 IMMEDIATE CHECK: Filter black openings right after normalization
+    // This is THE critical check - if normalizedOpening is "Caro-Kann Defense", this catches it
+    const normalizedOpeningColor = getOpeningColor(normalizedOpening)
+    if (normalizedOpeningColor === 'black') {
+      return // Skip this game - it's a black opening (Caro-Kann, Sicilian, etc.)
+    }
+
+    // Additional safety check using shouldCountOpeningForColor
     if (!shouldCountOpeningForColor(normalizedOpening, 'white')) {
       return // Skip this game for white opening stats
     }
 
-    if (!whiteOpeningMap.has(normalizedOpening)) {
-      whiteOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
+    // 🚨 KEY FIX: Group by player perspective opening name to merge duplicates
+    // Multiple board-perspective openings (e.g., "Caro-Kann Defense", "Sicilian Defense")
+    // should merge into one player-perspective entry (e.g., "King's Pawn Opening")
+    // CRITICAL: Pass rawOpening (not normalizedOpening) because getPlayerPerspectiveOpeningShort
+    // internally re-normalizes, and we need the original DB value to avoid double-normalization bugs
+    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(rawOpening, 'white', game)
+
+    if (!whiteOpeningMap.has(playerPerspectiveOpening)) {
+      whiteOpeningMap.set(playerPerspectiveOpening, { games: [], openings: new Set(), families: new Set() })
     }
-    const entry = whiteOpeningMap.get(normalizedOpening)!
+    const entry = whiteOpeningMap.get(playerPerspectiveOpening)!
     entry.games.push(game)
     if (game.opening) {
       entry.openings.add(game.opening)
@@ -1553,18 +1640,54 @@ export async function getOpeningColorPerformance(
   const blackOpeningMap = new Map<string, { games: any[]; openings: Set<string>; families: Set<string> }>()
   blackGames.forEach(game => {
     const rawOpening = game.opening_normalized || game.opening_family || game.opening
+    if (!rawOpening || rawOpening.trim() === '' || rawOpening === 'Unknown' || rawOpening === 'null') {
+      return // Skip games without valid opening data
+    }
+
+    // 🚨 CRITICAL FIX: Check opening color BEFORE normalization to catch opponent openings
+    // When player is Black and faces Italian Game (opponent's White opening),
+    // we must filter it out BEFORE normalization can transform the name
+    // IMPORTANT: We need to normalize ECO codes first to get accurate color
+    let preNormalizedOpening = rawOpening
+    // Check if it's an ECO code (format: A00-E99)
+    if (/^[A-E]\d{2}$/.test(rawOpening.trim())) {
+      const ecoName = getOpeningNameFromECOCode(rawOpening.trim())
+      if (ecoName && ecoName !== rawOpening) {
+        preNormalizedOpening = ecoName
+      }
+    }
+    const rawOpeningColor = getOpeningColor(preNormalizedOpening)
+    if (rawOpeningColor === 'white') {
+      return // Skip this game - it's a white opening (Italian, Ruy Lopez, etc.) that the opponent played
+    }
+
+    // Now normalize the opening name
     const normalizedOpening = getOpeningNameWithFallback(rawOpening, game)
 
-    // Filter: Only include if this opening belongs to black
-    // (e.g., exclude "Italian Game" when player played black against it)
+    // 🚨 CRITICAL: Filter: Only include if this opening belongs to black
+    // (e.g., exclude "Italian Game", "Ruy Lopez" when player played black against them)
+    // This prevents White openings from appearing in "Most Played Black Openings"
+    // See docs/OPENING_DISPLAY_REGRESSION_PREVENTION.md
     if (!shouldCountOpeningForColor(normalizedOpening, 'black')) {
       return // Skip this game for black opening stats
     }
 
-    if (!blackOpeningMap.has(normalizedOpening)) {
-      blackOpeningMap.set(normalizedOpening, { games: [], openings: new Set(), families: new Set() })
+    // Double-check: Defensive verification that opening is actually black
+    const openingColor = getOpeningColor(normalizedOpening)
+    if (openingColor === 'white') {
+      return // Skip this game - it's a white opening
     }
-    const entry = blackOpeningMap.get(normalizedOpening)!
+
+    // 🚨 KEY FIX: Group by player perspective opening name to merge duplicates
+    // Multiple board-perspective openings should merge into one player-perspective entry
+    // CRITICAL: Pass rawOpening (not normalizedOpening) because getPlayerPerspectiveOpeningShort
+    // internally re-normalizes, and we need the original DB value to avoid double-normalization bugs
+    const playerPerspectiveOpening = getPlayerPerspectiveOpeningShort(rawOpening, 'black', game)
+
+    if (!blackOpeningMap.has(playerPerspectiveOpening)) {
+      blackOpeningMap.set(playerPerspectiveOpening, { games: [], openings: new Set(), families: new Set() })
+    }
+    const entry = blackOpeningMap.get(playerPerspectiveOpening)!
     entry.games.push(game)
     if (game.opening) {
       entry.openings.add(game.opening)

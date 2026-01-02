@@ -322,7 +322,7 @@ function generateBestExplanation(themes: PositionThemes, isUserMove: boolean): s
     return `${subject} the strongest move, securing king safety.`
   }
 
-  return `${subject} the engine's top choice.`
+  return `${subject} the strongest move available.`
 }
 
 /**
@@ -506,8 +506,9 @@ function generateFollowUpSequence(context: ChessComCommentContext): { followUpMo
  * Format full Chess.com-style comment for display
  */
 export function formatChessComComment(comment: ChessComComment, san: string): string {
-  const { classification, evaluationChange, explanation } = comment
+  const { classification, explanation } = comment
 
-  // Format: "b3 is a miss (-4.35) - Explanation here."
-  return `${san} is ${classification === 'miss' ? 'a miss' : classification} (${evaluationChange}) - ${explanation}`
+  // Format: "b3 is a miss - Explanation here." (no numerical evaluation)
+  // Note: evaluationChange removed to avoid technical language
+  return `${san} is ${classification === 'miss' ? 'a miss' : classification} - ${explanation}`
 }

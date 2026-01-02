@@ -42,6 +42,12 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
   'Petrov': 'black',
   'Philidor Defense': 'black',
   'Philidor': 'black',
+  'Two Knights Defense': 'black',
+  'Hungarian Defense': 'black',
+  'Latvian Gambit': 'black',
+  'Elephant Gambit': 'black',
+  'Damiano Defense': 'black',
+  'Portuguese Opening': 'black',
 
   // 1.d4 openings (Black's defenses)
   'King\'s Indian Defense': 'black',
@@ -75,6 +81,7 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
   // White's 1.e4 systems
   'Italian Game': 'white',
   'Italian': 'white',
+  'Giuoco Piano': 'white',
   'Ruy Lopez': 'white',
   'Spanish Game': 'white',
   'Scotch Game': 'white',
@@ -87,21 +94,24 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
   'King\'s Gambit Declined': 'white',
   'Bishop\'s Opening': 'white',
   'Center Game': 'white',
+  'Ponziani Opening': 'white',
+  'Danish Gambit': 'white',
+  'Evans Gambit': 'white',
+  'Fried Liver Attack': 'white',
+  'Max Lange Attack': 'white',
+  'Italian Gambit': 'white',
 
   // White's 1.d4 systems
   'Queen\'s Gambit': 'white',
-  'Queen\'s Pawn Game': 'white',
-  'Queen\'s Pawn': 'white',
   'London System': 'white',
   'London': 'white',
   'Colle System': 'white',
   'Torre Attack': 'white',
   'Trompowsky Attack': 'white',
   'Blackmar-Diemer Gambit': 'white',
-
-  // White's 1.e4 systems (general)
-  'King\'s Pawn Game': 'white',
-  'King\'s Pawn': 'white',
+  'Catalan Opening': 'white',
+  'Catalan': 'white',
+  'Stonewall Attack': 'white',
 
   // White's other first moves
   'English Opening': 'white',
@@ -114,9 +124,19 @@ const OPENING_COLOR_MAP: Record<string, OpeningColor> = {
   'Bird': 'white',
   'Larsen\'s Opening': 'white',
   'Larsen': 'white',
+  'Nimzowitsch-Larsen Attack': 'white',
+  'Polish Opening': 'white',
+  'Orangutan': 'white',
+  'Sokolsky Opening': 'white',
+  'Zukertort Opening': 'white',
+  'Old Indian Attack': 'white',
 
   // === NEUTRAL OPENINGS ===
   // These describe the game structure rather than a specific color's choice
+  'King\'s Pawn Game': 'neutral',
+  'King\'s Pawn': 'neutral',
+  'Queen\'s Pawn Game': 'neutral',
+  'Queen\'s Pawn': 'neutral',
   'Indian Game': 'neutral',
   'Indian': 'neutral',
   'Unknown': 'neutral',

@@ -1,5 +1,6 @@
 /**
  * Initialize Microsoft Clarity analytics
+ * This uses the inline script approach which is more reliable than the NPM package
  * @param projectId - Your Clarity project ID from https://clarity.microsoft.com
  */
 export function initializeClarity(projectId: string) {
@@ -9,14 +10,21 @@ export function initializeClarity(projectId: string) {
   }
 
   try {
-    if (typeof window !== 'undefined') {
-      // Clarity is loaded via script tag and available on window
-      const clarityWindow = window as any
-      if (clarityWindow.clarity) {
-        clarityWindow.clarity('init', projectId)
-        console.log('Microsoft Clarity initialized successfully')
-      }
+    if (typeof window === 'undefined') {
+      return
     }
+
+    // Clarity inline script (official method)
+    (function(c: any, l: any, a: string, r: string, i: string, t?: any, y?: any) {
+      c[a] = c[a] || function() { (c[a].q = c[a].q || []).push(arguments) }
+      t = l.createElement(r) as HTMLScriptElement
+      t.async = true
+      t.src = "https://www.clarity.ms/tag/" + i
+      y = l.getElementsByTagName(r)[0]
+      y.parentNode.insertBefore(t, y)
+    })(window, document, "clarity", "script", projectId)
+
+    console.log('Microsoft Clarity initialized successfully')
   } catch (error) {
     console.error('Failed to initialize Microsoft Clarity:', error)
   }
@@ -29,11 +37,8 @@ export function initializeClarity(projectId: string) {
  */
 export function setClarityTag(key: string, value: string | string[]) {
   try {
-    if (typeof window !== 'undefined') {
-      const clarityWindow = window as any
-      if (clarityWindow.clarity) {
-        clarityWindow.clarity('set', key, value)
-      }
+    if (typeof window !== 'undefined' && (window as any).clarity) {
+      (window as any).clarity('set', key, value)
     }
   } catch (error) {
     console.error('Failed to set Clarity tag:', error)
@@ -48,11 +53,8 @@ export function setClarityTag(key: string, value: string | string[]) {
  */
 export function identifyUser(userId: string, sessionId?: string, pageId?: string) {
   try {
-    if (typeof window !== 'undefined') {
-      const clarityWindow = window as any
-      if (clarityWindow.clarity) {
-        clarityWindow.clarity('identify', userId, sessionId, pageId)
-      }
+    if (typeof window !== 'undefined' && (window as any).clarity) {
+      (window as any).clarity('identify', userId, sessionId, pageId)
     }
   } catch (error) {
     console.error('Failed to identify user in Clarity:', error)
@@ -65,11 +67,8 @@ export function identifyUser(userId: string, sessionId?: string, pageId?: string
  */
 export function upgradeSession(reason: string) {
   try {
-    if (typeof window !== 'undefined') {
-      const clarityWindow = window as any
-      if (clarityWindow.clarity) {
-        clarityWindow.clarity('upgrade', reason)
-      }
+    if (typeof window !== 'undefined' && (window as any).clarity) {
+      (window as any).clarity('upgrade', reason)
     }
   } catch (error) {
     console.error('Failed to upgrade Clarity session:', error)

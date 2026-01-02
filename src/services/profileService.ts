@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { normalizeUserId } from '../lib/security'
 import { quickCache, getUserExistsCacheKey } from '../utils/quickCache'
 import { logger } from '../utils/logger'
+import { sanitizeHttpError } from '../utils/errorSanitizer'
 
 export interface UserProfile {
   id: string
@@ -54,8 +55,8 @@ export class ProfileService {
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(`Failed to create profile: ${errorData.detail || response.statusText}`)
+        const sanitizedError = await sanitizeHttpError(response, 'create profile')
+        throw new Error(sanitizedError)
       }
 
       const profile = await response.json()

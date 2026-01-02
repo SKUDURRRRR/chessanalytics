@@ -23,13 +23,12 @@ export function useMobileOptimizations(): MobileOptimizations {
   useEffect(() => {
     const updateOptimizations = () => {
       const width = window.innerWidth
-      const height = window.innerHeight
-      
+
       // Determine device type
       const isMobile = width < 768
       const isTablet = width >= 768 && width < 1024
       const isDesktop = width >= 1024
-      
+
       // Determine board size based on viewport
       let boardSize: 'small' | 'medium' | 'large' = 'large'
       if (width < 480) {
@@ -37,13 +36,13 @@ export function useMobileOptimizations(): MobileOptimizations {
       } else if (width < 768) {
         boardSize = 'medium'
       }
-      
+
       // Check for touch capability
       const touchOptimized = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-      
+
       // Check for reduced motion preference
       const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      
+
       setOptimizations({
         isMobile,
         isTablet,
@@ -56,14 +55,14 @@ export function useMobileOptimizations(): MobileOptimizations {
 
     // Initial check
     updateOptimizations()
-    
+
     // Listen for resize events
     window.addEventListener('resize', updateOptimizations)
-    
+
     // Listen for motion preference changes
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
     mediaQuery.addEventListener('change', updateOptimizations)
-    
+
     return () => {
       window.removeEventListener('resize', updateOptimizations)
       mediaQuery.removeEventListener('change', updateOptimizations)
@@ -80,7 +79,7 @@ export function useBreakpoint() {
   useEffect(() => {
     const updateBreakpoint = () => {
       const width = window.innerWidth
-      
+
       if (width >= 1536) {
         setBreakpoint('2xl')
       } else if (width >= 1280) {
@@ -98,7 +97,7 @@ export function useBreakpoint() {
 
     updateBreakpoint()
     window.addEventListener('resize', updateBreakpoint)
-    
+
     return () => window.removeEventListener('resize', updateBreakpoint)
   }, [])
 
@@ -122,7 +121,7 @@ export function useViewport() {
 
     updateViewport()
     window.addEventListener('resize', updateViewport)
-    
+
     return () => window.removeEventListener('resize', updateViewport)
   }, [])
 
