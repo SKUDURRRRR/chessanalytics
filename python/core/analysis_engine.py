@@ -1610,6 +1610,9 @@ class ChessAnalysisEngine:
             evaluation_after=float(after_score)     # CRITICAL: for personality scoring
         )
 
+        # Set player_color based on whose turn it was (color_to_move captured earlier)
+        move_analysis.player_color = 'white' if color_to_move == chess.WHITE else 'black'
+        
         # Set is_user_move and ply_index if provided (from analyze_game context)
         if is_user_move is not None:
             move_analysis.is_user_move = is_user_move
@@ -2068,6 +2071,9 @@ class ChessAnalysisEngine:
                     evaluation_after=eval_cp
                 )
 
+                # Set player_color based on whose turn it was
+                book_move_analysis.player_color = 'white' if player_color == chess.WHITE else 'black'
+                
                 # Set is_user_move and ply_index if provided (from analyze_game context)
                 if is_user_move is not None:
                     book_move_analysis.is_user_move = is_user_move
@@ -3312,6 +3318,9 @@ class ChessAnalysisEngine:
                         evaluation_after=float(eval_after_cp)     # CRITICAL: for personality scoring
                     )
 
+                    # Set player_color based on whose turn it was
+                    move_analysis.player_color = 'white' if player_color == chess.WHITE else 'black'
+                    
                     # Set is_user_move and ply_index if provided (from analyze_game context)
                     if captured_is_user_move is not None:
                         move_analysis.is_user_move = captured_is_user_move

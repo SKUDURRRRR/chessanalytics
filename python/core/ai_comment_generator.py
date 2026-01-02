@@ -363,7 +363,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
                 player_color = move_analysis.get('player_color', 'white')
                 # Clean and validate comment
                 comment = self._clean_comment(comment, is_user_move, player_color)
-                comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
+                comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name, board=board)
                 print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
 
                 # Cache the comment for future use
@@ -499,7 +499,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
                     player_color = move_analysis.get('player_color', 'white')
                     # Clean and validate comment
                     comment = self._clean_comment(comment, is_user_move, player_color)
-                    comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
+                    comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name, board=board)
                     print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
 
                     # Cache the comment
@@ -608,11 +608,88 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
         # Limit to 3 most relevant
         return filtered[:3]
 
+    def _validate_piece_references(self, comment: str, board: chess.Board) -> str:
+        """
+        Validate piece+square references in the comment against actual board state.
+        Removes or generalizes references to pieces that don't exist at the stated squares.
+        """
+        if not comment or not board:
+            return comment
+        
+        piece_names_map = {
+            'pawn': chess.PAWN, 'knight': chess.KNIGHT, 'bishop': chess.BISHOP,
+            'rook': chess.ROOK, 'queen': chess.QUEEN, 'king': chess.KING
+        }
+        
+        # Pattern to match "piece on square" references
+        # e.g., "knight on d4", "the bishop on e5", "White's rook on a1"
+        pattern = r'\b(white\'?s?|black\'?s?)?\s*(pawn|knight|bishop|rook|queen|king)\s+on\s+([a-h][1-8])\b'
+        
+        def validate_reference(match):
+            """Check if the piece reference is valid, return original or empty string."""
+            full_match = match.group(0)
+            color_str = match.group(1) or ''
+            piece_type_str = match.group(2).lower()
+            square_str = match.group(3).lower()
+            
+            try:
+                square = chess.parse_square(square_str)
+                piece = board.piece_at(square)
+                
+                if piece is None:
+                    # No piece at this square - remove the reference
+                    print(f"[AI VALIDATION] ❌ Hallucination detected: '{full_match}' - no piece on {square_str}")
+                    return ""
+                
+                expected_piece_type = piece_names_map.get(piece_type_str)
+                if expected_piece_type and piece.piece_type != expected_piece_type:
+                    # Wrong piece type at this square
+                    actual_piece_name = {
+                        chess.PAWN: 'pawn', chess.KNIGHT: 'knight', chess.BISHOP: 'bishop',
+                        chess.ROOK: 'rook', chess.QUEEN: 'queen', chess.KING: 'king'
+                    }.get(piece.piece_type, 'piece')
+                    print(f"[AI VALIDATION] ❌ Wrong piece: '{full_match}' - actually a {actual_piece_name} on {square_str}")
+                    return ""
+                
+                # Check color if specified
+                if color_str:
+                    is_white_ref = 'white' in color_str.lower()
+                    is_black_ref = 'black' in color_str.lower()
+                    if is_white_ref and piece.color != chess.WHITE:
+                        print(f"[AI VALIDATION] ❌ Wrong color: '{full_match}' - piece is Black")
+                        return ""
+                    if is_black_ref and piece.color != chess.BLACK:
+                        print(f"[AI VALIDATION] ❌ Wrong color: '{full_match}' - piece is White")
+                        return ""
+                
+                # Reference is valid
+                return full_match
+                
+            except Exception as e:
+                print(f"[AI VALIDATION] Warning: Could not validate '{full_match}': {e}")
+                return full_match
+        
+        # Apply validation
+        validated_comment = re.sub(pattern, validate_reference, comment, flags=re.IGNORECASE)
+        
+        # Clean up any double spaces or orphaned punctuation from removals
+        validated_comment = re.sub(r'\s+', ' ', validated_comment)
+        validated_comment = re.sub(r'\s+([,.])', r'\1', validated_comment)
+        validated_comment = re.sub(r'([,.])\s*([,.])', r'\1', validated_comment)
+        validated_comment = validated_comment.strip()
+        
+        return validated_comment
+
     def _validate_comment(self, comment: str, move_san: str, is_capture: bool,
-                          is_user_move: bool, captured_piece: Optional[str] = None) -> str:
+                          is_user_move: bool, captured_piece: Optional[str] = None,
+                          board: chess.Board = None) -> str:
         """Validate and fix common AI hallucination patterns."""
         if not comment:
             return comment
+
+        # First, validate piece references against actual board state
+        if board:
+            comment = self._validate_piece_references(comment, board)
 
         # Check for capture mentions when move is not a capture
         if not is_capture:
@@ -1168,38 +1245,73 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
             for insight in filtered_positional:
                 positional_context += f"- {insight}\n"
 
-        # Build ACTUAL BOARD STATE context (CRITICAL for accuracy - prevents hallucination)
+        # Build MOVE CONTEXT - focused information about what the move did
+        # This replaces the verbose "all pieces" approach with targeted context
         board_state_context = ""
-        if board:
+        if board and move:
             try:
-                board_state_context = f"\n**ACTUAL BOARD STATE (VERIFY BEFORE MENTIONING ANY PIECE):**\n"
-
-                # List all pieces on the board with their exact locations
-                piece_locations = []
-                for square in chess.SQUARES:
-                    piece = board.piece_at(square)
-                    if piece:
-                        square_name = chess.square_name(square)
-                        piece_names_map = {
-                            chess.PAWN: "pawn", chess.KNIGHT: "knight", chess.BISHOP: "bishop",
-                            chess.ROOK: "rook", chess.QUEEN: "queen", chess.KING: "king"
-                        }
-                        piece_name = piece_names_map.get(piece.piece_type, "piece")
-                        color = "White" if piece.color == chess.WHITE else "Black"
-                        piece_locations.append(f"{color} {piece_name} on {square_name}")
-
-                # Add to context (show all pieces for accuracy)
-                board_state_context += "- " + "\n- ".join(piece_locations)
-                board_state_context += f"\n\n**CRITICAL ACCURACY RULES:**\n"
-                board_state_context += f"- ONLY mention pieces that are EXACTLY on the squares listed above\n"
-                board_state_context += f"- NEVER say 'knight on d4' unless you see 'knight on d4' in the list above\n"
-                board_state_context += f"- NEVER say 'bishop on e5' unless you see 'bishop on e5' in the list above\n"
-                board_state_context += f"- If you mention pinning/attacking/defending a piece, VERIFY its exact square from the list\n"
-                board_state_context += f"- If unsure about a piece location, DO NOT mention it - be vague instead\n"
-
+                piece_names_map = {
+                    chess.PAWN: "pawn", chess.KNIGHT: "knight", chess.BISHOP: "bishop",
+                    chess.ROOK: "rook", chess.QUEEN: "queen", chess.KING: "king"
+                }
+                
+                # Get the piece that moved (from board_after, since the piece is now on the destination)
+                moved_piece = board.piece_at(move.to_square)
+                from_square = chess.square_name(move.from_square)
+                to_square = chess.square_name(move.to_square)
+                
+                if moved_piece:
+                    piece_name = piece_names_map.get(moved_piece.piece_type, "piece")
+                    piece_color = "White" if moved_piece.color == chess.WHITE else "Black"
+                    
+                    board_state_context = f"\n**THE MOVE: {piece_color} {piece_name} moved from {from_square} to {to_square}**\n"
+                    
+                    # Add capture info if applicable (from capture_info already built above)
+                    if is_capture and captured_piece_name:
+                        board_state_context += f"- This move CAPTURED: {captured_piece_name}\n"
+                    
+                    # Find key nearby pieces (on squares attacked by or attacking the moved piece)
+                    key_pieces = []
+                    
+                    # Get squares attacked by the moved piece
+                    attacked_squares = board.attacks(move.to_square)
+                    for sq in attacked_squares:
+                        target_piece = board.piece_at(sq)
+                        if target_piece and target_piece.color != moved_piece.color:
+                            target_name = piece_names_map.get(target_piece.piece_type, "piece")
+                            target_color = "White" if target_piece.color == chess.WHITE else "Black"
+                            key_pieces.append(f"{piece_color} {piece_name} on {to_square} now attacks {target_color} {target_name} on {chess.square_name(sq)}")
+                    
+                    # Get pieces attacking the moved piece's new square
+                    attackers = board.attackers(not moved_piece.color, move.to_square)
+                    for sq in attackers:
+                        attacker = board.piece_at(sq)
+                        if attacker:
+                            attacker_name = piece_names_map.get(attacker.piece_type, "piece")
+                            attacker_color = "White" if attacker.color == chess.WHITE else "Black"
+                            key_pieces.append(f"{attacker_color} {attacker_name} on {chess.square_name(sq)} attacks {piece_color} {piece_name} on {to_square}")
+                    
+                    if key_pieces:
+                        board_state_context += "\n**KEY INTERACTIONS:**\n"
+                        for kp in key_pieces[:5]:  # Limit to 5 most relevant
+                            board_state_context += f"- {kp}\n"
+                    
+                    # Add both kings' positions (always relevant)
+                    for color in [chess.WHITE, chess.BLACK]:
+                        king_sq = board.king(color)
+                        if king_sq is not None:
+                            king_color = "White" if color == chess.WHITE else "Black"
+                            board_state_context += f"- {king_color} King is on {chess.square_name(king_sq)}\n"
+                    
+                    # Check if move gives check
+                    if board.is_check():
+                        board_state_context += f"- This move gives CHECK!\n"
+                    
+                    board_state_context += f"\n**ACCURACY RULE:** Only describe what actually happened with this move. Do not invent piece positions.\n"
+                
             except Exception as e:
                 # Could not generate board state context - continue without it
-                pass
+                print(f"[AI] Warning: Could not build move context: {e}")
 
         # Build Stockfish analysis context
         stockfish_context = ""
@@ -1349,21 +1461,13 @@ Write the comment now:"""
 **TAL'S VOICE:** Write with energy and directness. Show genuine interest in the position—be enthusiastic about tactics, clear about principles, and honest about mistakes. Keep it real and engaging, not poetic or flowery.
 
 **RULES:**
-- Start directly (no "Ah," "Oh,")
-- Use chess terms, not numbers or "centipawns/evaluation/engine"
-- Be specific: "weakens the position" not "is a good move"
-- Use "{color_name}" when referring to the player who made this move (never "you" or "your opponent")
-- 2-3 sentences max, clear and instructive
-- CRITICAL: If HANGING PIECES are listed above, you MUST mention them in your comment - this is the most important tactical issue!
-- CRITICAL: Analyze what {color_name} did, NOT what the other player should do in response
-- CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
-- CRITICAL: Do NOT infer sacrifices from position context or previous moves
-- CRITICAL: The CAPTURE section above is the ONLY capture information - do not mention other captures
-- CRITICAL: If the move is NOT A CAPTURE, do NOT mention capturing anything
-- CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
-- CRITICAL: NEVER mention a piece on a square unless it's listed in the ACTUAL BOARD STATE section above
-- CRITICAL: If you say "knight on d4" or "bishop on e5", VERIFY that exact piece is on that exact square in the board state list
-{"Mention better move " + best_move_san + " if relevant (what " + color_name + " should have played)." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
+- Start directly (no "Ah," "Oh,"), use chess terms not engine jargon
+- Use "{color_name}" when referring to the player who made this move
+- 2-3 sentences max, focus on the move's purpose and consequences
+- If HANGING PIECES are listed above, MUST mention them
+- ONLY describe what happened in THIS move - see "THE MOVE" section above for facts
+- If you mention a piece on a specific square, make sure it matches the KEY INTERACTIONS listed above
+{"- Mention better move " + best_move_san + " (what " + color_name + " should have played)" if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
 
 Write comment:"""
         return prompt
@@ -1396,20 +1500,13 @@ Write comment:"""
 **TAL'S VOICE:** Write with energy and directness. {"Celebrate this brilliant move—show genuine enthusiasm for the tactical vision!" if move_quality == MoveQuality.BRILLIANT else "Be honest but constructive—explain the mistake clearly and help them learn." if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else "Show appreciation for good chess—explain why this works."} Keep it real, engaging, and educational.
 
 **RULES:**
-- Start directly (no "Ah," "Oh,")
-- Use chess terms, not numbers or "centipawns/evaluation/engine"
-- Be specific: "loses the attack" not "is a good move"
-- Use "{color_name}" when referring to the player who made this move (never "you" or "your")
-- 2-3 sentences max, clear and instructive
-- CRITICAL: If HANGING PIECES are listed above, you MUST mention them in your comment - this is the most important tactical issue!
-- CRITICAL: Only mention captures/sacrifices that occurred in THIS specific move ({move_san})
-- CRITICAL: Do NOT infer sacrifices from position context or previous moves
-- CRITICAL: The CAPTURE section above is the ONLY capture information - do not mention other captures
-- CRITICAL: If the move is NOT A CAPTURE, do NOT mention capturing anything
-- CRITICAL: Only mention captures if the CAPTURE section explicitly states a piece was captured
-- CRITICAL: NEVER mention a piece on a square unless it's listed in the ACTUAL BOARD STATE section above
-- CRITICAL: If you say "knight on d4" or "bishop on e5", VERIFY that exact piece is on that exact square in the board state list
-{"Mention better move " + best_move_san + " if relevant (what " + color_name + " should have played)." if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
+- Start directly (no "Ah," "Oh,"), use chess terms not engine jargon
+- Use "{color_name}" when referring to the player who made this move
+- 2-3 sentences max, focus on the move's principle and educational value
+- If HANGING PIECES are listed above, MUST mention them
+- ONLY describe what happened in THIS move - see "THE MOVE" section above for facts
+- If you mention a piece on a specific square, make sure it matches the KEY INTERACTIONS listed above
+{"- Mention better move " + best_move_san + " (what " + color_name + " should have played)" if best_move_san and move_quality not in [MoveQuality.BRILLIANT, MoveQuality.BEST] else ""}
 
 Write comment:"""
         return prompt
