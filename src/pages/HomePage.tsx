@@ -4,6 +4,86 @@ import { useNavigate } from 'react-router-dom'
 import { PlayerSearch } from '../components/simple/PlayerSearch'
 import { useAuth } from '../contexts/AuthContext'
 
+interface ScreenshotMockupProps {
+  src: string
+  alt: string
+  glowColor: string
+  tiltDirection: 'left' | 'right'
+  hasError: boolean
+  onError: () => void
+  fallbackEmoji: string
+  fallbackLabel: string
+}
+
+function ScreenshotMockup({ src, alt, glowColor, tiltDirection, hasError, onError, fallbackEmoji, fallbackLabel }: ScreenshotMockupProps) {
+  const tilt = tiltDirection === 'left'
+    ? 'perspective(2000px) rotateY(-2deg) rotateX(1deg)'
+    : 'perspective(2000px) rotateY(2deg) rotateX(1deg)'
+
+  const glowColors: Record<string, string> = {
+    amber: 'from-amber-500/20 via-amber-400/10 to-orange-500/20',
+    sky: 'from-sky-500/20 via-cyan-400/10 to-blue-500/20',
+    purple: 'from-purple-500/20 via-violet-400/10 to-fuchsia-500/20',
+  }
+
+  return (
+    <div className="relative group p-6">
+      {/* Glow effect behind the frame */}
+      <div className={`absolute inset-2 bg-gradient-to-r ${glowColors[glowColor]} rounded-3xl blur-2xl opacity-40 group-hover:opacity-60 transition-opacity duration-500`} />
+
+      {/* Browser mockup frame */}
+      <div
+        className="relative rounded-xl overflow-hidden border border-white/[0.08] bg-slate-900/80"
+        style={{
+          transform: tilt,
+          transformOrigin: 'center center',
+          boxShadow: `
+            0 0 0 1px rgba(255, 255, 255, 0.05),
+            0 4px 6px -1px rgba(0, 0, 0, 0.3),
+            0 10px 15px -3px rgba(0, 0, 0, 0.3),
+            0 20px 25px -5px rgba(0, 0, 0, 0.25),
+            0 25px 50px -12px rgba(0, 0, 0, 0.5)
+          `,
+          transition: 'transform 0.4s ease, box-shadow 0.4s ease',
+        }}
+      >
+        {/* Browser top bar */}
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-800/90 border-b border-white/[0.06]">
+          <div className="flex gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-[#FF5F57]" />
+            <div className="w-2.5 h-2.5 rounded-full bg-[#FEBC2E]" />
+            <div className="w-2.5 h-2.5 rounded-full bg-[#28C840]" />
+          </div>
+          <div className="flex-1 mx-3">
+            <div className="bg-slate-700/40 rounded-md px-3 py-1 text-[11px] text-slate-500 font-mono truncate text-center">
+              chessdata.app
+            </div>
+          </div>
+          <div className="w-[52px]" /> {/* Spacer to balance the dots */}
+        </div>
+
+        {/* Screenshot content */}
+        {hasError ? (
+          <div className="h-64 flex items-center justify-center bg-slate-900/50">
+            <div className="text-center">
+              <div className="text-5xl mb-3">{fallbackEmoji}</div>
+              <p className="text-sm text-slate-500">{fallbackLabel}</p>
+            </div>
+          </div>
+        ) : (
+          <img
+            src={src}
+            alt={alt}
+            className="w-full h-auto block"
+            style={{ imageRendering: 'auto' }}
+            onError={onError}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function HomePage() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -137,7 +217,7 @@ export default function HomePage() {
 
 
       {/* Core Features Showcase */}
-      <section className="relative container-responsive py-12 sm:py-16 md:py-20 space-y-16 sm:space-y-20">
+      <section className="relative container-responsive py-12 sm:py-16 md:py-20 space-y-16 sm:space-y-20 overflow-hidden">
         {/* Feature 1: AI Coach Commentary */}
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
@@ -174,23 +254,16 @@ export default function HomePage() {
               </div>
             </div>
             <div className="order-1 lg:order-2">
-              <div className="card-responsive bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-400/20 min-h-64 overflow-hidden relative flex items-center justify-center">
-                {imageError ? (
-                  <div className="h-64 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-6xl mb-4">♛</div>
-                      <p className="text-sm text-slate-400">AI Coach Commentary</p>
-                    </div>
-                  </div>
-                ) : (
-                  <img
-                    src="/assets/chessboard.png"
-                    alt="Chess board with AI coach commentary"
-                    className="w-full h-auto max-h-96 object-contain"
-                    onError={() => setImageError(true)}
-                  />
-                )}
-              </div>
+              <ScreenshotMockup
+                src="/assets/chessboard.png"
+                alt="Chess board with AI coach commentary"
+                glowColor="amber"
+                tiltDirection="left"
+                hasError={imageError}
+                onError={() => setImageError(true)}
+                fallbackEmoji="♛"
+                fallbackLabel="AI Coach Commentary"
+              />
             </div>
           </div>
         </div>
@@ -199,23 +272,16 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
             <div>
-              <div className="card-responsive bg-gradient-to-br from-sky-500/10 to-cyan-600/5 border-sky-400/20 min-h-64 overflow-hidden relative flex items-center justify-center">
-                {personalityImageError ? (
-                  <div className="h-64 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-6xl mb-4">📊</div>
-                      <p className="text-sm text-slate-400">Personality Radar & Analytics</p>
-                    </div>
-                  </div>
-                ) : (
-                  <img
-                    src="/assets/Personality.png"
-                    alt="Chess personality radar visualization"
-                    className="w-full h-auto max-h-96 object-contain"
-                    onError={() => setPersonalityImageError(true)}
-                  />
-                )}
-              </div>
+              <ScreenshotMockup
+                src="/assets/Personality.png"
+                alt="Chess personality radar visualization"
+                glowColor="sky"
+                tiltDirection="right"
+                hasError={personalityImageError}
+                onError={() => setPersonalityImageError(true)}
+                fallbackEmoji="📊"
+                fallbackLabel="Personality Radar & Analytics"
+              />
             </div>
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-sky-500/10 px-4 py-1.5 text-xs uppercase tracking-wide text-sky-200 mb-4">
@@ -280,23 +346,16 @@ export default function HomePage() {
               </div>
             </div>
             <div className="order-1 lg:order-2">
-              <div className="card-responsive bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-400/20 min-h-64 overflow-hidden relative flex items-center justify-center">
-                {eloImageError ? (
-                  <div className="h-64 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-6xl mb-4">♚</div>
-                      <p className="text-sm text-slate-400">Game Analysis</p>
-                    </div>
-                  </div>
-                ) : (
-                  <img
-                    src="/assets/elo.png"
-                    alt="ELO rating and game analysis visualization"
-                    className="w-full h-auto max-h-96 object-contain"
-                    onError={() => setEloImageError(true)}
-                  />
-                )}
-              </div>
+              <ScreenshotMockup
+                src="/assets/elo.png"
+                alt="ELO rating and game analysis visualization"
+                glowColor="purple"
+                tiltDirection="left"
+                hasError={eloImageError}
+                onError={() => setEloImageError(true)}
+                fallbackEmoji="♚"
+                fallbackLabel="Game Analysis"
+              />
             </div>
           </div>
         </div>
