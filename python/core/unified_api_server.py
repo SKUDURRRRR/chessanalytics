@@ -11445,8 +11445,14 @@ async def get_engine_move(
     import chess.engine
     from concurrent.futures import ThreadPoolExecutor
 
-    # Premium check
-    if auth_user_id and not await _check_premium_access(auth_user_id):
+    # Premium check - require authentication
+    if not auth_user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Please log in to access coach features."
+        )
+
+    if not await _check_premium_access(auth_user_id):
         raise HTTPException(
             status_code=403,
             detail="Coach features require premium subscription. Please upgrade to access."
@@ -11458,7 +11464,7 @@ async def get_engine_move(
             # Validate FEN
             board = chess.Board(fen)
 
-            # Get Stockfish path
+            # Get Stockfish path from existing analysis engine
             from .analysis_engine import ChessAnalysisEngine, AnalysisConfig
             temp_engine = ChessAnalysisEngine(config=AnalysisConfig())
             stockfish_path = temp_engine.stockfish_path
@@ -11466,24 +11472,24 @@ async def get_engine_move(
             if not stockfish_path:
                 raise ValueError("Stockfish not available")
 
-            # Get engine move
+            # Get engine move with improved config
             with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
-                # Configure skill level
+                # Configure skill level with better resource allocation
                 try:
                     engine.configure({
                         'Skill Level': skill_level,
-                        'Threads': 1,
-                        'Hash': 64,
+                        'Threads': 2,
+                        'Hash': 128,
                     })
-                except:
+                except Exception:
                     pass  # Some engines don't support all options
 
-                # Get best move
-                result = engine.play(board, chess.engine.Limit(depth=depth))
+                # Get best move with time limit fallback to prevent hangs
+                result = engine.play(board, chess.engine.Limit(depth=depth, time=5.0))
                 move = result.move
 
-                # Get evaluation and PV
-                info = engine.analyse(board, chess.engine.Limit(depth=depth))
+                # Get evaluation and PV with time limit
+                info = engine.analyse(board, chess.engine.Limit(depth=depth, time=3.0))
                 score = info.get("score")
                 eval_dict = {"type": "cp", "value": 0, "score_for_white": 0}
 
@@ -11515,7 +11521,7 @@ async def get_engine_move(
                     try:
                         pv_san.append(temp_board.san(pv_move))
                         temp_board.push(pv_move)
-                    except:
+                    except Exception:
                         break
 
                 # Convert move to dict
@@ -11533,15 +11539,13 @@ async def get_engine_move(
                 }
 
         except Exception as e:
-            print(f"Error getting engine move: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error getting engine move: {e}")
             raise
 
     try:
-        # Run in thread pool
+        # Run in thread pool with capacity for multiple concurrent games
         loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor(max_workers=1) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             result = await loop.run_in_executor(
                 executor,
                 _get_engine_move,

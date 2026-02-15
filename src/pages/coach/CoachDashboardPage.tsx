@@ -74,16 +74,6 @@ function CoachDashboardContent({
     )
   }
 
-  // Debug logging
-  if (dashboard) {
-    console.log('[COACH_DASHBOARD] Dashboard data:', {
-      hasDailyLesson: !!dashboard.daily_lesson,
-      weaknessesCount: dashboard.top_weaknesses?.length || 0,
-      strengthsCount: dashboard.top_strengths?.length || 0,
-      activityCount: dashboard.recent_activity?.length || 0,
-    })
-  }
-
   return (
     <div className="min-h-screen bg-slate-950 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">

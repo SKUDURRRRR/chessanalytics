@@ -8,6 +8,7 @@ import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import asyncio
+import chess
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,28 @@ class PuzzleGenerator:
             supabase_client: Supabase client instance
         """
         self.supabase = supabase_client
+
+    @staticmethod
+    def _validate_fen(fen: str) -> bool:
+        """Validate that a FEN string represents a legal chess position."""
+        if not fen or not isinstance(fen, str) or len(fen.strip()) < 10:
+            return False
+        try:
+            board = chess.Board(fen)
+            return board.is_valid()
+        except (ValueError, Exception):
+            return False
+
+    @staticmethod
+    def _get_difficulty_rating(user_rating: int, is_blunder: bool) -> int:
+        """Get rating-adjusted puzzle difficulty."""
+        if user_rating < 1200:
+            offset = 200 if is_blunder else 300
+        elif user_rating < 1800:
+            offset = 100 if is_blunder else 200
+        else:
+            offset = 50 if is_blunder else 100
+        return max(800, min(2500, user_rating - offset))
 
     async def generate_puzzles_from_blunders(
         self, user_id: str, platform: str, game_analyses: List[Dict[str, Any]]
@@ -96,7 +119,7 @@ class PuzzleGenerator:
                         user_move = blunder_move_data.get('move_san', '')
                         best_move = blunder_move_data.get('best_move', '')
 
-                        if not fen or not best_move:
+                        if not self._validate_fen(fen) or not best_move:
                             continue
 
                         # Determine tactical theme if possible
@@ -131,8 +154,8 @@ class PuzzleGenerator:
                         if games_result.data:
                             user_rating = games_result.data[0].get('my_rating', 1500) or 1500
 
-                        # Difficulty rating: slightly below user rating for learning
-                        difficulty_rating = max(800, min(2500, user_rating - 100))
+                        # Rating-adjusted difficulty
+                        difficulty_rating = self._get_difficulty_rating(user_rating, is_blunder=True)
 
                         puzzle = {
                             'user_id': user_id,
@@ -227,7 +250,7 @@ class PuzzleGenerator:
                         user_move = mistake_move_data.get('move_san', '')
                         best_move = mistake_move_data.get('best_move', '')
 
-                        if not fen or not best_move:
+                        if not self._validate_fen(fen) or not best_move:
                             continue
 
                         # Get user rating for difficulty
@@ -244,7 +267,7 @@ class PuzzleGenerator:
                         if games_result.data:
                             user_rating = games_result.data[0].get('my_rating', 1500) or 1500
 
-                        difficulty_rating = max(800, min(2500, user_rating - 150))
+                        difficulty_rating = self._get_difficulty_rating(user_rating, is_blunder=False)
 
                         puzzle = {
                             'user_id': user_id,
@@ -298,40 +321,43 @@ class PuzzleGenerator:
         return categorized
 
     async def get_daily_puzzle(
-        self, user_id: str, platform: str
+        self, user_id: str, platform: str, puzzle_index: int = 0
     ) -> Optional[Dict[str, Any]]:
         """
-        Get or generate one daily puzzle for the user.
+        Get or generate a daily puzzle for the user.
 
         Args:
             user_id: User ID
             platform: Platform
+            puzzle_index: Index to cycle through daily puzzles (0-2)
 
         Returns:
             Puzzle dictionary or None
         """
-        # Check if puzzle was already generated today
         today = datetime.now().date()
         today_start = datetime.combine(today, datetime.min.time())
 
         try:
-            # Check for existing puzzle today
+            # Check for existing puzzles today
             existing_result = await asyncio.to_thread(
                 lambda: self.supabase.table('puzzles')
                 .select('*')
                 .eq('user_id', user_id)
                 .eq('platform', platform)
                 .gte('created_at', today_start.isoformat())
-                .order('created_at', desc=True)
-                .limit(1)
+                .order('created_at')
+                .limit(3)
                 .execute()
             )
 
+            if existing_result.data and len(existing_result.data) > puzzle_index:
+                return existing_result.data[puzzle_index]
+
+            # If we have some puzzles but not enough for this index, return what we have
             if existing_result.data:
                 return existing_result.data[0]
 
-            # Generate new daily puzzle
-            # Fetch recent game analyses
+            # Generate new daily puzzles (up to 3)
             analyses_result = await asyncio.to_thread(
                 lambda: self.supabase.table('game_analyses')
                 .select('*')
@@ -348,21 +374,25 @@ class PuzzleGenerator:
             puzzles = await self.generate_puzzles_from_blunders(user_id, platform, game_analyses)
 
             if not puzzles:
-                # Fall back to mistakes
                 puzzles = await self.generate_puzzles_from_mistakes(user_id, platform, game_analyses)
 
             if puzzles:
-                # Select first puzzle and save it
-                daily_puzzle = puzzles[0]
+                # Save up to 3 puzzles for daily rotation
+                saved_puzzles = []
+                for puzzle in puzzles[:3]:
+                    try:
+                        await asyncio.to_thread(
+                            lambda p=puzzle: self.supabase.table('puzzles')
+                            .insert(p)
+                            .execute()
+                        )
+                        saved_puzzles.append(puzzle)
+                    except Exception as e:
+                        logger.warning(f"Error saving daily puzzle: {e}")
 
-                # Save to database
-                await asyncio.to_thread(
-                    lambda: self.supabase.table('puzzles')
-                    .insert(daily_puzzle)
-                    .execute()
-                )
-
-                return daily_puzzle
+                if saved_puzzles:
+                    idx = min(puzzle_index, len(saved_puzzles) - 1)
+                    return saved_puzzles[idx]
 
         except Exception as e:
             logger.error(f"Error getting daily puzzle: {e}")

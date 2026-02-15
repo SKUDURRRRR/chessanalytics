@@ -15,16 +15,6 @@ export function PremiumGate({ children }: PremiumGateProps) {
   const { user, usageStats, loading } = useAuth()
   const navigate = useNavigate()
 
-  // Debug logging
-  console.log('[PREMIUM_GATE] Checking premium access:', {
-    hasUser: !!user,
-    userId: user?.id,
-    hasUsageStats: !!usageStats,
-    account_tier: usageStats?.account_tier,
-    subscription_status: usageStats?.subscription_status,
-    loading,
-  })
-
   // Wait for auth to load before checking premium
   if (loading) {
     return (
@@ -55,14 +45,6 @@ export function PremiumGate({ children }: PremiumGateProps) {
   const isActiveStatus = subscriptionStatus === 'active' || subscriptionStatus === 'trialing'
 
   const isPremium = isPremiumTier && isActiveStatus
-
-  console.log('[PREMIUM_GATE] Premium check result:', {
-    accountTier,
-    subscriptionStatus,
-    isPremiumTier,
-    isActiveStatus,
-    isPremium,
-  })
 
   if (!isPremium) {
     // Show upgrade modal

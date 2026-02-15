@@ -87,6 +87,34 @@ class LessonGenerator:
             if avg_accuracy < 80 or error_rate > 0.5:
                 priority = 'critical' if avg_accuracy < 60 else 'important'
 
+                # Build data-driven theory description
+                mistake_count = len(opening_mistakes.get(opening, []))
+                game_count = stats['games']
+                if avg_accuracy < 60:
+                    severity_desc = f"Your {opening} accuracy is critically low at {avg_accuracy:.0f}%"
+                elif avg_accuracy < 70:
+                    severity_desc = f"Your {opening} accuracy needs work at {avg_accuracy:.0f}%"
+                else:
+                    severity_desc = f"Your {opening} accuracy of {avg_accuracy:.0f}% can be improved"
+
+                theory = (
+                    f"{severity_desc} across {game_count} games. "
+                    f"You averaged {error_rate:.1f} errors per game in this opening. "
+                    f"Focus on the critical positions where your play diverges from best practice."
+                )
+
+                # Extract practice positions from actual mistake games
+                practice_positions = []
+                for mistake_data in opening_mistakes.get(opening, [])[:3]:
+                    game_id = mistake_data.get('game_id')
+                    if game_id and mistake_data.get('accuracy', 100) < 70:
+                        practice_positions.append({
+                            'game_id': game_id,
+                            'accuracy': mistake_data.get('accuracy', 0),
+                            'blunders': mistake_data.get('blunders', 0),
+                            'description': f"Game with {mistake_data.get('blunders', 0)} blunders and {mistake_data.get('accuracy', 0):.0f}% accuracy",
+                        })
+
                 lesson = {
                     'user_id': user_id,
                     'platform': platform,
@@ -94,13 +122,13 @@ class LessonGenerator:
                     'lesson_title': f'Master {opening}',
                     'lesson_description': f'Improve your {opening} play. Your current accuracy is {avg_accuracy:.1f}% with {error_rate:.1f} errors per game.',
                     'lesson_content': {
-                        'theory': f'Learn the key principles and common plans in {opening}.',
-                        'common_mistakes': opening_mistakes.get(opening, [])[:3],  # Top 3 mistake examples
-                        'practice_positions': [],
+                        'theory': theory,
+                        'common_mistakes': opening_mistakes.get(opening, [])[:3],
+                        'practice_positions': practice_positions,
                         'action_items': [
-                            f'Study {opening} theory',
-                            f'Review your {len(opening_mistakes.get(opening, []))} games with mistakes',
-                            'Practice this opening in your next games',
+                            f'Study {opening} theory and main lines',
+                            f'Review your {mistake_count} games with mistakes in this opening',
+                            'Practice this opening in your next games and track accuracy improvement',
                         ],
                     },
                     'priority': priority,
@@ -159,7 +187,13 @@ class LessonGenerator:
                 'lesson_title': 'Improve Your Tactical Vision',
                 'lesson_description': f'Your tactical score is {avg_tactical:.1f}/100. You average {blunders_per_game:.1f} blunders per game. Let\'s fix that!',
                 'lesson_content': {
-                    'theory': 'Tactical vision is about recognizing patterns: pins, forks, skewers, discovered attacks. Practice identifying these motifs.',
+                    'theory': (
+                        f"Your tactical score is {avg_tactical:.0f}/100 with {blunders_per_game:.1f} blunders per game. "
+                        f"{'This is a critical weakness that costs you many games. ' if avg_tactical < 50 else ''}"
+                        f"Focus on pattern recognition: pins, forks, skewers, and discovered attacks. "
+                        f"Your worst games had {high_blunder_games[0].get('blunders', 0) if high_blunder_games else 0}+ blunders - "
+                        f"review these to identify recurring tactical blind spots."
+                    ),
                     'common_mistakes': [
                         {
                             'game_id': g.get('game_id'),
@@ -168,11 +202,18 @@ class LessonGenerator:
                         }
                         for g in high_blunder_games[:3]
                     ],
-                    'practice_positions': [],
+                    'practice_positions': [
+                        {
+                            'game_id': g.get('game_id'),
+                            'blunders': g.get('blunders', 0),
+                            'description': f"Game with {g.get('blunders', 0)} blunders - tactical score {g.get('tactical_score', 0):.0f}/100",
+                        }
+                        for g in high_blunder_games[:3] if g.get('game_id')
+                    ],
                     'action_items': [
-                        'Solve 10 tactical puzzles daily',
+                        f'Solve tactical puzzles daily - focus on positions similar to your {total_blunders} blunders',
                         'Review your blunders and identify the tactical pattern you missed',
-                        'Practice calculation: visualize 3-4 moves ahead',
+                        'Practice calculation: visualize 3-4 moves ahead before making a move',
                     ],
                 },
                 'priority': priority,
@@ -236,13 +277,18 @@ class LessonGenerator:
                 'lesson_title': f'Master {phase_name.title()} Strategy',
                 'lesson_description': f'Your {phase_name} accuracy is {phase_accuracy:.1f}%. Learn to play quiet positions and convert advantages.',
                 'lesson_content': {
-                    'theory': f'Positional chess is about long-term planning, pawn structure, piece placement, and king safety. Focus on improving your {phase_name} understanding.',
+                    'theory': (
+                        f"Your {phase_name} accuracy is {phase_accuracy:.0f}%. "
+                        f"{'Your middlegame accuracy is ' + f'{avg_middlegame:.0f}%' + ' and endgame accuracy is ' + f'{avg_endgame:.0f}%' + '. ' if avg_middlegame and avg_endgame else ''}"
+                        f"Focus on long-term planning, pawn structure evaluation, and piece activity. "
+                        f"{'Endgame technique is crucial - practice king activity and pawn promotion patterns.' if weakest_phase == 'endgame' else 'Middlegame planning requires evaluating pawn structures and creating plans around piece placement.'}"
+                    ),
                     'common_mistakes': [],
                     'practice_positions': [],
                     'action_items': [
-                        f'Study {phase_name} principles',
+                        f'Study {phase_name} principles and typical pawn structures',
                         'Review games where you had an advantage but didn\'t convert',
-                        'Practice endgame technique' if weakest_phase == 'endgame' else 'Practice quiet middlegame planning',
+                        'Practice endgame technique with K+P vs K positions' if weakest_phase == 'endgame' else 'Practice quiet middlegame planning - identify the best piece placement',
                     ],
                 },
                 'priority': priority,
@@ -364,13 +410,13 @@ class LessonGenerator:
             all_lessons.append(general_lesson)
             logger.info(f"[LESSON_GENERATOR] Created general improvement lesson")
 
-        # Save lessons to database
+        # Save lessons to database (upsert to prevent duplicates)
         saved_count = 0
         for lesson in all_lessons:
             try:
                 await asyncio.to_thread(
                     lambda l=lesson: self.supabase.table('lessons')
-                    .insert(l)
+                    .upsert(l, on_conflict='user_id,platform,lesson_type,lesson_title')
                     .execute()
                 )
                 saved_count += 1

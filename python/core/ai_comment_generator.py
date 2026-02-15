@@ -869,7 +869,27 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
         opposite_color = "Black" if color_name == "White" else "White"
         comment = re.sub(r'\byour opponent\b', opposite_color, comment, flags=re.IGNORECASE)
 
-        # Replace remaining "you" with color name (catch-all)
+        # Catch-all: auto-conjugate remaining "you [verb]" patterns
+        # Handles verbs not in the explicit mapping above
+        _non_verbs = {'the', 'a', 'an', 'this', 'that', 'can', 'could', 'would', 'should', 'will',
+                      'might', 'may', 'must', 'also', 'still', 'just', 'only', 'never', 'always',
+                      'already', 'now', 'then', 'too', 'even', 'need', 'want', 'get', 'had', 'did', 'do'}
+        def _auto_conjugate(match):
+            word = match.group(1)
+            if word.lower() in _non_verbs:
+                return f'{color_name} {word}'
+            # Basic English third-person conjugation
+            wl = word.lower()
+            if wl.endswith(('s', 'sh', 'ch', 'x', 'z')):
+                return f'{color_name} {word}es'
+            elif wl.endswith('y') and len(wl) > 1 and wl[-2] not in 'aeiou':
+                return f'{color_name} {word[:-1]}ies'
+            else:
+                return f'{color_name} {word}s'
+
+        comment = re.sub(r'\byou\s+([a-z]\w+)', _auto_conjugate, comment, flags=re.IGNORECASE)
+
+        # Replace remaining standalone "you" with color name
         comment = re.sub(r'\byou\b', color_name, comment, flags=re.IGNORECASE)
 
         # Replace "your" with "color's" (possessive)
@@ -911,9 +931,12 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
                 comment += "."
             return comment.strip()
 
-        # Strictly limit to 3 sentences maximum
-        if len(complete_sentences) > 3:
-            complete_sentences = complete_sentences[:3]
+        # Limit sentences: allow 4 for complex tactical positions, 3 otherwise
+        comment_text = " ".join(complete_sentences).lower()
+        tactical_keywords = ('checkmate', 'sacrifice', 'combination', 'tactical', 'forcing', 'blunder', 'mate')
+        max_sentences = 4 if any(kw in comment_text for kw in tactical_keywords) else 3
+        if len(complete_sentences) > max_sentences:
+            complete_sentences = complete_sentences[:max_sentences]
 
         comment = " ".join(complete_sentences)
 

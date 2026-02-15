@@ -62,10 +62,28 @@ class ProgressAnalyzer:
         blunders_per_game = total_blunders / total_games if total_games > 0 else 0
         mistakes_per_game = total_mistakes / total_games if total_games > 0 else 0
 
+        # Determine rating-adjusted thresholds
+        # Extract user rating from game analyses for threshold adjustment
+        ratings = [a.get('my_rating', 0) or a.get('rating', 0) for a in game_analyses if a.get('my_rating') or a.get('rating')]
+        user_rating = sum(ratings) / len(ratings) if ratings else 1500
+
+        if user_rating < 1200:
+            tactical_threshold, positional_threshold = 45, 45
+            opening_threshold, phase_threshold = 55, 55
+            blunder_rate_threshold = 1.0
+        elif user_rating < 1800:
+            tactical_threshold, positional_threshold = 55, 55
+            opening_threshold, phase_threshold = 65, 65
+            blunder_rate_threshold = 0.5
+        else:
+            tactical_threshold, positional_threshold = 65, 65
+            opening_threshold, phase_threshold = 75, 75
+            blunder_rate_threshold = 0.3
+
         # Identify weaknesses (low scores or high error rates)
         weakness_candidates = []
 
-        if avg_tactical < 60:
+        if avg_tactical < tactical_threshold:
             weakness_candidates.append({
                 'category': 'tactical',
                 'title': 'Tactical Vision',
@@ -75,7 +93,7 @@ class ProgressAnalyzer:
                 'recommendation': 'Focus on tactical puzzles and pattern recognition.',
             })
 
-        if avg_positional < 60:
+        if avg_positional < positional_threshold:
             weakness_candidates.append({
                 'category': 'positional',
                 'title': 'Positional Understanding',
@@ -85,7 +103,7 @@ class ProgressAnalyzer:
                 'recommendation': 'Study positional concepts and endgame technique.',
             })
 
-        if avg_opening < 70 and opening_accuracies:
+        if avg_opening < opening_threshold and opening_accuracies:
             weakness_candidates.append({
                 'category': 'opening',
                 'title': 'Opening Accuracy',
@@ -95,7 +113,7 @@ class ProgressAnalyzer:
                 'recommendation': 'Study opening theory and build a consistent repertoire.',
             })
 
-        if avg_middlegame < 70 and middlegame_accuracies:
+        if avg_middlegame < phase_threshold and middlegame_accuracies:
             weakness_candidates.append({
                 'category': 'middlegame',
                 'title': 'Middlegame Play',
@@ -105,7 +123,7 @@ class ProgressAnalyzer:
                 'recommendation': 'Practice planning and piece coordination.',
             })
 
-        if avg_endgame < 70 and endgame_accuracies:
+        if avg_endgame < phase_threshold and endgame_accuracies:
             weakness_candidates.append({
                 'category': 'endgame',
                 'title': 'Endgame Technique',
@@ -115,7 +133,7 @@ class ProgressAnalyzer:
                 'recommendation': 'Study endgame theory and practice conversion.',
             })
 
-        if blunders_per_game > 0.5:
+        if blunders_per_game > blunder_rate_threshold:
             weakness_candidates.append({
                 'category': 'blunders',
                 'title': 'Blunder Rate',

@@ -3,7 +3,7 @@
  * Displays puzzle trainer interface
  */
 
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PremiumGate } from '../../components/coach/PremiumGate'
 import { usePuzzles, useDailyPuzzle } from '../../hooks/useCoachingData'
 import LoadingModal from '../../components/LoadingModal'
@@ -35,6 +35,7 @@ export default function PuzzlesPage() {
 }
 
 function PuzzlesPageContent({ userId, platform }: { userId: string; platform: 'lichess' | 'chess.com' }) {
+  const navigate = useNavigate()
   const { puzzleSet, loading: puzzlesLoading } = usePuzzles(userId, platform)
   const { dailyPuzzle, loading: dailyLoading } = useDailyPuzzle(userId, platform)
 
@@ -65,7 +66,10 @@ function PuzzlesPageContent({ userId, platform }: { userId: string; platform: 'l
                 <span>Difficulty: {dailyPuzzle.difficulty_rating}</span>
               </div>
             </div>
-            <button className="bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 px-6 rounded-xl transition-colors">
+            <button
+              onClick={() => navigate('/coach/puzzles/solve', { state: { puzzle: dailyPuzzle } })}
+              className="bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 px-6 rounded-xl transition-colors"
+            >
               Solve Puzzle →
             </button>
           </div>
@@ -85,7 +89,10 @@ function PuzzlesPageContent({ userId, platform }: { userId: string; platform: 'l
                   >
                     <h3 className="text-lg font-semibold text-white mb-2 capitalize">{category}</h3>
                     <p className="text-slate-400 text-sm mb-4">{puzzles.length} puzzles</p>
-                    <button className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                    <button
+                      onClick={() => navigate('/coach/puzzles/solve', { state: { puzzles, category } })}
+                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-xl transition-colors"
+                    >
                       Start Practice
                     </button>
                   </div>

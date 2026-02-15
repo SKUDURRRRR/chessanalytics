@@ -259,6 +259,10 @@ class ChessCoachingGenerator:
                 # Generate main comment (move-specific analysis or tactical commentary)
                 main_comment = self._generate_main_comment(move_quality, move_analysis, is_user_move)
 
+            # Even for critical tactical issues, capture position context for learning_points
+            if has_critical_tactical_issue and game_phase and previous_phase and game_phase != previous_phase:
+                move_analysis['_position_context'] = f"Note: the game has transitioned to the {game_phase}."
+
         # Generate detailed explanations (different perspective for opponent moves)
         what_went_right = self._analyze_what_went_right(move_analysis, board, move, move_quality, is_user_move)
         what_went_wrong = self._analyze_what_went_wrong(move_analysis, board, move, move_quality, is_user_move)
@@ -1678,6 +1682,11 @@ Write the phase transition comment now:"""
             learning_points.append("In the middlegame, look for tactical opportunities and improve piece placement.")
         elif game_phase == GamePhase.ENDGAME:
             learning_points.append("In the endgame, king activity and pawn promotion are crucial.")
+
+        # Include position context from tactical analysis (phase transitions, etc.)
+        position_ctx = move_analysis.get('_position_context')
+        if position_ctx:
+            learning_points.append(position_ctx)
 
         return learning_points
 

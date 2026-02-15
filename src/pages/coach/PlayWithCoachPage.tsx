@@ -34,8 +34,43 @@ interface MoveWithComment {
   processedMove?: ProcessedMove
 }
 
-// Change Map type from number to string (SAN-based)
-type CoachingCommentsMap = Map<string, MoveWithComment>
+// Key: half-move index (0-based position in moveHistory array)
+type CoachingCommentsMap = Map<number, MoveWithComment>
+
+/**
+ * Extract move analysis from the backend response, handling all known response shapes.
+ */
+function extractMoveAnalysis(data: any): any | null {
+  if (!data?.data) return null
+  // Shape 1: Single move analysis (data.data IS the MoveAnalysis)
+  if (data.data.move || data.data.move_san) {
+    return data.data
+  }
+  // Shape 2: Game analysis with moves_analysis array
+  if (data.data.moves_analysis?.length > 0) {
+    return data.data.moves_analysis[0]
+  }
+  // Shape 3: Root-level moves_analysis (legacy)
+  if (data.moves_analysis?.length > 0) {
+    return data.moves_analysis[0]
+  }
+  return null
+}
+
+/**
+ * Check if a coaching comment is raw engine output that should be filtered.
+ * More precise than blanket "contains centipawn" filtering.
+ */
+function isRawEngineOutput(comment: string): boolean {
+  const enginePatterns = [
+    /\d+\s*centipawns?\b/i,          // "150 centipawns"
+    /centipawn\s+loss/i,              // "centipawn loss"
+    /[+-]?\d+\.?\d*\s*cp\b/i,        // "+3.2 cp" or "150 cp"
+    /^cp\s+/i,                        // starts with "cp "
+    /\bcp\s+(?:loss|gain|advantage)/i // "cp loss", "cp advantage"
+  ]
+  return enginePatterns.some(pattern => pattern.test(comment))
+}
 
 export default function PlayWithCoachPage() {
   const navigate = useNavigate()
@@ -53,71 +88,34 @@ export default function PlayWithCoachPage() {
   const [analyzedGameId, setAnalyzedGameId] = useState<string | null>(null)
   const [coachingComments, setCoachingComments] = useState<CoachingCommentsMap>(new Map())
   const [isLoadingComments, setIsLoadingComments] = useState(false)
-  const [currentMoveComment, setCurrentMoveComment] = useState<MoveWithComment | null>(null)
-  const [isAnalyzingMove, setIsAnalyzingMove] = useState(false)
+  const [analyzingMoveIndex, setAnalyzingMoveIndex] = useState<number | null>(null)
   const analyzingMoveRef = useRef<{ moveNumber: number; san: string } | null>(null)
   const [showInitialGreeting, setShowInitialGreeting] = useState(true)
-  const lastCommentRef = useRef<MoveWithComment | null>(null) // Persist comment through re-renders
+  // FEN before each move, keyed by half-move index — needed for on-demand analysis of past moves
+  const moveFenHistoryRef = useRef<Map<number, string>>(new Map())
+  // Which comment to show in the sidebar (half-move index). null = show most recent.
+  const [selectedCommentIndex, setSelectedCommentIndex] = useState<number | null>(null)
 
   // Chess sound support
   const { soundEnabled, volume } = useChessSoundSettings()
   const { playSound } = useChessSound({ enabled: soundEnabled, volume })
 
-  // Sync ref with state to persist comments through re-renders
-  useEffect(() => {
-    if (currentMoveComment) {
-      lastCommentRef.current = currentMoveComment
+  // Derive displayed comment — either explicitly selected or most recent
+  const currentMoveComment = useMemo(() => {
+    if (moveHistory.length === 0 || showInitialGreeting) return null
+    // If a specific move is selected and has a comment, show it
+    if (selectedCommentIndex !== null && coachingComments.has(selectedCommentIndex)) {
+      return coachingComments.get(selectedCommentIndex) || null
     }
-  }, [currentMoveComment])
-
-  // Restore comment from move history if it disappears (e.g., after engine move)
-  useEffect(() => {
-    // Only restore if we don't have a current comment but have moves
-    if (!currentMoveComment && moveHistory.length > 0 && !showInitialGreeting && !isAnalyzingMove) {
-      // Find the last user move and restore its comment
-      for (let i = moveHistory.length - 1; i >= 0; i--) {
-        const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
-        if (isUserMove) {
-          const moveNumber = Math.floor(i / 2) + 1
-          const savedComment = coachingComments.get(moveNumber.toString()) ||
-                              coachingComments.get(moveNumber)
-          if (savedComment) {
-            console.log('[TAL_COACH] 🔄 Auto-restoring comment from move history for move', moveNumber, {
-              hasProcessedMove: !!savedComment.processedMove,
-              commentPreview: savedComment.coachingComment?.substring(0, 50)
-            })
-            setCurrentMoveComment(savedComment)
-            lastCommentRef.current = savedComment
-            break
-          }
-        }
+    // Otherwise show the most recent user move's comment
+    for (let i = moveHistory.length - 1; i >= 0; i--) {
+      const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
+      if (isUserMove && coachingComments.has(i)) {
+        return coachingComments.get(i) || null
       }
     }
-  }, [moveHistory.length, currentMoveComment, coachingComments, playerColor, showInitialGreeting, isAnalyzingMove])
-
-  // Also restore when game state changes (e.g., after engine move)
-  useEffect(() => {
-    if (!currentMoveComment && !lastCommentRef.current && moveHistory.length > 0 && !showInitialGreeting) {
-      // Small delay to ensure state has settled after engine move
-      const timer = setTimeout(() => {
-        for (let i = moveHistory.length - 1; i >= 0; i--) {
-          const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
-          if (isUserMove) {
-            const moveNumber = Math.floor(i / 2) + 1
-            const savedComment = coachingComments.get(moveNumber.toString()) ||
-                                coachingComments.get(moveNumber)
-            if (savedComment && savedComment.processedMove) {
-              console.log('[TAL_COACH] 🔄 Delayed restore after state change for move', moveNumber)
-              setCurrentMoveComment(savedComment)
-              lastCommentRef.current = savedComment
-              break
-            }
-          }
-        }
-      }, 100)
-      return () => clearTimeout(timer)
-    }
-  }, [gamePosition, currentMoveComment, coachingComments, moveHistory.length, playerColor, showInitialGreeting])
+    return null
+  }, [moveHistory.length, coachingComments, playerColor, showInitialGreeting, selectedCommentIndex])
 
   // Check if it's engine's turn
   // Engine plays the opposite color of the player
@@ -152,13 +150,6 @@ export default function PlayWithCoachPage() {
       })
 
       if (move) {
-        // Preserve current comment in ref before state updates
-        const commentToPreserve = currentMoveComment || lastCommentRef.current
-        if (commentToPreserve) {
-          lastCommentRef.current = commentToPreserve
-          console.log('[TAL_COACH] 💾 Preserving comment before engine move:', commentToPreserve.moveNumber)
-        }
-
         // Play sound for engine move
         const soundType = getMoveSoundSimple(result.move.san)
         playSound(soundType)
@@ -167,18 +158,8 @@ export default function PlayWithCoachPage() {
         setGamePosition(gameCopy.fen())
         setMoveHistory(prev => [...prev, result.move.san])
 
-        // Restore comment after state update using ref (ensures we have the latest)
-        setTimeout(() => {
-          const preservedComment = lastCommentRef.current
-          // Use functional update to get current state
-          setCurrentMoveComment(prev => {
-            if (!prev && preservedComment) {
-              console.log('[TAL_COACH] 🔄 Restored preserved comment after engine move')
-              return preservedComment
-            }
-            return prev
-          })
-        }, 50) // Small delay to let state settle
+        // No comment preservation needed - currentMoveComment is derived via useMemo
+        // and stays stable through engine move re-renders
 
         // Check game status
         if (gameCopy.isCheckmate()) {
@@ -274,7 +255,7 @@ export default function PlayWithCoachPage() {
       if (move) {
         // Store FEN before move for analysis
         const fenBefore = game.fen()
-        const moveNumber = Math.floor(moveHistory.length / 2) + 1
+        const halfMoveIndex = moveHistory.length // Current length = index of the move about to be added
 
         // Play sound for player move
         const soundType = getMoveSoundSimple(move.san)
@@ -290,9 +271,10 @@ export default function PlayWithCoachPage() {
           setShowInitialGreeting(false)
         }
 
-        // Analyze the move in real-time for coaching feedback
-        // Don't clear current comment - let it show until new analysis completes
-        analyzeMoveForCoaching(fenBefore, move, moveNumber)
+        // Store FEN for on-demand analysis later
+        moveFenHistoryRef.current.set(halfMoveIndex, fenBefore)
+        // Clear selected comment so sidebar shows "Ask Coach" prompt for new move
+        setSelectedCommentIndex(null)
 
         // Check game status
         if (gameCopy.isCheckmate()) {
@@ -328,10 +310,10 @@ export default function PlayWithCoachPage() {
     setAnalyzedGameId(null)
     setCoachingComments(new Map())
     setIsLoadingComments(false)
-    setCurrentMoveComment(null)
-    lastCommentRef.current = null
-    setIsAnalyzingMove(false)
+    setAnalyzingMoveIndex(null)
     analyzingMoveRef.current = null
+    moveFenHistoryRef.current = new Map()
+    setSelectedCommentIndex(null)
     setShowInitialGreeting(true)
   }
 
@@ -365,15 +347,8 @@ export default function PlayWithCoachPage() {
     return { from, to, promotion }
   }
 
-  // Normalize SAN string for matching (remove check/mate symbols, etc.)
-  const normalizeSan = (san: string): string => {
-    if (!san) return ''
-    // Remove check (+), checkmate (#), and other annotations
-    return san.replace(/[+#!?]/g, '').trim()
-  }
-
-  // Analyze a move in real-time for coaching feedback
-  const analyzeMoveForCoaching = useCallback(async (fenBefore: string, move: any, moveNumber: number) => {
+  // Analyze a move on-demand for coaching feedback
+  const analyzeMoveForCoaching = useCallback(async (fenBefore: string, move: any, moveNumber: number, halfMoveIndex: number) => {
     if (!user?.id) return
 
     // Check if we're already analyzing this exact move
@@ -382,11 +357,9 @@ export default function PlayWithCoachPage() {
       return // Already analyzing this move
     }
 
-    // Mark that we're analyzing this move
+    // Mark that we're analyzing this specific move index
     analyzingMoveRef.current = { moveNumber, san: move.san }
-    setIsAnalyzingMove(true)
-    // IMPORTANT: Don't clear current comment - let it show until new one is ready
-    // This ensures comments persist through engine moves
+    setAnalyzingMoveIndex(halfMoveIndex)
 
     try {
       // Convert move to UCI format
@@ -413,52 +386,12 @@ export default function PlayWithCoachPage() {
 
       if (response.ok) {
         const data = await response.json()
-        console.log('[TAL_COACH] Analysis response:', {
-          hasData: !!data.data,
-          hasMovesAnalysis: !!data.data?.moves_analysis,
-          hasMoveField: !!data.data?.move,
-          hasMoveSan: !!data.data?.move_san,
-          responseKeys: Object.keys(data),
-          dataKeys: data.data ? Object.keys(data.data) : []
-        })
 
-        // Extract move analysis from response
-        // Single move analysis returns MoveAnalysis object directly in data.data
-        // Game analysis returns GameAnalysis with moves_analysis array
-        let moveAnalysis = null
-
-        if (data.data) {
-          // Check if this is a single move analysis (has 'move' or 'move_san' field directly)
-          if (data.data.move || data.data.move_san) {
-            // Single move analysis - data.data IS the MoveAnalysis object
-            moveAnalysis = data.data
-            console.log('[TAL_COACH] ✅ Detected single move analysis format')
-          }
-          // Check if this is a game analysis with moves_analysis array
-          else if (data.data.moves_analysis && Array.isArray(data.data.moves_analysis) && data.data.moves_analysis.length > 0) {
-            // Game analysis format - extract first move from array
-            moveAnalysis = data.data.moves_analysis[0]
-            console.log('[TAL_COACH] ✅ Detected game analysis format with moves_analysis array')
-          }
-          // Fallback: check if moves_analysis is at root level
-          else if (data.moves_analysis && Array.isArray(data.moves_analysis) && data.moves_analysis.length > 0) {
-            moveAnalysis = data.moves_analysis[0]
-            console.log('[TAL_COACH] ✅ Detected moves_analysis at root level')
-          }
-        }
+        // Extract move analysis using unified response parser
+        const moveAnalysis = extractMoveAnalysis(data)
 
         if (moveAnalysis) {
-          console.log('[TAL_COACH] Move analysis extracted:', {
-            hasComment: !!moveAnalysis.coaching_comment,
-            commentPreview: moveAnalysis.coaching_comment?.substring(0, 50),
-            moveNumber,
-            san: move.san,
-            moveFromResponse: moveAnalysis.move_san || moveAnalysis.move
-          })
-
-          if (moveAnalysis.coaching_comment &&
-              !moveAnalysis.coaching_comment.toLowerCase().includes('centipawn') &&
-              !moveAnalysis.coaching_comment.toLowerCase().includes('cp')) {
+          if (moveAnalysis.coaching_comment && !isRawEngineOutput(moveAnalysis.coaching_comment)) {
 
             // Create ProcessedMove-like object for display
             const processedMove: ProcessedMove = {
@@ -507,47 +440,15 @@ export default function PlayWithCoachPage() {
               processedMove,
             }
 
-            // Always save to comments map first (for persistence)
+            // Save to comments map keyed by half-move index
             setCoachingComments(prev => {
               const newMap = new Map(prev)
-              newMap.set(moveNumber.toString(), moveComment) // Use string key for consistency
-              newMap.set(moveNumber, moveComment) // Also keep number key for backward compatibility
-              console.log('[TAL_COACH] 💾 Saved comment to map for move', moveNumber, 'Total comments:', newMap.size)
+              newMap.set(halfMoveIndex, moveComment)
               return newMap
             })
-
-            // Update current comment if this is still the move we're analyzing
-            // BUT: Also update if we don't have a current comment (to restore lost comments)
-            const shouldUpdate = (analyzingMoveRef.current?.moveNumber === moveNumber &&
-                                 analyzingMoveRef.current?.san === move.san) ||
-                                 !currentMoveComment // Always set if we don't have one
-
-            if (shouldUpdate) {
-              console.log('[TAL_COACH] ✅ Setting comment for move', moveNumber, move.san, {
-                matchesRef: analyzingMoveRef.current?.moveNumber === moveNumber,
-                noCurrentComment: !currentMoveComment
-              })
-              setCurrentMoveComment(moveComment)
-              lastCommentRef.current = moveComment // Persist in ref
-            } else {
-              console.log('[TAL_COACH] ⚠️ Comment saved but not displayed - move changed', {
-                expected: analyzingMoveRef.current,
-                actual: { moveNumber, san: move.san },
-                hasCurrentComment: !!currentMoveComment
-              })
-            }
-          } else {
-            console.log('[TAL_COACH] ⚠️ No valid coaching comment in response', {
-              hasComment: !!moveAnalysis.coaching_comment,
-              commentValue: moveAnalysis.coaching_comment?.substring(0, 100)
-            })
+            // Auto-select this comment for display
+            setSelectedCommentIndex(halfMoveIndex)
           }
-        } else {
-          console.log('[TAL_COACH] ⚠️ Could not extract move analysis from response', {
-            hasData: !!data.data,
-            dataType: typeof data.data,
-            dataKeys: data.data ? Object.keys(data.data) : []
-          })
         }
       } else {
         console.error('[TAL_COACH] ❌ API response not OK:', response.status, response.statusText)
@@ -559,7 +460,7 @@ export default function PlayWithCoachPage() {
       // Only clear analyzing state if this is still the current move being analyzed
       if (analyzingMoveRef.current?.moveNumber === moveNumber &&
           analyzingMoveRef.current?.san === move.san) {
-        setIsAnalyzingMove(false)
+        setAnalyzingMoveIndex(null)
         analyzingMoveRef.current = null
       }
     }
@@ -583,8 +484,7 @@ export default function PlayWithCoachPage() {
           if (result.analysis?.moves_analysis) {
             const movesWithComments = result.analysis.moves_analysis.filter(
               (move: any) => move.coaching_comment && move.coaching_comment.trim() &&
-                !move.coaching_comment.toLowerCase().includes('centipawn') &&
-                !move.coaching_comment.toLowerCase().includes('cp')
+                !isRawEngineOutput(move.coaching_comment)
             )
 
             // If we have comments, process them
@@ -606,9 +506,8 @@ export default function PlayWithCoachPage() {
       }
 
       if (analysisData?.analysis?.moves_analysis) {
-        // Process moves and create a map of SAN strings to coaching data
-        // We use SAN as key because moveHistory stores SAN strings
-        const commentsMap = new Map<string, MoveWithComment>()
+        // Process moves and create a map keyed by half-move index
+        const commentsMap = new Map<number, MoveWithComment>()
         const moves = analysisData.analysis.moves_analysis
 
         // Reconstruct move history with coaching data
@@ -680,17 +579,15 @@ export default function PlayWithCoachPage() {
                 gamePhase: move.game_phase,
               }
 
-              // Store by normalized SAN string for matching with moveHistory
+              // Store by half-move index for consistent lookup
               if (isUserMove && move.coaching_comment) {
-                const normalizedSan = normalizeSan(san)
-                commentsMap.set(normalizedSan, {
+                commentsMap.set(idx, {
                   moveNumber,
                   san: san,
                   isUserMove: true,
                   coachingComment: move.coaching_comment,
                   processedMove,
                 })
-                console.log(`[COACHING] Stored comment for move: ${san} (normalized: ${normalizedSan})`)
               }
             }
           } catch (err) {
@@ -728,12 +625,26 @@ export default function PlayWithCoachPage() {
       console.log('[REVIEW] Rebuilding game from', moveHistory.length, 'moves')
 
       // Apply all moves from history to reconstruct the complete game
+      let reconstructionFailed = false
       for (let i = 0; i < moveHistory.length; i++) {
         try {
-          fullGame.move(moveHistory[i])
+          const result = fullGame.move(moveHistory[i])
+          if (!result) {
+            console.error(`[REVIEW] Move returned null at index ${i}: ${moveHistory[i]}`)
+            reconstructionFailed = true
+            break
+          }
         } catch (err) {
           console.error(`[REVIEW] Failed to apply move ${i}: ${moveHistory[i]}`, err)
+          reconstructionFailed = true
+          break
         }
+      }
+
+      if (reconstructionFailed) {
+        setError(`Game reconstruction failed. ${fullGame.history().length} of ${moveHistory.length} moves could be replayed.`)
+        setIsAnalyzing(false)
+        return
       }
 
       // Get PGN from the reconstructed game - it will include all moves
@@ -800,41 +711,29 @@ ${pgn} ${result}`
 
       // Validate and parse date from headers
       const parseDate = (dateStr: string | undefined): string => {
-        if (!dateStr) return new Date().toISOString()
-
-        // Check for invalid date patterns
-        if (dateStr.includes('?') || dateStr === '????.??.??' || dateStr.trim() === '') {
+        if (!dateStr || dateStr.includes('?') || dateStr.trim() === '') {
+          // Coach games always have valid dates, so this shouldn't happen
+          console.warn(`[REVIEW] Invalid date string: "${dateStr}", using current time`)
           return new Date().toISOString()
         }
 
-        // Try to parse the date
         try {
-          // Handle YYYY.MM.DD format
           if (dateStr.match(/^\d{4}\.\d{2}\.\d{2}$/)) {
             const [year, month, day] = dateStr.split('.')
             const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
-            if (!isNaN(date.getTime())) {
-              return date.toISOString()
-            }
-          }
-          // Handle YYYY-MM-DD format
-          else if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            if (!isNaN(date.getTime())) return date.toISOString()
+          } else if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
             const date = new Date(dateStr + 'T00:00:00Z')
-            if (!isNaN(date.getTime())) {
-              return date.toISOString()
-            }
-          }
-          // Try parsing as ISO string
-          else {
+            if (!isNaN(date.getTime())) return date.toISOString()
+          } else {
             const date = new Date(dateStr)
-            if (!isNaN(date.getTime())) {
-              return date.toISOString()
-            }
+            if (!isNaN(date.getTime())) return date.toISOString()
           }
-        } catch (e) {
-          // If parsing fails, use current date
+        } catch {
+          // Fall through to warning
         }
 
+        console.warn(`[REVIEW] Could not parse date: "${dateStr}", using current time`)
         return new Date().toISOString()
       }
 
@@ -928,12 +827,37 @@ ${pgn} ${result}`
     setMoveHistory([])
     setError(null)
     setShowInitialGreeting(true)
-    setCurrentMoveComment(null)
-    lastCommentRef.current = null
-    setIsAnalyzingMove(false)
+    setAnalyzingMoveIndex(null)
     analyzingMoveRef.current = null
+    moveFenHistoryRef.current = new Map()
+    setSelectedCommentIndex(null)
     setCoachingComments(new Map())
   }
+
+  // Request coach feedback for a specific half-move index
+  const requestCoachFeedback = useCallback((halfMoveIndex: number) => {
+    if (analyzingMoveIndex !== null) return // Already analyzing
+    const fenBefore = moveFenHistoryRef.current.get(halfMoveIndex)
+    if (!fenBefore) return
+    const san = moveHistory[halfMoveIndex]
+    if (!san) return
+    const moveNumber = Math.floor(halfMoveIndex / 2) + 1
+    // Reconstruct the move object from FEN + SAN so analyzeMoveForCoaching can build UCI
+    const tempGame = new Chess(fenBefore)
+    const moveObj = tempGame.move(san)
+    if (!moveObj) return
+    setSelectedCommentIndex(halfMoveIndex)
+    analyzeMoveForCoaching(fenBefore, moveObj, moveNumber, halfMoveIndex)
+  }, [analyzingMoveIndex, moveHistory, analyzeMoveForCoaching])
+
+  // Find the most recent user move index that has no comment yet (for the prominent button)
+  const lastUncommentedUserMoveIndex = useMemo(() => {
+    for (let i = moveHistory.length - 1; i >= 0; i--) {
+      const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
+      if (isUserMove && !coachingComments.has(i)) return i
+    }
+    return null
+  }, [moveHistory.length, playerColor, coachingComments])
 
   // Get status message
   const getStatusMessage = () => {
@@ -1051,7 +975,7 @@ ${pgn} ${result}`
                         Ready to Play?
                       </h4>
                       <p className="text-emerald-100 text-sm leading-relaxed">
-                        Make your first move and I'll analyze it in real-time, giving you instant feedback on your decisions. Whether it's brilliant or needs improvement, we'll learn together!
+                        Make your first move! After any move, click "Ask Coach Tal" to get my analysis and feedback. Whether it's brilliant or needs improvement, we'll learn together!
                       </p>
                     </div>
                   </div>
@@ -1059,9 +983,7 @@ ${pgn} ${result}`
               )}
 
               {/* Tal Coach Live Commentary */}
-              {/* Show comment if we have one, regardless of whether we're analyzing a new move */}
-              {/* Use ref as fallback to ensure comment persists through re-renders */}
-              {!showInitialGreeting && (currentMoveComment || lastCommentRef.current) && (currentMoveComment?.processedMove || lastCommentRef.current?.processedMove) && (
+              {!showInitialGreeting && currentMoveComment?.processedMove && (
                 <div className="rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-6">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="flex-shrink-0">
@@ -1070,13 +992,13 @@ ${pgn} ${result}`
                     <h2 className="text-xl font-bold text-sky-300">Coach Tal</h2>
                   </div>
                   <EnhancedMoveCoaching
-                    move={(currentMoveComment || lastCommentRef.current)!.processedMove!}
+                    move={currentMoveComment.processedMove}
                     className="text-sm"
                   />
                 </div>
               )}
-              {/* Show "thinking" only if we're analyzing AND don't have a comment yet */}
-              {!showInitialGreeting && isAnalyzingMove && !currentMoveComment && !lastCommentRef.current && (
+              {/* Show "thinking" when analyzing a requested move */}
+              {!showInitialGreeting && analyzingMoveIndex !== null && (
                 <div className="rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-6">
                   <div className="flex items-center gap-3">
                     <div className="flex-shrink-0 animate-pulse">
@@ -1089,16 +1011,22 @@ ${pgn} ${result}`
                   </div>
                 </div>
               )}
-              {/* Show "thinking" overlay if analyzing a new move while previous comment is still visible */}
-              {!showInitialGreeting && isAnalyzingMove && (currentMoveComment || lastCommentRef.current) && (
-                <div className="rounded-3xl border border-amber-400/30 bg-gradient-to-br from-amber-900/20 to-orange-900/20 p-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl animate-pulse">⏳</span>
-                    <div>
-                      <p className="text-sm text-amber-300 font-medium">Analyzing your latest move...</p>
+              {/* Ask Coach button — shown when there's a user move without a comment */}
+              {!showInitialGreeting && analyzingMoveIndex === null && lastUncommentedUserMoveIndex !== null && (
+                <button
+                  onClick={() => requestCoachFeedback(lastUncommentedUserMoveIndex)}
+                  className="w-full rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-5 hover:from-sky-900/30 hover:to-blue-900/30 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0">
+                      <TalCoachIcon size={40} />
+                    </div>
+                    <div className="text-left">
+                      <h2 className="text-lg font-bold text-sky-300 group-hover:text-sky-200 transition-colors">Ask Coach Tal</h2>
+                      <p className="text-sm text-slate-400">Get feedback on your last move</p>
                     </div>
                   </div>
-                </div>
+                </button>
               )}
 
               {/* Game Info */}
@@ -1173,33 +1101,43 @@ ${pgn} ${result}`
                     {moveHistory.map((move, index) => {
                       const moveNumber = Math.floor(index / 2) + 1
                       const isUserMove = index % 2 === (playerColor === 'white' ? 0 : 1)
-                      // Try to get comment by move number (primary) or normalized SAN (fallback)
-                      const normalizedMove = normalizeSan(move)
-                      const moveComment = coachingComments.get(moveNumber.toString()) ||
-                                          coachingComments.get(moveNumber) ||
-                                          coachingComments.get(normalizedMove)
-                      const hasComment = moveComment && moveComment.isUserMove && isUserMove
-
-                      // Debug logging for first few moves
-                      if (index < 4 && isUserMove) {
-                        console.log(`[COACHING] Move ${index}: ${move} (normalized: ${normalizedMove}), hasComment: ${!!moveComment}`)
-                      }
+                      const hasComment = isUserMove && coachingComments.has(index)
+                      const isAnalyzingThis = analyzingMoveIndex === index
+                      const hasFen = moveFenHistoryRef.current.has(index)
+                      const isSelected = selectedCommentIndex === index
 
                       return (
                         <div key={index} className="space-y-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-slate-300 text-sm font-mono min-w-[60px]">
+                            <span className={`text-sm font-mono min-w-[60px] ${isSelected ? 'text-sky-300' : 'text-slate-300'}`}>
                               {moveNumber}.{index % 2 === 0 ? '' : '..'} {move}
                             </span>
                             {isUserMove && (
                               <span className="text-xs text-slate-500">(You)</span>
                             )}
+                            {isUserMove && hasComment && (
+                              <button
+                                onClick={() => setSelectedCommentIndex(index)}
+                                className={`text-xs px-1.5 py-0.5 rounded transition-colors ${isSelected ? 'text-sky-300 bg-sky-500/20' : 'text-sky-400/60 hover:text-sky-300 hover:bg-sky-500/10'}`}
+                                title="View coach feedback"
+                              >
+                                Tal
+                              </button>
+                            )}
+                            {isUserMove && !hasComment && hasFen && !isAnalyzingThis && (
+                              <button
+                                onClick={() => requestCoachFeedback(index)}
+                                disabled={analyzingMoveIndex !== null}
+                                className="text-xs px-1.5 py-0.5 rounded text-slate-500 hover:text-sky-300 hover:bg-sky-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="Ask Coach Tal about this move"
+                              >
+                                Ask
+                              </button>
+                            )}
+                            {isAnalyzingThis && (
+                              <span className="text-xs text-sky-400 animate-pulse">...</span>
+                            )}
                           </div>
-                          {isLoadingComments && isUserMove && !hasComment && (
-                            <div className="ml-0 mt-1 text-xs text-slate-500 italic">
-                              Loading coaching comment...
-                            </div>
-                          )}
                         </div>
                       )
                     })}
