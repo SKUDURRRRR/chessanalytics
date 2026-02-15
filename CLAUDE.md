@@ -42,29 +42,43 @@ src/
     simple/              # Core analytics (PlayerSearch, MatchHistory, EloTrendGraph)
     deep/                # Advanced analysis (PersonalityRadar, LongTermPlanner, ScoreCards)
     chess/               # Chess UI (FollowUpExplorer, ModernChessArrows)
+    coach/               # Coach UI (DailyLessonCard, GameResultModal, LessonViewer, PremiumGate)
     debug/               # Diagnostic (UnifiedChessAnalysis - main game analysis view)
+    admin/               # Admin tools (DataGenerator)
     ui/                  # Reusable primitives (ActionMenu, BottomSheet)
   pages/                 # React Router pages (lazy-loaded)
+    coach/               # Coach pages (CoachDashboard, Lessons, Puzzles, PlayWithCoach)
   services/              # API service layer (unifiedAnalysisService, autoImportService)
   lib/                   # Supabase client, config, env validation (Zod)
   utils/                 # Helpers (chessColors, chessUtils, apiCache)
   hooks/                 # Custom hooks
   contexts/              # AuthContext, ChessSoundContext
-  types/                 # TypeScript type definitions (index.ts - 550+ lines)
+  types/                 # TypeScript type definitions (index.ts - 750+ lines)
 
-python/core/
-  unified_api_server.py        # FastAPI server - all endpoints
-  analysis_engine.py           # Stockfish analysis + move classification
-  config.py                    # Central config (env loading, tier detection)
-  engine_pool.py               # Stockfish engine pool management
-  cache_manager.py             # LRUCache + TTLDict
-  error_handlers.py            # Custom exception hierarchy
-  cors_security.py             # CORS configuration
-  resilient_api_client.py      # HTTP client with circuit breaker + retry
-  ai_comment_generator.py      # AI coaching comments (Gemini/Claude)
-  personality_scoring.py       # Player personality trait scoring
-  stripe_service.py            # Payment processing
-  usage_tracker.py             # Rate limiting per user/tier
+python/
+  core/
+    unified_api_server.py      # FastAPI server - all endpoints (50+)
+    analysis_engine.py         # Stockfish analysis + move classification
+    config.py                  # Central config (env loading, tier detection)
+    config_free_tier.py        # Free tier resource limits
+    engine_pool.py             # Stockfish engine pool management
+    cache_manager.py           # LRUCache + TTLDict
+    error_handlers.py          # Custom exception hierarchy
+    cors_security.py           # CORS configuration
+    resilient_api_client.py    # HTTP client with circuit breaker + retry
+    ai_comment_generator.py    # AI coaching comments (Gemini/Claude)
+    lesson_generator.py        # Coach lesson generation
+    puzzle_generator.py        # Coach puzzle generation
+    progress_analyzer.py       # Player progress tracking
+    opening_utils.py           # Opening name/classification utilities
+    personality_scoring.py     # Player personality trait scoring
+    stripe_service.py          # Payment processing
+    usage_tracker.py           # Rate limiting per user/tier
+    # + ~20 more modules (analysis queue, knowledge base, security, etc.)
+  data/                        # Static data files
+  scripts/                     # Utility scripts
+  tests/                       # Backend test suite
+  utils/                       # Shared Python utilities
 
 supabase/
   migrations/                  # Timestamped SQL migrations
@@ -112,7 +126,7 @@ supabase/
 Game selection fetches IDs ordered by `played_at DESC`, then re-fetches PGN data maintaining that order. This prevents a regression bug where random selection broke chronological analysis. Do not refactor into a single query.
 
 ### Cache version bumping
-Cache invalidation uses version strings (currently v8). When changing analysis output format, bump the cache version in both backend config and frontend `apiCache.ts`.
+Cache invalidation uses version suffixes in cache key strings (e.g. `comprehensive_analytics_v2`). When changing analysis output format, bump the version suffix in the relevant cache keys in both backend and frontend `apiCache.ts`.
 
 ### Dual API calls for stats
 Frontend makes two separate API calls:
@@ -131,6 +145,12 @@ External API calls (Lichess, Chess.com, Gemini, Claude) use circuit breaker patt
 
 ### Move classification standard
 Follows chess.com naming: brilliant, best, great, excellent, good, acceptable, inaccuracy, mistake, blunder. Reference: `docs/MOVE_CLASSIFICATION_STANDARDS.md`.
+
+## Project Boundaries
+
+- Only edit files within this project (`chess-analytics/`) and the project's Claude memory directory
+- Never delete or modify files outside the project root
+- All file operations must stay within the working directory
 
 ## Common Pitfalls
 
