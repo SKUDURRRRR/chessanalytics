@@ -25,8 +25,9 @@ import { useExplorationAnalysis } from '../hooks/useExplorationAnalysis'
 import { useChessSound } from '../hooks/useChessSound'
 import { useChessSoundSettings } from '../contexts/ChessSoundContext'
 import { getMoveSoundSimple } from '../utils/chessSounds'
-import type { MatchHistoryGameSummary, Platform } from '../types'
+import type { MatchHistoryGameSummary, Platform, ChatPositionContext } from '../types'
 import LoadingModal from '../components/LoadingModal'
+import { useCoachChat } from '../contexts/CoachChatContext'
 import LimitReachedModal from '../components/LimitReachedModal'
 
 interface EvaluationInfo {
@@ -459,6 +460,7 @@ export default function GameAnalysisPage() {
   const [isFreeExploration, setIsFreeExploration] = useState(false) // New: track free exploration mode
   const [showLimitModal, setShowLimitModal] = useState(false)
   const [limitType, setLimitType] = useState<'import' | 'analyze'>('analyze')
+  const { setPositionContext } = useCoachChat()
 
   const parseNumericValue = (value: unknown): number | null => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -1509,6 +1511,23 @@ export default function GameAnalysisPage() {
   }, [analysisRecord, gameRecord, processedData.moves])
 
   const currentMove = currentIndex > 0 ? processedData.moves[currentIndex - 1] : null
+
+  // Publish position context to floating chat widget
+  useEffect(() => {
+    const ctx: ChatPositionContext = {
+      fen: processedData.positions[currentIndex] || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      moveHistory: processedData.moves.slice(0, currentIndex).map(m => m.san),
+      playerColor,
+      moveNumber: currentMove?.moveNumber,
+      lastMove: currentMove?.san,
+      gamePhase: currentMove?.gamePhase?.toLowerCase() as ChatPositionContext['gamePhase'],
+      contextType: 'analysis',
+      moveClassification: currentMove?.classification,
+      evaluation: currentMove?.displayEvaluation,
+    }
+    setPositionContext(ctx)
+    return () => setPositionContext(null)
+  }, [currentIndex, processedData, playerColor, currentMove, setPositionContext])
 
   const evaluationContainerRef = useRef<HTMLDivElement | null>(null)
 

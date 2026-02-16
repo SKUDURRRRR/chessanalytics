@@ -3,18 +3,15 @@
  * Displays puzzle trainer interface
  */
 
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import { PremiumGate } from '../../components/coach/PremiumGate'
+import { useNavigate, Link } from 'react-router-dom'
 import { usePuzzles, useDailyPuzzle } from '../../hooks/useCoachingData'
 import LoadingModal from '../../components/LoadingModal'
 import { useAuth } from '../../contexts/AuthContext'
+import { useCoachUser } from '../../hooks/useCoachUser'
 
 export default function PuzzlesPage() {
-  const [searchParams] = useSearchParams()
-  const { user } = useAuth()
-  const platformUsername = searchParams.get('userId') || ''
-  const platform = (searchParams.get('platform') || 'lichess') as 'lichess' | 'chess.com'
-  const authenticatedUserId = user?.id || ''
+  const { usageStats } = useAuth()
+  const { platform, platformUsername, authenticatedUserId } = useCoachUser()
 
   if (!authenticatedUserId) {
     return (
@@ -24,13 +21,44 @@ export default function PuzzlesPage() {
     )
   }
 
-  // Use platform username for data lookup, authenticated UUID for premium check
-  const userIdForData = platformUsername || authenticatedUserId
+  if (!platformUsername) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
+          <h2 className="text-2xl font-bold text-white mb-4">Connect your chess account</h2>
+          <p className="text-slate-300 mb-6">
+            Link your Chess.com or Lichess account to get personalized puzzles.
+          </p>
+          <Link
+            to="/profile"
+            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+          >
+            Go to Profile to Connect
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // Check coach puzzle limits
+  const coachPuzzles = usageStats?.coach_puzzles
+  const puzzlesExhausted = coachPuzzles && !coachPuzzles.unlimited && (coachPuzzles.remaining ?? 0) <= 0
 
   return (
-    <PremiumGate>
-      <PuzzlesPageContent userId={userIdForData} platform={platform} />
-    </PremiumGate>
+    <>
+      {puzzlesExhausted && (
+        <div className="bg-amber-900/30 border-b border-amber-500/30 px-4 py-3 text-center">
+          <p className="text-amber-200 text-sm">
+            You've used your free puzzles today.{' '}
+            <Link to="/pricing" className="text-amber-300 underline hover:text-amber-100 font-medium">
+              Upgrade to Pro
+            </Link>{' '}
+            for unlimited puzzles.
+          </p>
+        </div>
+      )}
+      <PuzzlesPageContent userId={platformUsername} platform={platform} />
+    </>
   )
 }
 

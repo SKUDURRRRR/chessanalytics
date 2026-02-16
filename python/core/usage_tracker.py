@@ -241,10 +241,10 @@ class UsageTracker:
             raise ValueError("Valid user_id is required")
 
         try:
-            # Get user's account tier
+            # Get user's account tier and linked accounts
             user_result = await asyncio.to_thread(
                 lambda: self.supabase.table('authenticated_users').select(
-                    'account_tier, subscription_status, subscription_end_date'
+                    'account_tier, subscription_status, subscription_end_date, chess_com_username, lichess_username, primary_platform, onboarding_completed'
                 ).eq('id', user_id).execute()
             )
 
@@ -258,6 +258,10 @@ class UsageTracker:
             account_tier = user['account_tier']
             subscription_status = user['subscription_status']
             subscription_end_date = user.get('subscription_end_date')
+            chess_com_username = user.get('chess_com_username')
+            lichess_username = user.get('lichess_username')
+            primary_platform = user.get('primary_platform')
+            onboarding_completed = user.get('onboarding_completed', False)
 
             # Debug logging for subscription end date
             logger.info(f"[USAGE_STATS] subscription_end_date from DB: {subscription_end_date}, type: {type(subscription_end_date)}")
@@ -265,7 +269,7 @@ class UsageTracker:
             # Get tier limits
             tier_result = await asyncio.to_thread(
                 lambda: self.supabase.table('payment_tiers').select(
-                    'import_limit, analysis_limit, name'
+                    'import_limit, analysis_limit, name, coach_lessons_limit, coach_puzzles_daily_limit'
                 ).eq('id', account_tier).execute()
             )
 
@@ -276,6 +280,8 @@ class UsageTracker:
             import_limit = tier['import_limit']
             analysis_limit = tier['analysis_limit']
             tier_name = tier['name']
+            coach_lessons_limit = tier.get('coach_lessons_limit')
+            coach_puzzles_daily_limit = tier.get('coach_puzzles_daily_limit')
 
             # Debug logging
             logger.info(f"[USAGE_STATS] User {user_id}: tier={account_tier}, name={tier_name}, import_limit={import_limit}, analysis_limit={analysis_limit}")
@@ -308,6 +314,21 @@ class UsageTracker:
             imports_remaining = None if import_limit is None else max(0, import_limit - current_imports)
             analyses_remaining = None if analysis_limit is None else max(0, analysis_limit - current_analyses)
 
+            # Get coach usage from the same usage record
+            coach_lessons_used = 0
+            coach_puzzles_used = 0
+            if usage_result.data and len(usage_result.data) > 0:
+                for record in usage_result.data:
+                    record_reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
+                    if record_reset_at > cutoff_time:
+                        coach_lessons_used = record.get('coach_lessons_used', 0)
+                        coach_puzzles_used = record.get('coach_puzzles_used', 0)
+                        break
+
+            # Calculate coach remaining
+            coach_lessons_remaining = None if coach_lessons_limit is None else max(0, coach_lessons_limit - coach_lessons_used)
+            coach_puzzles_remaining = None if coach_puzzles_daily_limit is None else max(0, coach_puzzles_daily_limit - coach_puzzles_used)
+
             result = {
                 'account_tier': account_tier,
                 'tier_name': tier_name,
@@ -326,6 +347,22 @@ class UsageTracker:
                     'remaining': analyses_remaining,
                     'unlimited': analysis_limit is None
                 },
+                'coach_lessons': {
+                    'used': coach_lessons_used,
+                    'limit': coach_lessons_limit,
+                    'remaining': coach_lessons_remaining,
+                    'unlimited': coach_lessons_limit is None
+                },
+                'coach_puzzles': {
+                    'used': coach_puzzles_used,
+                    'limit': coach_puzzles_daily_limit,
+                    'remaining': coach_puzzles_remaining,
+                    'unlimited': coach_puzzles_daily_limit is None
+                },
+                'chess_com_username': chess_com_username,
+                'lichess_username': lichess_username,
+                'primary_platform': primary_platform,
+                'onboarding_completed': onboarding_completed,
                 'reset_at': reset_at.isoformat() if reset_at else None,
                 'resets_in_hours': (
                     round((reset_at + timedelta(hours=24) - datetime.now(timezone.utc)).total_seconds() / 3600, 1)

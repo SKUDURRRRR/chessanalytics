@@ -1,4 +1,4 @@
-// Enhanced Authentication Context with Usage Tracking
+// Enhanced Authentication Context with Usage Tracking and Linked Chess Accounts
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import { logger } from '../utils/logger'
@@ -8,6 +8,17 @@ interface User {
   id: string
   email: string
   accountTier?: string
+  chessComUsername?: string
+  lichessUsername?: string
+  primaryPlatform?: 'chess.com' | 'lichess'
+  onboardingCompleted?: boolean
+}
+
+interface UsageBucket {
+  used: number
+  limit: number | null
+  remaining: number | null
+  unlimited: boolean
 }
 
 interface UsageStats {
@@ -16,18 +27,14 @@ interface UsageStats {
   subscription_status?: string
   subscription_end_date?: string
   is_unlimited?: boolean
-  imports?: {
-    used: number
-    limit: number | null
-    remaining: number | null
-    unlimited: boolean
-  }
-  analyses?: {
-    used: number
-    limit: number | null
-    remaining: number | null
-    unlimited: boolean
-  }
+  imports?: UsageBucket
+  analyses?: UsageBucket
+  coach_lessons?: UsageBucket
+  coach_puzzles?: UsageBucket
+  chess_com_username?: string
+  lichess_username?: string
+  primary_platform?: string
+  onboarding_completed?: boolean
   resets_in_hours?: number
 }
 
@@ -44,6 +51,9 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ error: any }>
   updateProfile: (data: Record<string, any>) => Promise<{ error: any }>
   refreshUsageStats: () => Promise<void>
+  linkChessAccount: (platform: 'chess.com' | 'lichess', username: string) => Promise<{ error: any; games_claimed?: number }>
+  unlinkChessAccount: (platform: 'chess.com' | 'lichess') => Promise<{ error: any }>
+  completeOnboarding: () => Promise<{ error: any }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -55,6 +65,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null)
 
+  // Helper to update user from usage stats response
+  const updateUserFromStats = useCallback((userId: string, email: string, stats: UsageStats) => {
+    setUser({
+      id: userId,
+      email,
+      accountTier: stats.account_tier,
+      chessComUsername: stats.chess_com_username,
+      lichessUsername: stats.lichess_username,
+      primaryPlatform: stats.primary_platform as 'chess.com' | 'lichess' | undefined,
+      onboardingCompleted: stats.onboarding_completed
+    })
+  }, [])
+
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
@@ -64,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: session.user.email!
         })
         // Fetch usage stats for authenticated users
-        fetchUsageStats(session.user.id)
+        fetchUsageStats(session.user.id, session.user.email!)
       }
       setLoading(false)
     })
@@ -79,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: session.user.email!
         })
         // Fetch usage stats when user logs in
-        fetchUsageStats(session.user.id)
+        fetchUsageStats(session.user.id, session.user.email!)
       } else {
         setUser(null)
         setUsageStats(null)
@@ -90,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const fetchUsageStats = async (userId: string) => {
+  const fetchUsageStats = async (userId: string, email?: string) => {
     // Input validation
     if (!userId || typeof userId !== 'string') {
       logger.error('Invalid userId provided to fetchUsageStats')
@@ -120,6 +143,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const stats = await response.json()
         setUsageStats(stats)
+        // Update user with linked account info from stats
+        const userEmail = email || session.session.user?.email || ''
+        updateUserFromStats(userId, userEmail, stats)
         logger.log('Usage stats fetched successfully')
       } else {
         // Only log non-connection errors
@@ -145,7 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUsageStats = useCallback(async () => {
     if (user) {
-      await fetchUsageStats(user.id)
+      await fetchUsageStats(user.id, user.email)
     }
   }, [user])
 
@@ -327,6 +353,109 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const linkChessAccount = async (platform: 'chess.com' | 'lichess', username: string) => {
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      if (!session.session) {
+        return { error: new Error('Not authenticated') }
+      }
+
+      const response = await fetchWithTimeout(
+        `${API_URL}/api/v1/auth/link-chess-account`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.session.access_token}`
+          },
+          body: JSON.stringify({ platform, username })
+        },
+        TIMEOUT_CONFIG.DEFAULT
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        return { error: new Error(data.message || data.detail || 'Failed to link account') }
+      }
+
+      // Refresh usage stats to update linked account info
+      await refreshUsageStats()
+      logger.log(`Linked ${platform} account: ${username}`)
+      return { error: null, games_claimed: data.games_claimed }
+    } catch (error) {
+      logger.error('Link chess account error:', error)
+      return { error: error as Error }
+    }
+  }
+
+  const unlinkChessAccount = async (platform: 'chess.com' | 'lichess') => {
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      if (!session.session) {
+        return { error: new Error('Not authenticated') }
+      }
+
+      const response = await fetchWithTimeout(
+        `${API_URL}/api/v1/auth/unlink-chess-account`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.session.access_token}`
+          },
+          body: JSON.stringify({ platform })
+        },
+        TIMEOUT_CONFIG.DEFAULT
+      )
+
+      if (!response.ok) {
+        const data = await response.json()
+        return { error: new Error(data.detail || 'Failed to unlink account') }
+      }
+
+      await refreshUsageStats()
+      logger.log(`Unlinked ${platform} account`)
+      return { error: null }
+    } catch (error) {
+      logger.error('Unlink chess account error:', error)
+      return { error: error as Error }
+    }
+  }
+
+  const completeOnboarding = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      if (!session.session) {
+        return { error: new Error('Not authenticated') }
+      }
+
+      const response = await fetchWithTimeout(
+        `${API_URL}/api/v1/auth/complete-onboarding`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.session.access_token}`
+          }
+        },
+        TIMEOUT_CONFIG.DEFAULT
+      )
+
+      if (!response.ok) {
+        const data = await response.json()
+        return { error: new Error(data.detail || 'Failed to complete onboarding') }
+      }
+
+      // Update local user state
+      setUser(prev => prev ? { ...prev, onboardingCompleted: true } : null)
+      return { error: null }
+    } catch (error) {
+      logger.error('Complete onboarding error:', error)
+      return { error: error as Error }
+    }
+  }
+
   const value = {
     user,
     loading,
@@ -339,7 +468,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOut,
     resetPassword,
     updateProfile,
-    refreshUsageStats
+    refreshUsageStats,
+    linkChessAccount,
+    unlinkChessAccount,
+    completeOnboarding
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

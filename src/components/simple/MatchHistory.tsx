@@ -37,9 +37,10 @@ interface Game {
   rating: number | null
   opponent_rating: number | null
   accuracy?: number | null
+  platform?: 'lichess' | 'chess.com'
 }
 
-const mapGameRow = (raw: any): Game => {
+const mapGameRow = (raw: any, overridePlatform?: 'lichess' | 'chess.com'): Game => {
   const result: Game['result'] = raw.result === 'loss' || raw.result === 'draw' ? raw.result : 'win'
   const color: Game['color'] = raw.color === 'black' ? 'black' : 'white'
 
@@ -57,10 +58,11 @@ const mapGameRow = (raw: any): Game => {
     rating: typeof raw.my_rating === 'number' ? raw.my_rating : (typeof raw.rating === 'number' ? raw.rating : null),
     opponent_rating: typeof raw.opponent_rating === 'number' ? raw.opponent_rating : null,
     accuracy: typeof raw.accuracy === 'number' ? raw.accuracy : null,
+    platform: overridePlatform ?? raw.platform,
   }
 }
 
-export function MatchHistory({ userId, platform, openingFilter, opponentFilter, onClearFilter, onGameSelect, onAnalyzedGamesChange }: MatchHistoryProps) {
+export function MatchHistory({ userId, platform, openingFilter, opponentFilter, onClearFilter, onGameSelect, onAnalyzedGamesChange, viewMode = 'single', secondaryUserId, secondaryPlatform }: MatchHistoryProps) {
   const [games, setGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -399,17 +401,35 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         filters.opponent = opponentFilter
       }
 
-      const data = await UnifiedAnalysisService.getMatchHistory(
-        canonicalUserId,
-        platform,
-        currentPage,
-        gamesPerPage,
-        filters
-      )
+      let allData: Game[] = []
+
+      if (viewMode === 'combined' && secondaryUserId && secondaryPlatform) {
+        // Combined view: fetch from both platforms in parallel
+        const secondaryCanonical = canonicalizeUserId(secondaryUserId, secondaryPlatform)
+        const [primaryData, secondaryData] = await Promise.all([
+          UnifiedAnalysisService.getMatchHistory(canonicalUserId, platform, currentPage, gamesPerPage, filters),
+          UnifiedAnalysisService.getMatchHistory(secondaryCanonical, secondaryPlatform, currentPage, gamesPerPage, filters)
+        ])
+        const primaryMapped = (primaryData || []).map(raw => mapGameRow(raw, platform))
+        const secondaryMapped = (secondaryData || []).map(raw => mapGameRow(raw, secondaryPlatform))
+        // Merge and sort by date descending
+        allData = [...primaryMapped, ...secondaryMapped]
+          .sort((a, b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime())
+          .slice(0, gamesPerPage)
+      } else {
+        const data = await UnifiedAnalysisService.getMatchHistory(
+          canonicalUserId,
+          platform,
+          currentPage,
+          gamesPerPage,
+          filters
+        )
+        allData = (data || []).map(raw => mapGameRow(raw, platform))
+      }
 
       // Check if we got data or if it's empty due to connection error
-      if (data && data.length > 0) {
-        const mappedData = data.map(mapGameRow)
+      if (allData.length > 0) {
+        const mappedData = allData
         const isReset = reset || page === 1
         if (isReset) {
           setGames(mappedData)
@@ -417,7 +437,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           setGames(prev => [...prev, ...mappedData])
         }
 
-        setHasMore(data.length === gamesPerPage)
+        setHasMore(mappedData.length === gamesPerPage)
 
         // Check analyzed status for newly loaded games (both initial load and pagination)
         const providerIds = mappedData
@@ -486,7 +506,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           setAnalyzedGameIds(new Set())
           setGameAnalyses(new Map())
         }
-      } else if (data && data.length === 0 && reset) {
+      } else if (allData.length === 0 && reset) {
         // Empty result - could be no games or connection error
         // Check if backend is available by testing the health endpoint
         try {
@@ -674,6 +694,15 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                         {game.result.toUpperCase()}
                       </span>
                       <span className="text-xs text-slate-400 capitalize">{game.color}</span>
+                      {viewMode === 'combined' && game.platform && (
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                          game.platform === 'lichess'
+                            ? 'bg-yellow-500/20 text-yellow-300'
+                            : 'bg-green-500/20 text-green-300'
+                        }`}>
+                          {game.platform === 'lichess' ? 'Li' : 'CC'}
+                        </span>
+                      )}
                       {queued && !analyzed && (
                         <span className="inline-flex items-center rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
                           In queue
@@ -830,6 +859,15 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                     </td>
                     <td className="py-3 px-2">
                       <div className="flex items-center gap-2">
+                        {viewMode === 'combined' && game.platform && (
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                            game.platform === 'lichess'
+                              ? 'bg-yellow-500/20 text-yellow-300'
+                              : 'bg-green-500/20 text-green-300'
+                          }`}>
+                            {game.platform === 'lichess' ? 'Li' : 'CC'}
+                          </span>
+                        )}
                         <span className={`font-medium ${getResultColor(game.result)}`}>
                           {game.result.toUpperCase()}
                         </span>

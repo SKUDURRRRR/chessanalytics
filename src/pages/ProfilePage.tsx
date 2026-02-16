@@ -4,11 +4,12 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
+import { CheckCircle2, Loader2 } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
 
 export default function ProfilePage() {
-  const { user, usageStats, refreshUsageStats, signOut } = useAuth()
+  const { user, usageStats, refreshUsageStats, signOut, linkChessAccount, unlinkChessAccount } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -477,6 +478,13 @@ export default function ProfilePage() {
         </div>
 
 
+        {/* Connected Chess Accounts */}
+        <ConnectedAccountsSection
+          user={user}
+          linkChessAccount={linkChessAccount}
+          unlinkChessAccount={unlinkChessAccount}
+        />
+
         {/* Usage Stats */}
         {usageStats && (
           <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
@@ -643,6 +651,51 @@ export default function ProfilePage() {
           </div>
         )}
 
+        {/* Coach Usage (for free users with coach limits) */}
+        {usageStats && !usageStats.is_unlimited && usageStats.coach_lessons && (
+          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
+            <h2 className="text-xl font-bold text-white mb-4">Coach Usage</h2>
+            <div className="space-y-4">
+              {usageStats.coach_lessons && !usageStats.coach_lessons.unlimited && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-slate-300">Lessons (per week)</span>
+                    <span className="text-white">
+                      {usageStats.coach_lessons.used || 0} / {usageStats.coach_lessons.limit || 0}
+                    </span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-2">
+                    <div
+                      className="bg-purple-400 h-2 rounded-full transition-all"
+                      style={{
+                        width: `${((usageStats.coach_lessons.used || 0) / (usageStats.coach_lessons.limit || 1)) * 100}%`
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+              {usageStats.coach_puzzles && !usageStats.coach_puzzles.unlimited && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-slate-300">Puzzles (per day)</span>
+                    <span className="text-white">
+                      {usageStats.coach_puzzles.used || 0} / {usageStats.coach_puzzles.limit || 0}
+                    </span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-2">
+                    <div
+                      className="bg-amber-400 h-2 rounded-full transition-all"
+                      style={{
+                        width: `${((usageStats.coach_puzzles.used || 0) / (usageStats.coach_puzzles.limit || 1)) * 100}%`
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
           <h2 className="text-xl font-bold text-white mb-4">Actions</h2>
@@ -755,6 +808,151 @@ export default function ProfilePage() {
               Sign Out
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Connected Chess Accounts section for Profile page */
+function ConnectedAccountsSection({
+  user,
+  linkChessAccount,
+  unlinkChessAccount
+}: {
+  user: { chessComUsername?: string; lichessUsername?: string; primaryPlatform?: string } | null
+  linkChessAccount: (platform: 'chess.com' | 'lichess', username: string) => Promise<{ error: any; games_claimed?: number }>
+  unlinkChessAccount: (platform: 'chess.com' | 'lichess') => Promise<{ error: any }>
+}) {
+  const [chessComInput, setChessComInput] = useState('')
+  const [lichessInput, setLichessInput] = useState('')
+  const [chessComLoading, setChessComLoading] = useState(false)
+  const [lichessLoading, setLichessLoading] = useState(false)
+  const [chessComError, setChessComError] = useState('')
+  const [lichessError, setLichessError] = useState('')
+  const [unlinkingChessCom, setUnlinkingChessCom] = useState(false)
+  const [unlinkingLichess, setUnlinkingLichess] = useState(false)
+
+  if (!user) return null
+
+  const handleLink = async (platform: 'chess.com' | 'lichess') => {
+    const username = platform === 'chess.com' ? chessComInput.trim() : lichessInput.trim()
+    if (!username) return
+
+    const setLoading = platform === 'chess.com' ? setChessComLoading : setLichessLoading
+    const setError = platform === 'chess.com' ? setChessComError : setLichessError
+    const setInput = platform === 'chess.com' ? setChessComInput : setLichessInput
+
+    setLoading(true)
+    setError('')
+    const { error } = await linkChessAccount(platform, username)
+    if (error) {
+      setError(error.message)
+    } else {
+      setInput('')
+    }
+    setLoading(false)
+  }
+
+  const handleUnlink = async (platform: 'chess.com' | 'lichess') => {
+    const setUnlinking = platform === 'chess.com' ? setUnlinkingChessCom : setUnlinkingLichess
+    setUnlinking(true)
+    await unlinkChessAccount(platform)
+    setUnlinking(false)
+  }
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
+      <h2 className="text-xl font-bold text-white mb-4">Connected Chess Accounts</h2>
+      <p className="text-sm text-slate-400 mb-5">
+        Link your accounts to get personalized coaching, puzzles, and analytics.
+      </p>
+
+      <div className="space-y-4">
+        {/* Chess.com */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Chess.com</label>
+          {user.chessComUsername ? (
+            <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                <span className="text-emerald-200 font-medium">{user.chessComUsername}</span>
+                {user.primaryPlatform === 'chess.com' && (
+                  <span className="text-xs text-emerald-400/60 border border-emerald-400/30 rounded-full px-2 py-0.5">Primary</span>
+                )}
+              </div>
+              <button
+                onClick={() => handleUnlink('chess.com')}
+                disabled={unlinkingChessCom}
+                className="text-xs text-slate-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+              >
+                {unlinkingChessCom ? 'Unlinking...' : 'Unlink'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={chessComInput}
+                onChange={(e) => { setChessComInput(e.target.value); setChessComError('') }}
+                onKeyDown={(e) => e.key === 'Enter' && handleLink('chess.com')}
+                placeholder="Your Chess.com username"
+                disabled={chessComLoading}
+                className="flex-1 rounded-xl border border-white/10 bg-slate-800 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40 transition disabled:opacity-50"
+              />
+              <button
+                onClick={() => handleLink('chess.com')}
+                disabled={chessComLoading || !chessComInput.trim()}
+                className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {chessComLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect'}
+              </button>
+            </div>
+          )}
+          {chessComError && <p className="mt-1.5 text-sm text-rose-400">{chessComError}</p>}
+        </div>
+
+        {/* Lichess */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Lichess</label>
+          {user.lichessUsername ? (
+            <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                <span className="text-emerald-200 font-medium">{user.lichessUsername}</span>
+                {user.primaryPlatform === 'lichess' && (
+                  <span className="text-xs text-emerald-400/60 border border-emerald-400/30 rounded-full px-2 py-0.5">Primary</span>
+                )}
+              </div>
+              <button
+                onClick={() => handleUnlink('lichess')}
+                disabled={unlinkingLichess}
+                className="text-xs text-slate-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+              >
+                {unlinkingLichess ? 'Unlinking...' : 'Unlink'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={lichessInput}
+                onChange={(e) => { setLichessInput(e.target.value); setLichessError('') }}
+                onKeyDown={(e) => e.key === 'Enter' && handleLink('lichess')}
+                placeholder="Your Lichess username"
+                disabled={lichessLoading}
+                className="flex-1 rounded-xl border border-white/10 bg-slate-800 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40 transition disabled:opacity-50"
+              />
+              <button
+                onClick={() => handleLink('lichess')}
+                disabled={lichessLoading || !lichessInput.trim()}
+                className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {lichessLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect'}
+              </button>
+            </div>
+          )}
+          {lichessError && <p className="mt-1.5 text-sm text-rose-400">{lichessError}</p>}
         </div>
       </div>
     </div>

@@ -1,6 +1,9 @@
 // Centralized type definitions for the Chess Analytics application
 // This file ensures type consistency across the entire application
 
+// Platform switcher view mode for analytics page
+export type ViewMode = 'single' | 'combined'
+
 // Database table types (matching Supabase schema)
 export const PERSONALITY_TRAITS = ['tactical', 'positional', 'aggressive', 'patient', 'novelty', 'staleness'] as const;
 export type PersonalityTrait = typeof PERSONALITY_TRAITS[number];
@@ -421,6 +424,9 @@ export interface MatchHistoryProps {
   onClearFilter?: () => void
   onGameSelect?: (game: MatchHistoryGameSummary) => void
   onAnalyzedGamesChange?: (analyzedGameIds: Set<string>) => void
+  viewMode?: ViewMode
+  secondaryUserId?: string
+  secondaryPlatform?: 'lichess' | 'chess.com'
 }
 
 export interface AnalyticsBarProps {
@@ -754,4 +760,39 @@ export interface PuzzleSet {
     endgame: Puzzle[]
   }
   total: number
+}
+
+// ============================================================================
+// COACH CHAT TYPES
+// ============================================================================
+
+/** Context about the current chess position for coach chat */
+export interface ChatPositionContext {
+  fen: string
+  moveHistory: string[]
+  playerColor?: 'white' | 'black'
+  moveNumber?: number
+  lastMove?: string
+  gamePhase?: 'opening' | 'middlegame' | 'endgame'
+  contextType: 'play' | 'puzzle' | 'analysis'
+  puzzleTheme?: string
+  puzzleCategory?: string
+  moveClassification?: string
+  evaluation?: string
+}
+
+/** A single chat message */
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'coach'
+  content: string
+  timestamp: number
+  positionContext?: ChatPositionContext
+}
+
+/** Response from the coach chat API */
+export interface CoachChatResponse {
+  response: string
+  tokens_used?: number
+  model_used?: string
 }

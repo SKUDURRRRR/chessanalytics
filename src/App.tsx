@@ -4,10 +4,13 @@ import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 import { AuthProvider } from './contexts/AuthContext'
 import { ChessSoundProvider } from './contexts/ChessSoundContext'
+import { CoachChatProvider } from './contexts/CoachChatContext'
+import { CoachChatPanel } from './components/coach/CoachChatPanel'
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
 import { Navigation } from './components/Navigation'
 import { Footer } from './components/Footer'
 import LoadingModal from './components/LoadingModal'
+import { AccountSetupModal } from './components/AccountSetupModal'
 
 // Helper function to retry chunk loading with auto-reload on persistent failure
 const lazyWithRetry = (componentImport: () => Promise<any>) => {
@@ -77,6 +80,7 @@ function App() {
     <PageErrorBoundary>
       <AuthProvider>
         <ChessSoundProvider>
+          <CoachChatProvider>
           <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <div className="min-h-screen bg-slate-950 flex flex-col">
               <Navigation />
@@ -105,9 +109,12 @@ function App() {
               </Suspense>
               <Footer />
             </div>
+            <AccountSetupModal />
+            <CoachChatPanel />
             <Analytics />
             <SpeedInsights />
           </Router>
+          </CoachChatProvider>
         </ChessSoundProvider>
       </AuthProvider>
     </PageErrorBoundary>

@@ -11,6 +11,8 @@ import {
   PuzzleSet,
   PuzzleAttempt,
   Platform,
+  ChatPositionContext,
+  CoachChatResponse,
 } from '../types'
 import { config } from '../lib/config'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
@@ -342,6 +344,65 @@ export class CoachingService {
       return data
     } catch (error) {
       logger.error('Error getting engine move:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Chat with Coach Tal about the current position
+   */
+  static async chatWithCoach(
+    message: string,
+    positionContext: ChatPositionContext,
+    conversationHistory: Array<{ role: string; content: string }>,
+    authUserId: string
+  ): Promise<CoachChatResponse> {
+    try {
+      const url = new URL(`${API_URL}/api/v1/coach/chat`)
+      url.searchParams.append('auth_user_id', authUserId)
+
+      const response = await fetchWithTimeout(
+        url.toString(),
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message,
+            position_context: {
+              fen: positionContext.fen,
+              move_history: positionContext.moveHistory,
+              player_color: positionContext.playerColor,
+              move_number: positionContext.moveNumber,
+              last_move: positionContext.lastMove,
+              game_phase: positionContext.gamePhase,
+              context_type: positionContext.contextType,
+              puzzle_theme: positionContext.puzzleTheme,
+              puzzle_category: positionContext.puzzleCategory,
+              move_classification: positionContext.moveClassification,
+              evaluation: positionContext.evaluation,
+            },
+            conversation_history: conversationHistory,
+          }),
+        },
+        TIMEOUT_CONFIG.DEFAULT
+      )
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Coach chat requires premium subscription')
+        }
+        if (response.status === 429) {
+          throw new Error('Chat rate limit reached. Please try again later.')
+        }
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      return data as CoachChatResponse
+    } catch (error) {
+      logger.error('Error chatting with coach:', error)
       throw error
     }
   }

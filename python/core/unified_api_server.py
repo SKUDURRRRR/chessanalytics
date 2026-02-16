@@ -1018,6 +1018,41 @@ class LinkAnonymousDataRequest(BaseModel):
     platform: str = Field(..., description="Platform (lichess, chess.com)")
     anonymous_user_id: str = Field(..., min_length=1, max_length=100, description="Anonymous user ID to link")
 
+
+class LinkChessAccountRequest(BaseModel):
+    """Request model for linking a chess platform account."""
+    platform: str = Field(..., description="Platform: 'chess.com' or 'lichess'")
+    username: str = Field(..., min_length=1, max_length=100, description="Chess platform username")
+
+    @validator('platform')
+    def validate_platform(cls, v):
+        if v not in ('chess.com', 'lichess'):
+            raise ValueError("platform must be 'chess.com' or 'lichess'")
+        return v
+
+
+class UnlinkChessAccountRequest(BaseModel):
+    """Request model for unlinking a chess platform account."""
+    platform: str = Field(..., description="Platform: 'chess.com' or 'lichess'")
+
+    @validator('platform')
+    def validate_platform(cls, v):
+        if v not in ('chess.com', 'lichess'):
+            raise ValueError("platform must be 'chess.com' or 'lichess'")
+        return v
+
+
+class SetPrimaryPlatformRequest(BaseModel):
+    """Request model for setting the primary chess platform."""
+    platform: str = Field(..., description="Platform: 'chess.com' or 'lichess'")
+
+    @validator('platform')
+    def validate_platform(cls, v):
+        if v not in ('chess.com', 'lichess'):
+            raise ValueError("platform must be 'chess.com' or 'lichess'")
+        return v
+
+
 # ============================================================================
 # UNIFIED API ENDPOINTS
 # ============================================================================
@@ -9416,12 +9451,15 @@ async def _handle_move_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnaly
         move = chess.Move.from_uci(request.move)
 
         # Pass fullmove_number and is_user_move to enable AI coaching comments
+        # force_engine=True: always use Stockfish for single-move coaching feedback
+        # (skip the opening book heuristic which can misclassify blunders as "book moves")
         result = await engine.analyze_move(
             board,
             move,
             analysis_type_enum,
             fullmove_number=request.fullmove_number,
-            is_user_move=request.is_user_move
+            is_user_move=request.is_user_move,
+            force_engine=True
         )
 
         return UnifiedAnalysisResponse(
@@ -10540,6 +10578,250 @@ async def update_user_profile(
         content={"success": False, "message": "No valid fields to update"}
     )
 
+
+@app.post("/api/v1/auth/link-chess-account")
+async def link_chess_account(
+    request: LinkChessAccountRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Link a chess platform account to the authenticated user.
+    Validates the username exists on the platform, stores it, and claims any
+    previously imported anonymous data.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    username = request.username.strip()
+    platform = request.platform
+
+    # Normalize chess.com username to lowercase (case-insensitive platform)
+    if platform == 'chess.com':
+        username = username.lower()
+
+    try:
+        # Validate the username exists on the platform
+        api_client = get_resilient_api_client()
+        if api_client:
+            if platform == 'lichess':
+                exists, msg = await api_client.validate_lichess_user(username)
+            else:
+                exists, msg = await api_client.validate_chesscom_user(username)
+
+            if not exists:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": f"Username '{username}' not found on {platform}"}
+                )
+        else:
+            logger.warning("Resilient client not available, skipping username validation")
+
+        # Determine which column to update
+        column = 'chess_com_username' if platform == 'chess.com' else 'lichess_username'
+
+        # Get current user data to check if primary_platform needs to be set
+        user_result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').select(
+                'chess_com_username, lichess_username, primary_platform'
+            ).eq('id', user_id).execute()
+        )
+
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        current_user = user_result.data[0]
+
+        # Build update data
+        update_data = {
+            column: username,
+            'onboarding_completed': True,
+            'updated_at': 'now()'
+        }
+
+        # Set primary_platform if not already set or if this is the only linked account
+        if not current_user.get('primary_platform'):
+            update_data['primary_platform'] = platform
+
+        # Update authenticated_users
+        await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').update(
+                update_data
+            ).eq('id', user_id).execute()
+        )
+
+        # Claim any previously imported anonymous data for this username
+        games_claimed = 0
+        if usage_tracker:
+            try:
+                claim_result = await usage_tracker.claim_anonymous_data(
+                    auth_user_id=user_id,
+                    platform=platform,
+                    anonymous_user_id=username
+                )
+                games_claimed = claim_result.get('games_claimed', 0) if isinstance(claim_result, dict) else 0
+            except Exception as e:
+                logger.warning(f"Failed to claim anonymous data during account linking: {e}")
+
+        logger.info(f"Linked {platform} account '{username}' for user {user_id}, claimed {games_claimed} games")
+
+        return {
+            "success": True,
+            "username": username,
+            "platform": platform,
+            "games_claimed": games_claimed
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error linking chess account for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to link chess account")
+
+
+@app.post("/api/v1/auth/unlink-chess-account")
+async def unlink_chess_account(
+    request: UnlinkChessAccountRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Unlink a chess platform account from the authenticated user.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    platform = request.platform
+    column = 'chess_com_username' if platform == 'chess.com' else 'lichess_username'
+    other_column = 'lichess_username' if platform == 'chess.com' else 'chess_com_username'
+
+    try:
+        # Get current user data
+        user_result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').select(
+                'chess_com_username, lichess_username, primary_platform'
+            ).eq('id', user_id).execute()
+        )
+
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        current_user = user_result.data[0]
+
+        update_data = {
+            column: None,
+            'updated_at': 'now()'
+        }
+
+        # If unlinking the primary platform, switch to the other one (or None)
+        if current_user.get('primary_platform') == platform:
+            other_username = current_user.get(other_column)
+            if other_username:
+                update_data['primary_platform'] = 'lichess' if platform == 'chess.com' else 'chess.com'
+            else:
+                update_data['primary_platform'] = None
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').update(
+                update_data
+            ).eq('id', user_id).execute()
+        )
+
+        logger.info(f"Unlinked {platform} account for user {user_id}")
+        return {"success": True, "platform": platform}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unlinking chess account for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to unlink chess account")
+
+
+@app.put("/api/v1/auth/set-primary-platform")
+async def set_primary_platform(
+    request: SetPrimaryPlatformRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Set the user's primary chess platform for default data lookup.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    platform = request.platform
+    column = 'chess_com_username' if platform == 'chess.com' else 'lichess_username'
+
+    try:
+        # Verify user has that platform linked
+        user_result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').select(
+                column
+            ).eq('id', user_id).execute()
+        )
+
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if not user_result.data[0].get(column):
+            raise HTTPException(
+                status_code=400,
+                detail=f"No {platform} account linked. Link an account first."
+            )
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').update(
+                {'primary_platform': platform, 'updated_at': 'now()'}
+            ).eq('id', user_id).execute()
+        )
+
+        logger.info(f"Set primary platform to {platform} for user {user_id}")
+        return {"success": True, "primary_platform": platform}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting primary platform for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to set primary platform")
+
+
+@app.post("/api/v1/auth/complete-onboarding")
+async def complete_onboarding(
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Mark the user's onboarding as completed (e.g., when they skip the setup modal).
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').update(
+                {'onboarding_completed': True, 'updated_at': 'now()'}
+            ).eq('id', user_id).execute()
+        )
+
+        return {"success": True}
+
+    except Exception as e:
+        logger.error(f"Error completing onboarding for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to complete onboarding")
+
+
 # ============================================================================
 # PAYMENT ENDPOINTS
 # ============================================================================
@@ -11563,6 +11845,283 @@ async def get_engine_move(
     except Exception as e:
         logger.error(f"Error getting engine move: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get engine move: {str(e)}")
+
+
+# ============================================================================
+# COACH CHAT - Interactive AI coaching chatbot
+# ============================================================================
+
+class ChatPositionContext(BaseModel):
+    """Chess position context for coach chat."""
+    fen: str = Field(..., description="FEN string of current position")
+    move_history: List[str] = Field(default_factory=list, description="Move history in SAN")
+    player_color: Optional[str] = Field(None, description="Player's color")
+    move_number: Optional[int] = Field(None, description="Current move number")
+    last_move: Optional[str] = Field(None, description="Last move in SAN")
+    game_phase: Optional[str] = Field(None, description="opening/middlegame/endgame")
+    context_type: str = Field("play", description="play/puzzle/analysis")
+    puzzle_theme: Optional[str] = Field(None, description="Puzzle tactical theme")
+    puzzle_category: Optional[str] = Field(None, description="Puzzle category")
+    move_classification: Optional[str] = Field(None, description="Move classification from analysis")
+    evaluation: Optional[str] = Field(None, description="Engine evaluation string")
+
+
+class ConversationMessage(BaseModel):
+    """A message in the conversation history."""
+    role: str = Field(..., description="user or coach")
+    content: str = Field(..., description="Message content")
+
+
+class CoachChatRequest(BaseModel):
+    """Request for coach chat interaction."""
+    message: str = Field(..., min_length=1, max_length=500, description="User message")
+    position_context: ChatPositionContext
+    conversation_history: List[ConversationMessage] = Field(
+        default_factory=list,
+        description="Recent conversation history (max 20)"
+    )
+
+    @validator('conversation_history')
+    def limit_history(cls, v):
+        return v[-20:] if len(v) > 20 else v
+
+
+class CoachChatResponse(BaseModel):
+    """Response from coach chat."""
+    response: str
+    tokens_used: Optional[int] = None
+    model_used: Optional[str] = None
+
+
+# In-memory chat rate limiter
+_chat_usage: Dict[str, List[float]] = {}
+_CHAT_RATE_LIMIT = 50  # messages per hour per user
+
+
+def _check_chat_rate_limit(user_id: str) -> Tuple[bool, Dict]:
+    """Check if user has remaining chat messages this hour."""
+    import time as _time
+    now = _time.time()
+    one_hour_ago = now - 3600
+
+    if user_id not in _chat_usage:
+        _chat_usage[user_id] = []
+
+    # Prune old entries
+    _chat_usage[user_id] = [t for t in _chat_usage[user_id] if t > one_hour_ago]
+    count = len(_chat_usage[user_id])
+
+    if count >= _CHAT_RATE_LIMIT:
+        return False, {
+            'message': f'You have used {count}/{_CHAT_RATE_LIMIT} chat messages this hour.',
+            'remaining': 0,
+            'limit': _CHAT_RATE_LIMIT
+        }
+    return True, {
+        'remaining': _CHAT_RATE_LIMIT - count,
+        'limit': _CHAT_RATE_LIMIT
+    }
+
+
+def _increment_chat_usage(user_id: str):
+    """Record a chat message usage."""
+    import time as _time
+    if user_id not in _chat_usage:
+        _chat_usage[user_id] = []
+    _chat_usage[user_id].append(_time.time())
+
+
+def _build_chat_system_prompt(context: ChatPositionContext) -> str:
+    """Build system prompt for Socratic chess coaching chat."""
+    context_specific = ""
+    if context.context_type == "puzzle":
+        context_specific = """
+PUZZLE CONTEXT:
+You are helping the student solve a chess puzzle. NEVER reveal the solution directly.
+Instead, guide them with questions like:
+- "What pieces are currently undefended?"
+- "What would happen if you controlled that diagonal?"
+- "Look at the relationship between the knight and the king..."
+- "Which piece is doing the least work right now?"
+If they ask for the answer, redirect: "The best learning comes from discovery. Let me give you another hint..."
+"""
+    elif context.context_type == "play":
+        context_specific = """
+LIVE GAME CONTEXT:
+The student is playing a game right now. Help them think about their position without
+telling them the exact move. Ask guiding questions:
+- "What are the critical squares in this position?"
+- "Is your king safe? What about your opponent's?"
+- "Think about what your opponent wants to do next..."
+- "Which of your pieces could be more active?"
+"""
+    elif context.context_type == "analysis":
+        context_specific = """
+GAME REVIEW CONTEXT:
+The student is reviewing a completed game. You can be more specific about moves since
+the game is over, but still prioritize teaching concepts over just listing moves.
+Help them understand WHY moves were good or bad, not just WHICH move was best.
+"""
+
+    return f"""You are Mikhail Tal, the Magician from Riga, serving as a personal chess coach in an interactive chat. You teach through the Socratic method - guiding students to discover answers themselves rather than giving direct solutions.
+
+YOUR CORE TEACHING PHILOSOPHY:
+- NEVER give the best move directly unless explicitly reviewing a completed game
+- Ask probing questions that lead the student toward the right idea
+- Give HINTS, not answers: "Consider the diagonal...", "What happens after the exchange?"
+- Celebrate when students find the right idea: "Exactly! Now you see the magic!"
+- If they struggle, give progressively stronger hints, but never the full answer
+- Use chess concepts: tactics, strategy, pawn structure, piece activity, king safety
+
+YOUR VOICE:
+- Energetic, passionate, direct - you love chess and it shows
+- Concise responses: 2-4 sentences typical, never more than 6 sentences
+- Be direct, no flowery openings
+- Use chess terminology naturally but explain concepts for intermediate players
+- Occasionally reference famous games or positions to illustrate points
+
+CRITICAL RULES:
+- If asked "what is the best move?", NEVER answer directly. Instead give a hint.
+- If asked about a tactic, describe the PATTERN, not the specific move sequence
+- When the student is wrong, be encouraging: "Good thinking, but look more carefully at..."
+- Keep responses SHORT. This is a chat, not a lecture.
+- Always relate your hints to the CURRENT POSITION (the FEN provided)
+
+{context_specific}
+
+RESPONSE FORMAT:
+- Plain text only, no markdown formatting
+- No bullet points or numbered lists in chat responses
+- Write naturally as if speaking to a student across the board"""
+
+
+def _build_chat_user_prompt(
+    user_message: str,
+    context: ChatPositionContext,
+    history: List[ConversationMessage],
+) -> str:
+    """Build the user prompt including position context and conversation history."""
+    position_info = f"Current position (FEN): {context.fen}"
+    if context.move_history:
+        recent_moves = context.move_history[-10:]
+        position_info += f"\nRecent moves: {' '.join(recent_moves)}"
+    if context.last_move:
+        position_info += f"\nLast move played: {context.last_move}"
+    if context.game_phase:
+        position_info += f"\nGame phase: {context.game_phase}"
+    if context.player_color:
+        position_info += f"\nStudent is playing: {context.player_color}"
+    if context.move_classification:
+        position_info += f"\nLast move was classified as: {context.move_classification}"
+    if context.evaluation:
+        position_info += f"\nEngine evaluation: {context.evaluation}"
+    if context.puzzle_theme:
+        position_info += f"\nPuzzle theme: {context.puzzle_theme}"
+
+    conv_text = ""
+    if history:
+        recent_history = history[-10:]
+        conv_lines = []
+        for msg in recent_history:
+            speaker = "Student" if msg.role == "user" else "Coach Tal"
+            conv_lines.append(f"{speaker}: {msg.content}")
+        conv_text = "\n--- Conversation so far ---\n" + "\n".join(conv_lines) + "\n---\n"
+
+    return f"""[POSITION CONTEXT]
+{position_info}
+
+{conv_text}
+Student's message: {user_message}
+
+Respond as Coach Tal. Remember: guide, don't give away answers. Keep it concise."""
+
+
+@app.post("/api/v1/coach/chat", response_model=CoachChatResponse)
+async def coach_chat(
+    request: CoachChatRequest,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """
+    Interactive chat with Tal Coach about the current chess position.
+    Premium-only endpoint with rate limiting.
+    """
+    # 1. Premium check
+    if not auth_user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Please log in to chat with Coach Tal."
+        )
+
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Coach chat requires premium subscription. Please upgrade to access."
+        )
+
+    # 2. Rate limiting
+    can_chat, chat_stats = _check_chat_rate_limit(auth_user_id)
+    if not can_chat:
+        raise HTTPException(
+            status_code=429,
+            detail=chat_stats.get('message', 'Chat rate limit reached. Please try again later.')
+        )
+
+    # 3. Validate FEN
+    try:
+        import chess
+        chess.Board(request.position_context.fen)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid chess position (FEN).")
+
+    # 4. Build prompts and call AI
+    try:
+        system_prompt = _build_chat_system_prompt(request.position_context)
+        user_prompt = _build_chat_user_prompt(
+            request.message,
+            request.position_context,
+            request.conversation_history,
+        )
+
+        # Use existing AI generator
+        from .ai_comment_generator import AIChessCommentGenerator
+        generator = AIChessCommentGenerator()
+
+        response_text = None
+        model_used = None
+
+        if generator.enabled:
+            logger.info(f"[COACH CHAT] AI generator enabled, provider={generator.provider}, model={generator.config.ai_model}")
+            response_text = await generator.generate_chat_response(user_prompt, system_prompt)
+            model_used = generator.config.ai_model
+            if not response_text:
+                logger.warning("[COACH CHAT] AI generator returned None - API call may have failed")
+        else:
+            logger.warning(f"[COACH CHAT] AI generator NOT enabled. provider={generator.provider}, client={generator.client is not None}")
+
+        if not response_text:
+            response_text = (
+                "Let me think about this position differently... "
+                "Could you tell me what you notice about the piece activity here? "
+                "Sometimes looking at the board fresh reveals new ideas."
+            )
+            model_used = "fallback"
+
+        # 5. Increment usage
+        _increment_chat_usage(auth_user_id)
+
+        return CoachChatResponse(
+            response=response_text,
+            model_used=model_used
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Coach chat error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Coach is temporarily unavailable. Please try again in a moment."
+        )
 
 
 if __name__ == "__main__":

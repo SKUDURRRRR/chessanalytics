@@ -15,6 +15,16 @@ export function Navigation() {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [lastVisitedPlayer, setLastVisitedPlayer] = useState<LastVisitedPlayer | null>(null)
 
+  // Derive linked account info for navigation
+  const linkedUsername = user?.primaryPlatform === 'chess.com'
+    ? user.chessComUsername
+    : user?.primaryPlatform === 'lichess'
+      ? user.lichessUsername
+      : user?.chessComUsername || user?.lichessUsername
+  const linkedPlatform = user?.primaryPlatform
+    || (user?.chessComUsername ? 'chess.com' : user?.lichessUsername ? 'lichess' : null)
+  const hasLinkedAccount = !!(user?.chessComUsername || user?.lichessUsername)
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -188,13 +198,21 @@ export function Navigation() {
                         >
                           Home
                         </Link>
-                        {lastVisitedPlayer && (
+                        {hasLinkedAccount && linkedUsername && linkedPlatform ? (
                           <Link
-                            to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                            to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}`}
                             className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
                             onClick={() => setIsDropdownOpen(false)}
                           >
-                            Last Player
+                            My Analytics
+                          </Link>
+                        ) : (
+                          <Link
+                            to="/profile"
+                            className="block px-4 py-2.5 text-sm text-amber-300 hover:bg-slate-700 transition-colors"
+                            onClick={() => setIsDropdownOpen(false)}
+                          >
+                            Connect Account
                           </Link>
                         )}
                         <Link
@@ -240,12 +258,19 @@ export function Navigation() {
                   >
                     Home
                   </Link>
-                  {lastVisitedPlayer && (
+                  {hasLinkedAccount && linkedUsername && linkedPlatform ? (
                     <Link
-                      to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                      to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}`}
                       className={getButtonClass('/simple-analytics')}
                     >
-                      Last Player
+                      My Analytics
+                    </Link>
+                  ) : (
+                    <Link
+                      to="/profile"
+                      className="rounded-2xl border border-amber-400/40 bg-amber-500/20 px-6 py-2.5 text-sm font-semibold text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-500/30"
+                    >
+                      Connect Account
                     </Link>
                   )}
                   <Link

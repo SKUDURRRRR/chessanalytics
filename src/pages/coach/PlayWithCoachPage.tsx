@@ -20,6 +20,8 @@ import { supabase } from '../../lib/supabase'
 import { EnhancedMoveCoaching } from '../../components/debug/EnhancedMoveCoaching'
 import { ProcessedMove } from '../GameAnalysisPage'
 import { TalCoachIcon } from '../../components/ui/TalCoachIcon'
+import { ChatPositionContext } from '../../types'
+import { useCoachChat } from '../../contexts/CoachChatContext'
 import { useChessSound } from '../../hooks/useChessSound'
 import { useChessSoundSettings } from '../../contexts/ChessSoundContext'
 import { getMoveSoundSimple } from '../../utils/chessSounds'
@@ -95,6 +97,9 @@ export default function PlayWithCoachPage() {
   const moveFenHistoryRef = useRef<Map<number, string>>(new Map())
   // Which comment to show in the sidebar (half-move index). null = show most recent.
   const [selectedCommentIndex, setSelectedCommentIndex] = useState<number | null>(null)
+
+  // Coach chat context
+  const { setPositionContext } = useCoachChat()
 
   // Chess sound support
   const { soundEnabled, volume } = useChessSoundSettings()
@@ -858,6 +863,21 @@ ${pgn} ${result}`
     }
     return null
   }, [moveHistory.length, playerColor, coachingComments])
+
+  // Publish position context to floating chat widget
+  useEffect(() => {
+    const ctx: ChatPositionContext = {
+      fen: gamePosition,
+      moveHistory,
+      playerColor,
+      moveNumber: Math.floor(moveHistory.length / 2) + 1,
+      lastMove: moveHistory[moveHistory.length - 1],
+      gamePhase: moveHistory.length < 10 ? 'opening' : moveHistory.length > 40 ? 'endgame' : 'middlegame',
+      contextType: 'play',
+    }
+    setPositionContext(ctx)
+    return () => setPositionContext(null)
+  }, [gamePosition, moveHistory, playerColor, setPositionContext])
 
   // Get status message
   const getStatusMessage = () => {

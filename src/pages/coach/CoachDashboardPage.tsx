@@ -3,24 +3,17 @@
  * Main overview page for Coach tab
  */
 
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import { PremiumGate } from '../../components/coach/PremiumGate'
+import { useNavigate } from 'react-router-dom'
 import { DailyLessonCard } from '../../components/coach/DailyLessonCard'
 import { WeaknessCard } from '../../components/coach/WeaknessCard'
 import { StrengthCard } from '../../components/coach/StrengthCard'
 import { useCoachDashboard } from '../../hooks/useCoachingData'
 import { Link } from 'react-router-dom'
 import LoadingModal from '../../components/LoadingModal'
-import { useAuth } from '../../contexts/AuthContext'
+import { useCoachUser } from '../../hooks/useCoachUser'
 
 export default function CoachDashboardPage() {
-  const [searchParams] = useSearchParams()
-  const { user } = useAuth()
-  // For Coach, we need the authenticated user's UUID for premium check
-  // But we also need the platform username for data lookup
-  const platformUsername = searchParams.get('userId') || ''
-  const platform = (searchParams.get('platform') || 'lichess') as 'lichess' | 'chess.com'
-  const authenticatedUserId = user?.id || ''
+  const { platform, platformUsername, authenticatedUserId, hasLinkedAccount } = useCoachUser()
 
   if (!authenticatedUserId) {
     return (
@@ -30,14 +23,27 @@ export default function CoachDashboardPage() {
     )
   }
 
-  // Use authenticated user's UUID for API calls (premium check)
-  // But pass platform username for data lookup if available
-  const userIdForData = platformUsername || authenticatedUserId
+  if (!platformUsername) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
+          <h2 className="text-2xl font-bold text-white mb-4">Connect your chess account</h2>
+          <p className="text-slate-300 mb-6">
+            Link your Chess.com or Lichess account to get personalized coaching, lessons, and puzzles based on your games.
+          </p>
+          <Link
+            to="/profile"
+            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+          >
+            Go to Profile to Connect
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <PremiumGate>
-      <CoachDashboardContent userId={authenticatedUserId} platformUsername={userIdForData} platform={platform} />
-    </PremiumGate>
+    <CoachDashboardContent userId={authenticatedUserId} platformUsername={platformUsername} platform={platform} />
   )
 }
 

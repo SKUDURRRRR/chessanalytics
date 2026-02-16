@@ -3,14 +3,15 @@
  * Minimal interactive puzzle solver - loads FEN, accepts move, checks solution.
  */
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Chessboard } from 'react-chessboard'
 import { Chess, Square } from 'chess.js'
-import { PremiumGate } from '../../components/coach/PremiumGate'
 import { CoachingService } from '../../services/coachingService'
 import { useAuth } from '../../contexts/AuthContext'
+import { useCoachChat } from '../../contexts/CoachChatContext'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
+import { ChatPositionContext } from '../../types'
 
 interface Puzzle {
   id?: string
@@ -34,9 +35,9 @@ export default function PuzzleSolvePage() {
   }
 
   return (
-    <PremiumGate>
+    <>
       <PuzzleSolveContent />
-    </PremiumGate>
+    </>
   )
 }
 
@@ -56,6 +57,7 @@ function PuzzleSolveContent() {
   const [result, setResult] = useState<'correct' | 'incorrect' | null>(null)
   const [userMove, setUserMove] = useState<string | null>(null)
   const startTime = useMemo(() => Date.now(), [currentIndex])
+  const { setPositionContext } = useCoachChat()
 
   const currentPuzzle = puzzles[currentIndex]
 
@@ -77,6 +79,19 @@ function PuzzleSolveContent() {
 
   const game = new Chess(currentPuzzle.fen_position)
   const boardOrientation = game.turn() === 'w' ? 'white' : 'black'
+
+  // Publish position context to floating chat widget
+  useEffect(() => {
+    const ctx: ChatPositionContext = {
+      fen: currentPuzzle.fen_position,
+      moveHistory: [],
+      contextType: 'puzzle',
+      puzzleTheme: currentPuzzle.tactical_theme,
+      puzzleCategory: currentPuzzle.puzzle_category,
+    }
+    setPositionContext(ctx)
+    return () => setPositionContext(null)
+  }, [currentPuzzle.fen_position, currentPuzzle.tactical_theme, currentPuzzle.puzzle_category, setPositionContext])
 
   const onDrop = (sourceSquare: string, targetSquare: string) => {
     if (result !== null) return false
@@ -241,6 +256,7 @@ function PuzzleSolveContent() {
                 </div>
               </div>
             )}
+
           </div>
         </div>
       </div>

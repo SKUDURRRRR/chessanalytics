@@ -13,7 +13,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { AnonymousUsageTracker } from '../services/anonymousUsageTracker'
 import LimitReachedModal from '../components/LimitReachedModal'
 // Debug components removed from production
-import { OpeningFilter, OpeningIdentifierSets } from '../types'
+import { OpeningFilter, OpeningIdentifierSets, ViewMode } from '../types'
 
 const serializeOpeningIdentifiers = (identifiers: OpeningIdentifierSets): string => {
   try {
@@ -109,6 +109,29 @@ export default function SimpleAnalyticsPage() {
   const { user, usageStats, refreshUsageStats } = useAuth()
   const [showLimitModal, setShowLimitModal] = useState(false)
   const [limitType, setLimitType] = useState<'import' | 'analyze'>('import')
+
+  // Platform switcher (for users with both accounts linked)
+  const hasBothAccounts = !!(user?.chessComUsername && user?.lichessUsername)
+  const viewMode = searchParams.get('view') === 'combined' ? 'combined' as const : 'single' as const
+
+  const handlePlatformSwitch = (target: 'chess.com' | 'lichess' | 'combined') => {
+    const newParams = new URLSearchParams()
+    if (activeTab !== 'analytics') newParams.set('tab', activeTab)
+
+    if (target === 'combined') {
+      // Keep current user/platform as primary, add view=combined
+      newParams.set('user', userId)
+      newParams.set('platform', platform)
+      newParams.set('view', 'combined')
+    } else {
+      const username = target === 'chess.com'
+        ? user!.chessComUsername!
+        : user!.lichessUsername!
+      newParams.set('user', username)
+      newParams.set('platform', target)
+    }
+    setSearchParams(newParams, { replace: true })
+  }
 
   // Slow loading popup state
   const [showSlowLoadingPopup, setShowSlowLoadingPopup] = useState(false)
@@ -683,20 +706,66 @@ export default function SimpleAnalyticsPage() {
               </div>
 
               <div className="text-center">
-                <div className={`inline-flex items-center gap-2 rounded-full border px-4 py-1 text-xs uppercase tracking-wide font-semibold ${
-                  platform === 'lichess'
-                    ? 'border-yellow-500/30 bg-yellow-600/20 text-yellow-100'
-                    : 'border-green-500/30 bg-green-600/20 text-green-100'
-                }`}>
-                  {platform === 'lichess' ? 'Lichess' : 'Chess.com'}
-                </div>
-                <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">{userId}</h1>
+                {hasBothAccounts ? (
+                  /* Platform switcher for users with both accounts linked */
+                  <div className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.08] p-1 text-xs font-semibold">
+                    <button
+                      onClick={() => handlePlatformSwitch('chess.com')}
+                      className={`rounded-full px-4 py-1.5 transition ${
+                        viewMode === 'single' && platform === 'chess.com'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-green-200 hover:text-white'
+                      }`}
+                    >
+                      Chess.com
+                    </button>
+                    <button
+                      onClick={() => handlePlatformSwitch('lichess')}
+                      className={`rounded-full px-4 py-1.5 transition ${
+                        viewMode === 'single' && platform === 'lichess'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-yellow-200 hover:text-white'
+                      }`}
+                    >
+                      Lichess
+                    </button>
+                    <button
+                      onClick={() => handlePlatformSwitch('combined')}
+                      className={`rounded-full px-4 py-1.5 transition ${
+                        viewMode === 'combined'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-sky-200 hover:text-white'
+                      }`}
+                    >
+                      Combined
+                    </button>
+                  </div>
+                ) : (
+                  /* Static platform badge for single-account users */
+                  <div className={`inline-flex items-center gap-2 rounded-full border px-4 py-1 text-xs uppercase tracking-wide font-semibold ${
+                    platform === 'lichess'
+                      ? 'border-yellow-500/30 bg-yellow-600/20 text-yellow-100'
+                      : 'border-green-500/30 bg-green-600/20 text-green-100'
+                  }`}>
+                    {platform === 'lichess' ? 'Lichess' : 'Chess.com'}
+                  </div>
+                )}
+                <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
+                  {viewMode === 'combined'
+                    ? `${user?.chessComUsername} + ${user?.lichessUsername}`
+                    : userId}
+                </h1>
                 <p className="mt-1.5 text-sm text-slate-300">
-                  Import games, trigger fresh Stockfish evaluations, and explore openings without leaving this dashboard.
+                  {viewMode === 'combined'
+                    ? 'Combined analytics from both Chess.com and Lichess.'
+                    : 'Import games, trigger fresh Stockfish evaluations, and explore openings without leaving this dashboard.'}
                 </p>
               </div>
 
               <div className="flex flex-col items-center gap-3 text-sm">
+                {viewMode === 'combined' ? (
+                  <p className="text-xs text-slate-400">Switch to a single platform to import games</p>
+                ) : (
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   {!hasGames ? (
                     <button
@@ -742,6 +811,7 @@ export default function SimpleAnalyticsPage() {
                     </button>
                   )}
                 </div>
+                )}
                 <div className="flex items-center gap-3 text-xs text-slate-400">
                   {lastRefresh && <span>Updated · {lastRefresh.toLocaleTimeString()}</span>}
                 </div>
@@ -887,21 +957,27 @@ export default function SimpleAnalyticsPage() {
 
         {activeTab === 'analytics' && (
           <SimpleAnalytics
-            key={`simple-analytics-${refreshKey}`}
+            key={`simple-analytics-${refreshKey}-${viewMode}`}
             userId={userId}
             platform={platform}
             onOpeningClick={handleOpeningClick}
             forceRefresh={forceDataRefresh}
+            viewMode={viewMode}
+            secondaryUserId={viewMode === 'combined' ? (platform === 'chess.com' ? user?.lichessUsername : user?.chessComUsername) || '' : undefined}
+            secondaryPlatform={viewMode === 'combined' ? (platform === 'chess.com' ? 'lichess' : 'chess.com') : undefined}
           />
         )}
 
         {activeTab === 'matchHistory' && (
           <ErrorBoundary>
             <MatchHistory
-              key={`match-history-${refreshKey}`}
+              key={`match-history-${refreshKey}-${viewMode}`}
               userId={userId}
               platform={platform}
               openingFilter={openingFilter}
+              viewMode={viewMode}
+              secondaryUserId={viewMode === 'combined' ? (platform === 'chess.com' ? user?.lichessUsername : user?.chessComUsername) || '' : undefined}
+              secondaryPlatform={viewMode === 'combined' ? (platform === 'chess.com' ? 'lichess' : 'chess.com') : undefined}
               onClearFilter={() => {
                 setOpeningFilter(null)
                 const newSearchParams = new URLSearchParams(searchParams)

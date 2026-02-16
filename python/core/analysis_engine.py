@@ -912,13 +912,19 @@ class ChessAnalysisEngine:
                           analysis_type: Optional[AnalysisType] = None,
                           fullmove_number: Optional[int] = None,
                           is_user_move: Optional[bool] = None,
-                          ply_index: Optional[int] = None) -> MoveAnalysis:
-        """Analyze a specific move in a position."""
+                          ply_index: Optional[int] = None,
+                          force_engine: bool = False) -> MoveAnalysis:
+        """Analyze a specific move in a position.
+
+        Args:
+            force_engine: If True, always use Stockfish analysis even for opening moves.
+                          Use for single-move coaching where accuracy matters over speed.
+        """
         analysis_type = analysis_type or self.config.analysis_type
         start_time = datetime.now()
 
         try:
-            return await self._analyze_move_stockfish(board, move, analysis_type, fullmove_number, is_user_move, ply_index)
+            return await self._analyze_move_stockfish(board, move, analysis_type, fullmove_number, is_user_move, ply_index, force_engine=force_engine)
         finally:
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
             print(f"Move analysis completed in {processing_time:.1f}ms")
@@ -1886,60 +1892,75 @@ class ChessAnalysisEngine:
         """
         Check if a move is a reasonable opening move (for fast opening book path).
 
-        Reasonable opening moves:
-        - Develop knights, bishops, or queen
-        - Push central pawns (e4, d4, e5, d5, c4, c5, Nf6, Nf3, etc.)
-        - Castle
-        - Don't lose material without compensation
-
-        This allows us to skip full Stockfish analysis for standard opening theory.
+        Only returns True for moves that are almost certainly fine — standard
+        development moves from starting squares, standard pawn pushes, and castling.
+        This is intentionally conservative to avoid misclassifying blunders as
+        "book moves" (e.g. a knight moving forward into a losing square).
         """
-        # Get piece being moved
         piece = board.piece_at(move.from_square)
         if not piece:
+            return False
+
+        # Only apply for first 5 moves (not 8) — positions diverge quickly
+        if board.fullmove_number > 5:
             return False
 
         # Castling is always reasonable
         if board.is_castling(move):
             return True
 
-        # Central pawn moves (e4, d4, e5, d5, c4, c5)
+        # Central pawn pushes from starting rank only (e2-e4, d2-d4, c2-c4, etc.)
         if piece.piece_type == chess.PAWN:
             to_file = chess.square_file(move.to_square)
-            # Central files (c, d, e)
-            if to_file in [2, 3, 4]:  # c, d, e files
-                return True
-
-        # Knight and bishop development
-        if piece.piece_type in [chess.KNIGHT, chess.BISHOP]:
-            # Not moving back to starting rank
             from_rank = chess.square_rank(move.from_square)
-            to_rank = chess.square_rank(move.to_square)
-            if piece.color == chess.WHITE and to_rank > from_rank:
+            # Only accept pawns moving from their starting rank (rank 1 for white, rank 6 for black)
+            is_starting_rank = (piece.color == chess.WHITE and from_rank == 1) or \
+                               (piece.color == chess.BLACK and from_rank == 6)
+            if is_starting_rank and to_file in [2, 3, 4, 5]:  # c, d, e, f files
                 return True
-            if piece.color == chess.BLACK and to_rank < from_rank:
-                return True
+            return False
 
-        # Queen moves (acceptable if not too early)
-        if piece.piece_type == chess.QUEEN:
-            # Queen moves on move 3+ are sometimes okay
-            if board.fullmove_number >= 3:
-                return True
+        # Knight development from starting squares only (b1/g1 for white, b8/g8 for black)
+        if piece.piece_type == chess.KNIGHT:
+            from_square = move.from_square
+            to_square = move.to_square
+            # White knights: b1->c3/a3, g1->f3/h3
+            white_starting = [chess.B1, chess.G1]
+            # Black knights: b8->c6/a6, g8->f6/h6
+            black_starting = [chess.B8, chess.G8]
+            if piece.color == chess.WHITE and from_square in white_starting:
+                # Standard development squares for white knights
+                if to_square in [chess.C3, chess.F3]:
+                    return True
+            if piece.color == chess.BLACK and from_square in black_starting:
+                if to_square in [chess.C6, chess.F6]:
+                    return True
+            return False
 
+        # Bishop development from starting squares only
+        if piece.piece_type == chess.BISHOP:
+            from_rank = chess.square_rank(move.from_square)
+            is_starting_rank = (piece.color == chess.WHITE and from_rank == 0) or \
+                               (piece.color == chess.BLACK and from_rank == 7)
+            if is_starting_rank:
+                return True
+            return False
+
+        # Queen and other pieces — never shortcut, always use Stockfish
         return False
 
     def _get_opening_book_evaluation(self, board: chess.Board, move: chess.Move) -> Optional[Tuple[float, bool]]:
         """
-        Get a fast opening book evaluation for early game moves (moves 1-8).
+        Get a fast opening book evaluation for early game moves (moves 1-5).
 
         Returns:
             (evaluation_cp, is_book_move) or None if should use Stockfish
 
-        This provides 50%+ speedup for opening moves by skipping Stockfish analysis.
-        User approved reduced accuracy for opening moves.
+        This provides speedup for standard opening moves by skipping Stockfish.
+        Only applies to the first 5 moves with conservative heuristics.
         """
-        # Only for first 8 moves
-        if board.fullmove_number > 8:
+        # Only for first 5 moves (positions diverge too much after that)
+        if board.fullmove_number > 5:
             return None
 
         # Check if it's still an opening position (most pieces on board)
@@ -1966,14 +1987,15 @@ class ChessAnalysisEngine:
                                     analysis_type: AnalysisType,
                                     fullmove_number: Optional[int] = None,
                                     is_user_move: Optional[bool] = None,
-                                    ply_index: Optional[int] = None) -> MoveAnalysis:
+                                    ply_index: Optional[int] = None,
+                                    force_engine: bool = False) -> MoveAnalysis:
         """Stockfish move analysis - runs in thread pool for true parallelism."""
         if not self.stockfish_path:
             raise ValueError("Stockfish executable not found")
 
-        # OPTIMIZATION: Opening book fast path (50%+ speedup for moves 1-8)
-        # For early game standard moves, skip Stockfish analysis entirely
-        if fullmove_number is not None and fullmove_number <= 8:
+        # OPTIMIZATION: Opening book fast path (speedup for early moves in batch analysis)
+        # SKIP when force_engine=True (single-move coaching) — accuracy over speed
+        if not force_engine and fullmove_number is not None and fullmove_number <= 5:
             opening_eval = self._get_opening_book_evaluation(board, move)
             if opening_eval is not None:
                 eval_cp, is_book_move = opening_eval

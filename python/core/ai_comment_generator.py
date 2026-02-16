@@ -711,6 +711,111 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
 
             return None
 
+    async def generate_chat_response(self, prompt: str, system_prompt: str) -> Optional[str]:
+        """Generate a chat response using the configured AI provider.
+
+        Public method for interactive coach chat. Uses the same underlying
+        AI infrastructure as move comment generation.
+
+        Args:
+            prompt: The user prompt including position context and message.
+            system_prompt: The system prompt with coaching instructions.
+
+        Returns:
+            The AI response text, or None if generation failed.
+        """
+        if not self.enabled:
+            print("[AI CHAT] Generator not enabled, skipping")
+            return None
+        if not self.client:
+            print("[AI CHAT] No client initialized, skipping")
+            return None
+
+        print(f"[AI CHAT] Generating response via {self.provider}...")
+
+        try:
+            # Apply rate limiting
+            if self._async_rate_limiter:
+                acquired = await self._async_rate_limiter.wait_for_token(timeout=10.0)
+                if not acquired:
+                    print("[AI CHAT] Rate limit: could not acquire token")
+                    return None
+
+            # For chat, use a dedicated Gemini call that handles system_instruction
+            # via model instantiation (some SDK versions don't support it per-call)
+            result = None
+            if self._api_semaphore:
+                async with self._api_semaphore:
+                    result = await self._call_chat_api_async(prompt, system_prompt)
+            else:
+                result = await self._call_chat_api_async(prompt, system_prompt)
+
+            if result:
+                print(f"[AI CHAT] Got response ({len(result)} chars)")
+            else:
+                print("[AI CHAT] API returned None")
+            return result
+
+        except Exception as e:
+            print(f"[AI CHAT] Error generating chat response: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def _call_chat_api_async(self, prompt: str, system_prompt: str) -> Optional[str]:
+        """Async API call for chat, handling system_instruction correctly per provider."""
+        if self.provider == AIProvider.GEMINI.value:
+            return await self._call_gemini_chat_async(prompt, system_prompt)
+        else:
+            # Anthropic handles system prompt fine in _call_anthropic_api_async
+            # but we override max_tokens for chat
+            original_max = self.config.max_tokens
+            self.config.max_tokens = 1024
+            try:
+                return await self._call_anthropic_api_async(prompt, system_prompt)
+            finally:
+                self.config.max_tokens = original_max
+
+    async def _call_gemini_chat_async(self, prompt: str, system_prompt: str) -> Optional[str]:
+        """Gemini chat call - creates model with system_instruction at init time."""
+        try:
+            def _generate_sync():
+                # Create a model instance with system_instruction baked in
+                chat_model = genai.GenerativeModel(
+                    self.config.ai_model,
+                    system_instruction=system_prompt,
+                )
+                generation_config = {
+                    "max_output_tokens": 1024,
+                    "temperature": 0.8,
+                }
+                return chat_model.generate_content(
+                    contents=[prompt],
+                    generation_config=generation_config,
+                )
+
+            response = await asyncio.to_thread(_generate_sync)
+
+            if response and response.candidates:
+                candidate = response.candidates[0]
+                finish_reason = getattr(candidate, 'finish_reason', None)
+                print(f"[AI CHAT] Gemini finish_reason={finish_reason}")
+                if finish_reason and str(finish_reason) not in ('1', 'STOP', 'FinishReason.STOP'):
+                    print(f"[AI CHAT] Warning: non-STOP finish reason: {finish_reason}")
+                if hasattr(response, 'text') and response.text:
+                    return response.text.strip()
+                # Try extracting from candidate parts if .text fails
+                if candidate.content and candidate.content.parts:
+                    text = ''.join(p.text for p in candidate.content.parts if hasattr(p, 'text'))
+                    if text:
+                        return text.strip()
+            print("[AI CHAT] Gemini response had no text content")
+            return None
+
+        except Exception as e:
+            print(f"[AI CHAT] Gemini API call failed: {e}")
+            return None
+
     def _filter_insights_for_move(self, insights: list, move_san: str, is_capture: bool, is_user_move: bool) -> list:
         """Filter insights to only include those relevant to the current move."""
         if not insights:

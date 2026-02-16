@@ -25,6 +25,7 @@ import { EloTrendGraph } from './EloTrendGraph'
 import { EnhancedOpponentAnalysis } from './EnhancedOpponentAnalysis'
 import { TimeSpentSummary } from './TimeSpentAnalysis'
 import { OpeningFilter, OpeningIdentifierSets } from '../../types'
+import { mergeAnalysisStats, mergeComprehensiveAnalytics, mergeDeepAnalysis } from '../../utils/combinedAnalytics'
 
 interface SimpleAnalyticsProps {
   userId: string
@@ -34,9 +35,12 @@ interface SimpleAnalyticsProps {
   onOpeningClick?: (filter: OpeningFilter) => void
   onOpponentClick?: (opponentName: string) => void
   forceRefresh?: boolean
+  viewMode?: 'single' | 'combined'
+  secondaryUserId?: string
+  secondaryPlatform?: 'lichess' | 'chess.com'
 }
 
-export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningClick, onOpponentClick, forceRefresh = false }: SimpleAnalyticsProps) {
+export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningClick, onOpponentClick, forceRefresh = false, viewMode = 'single', secondaryUserId, secondaryPlatform }: SimpleAnalyticsProps) {
   const navigate = useNavigate()
   const [data, setData] = useState<AnalysisStats | null>(null)
   const [comprehensiveData, setComprehensiveData] = useState<ComprehensiveAnalytics | null>(null)
@@ -72,6 +76,27 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     }
   }, [comprehensiveData?.performanceTrends, selectedTimeControl, eloGraphGamesUsed])
 
+  // Fetch analytics data for a single platform
+  const fetchPlatformData = useCallback(async (uid: string, plat: 'lichess' | 'chess.com', forceRefresh: boolean) => {
+    const [analysisResult, playerStats, gamesData, basicStatsData, analysisOnlyData, deepAnalysis, eloStats] = await Promise.all([
+      UnifiedAnalysisService.getAnalysisStats(uid, plat, 'stockfish'),
+      UnifiedAnalysisService.getPlayerStats(uid, plat),
+      UnifiedAnalysisService.getGameAnalyses(uid, plat, 'stockfish', 20, 0),
+      UnifiedAnalysisService.getComprehensiveAnalytics(uid, plat, 10000),
+      UnifiedAnalysisService.getComprehensiveAnalytics(uid, plat, 100),
+      UnifiedAnalysisService.fetchDeepAnalysis(uid, plat, forceRefresh),
+      UnifiedAnalysisService.getEloStats(uid, plat)
+    ])
+    const comprehensiveAnalytics = {
+      ...basicStatsData,
+      marathon_performance: analysisOnlyData?.marathon_performance,
+      personal_records: analysisOnlyData?.personal_records,
+      resignation_timing: analysisOnlyData?.resignation_timing,
+      recent_trend: analysisOnlyData?.recent_trend,
+    }
+    return { analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis, eloStats }
+  }, [])
+
   const loadData = useCallback(async (forceRefresh = false) => {
     // Prevent multiple simultaneous calls
     if (isLoadingRef.current) {
@@ -90,61 +115,39 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       }
       setError(null)
 
-      // Optimized data fetching - fetch ALL data in parallel for maximum speed
-      const [analysisResult, playerStats, gamesData, basicStatsData, analysisOnlyData, deepAnalysis, eloStats] = await Promise.all([
-        UnifiedAnalysisService.getAnalysisStats(
-          userId,
-          (platform as 'lichess' | 'chess.com') || 'lichess',
-          'stockfish'
-        ),
-        // Use backend API for player stats instead of direct Supabase query
-        UnifiedAnalysisService.getPlayerStats(userId, (platform as 'lichess' | 'chess.com') || 'lichess'),
-        // Reduced from 50 to 20 - only need a small sample for quick stats
-        // Most data comes from comprehensive analytics which is much more efficient
-        UnifiedAnalysisService.getGameAnalyses(
-          userId,
-          (platform as 'lichess' | 'chess.com') || 'lichess',
-          'stockfish',
-          20,  // Reduced from 50 for faster loading
-          0
-        ),
-        // Fetch basic stats (color/opening) from ALL games
-        (async () => {
-          const basicStats = await UnifiedAnalysisService.getComprehensiveAnalytics(
-            userId,
-            (platform as 'lichess' | 'chess.com') || 'lichess',
-            10000  // Fetch all games for accurate color/opening statistics
-          )
-          return basicStats
-        })(),
-        // Fetch analysis data from recent games only
-        (async () => {
-          const analysisData = await UnifiedAnalysisService.getComprehensiveAnalytics(
-            userId,
-            (platform as 'lichess' | 'chess.com') || 'lichess',
-            100  // Only 100 games for analysis data (marathon, records, resignation)
-          )
-          return analysisData
-        })(),
-        UnifiedAnalysisService.fetchDeepAnalysis(
-          userId,
-          (platform as 'lichess' | 'chess.com') || 'lichess',
-          forceRefresh  // Pass forceRefresh to bypass cache after analysis
-        ),
-        UnifiedAnalysisService.getEloStats(
-          userId,
-          (platform as 'lichess' | 'chess.com') || 'lichess'
-        )
-      ])
+      const plat = (platform as 'lichess' | 'chess.com') || 'lichess'
 
-      // Merge comprehensive analytics: color/opening from all games + analysis data from 100 games
-      const comprehensiveAnalytics = {
-        ...basicStatsData,
-        // Override with analysis-specific data from the 100-game fetch
-        marathon_performance: analysisOnlyData?.marathon_performance,
-        personal_records: analysisOnlyData?.personal_records,
-        resignation_timing: analysisOnlyData?.resignation_timing,
-        recent_trend: analysisOnlyData?.recent_trend,
+      let analysisResult, playerStats, gamesData: ReturnType<typeof UnifiedAnalysisService.getGameAnalyses> extends Promise<infer T> ? T : never, comprehensiveAnalytics: Record<string, unknown>, deepAnalysis, eloStats
+
+      if (viewMode === 'combined' && secondaryUserId && secondaryPlatform) {
+        // Combined view: fetch both platforms in parallel, then merge
+        const [primary, secondary] = await Promise.all([
+          fetchPlatformData(userId, plat, forceRefresh),
+          fetchPlatformData(secondaryUserId, secondaryPlatform, forceRefresh)
+        ])
+
+        analysisResult = primary.analysisResult && secondary.analysisResult
+          ? mergeAnalysisStats(primary.analysisResult, secondary.analysisResult)
+          : primary.analysisResult || secondary.analysisResult
+        playerStats = primary.playerStats
+        gamesData = [...(primary.gamesData || []), ...(secondary.gamesData || [])]
+        comprehensiveAnalytics = (primary.comprehensiveAnalytics && secondary.comprehensiveAnalytics)
+          ? mergeComprehensiveAnalytics(primary.comprehensiveAnalytics as ComprehensiveAnalytics, secondary.comprehensiveAnalytics as ComprehensiveAnalytics) as unknown as Record<string, unknown>
+          : (primary.comprehensiveAnalytics || secondary.comprehensiveAnalytics) as Record<string, unknown>
+        deepAnalysis = (primary.deepAnalysis && secondary.deepAnalysis)
+          ? mergeDeepAnalysis(primary.deepAnalysis, secondary.deepAnalysis)
+          : primary.deepAnalysis || secondary.deepAnalysis
+        // For ELO: use primary platform's stats (UI will show both ELO graphs separately)
+        eloStats = primary.eloStats
+      } else {
+        // Single platform: existing behavior
+        const result = await fetchPlatformData(userId, plat, forceRefresh)
+        analysisResult = result.analysisResult
+        playerStats = result.playerStats
+        gamesData = result.gamesData
+        comprehensiveAnalytics = result.comprehensiveAnalytics as Record<string, unknown>
+        deepAnalysis = result.deepAnalysis
+        eloStats = result.eloStats
       }
 
       // Set default values for removed services
@@ -321,7 +324,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       setRefreshing(false)
       isLoadingRef.current = false
     }
-  }, [userId, platform, fromDate, toDate])
+  }, [userId, platform, fromDate, toDate, viewMode, secondaryUserId, secondaryPlatform, fetchPlatformData])
 
   useEffect(() => {
     if (!userId) {
@@ -331,7 +334,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       return
     }
     loadData()
-  }, [userId, platform, fromDate, toDate, loadData])
+  }, [userId, platform, fromDate, toDate, viewMode, secondaryUserId, secondaryPlatform, loadData])
 
   // Load most played opening when time control changes
   // Calculate most played opening from comprehensive data (no separate query needed)
@@ -1043,15 +1046,47 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 </div>
               </div>
               <div className="lg:col-span-2 min-w-0">
-                <EloTrendGraph
-                  userId={userId}
-                  platform={platform as 'lichess' | 'chess.com'}
-                  className="w-full"
-                  selectedTimeControl={selectedTimeControl}
-                  onTimeControlChange={setSelectedTimeControl}
-                  onGamesUsedChange={setEloGraphGamesUsed}
-                  key={dataRefreshKey}
-                />
+                {viewMode === 'combined' && secondaryUserId && secondaryPlatform ? (
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-xs font-semibold text-green-300 uppercase tracking-wide mb-1">
+                        {platform === 'chess.com' ? 'Chess.com' : 'Lichess'}
+                      </div>
+                      <EloTrendGraph
+                        userId={userId}
+                        platform={platform as 'lichess' | 'chess.com'}
+                        className="w-full"
+                        selectedTimeControl={selectedTimeControl}
+                        onTimeControlChange={setSelectedTimeControl}
+                        onGamesUsedChange={setEloGraphGamesUsed}
+                        key={`primary-${dataRefreshKey}`}
+                      />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-yellow-300 uppercase tracking-wide mb-1">
+                        {secondaryPlatform === 'chess.com' ? 'Chess.com' : 'Lichess'}
+                      </div>
+                      <EloTrendGraph
+                        userId={secondaryUserId}
+                        platform={secondaryPlatform}
+                        className="w-full"
+                        selectedTimeControl={selectedTimeControl}
+                        onTimeControlChange={setSelectedTimeControl}
+                        key={`secondary-${dataRefreshKey}`}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <EloTrendGraph
+                    userId={userId}
+                    platform={platform as 'lichess' | 'chess.com'}
+                    className="w-full"
+                    selectedTimeControl={selectedTimeControl}
+                    onTimeControlChange={setSelectedTimeControl}
+                    onGamesUsedChange={setEloGraphGamesUsed}
+                    key={dataRefreshKey}
+                  />
+                )}
               </div>
             </div>
 
