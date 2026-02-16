@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Chessboard } from 'react-chessboard'
-import { Chess } from 'chess.js'
+import { Chess, type Square } from 'chess.js'
 import { CoachingService } from '../../services/coachingService'
 import UnifiedAnalysisService from '../../services/unifiedAnalysisService'
 import { fetchGameAnalysisData } from '../../services/gameAnalysisService'
@@ -17,7 +17,6 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
 import { config } from '../../lib/config'
 import { supabase } from '../../lib/supabase'
-import { EnhancedMoveCoaching } from '../../components/debug/EnhancedMoveCoaching'
 import { ProcessedMove } from '../GameAnalysisPage'
 import { TalCoachIcon } from '../../components/ui/TalCoachIcon'
 import { ChatPositionContext } from '../../types'
@@ -25,6 +24,7 @@ import { useCoachChat } from '../../contexts/CoachChatContext'
 import { useChessSound } from '../../hooks/useChessSound'
 import { useChessSoundSettings } from '../../contexts/ChessSoundContext'
 import { getMoveSoundSimple } from '../../utils/chessSounds'
+import { getMoveClassificationBgColor } from '../../utils/chessColors'
 
 type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'resignation'
 
@@ -61,17 +61,71 @@ function extractMoveAnalysis(data: any): any | null {
 
 /**
  * Check if a coaching comment is raw engine output that should be filtered.
- * More precise than blanket "contains centipawn" filtering.
  */
 function isRawEngineOutput(comment: string): boolean {
   const enginePatterns = [
-    /\d+\s*centipawns?\b/i,          // "150 centipawns"
-    /centipawn\s+loss/i,              // "centipawn loss"
-    /[+-]?\d+\.?\d*\s*cp\b/i,        // "+3.2 cp" or "150 cp"
-    /^cp\s+/i,                        // starts with "cp "
-    /\bcp\s+(?:loss|gain|advantage)/i // "cp loss", "cp advantage"
+    /\d+\s*centipawns?\b/i,
+    /centipawn\s+loss/i,
+    /[+-]?\d+\.?\d*\s*cp\b/i,
+    /^cp\s+/i,
+    /\bcp\s+(?:loss|gain|advantage)/i
   ]
   return enginePatterns.some(pattern => pattern.test(comment))
+}
+
+/**
+ * Compact move cell for the two-column move history table.
+ */
+interface MoveCellProps {
+  san: string
+  halfMoveIndex: number
+  isActive: boolean
+  isUserMove: boolean
+  hasComment: boolean
+  isAnalyzing: boolean
+  classification?: string
+  onNavigate: () => void
+  onRequestFeedback: () => void
+  canRequestFeedback: boolean
+}
+
+function MoveCell({
+  san, isActive, isUserMove, hasComment, isAnalyzing,
+  classification, onNavigate, onRequestFeedback, canRequestFeedback
+}: MoveCellProps) {
+  return (
+    <button
+      onClick={onNavigate}
+      className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left transition-all duration-150 gap-1 ${
+        isActive
+          ? 'bg-sky-500/25 text-white ring-1 ring-sky-400/40'
+          : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
+      }`}
+    >
+      <span className="text-xs font-medium truncate font-mono">{san}</span>
+      <span className="flex items-center gap-1 flex-shrink-0">
+        {hasComment && classification && (
+          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+            getMoveClassificationBgColor(classification)
+          }`}>
+            {classification.slice(0, 4)}
+          </span>
+        )}
+        {isAnalyzing && (
+          <span className="text-sky-400 text-[10px] animate-pulse">...</span>
+        )}
+        {isUserMove && canRequestFeedback && !isAnalyzing && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRequestFeedback() }}
+            className="w-4 h-4 rounded-full bg-sky-500/20 border border-sky-400/30 flex items-center justify-center hover:bg-sky-500/40 transition-colors"
+            title="Ask Coach Tal"
+          >
+            <span className="text-[8px] text-sky-300 font-bold">?</span>
+          </button>
+        )}
+      </span>
+    </button>
+  )
 }
 
 export default function PlayWithCoachPage() {
@@ -87,16 +141,15 @@ export default function PlayWithCoachPage() {
   const [error, setError] = useState<string | null>(null)
   const [showResultModal, setShowResultModal] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [analyzedGameId, setAnalyzedGameId] = useState<string | null>(null)
   const [coachingComments, setCoachingComments] = useState<CoachingCommentsMap>(new Map())
-  const [isLoadingComments, setIsLoadingComments] = useState(false)
   const [analyzingMoveIndex, setAnalyzingMoveIndex] = useState<number | null>(null)
   const analyzingMoveRef = useRef<{ moveNumber: number; san: string } | null>(null)
   const [showInitialGreeting, setShowInitialGreeting] = useState(true)
   // FEN before each move, keyed by half-move index — needed for on-demand analysis of past moves
   const moveFenHistoryRef = useRef<Map<number, string>>(new Map())
-  // Which comment to show in the sidebar (half-move index). null = show most recent.
-  const [selectedCommentIndex, setSelectedCommentIndex] = useState<number | null>(null)
+  // Move navigation: null = live position, number = viewing position after Nth half-move
+  const [viewIndex, setViewIndex] = useState<number | null>(null)
+  const moveListRef = useRef<HTMLDivElement>(null)
 
   // Coach chat context
   const { setPositionContext } = useCoachChat()
@@ -105,30 +158,42 @@ export default function PlayWithCoachPage() {
   const { soundEnabled, volume } = useChessSoundSettings()
   const { playSound } = useChessSound({ enabled: soundEnabled, volume })
 
-  // Derive displayed comment — either explicitly selected or most recent
-  const currentMoveComment = useMemo(() => {
-    if (moveHistory.length === 0 || showInitialGreeting) return null
-    // If a specific move is selected and has a comment, show it
-    if (selectedCommentIndex !== null && coachingComments.has(selectedCommentIndex)) {
-      return coachingComments.get(selectedCommentIndex) || null
-    }
-    // Otherwise show the most recent user move's comment
-    for (let i = moveHistory.length - 1; i >= 0; i--) {
-      const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
-      if (isUserMove && coachingComments.has(i)) {
-        return coachingComments.get(i) || null
+  // Position to display: historical when browsing, live otherwise
+  const displayPosition = useMemo(() => {
+    if (viewIndex === null) return gamePosition
+    const tempGame = new Chess()
+    for (let i = 0; i < viewIndex; i++) {
+      if (i < moveHistory.length) {
+        tempGame.move(moveHistory[i])
       }
     }
-    return null
-  }, [moveHistory.length, coachingComments, playerColor, showInitialGreeting, selectedCommentIndex])
+    return tempGame.fen()
+  }, [viewIndex, gamePosition, moveHistory])
+
+  const isViewingHistory = viewIndex !== null
+
+  // Active half-move index for highlighting (0 = start, N = after Nth move)
+  const activeHalfMoveIndex = useMemo(() => {
+    if (viewIndex !== null) return viewIndex
+    return moveHistory.length
+  }, [viewIndex, moveHistory.length])
 
   // Check if it's engine's turn
-  // Engine plays the opposite color of the player
   const isEngineTurn = useMemo(() => {
-    const currentTurn = game.turn() // 'w' for white, 'b' for black
+    const currentTurn = game.turn()
     const playerTurn = playerColor === 'white' ? 'w' : 'b'
     return currentTurn !== playerTurn
   }, [game, playerColor])
+
+  // Navigate to a specific half-move position
+  const navigateToMove = useCallback((index: number) => {
+    const clamped = Math.max(0, Math.min(moveHistory.length, index))
+    if (clamped === moveHistory.length) {
+      setViewIndex(null)
+    } else {
+      setViewIndex(clamped)
+    }
+  }, [moveHistory.length])
 
   // Handle engine move
   const makeEngineMove = useCallback(async () => {
@@ -146,16 +211,14 @@ export default function PlayWithCoachPage() {
         user?.id
       )
 
-      // Create a new game instance from current position
       const gameCopy = new Chess(currentFen)
       const move = gameCopy.move({
         from: result.move.from,
         to: result.move.to,
-        promotion: 'q', // Always promote to queen for simplicity
+        promotion: 'q',
       })
 
       if (move) {
-        // Play sound for engine move
         const soundType = getMoveSoundSimple(result.move.san)
         playSound(soundType)
 
@@ -163,10 +226,6 @@ export default function PlayWithCoachPage() {
         setGamePosition(gameCopy.fen())
         setMoveHistory(prev => [...prev, result.move.san])
 
-        // No comment preservation needed - currentMoveComment is derived via useMemo
-        // and stays stable through engine move re-renders
-
-        // Check game status
         if (gameCopy.isCheckmate()) {
           setGameStatus('checkmate')
           setShowResultModal(true)
@@ -191,7 +250,6 @@ export default function PlayWithCoachPage() {
   // Trigger engine move when it's engine's turn
   useEffect(() => {
     if (isEngineTurn && gameStatus === 'playing' && !isEngineThinking) {
-      // Small delay to make it feel more natural
       const timer = setTimeout(() => {
         makeEngineMove()
       }, 300)
@@ -201,87 +259,69 @@ export default function PlayWithCoachPage() {
 
   // Handle player move
   const onDrop = (sourceSquare: string, targetSquare: string) => {
-    if (isEngineTurn || gameStatus !== 'playing') return false
+    if (isEngineTurn || gameStatus !== 'playing' || isViewingHistory) return false
 
     try {
       const gameCopy = new Chess(game.fen())
-      const piece = gameCopy.get(sourceSquare)
+      const piece = gameCopy.get(sourceSquare as Square)
 
-      // Handle castling: if king is dragged to rook square, convert to proper castling move
       let actualTargetSquare = targetSquare
       if (piece?.type === 'k') {
         const sourceFile = sourceSquare[0]
         const targetFile = targetSquare[0]
         const rank = sourceSquare[1]
 
-        // Check if this might be a castling attempt (dragging to rook square)
-        // Kingside: king on e-file, trying to move to h-file (rook square)
-        // Queenside: king on e-file, trying to move to a-file (rook square)
         if (sourceFile === 'e') {
           if (targetFile === 'h' && rank === '1') {
-            // White kingside castling attempt - move to g1 instead
             actualTargetSquare = 'g1'
           } else if (targetFile === 'a' && rank === '1') {
-            // White queenside castling attempt - move to c1 instead
             actualTargetSquare = 'c1'
           } else if (targetFile === 'h' && rank === '8') {
-            // Black kingside castling attempt - move to g8 instead
             actualTargetSquare = 'g8'
           } else if (targetFile === 'a' && rank === '8') {
-            // Black queenside castling attempt - move to c8 instead
             actualTargetSquare = 'c8'
           }
         }
 
-        // Also handle if user drags king two squares (proper castling move)
-        // This should work automatically, but we ensure it's handled
-        // e1->g1 (white kingside), e1->c1 (white queenside)
-        // e8->g8 (black kingside), e8->c8 (black queenside)
         if (sourceFile === 'e' && (targetFile === 'g' || targetFile === 'c')) {
-          // This is already a valid castling move, let it through
           actualTargetSquare = targetSquare
         }
       }
 
-      // Check if this is a pawn promotion before attempting the move
       const targetRank = actualTargetSquare[1]
       const isPromotion = piece?.type === 'p' &&
                         ((piece.color === 'w' && targetRank === '8') ||
                          (piece.color === 'b' && targetRank === '1'))
 
-      // Try to make the move - let chess.js determine the move type automatically
-      // Only specify promotion if it's actually a pawn promotion
       const move = gameCopy.move({
         from: sourceSquare,
         to: actualTargetSquare,
-        ...(isPromotion && { promotion: 'q' }), // Only add promotion for pawn promotions
+        ...(isPromotion && { promotion: 'q' }),
       })
 
       if (move) {
-        // Store FEN before move for analysis
         const fenBefore = game.fen()
-        const halfMoveIndex = moveHistory.length // Current length = index of the move about to be added
+        const halfMoveIndex = moveHistory.length
 
-        // Play sound for player move
         const soundType = getMoveSoundSimple(move.san)
         playSound(soundType)
 
-        // Update game state first
+        // Return to live position
+        setViewIndex(null)
+
         setGame(gameCopy)
         setGamePosition(gameCopy.fen())
         setMoveHistory(prev => [...prev, move.san])
 
-        // Hide initial greeting once player makes first move
         if (showInitialGreeting) {
           setShowInitialGreeting(false)
         }
 
-        // Store FEN for on-demand analysis later
         moveFenHistoryRef.current.set(halfMoveIndex, fenBefore)
-        // Clear selected comment so sidebar shows "Ask Coach" prompt for new move
-        setSelectedCommentIndex(null)
 
-        // Check game status
+        const moveNumber = Math.floor(halfMoveIndex / 2) + 1
+        analyzeMoveForCoaching(fenBefore, move, moveNumber, halfMoveIndex)
+
         if (gameCopy.isCheckmate()) {
           setGameStatus('checkmate')
           setShowResultModal(true)
@@ -293,7 +333,6 @@ export default function PlayWithCoachPage() {
           setShowResultModal(true)
         }
 
-        // The useEffect will automatically trigger engine move when isEngineTurn becomes true
         return true
       }
       return false
@@ -312,29 +351,24 @@ export default function PlayWithCoachPage() {
     setMoveHistory([])
     setError(null)
     setShowResultModal(false)
-    setAnalyzedGameId(null)
     setCoachingComments(new Map())
-    setIsLoadingComments(false)
     setAnalyzingMoveIndex(null)
     analyzingMoveRef.current = null
     moveFenHistoryRef.current = new Map()
-    setSelectedCommentIndex(null)
     setShowInitialGreeting(true)
+    setViewIndex(null)
   }
 
   // Determine if player won
   const playerWon = useMemo(() => {
     if (gameStatus !== 'checkmate') return false
-    // If it's checkmate, the player won if the current turn is the engine's color
-    const currentTurn = game.turn() // 'w' or 'b'
+    const currentTurn = game.turn()
     const engineColor = playerColor === 'white' ? 'b' : 'w'
-    // If it's the engine's turn now, that means the engine is in checkmate, so player won
     return currentTurn === engineColor
   }, [gameStatus, game, playerColor])
 
-  // Helper to parse UCI move (matches GameAnalysisPage implementation)
+  // Helper to parse UCI move
   const parseUciMove = (uci: string) => {
-    // Validate UCI format
     if (!uci || typeof uci !== 'string' || uci.length < 4) {
       throw new Error(`Invalid UCI format: ${uci}`)
     }
@@ -343,7 +377,6 @@ export default function PlayWithCoachPage() {
     const to = uci.slice(2, 4)
     const promotion = uci.length > 4 ? uci.slice(4) : undefined
 
-    // Validate square format (should be like 'e2', 'a1', etc.)
     const squareRegex = /^[a-h][1-8]$/
     if (!squareRegex.test(from) || !squareRegex.test(to)) {
       throw new Error(`Invalid square format in UCI: ${uci}`)
@@ -356,21 +389,17 @@ export default function PlayWithCoachPage() {
   const analyzeMoveForCoaching = useCallback(async (fenBefore: string, move: any, moveNumber: number, halfMoveIndex: number) => {
     if (!user?.id) return
 
-    // Check if we're already analyzing this exact move
     if (analyzingMoveRef.current?.moveNumber === moveNumber &&
         analyzingMoveRef.current?.san === move.san) {
-      return // Already analyzing this move
+      return
     }
 
-    // Mark that we're analyzing this specific move index
     analyzingMoveRef.current = { moveNumber, san: move.san }
     setAnalyzingMoveIndex(halfMoveIndex)
 
     try {
-      // Convert move to UCI format
       const moveUci = `${move.from}${move.to}${move.promotion || ''}`
 
-      // Call the backend to analyze this single move
       const baseUrl = config.getApi().baseUrl
       const response = await fetch(`${baseUrl}/api/v1/analyze`, {
         method: 'POST',
@@ -383,22 +412,20 @@ export default function PlayWithCoachPage() {
           analysis_type: 'deep',
           fen: fenBefore,
           move: moveUci,
-          depth: 8, // Faster analysis for real-time feedback
-          fullmove_number: moveNumber, // Required for AI coaching comments
-          is_user_move: true, // This is always a user move in coaching context
+          depth: 8,
+          fullmove_number: moveNumber,
+          is_user_move: true,
         }),
       })
 
       if (response.ok) {
         const data = await response.json()
 
-        // Extract move analysis using unified response parser
         const moveAnalysis = extractMoveAnalysis(data)
 
         if (moveAnalysis) {
           if (moveAnalysis.coaching_comment && !isRawEngineOutput(moveAnalysis.coaching_comment)) {
 
-            // Create ProcessedMove-like object for display
             const processedMove: ProcessedMove = {
               index: moveNumber * 2 - 2,
               ply: moveNumber * 2 - 1,
@@ -422,7 +449,7 @@ export default function PlayWithCoachPage() {
                              moveAnalysis.is_blunder ? 'blunder' : 'acceptable',
               explanation: moveAnalysis.explanation || '',
               fenBefore: fenBefore,
-              fenAfter: '', // Will be set after analysis
+              fenAfter: '',
               coachingComment: moveAnalysis.coaching_comment,
               whatWentRight: moveAnalysis.what_went_right,
               whatWentWrong: moveAnalysis.what_went_wrong,
@@ -445,24 +472,19 @@ export default function PlayWithCoachPage() {
               processedMove,
             }
 
-            // Save to comments map keyed by half-move index
             setCoachingComments(prev => {
               const newMap = new Map(prev)
               newMap.set(halfMoveIndex, moveComment)
               return newMap
             })
-            // Auto-select this comment for display
-            setSelectedCommentIndex(halfMoveIndex)
           }
         }
       } else {
-        console.error('[TAL_COACH] ❌ API response not OK:', response.status, response.statusText)
+        console.error('[TAL_COACH] API response not OK:', response.status, response.statusText)
       }
     } catch (err) {
-      console.error('[TAL_COACH] ❌ Error analyzing move for coaching:', err)
-      // Don't show error to user - just silently fail
+      console.error('[TAL_COACH] Error analyzing move for coaching:', err)
     } finally {
-      // Only clear analyzing state if this is still the current move being analyzed
       if (analyzingMoveRef.current?.moveNumber === moveNumber &&
           analyzingMoveRef.current?.san === move.san) {
         setAnalyzingMoveIndex(null)
@@ -475,11 +497,9 @@ export default function PlayWithCoachPage() {
   const fetchCoachingComments = useCallback(async (gameId: string) => {
     if (!user?.id) return
 
-    setIsLoadingComments(true)
     try {
-      // Poll for analysis to be ready with AI comments
       let attempts = 0
-      const maxAttempts = 20 // Wait up to 100 seconds (5s intervals)
+      const maxAttempts = 20
       let analysisData = null
 
       while (attempts < maxAttempts) {
@@ -492,14 +512,12 @@ export default function PlayWithCoachPage() {
                 !isRawEngineOutput(move.coaching_comment)
             )
 
-            // If we have comments, process them
             if (movesWithComments.length > 0 || attempts >= 5) {
               analysisData = result
               break
             }
           }
 
-          // Wait before next attempt
           await new Promise(resolve => setTimeout(resolve, 5000))
           attempts++
         } catch (err) {
@@ -511,11 +529,9 @@ export default function PlayWithCoachPage() {
       }
 
       if (analysisData?.analysis?.moves_analysis) {
-        // Process moves and create a map keyed by half-move index
         const commentsMap = new Map<number, MoveWithComment>()
         const moves = analysisData.analysis.moves_analysis
 
-        // Reconstruct move history with coaching data
         const chess = new Chess()
         moves.forEach((move: any, idx: number) => {
           try {
@@ -525,7 +541,6 @@ export default function PlayWithCoachPage() {
             let moveResult = null
             let san = move.move_san || ''
 
-            // Try to apply move using UCI first
             try {
               const { from, to, promotion } = parseUciMove(move.move)
               moveResult = chess.move({ from, to, promotion })
@@ -533,7 +548,6 @@ export default function PlayWithCoachPage() {
                 san = moveResult.san
               }
             } catch (uciErr) {
-              // If UCI parsing fails, try using SAN directly
               if (move.move_san) {
                 try {
                   moveResult = chess.move(move.move_san)
@@ -545,7 +559,6 @@ export default function PlayWithCoachPage() {
             }
 
             if (moveResult && san) {
-              // Create ProcessedMove-like object for EnhancedMoveCoaching
               const processedMove: ProcessedMove = {
                 index: idx,
                 ply: idx + 1,
@@ -584,7 +597,6 @@ export default function PlayWithCoachPage() {
                 gamePhase: move.game_phase,
               }
 
-              // Store by half-move index for consistent lookup
               if (isUserMove && move.coaching_comment) {
                 commentsMap.set(idx, {
                   moveNumber,
@@ -605,8 +617,6 @@ export default function PlayWithCoachPage() {
       }
     } catch (err) {
       console.error('Error fetching coaching comments:', err)
-    } finally {
-      setIsLoadingComments(false)
     }
   }, [user?.id, playerColor])
 
@@ -622,14 +632,11 @@ export default function PlayWithCoachPage() {
     setShowResultModal(false)
 
     try {
-      // Rebuild the game from move history to ensure we have all moves
-      // This is necessary because the game state might have been reset
       const fullGame = new Chess()
 
       console.log('[REVIEW] Move history state:', moveHistory)
       console.log('[REVIEW] Rebuilding game from', moveHistory.length, 'moves')
 
-      // Apply all moves from history to reconstruct the complete game
       let reconstructionFailed = false
       for (let i = 0; i < moveHistory.length; i++) {
         try {
@@ -652,7 +659,6 @@ export default function PlayWithCoachPage() {
         return
       }
 
-      // Get PGN from the reconstructed game - it will include all moves
       const pgn = fullGame.pgn({
         max_width: 80,
         newline: '\n'
@@ -662,13 +668,11 @@ export default function PlayWithCoachPage() {
       console.log('[REVIEW] Generated PGN:', pgn)
       console.log('[REVIEW] Full game has', fullGame.history().length, 'moves')
 
-      // Add game headers
       const playerName = user.email?.split('@')[0] || 'Player'
       const engineName = 'Tal Coach'
       const whitePlayer = playerColor === 'white' ? playerName : engineName
       const blackPlayer = playerColor === 'black' ? playerName : engineName
 
-      // Determine result
       let result = '*'
       if (gameStatus === 'checkmate') {
         result = playerWon ? (playerColor === 'white' ? '1-0' : '0-1') : (playerColor === 'white' ? '0-1' : '1-0')
@@ -687,10 +691,8 @@ export default function PlayWithCoachPage() {
 
 ${pgn} ${result}`
 
-      // Generate a unique game ID for this coach game
       const gameId = `coach-${Date.now()}-${Math.random().toString(36).substring(7)}`
 
-      // Parse PGN to extract game info
       const pgnLines = fullPgn.split('\n')
       const headers: Record<string, string> = {}
       pgnLines.forEach(line => {
@@ -700,7 +702,6 @@ ${pgn} ${result}`
         }
       })
 
-      // Determine user's color and result
       const userIsWhite = headers.White === playerName
       const color = userIsWhite ? 'white' : 'black'
       let userResult: 'win' | 'loss' | 'draw' = 'draw'
@@ -710,14 +711,11 @@ ${pgn} ${result}`
         userResult = userIsWhite ? 'loss' : 'win'
       }
 
-      // Count moves from PGN
       const moveText = fullPgn.split('\n\n')[1] || ''
       const moveCount = moveText.trim().split(/\s+/).filter(m => m && !m.match(/^\d+\./)).length
 
-      // Validate and parse date from headers
       const parseDate = (dateStr: string | undefined): string => {
         if (!dateStr || dateStr.includes('?') || dateStr.trim() === '') {
-          // Coach games always have valid dates, so this shouldn't happen
           console.warn(`[REVIEW] Invalid date string: "${dateStr}", using current time`)
           return new Date().toISOString()
         }
@@ -744,7 +742,6 @@ ${pgn} ${result}`
 
       const playedAt = parseDate(headers.Date)
 
-      // Create game record in database first (required for analysis to save)
       const { error: gameError } = await supabase
         .from('games')
         .upsert({
@@ -771,7 +768,6 @@ ${pgn} ${result}`
         throw new Error(`Failed to create game record: ${gameError.message}`)
       }
 
-      // Save PGN to database (only if game creation succeeded)
       const { error: pgnError } = await supabase
         .from('games_pgn')
         .upsert({
@@ -788,34 +784,27 @@ ${pgn} ${result}`
         throw new Error(`Failed to save PGN: ${pgnError.message}`)
       }
 
-      // Analyze the game with a specific game_id so it can be saved
       const analysisResponse = await UnifiedAnalysisService.analyze({
         user_id: user.id,
         platform: 'lichess',
-        analysis_type: 'deep', // Use deep analysis to get coaching comments
+        analysis_type: 'deep',
         pgn: fullPgn,
         depth: 10,
         game_id: gameId,
         provider_game_id: gameId,
       })
 
-      // Store the game ID for fetching comments
-      setAnalyzedGameId(gameId)
-
-      // Check if analysis was successful
       if (analysisResponse.analysis_id || analysisResponse.success !== false) {
-        // Navigate to analysis page to see full game review
         const analysisId = analysisResponse.analysis_id || gameId
         console.log(`[REVIEW] Navigating to analysis page: /analysis/lichess/${user.id}/${analysisId}`)
         navigate(`/analysis/lichess/${user.id}/${analysisId}`)
       } else {
-        // If analysis failed, show error
         throw new Error(analysisResponse.message || 'Failed to analyze game')
       }
     } catch (err) {
       console.error('Error reviewing game:', err)
       setError(err instanceof Error ? err.message : 'Failed to analyze game')
-      setShowResultModal(true) // Reopen modal to show error
+      setShowResultModal(true)
     } finally {
       setIsAnalyzing(false)
     }
@@ -835,49 +824,113 @@ ${pgn} ${result}`
     setAnalyzingMoveIndex(null)
     analyzingMoveRef.current = null
     moveFenHistoryRef.current = new Map()
-    setSelectedCommentIndex(null)
     setCoachingComments(new Map())
+    setViewIndex(null)
   }
 
   // Request coach feedback for a specific half-move index
   const requestCoachFeedback = useCallback((halfMoveIndex: number) => {
-    if (analyzingMoveIndex !== null) return // Already analyzing
+    if (analyzingMoveIndex !== null) return
     const fenBefore = moveFenHistoryRef.current.get(halfMoveIndex)
     if (!fenBefore) return
     const san = moveHistory[halfMoveIndex]
     if (!san) return
     const moveNumber = Math.floor(halfMoveIndex / 2) + 1
-    // Reconstruct the move object from FEN + SAN so analyzeMoveForCoaching can build UCI
     const tempGame = new Chess(fenBefore)
     const moveObj = tempGame.move(san)
     if (!moveObj) return
-    setSelectedCommentIndex(halfMoveIndex)
     analyzeMoveForCoaching(fenBefore, moveObj, moveNumber, halfMoveIndex)
   }, [analyzingMoveIndex, moveHistory, analyzeMoveForCoaching])
 
-  // Find the most recent user move index that has no comment yet (for the prominent button)
-  const lastUncommentedUserMoveIndex = useMemo(() => {
-    for (let i = moveHistory.length - 1; i >= 0; i--) {
-      const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
-      if (isUserMove && !coachingComments.has(i)) return i
-    }
-    return null
-  }, [moveHistory.length, playerColor, coachingComments])
-
   // Publish position context to floating chat widget
   useEffect(() => {
+    let lastUserMove: string | undefined
+    let lastOpponentMove: string | undefined
+    let moveClassification: string | undefined
+    let evaluation: string | undefined
+    for (let i = moveHistory.length - 1; i >= 0; i--) {
+      const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
+      if (isUserMove && !lastUserMove) {
+        lastUserMove = moveHistory[i]
+        if (coachingComments.has(i)) {
+          const comment = coachingComments.get(i)
+          moveClassification = comment?.processedMove?.classification
+          evaluation = comment?.processedMove?.displayEvaluation
+        }
+      }
+      if (!isUserMove && !lastOpponentMove) {
+        lastOpponentMove = moveHistory[i]
+      }
+      if (lastUserMove && lastOpponentMove) break
+    }
+
     const ctx: ChatPositionContext = {
       fen: gamePosition,
       moveHistory,
       playerColor,
       moveNumber: Math.floor(moveHistory.length / 2) + 1,
       lastMove: moveHistory[moveHistory.length - 1],
+      lastUserMove,
+      lastOpponentMove,
       gamePhase: moveHistory.length < 10 ? 'opening' : moveHistory.length > 40 ? 'endgame' : 'middlegame',
       contextType: 'play',
+      moveClassification,
+      evaluation,
     }
     setPositionContext(ctx)
     return () => setPositionContext(null)
-  }, [gamePosition, moveHistory, playerColor, setPositionContext])
+  }, [gamePosition, moveHistory, playerColor, coachingComments, setPositionContext])
+
+  // Keyboard navigation for move browsing
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return
+      }
+
+      const currentPos = viewIndex ?? moveHistory.length
+
+      switch (event.key) {
+        case 'ArrowLeft':
+          event.preventDefault()
+          navigateToMove(currentPos - 1)
+          break
+        case 'ArrowRight':
+          event.preventDefault()
+          navigateToMove(currentPos + 1)
+          break
+        case 'Home':
+          event.preventDefault()
+          navigateToMove(0)
+          break
+        case 'End':
+          event.preventDefault()
+          navigateToMove(moveHistory.length)
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [viewIndex, moveHistory.length, navigateToMove])
+
+  // Auto-scroll move list to active move
+  useEffect(() => {
+    const container = moveListRef.current
+    if (!container || moveHistory.length === 0) return
+
+    const rowIndex = activeHalfMoveIndex > 0 ? Math.floor((activeHalfMoveIndex - 1) / 2) : 0
+    const rows = container.querySelectorAll('tbody tr')
+    const targetRow = rows[rowIndex] as HTMLElement
+
+    if (targetRow) {
+      const containerRect = container.getBoundingClientRect()
+      const targetRect = targetRow.getBoundingClientRect()
+      const relativeTop = targetRect.top - containerRect.top + container.scrollTop
+      const scrollToPosition = relativeTop - container.clientHeight / 2 + targetRect.height / 2
+      container.scrollTo({ top: Math.max(0, scrollToPosition), behavior: 'smooth' })
+    }
+  }, [activeHalfMoveIndex, moveHistory.length])
 
   // Get status message
   const getStatusMessage = () => {
@@ -885,284 +938,268 @@ ${pgn} ${result}`
       const winner = game.turn() === 'w' ? 'Black' : 'White'
       return `${winner} wins by checkmate!`
     }
-    if (gameStatus === 'stalemate') {
-      return 'Draw by stalemate'
-    }
-    if (gameStatus === 'draw') {
-      return 'Draw'
-    }
-    if (isEngineThinking) {
-      return 'Tal Coach is thinking...'
-    }
-    if (isEngineTurn) {
-      return "Waiting for Tal Coach's move..."
-    }
+    if (gameStatus === 'stalemate') return 'Draw by stalemate'
+    if (gameStatus === 'draw') return 'Draw'
+    if (isViewingHistory) return `Move ${viewIndex} of ${moveHistory.length}`
+    if (isEngineThinking) return 'Tal is thinking...'
+    if (isEngineTurn) return "Tal's turn..."
     return 'Your turn'
   }
 
-  const boardWidth = Math.min(window.innerWidth - 64, 600)
+  // Responsive board width
+  const boardWidth = useMemo(() => {
+    if (typeof window === 'undefined') return 480
+    const isDesktop = window.innerWidth >= 1024
+    if (isDesktop) {
+      return Math.min(window.innerWidth - 420, 560)
+    }
+    return Math.min(window.innerWidth - 32, 560)
+  }, [])
+
+  const engineColor = playerColor === 'white' ? 'black' : 'white'
+
+  // Navigation button styles
+  const navBtnClass = 'min-h-[36px] min-w-[36px] rounded-full border border-white/10 bg-white/10 px-2.5 py-1.5 transition hover:border-white/30 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 text-sm font-mono'
 
   return (
     <PremiumGate>
-      <div className="min-h-screen bg-slate-950 p-4 md:p-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="mb-6">
+      <div className="min-h-screen bg-slate-950 p-4 md:p-6">
+        <div className="max-w-[1200px] mx-auto">
+          {/* Compact Header */}
+          <div className="mb-4 flex items-center gap-3">
             <button
               onClick={() => navigate('/coach')}
-              className="mb-4 text-slate-400 hover:text-slate-300 transition-colors flex items-center gap-2"
+              className="text-slate-400 hover:text-slate-300 transition-colors text-sm"
             >
-              ← Back to Coach Dashboard
+              ← Coach
             </button>
-            <h1 className="text-4xl font-bold text-white mb-2">Play with Tal Coach</h1>
-            <p className="text-slate-400">Practice against an AI coach that adapts to your skill level</p>
+            <span className="text-slate-600">|</span>
+            <h1 className="text-lg font-semibold text-white">Play with Coach Tal</h1>
+            {error && (
+              <span className="ml-auto text-red-400 text-xs">{error}</span>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Chess Board */}
-            <div className="lg:col-span-2">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-                {/* Status Bar */}
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="text-white font-semibold">{getStatusMessage()}</div>
-                  {error && (
-                    <div className="text-red-400 text-sm">{error}</div>
-                  )}
-                </div>
+          {/* Main Layout */}
+          <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start">
 
-                {/* Board */}
-                <div className="flex justify-center">
-                  <div style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
-                    <Chessboard
-                      id="play-with-coach-board"
-                      position={gamePosition}
-                      onPieceDrop={onDrop}
-                      arePiecesDraggable={!isEngineTurn && gameStatus === 'playing'}
-                      boardOrientation={playerColor}
-                      boardWidth={boardWidth}
-                      showBoardNotation={true}
-                      {...getDarkChessBoardTheme('default')}
-                    />
-                  </div>
-                </div>
-
-                {/* Controls */}
-                <div className="mt-6 flex flex-wrap gap-3 justify-center">
-                  <button
-                    onClick={resetGame}
-                    className="px-4 py-2 rounded-lg border border-slate-400/30 bg-slate-500/10 text-slate-300 hover:bg-slate-500/20 transition-colors"
-                  >
-                    New Game
-                  </button>
-                  <button
-                    onClick={changeColor}
-                    className="px-4 py-2 rounded-lg border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors"
-                  >
-                    Play as {playerColor === 'white' ? 'Black' : 'White'}
-                  </button>
-                  {gameStatus !== 'playing' && (
-                    <button
-                      onClick={() => navigate('/coach')}
-                      className="px-4 py-2 rounded-lg border border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 transition-colors"
-                    >
-                      Back to Dashboard
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Sidebar */}
-            <div className="space-y-6">
-              {/* Initial Tal Coach Greeting */}
-              {showInitialGreeting && moveHistory.length === 0 && (
-                <div className="rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-6">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex-shrink-0">
-                      <TalCoachIcon size={40} />
-                    </div>
-                    <h2 className="text-xl font-bold text-sky-300">Coach Tal</h2>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400">
-                      <p className="text-slate-200 leading-relaxed text-base">
-                        Welcome to the board! The pieces are ready, and so are you. I'm Tal Coach, and I'm here to challenge you and help you grow. Every move is a learning opportunity, and I'll be with you every step of the way. Let's see what magic you create today!
-                      </p>
-                    </div>
-                    <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-4">
-                      <h4 className="text-emerald-300 font-semibold mb-2 flex items-center gap-2">
-                        <span className="text-lg">⚔️</span>
-                        Ready to Play?
-                      </h4>
-                      <p className="text-emerald-100 text-sm leading-relaxed">
-                        Make your first move! After any move, click "Ask Coach Tal" to get my analysis and feedback. Whether it's brilliant or needs improvement, we'll learn together!
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Tal Coach Live Commentary */}
-              {!showInitialGreeting && currentMoveComment?.processedMove && (
-                <div className="rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-6">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex-shrink-0">
-                      <TalCoachIcon size={40} />
-                    </div>
-                    <h2 className="text-xl font-bold text-sky-300">Coach Tal</h2>
-                  </div>
-                  <EnhancedMoveCoaching
-                    move={currentMoveComment.processedMove}
-                    className="text-sm"
-                  />
-                </div>
-              )}
-              {/* Show "thinking" when analyzing a requested move */}
-              {!showInitialGreeting && analyzingMoveIndex !== null && (
-                <div className="rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-6">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0 animate-pulse">
-                      <TalCoachIcon size={40} />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-bold text-sky-300">Tal Coach is thinking...</h2>
-                      <p className="text-sm text-slate-400 mt-1">Analyzing your move...</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {/* Ask Coach button — shown when there's a user move without a comment */}
-              {!showInitialGreeting && analyzingMoveIndex === null && lastUncommentedUserMoveIndex !== null && (
-                <button
-                  onClick={() => requestCoachFeedback(lastUncommentedUserMoveIndex)}
-                  className="w-full rounded-3xl border border-sky-400/30 bg-gradient-to-br from-sky-900/20 to-blue-900/20 p-5 hover:from-sky-900/30 hover:to-blue-900/30 transition-all group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0">
-                      <TalCoachIcon size={40} />
-                    </div>
-                    <div className="text-left">
-                      <h2 className="text-lg font-bold text-sky-300 group-hover:text-sky-200 transition-colors">Ask Coach Tal</h2>
-                      <p className="text-sm text-slate-400">Get feedback on your last move</p>
-                    </div>
-                  </div>
-                </button>
-              )}
-
-              {/* Game Info */}
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-                <h2 className="text-xl font-bold text-white mb-4">Game Info</h2>
-                <div className="space-y-3">
-                  <div>
-                    <div className="text-sm text-slate-400 mb-1">Status</div>
-                    <div className="text-white font-semibold capitalize">{gameStatus}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-slate-400 mb-1">You are playing as</div>
-                    <div className="text-white font-semibold capitalize">{playerColor}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-slate-400 mb-1">Skill Level</div>
+            {/* LEFT: Board Column */}
+            <div className="flex-shrink-0 w-full lg:w-auto">
+              {/* Opponent Bar */}
+              <div className="flex items-center gap-2.5 mb-2 px-1">
+                <div className={`w-3.5 h-3.5 rounded-sm border border-slate-600 ${
+                  engineColor === 'white' ? 'bg-white' : 'bg-slate-800'
+                }`} />
+                <TalCoachIcon size={24} />
+                <span className="text-white font-medium text-sm">Coach Tal</span>
+                {moveHistory.length > 0 ? (
+                  <span className="text-xs text-slate-500 ml-auto">Lvl {skillLevel}/20</span>
+                ) : (
+                  <div className="ml-auto flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Lvl</span>
                     <input
                       type="range"
                       min="0"
                       max="20"
                       value={skillLevel}
                       onChange={(e) => setSkillLevel(Number(e.target.value))}
-                      className="w-full"
-                      disabled={gameStatus !== 'playing' || moveHistory.length > 0}
+                      className="w-20 h-1 accent-sky-400 cursor-pointer"
                     />
-                    <div className="text-white text-sm mt-1">{skillLevel}/20</div>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                {moveHistory.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-white/10 space-y-2">
-                    <button
-                      onClick={reviewGame}
-                      disabled={isAnalyzing}
-                      className="w-full px-4 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
-                    >
-                      {isAnalyzing ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <span className="animate-spin">⏳</span>
-                          Analyzing...
-                        </span>
-                      ) : (
-                        <span className="flex items-center justify-center gap-2">
-                          <span>📊</span>
-                          Review Game
-                        </span>
-                      )}
-                    </button>
-                    {gameStatus !== 'playing' && (
-                      <button
-                        onClick={resetGame}
-                        className="w-full px-4 py-3 rounded-lg border border-white/20 bg-white/5 hover:bg-white/10 text-white font-semibold transition-all"
-                      >
-                        <span className="flex items-center justify-center gap-2">
-                          <span>🔄</span>
-                          New Game
-                        </span>
-                      </button>
-                    )}
+                    <span className="text-xs text-white font-medium w-5 text-right">{skillLevel}</span>
                   </div>
                 )}
               </div>
 
-              {/* Move History with Coaching Comments */}
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-                <h2 className="text-xl font-bold text-white mb-4">Move History</h2>
-                {moveHistory.length === 0 ? (
-                  <p className="text-slate-400 text-sm">No moves yet</p>
-                ) : (
-                  <div className="space-y-4 max-h-[600px] overflow-y-auto">
-                    {moveHistory.map((move, index) => {
-                      const moveNumber = Math.floor(index / 2) + 1
-                      const isUserMove = index % 2 === (playerColor === 'white' ? 0 : 1)
-                      const hasComment = isUserMove && coachingComments.has(index)
-                      const isAnalyzingThis = analyzingMoveIndex === index
-                      const hasFen = moveFenHistoryRef.current.has(index)
-                      const isSelected = selectedCommentIndex === index
+              {/* Chess Board */}
+              <div className="flex justify-center">
+                <div style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
+                  <Chessboard
+                    id="play-with-coach-board"
+                    position={displayPosition}
+                    onPieceDrop={onDrop}
+                    arePiecesDraggable={!isEngineTurn && gameStatus === 'playing' && !isViewingHistory}
+                    boardOrientation={playerColor}
+                    boardWidth={boardWidth}
+                    showBoardNotation={true}
+                    {...getDarkChessBoardTheme('default')}
+                  />
+                </div>
+              </div>
 
-                      return (
-                        <div key={index} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-sm font-mono min-w-[60px] ${isSelected ? 'text-sky-300' : 'text-slate-300'}`}>
-                              {moveNumber}.{index % 2 === 0 ? '' : '..'} {move}
-                            </span>
-                            {isUserMove && (
-                              <span className="text-xs text-slate-500">(You)</span>
-                            )}
-                            {isUserMove && hasComment && (
-                              <button
-                                onClick={() => setSelectedCommentIndex(index)}
-                                className={`text-xs px-1.5 py-0.5 rounded transition-colors ${isSelected ? 'text-sky-300 bg-sky-500/20' : 'text-sky-400/60 hover:text-sky-300 hover:bg-sky-500/10'}`}
-                                title="View coach feedback"
-                              >
-                                Tal
-                              </button>
-                            )}
-                            {isUserMove && !hasComment && hasFen && !isAnalyzingThis && (
-                              <button
-                                onClick={() => requestCoachFeedback(index)}
-                                disabled={analyzingMoveIndex !== null}
-                                className="text-xs px-1.5 py-0.5 rounded text-slate-500 hover:text-sky-300 hover:bg-sky-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                title="Ask Coach Tal about this move"
-                              >
-                                Ask
-                              </button>
-                            )}
-                            {isAnalyzingThis && (
-                              <span className="text-xs text-sky-400 animate-pulse">...</span>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
+              {/* Player Bar + Navigation */}
+              <div className="flex items-center gap-2.5 mt-2 px-1">
+                {/* Player identity */}
+                <div className={`w-3.5 h-3.5 rounded-sm border border-slate-600 ${
+                  playerColor === 'white' ? 'bg-white' : 'bg-slate-800'
+                }`} />
+                <span className="text-white font-medium text-sm">You</span>
+                <span className="text-xs text-slate-500">
+                  {getStatusMessage()}
+                </span>
+
+                {/* Navigation buttons */}
+                <div className="ml-auto flex items-center gap-1">
+                  <button
+                    onClick={() => navigateToMove(0)}
+                    disabled={moveHistory.length === 0}
+                    className={navBtnClass}
+                    aria-label="First position"
+                  >
+                    {'|<'}
+                  </button>
+                  <button
+                    onClick={() => navigateToMove((viewIndex ?? moveHistory.length) - 1)}
+                    disabled={activeHalfMoveIndex === 0}
+                    className={navBtnClass}
+                    aria-label="Previous move"
+                  >
+                    {'<'}
+                  </button>
+                  <button
+                    onClick={() => navigateToMove((viewIndex ?? moveHistory.length) + 1)}
+                    disabled={activeHalfMoveIndex >= moveHistory.length}
+                    className={navBtnClass}
+                    aria-label="Next move"
+                  >
+                    {'>'}
+                  </button>
+                  <button
+                    onClick={() => navigateToMove(moveHistory.length)}
+                    disabled={viewIndex === null}
+                    className={navBtnClass}
+                    aria-label="Current position"
+                  >
+                    {'>|'}
+                  </button>
+                </div>
+              </div>
+
+              {/* History viewing indicator */}
+              {isViewingHistory && (
+                <div className="mt-2 px-1">
+                  <button
+                    onClick={() => setViewIndex(null)}
+                    className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                  >
+                    ← Return to live position
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT: Sidebar */}
+            <div className="flex-1 min-w-0 lg:max-w-[340px] w-full">
+              {/* Compact Welcome (pre-game only) */}
+              {showInitialGreeting && moveHistory.length === 0 && (
+                <div className="flex items-start gap-2.5 rounded-xl border border-sky-400/20 bg-sky-900/10 px-4 py-3 mb-3">
+                  <TalCoachIcon size={24} className="flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-slate-300 leading-relaxed">
+                    Make your first move to begin! Adjust my skill level above, then use the chat bubble to ask me for advice anytime.
+                  </p>
+                </div>
+              )}
+
+              {/* Two-Column Move History */}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">Moves</h3>
+                {moveHistory.length === 0 ? (
+                  <p className="text-slate-600 text-xs py-4 text-center">No moves yet</p>
+                ) : (
+                  <div ref={moveListRef} className="max-h-[350px] overflow-y-auto pr-1">
+                    <table className="w-full table-fixed text-left">
+                      <thead className="sticky top-0 bg-slate-950/95 backdrop-blur z-10">
+                        <tr className="text-[10px] uppercase text-slate-500 tracking-wider">
+                          <th className="w-8 py-1.5 px-1">#</th>
+                          <th className="py-1.5 px-1">White</th>
+                          <th className="py-1.5 px-1">Black</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.from({ length: Math.ceil(moveHistory.length / 2) }).map((_, row) => {
+                          const whiteIdx = row * 2
+                          const blackIdx = row * 2 + 1
+                          const whiteSan = moveHistory[whiteIdx]
+                          const blackSan = moveHistory[blackIdx]
+
+                          return (
+                            <tr key={row} className="border-b border-white/5 last:border-b-0">
+                              <td className="py-1 px-1 text-xs text-slate-600 font-medium">{row + 1}.</td>
+                              <td className="py-1 px-1">
+                                {whiteSan && (
+                                  <MoveCell
+                                    san={whiteSan}
+                                    halfMoveIndex={whiteIdx}
+                                    isActive={activeHalfMoveIndex === whiteIdx + 1}
+                                    isUserMove={whiteIdx % 2 === (playerColor === 'white' ? 0 : 1)}
+                                    hasComment={coachingComments.has(whiteIdx)}
+                                    isAnalyzing={analyzingMoveIndex === whiteIdx}
+                                    classification={coachingComments.get(whiteIdx)?.processedMove?.classification}
+                                    onNavigate={() => navigateToMove(whiteIdx + 1)}
+                                    onRequestFeedback={() => requestCoachFeedback(whiteIdx)}
+                                    canRequestFeedback={
+                                      analyzingMoveIndex === null &&
+                                      !coachingComments.has(whiteIdx) &&
+                                      moveFenHistoryRef.current.has(whiteIdx)
+                                    }
+                                  />
+                                )}
+                              </td>
+                              <td className="py-1 px-1">
+                                {blackSan ? (
+                                  <MoveCell
+                                    san={blackSan}
+                                    halfMoveIndex={blackIdx}
+                                    isActive={activeHalfMoveIndex === blackIdx + 1}
+                                    isUserMove={blackIdx % 2 === (playerColor === 'white' ? 0 : 1)}
+                                    hasComment={coachingComments.has(blackIdx)}
+                                    isAnalyzing={analyzingMoveIndex === blackIdx}
+                                    classification={coachingComments.get(blackIdx)?.processedMove?.classification}
+                                    onNavigate={() => navigateToMove(blackIdx + 1)}
+                                    onRequestFeedback={() => requestCoachFeedback(blackIdx)}
+                                    canRequestFeedback={
+                                      analyzingMoveIndex === null &&
+                                      !coachingComments.has(blackIdx) &&
+                                      moveFenHistoryRef.current.has(blackIdx)
+                                    }
+                                  />
+                                ) : (
+                                  <span className="text-slate-800 text-xs px-2">--</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
+              </div>
+
+              {/* Game Controls */}
+              <div className="mt-3 space-y-2">
+                {moveHistory.length > 0 && (
+                  <button
+                    onClick={reviewGame}
+                    disabled={isAnalyzing}
+                    className="w-full px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                  >
+                    {isAnalyzing ? 'Analyzing...' : 'Review Game'}
+                  </button>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={resetGame}
+                    className="flex-1 px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 text-sm transition-colors"
+                  >
+                    New Game
+                  </button>
+                  <button
+                    onClick={changeColor}
+                    className="flex-1 px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 text-sm transition-colors"
+                  >
+                    Flip Color
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -1042,6 +1042,12 @@ class UnlinkChessAccountRequest(BaseModel):
         return v
 
 
+class CreatePlayerLinkRequest(BaseModel):
+    """Request model for creating a cross-platform player link."""
+    chess_com_username: str = Field(..., min_length=1, max_length=100)
+    lichess_username: str = Field(..., min_length=1, max_length=100)
+
+
 class SetPrimaryPlatformRequest(BaseModel):
     """Request model for setting the primary chess platform."""
     platform: str = Field(..., description="Platform: 'chess.com' or 'lichess'")
@@ -10668,6 +10674,25 @@ async def link_chess_account(
 
         logger.info(f"Linked {platform} account '{username}' for user {user_id}, claimed {games_claimed} games")
 
+        # Auto-populate player_platform_links if user now has both accounts linked
+        try:
+            other_column = 'lichess_username' if platform == 'chess.com' else 'chess_com_username'
+            other_username = current_user.get(other_column)
+            if other_username:
+                chess_com = username if platform == 'chess.com' else other_username
+                lichess = username if platform == 'lichess' else other_username
+                await asyncio.to_thread(
+                    lambda: supabase_service.table('player_platform_links').upsert({
+                        'chess_com_username': chess_com,
+                        'lichess_username': lichess,
+                        'source': 'user_linked',
+                        'updated_at': 'now()'
+                    }, on_conflict='chess_com_username').execute()
+                )
+                logger.info(f"Auto-created player link: {chess_com} <-> {lichess}")
+        except Exception as e:
+            logger.warning(f"Failed to auto-create player link: {e}")
+
         return {
             "success": True,
             "username": username,
@@ -10792,6 +10817,135 @@ async def set_primary_platform(
     except Exception as e:
         logger.error(f"Error setting primary platform for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to set primary platform")
+
+
+@app.get("/api/v1/player-links/{platform}/{username}")
+async def get_player_link(platform: str, username: str):
+    """
+    Look up a cross-platform link for any player.
+    Returns the linked username on the other platform, if one exists.
+    No authentication required.
+    """
+    if not supabase_service:
+        return {"linked": False}
+
+    if platform not in ('chess.com', 'lichess'):
+        return {"linked": False}
+
+    try:
+        # Normalize chess.com username to lowercase for lookup
+        lookup_username = username.strip().lower() if platform == 'chess.com' else username.strip()
+
+        # Check player_platform_links table first
+        if platform == 'chess.com':
+            result = await asyncio.to_thread(
+                lambda: supabase_service.table('player_platform_links').select(
+                    'chess_com_username, lichess_username'
+                ).ilike('chess_com_username', lookup_username).limit(1).execute()
+            )
+        else:
+            result = await asyncio.to_thread(
+                lambda: supabase_service.table('player_platform_links').select(
+                    'chess_com_username, lichess_username'
+                ).eq('lichess_username', lookup_username).limit(1).execute()
+            )
+
+        if result.data:
+            row = result.data[0]
+            return {
+                "linked": True,
+                "chess_com_username": row['chess_com_username'],
+                "lichess_username": row['lichess_username']
+            }
+
+        # Fallback: check authenticated_users table
+        if platform == 'chess.com':
+            result = await asyncio.to_thread(
+                lambda: supabase_service.table('authenticated_users').select(
+                    'chess_com_username, lichess_username'
+                ).ilike('chess_com_username', lookup_username).not_.is_('lichess_username', 'null').limit(1).execute()
+            )
+        else:
+            result = await asyncio.to_thread(
+                lambda: supabase_service.table('authenticated_users').select(
+                    'chess_com_username, lichess_username'
+                ).eq('lichess_username', lookup_username).not_.is_('chess_com_username', 'null').limit(1).execute()
+            )
+
+        if result.data:
+            row = result.data[0]
+            return {
+                "linked": True,
+                "chess_com_username": row['chess_com_username'],
+                "lichess_username": row['lichess_username']
+            }
+
+        return {"linked": False}
+
+    except Exception as e:
+        logger.error(f"Error looking up player link for {platform}/{username}: {e}")
+        return {"linked": False}
+
+
+@app.post("/api/v1/player-links")
+async def create_player_link(request: CreatePlayerLinkRequest):
+    """
+    Create a cross-platform player link.
+    Validates both usernames exist on their platforms before creating.
+    No authentication required.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    chess_com_user = request.chess_com_username.strip().lower()
+    lichess_user = request.lichess_username.strip()
+
+    if not chess_com_user or not lichess_user:
+        raise HTTPException(status_code=400, detail="Both usernames are required")
+
+    try:
+        # Validate both usernames exist on their platforms
+        api_client = get_resilient_api_client()
+        if api_client:
+            chess_exists, chess_msg = await api_client.validate_chesscom_user(chess_com_user)
+            if not chess_exists:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": f"Username '{chess_com_user}' not found on Chess.com"}
+                )
+
+            lichess_exists, lichess_msg = await api_client.validate_lichess_user(lichess_user)
+            if not lichess_exists:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": f"Username '{lichess_user}' not found on Lichess"}
+                )
+        else:
+            logger.warning("Resilient client not available, skipping username validation for player link")
+
+        # Insert into player_platform_links
+        await asyncio.to_thread(
+            lambda: supabase_service.table('player_platform_links').upsert({
+                'chess_com_username': chess_com_user,
+                'lichess_username': lichess_user,
+                'source': 'manual',
+                'updated_at': 'now()'
+            }, on_conflict='chess_com_username').execute()
+        )
+
+        logger.info(f"Created player link: {chess_com_user} (chess.com) <-> {lichess_user} (lichess)")
+
+        return {
+            "success": True,
+            "chess_com_username": chess_com_user,
+            "lichess_username": lichess_user
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating player link: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create player link")
 
 
 @app.post("/api/v1/auth/complete-onboarding")
@@ -11858,6 +12012,8 @@ class ChatPositionContext(BaseModel):
     player_color: Optional[str] = Field(None, description="Player's color")
     move_number: Optional[int] = Field(None, description="Current move number")
     last_move: Optional[str] = Field(None, description="Last move in SAN")
+    last_user_move: Optional[str] = Field(None, description="Student's last move in SAN")
+    last_opponent_move: Optional[str] = Field(None, description="Opponent/engine's last move in SAN")
     game_phase: Optional[str] = Field(None, description="opening/middlegame/endgame")
     context_type: str = Field("play", description="play/puzzle/analysis")
     puzzle_theme: Optional[str] = Field(None, description="Puzzle tactical theme")
@@ -12005,16 +12161,20 @@ def _build_chat_user_prompt(
     if context.move_history:
         recent_moves = context.move_history[-10:]
         position_info += f"\nRecent moves: {' '.join(recent_moves)}"
-    if context.last_move:
+    if context.player_color:
+        position_info += f"\nStudent is playing: {context.player_color}"
+    if context.last_user_move:
+        position_info += f"\nStudent's last move: {context.last_user_move}"
+        if context.move_classification:
+            position_info += f" (classified as: {context.move_classification})"
+        if context.evaluation:
+            position_info += f" [eval: {context.evaluation}]"
+    if context.last_opponent_move:
+        position_info += f"\nOpponent's last move: {context.last_opponent_move}"
+    elif context.last_move:
         position_info += f"\nLast move played: {context.last_move}"
     if context.game_phase:
         position_info += f"\nGame phase: {context.game_phase}"
-    if context.player_color:
-        position_info += f"\nStudent is playing: {context.player_color}"
-    if context.move_classification:
-        position_info += f"\nLast move was classified as: {context.move_classification}"
-    if context.evaluation:
-        position_info += f"\nEngine evaluation: {context.evaluation}"
     if context.puzzle_theme:
         position_info += f"\nPuzzle theme: {context.puzzle_theme}"
 

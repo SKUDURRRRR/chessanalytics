@@ -773,6 +773,8 @@ export interface ChatPositionContext {
   playerColor?: 'white' | 'black'
   moveNumber?: number
   lastMove?: string
+  lastUserMove?: string
+  lastOpponentMove?: string
   gamePhase?: 'opening' | 'middlegame' | 'endgame'
   contextType: 'play' | 'puzzle' | 'analysis'
   puzzleTheme?: string

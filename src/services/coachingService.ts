@@ -376,6 +376,8 @@ export class CoachingService {
               player_color: positionContext.playerColor,
               move_number: positionContext.moveNumber,
               last_move: positionContext.lastMove,
+              last_user_move: positionContext.lastUserMove,
+              last_opponent_move: positionContext.lastOpponentMove,
               game_phase: positionContext.gamePhase,
               context_type: positionContext.contextType,
               puzzle_theme: positionContext.puzzleTheme,
