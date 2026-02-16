@@ -641,9 +641,38 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
         </div>
 
         {recentPlayers.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            No recent players yet. Search for a player to get started!
-          </p>
+          <div>
+            <p className="text-sm text-slate-400 mb-3">
+              Try it out — click any player to see their analysis instantly
+            </p>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+              {[
+                { userId: 'hikaru', platform: 'chess.com' as const, displayName: 'Hikaru Nakamura', rating: 3228 },
+                { userId: 'DrNykterstein', platform: 'lichess' as const, displayName: 'Magnus Carlsen', rating: 2830 },
+                { userId: 'DanielNarodworthy', platform: 'chess.com' as const, displayName: 'Daniel Naroditsky', rating: 3004 },
+              ].map(player => (
+                <div
+                  key={`${player.userId}-${player.platform}`}
+                  onClick={() => handlePlayerSelect(player.userId, player.platform, player.displayName, player.rating)}
+                  className="cursor-pointer rounded-2xl border border-slate-700/30 bg-slate-800/30 p-3 transition-all hover:border-slate-600/50 hover:bg-slate-800/50"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className={`text-xl ${getPlatformColor(player.platform)}`}>
+                      {getPlatformIcon(player.platform)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate font-medium text-white text-sm">
+                        {player.displayName}
+                      </div>
+                      <div className="truncate text-xs text-slate-400">
+                        {player.platform} &middot; {player.rating}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : (
           <>
             <div className="text-center mb-3">
