@@ -1011,7 +1011,7 @@ ${pgn} ${result}`
               </div>
 
               {/* Chess Board */}
-              <div className="flex justify-center">
+              <div className="flex justify-center pb-3">
                 <div style={{ width: `${boardWidth}px` }}>
                   <Chessboard
                     id="play-with-coach-board"
@@ -1027,7 +1027,7 @@ ${pgn} ${result}`
               </div>
 
               {/* Player Bar */}
-              <div className="flex items-center gap-2.5 mt-2 px-1">
+              <div className="relative z-10 flex items-center gap-2.5 mt-2 px-1">
                 <div className={`w-3.5 h-3.5 rounded-sm border border-slate-600 ${
                   playerColor === 'white' ? 'bg-white' : 'bg-slate-800'
                 }`} />
