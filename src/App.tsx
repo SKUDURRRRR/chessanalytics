@@ -49,6 +49,7 @@ const GameAnalysisPage = lazyWithRetry(() => import('./pages/GameAnalysisPage'))
 const LoginPage = lazyWithRetry(() => import('./pages/LoginPage'))
 const SignUpPage = lazyWithRetry(() => import('./pages/SignUpPage'))
 const ForgotPasswordPage = lazyWithRetry(() => import('./pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazyWithRetry(() => import('./pages/ResetPasswordPage'))
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'))
 const PricingPage = lazyWithRetry(() => import('./pages/PricingPage'))
 const TermsOfServicePage = lazyWithRetry(() => import('./pages/TermsOfServicePage'))
@@ -94,6 +95,7 @@ function App() {
                   <Route path="/login" element={<ComponentErrorBoundary><LoginPage /></ComponentErrorBoundary>} />
                   <Route path="/signup" element={<ComponentErrorBoundary><SignUpPage /></ComponentErrorBoundary>} />
                   <Route path="/forgot-password" element={<ComponentErrorBoundary><ForgotPasswordPage /></ComponentErrorBoundary>} />
+                  <Route path="/reset-password" element={<ComponentErrorBoundary><ResetPasswordPage /></ComponentErrorBoundary>} />
                   <Route path="/profile" element={<ComponentErrorBoundary><ProfilePage /></ComponentErrorBoundary>} />
                   <Route path="/pricing" element={<ComponentErrorBoundary><PricingPage /></ComponentErrorBoundary>} />
                   <Route path="/terms" element={<ComponentErrorBoundary><TermsOfServicePage /></ComponentErrorBoundary>} />
