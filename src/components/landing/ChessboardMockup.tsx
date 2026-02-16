@@ -5,26 +5,7 @@ export function ChessboardMockup() {
   // Position after 1.e4 d6 2.d4 Nf6 3.Bc4 h6 (Pirc Defense)
   const fen = 'r1bqkb1r/ppp1ppp1/3p1n1p/8/2B1P3/3P4/PPP2PPP/RNBQK1NR w KQkq - 0 4'
 
-  const sqSize = 40
-  const boardPx = sqSize * 8
-
-  // Arrow from c4 to f7 (bishop diagonal)
-  const arrowFrom = { col: 2, row: 4 }
-  const arrowTo = { col: 5, row: 1 }
-  const ax1 = arrowFrom.col * sqSize + sqSize / 2
-  const ay1 = arrowFrom.row * sqSize + sqSize / 2
-  const ax2 = arrowTo.col * sqSize + sqSize / 2
-  const ay2 = arrowTo.row * sqSize + sqSize / 2
-
-  // Arrow head calc
-  const angle = Math.atan2(ay2 - ay1, ax2 - ax1)
-  const headLen = 16, headW = 10
-  const hp1x = ax2 - headLen * Math.cos(angle) - headW * Math.sin(angle)
-  const hp1y = ay2 - headLen * Math.sin(angle) + headW * Math.cos(angle)
-  const hp2x = ax2 - headLen * Math.cos(angle) + headW * Math.sin(angle)
-  const hp2y = ay2 - headLen * Math.sin(angle) - headW * Math.cos(angle)
-  const shortenX = ax2 - headLen * Math.cos(angle)
-  const shortenY = ay2 - headLen * Math.sin(angle)
+  const boardPx = 320
 
   const moves = [
     { num: 3, you: 'Bc4', youClass: 'good', opp: 'Nf6', oppClass: 'best' },
@@ -56,7 +37,7 @@ export function ChessboardMockup() {
         </span>
       </div>
 
-      <div className="flex gap-3 items-start">
+      <div className="flex gap-3">
         {/* Left - Board with eval bar */}
         <div className="shrink-0">
           <div className="flex gap-1">
@@ -77,30 +58,9 @@ export function ChessboardMockup() {
                 arePiecesDraggable={false}
                 boardWidth={boardPx}
                 showBoardNotation={true}
+                customArrows={[['c4', 'f7', 'rgb(16, 185, 129)']]}
                 {...getDarkChessBoardTheme('default')}
               />
-
-              {/* Arrow overlay */}
-              <svg className="absolute inset-0 pointer-events-none" style={{ width: boardPx, height: boardPx }}>
-                <defs>
-                  <filter id="mockArrowGlow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-                    <feMerge>
-                      <feMergeNode in="coloredBlur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                </defs>
-                <path
-                  d={`M ${ax1},${ay1} L ${shortenX},${shortenY}`}
-                  stroke="#10b981" strokeWidth="7" strokeLinecap="round" fill="none" opacity="0.85"
-                  filter="url(#mockArrowGlow)"
-                />
-                <polygon
-                  points={`${ax2},${ay2} ${hp1x},${hp1y} ${hp2x},${hp2y}`}
-                  fill="#10b981" opacity="0.95"
-                />
-              </svg>
             </div>
           </div>
 
@@ -119,9 +79,9 @@ export function ChessboardMockup() {
 
         {/* Right - Analysis Panel */}
         <div className="flex-1 min-w-0">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 shadow-xl shadow-black/40 h-full flex flex-col">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-xl shadow-black/40 h-full flex flex-col">
             {/* Current Move */}
-            <div className="mb-2.5">
+            <div className="mb-2">
               <h3 className="text-[8px] font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xl font-semibold text-white leading-none">h6</span>
@@ -137,25 +97,25 @@ export function ChessboardMockup() {
             </div>
 
             {/* Move Analysis */}
-            <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-2.5 rounded-lg border-l-4 border-sky-400 mb-2.5">
-              <div className="text-[9px] font-semibold text-white mb-1">Move Analysis</div>
+            <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-2 rounded-lg border-l-4 border-sky-400 mb-2">
+              <div className="text-[9px] font-semibold text-white mb-0.5">Move Analysis</div>
               <p className="text-[7.5px] text-slate-200 leading-relaxed">
-                This position is sharp and tense. Black has given up some central control to improve the placement of his knight on f6, but this weakens his kingside pawns. White must carefully weigh the pros and cons of an immediate pawn storm versus a more patient approach to exploit these structural weaknesses.
+                This position is sharp and tense. Black has given up central control for active piece play with Nf6, but h6 weakens the kingside. White should weigh an immediate pawn storm versus a patient approach to exploit these weaknesses.
               </p>
             </div>
 
             {/* Follow-Up button */}
-            <button className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 text-[8px] font-medium text-emerald-300 mb-2.5">
+            <button className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 text-[8px] font-medium text-emerald-300 mb-2">
               &rarr; Show Follow-Up
             </button>
 
             {/* Divider */}
-            <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent mb-2.5" />
+            <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent mb-2" />
 
             {/* Move Timeline */}
-            <div className="flex-1">
+            <div className="flex-1 min-h-0">
               <h3 className="text-[8px] font-semibold uppercase tracking-wide text-slate-400">Move Timeline</h3>
-              <div className="text-[7px] text-slate-500 mt-0.5 mb-2">&larr; &rarr; to navigate moves &bull; Scroll to see all moves</div>
+              <div className="text-[7px] text-slate-500 mt-0.5 mb-1.5">&larr; &rarr; to navigate moves &bull; Scroll to see all moves</div>
 
               <table className="w-full table-fixed text-left">
                 <thead>

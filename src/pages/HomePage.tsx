@@ -155,7 +155,7 @@ export default function HomePage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
-      <div className="relative container-responsive space-responsive py-8 sm:py-12 md:py-16">
+      <div className="relative container-responsive pt-8 pb-2 sm:pt-12 sm:pb-4 md:pt-16 md:pb-6">
         <header className="text-center">
           <h1 className="text-fluid-4xl font-semibold leading-tight text-white">
             See why you really lost that game
@@ -260,7 +260,7 @@ export default function HomePage() {
 
 
       {/* Core Features Showcase */}
-      <section className="relative container-responsive py-12 sm:py-16 md:py-20 space-y-16 sm:space-y-20 overflow-hidden">
+      <section className="relative container-responsive pt-6 pb-12 sm:pt-8 sm:pb-16 md:pt-12 md:pb-20 space-y-16 sm:space-y-20 overflow-hidden">
         {/* Feature 1: AI Coach Commentary */}
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
@@ -440,10 +440,10 @@ export default function HomePage() {
             {howItWorksSteps.map((item) => (
               <div key={item.step} className="card-responsive text-left group hover:border-white/20 hover:bg-white/[0.08] transition duration-300">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="text-3xl">{item.iconEmoji}</div>
                   <div className="w-8 h-8 rounded-full bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sm font-semibold text-sky-200">
                     {item.step}
                   </div>
+                  <div className="text-3xl">{item.iconEmoji}</div>
                 </div>
                 <h3 className="text-xl font-semibold text-white mb-3">{item.title}</h3>
                 <p className="text-sm text-slate-300 leading-relaxed">{item.description}</p>

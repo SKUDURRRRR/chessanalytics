@@ -12,6 +12,7 @@ import { clearUserCache } from '../utils/apiCache'
 import { useAuth } from '../contexts/AuthContext'
 import { AnonymousUsageTracker } from '../services/anonymousUsageTracker'
 import LimitReachedModal from '../components/LimitReachedModal'
+import { config } from '../lib/config'
 // Debug components removed from production
 import { OpeningFilter, OpeningIdentifierSets, ViewMode } from '../types'
 
@@ -110,9 +111,61 @@ export default function SimpleAnalyticsPage() {
   const [showLimitModal, setShowLimitModal] = useState(false)
   const [limitType, setLimitType] = useState<'import' | 'analyze'>('import')
 
-  // Platform switcher (for users with both accounts linked)
-  const hasBothAccounts = !!(user?.chessComUsername && user?.lichessUsername)
+  // Cross-platform link state
+  const [crossPlatformLink, setCrossPlatformLink] = useState<{
+    chessComUsername: string
+    lichessUsername: string
+  } | null>(null)
+  const [showLinkInput, setShowLinkInput] = useState(false)
+  const [linkInputValue, setLinkInputValue] = useState('')
+  const [linkError, setLinkError] = useState('')
+  const [linkLoading, setLinkLoading] = useState(false)
+
+  // Platform switcher
+  const isOwnProfile = !!(user && userId && (
+    (user.chessComUsername && canonicalizeUserId(userId, 'chess.com') === canonicalizeUserId(user.chessComUsername, 'chess.com')) ||
+    (user.lichessUsername && userId === user.lichessUsername)
+  ))
+  const hasBothAccounts =
+    (isOwnProfile && !!(user?.chessComUsername && user?.lichessUsername)) ||
+    !!crossPlatformLink
   const viewMode = searchParams.get('view') === 'combined' ? 'combined' as const : 'single' as const
+
+  // Look up cross-platform link when viewing a player
+  useEffect(() => {
+    if (!userId || !platform) return
+    // Skip lookup for own profile (already handled by auth)
+    if (isOwnProfile && user?.chessComUsername && user?.lichessUsername) return
+
+    const apiUrl = config.getApi().baseUrl
+    fetch(`${apiUrl}/api/v1/player-links/${encodeURIComponent(platform)}/${encodeURIComponent(userId)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.linked) {
+          setCrossPlatformLink({
+            chessComUsername: data.chess_com_username,
+            lichessUsername: data.lichess_username
+          })
+        } else {
+          setCrossPlatformLink(null)
+        }
+      })
+      .catch(() => setCrossPlatformLink(null))
+  }, [userId, platform, isOwnProfile, user?.chessComUsername, user?.lichessUsername])
+
+  // Helper to resolve the secondary platform username for combined view
+  const getSecondaryUser = (): string | undefined => {
+    if (isOwnProfile) {
+      return platform === 'chess.com' ? user?.lichessUsername : user?.chessComUsername
+    }
+    if (crossPlatformLink) {
+      return platform === 'chess.com'
+        ? crossPlatformLink.lichessUsername
+        : crossPlatformLink.chessComUsername
+    }
+    return undefined
+  }
+  const getSecondaryPlatform = (): 'lichess' | 'chess.com' => platform === 'chess.com' ? 'lichess' : 'chess.com'
 
   const handlePlatformSwitch = (target: 'chess.com' | 'lichess' | 'combined') => {
     const newParams = new URLSearchParams()
@@ -124,13 +177,55 @@ export default function SimpleAnalyticsPage() {
       newParams.set('platform', platform)
       newParams.set('view', 'combined')
     } else {
-      const username = target === 'chess.com'
-        ? user!.chessComUsername!
-        : user!.lichessUsername!
+      let username: string
+      if (isOwnProfile && user) {
+        // Own profile: use linked account usernames
+        username = target === 'chess.com' ? user.chessComUsername! : user.lichessUsername!
+      } else if (crossPlatformLink) {
+        // Other player: use cross-platform link
+        username = target === 'chess.com'
+          ? crossPlatformLink.chessComUsername
+          : crossPlatformLink.lichessUsername
+      } else {
+        return
+      }
       newParams.set('user', username)
       newParams.set('platform', target)
     }
     setSearchParams(newParams, { replace: true })
+  }
+
+  const handleCreateLink = async () => {
+    if (!linkInputValue.trim()) return
+    setLinkLoading(true)
+    setLinkError('')
+    try {
+      const apiUrl = config.getApi().baseUrl
+      const body = platform === 'chess.com'
+        ? { chess_com_username: userId, lichess_username: linkInputValue.trim() }
+        : { chess_com_username: linkInputValue.trim(), lichess_username: userId }
+
+      const res = await fetch(`${apiUrl}/api/v1/player-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      const data = await res.json()
+      if (data.success) {
+        setCrossPlatformLink({
+          chessComUsername: data.chess_com_username,
+          lichessUsername: data.lichess_username
+        })
+        setShowLinkInput(false)
+        setLinkInputValue('')
+      } else {
+        setLinkError(data.message || 'Failed to create link')
+      }
+    } catch {
+      setLinkError('Network error')
+    } finally {
+      setLinkLoading(false)
+    }
   }
 
   // Slow loading popup state
@@ -750,9 +845,47 @@ export default function SimpleAnalyticsPage() {
                     {platform === 'lichess' ? 'Lichess' : 'Chess.com'}
                   </div>
                 )}
+                {/* Link other platform prompt */}
+                {!hasBothAccounts && !isOwnProfile && (
+                  <div className="mt-2">
+                    {showLinkInput ? (
+                      <div className="flex items-center gap-2 justify-center">
+                        <input
+                          type="text"
+                          value={linkInputValue}
+                          onChange={e => { setLinkInputValue(e.target.value); setLinkError('') }}
+                          onKeyDown={e => e.key === 'Enter' && handleCreateLink()}
+                          placeholder={`${platform === 'chess.com' ? 'Lichess' : 'Chess.com'} username`}
+                          className="rounded-full border border-slate-600/50 bg-slate-800/60 px-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-slate-500 w-40"
+                        />
+                        <button
+                          onClick={handleCreateLink}
+                          disabled={linkLoading || !linkInputValue.trim()}
+                          className="rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50"
+                        >
+                          {linkLoading ? '...' : 'Link'}
+                        </button>
+                        <button
+                          onClick={() => { setShowLinkInput(false); setLinkError(''); setLinkInputValue('') }}
+                          className="text-xs text-slate-500 hover:text-slate-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowLinkInput(true)}
+                        className="text-xs text-slate-500 hover:text-slate-300 transition"
+                      >
+                        Know their {platform === 'chess.com' ? 'Lichess' : 'Chess.com'} username? Link it
+                      </button>
+                    )}
+                    {linkError && <p className="text-xs text-rose-400 mt-1">{linkError}</p>}
+                  </div>
+                )}
                 <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
                   {viewMode === 'combined'
-                    ? `${user?.chessComUsername} + ${user?.lichessUsername}`
+                    ? `${userId} + ${getSecondaryUser() || ''}`
                     : userId}
                 </h1>
                 <p className="mt-1.5 text-sm text-slate-300">
@@ -963,8 +1096,8 @@ export default function SimpleAnalyticsPage() {
             onOpeningClick={handleOpeningClick}
             forceRefresh={forceDataRefresh}
             viewMode={viewMode}
-            secondaryUserId={viewMode === 'combined' ? (platform === 'chess.com' ? user?.lichessUsername : user?.chessComUsername) || '' : undefined}
-            secondaryPlatform={viewMode === 'combined' ? (platform === 'chess.com' ? 'lichess' : 'chess.com') : undefined}
+            secondaryUserId={viewMode === 'combined' ? getSecondaryUser() || '' : undefined}
+            secondaryPlatform={viewMode === 'combined' ? getSecondaryPlatform() : undefined}
           />
         )}
 

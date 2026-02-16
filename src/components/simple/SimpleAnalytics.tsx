@@ -156,8 +156,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       // Only log diagnostics in development mode
       if (import.meta.env.DEV) {
         console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
-        console.log('Basic stats (10000) - total games:', basicStatsData?.total_games)
-        console.log('Analysis data (100) - marathon analyzed:', analysisOnlyData?.marathon_performance?.analyzed_count)
+        console.log('Comprehensive stats - total games:', comprehensiveAnalytics?.total_games)
+        console.log('Marathon analyzed:', comprehensiveAnalytics?.marathon_performance?.analyzed_count)
         console.log('Merged comprehensive analytics:', comprehensiveAnalytics)
         console.log('Opening Color Stats (camelCase):', comprehensiveAnalytics?.openingColorStats)
         console.log('Opening Color Stats (snake_case):', comprehensiveAnalytics?.opening_color_stats)
@@ -1348,29 +1348,29 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           <div className={subtleCardClass}>
             <div className="flex justify-between text-sm text-slate-200">
               <span className="text-slate-400">Opening Accuracy</span>
-              <span className="font-semibold">{safeData.average_opening_accuracy || 'N/A'}%</span>
+              <span className="font-semibold">{safeData.average_opening_accuracy ? Number(safeData.average_opening_accuracy).toFixed(1) : 'N/A'}%</span>
             </div>
             <div className="mt-2 flex justify-between text-sm text-slate-200">
               <span className="text-slate-400">Middle Game Accuracy</span>
-              <span className="font-semibold">{safeData.average_middle_game_accuracy || 'N/A'}%</span>
+              <span className="font-semibold">{safeData.average_middle_game_accuracy ? Number(safeData.average_middle_game_accuracy).toFixed(1) : 'N/A'}%</span>
             </div>
             <div className="mt-2 flex justify-between text-sm text-slate-200">
               <span className="text-slate-400">Endgame Accuracy</span>
-              <span className="font-semibold">{safeData.average_endgame_accuracy || 'N/A'}%</span>
+              <span className="font-semibold">{safeData.average_endgame_accuracy ? Number(safeData.average_endgame_accuracy).toFixed(1) : 'N/A'}%</span>
             </div>
           </div>
           <div className={subtleCardClass}>
             <div className="flex justify-between text-sm text-slate-200">
               <span className="text-slate-400">Blunders per Game</span>
-              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.blunders}`}>{safeData.blunders_per_game}</span>
+              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.blunders}`}>{Number(safeData.blunders_per_game).toFixed(2)}</span>
             </div>
             <div className="mt-2 flex justify-between text-sm text-slate-200">
               <span className="text-slate-400">Inaccuracies per Game</span>
-              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.inaccuracies}`}>{safeData.inaccuracies_per_game}</span>
+              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.inaccuracies}`}>{Number(safeData.inaccuracies_per_game).toFixed(2)}</span>
             </div>
             <div className="mt-2 flex justify-between text-sm text-slate-200">
               <span className="text-slate-400">Brilliant Moves per Game</span>
-              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.brilliants}`}>{safeData.brilliant_moves_per_game}</span>
+              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.brilliants}`}>{Number(safeData.brilliant_moves_per_game).toFixed(2)}</span>
             </div>
           </div>
 

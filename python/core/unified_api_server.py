@@ -12110,6 +12110,11 @@ telling them the exact move. Ask guiding questions:
 - "Is your king safe? What about your opponent's?"
 - "Think about what your opponent wants to do next..."
 - "Which of your pieces could be more active?"
+
+IMPORTANT: Each move in the context is labeled (student) or (opponent). When the student
+asks about "my move" or "my last move", refer ONLY to moves labeled (student). Do NOT
+confuse the opponent's moves with the student's moves. The student's last move and the
+opponent's last move are explicitly labeled in the position context.
 """
     elif context.context_type == "analysis":
         context_specific = """
@@ -12158,11 +12163,27 @@ def _build_chat_user_prompt(
 ) -> str:
     """Build the user prompt including position context and conversation history."""
     position_info = f"Current position (FEN): {context.fen}"
-    if context.move_history:
-        recent_moves = context.move_history[-10:]
-        position_info += f"\nRecent moves: {' '.join(recent_moves)}"
     if context.player_color:
-        position_info += f"\nStudent is playing: {context.player_color}"
+        position_info += f"\nStudent is playing as: {context.player_color}"
+        opponent_color = "black" if context.player_color == "white" else "white"
+
+    # Format recent moves with clear attribution
+    if context.move_history:
+        recent = context.move_history[-10:]
+        start_idx = len(context.move_history) - len(recent)
+        formatted_moves = []
+        for j, san in enumerate(recent):
+            idx = start_idx + j
+            move_num = idx // 2 + 1
+            is_white = idx % 2 == 0
+            prefix = f"{move_num}." if is_white else f"{move_num}..."
+            who = "student" if context.player_color and (
+                (context.player_color == "white" and is_white) or
+                (context.player_color == "black" and not is_white)
+            ) else "opponent"
+            formatted_moves.append(f"{prefix}{san} ({who})")
+        position_info += f"\nRecent moves: {', '.join(formatted_moves)}"
+
     if context.last_user_move:
         position_info += f"\nStudent's last move: {context.last_user_move}"
         if context.move_classification:
@@ -12170,7 +12191,7 @@ def _build_chat_user_prompt(
         if context.evaluation:
             position_info += f" [eval: {context.evaluation}]"
     if context.last_opponent_move:
-        position_info += f"\nOpponent's last move: {context.last_opponent_move}"
+        position_info += f"\nOpponent's last move (NOT the student's): {context.last_opponent_move}"
     elif context.last_move:
         position_info += f"\nLast move played: {context.last_move}"
     if context.game_phase:
