@@ -6,7 +6,7 @@ import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
 import { CheckCircle2, Loader2 } from 'lucide-react'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002'
+const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
 
 export default function ProfilePage() {
   const { user, usageStats, refreshUsageStats, signOut, linkChessAccount, unlinkChessAccount } = useAuth()

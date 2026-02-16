@@ -40,7 +40,7 @@ export class ProfileService {
   ): Promise<UserProfile> {
     try {
       // Use backend API which has service role access
-      const API_BASE_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8000'
+      const API_BASE_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
 
       const response = await fetch(`${API_BASE_URL}/api/v1/profiles`, {
         method: 'POST',

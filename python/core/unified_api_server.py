@@ -11467,6 +11467,69 @@ async def get_coach_dashboard(
         raise HTTPException(status_code=500, detail="Failed to get coach dashboard")
 
 
+@app.get("/api/v1/coach/progress/{user_id}/{platform}")
+async def get_coach_progress(
+    user_id: str,
+    platform: str,
+    period_days: int = Query(90, description="Number of days to look back"),
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+):
+    """
+    Get progress tracking data for charts and streaks.
+    Premium-only endpoint.
+    """
+    if auth_user_id:
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(status_code=403, detail="Coach features require premium subscription.")
+    else:
+        if not await _check_premium_access(user_id, platform):
+            raise HTTPException(status_code=403, detail="Coach features require premium subscription.")
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        canonical = _canonical_user_id(user_id, platform)
+        progress_analyzer = ProgressAnalyzer(supabase_service)
+
+        # Fetch game analyses
+        analyses_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('*')
+            .eq('user_id', canonical)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(500)
+            .execute()
+        )
+        game_analyses = analyses_result.data or []
+
+        # Get all three data sets
+        time_series = await progress_analyzer.get_progress_time_series(
+            canonical, platform, game_analyses, period_days
+        )
+
+        # For streak data, try auth_user_id first (for lesson/puzzle tables), fall back to canonical
+        streak_user_id = auth_user_id or canonical
+        streaks = await progress_analyzer.get_streak_data(streak_user_id, platform)
+
+        weakness_evolution = await progress_analyzer.get_weakness_evolution(
+            canonical, platform, game_analyses, weeks=max(4, period_days // 7)
+        )
+
+        return {
+            'time_series': time_series,
+            'streaks': streaks,
+            'weakness_evolution': weakness_evolution,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting coach progress: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get progress data")
+
+
 @app.get("/api/v1/coach/lessons/{user_id}/{platform}")
 async def get_lessons(
     user_id: str,
@@ -12050,6 +12113,9 @@ class CoachChatResponse(BaseModel):
 
 
 # In-memory chat rate limiter
+# NOTE: This resets on server restart. Acceptable for now since Railway auto-restarts
+# are infrequent and the limit is generous. For persistent rate limiting, consider
+# moving to the usage_tracking table or Redis in a future infrastructure upgrade.
 _chat_usage: Dict[str, List[float]] = {}
 _CHAT_RATE_LIMIT = 50  # messages per hour per user
 
@@ -12088,67 +12154,67 @@ def _increment_chat_usage(user_id: str):
 
 
 def _build_chat_system_prompt(context: ChatPositionContext) -> str:
-    """Build system prompt for Socratic chess coaching chat."""
+    """Build system prompt for direct chess coaching chat."""
     context_specific = ""
     if context.context_type == "puzzle":
         context_specific = """
 PUZZLE CONTEXT:
-You are helping the student solve a chess puzzle. NEVER reveal the solution directly.
-Instead, guide them with questions like:
-- "What pieces are currently undefended?"
-- "What would happen if you controlled that diagonal?"
-- "Look at the relationship between the knight and the king..."
-- "Which piece is doing the least work right now?"
-If they ask for the answer, redirect: "The best learning comes from discovery. Let me give you another hint..."
+You are helping the student solve a chess puzzle. Don't reveal the full solution directly,
+but DO give concrete hints that narrow it down:
+- Name the tactical theme if you can see it: "This is a discovered attack pattern"
+- Point to the key pieces involved: "Your rook and their king are almost aligned — what's in the way?"
+- If they suggest a wrong move, explain specifically why it fails: "After Nxe5, they have Qd4+ forking king and rook"
+- If they're stuck after 2+ attempts, give a much stronger hint: "The key move starts with your bishop on g5"
 """
     elif context.context_type == "play":
         context_specific = """
 LIVE GAME CONTEXT:
-The student is playing a game right now. Help them think about their position without
-telling them the exact move. Ask guiding questions:
-- "What are the critical squares in this position?"
-- "Is your king safe? What about your opponent's?"
-- "Think about what your opponent wants to do next..."
-- "Which of your pieces could be more active?"
+The student is playing a live game. Give them practical, actionable coaching:
+- When they suggest a move, evaluate it directly: "Nc3 is solid here — it develops toward the center and prepares d4"
+- When their idea has problems, say so clearly and suggest alternatives: "e5 looks tempting but after dxe5 Nxe5, their knight dominates. Try Nc3 first to build pressure"
+- Name 1-2 candidate moves with brief reasons when they ask what to play, without insisting one is 'the' answer
+- Focus on the most important feature of the position: an unsafe king, a weak pawn, a strong outpost, etc.
 
 IMPORTANT: Each move in the context is labeled (student) or (opponent). When the student
 asks about "my move" or "my last move", refer ONLY to moves labeled (student). Do NOT
-confuse the opponent's moves with the student's moves. The student's last move and the
-opponent's last move are explicitly labeled in the position context.
+confuse the opponent's moves with the student's moves.
 """
     elif context.context_type == "analysis":
         context_specific = """
 GAME REVIEW CONTEXT:
-The student is reviewing a completed game. You can be more specific about moves since
-the game is over, but still prioritize teaching concepts over just listing moves.
-Help them understand WHY moves were good or bad, not just WHICH move was best.
+The student is reviewing a completed game. Be fully specific:
+- Name the best move and explain why it was strong
+- If the played move was a mistake, explain the concrete consequence: "After Bxh7+, the king is exposed and you win the queen in 3 moves"
+- Teach the underlying concept so they recognize similar positions: "This is a classic Greek Gift sacrifice pattern"
 """
 
-    return f"""You are Mikhail Tal, the Magician from Riga, serving as a personal chess coach in an interactive chat. You teach through the Socratic method - guiding students to discover answers themselves rather than giving direct solutions.
+    return f"""You are Mikhail Tal, the Magician from Riga, serving as a personal chess coach in an interactive chat. You give direct, actionable advice while teaching the ideas behind the moves.
 
 YOUR CORE TEACHING PHILOSOPHY:
-- NEVER give the best move directly unless explicitly reviewing a completed game
-- Ask probing questions that lead the student toward the right idea
-- Give HINTS, not answers: "Consider the diagonal...", "What happens after the exchange?"
-- Celebrate when students find the right idea: "Exactly! Now you see the magic!"
-- If they struggle, give progressively stronger hints, but never the full answer
-- Use chess concepts: tactics, strategy, pawn structure, piece activity, king safety
+- Give CLEAR OPINIONS on the student's ideas: "That's a strong move because..." or "I'd avoid that here because..."
+- When the student suggests a move, evaluate it honestly with a brief reason (1-2 key points)
+- Suggest concrete alternatives when their idea has problems: "Instead, consider Nc3 — it develops with tempo"
+- Explain strategy in cause-and-effect terms: "If you play e5, their knight lands on d4 with no way to kick it out"
+- Celebrate good ideas: "Yes! That's exactly the spirit of this position!"
+- You may end with ONE brief guiding question occasionally to deepen their thinking, but not every message and never more than one
 
 YOUR VOICE:
-- Energetic, passionate, direct - you love chess and it shows
-- Concise responses: 2-4 sentences typical, never more than 6 sentences
-- Be direct, no flowery openings
+- Energetic, passionate, direct — you love chess and it shows
+- Concise: 2-4 sentences, MAXIMUM 4 sentences. This is a quick chat, not a lecture
+- Jump straight into the chess — no filler openings like "Great question!" or "Interesting idea!" or "Let's think about this..."
 - Use chess terminology naturally but explain concepts for intermediate players
 - Occasionally reference famous games or positions to illustrate points
 
-CRITICAL RULES:
-- If asked "what is the best move?", NEVER answer directly. Instead give a hint.
-- If asked about a tactic, describe the PATTERN, not the specific move sequence
-- When the student is wrong, be encouraging: "Good thinking, but look more carefully at..."
-- Keep responses SHORT. This is a chat, not a lecture.
-- Always relate your hints to the CURRENT POSITION (the FEN provided)
-
 {context_specific}
+
+CRITICAL RULES:
+- NEVER respond with only questions and no concrete advice. Every response MUST contain at least one clear, actionable insight about the position
+- When the student asks about a specific move, give your opinion on THAT MOVE first, then teach
+- Keep responses SHORT. If you're writing more than 4 sentences, stop and trim
+- Always relate advice to the CURRENT POSITION (the FEN provided)
+- When the student is wrong, be direct but kind: "That loses material because of Bxf7+. Look at your knight instead — where can it go to create a double attack?"
+- PERSPECTIVE: The student's color is given in the position context. Only suggest moves for THEIR color. Use correct notation from their perspective (e.g. if student is White and can capture on d5, say "exd5", not "dxe4" which would be Black's move). Double-check that any move you name is legal for the side to move
+- CONSISTENCY: Never contradict yourself in the same response (e.g. don't say "don't capture" then suggest a capture)
 
 RESPONSE FORMAT:
 - Plain text only, no markdown formatting
@@ -12164,8 +12230,15 @@ def _build_chat_user_prompt(
     """Build the user prompt including position context and conversation history."""
     position_info = f"Current position (FEN): {context.fen}"
     if context.player_color:
-        position_info += f"\nStudent is playing as: {context.player_color}"
         opponent_color = "black" if context.player_color == "white" else "white"
+        position_info += f"\nStudent is playing as: {context.player_color.upper()} (opponent is {opponent_color})"
+        # Determine whose turn it is from FEN
+        fen_parts = context.fen.split()
+        if len(fen_parts) >= 2:
+            side_to_move = "white" if fen_parts[1] == "w" else "black"
+            is_student_turn = side_to_move == context.player_color
+            turn_label = "student's turn" if is_student_turn else "opponent's turn"
+            position_info += f"\nSide to move: {side_to_move} ({turn_label})"
 
     # Format recent moves with clear attribution
     if context.move_history:
@@ -12214,7 +12287,7 @@ def _build_chat_user_prompt(
 {conv_text}
 Student's message: {user_message}
 
-Respond as Coach Tal. Remember: guide, don't give away answers. Keep it concise."""
+Respond as Coach Tal. Be direct and helpful — give a clear opinion with a brief reason. Only suggest moves for the student's color. Max 4 sentences."""
 
 
 @app.post("/api/v1/coach/chat", response_model=CoachChatResponse)
@@ -12303,6 +12376,334 @@ async def coach_chat(
             status_code=500,
             detail="Coach is temporarily unavailable. Please try again in a moment."
         )
+
+
+# ============================================================================
+# GAME TAGS ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/coach/tags")
+async def add_game_tag(
+    tag_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Add a tag to a game. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        game_id = tag_data.get('game_id')
+        platform = tag_data.get('platform')
+        tag = tag_data.get('tag', '').strip()
+        tag_type = tag_data.get('tag_type', 'user')
+
+        if not game_id or not platform or not tag:
+            raise HTTPException(status_code=400, detail="game_id, platform, and tag are required")
+        if tag_type not in ('user', 'system'):
+            raise HTTPException(status_code=400, detail="tag_type must be 'user' or 'system'")
+
+        insert_data = {
+            'user_id': auth_user_id,
+            'game_id': game_id,
+            'platform': platform,
+            'tag': tag,
+            'tag_type': tag_type,
+        }
+
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .upsert(insert_data, on_conflict='user_id,game_id,tag')
+            .execute()
+        )
+
+        return {'success': True, 'tag': result.data[0] if result.data else insert_data}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding game tag: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add tag")
+
+
+@app.delete("/api/v1/coach/tags/{tag_id}")
+async def delete_game_tag(
+    tag_id: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Remove a tag. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        # Verify ownership
+        tag_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .select('user_id')
+            .eq('id', tag_id)
+            .execute()
+        )
+        if not tag_result.data:
+            raise HTTPException(status_code=404, detail="Tag not found")
+        if tag_result.data[0]['user_id'] != auth_user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this tag")
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .delete()
+            .eq('id', tag_id)
+            .execute()
+        )
+
+        return {'success': True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting game tag: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete tag")
+
+
+@app.get("/api/v1/coach/tags/{user_id}/{platform}")
+async def get_user_tags(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Get all tags for a user. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .execute()
+        )
+
+        return {'tags': result.data or []}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user tags: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get tags")
+
+
+@app.get("/api/v1/coach/tags/game/{game_id}")
+async def get_game_tags(
+    game_id: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Get tags for a specific game. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('game_id', game_id)
+            .execute()
+        )
+
+        return {'tags': result.data or []}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting game tags: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get game tags")
+
+
+# ============================================================================
+# SAVED POSITIONS ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/coach/positions")
+async def save_position(
+    position_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Save a chess position. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        fen = position_data.get('fen', '').strip()
+        platform = position_data.get('platform')
+        if not fen or not platform:
+            raise HTTPException(status_code=400, detail="fen and platform are required")
+
+        # Validate FEN
+        try:
+            import chess
+            chess.Board(fen)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid FEN string")
+
+        insert_data = {
+            'user_id': auth_user_id,
+            'platform': platform,
+            'fen': fen,
+            'title': position_data.get('title', ''),
+            'notes': position_data.get('notes', ''),
+            'source_game_id': position_data.get('source_game_id'),
+            'source_move_number': position_data.get('source_move_number'),
+            'tags': position_data.get('tags', []),
+        }
+
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .insert(insert_data)
+            .execute()
+        )
+
+        return {'success': True, 'position': result.data[0] if result.data else insert_data}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving position: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save position")
+
+
+@app.get("/api/v1/coach/positions/{user_id}/{platform}")
+async def get_saved_positions(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Get saved positions for a user. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .execute()
+        )
+
+        return {'positions': result.data or []}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting saved positions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get saved positions")
+
+
+@app.put("/api/v1/coach/positions/{position_id}")
+async def update_saved_position(
+    position_id: str,
+    update_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Update notes/title of a saved position. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        # Verify ownership
+        pos_result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .select('user_id')
+            .eq('id', position_id)
+            .execute()
+        )
+        if not pos_result.data:
+            raise HTTPException(status_code=404, detail="Position not found")
+        if pos_result.data[0]['user_id'] != auth_user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to update this position")
+
+        allowed_fields = {'title', 'notes', 'tags'}
+        filtered = {k: v for k, v in update_data.items() if k in allowed_fields}
+        if not filtered:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .update(filtered)
+            .eq('id', position_id)
+            .execute()
+        )
+
+        return {'success': True, 'position': result.data[0] if result.data else None}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating saved position: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update position")
+
+
+@app.delete("/api/v1/coach/positions/{position_id}")
+async def delete_saved_position(
+    position_id: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Delete a saved position. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        # Verify ownership
+        pos_result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .select('user_id')
+            .eq('id', position_id)
+            .execute()
+        )
+        if not pos_result.data:
+            raise HTTPException(status_code=404, detail="Position not found")
+        if pos_result.data[0]['user_id'] != auth_user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this position")
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .delete()
+            .eq('id', position_id)
+            .execute()
+        )
+
+        return {'success': True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting saved position: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete position")
 
 
 if __name__ == "__main__":
