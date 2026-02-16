@@ -11575,9 +11575,10 @@ async def get_lessons(
             .execute()
         )
 
-        # Get all lessons - pass UUID for lessons table, pre-fetched analyses for content
+        # Get all lessons - pass UUID for lessons table, canonical username for game data tables
         lessons = await lesson_generator.get_all_lessons(
-            db_user_id, platform, force_regenerate=False, game_analyses=analyses_result.data or []
+            db_user_id, platform, force_regenerate=False,
+            game_analyses=analyses_result.data or [], canonical_user_id=canonical_user_id
         )
 
         # Filter by category if provided
@@ -11797,7 +11798,7 @@ async def get_puzzles(
 
             # Generate puzzles using UUID for puzzle table, canonical for game data
             puzzles = await puzzle_generator.generate_puzzles_from_blunders(
-                db_user_id, platform, game_analyses
+                db_user_id, platform, game_analyses, canonical_user_id=canonical_user_id
             )
 
             # Save puzzles to database
@@ -11859,11 +11860,14 @@ async def get_daily_puzzle(
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        # puzzles table uses UUID (auth.users)
-        db_user_id = auth_user_id or _canonical_user_id(user_id, platform)
+        # puzzles table uses UUID (auth.users), game data uses canonical username
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_user_id = auth_user_id or canonical_user_id
         puzzle_generator = PuzzleGenerator(supabase_service)
 
-        daily_puzzle = await puzzle_generator.get_daily_puzzle(db_user_id, platform)
+        daily_puzzle = await puzzle_generator.get_daily_puzzle(
+            db_user_id, platform, canonical_user_id=canonical_user_id
+        )
 
         if not daily_puzzle:
             raise HTTPException(status_code=404, detail="No daily puzzle available")

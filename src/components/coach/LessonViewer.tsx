@@ -9,8 +9,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { CoachingService } from '../../services/coachingService'
 import { LessonDetail } from '../../types'
 import LoadingModal from '../LoadingModal'
-import { Chessboard } from 'react-chessboard'
-import { Chess } from 'chess.js'
+import { PracticePositionSection } from './PracticePositionSection'
 
 export function LessonViewer() {
   const { lessonId } = useParams<{ lessonId: string }>()
@@ -19,7 +18,6 @@ export function LessonViewer() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [timeSpent, setTimeSpent] = useState(0)
-  const [game] = useState(new Chess()) // Moved to top - hooks must be called before any returns
 
   const loadLesson = async () => {
     if (!lessonId) return
@@ -130,6 +128,11 @@ export function LessonViewer() {
               ))}
             </div>
           </div>
+        )}
+
+        {/* Practice Positions - Interactive Board */}
+        {lesson.lesson_content?.practice_positions && lesson.lesson_content.practice_positions.length > 0 && (
+          <PracticePositionSection positions={lesson.lesson_content.practice_positions} />
         )}
 
         {/* Action Items */}

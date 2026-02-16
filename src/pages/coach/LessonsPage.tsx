@@ -84,6 +84,8 @@ function LessonsPageContent({
     { id: 'opening', label: 'Opening' },
     { id: 'tactical', label: 'Tactical' },
     { id: 'positional', label: 'Positional' },
+    { id: 'time_management', label: 'Time Management' },
+    { id: 'style', label: 'Playing Style' },
   ]
 
   if (loading) {

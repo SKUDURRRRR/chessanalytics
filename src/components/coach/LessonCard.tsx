@@ -25,6 +25,14 @@ export function LessonCard({ lesson }: LessonCardProps) {
     completed: 'text-emerald-400',
   }
 
+  const typeIcons: Record<string, string> = {
+    opening: '♟',
+    tactical: '⚔',
+    positional: '♜',
+    time_management: '⏱',
+    style: '🎨',
+  }
+
   const statusIcons = {
     not_started: '○',
     in_progress: '◐',
@@ -45,7 +53,10 @@ export function LessonCard({ lesson }: LessonCardProps) {
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
           <h3 className="text-lg font-semibold text-white mb-1">{lesson.lesson_title}</h3>
-          <p className="text-sm text-slate-400 capitalize">{lesson.lesson_type}</p>
+          <p className="text-sm text-slate-400">
+            <span className="mr-1.5">{typeIcons[lesson.lesson_type] || '📝'}</span>
+            <span className="capitalize">{lesson.lesson_type.replace('_', ' ')}</span>
+          </p>
         </div>
         <span className={`text-lg ${statusColors[lesson.status || 'not_started']}`}>
           {statusIcons[lesson.status || 'not_started']}

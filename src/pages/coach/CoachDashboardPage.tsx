@@ -3,7 +3,6 @@
  * Main overview page for Coach tab
  */
 
-import { useNavigate } from 'react-router-dom'
 import { DailyLessonCard } from '../../components/coach/DailyLessonCard'
 import { WeaknessCard } from '../../components/coach/WeaknessCard'
 import { StrengthCard } from '../../components/coach/StrengthCard'
@@ -13,7 +12,7 @@ import LoadingModal from '../../components/LoadingModal'
 import { useCoachUser } from '../../hooks/useCoachUser'
 
 export default function CoachDashboardPage() {
-  const { platform, platformUsername, authenticatedUserId, hasLinkedAccount } = useCoachUser()
+  const { platform, platformUsername, authenticatedUserId } = useCoachUser()
 
   if (!authenticatedUserId) {
     return (
@@ -88,6 +87,69 @@ function CoachDashboardContent({
           <p className="text-slate-400">Personalized chess coaching based on your games</p>
         </div>
 
+        {/* Quick Links */}
+        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 mb-8">
+          <h2 className="text-xl font-bold text-white mb-4">Quick Links</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+            <Link
+              to="/coach/play"
+              className="rounded-xl border border-emerald-400/40 bg-emerald-500/20 p-5 hover:bg-emerald-500/30 transition-colors text-center shadow-[0_0_8px_rgba(16,185,129,0.15)]"
+            >
+              <div className="text-2xl mb-1.5">&#9823;</div>
+              <h3 className="font-semibold text-emerald-100 text-sm mb-0.5">Play with Tal</h3>
+              <p className="text-xs text-emerald-200/70">Practice against AI</p>
+            </Link>
+            <Link
+              to="/coach/lessons"
+              className="rounded-xl border border-white/10 bg-white/[0.05] p-5 hover:bg-white/[0.08] transition-colors text-center"
+            >
+              <div className="text-2xl mb-1.5">&#9813;</div>
+              <h3 className="font-semibold text-white text-sm mb-0.5">Lessons</h3>
+              <p className="text-xs text-slate-400">Personalized lessons</p>
+            </Link>
+            <Link
+              to="/coach/puzzles"
+              className="rounded-xl border border-white/10 bg-white/[0.05] p-5 hover:bg-white/[0.08] transition-colors text-center"
+            >
+              <div className="text-2xl mb-1.5">&#9816;</div>
+              <h3 className="font-semibold text-white text-sm mb-0.5">Puzzles</h3>
+              <p className="text-xs text-slate-400">Practice tactics</p>
+            </Link>
+            <Link
+              to="/coach/progress"
+              className="rounded-xl border border-white/10 bg-white/[0.05] p-5 hover:bg-white/[0.08] transition-colors text-center"
+            >
+              <div className="text-2xl mb-1.5">&#9815;</div>
+              <h3 className="font-semibold text-white text-sm mb-0.5">Progress</h3>
+              <p className="text-xs text-slate-400">Track improvement</p>
+            </Link>
+            <Link
+              to="/coach/study-plan"
+              className="rounded-xl border border-white/10 bg-white/[0.05] p-5 hover:bg-white/[0.08] transition-colors text-center"
+            >
+              <div className="text-2xl mb-1.5">&#9814;</div>
+              <h3 className="font-semibold text-white text-sm mb-0.5">Study Plan</h3>
+              <p className="text-xs text-slate-400">Weekly training</p>
+            </Link>
+            <Link
+              to="/coach/openings"
+              className="rounded-xl border border-white/10 bg-white/[0.05] p-5 hover:bg-white/[0.08] transition-colors text-center"
+            >
+              <div className="text-2xl mb-1.5">&#9812;</div>
+              <h3 className="font-semibold text-white text-sm mb-0.5">Openings</h3>
+              <p className="text-xs text-slate-400">Repertoire trainer</p>
+            </Link>
+            <Link
+              to="/coach/positions"
+              className="rounded-xl border border-white/10 bg-white/[0.05] p-5 hover:bg-white/[0.08] transition-colors text-center"
+            >
+              <div className="text-2xl mb-1.5">&#9817;</div>
+              <h3 className="font-semibold text-white text-sm mb-0.5">Positions</h3>
+              <p className="text-xs text-slate-400">Saved positions</p>
+            </Link>
+          </div>
+        </div>
+
         {/* Daily Lesson */}
         <div className="mb-8">
           <DailyLessonCard lesson={dashboard?.daily_lesson || null} loading={loading} />
@@ -118,42 +180,6 @@ function CoachDashboardContent({
               ) : (
                 <p className="text-slate-400">No strengths identified yet. Complete some analyses to see your strengths!</p>
               )}
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Links */}
-        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-          <h2 className="text-xl font-bold text-white mb-4">Quick Links</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Link
-              to="/coach/play"
-              className="rounded-xl border border-emerald-400/40 bg-emerald-500/20 p-6 hover:bg-emerald-500/30 transition-colors text-center shadow-[0_0_8px_rgba(16,185,129,0.15)]"
-            >
-              <div className="text-3xl mb-2">♟️</div>
-              <h3 className="font-semibold text-emerald-100 mb-1">Play with Tal Coach</h3>
-              <p className="text-sm text-emerald-200/80">Practice against AI</p>
-            </Link>
-            <Link
-              to="/coach/lessons"
-              className="rounded-xl border border-white/10 bg-white/[0.05] p-6 hover:bg-white/[0.08] transition-colors text-center"
-            >
-              <div className="text-3xl mb-2">📚</div>
-              <h3 className="font-semibold text-white mb-1">Lessons</h3>
-              <p className="text-sm text-slate-400">Personalized lessons</p>
-            </Link>
-            <Link
-              to="/coach/puzzles"
-              className="rounded-xl border border-white/10 bg-white/[0.05] p-6 hover:bg-white/[0.08] transition-colors text-center"
-            >
-              <div className="text-3xl mb-2">🧩</div>
-              <h3 className="font-semibold text-white mb-1">Puzzles</h3>
-              <p className="text-sm text-slate-400">Practice puzzles</p>
-            </Link>
-            <div className="rounded-xl border border-white/10 bg-white/[0.05] p-6 text-center opacity-50">
-              <div className="text-3xl mb-2">📊</div>
-              <h3 className="font-semibold text-white mb-1">Progress</h3>
-              <p className="text-sm text-slate-400">Coming soon</p>
             </div>
           </div>
         </div>

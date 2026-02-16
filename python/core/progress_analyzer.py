@@ -6,6 +6,8 @@ Analyzes user's game data to identify strengths, weaknesses, and generate recomm
 
 import logging
 from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime, timedelta, date
+from collections import defaultdict
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -291,3 +293,303 @@ class ProgressAnalyzer:
                 recommendations.append('Use your positional understanding to outplay opponents')
 
         return recommendations[:3]  # Top 3 recommendations
+
+    async def get_progress_time_series(
+        self, user_id: str, platform: str,
+        game_analyses: List[Dict[str, Any]],
+        period_days: int = 90
+    ) -> Dict[str, Any]:
+        """
+        Aggregate progress data into weekly time series for charts.
+
+        Args:
+            user_id: Canonical user ID (username)
+            platform: Platform
+            game_analyses: Game analysis records (should be ordered by created_at)
+            period_days: Number of days to look back
+
+        Returns:
+            Dictionary with rating_trend, accuracy_by_phase, blunder_rate_trend, personality_trends
+        """
+        cutoff = datetime.utcnow() - timedelta(days=period_days)
+
+        # Filter analyses within period
+        recent = []
+        for a in game_analyses:
+            created = a.get('created_at') or a.get('played_at', '')
+            if isinstance(created, str) and created:
+                try:
+                    dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                    if dt.replace(tzinfo=None) >= cutoff:
+                        a['_parsed_date'] = dt.replace(tzinfo=None)
+                        recent.append(a)
+                except (ValueError, TypeError):
+                    recent.append(a)
+                    a['_parsed_date'] = datetime.utcnow()
+            else:
+                recent.append(a)
+                a['_parsed_date'] = datetime.utcnow()
+
+        # Group by ISO week
+        def week_key(dt: datetime) -> str:
+            iso = dt.isocalendar()
+            return f"{iso[0]}-W{iso[1]:02d}"
+
+        weekly: Dict[str, List[Dict]] = defaultdict(list)
+        for a in recent:
+            wk = week_key(a.get('_parsed_date', datetime.utcnow()))
+            weekly[wk].append(a)
+
+        sorted_weeks = sorted(weekly.keys())
+
+        # Rating trend (from games table - use my_rating from analyses if available)
+        rating_trend = []
+        for wk in sorted_weeks:
+            ratings = [a.get('my_rating', 0) or a.get('rating', 0) for a in weekly[wk] if a.get('my_rating') or a.get('rating')]
+            if ratings:
+                rating_trend.append({
+                    'week': wk,
+                    'avg_rating': round(sum(ratings) / len(ratings), 1),
+                    'games': len(weekly[wk]),
+                })
+
+        # Accuracy by phase
+        accuracy_by_phase = []
+        for wk in sorted_weeks:
+            analyses = weekly[wk]
+            op = [a.get('opening_accuracy', 0) for a in analyses if a.get('opening_accuracy')]
+            mg = [a.get('middle_game_accuracy', 0) for a in analyses if a.get('middle_game_accuracy')]
+            eg = [a.get('endgame_accuracy', 0) for a in analyses if a.get('endgame_accuracy')]
+            if op or mg or eg:
+                accuracy_by_phase.append({
+                    'week': wk,
+                    'opening': round(sum(op) / len(op), 1) if op else 0,
+                    'middlegame': round(sum(mg) / len(mg), 1) if mg else 0,
+                    'endgame': round(sum(eg) / len(eg), 1) if eg else 0,
+                })
+
+        # Blunder rate trend
+        blunder_rate_trend = []
+        for wk in sorted_weeks:
+            analyses = weekly[wk]
+            total_blunders = sum(a.get('blunders', 0) for a in analyses)
+            total_games = len(analyses)
+            if total_games > 0:
+                blunder_rate_trend.append({
+                    'week': wk,
+                    'blunders_per_game': round(total_blunders / total_games, 2),
+                })
+
+        # Personality score trends
+        personality_trends = []
+        score_keys = {
+            'tactical': 'tactical_score',
+            'positional': 'positional_score',
+            'aggressive': 'aggressive_score',
+            'patient': 'patient_score',
+            'novelty': 'novelty_score',
+            'staleness': 'staleness_score',
+        }
+        for wk in sorted_weeks:
+            analyses = weekly[wk]
+            week_scores: Dict[str, float] = {'week': wk}
+            for label, key in score_keys.items():
+                values = [a.get(key, 50) for a in analyses if a.get(key) is not None]
+                week_scores[label] = round(sum(values) / len(values), 1) if values else 50
+            personality_trends.append(week_scores)
+
+        return {
+            'rating_trend': rating_trend,
+            'accuracy_by_phase': accuracy_by_phase,
+            'blunder_rate_trend': blunder_rate_trend,
+            'personality_trends': personality_trends,
+        }
+
+    async def get_streak_data(
+        self, user_id: str, platform: str
+    ) -> Dict[str, Any]:
+        """
+        Calculate activity streaks and completion stats.
+
+        Args:
+            user_id: Auth user UUID (for lesson_progress/puzzle_attempts) or canonical user_id
+            platform: Platform
+
+        Returns:
+            Streak data including current streak, best streak, days active, and completion counts
+        """
+        # Collect all activity dates
+        activity_dates: set = set()
+
+        # Game analyses dates (uses canonical user_id)
+        try:
+            ga_result = await asyncio.to_thread(
+                lambda: self.supabase.table('game_analyses')
+                .select('created_at')
+                .eq('user_id', user_id)
+                .eq('platform', platform)
+                .execute()
+            )
+            for r in (ga_result.data or []):
+                if r.get('created_at'):
+                    try:
+                        dt = datetime.fromisoformat(r['created_at'].replace('Z', '+00:00'))
+                        activity_dates.add(dt.date())
+                    except (ValueError, TypeError):
+                        pass
+        except Exception as e:
+            logger.warning(f"[PROGRESS] Failed to fetch game_analyses dates: {e}")
+
+        # Lesson progress dates
+        try:
+            lp_result = await asyncio.to_thread(
+                lambda: self.supabase.table('lesson_progress')
+                .select('updated_at, status')
+                .eq('user_id', user_id)
+                .execute()
+            )
+            lessons_completed = 0
+            for r in (lp_result.data or []):
+                if r.get('status') == 'completed':
+                    lessons_completed += 1
+                if r.get('updated_at'):
+                    try:
+                        dt = datetime.fromisoformat(r['updated_at'].replace('Z', '+00:00'))
+                        activity_dates.add(dt.date())
+                    except (ValueError, TypeError):
+                        pass
+        except Exception as e:
+            logger.warning(f"[PROGRESS] Failed to fetch lesson_progress dates: {e}")
+            lessons_completed = 0
+
+        # Puzzle attempt dates
+        try:
+            pa_result = await asyncio.to_thread(
+                lambda: self.supabase.table('puzzle_attempts')
+                .select('attempted_at, was_correct')
+                .eq('user_id', user_id)
+                .execute()
+            )
+            puzzles_solved = 0
+            puzzles_correct = 0
+            for r in (pa_result.data or []):
+                puzzles_solved += 1
+                if r.get('was_correct'):
+                    puzzles_correct += 1
+                if r.get('attempted_at'):
+                    try:
+                        dt = datetime.fromisoformat(r['attempted_at'].replace('Z', '+00:00'))
+                        activity_dates.add(dt.date())
+                    except (ValueError, TypeError):
+                        pass
+        except Exception as e:
+            logger.warning(f"[PROGRESS] Failed to fetch puzzle_attempts dates: {e}")
+            puzzles_solved = 0
+            puzzles_correct = 0
+
+        # Calculate streaks
+        today = date.today()
+        sorted_dates = sorted(activity_dates, reverse=True)
+
+        current_streak = 0
+        best_streak = 0
+
+        if sorted_dates:
+            # Current streak - count consecutive days ending at today or yesterday
+            streak = 0
+            check_date = today
+            # Allow starting from today or yesterday
+            if sorted_dates[0] == today or sorted_dates[0] == today - timedelta(days=1):
+                check_date = sorted_dates[0]
+                for d in sorted_dates:
+                    if d == check_date:
+                        streak += 1
+                        check_date -= timedelta(days=1)
+                    elif d < check_date:
+                        break
+                current_streak = streak
+
+            # Best streak
+            streak = 1
+            prev = sorted_dates[0]
+            for d in sorted_dates[1:]:
+                if prev - d == timedelta(days=1):
+                    streak += 1
+                else:
+                    best_streak = max(best_streak, streak)
+                    streak = 1
+                prev = d
+            best_streak = max(best_streak, streak)
+
+        puzzle_solve_rate = puzzles_correct / puzzles_solved if puzzles_solved > 0 else 0
+
+        return {
+            'current_streak': current_streak,
+            'best_streak': best_streak,
+            'days_active': len(activity_dates),
+            'lessons_completed': lessons_completed,
+            'puzzles_solved': puzzles_solved,
+            'puzzle_solve_rate': round(puzzle_solve_rate, 2),
+        }
+
+    async def get_weakness_evolution(
+        self, user_id: str, platform: str,
+        game_analyses: List[Dict[str, Any]],
+        weeks: int = 8
+    ) -> List[Dict[str, Any]]:
+        """
+        Track how weakness scores evolve over time (weekly).
+
+        Args:
+            user_id: User ID
+            platform: Platform
+            game_analyses: Game analysis records
+            weeks: Number of weeks to track
+
+        Returns:
+            List of weekly score snapshots
+        """
+        cutoff = datetime.utcnow() - timedelta(weeks=weeks)
+
+        # Group analyses by week
+        weekly: Dict[str, List[Dict]] = defaultdict(list)
+        for a in game_analyses:
+            created = a.get('created_at') or a.get('played_at', '')
+            if isinstance(created, str) and created:
+                try:
+                    dt = datetime.fromisoformat(created.replace('Z', '+00:00')).replace(tzinfo=None)
+                    if dt >= cutoff:
+                        iso = dt.isocalendar()
+                        wk = f"{iso[0]}-W{iso[1]:02d}"
+                        weekly[wk].append(a)
+                except (ValueError, TypeError):
+                    pass
+
+        evolution = []
+        for wk in sorted(weekly.keys()):
+            analyses = weekly[wk]
+            scores: Dict[str, Any] = {'week': wk, 'scores': {}}
+
+            # Calculate category scores for this week
+            categories = {
+                'tactical': 'tactical_score',
+                'positional': 'positional_score',
+                'opening': 'opening_accuracy',
+                'middlegame': 'middle_game_accuracy',
+                'endgame': 'endgame_accuracy',
+            }
+            for cat, key in categories.items():
+                values = [a.get(key, 0) for a in analyses if a.get(key) is not None]
+                if values:
+                    scores['scores'][cat] = round(sum(values) / len(values), 1)
+
+            # Blunder rate as inverted score
+            total_blunders = sum(a.get('blunders', 0) for a in analyses)
+            if analyses:
+                blunder_rate = total_blunders / len(analyses)
+                scores['scores']['blunders'] = round(max(0, 100 - blunder_rate * 20), 1)
+
+            if scores['scores']:
+                evolution.append(scores)
+
+        return evolution

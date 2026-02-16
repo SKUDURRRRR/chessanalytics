@@ -24,6 +24,88 @@ class LessonGenerator:
         """
         self.supabase = supabase_client
 
+    async def _get_fen_positions_from_game(
+        self, game_id: str, user_id: str, platform: str, max_positions: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Extract FEN positions from a game's move analysis where mistakes/blunders occurred.
+
+        Args:
+            game_id: Game ID to get positions from
+            user_id: Canonical user ID (username)
+            platform: Platform
+            max_positions: Maximum positions to return
+
+        Returns:
+            List of {fen, description, correct_move} dicts
+        """
+        try:
+            result = await asyncio.to_thread(
+                lambda: self.supabase.table('move_analyses')
+                .select('moves_analysis')
+                .eq('user_id', user_id)
+                .eq('platform', platform)
+                .eq('game_id', game_id)
+                .limit(1)
+                .execute()
+            )
+
+            if not result.data or not result.data[0].get('moves_analysis'):
+                return []
+
+            moves = result.data[0]['moves_analysis']
+            positions = []
+
+            for move in moves:
+                classification = move.get('classification', '')
+                fen_before = move.get('fen_before', '')
+                best_move = move.get('best_move_san') or move.get('bestMoveSan', '')
+
+                if classification in ('blunder', 'mistake') and fen_before:
+                    move_san = move.get('san', move.get('move_san', ''))
+                    move_num = move.get('move_number', move.get('moveNumber', '?'))
+                    positions.append({
+                        'fen': fen_before,
+                        'description': f"Move {move_num}: You played {move_san} ({classification})",
+                        'correct_move': best_move or None,
+                    })
+
+                if len(positions) >= max_positions:
+                    break
+
+            return positions
+        except Exception as e:
+            logger.warning(f"[LESSON_GENERATOR] Failed to get FEN positions for game {game_id}: {e}")
+            return []
+
+    async def _enrich_practice_positions(
+        self, practice_positions: List[Dict[str, Any]], user_id: str, platform: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Enrich practice positions with actual FEN data from move analyses.
+
+        Args:
+            practice_positions: Positions with game_id but possibly no FEN
+            user_id: Canonical user ID
+            platform: Platform
+
+        Returns:
+            Enriched positions with FEN data
+        """
+        enriched = []
+        for pos in practice_positions:
+            game_id = pos.get('game_id')
+            if game_id and not pos.get('fen'):
+                fen_positions = await self._get_fen_positions_from_game(
+                    game_id, user_id, platform, max_positions=1
+                )
+                if fen_positions:
+                    enriched.append(fen_positions[0])
+                    continue
+            if pos.get('fen'):
+                enriched.append(pos)
+        return enriched
+
     async def generate_opening_lessons(
         self, user_id: str, platform: str, game_analyses: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
@@ -299,8 +381,294 @@ class LessonGenerator:
 
         return lessons
 
+    async def generate_time_management_lessons(
+        self, user_id: str, platform: str, game_analyses: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate time management lessons based on time_management_score and time control performance.
+
+        Args:
+            user_id: User ID
+            platform: Platform
+            game_analyses: List of game analysis records
+
+        Returns:
+            List of lesson dictionaries
+        """
+        lessons = []
+
+        if not game_analyses:
+            return lessons
+
+        # Calculate average time management score
+        tm_scores = [a.get('time_management_score', 0) for a in game_analyses if a.get('time_management_score') is not None]
+        avg_tm_score = sum(tm_scores) / len(tm_scores) if tm_scores else 50
+
+        # Group by time control category
+        time_control_stats: Dict[str, Dict[str, Any]] = {}
+        for analysis in game_analyses:
+            tc = analysis.get('time_control', 'unknown')
+            # Classify into categories: bullet/blitz/rapid/classical
+            if tc in ('bullet', 'blitz', 'rapid', 'classical'):
+                tc_cat = tc
+            elif tc and any(t in str(tc).lower() for t in ['1+0', '2+1', '1+1']):
+                tc_cat = 'bullet'
+            elif tc and any(t in str(tc).lower() for t in ['3+0', '3+2', '5+0', '5+3']):
+                tc_cat = 'blitz'
+            elif tc and any(t in str(tc).lower() for t in ['10+', '15+', '10+0', '15+10']):
+                tc_cat = 'rapid'
+            else:
+                tc_cat = 'other'
+
+            if tc_cat == 'other':
+                continue
+
+            if tc_cat not in time_control_stats:
+                time_control_stats[tc_cat] = {'games': 0, 'total_accuracy': 0, 'total_tm_score': 0}
+            time_control_stats[tc_cat]['games'] += 1
+            time_control_stats[tc_cat]['total_accuracy'] += analysis.get('accuracy', 0)
+            time_control_stats[tc_cat]['total_tm_score'] += analysis.get('time_management_score', 0)
+
+        logger.info(f"[LESSON_GENERATOR] Time management: avg_score={avg_tm_score:.1f}, time_controls={list(time_control_stats.keys())}")
+
+        # Find significant accuracy drops in faster time controls
+        blitz_accuracy = None
+        rapid_accuracy = None
+        for tc_cat, stats in time_control_stats.items():
+            if stats['games'] >= 3:
+                avg_acc = stats['total_accuracy'] / stats['games']
+                if tc_cat == 'blitz':
+                    blitz_accuracy = avg_acc
+                elif tc_cat == 'rapid':
+                    rapid_accuracy = avg_acc
+
+        # Generate lesson if time management is weak
+        if avg_tm_score < 60 or (blitz_accuracy and rapid_accuracy and rapid_accuracy - blitz_accuracy > 10):
+            priority = 'critical' if avg_tm_score < 40 else 'important'
+
+            # Build context-specific theory
+            theory_parts = [f"Your time management score is {avg_tm_score:.0f}/100."]
+
+            if blitz_accuracy and rapid_accuracy and rapid_accuracy - blitz_accuracy > 10:
+                theory_parts.append(
+                    f"Your accuracy drops from {rapid_accuracy:.0f}% in rapid to {blitz_accuracy:.0f}% in blitz - "
+                    f"a {rapid_accuracy - blitz_accuracy:.0f}% gap. You likely rush decisions under time pressure."
+                )
+
+            if avg_tm_score < 40:
+                theory_parts.append(
+                    "This is a critical weakness. Poor time management leads to unnecessary blunders "
+                    "in winning positions. Focus on allocating time to critical moments."
+                )
+
+            theory_parts.append(
+                "Key principles: spend more time on complex positions with many piece interactions, "
+                "play quickly in familiar positions, and always keep a time buffer for the endgame."
+            )
+
+            # Find worst time-managed games for practice
+            worst_tm_games = sorted(
+                [a for a in game_analyses if a.get('time_management_score', 100) < 50],
+                key=lambda x: x.get('time_management_score', 100)
+            )[:5]
+
+            practice_positions = [
+                {
+                    'game_id': g.get('game_id'),
+                    'accuracy': g.get('accuracy', 0),
+                    'blunders': g.get('blunders', 0),
+                    'description': f"Time management score: {g.get('time_management_score', 0):.0f}/100, accuracy: {g.get('accuracy', 0):.0f}%",
+                }
+                for g in worst_tm_games[:3] if g.get('game_id')
+            ]
+
+            lesson = {
+                'user_id': user_id,
+                'platform': platform,
+                'lesson_type': 'time_management',
+                'lesson_title': 'Master Your Clock',
+                'lesson_description': f'Your time management score is {avg_tm_score:.0f}/100. Learn to allocate time effectively.',
+                'lesson_content': {
+                    'theory': ' '.join(theory_parts),
+                    'common_mistakes': [
+                        {
+                            'game_id': g.get('game_id'),
+                            'blunders': g.get('blunders', 0),
+                            'accuracy': g.get('accuracy', 0),
+                            'tactical_score': g.get('time_management_score', 0),
+                        }
+                        for g in worst_tm_games[:3]
+                    ],
+                    'practice_positions': practice_positions,
+                    'action_items': [
+                        'Before each move, quickly assess: is this position critical or routine?',
+                        'Spend more time on moves where many pieces interact or tensions exist',
+                        'In time trouble, prefer safe moves over ambitious ones',
+                    ],
+                },
+                'priority': priority,
+                'estimated_time_minutes': 20,
+                'generated_from_games': [g.get('game_id') for g in worst_tm_games],
+            }
+            lessons.append(lesson)
+
+        return lessons
+
+    async def generate_style_lessons(
+        self, user_id: str, platform: str, game_analyses: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate playing style lessons based on personality scores.
+
+        Uses the 6 personality traits: tactical, positional, aggressive, patient, novelty, staleness.
+
+        Args:
+            user_id: User ID
+            platform: Platform
+            game_analyses: List of game analysis records
+
+        Returns:
+            List of lesson dictionaries
+        """
+        lessons = []
+
+        if not game_analyses:
+            return lessons
+
+        # Calculate average personality scores
+        score_keys = ['tactical_score', 'positional_score', 'aggressive_score',
+                      'patient_score', 'novelty_score', 'staleness_score']
+        avg_scores: Dict[str, float] = {}
+
+        for key in score_keys:
+            values = [a.get(key, 50) for a in game_analyses if a.get(key) is not None]
+            avg_scores[key] = sum(values) / len(values) if values else 50
+
+        logger.info(f"[LESSON_GENERATOR] Style scores: {', '.join(f'{k}={v:.1f}' for k, v in avg_scores.items())}")
+
+        # Define style-based lesson triggers
+        style_triggers = []
+
+        # Aggressive but impatient
+        if avg_scores.get('aggressive_score', 50) > 70 and avg_scores.get('patient_score', 50) < 40:
+            style_triggers.append({
+                'title': 'Channel Your Aggression',
+                'description': f'Aggressive score: {avg_scores["aggressive_score"]:.0f}, Patient score: {avg_scores["patient_score"]:.0f}. Learn to combine attack with restraint.',
+                'theory': (
+                    f"Your aggressive score of {avg_scores['aggressive_score']:.0f}/100 shows you love to attack, "
+                    f"but your patience score of {avg_scores['patient_score']:.0f}/100 means you sometimes rush into "
+                    f"premature attacks. The best attackers know when to build pressure gradually. "
+                    f"Study games of Tal and Kasparov - they prepared devastating attacks with quiet moves first."
+                ),
+                'action_items': [
+                    'Before launching an attack, ensure at least 3 of your pieces are participating',
+                    'Practice prophylaxis - improve your worst-placed piece before attacking',
+                    'In your next 5 games, consciously delay attacks by one move to improve preparation',
+                ],
+                'priority': 'important',
+            })
+
+        # Too passive
+        if avg_scores.get('patient_score', 50) > 70 and avg_scores.get('aggressive_score', 50) < 40:
+            style_triggers.append({
+                'title': 'When Patience Becomes Passivity',
+                'description': f'Patient score: {avg_scores["patient_score"]:.0f}, Aggressive score: {avg_scores["aggressive_score"]:.0f}. Learn to seize the initiative.',
+                'theory': (
+                    f"Your patience score of {avg_scores['patient_score']:.0f}/100 shows great discipline, "
+                    f"but your aggressive score of {avg_scores['aggressive_score']:.0f}/100 suggests you may be "
+                    f"too passive in critical positions. Chess rewards initiative - sometimes you need to create "
+                    f"imbalances and complications. Study Petrosian's prophylactic style to see how defense and "
+                    f"counter-attack work together."
+                ),
+                'action_items': [
+                    'Look for tactical opportunities even in quiet positions',
+                    'Practice creating pawn breaks to open the position',
+                    'When ahead in development, look for ways to open the position immediately',
+                ],
+                'priority': 'important',
+            })
+
+        # Low novelty / stuck in patterns
+        if avg_scores.get('novelty_score', 50) < 35:
+            style_triggers.append({
+                'title': 'Break Out of Your Comfort Zone',
+                'description': f'Novelty score: {avg_scores["novelty_score"]:.0f}. You tend to repeat the same patterns.',
+                'theory': (
+                    f"Your novelty score of {avg_scores['novelty_score']:.0f}/100 means you tend to play the same "
+                    f"types of positions and moves repeatedly. While consistency has value, chess improvement "
+                    f"requires exploring new ideas. Try different openings, practice unfamiliar pawn structures, "
+                    f"and study a variety of game styles."
+                ),
+                'action_items': [
+                    'Play a new opening you\'ve never tried in your next 3 games',
+                    'Study games from a player with a very different style than yours',
+                    'In each game, make at least one move that surprises you',
+                ],
+                'priority': 'enhancement',
+            })
+
+        # Tactical weakness with positional strength
+        if avg_scores.get('tactical_score', 50) < 50 and avg_scores.get('positional_score', 50) > 65:
+            style_triggers.append({
+                'title': 'Add Tactics to Your Positional Play',
+                'description': f'Tactical: {avg_scores["tactical_score"]:.0f}, Positional: {avg_scores["positional_score"]:.0f}. Your strategy needs sharper execution.',
+                'theory': (
+                    f"Your positional score of {avg_scores['positional_score']:.0f}/100 shows strong strategic "
+                    f"understanding, but your tactical score of {avg_scores['tactical_score']:.0f}/100 means you "
+                    f"often miss the concrete execution. Great strategy without tactics is like having a plan but "
+                    f"not the tools to execute it. Focus on calculation and pattern recognition."
+                ),
+                'action_items': [
+                    'Solve 10 tactical puzzles daily focusing on combinations',
+                    'In analyzed games, review positions where you had an advantage but failed to convert',
+                    'Practice calculating forced sequences 4-5 moves deep',
+                ],
+                'priority': 'important',
+            })
+
+        # High staleness
+        if avg_scores.get('staleness_score', 50) > 65:
+            style_triggers.append({
+                'title': 'Refresh Your Repertoire',
+                'description': f'Staleness score: {avg_scores["staleness_score"]:.0f}. Your play has become predictable.',
+                'theory': (
+                    f"Your staleness score of {avg_scores['staleness_score']:.0f}/100 indicates your play has "
+                    f"become predictable and repetitive. Opponents who study your games will exploit this. "
+                    f"Introduce surprise weapons in your opening repertoire and practice different middlegame plans."
+                ),
+                'action_items': [
+                    'Learn one new opening line for both colors this week',
+                    'Study a GM who plays a completely different style than you',
+                    'Try playing the opposite side of positions you normally play',
+                ],
+                'priority': 'important',
+            })
+
+        # Generate at most 2 style lessons (most relevant)
+        for trigger in style_triggers[:2]:
+            lesson = {
+                'user_id': user_id,
+                'platform': platform,
+                'lesson_type': 'style',
+                'lesson_title': trigger['title'],
+                'lesson_description': trigger['description'],
+                'lesson_content': {
+                    'theory': trigger['theory'],
+                    'common_mistakes': [],
+                    'practice_positions': [],
+                    'action_items': trigger['action_items'],
+                },
+                'priority': trigger['priority'],
+                'estimated_time_minutes': 20,
+                'generated_from_games': [],
+            }
+            lessons.append(lesson)
+
+        return lessons
+
     async def get_all_lessons(
-        self, user_id: str, platform: str, force_regenerate: bool = False, game_analyses: Optional[List[Dict[str, Any]]] = None
+        self, user_id: str, platform: str, force_regenerate: bool = False,
+        game_analyses: Optional[List[Dict[str, Any]]] = None, canonical_user_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Get all lessons for a user, generating if needed.
@@ -310,10 +678,15 @@ class LessonGenerator:
             platform: Platform
             force_regenerate: If True, regenerate lessons even if they exist
             game_analyses: Optional pre-fetched game analyses. If not provided, will fetch using user_id.
+            canonical_user_id: Platform username for querying move_analyses/game_analyses tables.
+                If not provided, falls back to user_id.
 
         Returns:
             List of lesson dictionaries with progress status
         """
+        # canonical_user_id is the platform username for game data tables
+        # user_id is UUID for coaching tables (lessons, lesson_progress)
+        query_user_id = canonical_user_id or user_id
         # Check if lessons already exist
         if not force_regenerate:
             existing_lessons_result = await asyncio.to_thread(
@@ -352,11 +725,11 @@ class LessonGenerator:
         # Generate new lessons
         # Use provided game_analyses or fetch them
         if game_analyses is None:
-            # Fetch game analyses (note: user_id here should be canonical username for game_analyses table)
+            # Fetch game analyses using canonical username (game_analyses.user_id is TEXT)
             analyses_result = await asyncio.to_thread(
                 lambda: self.supabase.table('game_analyses')
                 .select('*')
-                .eq('user_id', user_id)
+                .eq('user_id', query_user_id)
                 .eq('platform', platform)
                 .order('created_at', desc=True)
                 .limit(100)  # Analyze last 100 games
@@ -382,33 +755,25 @@ class LessonGenerator:
         logger.info(f"[LESSON_GENERATOR] Generated {len(positional_lessons)} positional lessons")
         all_lessons.extend(positional_lessons)
 
+        time_mgmt_lessons = await self.generate_time_management_lessons(user_id, platform, game_analyses)
+        logger.info(f"[LESSON_GENERATOR] Generated {len(time_mgmt_lessons)} time management lessons")
+        all_lessons.extend(time_mgmt_lessons)
+
+        style_lessons = await self.generate_style_lessons(user_id, platform, game_analyses)
+        logger.info(f"[LESSON_GENERATOR] Generated {len(style_lessons)} style lessons")
+        all_lessons.extend(style_lessons)
+
         logger.info(f"[LESSON_GENERATOR] Total lessons generated: {len(all_lessons)}")
 
-        # If no lessons generated, create a general improvement lesson
-        if not all_lessons and game_analyses:
-            logger.info(f"[LESSON_GENERATOR] No specific lessons generated, creating general improvement lesson")
-            general_lesson = {
-                'user_id': user_id,
-                'platform': platform,
-                'lesson_type': 'tactical',
-                'lesson_title': 'Continue Your Chess Improvement',
-                'lesson_description': f'You have {len(game_analyses)} analyzed games. Review your games to identify patterns and areas for improvement.',
-                'lesson_content': {
-                    'theory': 'Regular review of your games is key to improvement. Focus on understanding why moves were played and what alternatives existed.',
-                    'common_mistakes': [],
-                    'practice_positions': [],
-                    'action_items': [
-                        'Review your recent games and identify recurring patterns',
-                        'Focus on one aspect at a time (openings, tactics, or endgames)',
-                        'Practice with puzzles to sharpen your tactical vision',
-                    ],
-                },
-                'priority': 'enhancement',
-                'estimated_time_minutes': 15,
-                'generated_from_games': [a.get('game_id') for a in game_analyses[:5] if a.get('game_id')],
-            }
-            all_lessons.append(general_lesson)
-            logger.info(f"[LESSON_GENERATOR] Created general improvement lesson")
+        if not all_lessons:
+            logger.info(f"[LESSON_GENERATOR] No lessons generated - user has no specific weaknesses to address")
+
+        # Enrich practice positions with actual FEN data from move analyses
+        for lesson in all_lessons:
+            positions = lesson.get('lesson_content', {}).get('practice_positions', [])
+            if positions:
+                enriched = await self._enrich_practice_positions(positions, query_user_id, platform)
+                lesson['lesson_content']['practice_positions'] = enriched
 
         # Save lessons to database (upsert to prevent duplicates)
         saved_count = 0

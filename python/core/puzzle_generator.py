@@ -48,19 +48,24 @@ class PuzzleGenerator:
         return max(800, min(2500, user_rating - offset))
 
     async def generate_puzzles_from_blunders(
-        self, user_id: str, platform: str, game_analyses: List[Dict[str, Any]]
+        self, user_id: str, platform: str, game_analyses: List[Dict[str, Any]],
+        canonical_user_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Generate puzzles from positions where user blundered.
 
         Args:
-            user_id: User ID
+            user_id: User ID (UUID for puzzles table)
             platform: Platform ('lichess' or 'chess.com')
             game_analyses: List of game analysis records
+            canonical_user_id: Platform username for querying move_analyses/games tables.
+                If not provided, falls back to user_id.
 
         Returns:
             List of puzzle dictionaries
         """
+        # query_user_id is canonical username for game data tables
+        query_user_id = canonical_user_id or user_id
         puzzles = []
 
         if not game_analyses:
@@ -79,10 +84,10 @@ class PuzzleGenerator:
             # Fetch move analyses for this game to find blunder positions
             try:
                 move_analyses_result = await asyncio.to_thread(
-                    lambda: self.supabase.table('move_analyses')
+                    lambda gid=game_id: self.supabase.table('move_analyses')
                     .select('*')
-                    .eq('game_id', game_id)
-                    .eq('user_id', user_id)
+                    .eq('game_id', gid)
+                    .eq('user_id', query_user_id)
                     .eq('platform', platform)
                     .order('created_at')
                     .execute()
@@ -140,12 +145,12 @@ class PuzzleGenerator:
                                 tactical_theme = 'double_attack'
 
                         # Estimate difficulty based on user rating
-                        # Fetch user's current rating from games
+                        # Fetch user's current rating from games (games.user_id is TEXT username)
                         games_result = await asyncio.to_thread(
-                            lambda: self.supabase.table('games')
+                            lambda gid=game_id: self.supabase.table('games')
                             .select('my_rating')
-                            .eq('id', game_id)
-                            .eq('user_id', user_id)
+                            .eq('id', gid)
+                            .eq('user_id', query_user_id)
                             .limit(1)
                             .execute()
                         )
@@ -184,19 +189,22 @@ class PuzzleGenerator:
         return puzzles[:50]  # Limit to 50 puzzles
 
     async def generate_puzzles_from_mistakes(
-        self, user_id: str, platform: str, game_analyses: List[Dict[str, Any]]
+        self, user_id: str, platform: str, game_analyses: List[Dict[str, Any]],
+        canonical_user_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Generate puzzles from positions where user made mistakes (100-200 cp loss).
 
         Args:
-            user_id: User ID
+            user_id: User ID (UUID for puzzles table)
             platform: Platform
             game_analyses: List of game analysis records
+            canonical_user_id: Platform username for querying move_analyses/games tables.
 
         Returns:
             List of puzzle dictionaries
         """
+        query_user_id = canonical_user_id or user_id
         puzzles = []
 
         if not game_analyses:
@@ -212,13 +220,13 @@ class PuzzleGenerator:
             if not game_id or mistakes == 0:
                 continue
 
-            # Fetch move analyses
+            # Fetch move analyses (move_analyses.user_id is TEXT username)
             try:
                 move_analyses_result = await asyncio.to_thread(
-                    lambda: self.supabase.table('move_analyses')
+                    lambda gid=game_id: self.supabase.table('move_analyses')
                     .select('*')
-                    .eq('game_id', game_id)
-                    .eq('user_id', user_id)
+                    .eq('game_id', gid)
+                    .eq('user_id', query_user_id)
                     .eq('platform', platform)
                     .order('created_at')
                     .execute()
@@ -253,12 +261,12 @@ class PuzzleGenerator:
                         if not self._validate_fen(fen) or not best_move:
                             continue
 
-                        # Get user rating for difficulty
+                        # Get user rating for difficulty (games.user_id is TEXT username)
                         games_result = await asyncio.to_thread(
-                            lambda: self.supabase.table('games')
+                            lambda gid=game_id: self.supabase.table('games')
                             .select('my_rating')
-                            .eq('id', game_id)
-                            .eq('user_id', user_id)
+                            .eq('id', gid)
+                            .eq('user_id', query_user_id)
                             .limit(1)
                             .execute()
                         )
@@ -321,24 +329,28 @@ class PuzzleGenerator:
         return categorized
 
     async def get_daily_puzzle(
-        self, user_id: str, platform: str, puzzle_index: int = 0
+        self, user_id: str, platform: str, puzzle_index: int = 0,
+        canonical_user_id: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Get or generate a daily puzzle for the user.
 
         Args:
-            user_id: User ID
+            user_id: User ID (UUID for puzzles table)
             platform: Platform
             puzzle_index: Index to cycle through daily puzzles (0-2)
+            canonical_user_id: Platform username for querying game data tables.
 
         Returns:
             Puzzle dictionary or None
         """
+        # query_user_id is canonical username for game data tables
+        query_user_id = canonical_user_id or user_id
         today = datetime.now().date()
         today_start = datetime.combine(today, datetime.min.time())
 
         try:
-            # Check for existing puzzles today
+            # Check for existing puzzles today (puzzles.user_id is UUID)
             existing_result = await asyncio.to_thread(
                 lambda: self.supabase.table('puzzles')
                 .select('*')
@@ -358,10 +370,11 @@ class PuzzleGenerator:
                 return existing_result.data[0]
 
             # Generate new daily puzzles (up to 3)
+            # game_analyses.user_id is TEXT username
             analyses_result = await asyncio.to_thread(
                 lambda: self.supabase.table('game_analyses')
                 .select('*')
-                .eq('user_id', user_id)
+                .eq('user_id', query_user_id)
                 .eq('platform', platform)
                 .order('created_at', desc=True)
                 .limit(50)
@@ -371,10 +384,14 @@ class PuzzleGenerator:
             game_analyses = analyses_result.data or []
 
             # Generate puzzles from blunders (prefer blunders for daily puzzle)
-            puzzles = await self.generate_puzzles_from_blunders(user_id, platform, game_analyses)
+            puzzles = await self.generate_puzzles_from_blunders(
+                user_id, platform, game_analyses, canonical_user_id=query_user_id
+            )
 
             if not puzzles:
-                puzzles = await self.generate_puzzles_from_mistakes(user_id, platform, game_analyses)
+                puzzles = await self.generate_puzzles_from_mistakes(
+                    user_id, platform, game_analyses, canonical_user_id=query_user_id
+                )
 
             if puzzles:
                 # Save up to 3 puzzles for daily rotation

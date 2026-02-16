@@ -654,6 +654,16 @@ export interface DashboardData {
   top_weaknesses: Weakness[]
   top_strengths: Strength[]
   recent_activity: Activity[]
+  quick_stats?: QuickStats
+}
+
+export interface QuickStats {
+  current_streak: number
+  lessons_completed: number
+  puzzles_solved: number
+  puzzle_solve_rate: number
+  active_study_plan: boolean
+  openings_tracked: number
 }
 
 export interface Weakness {
@@ -797,4 +807,132 @@ export interface CoachChatResponse {
   response: string
   tokens_used?: number
   model_used?: string
+}
+
+// ============================================================================
+// COACH PHASE 2 TYPES
+// ============================================================================
+
+/** Progress tracking time-series data */
+export interface ProgressData {
+  time_series: {
+    rating_trend: Array<{ week: string; avg_rating: number; games: number }>
+    accuracy_by_phase: Array<{
+      week: string
+      opening: number
+      middlegame: number
+      endgame: number
+    }>
+    blunder_rate_trend: Array<{ week: string; blunders_per_game: number }>
+    personality_trends: Array<{
+      week: string
+      tactical: number
+      positional: number
+      aggressive: number
+      patient: number
+      novelty: number
+      staleness: number
+    }>
+  }
+  streaks: {
+    current_streak: number
+    best_streak: number
+    days_active: number
+    lessons_completed: number
+    puzzles_solved: number
+    puzzle_solve_rate: number
+  }
+  weakness_evolution: Array<{
+    week: string
+    scores: Record<string, number>
+  }>
+}
+
+/** Weekly study plan */
+export interface StudyPlan {
+  id: string
+  user_id: string
+  platform: 'lichess' | 'chess.com'
+  week_start: string
+  week_number: number
+  goals: UserGoal[]
+  daily_activities: Record<string, DailyActivity[]>
+  status: 'active' | 'completed' | 'skipped'
+  created_at?: string
+  updated_at?: string
+}
+
+/** Single daily activity within a study plan */
+export interface DailyActivity {
+  type: 'lesson' | 'puzzles' | 'review' | 'practice'
+  title: string
+  description?: string
+  target_id?: string
+  completed: boolean
+  completed_at?: string
+}
+
+/** User improvement goal */
+export interface UserGoal {
+  id: string
+  goal_type: string
+  goal_description: string
+  target_value: number
+  current_value: number
+  deadline?: string
+  status: 'pending' | 'in_progress' | 'completed' | 'abandoned'
+}
+
+/** Tag on a game */
+export interface GameTag {
+  id: string
+  game_id: string
+  platform: 'lichess' | 'chess.com'
+  tag: string
+  tag_type: 'user' | 'system'
+  created_at?: string
+}
+
+/** Saved chess position */
+export interface SavedPosition {
+  id: string
+  fen: string
+  title?: string
+  notes?: string
+  source_game_id?: string
+  source_move_number?: number
+  platform: 'lichess' | 'chess.com'
+  tags: string[]
+  created_at?: string
+  updated_at?: string
+}
+
+/** Opening repertoire entry */
+export interface OpeningRepertoire {
+  id: string
+  opening_family: string
+  color: 'white' | 'black'
+  games_played: number
+  win_rate: number
+  avg_accuracy: number
+  deviation_moves: DeviationMove[]
+  confidence_level: number
+  last_practiced?: string
+  spaced_repetition_due?: string
+}
+
+/** A point where user deviates from main opening line */
+export interface DeviationMove {
+  move_number: number
+  expected_move: string
+  actual_move: string
+  frequency: number
+  result_after?: string
+}
+
+/** Full opening detail with deviations and drill positions */
+export interface OpeningDetail {
+  repertoire: OpeningRepertoire
+  deviations: DeviationMove[]
+  drill_positions: PracticePosition[]
 }

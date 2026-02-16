@@ -60,6 +60,10 @@ const LessonsPage = lazyWithRetry(() => import('./pages/coach/LessonsPage'))
 const PuzzlesPage = lazyWithRetry(() => import('./pages/coach/PuzzlesPage'))
 const PuzzleSolvePage = lazyWithRetry(() => import('./pages/coach/PuzzleSolvePage'))
 const PlayWithCoachPage = lazyWithRetry(() => import('./pages/coach/PlayWithCoachPage'))
+const ProgressPage = lazyWithRetry(() => import('./pages/coach/ProgressPage'))
+const PositionLibraryPage = lazyWithRetry(() => import('./pages/coach/PositionLibraryPage'))
+const OpeningsPage = lazyWithRetry(() => import('./pages/coach/OpeningsPage'))
+const StudyPlanPage = lazyWithRetry(() => import('./pages/coach/StudyPlanPage'))
 const LessonViewer = lazyWithRetry(() => import('./components/coach/LessonViewer').then(m => ({ default: m.LessonViewer })))
 
 // Loading component shown while pages load
@@ -104,6 +108,10 @@ function App() {
                   <Route path="/coach/play" element={<ComponentErrorBoundary><PlayWithCoachPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/lessons" element={<ComponentErrorBoundary><LessonsPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/lessons/:lessonId" element={<ComponentErrorBoundary><LessonViewer /></ComponentErrorBoundary>} />
+                  <Route path="/coach/progress" element={<ComponentErrorBoundary><ProgressPage /></ComponentErrorBoundary>} />
+                  <Route path="/coach/positions" element={<ComponentErrorBoundary><PositionLibraryPage /></ComponentErrorBoundary>} />
+                  <Route path="/coach/openings" element={<ComponentErrorBoundary><OpeningsPage /></ComponentErrorBoundary>} />
+                  <Route path="/coach/study-plan" element={<ComponentErrorBoundary><StudyPlanPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/puzzles" element={<ComponentErrorBoundary><PuzzlesPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/puzzles/solve" element={<ComponentErrorBoundary><PuzzleSolvePage /></ComponentErrorBoundary>} />
                   <Route path="*" element={<ComponentErrorBoundary><NotFoundPage /></ComponentErrorBoundary>} />
