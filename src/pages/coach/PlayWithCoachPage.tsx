@@ -660,7 +660,7 @@ export default function PlayWithCoachPage() {
       }
 
       const pgn = fullGame.pgn({
-        max_width: 80,
+        maxWidth: 80,
         newline: '\n'
       })
 
@@ -1012,7 +1012,7 @@ ${pgn} ${result}`
 
               {/* Chess Board */}
               <div className="flex justify-center">
-                <div style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
+                <div style={{ width: `${boardWidth}px` }}>
                   <Chessboard
                     id="play-with-coach-board"
                     position={displayPosition}
@@ -1026,9 +1026,8 @@ ${pgn} ${result}`
                 </div>
               </div>
 
-              {/* Player Bar + Navigation */}
+              {/* Player Bar */}
               <div className="flex items-center gap-2.5 mt-2 px-1">
-                {/* Player identity */}
                 <div className={`w-3.5 h-3.5 rounded-sm border border-slate-600 ${
                   playerColor === 'white' ? 'bg-white' : 'bg-slate-800'
                 }`} />
@@ -1036,55 +1035,51 @@ ${pgn} ${result}`
                 <span className="text-xs text-slate-500">
                   {getStatusMessage()}
                 </span>
-
-                {/* Navigation buttons */}
-                <div className="ml-auto flex items-center gap-1">
-                  <button
-                    onClick={() => navigateToMove(0)}
-                    disabled={moveHistory.length === 0}
-                    className={navBtnClass}
-                    aria-label="First position"
-                  >
-                    {'|<'}
-                  </button>
-                  <button
-                    onClick={() => navigateToMove((viewIndex ?? moveHistory.length) - 1)}
-                    disabled={activeHalfMoveIndex === 0}
-                    className={navBtnClass}
-                    aria-label="Previous move"
-                  >
-                    {'<'}
-                  </button>
-                  <button
-                    onClick={() => navigateToMove((viewIndex ?? moveHistory.length) + 1)}
-                    disabled={activeHalfMoveIndex >= moveHistory.length}
-                    className={navBtnClass}
-                    aria-label="Next move"
-                  >
-                    {'>'}
-                  </button>
-                  <button
-                    onClick={() => navigateToMove(moveHistory.length)}
-                    disabled={viewIndex === null}
-                    className={navBtnClass}
-                    aria-label="Current position"
-                  >
-                    {'>|'}
-                  </button>
-                </div>
-              </div>
-
-              {/* History viewing indicator */}
-              {isViewingHistory && (
-                <div className="mt-2 px-1">
+                {isViewingHistory && (
                   <button
                     onClick={() => setViewIndex(null)}
-                    className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                    className="ml-auto text-xs text-sky-400 hover:text-sky-300 transition-colors"
                   >
-                    ← Return to live position
+                    ← Live
                   </button>
-                </div>
-              )}
+                )}
+              </div>
+
+              {/* Move Navigation */}
+              <div className="flex items-center justify-center gap-1.5 mt-3 py-2 px-3 rounded-xl bg-white/[0.03] border border-white/5">
+                <button
+                  onClick={() => navigateToMove(0)}
+                  disabled={moveHistory.length === 0}
+                  className={navBtnClass}
+                  aria-label="First position"
+                >
+                  {'|<'}
+                </button>
+                <button
+                  onClick={() => navigateToMove((viewIndex ?? moveHistory.length) - 1)}
+                  disabled={activeHalfMoveIndex === 0}
+                  className={navBtnClass}
+                  aria-label="Previous move"
+                >
+                  {'<'}
+                </button>
+                <button
+                  onClick={() => navigateToMove((viewIndex ?? moveHistory.length) + 1)}
+                  disabled={activeHalfMoveIndex >= moveHistory.length}
+                  className={navBtnClass}
+                  aria-label="Next move"
+                >
+                  {'>'}
+                </button>
+                <button
+                  onClick={() => navigateToMove(moveHistory.length)}
+                  disabled={viewIndex === null}
+                  className={navBtnClass}
+                  aria-label="Current position"
+                >
+                  {'>|'}
+                </button>
+              </div>
             </div>
 
             {/* RIGHT: Sidebar */}
