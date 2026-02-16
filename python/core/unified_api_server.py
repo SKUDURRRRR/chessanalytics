@@ -11560,10 +11560,25 @@ async def get_lessons(
 
     try:
         canonical_user_id = _canonical_user_id(user_id, platform)
+        # lessons table uses UUID (auth.users), game_analyses uses platform username
+        db_user_id = auth_user_id or canonical_user_id
         lesson_generator = LessonGenerator(supabase_service)
 
-        # Get all lessons
-        lessons = await lesson_generator.get_all_lessons(canonical_user_id, platform, force_regenerate=False)
+        # Pre-fetch game analyses using platform username (game_analyses.user_id is TEXT)
+        analyses_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('*')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(100)
+            .execute()
+        )
+
+        # Get all lessons - pass UUID for lessons table, pre-fetched analyses for content
+        lessons = await lesson_generator.get_all_lessons(
+            db_user_id, platform, force_regenerate=False, game_analyses=analyses_result.data or []
+        )
 
         # Filter by category if provided
         if category:
@@ -11574,7 +11589,7 @@ async def get_lessons(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting lessons: {e}")
+        logger.error(f"Error getting lessons: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get lessons")
 
 
@@ -11750,13 +11765,15 @@ async def get_puzzles(
 
     try:
         canonical_user_id = _canonical_user_id(user_id, platform)
+        # puzzles table uses UUID (auth.users), game_analyses uses platform username
+        db_user_id = auth_user_id or canonical_user_id
         puzzle_generator = PuzzleGenerator(supabase_service)
 
-        # Check if puzzles already exist
+        # Check if puzzles already exist (puzzles.user_id is UUID)
         puzzles_result = await asyncio.to_thread(
             lambda: supabase_service.table('puzzles')
             .select('*')
-            .eq('user_id', canonical_user_id)
+            .eq('user_id', db_user_id)
             .eq('platform', platform)
             .execute()
         )
@@ -11765,7 +11782,7 @@ async def get_puzzles(
 
         # Generate puzzles if none exist
         if not puzzles:
-            # Fetch game analyses
+            # Fetch game analyses using platform username (game_analyses.user_id is TEXT)
             analyses_result = await asyncio.to_thread(
                 lambda: supabase_service.table('game_analyses')
                 .select('*')
@@ -11778,9 +11795,9 @@ async def get_puzzles(
 
             game_analyses = analyses_result.data or []
 
-            # Generate puzzles
+            # Generate puzzles using UUID for puzzle table, canonical for game data
             puzzles = await puzzle_generator.generate_puzzles_from_blunders(
-                canonical_user_id, platform, game_analyses
+                db_user_id, platform, game_analyses
             )
 
             # Save puzzles to database
@@ -11810,7 +11827,7 @@ async def get_puzzles(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting puzzles: {e}")
+        logger.error(f"Error getting puzzles: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get puzzles")
 
 
@@ -11842,10 +11859,11 @@ async def get_daily_puzzle(
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        canonical_user_id = _canonical_user_id(user_id, platform)
+        # puzzles table uses UUID (auth.users)
+        db_user_id = auth_user_id or _canonical_user_id(user_id, platform)
         puzzle_generator = PuzzleGenerator(supabase_service)
 
-        daily_puzzle = await puzzle_generator.get_daily_puzzle(canonical_user_id, platform)
+        daily_puzzle = await puzzle_generator.get_daily_puzzle(db_user_id, platform)
 
         if not daily_puzzle:
             raise HTTPException(status_code=404, detail="No daily puzzle available")
@@ -11855,7 +11873,7 @@ async def get_daily_puzzle(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting daily puzzle: {e}")
+        logger.error(f"Error getting daily puzzle: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get daily puzzle")
 
 
@@ -12153,6 +12171,58 @@ def _increment_chat_usage(user_id: str):
     _chat_usage[user_id].append(_time.time())
 
 
+def _get_stockfish_top_moves(fen: str, num_moves: int = 3, depth: int = 14, time_limit: float = 0.2) -> List[Dict[str, Any]]:
+    """Quick Stockfish evaluation returning top N moves with scores.
+
+    Returns list of dicts with keys: move_san, eval_text, is_best.
+    Uses a temporary engine to avoid pool contention with ongoing analyses.
+    """
+    import chess as _chess
+    import chess.engine as _engine
+
+    try:
+        engine_instance = _get_analysis_engine()
+        sf_path = getattr(engine_instance, 'stockfish_path', None)
+        if not sf_path:
+            return []
+    except Exception:
+        return []
+
+    try:
+        board = _chess.Board(fen)
+        with _engine.SimpleEngine.popen_uci(sf_path) as sf:
+            sf.configure({'Skill Level': 20, 'Threads': 1, 'Hash': 64})
+            limit = _engine.Limit(depth=depth, time=time_limit)
+            info_list = sf.analyse(board, limit, multipv=num_moves)
+
+            results = []
+            for i, info in enumerate(info_list):
+                pv = info.get('pv', [])
+                if not pv:
+                    continue
+                move = pv[0]
+                score = info.get('score')
+                if score:
+                    pov = score.pov(board.turn)
+                    if pov.is_mate():
+                        mate_in = pov.mate()
+                        eval_text = f"mate in {abs(mate_in)}" if mate_in > 0 else f"getting mated in {abs(mate_in)}"
+                    else:
+                        cp = pov.score()
+                        eval_text = f"{cp/100:+.1f}" if cp is not None else "unclear"
+                else:
+                    eval_text = "unclear"
+                results.append({
+                    'move_san': board.san(move),
+                    'eval_text': eval_text,
+                    'is_best': i == 0,
+                })
+            return results
+    except Exception as e:
+        logger.warning(f"[COACH CHAT] Stockfish probe failed: {e}")
+        return []
+
+
 def _build_chat_system_prompt(context: ChatPositionContext) -> str:
     """Build system prompt for direct chess coaching chat."""
     context_specific = ""
@@ -12213,7 +12283,9 @@ CRITICAL RULES:
 - Keep responses SHORT. If you're writing more than 4 sentences, stop and trim
 - Always relate advice to the CURRENT POSITION (the FEN provided)
 - When the student is wrong, be direct but kind: "That loses material because of Bxf7+. Look at your knight instead — where can it go to create a double attack?"
-- PERSPECTIVE: The student's color is given in the position context. Only suggest moves for THEIR color. Use correct notation from their perspective (e.g. if student is White and can capture on d5, say "exd5", not "dxe4" which would be Black's move). Double-check that any move you name is legal for the side to move
+- PERSPECTIVE: The student's color is given in the position context. Only suggest moves for THEIR color. Use correct notation from their perspective (e.g. if student is White and can capture on d5, say "exd5", not "dxe4" which would be Black's move)
+- LEGAL MOVES: A list of legal moves is provided in the position context. ONLY suggest or reference moves from that list. If a move is not in the list, it is illegal — do not suggest it
+- ENGINE GUIDANCE: Stockfish engine evaluations of top moves are provided. Base your recommendations on these evaluations — they are objectively correct. Explain the engine's top choice in human-friendly terms
 - CONSISTENCY: Never contradict yourself in the same response (e.g. don't say "don't capture" then suggest a capture)
 
 RESPONSE FORMAT:
@@ -12226,9 +12298,20 @@ def _build_chat_user_prompt(
     user_message: str,
     context: ChatPositionContext,
     history: List[ConversationMessage],
+    stockfish_moves: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Build the user prompt including position context and conversation history."""
     position_info = f"Current position (FEN): {context.fen}"
+
+    # Compute legal moves from the FEN to prevent hallucinated moves
+    legal_moves_san = []
+    try:
+        import chess as _chess
+        board = _chess.Board(context.fen)
+        legal_moves_san = [board.san(m) for m in board.legal_moves]
+    except Exception:
+        pass
+
     if context.player_color:
         opponent_color = "black" if context.player_color == "white" else "white"
         position_info += f"\nStudent is playing as: {context.player_color.upper()} (opponent is {opponent_color})"
@@ -12239,6 +12322,19 @@ def _build_chat_user_prompt(
             is_student_turn = side_to_move == context.player_color
             turn_label = "student's turn" if is_student_turn else "opponent's turn"
             position_info += f"\nSide to move: {side_to_move} ({turn_label})"
+
+    if legal_moves_san:
+        position_info += f"\nLegal moves in this position: {', '.join(sorted(legal_moves_san))}"
+        position_info += "\nIMPORTANT: ONLY reference moves from this legal moves list. Any move not in this list is ILLEGAL and must not be suggested."
+
+    # Include Stockfish evaluation of top moves
+    if stockfish_moves:
+        sf_lines = []
+        for mv in stockfish_moves:
+            label = "BEST" if mv['is_best'] else "good"
+            sf_lines.append(f"  {mv['move_san']} (eval: {mv['eval_text']}, {label})")
+        position_info += "\n\nSTOCKFISH ENGINE EVALUATION (top moves ranked by strength):\n" + "\n".join(sf_lines)
+        position_info += "\nUse these engine evaluations to guide your advice. Recommend moves from this list. Explain WHY the top move is strong in human terms."
 
     # Format recent moves with clear attribution
     if context.move_history:
@@ -12327,13 +12423,19 @@ async def coach_chat(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid chess position (FEN).")
 
-    # 4. Build prompts and call AI
+    # 4. Quick Stockfish evaluation for top moves (runs in thread to avoid blocking)
+    stockfish_moves = await asyncio.to_thread(
+        _get_stockfish_top_moves, request.position_context.fen
+    )
+
+    # 5. Build prompts and call AI
     try:
         system_prompt = _build_chat_system_prompt(request.position_context)
         user_prompt = _build_chat_user_prompt(
             request.message,
             request.position_context,
             request.conversation_history,
+            stockfish_moves=stockfish_moves,
         )
 
         # Use existing AI generator
@@ -12376,6 +12478,269 @@ async def coach_chat(
             status_code=500,
             detail="Coach is temporarily unavailable. Please try again in a moment."
         )
+
+
+# ============================================================================
+# STUDY PLAN ENDPOINTS
+# ============================================================================
+
+@app.get("/api/v1/coach/study-plan/{user_id}/{platform}")
+async def get_study_plan(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Get current active study plan. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .study_plan_generator import StudyPlanGenerator
+        generator = StudyPlanGenerator(supabase_service)
+
+        plan = await generator.get_current_plan(auth_user_id, platform)
+        return {'plan': plan}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting study plan: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get study plan")
+
+
+@app.post("/api/v1/coach/study-plan/{user_id}/{platform}")
+async def create_study_plan(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Generate a new weekly study plan. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .study_plan_generator import StudyPlanGenerator
+        generator = StudyPlanGenerator(supabase_service)
+
+        plan = await generator.generate_weekly_plan(auth_user_id, platform, user_id)
+        return {'plan': plan}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating study plan: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create study plan")
+
+
+@app.post("/api/v1/coach/study-plan/{plan_id}/activity")
+async def complete_study_activity(
+    plan_id: str,
+    activity_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Mark a daily activity as completed. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        day = activity_data.get('day', 0)
+        activity_index = activity_data.get('activity_index', 0)
+
+        from .study_plan_generator import StudyPlanGenerator
+        generator = StudyPlanGenerator(supabase_service)
+
+        plan = await generator.complete_daily_activity(auth_user_id, plan_id, day, activity_index)
+        return {'plan': plan}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing activity: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to complete activity")
+
+
+@app.get("/api/v1/coach/goals/{user_id}/{platform}")
+async def get_user_goals(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Get user goals. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .study_plan_generator import StudyPlanGenerator
+        generator = StudyPlanGenerator(supabase_service)
+
+        goals = await generator.get_goals(auth_user_id, platform)
+        return {'goals': goals}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting goals: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get goals")
+
+
+# ============================================================================
+# OPENING REPERTOIRE ENDPOINTS
+# ============================================================================
+
+@app.get("/api/v1/coach/openings/{user_id}/{platform}")
+async def get_opening_repertoire(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID"),
+    refresh: bool = Query(False, description="Force re-analysis of repertoire")
+):
+    """Get user's opening repertoire overview. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        analyzer = OpeningRepertoireAnalyzer(supabase_service)
+
+        if refresh:
+            entries = await analyzer.analyze_repertoire(auth_user_id, platform, user_id)
+            return {'repertoire': entries, 'refreshed': True}
+
+        entries = await analyzer.get_repertoire(auth_user_id, platform)
+
+        if not entries:
+            entries = await analyzer.analyze_repertoire(auth_user_id, platform, user_id)
+
+        return {'repertoire': entries, 'refreshed': not bool(entries)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting opening repertoire: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get opening repertoire")
+
+
+@app.get("/api/v1/coach/openings/{user_id}/{platform}/{opening_family}")
+async def get_opening_detail(
+    user_id: str,
+    platform: str,
+    opening_family: str,
+    color: str = Query('white', description="Color: 'white' or 'black'"),
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Get detailed analysis for a specific opening. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        analyzer = OpeningRepertoireAnalyzer(supabase_service)
+
+        import urllib.parse
+        decoded_opening = urllib.parse.unquote(opening_family)
+
+        detail = await analyzer.get_opening_detail(
+            auth_user_id, platform, user_id, decoded_opening, color
+        )
+        return detail
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting opening detail: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get opening detail")
+
+
+@app.post("/api/v1/coach/openings/drill")
+async def get_drill_positions(
+    drill_request: Dict[str, Any],
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Get drill positions for an opening. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        user_id = drill_request.get('user_id', '')
+        platform_val = drill_request.get('platform', '')
+        opening_family = drill_request.get('opening_family', '')
+        color = drill_request.get('color', 'white')
+
+        if not user_id or not platform_val or not opening_family:
+            raise HTTPException(status_code=400, detail="user_id, platform, and opening_family are required")
+
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        analyzer = OpeningRepertoireAnalyzer(supabase_service)
+
+        positions = await analyzer.get_drill_positions(
+            auth_user_id, platform_val, user_id, opening_family, color
+        )
+        return {'positions': positions}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting drill positions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get drill positions")
+
+
+@app.post("/api/v1/coach/openings/drill/complete")
+async def complete_drill(
+    completion_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+):
+    """Update spaced repetition after a drill. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        repertoire_id = completion_data.get('repertoire_id', '')
+        confidence_delta = completion_data.get('confidence_delta', 0)
+
+        if not repertoire_id:
+            raise HTTPException(status_code=400, detail="repertoire_id is required")
+
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        analyzer = OpeningRepertoireAnalyzer(supabase_service)
+
+        result = await analyzer.update_spaced_repetition(
+            auth_user_id, repertoire_id, confidence_delta
+        )
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing drill: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update drill completion")
 
 
 # ============================================================================

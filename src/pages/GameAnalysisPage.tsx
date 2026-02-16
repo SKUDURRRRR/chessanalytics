@@ -1513,10 +1513,15 @@ export default function GameAnalysisPage() {
   const currentMove = currentIndex > 0 ? processedData.moves[currentIndex - 1] : null
 
   // Publish position context to floating chat widget
+  // In analysis mode, use the pre-move FEN so the coach can discuss the decision
+  // point (what move should have been played), not the resulting position
   useEffect(() => {
+    const analysisfen = currentMove?.fenBefore
+      || processedData.positions[currentIndex]
+      || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
     const ctx: ChatPositionContext = {
-      fen: processedData.positions[currentIndex] || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-      moveHistory: processedData.moves.slice(0, currentIndex).map(m => m.san),
+      fen: analysisfen,
+      moveHistory: processedData.moves.slice(0, Math.max(0, currentIndex - 1)).map(m => m.san),
       playerColor,
       moveNumber: currentMove?.moveNumber,
       lastMove: currentMove?.san,
