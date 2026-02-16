@@ -1,24 +1,43 @@
 // Home Page - Engaging entry point for chess improvement
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PlayerSearch } from '../components/simple/PlayerSearch'
 import { useAuth } from '../contexts/AuthContext'
+import { EloMockup } from '../components/landing/EloMockup'
+import { PersonalityMockup } from '../components/landing/PersonalityMockup'
+import { ChessboardMockup } from '../components/landing/ChessboardMockup'
 
 interface ScreenshotMockupProps {
-  src: string
-  alt: string
   glowColor: string
-  tiltDirection: 'left' | 'right'
-  hasError: boolean
-  onError: () => void
-  fallbackEmoji: string
-  fallbackLabel: string
+  children: React.ReactNode
 }
 
-function ScreenshotMockup({ src, alt, glowColor, tiltDirection, hasError, onError, fallbackEmoji, fallbackLabel }: ScreenshotMockupProps) {
-  const tilt = tiltDirection === 'left'
-    ? 'perspective(2000px) rotateY(-2deg) rotateX(1deg)'
-    : 'perspective(2000px) rotateY(2deg) rotateX(1deg)'
+// Render mockup content at a fixed comfortable width, then scale down to fit container
+const MOCKUP_CONTENT_WIDTH = 660
+
+function ScreenshotMockup({ glowColor, children }: ScreenshotMockupProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+  const [scaledHeight, setScaledHeight] = useState<number | undefined>(undefined)
+
+  useEffect(() => {
+    const container = containerRef.current
+    const content = contentRef.current
+    if (!container || !content) return
+
+    const update = () => {
+      const containerW = container.offsetWidth
+      const s = Math.min(1, containerW / MOCKUP_CONTENT_WIDTH)
+      setScale(s)
+      setScaledHeight(content.offsetHeight * s)
+    }
+
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(container)
+    return () => ro.disconnect()
+  }, [])
 
   const glowColors: Record<string, string> = {
     amber: 'from-amber-500/20 via-amber-400/10 to-orange-500/20',
@@ -35,8 +54,6 @@ function ScreenshotMockup({ src, alt, glowColor, tiltDirection, hasError, onErro
       <div
         className="relative rounded-xl overflow-hidden border border-white/[0.08] bg-slate-900/80"
         style={{
-          transform: tilt,
-          transformOrigin: 'center center',
           boxShadow: `
             0 0 0 1px rgba(255, 255, 255, 0.05),
             0 4px 6px -1px rgba(0, 0, 0, 0.3),
@@ -44,7 +61,6 @@ function ScreenshotMockup({ src, alt, glowColor, tiltDirection, hasError, onErro
             0 20px 25px -5px rgba(0, 0, 0, 0.25),
             0 25px 50px -12px rgba(0, 0, 0, 0.5)
           `,
-          transition: 'transform 0.4s ease, box-shadow 0.4s ease',
         }}
       >
         {/* Browser top bar */}
@@ -59,26 +75,22 @@ function ScreenshotMockup({ src, alt, glowColor, tiltDirection, hasError, onErro
               chessdata.app
             </div>
           </div>
-          <div className="w-[52px]" /> {/* Spacer to balance the dots */}
+          <div className="w-[52px]" />
         </div>
 
-        {/* Screenshot content */}
-        {hasError ? (
-          <div className="h-64 flex items-center justify-center bg-slate-900/50">
-            <div className="text-center">
-              <div className="text-5xl mb-3">{fallbackEmoji}</div>
-              <p className="text-sm text-slate-500">{fallbackLabel}</p>
-            </div>
+        {/* Auto-scaled content: renders at fixed width, scales to fit */}
+        <div ref={containerRef} className="overflow-hidden" style={{ height: scaledHeight }}>
+          <div
+            ref={contentRef}
+            style={{
+              width: MOCKUP_CONTENT_WIDTH,
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            {children}
           </div>
-        ) : (
-          <img
-            src={src}
-            alt={alt}
-            className="w-full h-auto block"
-            style={{ imageRendering: 'auto' }}
-            onError={onError}
-          />
-        )}
+        </div>
       </div>
     </div>
   )
@@ -87,9 +99,6 @@ function ScreenshotMockup({ src, alt, glowColor, tiltDirection, hasError, onErro
 export default function HomePage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [imageError, setImageError] = useState(false)
-  const [personalityImageError, setPersonalityImageError] = useState(false)
-  const [eloImageError, setEloImageError] = useState(false)
 
   useEffect(() => {
     // Clean up OAuth hash fragments and wildcards from URL
@@ -254,16 +263,9 @@ export default function HomePage() {
               </div>
             </div>
             <div className="order-1 lg:order-2">
-              <ScreenshotMockup
-                src="/assets/chessboard.png"
-                alt="Chess board with AI coach commentary"
-                glowColor="amber"
-                tiltDirection="left"
-                hasError={imageError}
-                onError={() => setImageError(true)}
-                fallbackEmoji="♛"
-                fallbackLabel="AI Coach Commentary"
-              />
+              <ScreenshotMockup glowColor="amber">
+                <ChessboardMockup />
+              </ScreenshotMockup>
             </div>
           </div>
         </div>
@@ -272,16 +274,9 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
             <div>
-              <ScreenshotMockup
-                src="/assets/Personality.png"
-                alt="Chess personality radar visualization"
-                glowColor="sky"
-                tiltDirection="right"
-                hasError={personalityImageError}
-                onError={() => setPersonalityImageError(true)}
-                fallbackEmoji="📊"
-                fallbackLabel="Personality Radar & Analytics"
-              />
+              <ScreenshotMockup glowColor="sky">
+                <PersonalityMockup />
+              </ScreenshotMockup>
             </div>
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-sky-500/10 px-4 py-1.5 text-xs uppercase tracking-wide text-sky-200 mb-4">
@@ -346,16 +341,9 @@ export default function HomePage() {
               </div>
             </div>
             <div className="order-1 lg:order-2">
-              <ScreenshotMockup
-                src="/assets/elo.png"
-                alt="ELO rating and game analysis visualization"
-                glowColor="purple"
-                tiltDirection="left"
-                hasError={eloImageError}
-                onError={() => setEloImageError(true)}
-                fallbackEmoji="♚"
-                fallbackLabel="Game Analysis"
-              />
+              <ScreenshotMockup glowColor="purple">
+                <EloMockup />
+              </ScreenshotMockup>
             </div>
           </div>
         </div>
