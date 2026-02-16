@@ -1626,7 +1626,7 @@ class ChessAnalysisEngine:
         # Move number was already calculated before the move was made
         # Use is_user_move parameter if provided, otherwise default to True (for backward compatibility)
         actual_is_user_move = is_user_move if is_user_move is not None else True
-        return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=actual_is_user_move)
+        return self._enhance_move_analysis_with_coaching(move_analysis, board, move, move_number, is_user_move=actual_is_user_move, force_engine=force_engine)
 
     def _summarize_move_classifications(self, moves_analysis: List[MoveAnalysis]) -> Dict[str, int]:
         summary = {
@@ -1674,7 +1674,8 @@ class ChessAnalysisEngine:
     def _enhance_move_analysis_with_coaching(self, move_analysis: MoveAnalysis, board: chess.Board,
                                            move: chess.Move, move_number: int,
                                            player_skill_level: str = "intermediate",
-                                           is_user_move: bool = True) -> MoveAnalysis:
+                                           is_user_move: bool = True,
+                                           force_engine: bool = False) -> MoveAnalysis:
         """Enhance move analysis with comprehensive coaching comments."""
         try:
             # Determine game phase
@@ -1713,15 +1714,15 @@ class ChessAnalysisEngine:
             enhanced_move_data['game_phase'] = game_phase.value
             enhanced_move_data['fullmove_number'] = move_number
 
-            # OPTIMIZATION: Skip AI coaching comments during fast analysis
-            # AI comments add 2+ seconds per move due to API rate limits
-            # For real-time coaching (single move analysis), we want AI comments enabled
-            # For batch game analysis, comments can be generated separately
-            # Check if this is single-move analysis (move_number and is_user_move provided)
-            is_single_move_analysis = move_number is not None and is_user_move is not None
-            skip_ai_comments = not is_single_move_analysis  # Enable AI comments for single move analysis only
+            # OPTIMIZATION: Skip AI coaching comments during batch game analysis
+            # AI comments add 2-8 seconds per move due to API calls + rate limits
+            # Only generate AI comments for single-move coaching (force_engine=True),
+            # NOT for batch game analysis where analyze_game() also passes
+            # fullmove_number and is_user_move (for greetings/metadata)
+            is_single_move_coaching = force_engine  # force_engine=True only from single-move coaching endpoint
+            skip_ai_comments = not is_single_move_coaching
 
-            print(f"[COACHING] Checking AI comments: move_number={move_number}, is_user_move={is_user_move}, is_single_move_analysis={is_single_move_analysis}, skip_ai_comments={skip_ai_comments}")
+            print(f"[COACHING] Checking AI comments: move_number={move_number}, is_user_move={is_user_move}, force_engine={force_engine}, skip_ai_comments={skip_ai_comments}")
 
             # INSTANT GREETING: Always add instant Tal greeting for player's first move
             # This shows immediately, even before AI comments are generated
@@ -1759,8 +1760,16 @@ class ChessAnalysisEngine:
                 if is_user_move and move_number == 1:
                     print(f"[INSTANT_GREETING] ⚠️ Skipped greeting: is_user_move={is_user_move}, move_number={move_number}, ply_index={ply_index}, move_san={move_analysis.move_san}")
 
-            if not skip_ai_comments:
-                # Generate coaching comment
+            # Always generate coaching comments using templates.
+            # For batch analysis (skip_ai_comments=True), temporarily disable the AI
+            # generator so only fast template-based comments are produced.
+            # For single-move coaching (force_engine=True), AI comments are enabled.
+            ai_was_enabled = False
+            if skip_ai_comments and self.coaching_generator.ai_generator:
+                ai_was_enabled = self.coaching_generator.ai_generator.enabled
+                self.coaching_generator.ai_generator.enabled = False
+
+            try:
                 coaching_comment = self.coaching_generator.generate_coaching_comment(
                     enhanced_move_data,
                     board,
@@ -1770,8 +1779,9 @@ class ChessAnalysisEngine:
                     is_user_move
                 )
 
-                # Update move analysis with coaching data
-                move_analysis.coaching_comment = coaching_comment.main_comment
+                # Don't overwrite instant greeting if it was already set
+                if not move_analysis.coaching_comment:
+                    move_analysis.coaching_comment = coaching_comment.main_comment
                 move_analysis.what_went_right = coaching_comment.what_went_right or ""
                 move_analysis.what_went_wrong = coaching_comment.what_went_wrong or ""
                 move_analysis.how_to_improve = coaching_comment.how_to_improve or ""
@@ -1783,38 +1793,10 @@ class ChessAnalysisEngine:
                 move_analysis.encouragement_level = coaching_comment.encouragement_level
                 move_analysis.move_quality = coaching_comment.move_quality.value
                 move_analysis.game_phase = coaching_comment.game_phase.value
-            else:
-                # Set default values when skipping AI comments
-                # BUT: Don't overwrite instant greeting if it was already set
-                if not move_analysis.coaching_comment:
-                    move_analysis.coaching_comment = ""
-                move_analysis.what_went_right = ""
-                move_analysis.what_went_wrong = ""
-                move_analysis.how_to_improve = ""
-                move_analysis.tactical_insights = []
-                move_analysis.positional_insights = []
-                move_analysis.risks = []
-                move_analysis.benefits = []
-                move_analysis.learning_points = []
-                move_analysis.encouragement_level = 3
-                # Determine move quality from centipawn loss
-                if move_analysis.is_brilliant:
-                    move_analysis.move_quality = "brilliant"
-                elif move_analysis.is_best:
-                    move_analysis.move_quality = "best"
-                elif move_analysis.is_great:
-                    move_analysis.move_quality = "great"
-                elif move_analysis.is_good:
-                    move_analysis.move_quality = "good"
-                elif move_analysis.is_inaccuracy:
-                    move_analysis.move_quality = "inaccuracy"
-                elif move_analysis.is_mistake:
-                    move_analysis.move_quality = "mistake"
-                elif move_analysis.is_blunder:
-                    move_analysis.move_quality = "blunder"
-                else:
-                    move_analysis.move_quality = "book"
-                move_analysis.game_phase = game_phase.value
+            finally:
+                # Re-enable AI generator if it was disabled for batch analysis
+                if skip_ai_comments and self.coaching_generator.ai_generator and ai_was_enabled:
+                    self.coaching_generator.ai_generator.enabled = True
 
             return move_analysis
 
@@ -2099,7 +2081,7 @@ class ChessAnalysisEngine:
                 # Enhance with coaching comments (including instant Tal greeting for first move)
                 actual_is_user_move = is_user_move if is_user_move is not None else True
                 print(f"[OPENING_BOOK] Calling _enhance_move_analysis_with_coaching with fullmove_number={fullmove_number}, is_user_move={actual_is_user_move}")
-                return self._enhance_move_analysis_with_coaching(book_move_analysis, board, move, fullmove_number, is_user_move=actual_is_user_move)
+                return self._enhance_move_analysis_with_coaching(book_move_analysis, board, move, fullmove_number, is_user_move=actual_is_user_move, force_engine=force_engine)
 
         # Use adaptive depth based on position complexity (30% speedup on average)
         depth = self._get_adaptive_depth(board, move)
@@ -2127,6 +2109,7 @@ class ChessAnalysisEngine:
             current_time_limit = time_limit
             captured_is_user_move = is_user_move  # Capture is_user_move
             captured_ply_index = ply_index  # Capture ply_index
+            captured_force_engine = force_engine  # Capture force_engine
             try:
                 # Use engine pool to avoid startup overhead (100-200ms per engine creation)
                 # For 65 moves, this saves 6.5-13 seconds!
@@ -2157,6 +2140,16 @@ class ChessAnalysisEngine:
                     cache_key = f"{fen_before}|{depth}"
                     cached_result = self._position_cache.get(cache_key)
 
+                    # Accept a cached eval from a slightly lower depth (within 4 levels)
+                    # A depth-12 eval is still useful when we wanted depth-14 — the
+                    # move classification thresholds (25/100/200/400cp) are wide enough
+                    if cached_result is None and depth > 10:
+                        for try_depth in range(depth - 1, max(9, depth - 5), -1):
+                            fallback_key = f"{fen_before}|{try_depth}"
+                            cached_result = self._position_cache.get(fallback_key)
+                            if cached_result is not None:
+                                break
+
                     if cached_result is not None:
                         # Cache hit! Reuse previous analysis
                         eval_before, best_move_before, best_move_pv = cached_result
@@ -2164,8 +2157,9 @@ class ChessAnalysisEngine:
                     else:
                         # Cache miss - run Stockfish analysis
                         # Get evaluation before move
-                        # Use depth for better PV line (time limit gives shallow PV)
-                        info_before = engine.analyse(board, chess.engine.Limit(depth=depth))
+                        # Use both depth and time limit - Stockfish stops at whichever is reached first
+                        # This caps worst-case time for complex positions while still reaching full depth for simple ones
+                        info_before = engine.analyse(board, chess.engine.Limit(depth=depth, time=current_time_limit))
                         eval_before = info_before.get("score", chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
                         best_move_before = info_before.get("pv", [None])[0]
                         # Capture the full PV for the best move line
@@ -2248,11 +2242,19 @@ class ChessAnalysisEngine:
                         # Use reduced depth for "after" analysis (we already know the move)
                         # This provides ~20-30% speedup without significant accuracy loss
                         after_depth = max(10, depth - 2)  # Reduce by 2 levels, minimum 10
-                        info_after = engine.analyse(board, chess.engine.Limit(depth=after_depth))
+                        after_time_limit = current_time_limit * 0.8  # Slightly less time for "after" evals
+                        info_after = engine.analyse(board, chess.engine.Limit(depth=after_depth, time=after_time_limit))
                         eval_after = info_after.get("score", chess.engine.PovScore(chess.engine.Cp(0), chess.WHITE))
                         # Capture PV after move to check for mate sequences
                         pv_after_moves = info_after.get("pv", [])
                         pv_after = [mv.uci() for mv in pv_after_moves] if pv_after_moves else []
+
+                        # Cache "after" eval so next move's "before" lookup can hit
+                        # (move N's "after" position = move N+1's "before" position)
+                        after_fen = board.fen()
+                        after_best_move = pv_after_moves[0] if pv_after_moves else None
+                        after_cache_key = f"{after_fen}|{after_depth}"
+                        self._position_cache.set(after_cache_key, (eval_after, after_best_move, pv_after))
 
                     # Calculate centipawn loss relative to Stockfish's best move from the player's perspective
                     best_eval = eval_before.pov(player_color)
@@ -2502,7 +2504,11 @@ class ChessAnalysisEngine:
                             else:
                                 # Run multipv analysis for brilliant move detection
                                 # Get top 3 moves to check if there are multiple good options
-                                multipv_analysis = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=3)
+                                # Use reduced depth (brilliant detection needs relative ordering, not absolute precision)
+                                # and time cap (multipv=3 is ~3x more expensive than single PV)
+                                multipv_depth = max(10, depth - 4)
+                                multipv_time_limit = current_time_limit * 1.5
+                                multipv_analysis = engine.analyse(board, chess.engine.Limit(depth=multipv_depth, time=multipv_time_limit), multipv=3)
 
                                 if len(multipv_analysis) >= 2:
                                     # Check if the played move is significantly better than alternatives
@@ -3349,7 +3355,7 @@ class ChessAnalysisEngine:
                     # Use captured is_user_move if provided, otherwise default to True
                     actual_is_user_move = captured_is_user_move if captured_is_user_move is not None else True
                     print(f"[REGULAR_PATH] Calling _enhance_move_analysis_with_coaching with move_number={move_number}, is_user_move={actual_is_user_move}")
-                    return self._enhance_move_analysis_with_coaching(move_analysis, board, current_move, move_number, is_user_move=actual_is_user_move)
+                    return self._enhance_move_analysis_with_coaching(move_analysis, board, current_move, move_number, is_user_move=actual_is_user_move, force_engine=captured_force_engine)
             except Exception as e:
                 error_msg = str(e)
                 if "exit code: -9" in error_msg or "died unexpectedly" in error_msg:

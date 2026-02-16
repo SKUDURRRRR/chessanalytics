@@ -409,7 +409,7 @@ export default function PlayWithCoachPage() {
         body: JSON.stringify({
           user_id: user.id,
           platform: 'lichess',
-          analysis_type: 'deep',
+          analysis_type: 'stockfish',
           fen: fenBefore,
           move: moveUci,
           depth: 8,
@@ -787,7 +787,7 @@ ${pgn} ${result}`
       const analysisResponse = await UnifiedAnalysisService.analyze({
         user_id: user.id,
         platform: 'lichess',
-        analysis_type: 'deep',
+        analysis_type: 'stockfish',
         pgn: fullPgn,
         depth: 10,
         game_id: gameId,
