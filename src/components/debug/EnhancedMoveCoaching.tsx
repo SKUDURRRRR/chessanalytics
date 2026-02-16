@@ -67,31 +67,6 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
         </div>
       )}
 
-      {/* What Went Wrong */}
-      {move.whatWentWrong && (
-        <div className="bg-rose-900/20 border border-rose-500/30 rounded-lg p-4">
-          <h4 className="text-rose-300 font-semibold mb-2 flex items-center gap-2">
-            <span className="text-lg">✗</span>
-            What Went Wrong
-          </h4>
-          <p className="text-rose-100 text-sm leading-relaxed">
-            {move.whatWentWrong}
-          </p>
-        </div>
-      )}
-
-      {/* How to Improve */}
-      {move.howToImprove && (
-        <div className="bg-sky-900/20 border border-sky-500/30 rounded-lg p-4">
-          <h4 className="text-sky-300 font-semibold mb-2 flex items-center gap-2">
-            <span className="text-lg">💡</span>
-            How to Improve
-          </h4>
-          <p className="text-sky-100 text-sm leading-relaxed">
-            {move.howToImprove}
-          </p>
-        </div>
-      )}
 
       {/* Risks */}
       {move.risks && move.risks.length > 0 && (
