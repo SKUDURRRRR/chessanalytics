@@ -773,6 +773,69 @@ export interface PuzzleSet {
 }
 
 // ============================================================================
+// PUZZLE BANK TYPES (Multi-move puzzles from Lichess)
+// ============================================================================
+
+/** A puzzle from the standard puzzle bank (Lichess) */
+export interface BankPuzzle {
+  puzzle_id: string
+  fen: string
+  setup_move: string
+  rating: number
+  themes: string[]
+  total_moves: number
+  user_rating: number
+  user_xp: number
+  user_level: number
+}
+
+/** Result of checking a single move in a multi-move puzzle */
+export interface PuzzleMoveResult {
+  is_correct: boolean
+  opponent_move?: string
+  correct_move?: string
+  is_complete: boolean
+}
+
+/** Result of completing a puzzle (rating/XP changes) */
+export interface PuzzleCompletionResult {
+  rating_change: number
+  new_rating: number
+  xp_earned: number
+  new_xp_total: number
+  level: number
+  level_up: boolean
+  daily_challenge_progress?: string
+  streak: number
+}
+
+/** Daily challenge data */
+export interface DailyChallenge {
+  challenge_date: string
+  puzzles: BankPuzzle[]
+  completed_ids: string[]
+  total_xp: number
+}
+
+/** User puzzle statistics */
+export interface PuzzleStats {
+  rating: number
+  highest_rating: number
+  rd: number
+  puzzles_attempted: number
+  puzzles_correct: number
+  solve_rate: number
+  xp: number
+  level: number
+  xp_to_next_level: number
+  rating_history: Array<{ date: string; rating: number }>
+  current_streak: number
+  best_streak: number
+  daily_challenges_completed: number
+  theme_performance: Record<string, { attempted: number; correct: number }>
+}
+
+// ============================================================================
 // COACH CHAT TYPES
 // ============================================================================
 
@@ -786,11 +849,39 @@ export interface ChatPositionContext {
   lastUserMove?: string
   lastOpponentMove?: string
   gamePhase?: 'opening' | 'middlegame' | 'endgame'
-  contextType: 'play' | 'puzzle' | 'analysis'
+  contextType: 'play' | 'puzzle' | 'analysis' | 'game-review'
   puzzleTheme?: string
   puzzleCategory?: string
   moveClassification?: string
   evaluation?: string
+  // Game review context fields
+  bestMoveSan?: string
+  centipawnLoss?: number
+  coachingComment?: string
+  tacticalInsights?: string[]
+  positionalInsights?: string[]
+  learningPoints?: string[]
+  keyMomentIndex?: number
+  totalKeyMoments?: number
+  gameResult?: string
+  opponentName?: string
+}
+
+/** Summary of a game available for review */
+export interface GameReviewSummary {
+  gameId: string
+  platform: 'lichess' | 'chess.com'
+  playedAt: string
+  result: 'win' | 'loss' | 'draw'
+  playerColor: 'white' | 'black'
+  opponent: string
+  opening: string
+  timeControl: string
+  accuracy: number
+  blunders: number
+  mistakes: number
+  inaccuracies: number
+  keyMomentsCount: number
 }
 
 /** A single chat message */
@@ -846,6 +937,137 @@ export interface ProgressData {
     week: string
     scores: Record<string, number>
   }>
+  advanced_metrics?: AdvancedProgressMetrics
+  diagnostic?: DiagnosticSummary
+}
+
+export interface DiagnosticSummary {
+  summary: string
+  generated_by: 'ai' | 'template'
+  key_insight: string
+}
+
+/** Advanced progress metrics computed from per-move analysis */
+export interface AdvancedProgressMetrics {
+  advantage_conversion?: AdvantageConversionData
+  comeback_throw?: ComebackThrowData
+  win_loss_by_phase?: WinLossByPhaseData
+  opening_repertoire?: OpeningRepertoireData
+  time_trouble?: TimeTroubleData
+  critical_moments?: CriticalMomentData
+  endgame_types?: EndgameTypeData
+  missed_tactics?: MissedTacticData
+  peer_comparison?: PeerComparisonData
+}
+
+export interface AdvantageConversionData {
+  overall_rate: number
+  total_opportunities: number
+  total_converted: number
+  weekly_trend: Array<{
+    week: string
+    rate: number
+    opportunities: number
+    converted: number
+  }>
+}
+
+export interface ComebackThrowData {
+  comeback_rate: number
+  throw_rate: number
+  total_comebacks: number
+  total_throws: number
+  weekly_trend: Array<{
+    week: string
+    comebacks: number
+    throws: number
+    total_decided: number
+  }>
+}
+
+export interface WinLossByPhaseData {
+  summary: {
+    opening_advantage_wins: number
+    middlegame_decided: number
+    endgame_decided: number
+  }
+  weekly_trend: Array<{
+    week: string
+    avg_opening_eval: number | null
+    avg_middlegame_eval: number | null
+    avg_endgame_eval: number | null
+  }>
+}
+
+export interface OpeningRepertoireData {
+  openings: Array<{
+    opening_family: string
+    color: 'white' | 'black'
+    games: number
+    win_rate: number
+    draw_rate: number
+    avg_accuracy: number
+    performance_score: number
+  }>
+  best_opening: { name: string; color: string; win_rate: number } | null
+  worst_opening: { name: string; color: string; win_rate: number } | null
+}
+
+export interface TimeTroubleData {
+  avg_accuracy_degradation: number
+  by_time_control: Array<{
+    category: string
+    avg_accuracy: number
+    avg_blunders: number
+    games: number
+  }>
+  weekly_trend: Array<{ week: string; degradation: number }>
+}
+
+export interface CriticalMomentData {
+  avg_cpl_critical: number
+  avg_cpl_normal: number
+  critical_performance_ratio: number
+  total_critical_moments: number
+  weekly_trend: Array<{
+    week: string
+    avg_cpl_critical: number
+    critical_count: number
+  }>
+}
+
+export interface EndgameTypeData {
+  types: Array<{
+    type: string
+    games: number
+    avg_cpl: number
+    accuracy_estimate: number
+  }>
+  best_type: string | null
+  worst_type: string | null
+}
+
+export interface MissedTacticData {
+  total_missed: number
+  per_game_rate: number
+  most_common_missed: string | null
+  weekly_trend: Array<{
+    week: string
+    missed_per_game: number
+  }>
+}
+
+export interface PeerComparisonData {
+  peer_rating_range: { min: number; max: number }
+  peer_count: number
+  comparisons: Array<{
+    metric: string
+    label: string
+    your_value: number
+    peer_avg: number
+    percentile: number
+    assessment: 'above_average' | 'average' | 'below_average'
+  }>
 }
 
 /** Weekly study plan */
@@ -855,24 +1077,42 @@ export interface StudyPlan {
   platform: 'lichess' | 'chess.com'
   week_start: string
   week_number: number
-  goals: UserGoal[]
+  goals: StudyPlanGoal[]
   daily_activities: Record<string, DailyActivity[]>
   status: 'active' | 'completed' | 'skipped'
+  weakness_snapshot?: Record<string, number>
+  weekly_summary?: WeeklySummary
+  days_completed?: number
   created_at?: string
   updated_at?: string
 }
 
-/** Single daily activity within a study plan */
-export interface DailyActivity {
-  type: 'lesson' | 'puzzles' | 'review' | 'practice'
-  title: string
-  description?: string
-  target_id?: string
-  completed: boolean
-  completed_at?: string
+/** Goal as stored in study plan JSONB (different from UserGoal DB record) */
+export interface StudyPlanGoal {
+  type: string
+  description: string
+  target: number
+  theme?: string
+  opening?: string
+  color?: string
+  category?: string
 }
 
-/** User improvement goal */
+/** Single daily activity within a study plan */
+export interface DailyActivity {
+  type: 'puzzle' | 'lesson' | 'review' | 'play' | 'opening'
+  label: string
+  description?: string
+  route?: string
+  target_id?: string
+  goal_type?: string
+  time_estimate?: number
+  completed: boolean
+  completed_at?: string
+  day_name?: string
+}
+
+/** User improvement goal (database record from user_goals table) */
 export interface UserGoal {
   id: string
   goal_type: string
@@ -881,6 +1121,17 @@ export interface UserGoal {
   current_value: number
   deadline?: string
   status: 'pending' | 'in_progress' | 'completed' | 'abandoned'
+}
+
+/** Weekly summary comparing current vs previous plan */
+export interface WeeklySummary {
+  improved_areas: Array<{ area: string; change: number }>
+  declined_areas: Array<{ area: string; change: number }>
+  activities_completed: number
+  activities_total: number
+  completion_rate: number
+  plan_streak: number
+  focus_next_week: string
 }
 
 /** Tag on a game */
@@ -912,6 +1163,7 @@ export interface OpeningRepertoire {
   id: string
   opening_family: string
   color: 'white' | 'black'
+  platform?: Platform
   games_played: number
   win_rate: number
   avg_accuracy: number

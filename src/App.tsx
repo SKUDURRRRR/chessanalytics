@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 import { AuthProvider } from './contexts/AuthContext'
@@ -64,7 +64,7 @@ const ProgressPage = lazyWithRetry(() => import('./pages/coach/ProgressPage'))
 const PositionLibraryPage = lazyWithRetry(() => import('./pages/coach/PositionLibraryPage'))
 const OpeningsPage = lazyWithRetry(() => import('./pages/coach/OpeningsPage'))
 const StudyPlanPage = lazyWithRetry(() => import('./pages/coach/StudyPlanPage'))
-const LessonViewer = lazyWithRetry(() => import('./components/coach/LessonViewer').then(m => ({ default: m.LessonViewer })))
+const GameReviewPage = lazyWithRetry(() => import('./pages/coach/GameReviewPage'))
 
 // Loading component shown while pages load
 function PageLoader() {
@@ -106,8 +106,11 @@ function App() {
                   <Route path="/privacy" element={<ComponentErrorBoundary><PrivacyPolicyPage /></ComponentErrorBoundary>} />
                   <Route path="/coach" element={<ComponentErrorBoundary><CoachDashboardPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/play" element={<ComponentErrorBoundary><PlayWithCoachPage /></ComponentErrorBoundary>} />
-                  <Route path="/coach/lessons" element={<ComponentErrorBoundary><LessonsPage /></ComponentErrorBoundary>} />
-                  <Route path="/coach/lessons/:lessonId" element={<ComponentErrorBoundary><LessonViewer /></ComponentErrorBoundary>} />
+                  <Route path="/coach/review" element={<ComponentErrorBoundary><LessonsPage /></ComponentErrorBoundary>} />
+                  <Route path="/coach/review/:platform/:userId/:gameId" element={<ComponentErrorBoundary><GameReviewPage /></ComponentErrorBoundary>} />
+                  {/* Redirect old lesson URLs */}
+                  <Route path="/coach/lessons" element={<Navigate to="/coach/review" replace />} />
+                  <Route path="/coach/lessons/:lessonId" element={<Navigate to="/coach/review" replace />} />
                   <Route path="/coach/progress" element={<ComponentErrorBoundary><ProgressPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/positions" element={<ComponentErrorBoundary><PositionLibraryPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/openings" element={<ComponentErrorBoundary><OpeningsPage /></ComponentErrorBoundary>} />

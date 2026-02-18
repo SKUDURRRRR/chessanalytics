@@ -88,6 +88,7 @@ from .resilient_api_client import get_api_client as get_resilient_api_client
 # Import Coach modules
 from .lesson_generator import LessonGenerator
 from .puzzle_generator import PuzzleGenerator
+from .puzzle_rating import PuzzleRatingEngine
 from .progress_analyzer import ProgressAnalyzer
 
 # Load environment configuration
@@ -11492,8 +11493,8 @@ async def get_coach_progress(
         canonical = _canonical_user_id(user_id, platform)
         progress_analyzer = ProgressAnalyzer(supabase_service)
 
-        # Fetch game analyses
-        analyses_result = await asyncio.to_thread(
+        # Fetch game analyses and games data in parallel
+        analyses_future = asyncio.to_thread(
             lambda: supabase_service.table('game_analyses')
             .select('*')
             .eq('user_id', canonical)
@@ -11502,9 +11503,33 @@ async def get_coach_progress(
             .limit(500)
             .execute()
         )
-        game_analyses = analyses_result.data or []
+        games_future = asyncio.to_thread(
+            lambda: supabase_service.table('games')
+            .select('provider_game_id, result, color, opening_family, time_control, my_rating, opponent_rating')
+            .eq('user_id', canonical)
+            .eq('platform', platform)
+            .order('played_at', desc=True)
+            .limit(500)
+            .execute()
+        )
 
-        # Get all three data sets
+        analyses_result, games_result = await asyncio.gather(analyses_future, games_future)
+        game_analyses = analyses_result.data or []
+        games_data = games_result.data or []
+
+        # Debug: log data counts and join success
+        games_lookup_debug = {g.get('provider_game_id'): g for g in games_data if g.get('provider_game_id')}
+        matched = sum(1 for a in game_analyses if a.get('game_id', '') in games_lookup_debug)
+        logger.info(f"[PROGRESS DEBUG] canonical={canonical}, platform={platform}, period_days={period_days}")
+        logger.info(f"[PROGRESS DEBUG] game_analyses: {len(game_analyses)}, games: {len(games_data)}, matched: {matched}")
+        if game_analyses:
+            sample_ids = [a.get('game_id', '')[:30] for a in game_analyses[:3]]
+            logger.info(f"[PROGRESS DEBUG] sample game_analyses game_ids: {sample_ids}")
+        if games_data:
+            sample_pids = [g.get('provider_game_id', '')[:30] for g in games_data[:3]]
+            logger.info(f"[PROGRESS DEBUG] sample games provider_game_ids: {sample_pids}")
+
+        # Get all data sets
         time_series = await progress_analyzer.get_progress_time_series(
             canonical, platform, game_analyses, period_days
         )
@@ -11517,10 +11542,62 @@ async def get_coach_progress(
             canonical, platform, game_analyses, weeks=max(4, period_days // 7)
         )
 
+        # Advanced metrics
+        advanced_metrics = await progress_analyzer.get_advanced_metrics(
+            canonical, platform, game_analyses, games_data, period_days
+        )
+
+        # Peer comparison (best-effort, don't fail if unavailable)
+        peer_comparison = None
+        try:
+            # Get user rating from games data
+            ratings = [g.get('my_rating', 0) for g in games_data if g.get('my_rating')]
+            user_rating = round(sum(ratings) / len(ratings)) if ratings else 0
+
+            if user_rating > 0:
+                # Build user metrics summary for comparison
+                user_metrics = {
+                    'accuracy': round(
+                        sum(a.get('accuracy', 0) for a in game_analyses if a.get('accuracy'))
+                        / max(1, sum(1 for a in game_analyses if a.get('accuracy'))), 1
+                    ),
+                    'blunders_per_game': round(
+                        sum(a.get('blunders', 0) for a in game_analyses)
+                        / max(1, len(game_analyses)), 2
+                    ),
+                    'avg_cpl': round(
+                        sum(a.get('average_centipawn_loss', 0) for a in game_analyses if a.get('average_centipawn_loss'))
+                        / max(1, sum(1 for a in game_analyses if a.get('average_centipawn_loss'))), 1
+                    ),
+                    'tactical_score': round(
+                        sum(a.get('tactical_score', 0) for a in game_analyses if a.get('tactical_score'))
+                        / max(1, sum(1 for a in game_analyses if a.get('tactical_score'))), 1
+                    ),
+                }
+
+                peer_comparison = await progress_analyzer.get_peer_comparison(
+                    canonical, platform, user_metrics, user_rating
+                )
+                if peer_comparison:
+                    advanced_metrics['peer_comparison'] = peer_comparison
+        except Exception as e:
+            logger.warning(f"[PROGRESS] Peer comparison failed (non-critical): {e}")
+
+        # Diagnostic summary (template-based, fast)
+        try:
+            diagnostic = ProgressAnalyzer.generate_diagnostic_summary(
+                advanced_metrics, peer_comparison, user_rating if ratings else 1500
+            )
+        except Exception as e:
+            logger.warning(f"[PROGRESS] Diagnostic generation failed: {e}")
+            diagnostic = None
+
         return {
             'time_series': time_series,
             'streaks': streaks,
             'weakness_evolution': weakness_evolution,
+            'advanced_metrics': advanced_metrics,
+            'diagnostic': diagnostic,
         }
 
     except HTTPException:
@@ -12105,6 +12182,16 @@ class ChatPositionContext(BaseModel):
     puzzle_category: Optional[str] = Field(None, description="Puzzle category")
     move_classification: Optional[str] = Field(None, description="Move classification from analysis")
     evaluation: Optional[str] = Field(None, description="Engine evaluation string")
+    best_move_san: Optional[str] = None
+    centipawn_loss: Optional[float] = None
+    coaching_comment: Optional[str] = None
+    tactical_insights: Optional[List[str]] = None
+    positional_insights: Optional[List[str]] = None
+    learning_points: Optional[List[str]] = None
+    key_moment_index: Optional[int] = None
+    total_key_moments: Optional[int] = None
+    game_result: Optional[str] = None
+    opponent_name: Optional[str] = None
 
 
 class ConversationMessage(BaseModel):
@@ -12261,6 +12348,18 @@ The student is reviewing a completed game. Be fully specific:
 - If the played move was a mistake, explain the concrete consequence: "After Bxh7+, the king is exposed and you win the queen in 3 moves"
 - Teach the underlying concept so they recognize similar positions: "This is a classic Greek Gift sacrifice pattern"
 """
+    elif context.context_type == "game-review":
+        context_specific = """
+GAME REVIEW CONTEXT:
+The student is reviewing one of their completed games, focusing on key mistakes.
+You have the engine's analysis for this specific move: classification, centipawn loss, best alternative, and coaching insights.
+- Explain concretely why the played move was wrong (what it allows the opponent to do)
+- Compare to the best move and explain what it achieves tactically or positionally
+- Teach the underlying pattern so they recognize it in future games
+- Reference specific pieces and squares, not generic advice
+- If they ask follow-ups, go deeper into variations and candidate moves
+- You know which key moment this is (e.g. moment 3 of 7) - reference progress when appropriate
+"""
 
     return f"""You are Mikhail Tal, the Magician from Riga, serving as a personal chess coach in an interactive chat. You give direct, actionable advice while teaching the ideas behind the moves.
 
@@ -12371,6 +12470,27 @@ def _build_chat_user_prompt(
         position_info += f"\nGame phase: {context.game_phase}"
     if context.puzzle_theme:
         position_info += f"\nPuzzle theme: {context.puzzle_theme}"
+
+    # Game review context data
+    if context.context_type == "game-review":
+        if context.best_move_san:
+            position_info += f"\nBest move was: {context.best_move_san}"
+        if context.centipawn_loss is not None:
+            position_info += f"\nCentipawn loss from played move: {context.centipawn_loss}"
+        if context.coaching_comment:
+            position_info += f"\nPre-analysis coaching note: {context.coaching_comment}"
+        if context.tactical_insights:
+            position_info += f"\nTactical insights: {', '.join(context.tactical_insights)}"
+        if context.positional_insights:
+            position_info += f"\nPositional insights: {', '.join(context.positional_insights)}"
+        if context.learning_points:
+            position_info += f"\nLearning points: {', '.join(context.learning_points)}"
+        if context.key_moment_index and context.total_key_moments:
+            position_info += f"\nThis is key moment {context.key_moment_index} of {context.total_key_moments} in this game review"
+        if context.game_result:
+            position_info += f"\nGame result: {context.game_result}"
+        if context.opponent_name:
+            position_info += f"\nOpponent: {context.opponent_name}"
 
     conv_text = ""
     if history:
@@ -12555,6 +12675,8 @@ async def complete_study_activity(
         raise HTTPException(status_code=503, detail="Database not configured")
     if not auth_user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
 
     try:
         day = activity_data.get('day', 0)
@@ -13073,6 +13195,728 @@ async def delete_saved_position(
     except Exception as e:
         logger.error(f"Error deleting saved position: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete position")
+
+
+# =============================================================================
+# PUZZLE BANK ENDPOINTS (Multi-move puzzles with rating & gamification)
+# =============================================================================
+
+
+async def _get_or_create_puzzle_rating(user_id: str) -> dict:
+    """Get or create user_puzzle_rating record. Returns dict with all fields."""
+    result = await asyncio.to_thread(
+        lambda: supabase_service.table('user_puzzle_rating')
+        .select('*')
+        .eq('user_id', user_id)
+        .execute()
+    )
+    if result.data:
+        return result.data[0]
+
+    # Create default record
+    new_record = {
+        'user_id': user_id,
+        'rating': PuzzleRatingEngine.INITIAL_RATING,
+        'rating_deviation': PuzzleRatingEngine.INITIAL_RD,
+        'puzzles_attempted': 0,
+        'puzzles_correct': 0,
+        'highest_rating': PuzzleRatingEngine.INITIAL_RATING,
+        'current_xp': 0,
+        'current_level': 1,
+    }
+    insert_result = await asyncio.to_thread(
+        lambda: supabase_service.table('user_puzzle_rating')
+        .insert(new_record)
+        .execute()
+    )
+    return insert_result.data[0] if insert_result.data else new_record
+
+
+async def _load_fallback_puzzles() -> list[dict]:
+    """Load fallback puzzles from bundled JSON file."""
+    import json
+    from pathlib import Path
+
+    fallback_path = Path(__file__).parent.parent / "data" / "fallback_puzzles.json"
+    if not fallback_path.exists():
+        return []
+
+    with open(fallback_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+async def _ensure_puzzle_bank_populated() -> bool:
+    """Check if puzzle_bank has data; if not, load fallback puzzles."""
+    count_result = await asyncio.to_thread(
+        lambda: supabase_service.table('puzzle_bank')
+        .select('id', count='exact')
+        .limit(1)
+        .execute()
+    )
+    if count_result.count and count_result.count > 0:
+        return True
+
+    # Try to load fallback puzzles
+    puzzles = await _load_fallback_puzzles()
+    if not puzzles:
+        return False
+
+    # Batch insert fallback puzzles
+    batch_size = 100
+    for i in range(0, len(puzzles), batch_size):
+        batch = puzzles[i:i + batch_size]
+        try:
+            await asyncio.to_thread(
+                lambda b=batch: supabase_service.table('puzzle_bank')
+                .insert(b)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to insert fallback puzzle batch: {e}")
+
+    logger.info(f"Loaded {len(puzzles)} fallback puzzles into puzzle_bank")
+    return True
+
+
+@app.get("/api/v1/coach/puzzle-bank/next")
+async def get_next_bank_puzzle(
+    auth_user_id: str = Query(..., description="Authenticated user UUID"),
+    theme: Optional[str] = Query(None, description="Filter by theme (fork, pin, mate, etc.)"),
+    mode: str = Query("rated", description="rated|daily|practice"),
+):
+    """
+    Get next puzzle from the puzzle bank, matched to user rating.
+    Daily challenge mode is free; rated mode requires premium.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    # Premium check for rated mode only
+    if mode == "rated":
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(
+                status_code=403,
+                detail="Unlimited rated puzzles require premium subscription."
+            )
+
+    try:
+        await _ensure_puzzle_bank_populated()
+
+        # Get user rating
+        user_rating_data = await _get_or_create_puzzle_rating(auth_user_id)
+        user_rating = user_rating_data['rating']
+
+        # Get recently attempted puzzle IDs to avoid repeats
+        recent_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_attempts')
+            .select('puzzle_bank_id')
+            .eq('user_id', auth_user_id)
+            .not_.is_('puzzle_bank_id', 'null')
+            .order('attempted_at', desc=True)
+            .limit(50)
+            .execute()
+        )
+        recent_ids = [r['puzzle_bank_id'] for r in (recent_result.data or []) if r.get('puzzle_bank_id')]
+
+        # Build query for next puzzle near user rating
+        rating_range = 200
+        query = supabase_service.table('puzzle_bank').select('*')
+        query = query.gte('rating', user_rating - rating_range)
+        query = query.lte('rating', user_rating + rating_range)
+
+        if theme:
+            query = query.contains('themes', [theme])
+
+        result = await asyncio.to_thread(
+            lambda: query.limit(20).execute()
+        )
+
+        candidates = result.data or []
+
+        # Filter out recently attempted and malformed puzzles (need at least 2 moves)
+        candidates = [
+            p for p in candidates
+            if p['id'] not in recent_ids and len(p.get('moves', [])) >= 2
+        ]
+
+        if not candidates:
+            # Widen search if no candidates found
+            wider_query = supabase_service.table('puzzle_bank').select('*')
+            wider_query = wider_query.gte('rating', user_rating - 400)
+            wider_query = wider_query.lte('rating', user_rating + 400)
+            wider_result = await asyncio.to_thread(
+                lambda: wider_query.limit(20).execute()
+            )
+            candidates = [
+                p for p in (wider_result.data or [])
+                if p['id'] not in recent_ids and len(p.get('moves', [])) >= 2
+            ]
+
+        if not candidates:
+            raise HTTPException(status_code=404, detail="No puzzles available")
+
+        # Pick the one closest to user rating with some randomness
+        import random
+        candidates.sort(key=lambda p: abs(p['rating'] - user_rating) + random.randint(0, 100))
+        puzzle = candidates[0]
+
+        # Compute setup_move and total user moves
+        moves = puzzle['moves']
+        setup_move = moves[0] if moves else ""
+        # User moves are at indices 1, 3, 5, ... (odd indices)
+        total_user_moves = len([m for i, m in enumerate(moves) if i % 2 == 1])
+
+        return {
+            'puzzle_id': puzzle['id'],
+            'fen': puzzle['fen'],
+            'setup_move': setup_move,
+            'rating': puzzle['rating'],
+            'themes': puzzle['themes'],
+            'total_moves': total_user_moves,
+            'user_rating': user_rating_data['rating'],
+            'user_xp': user_rating_data['current_xp'],
+            'user_level': user_rating_data['current_level'],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting next bank puzzle: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get next puzzle")
+
+
+@app.post("/api/v1/coach/puzzle-bank/{puzzle_id}/check-move")
+async def check_puzzle_move(puzzle_id: str, move_data: Dict[str, Any]):
+    """
+    Validate a single user move in a multi-move puzzle.
+
+    The moves array uses Lichess convention:
+      moves[0] = setup move (auto-played)
+      moves[1] = first user move
+      moves[2] = opponent response
+      moves[3] = second user move
+      ...
+
+    move_index is 0-based user move index:
+      move_index=0 checks moves[1]
+      move_index=1 checks moves[3]
+      move_index=2 checks moves[5]
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        move_uci = move_data.get('move_uci', '').lower().strip()
+        move_index = move_data.get('move_index', 0)
+
+        if not move_uci:
+            raise HTTPException(status_code=400, detail="move_uci is required")
+
+        # Fetch puzzle
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_bank')
+            .select('moves')
+            .eq('id', puzzle_id)
+            .execute()
+        )
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Puzzle not found")
+
+        moves = result.data[0]['moves']
+
+        # Calculate which move in the array we're checking
+        # User moves are at indices 1, 3, 5, ... (setup is 0, opponent responses at 2, 4, ...)
+        expected_idx = 1 + (move_index * 2)
+
+        if expected_idx >= len(moves):
+            raise HTTPException(status_code=400, detail="Invalid move index")
+
+        expected_move = moves[expected_idx].lower().strip()
+        is_correct = move_uci == expected_move
+
+        if is_correct:
+            # Check if there's an opponent response after this move
+            opponent_idx = expected_idx + 1
+            if opponent_idx < len(moves):
+                # More moves remain
+                opponent_move = moves[opponent_idx]
+                # Check if there are more user moves after the opponent response
+                next_user_idx = opponent_idx + 1
+                is_complete = next_user_idx >= len(moves)
+                return {
+                    'is_correct': True,
+                    'opponent_move': opponent_move,
+                    'is_complete': is_complete,
+                }
+            else:
+                # This was the last move - puzzle complete
+                return {
+                    'is_correct': True,
+                    'is_complete': True,
+                }
+        else:
+            return {
+                'is_correct': False,
+                'correct_move': moves[expected_idx],
+                'is_complete': False,
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking puzzle move: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to check move")
+
+
+@app.post("/api/v1/coach/puzzle-bank/{puzzle_id}/complete")
+async def complete_bank_puzzle(puzzle_id: str, completion_data: Dict[str, Any]):
+    """
+    Record completion of a puzzle bank puzzle.
+    Updates rating, XP, streak, and daily challenge progress.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        auth_user_id = completion_data.get('auth_user_id')
+        solved = completion_data.get('solved', False)
+        time_seconds = completion_data.get('time_seconds', 0)
+        moves_made = completion_data.get('moves_made', [])
+
+        if not auth_user_id:
+            raise HTTPException(status_code=400, detail="auth_user_id is required")
+
+        # Get puzzle rating
+        puzzle_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_bank')
+            .select('rating')
+            .eq('id', puzzle_id)
+            .execute()
+        )
+        if not puzzle_result.data:
+            raise HTTPException(status_code=404, detail="Puzzle not found")
+
+        puzzle_rating = puzzle_result.data[0]['rating']
+
+        # Get user rating
+        user_data = await _get_or_create_puzzle_rating(auth_user_id)
+        old_rating = user_data['rating']
+        old_rd = user_data['rating_deviation']
+        old_xp = user_data['current_xp']
+        old_level = user_data['current_level']
+
+        # Calculate new rating
+        new_rating, new_rd = PuzzleRatingEngine.update_rating(
+            old_rating, old_rd, puzzle_rating, solved
+        )
+
+        # Check streak - look at daily_challenge completions
+        from datetime import date, timedelta
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        streak_result = await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .select('challenge_date, completed_at')
+            .eq('user_id', auth_user_id)
+            .not_.is_('completed_at', 'null')
+            .order('challenge_date', desc=True)
+            .limit(30)
+            .execute()
+        )
+        completed_dates = [r['challenge_date'] for r in (streak_result.data or [])]
+        has_streak = str(yesterday) in completed_dates or str(today) in completed_dates
+
+        # Calculate XP
+        xp_earned = PuzzleRatingEngine.calculate_xp(
+            solved, puzzle_rating, old_rating, time_seconds, streak_bonus=has_streak
+        )
+        new_xp = old_xp + xp_earned
+        new_level = PuzzleRatingEngine.level_from_xp(new_xp)
+        level_up = new_level > old_level
+
+        # Update user rating
+        highest = max(user_data['highest_rating'], new_rating)
+        await asyncio.to_thread(
+            lambda: supabase_service.table('user_puzzle_rating')
+            .update({
+                'rating': new_rating,
+                'rating_deviation': new_rd,
+                'puzzles_attempted': user_data['puzzles_attempted'] + 1,
+                'puzzles_correct': user_data['puzzles_correct'] + (1 if solved else 0),
+                'highest_rating': highest,
+                'current_xp': new_xp,
+                'current_level': new_level,
+            })
+            .eq('user_id', auth_user_id)
+            .execute()
+        )
+
+        # Record attempt
+        attempt_record = {
+            'user_id': auth_user_id,
+            'puzzle_bank_id': puzzle_id,
+            'was_correct': solved,
+            'time_to_solve_seconds': time_seconds,
+            'moves_made': moves_made,
+            'rating_before': old_rating,
+            'rating_after': new_rating,
+            'xp_earned': xp_earned,
+        }
+        await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_attempts')
+            .insert(attempt_record)
+            .execute()
+        )
+
+        # Update daily challenge if active
+        daily_progress = None
+        daily_result = await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('challenge_date', str(today))
+            .execute()
+        )
+        if daily_result.data:
+            challenge = daily_result.data[0]
+            if puzzle_id in challenge['puzzle_ids'] and puzzle_id not in challenge['completed_ids']:
+                new_completed = challenge['completed_ids'] + [puzzle_id]
+                update_data = {
+                    'completed_ids': new_completed,
+                    'total_xp_earned': challenge['total_xp_earned'] + xp_earned,
+                }
+                if len(new_completed) >= len(challenge['puzzle_ids']):
+                    update_data['completed_at'] = datetime.now(timezone.utc).isoformat()
+                    # Bonus XP for completing daily challenge
+                    bonus_xp = 50
+                    new_xp += bonus_xp
+                    xp_earned += bonus_xp
+                    update_data['total_xp_earned'] += bonus_xp
+                    # Update user XP with bonus
+                    await asyncio.to_thread(
+                        lambda: supabase_service.table('user_puzzle_rating')
+                        .update({'current_xp': new_xp, 'current_level': PuzzleRatingEngine.level_from_xp(new_xp)})
+                        .eq('user_id', auth_user_id)
+                        .execute()
+                    )
+                await asyncio.to_thread(
+                    lambda: supabase_service.table('daily_challenge')
+                    .update(update_data)
+                    .eq('id', challenge['id'])
+                    .execute()
+                )
+                daily_progress = f"{len(new_completed)}/{len(challenge['puzzle_ids'])}"
+            else:
+                daily_progress = f"{len(challenge['completed_ids'])}/{len(challenge['puzzle_ids'])}"
+
+        # Calculate current streak
+        current_streak = 0
+        check_date = today
+        all_completed = set(completed_dates)
+        # Add today if daily challenge was just completed
+        if daily_result.data and daily_result.data[0].get('completed_at'):
+            all_completed.add(str(today))
+        while str(check_date) in all_completed:
+            current_streak += 1
+            check_date -= timedelta(days=1)
+
+        return {
+            'rating_change': new_rating - old_rating,
+            'new_rating': new_rating,
+            'xp_earned': xp_earned,
+            'new_xp_total': new_xp,
+            'level': PuzzleRatingEngine.level_from_xp(new_xp),
+            'level_up': level_up,
+            'daily_challenge_progress': daily_progress,
+            'streak': current_streak,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing bank puzzle: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to complete puzzle")
+
+
+@app.get("/api/v1/coach/puzzle-bank/daily-challenge")
+async def get_daily_challenge(
+    auth_user_id: str = Query(..., description="Authenticated user UUID"),
+):
+    """
+    Get today's daily challenge (5 puzzles).
+    Creates a new challenge if none exists for today.
+    Daily challenges are FREE for all users.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        await _ensure_puzzle_bank_populated()
+
+        from datetime import date
+        today = str(date.today())
+
+        # Check for existing challenge
+        existing = await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('challenge_date', today)
+            .execute()
+        )
+
+        if existing.data:
+            challenge = existing.data[0]
+            # Fetch the actual puzzles
+            puzzle_ids = challenge['puzzle_ids']
+            puzzles = []
+            for pid in puzzle_ids:
+                p_result = await asyncio.to_thread(
+                    lambda pid=pid: supabase_service.table('puzzle_bank')
+                    .select('*')
+                    .eq('id', pid)
+                    .execute()
+                )
+                if p_result.data:
+                    p = p_result.data[0]
+                    moves = p['moves']
+                    setup_move = moves[0] if moves else ""
+                    total_user_moves = len([m for i, m in enumerate(moves) if i % 2 == 1])
+                    puzzles.append({
+                        'puzzle_id': p['id'],
+                        'fen': p['fen'],
+                        'setup_move': setup_move,
+                        'rating': p['rating'],
+                        'themes': p['themes'],
+                        'total_moves': total_user_moves,
+                    })
+
+            return {
+                'challenge_date': challenge['challenge_date'],
+                'puzzles': puzzles,
+                'completed_ids': challenge['completed_ids'],
+                'total_xp': challenge['total_xp_earned'],
+            }
+
+        # Generate new daily challenge
+        user_data = await _get_or_create_puzzle_rating(auth_user_id)
+        user_rating = user_data['rating']
+
+        # Select 5 puzzles near user rating with varied themes
+        query = supabase_service.table('puzzle_bank').select('*')
+        query = query.gte('rating', user_rating - 300)
+        query = query.lte('rating', user_rating + 300)
+        query = query.order('popularity', desc=True)
+
+        result = await asyncio.to_thread(
+            lambda: query.limit(50).execute()
+        )
+
+        candidates = result.data or []
+
+        if len(candidates) < 5:
+            # Widen search
+            wider = supabase_service.table('puzzle_bank').select('*')
+            wider = wider.order('popularity', desc=True)
+            wider_result = await asyncio.to_thread(
+                lambda: wider.limit(50).execute()
+            )
+            candidates = wider_result.data or []
+
+        if not candidates:
+            raise HTTPException(status_code=404, detail="No puzzles available for daily challenge")
+
+        # Select 5 diverse puzzles (try different themes)
+        import random
+        random.shuffle(candidates)
+        selected = []
+        used_themes = set()
+        for p in candidates:
+            if len(selected) >= 5:
+                break
+            p_themes = set(p.get('themes', []))
+            # Prefer puzzles with new themes
+            if not p_themes.intersection(used_themes) or len(selected) >= 3:
+                selected.append(p)
+                used_themes.update(p_themes)
+
+        # Fill up to 5 if needed
+        if len(selected) < 5:
+            remaining = [p for p in candidates if p not in selected]
+            selected.extend(remaining[:5 - len(selected)])
+
+        selected = selected[:5]
+        puzzle_ids = [p['id'] for p in selected]
+
+        # Create daily challenge record
+        challenge_record = {
+            'user_id': auth_user_id,
+            'challenge_date': today,
+            'puzzle_ids': puzzle_ids,
+            'completed_ids': [],
+            'total_xp_earned': 0,
+        }
+        await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .insert(challenge_record)
+            .execute()
+        )
+
+        # Format response
+        puzzles = []
+        for p in selected:
+            moves = p['moves']
+            setup_move = moves[0] if moves else ""
+            total_user_moves = len([m for i, m in enumerate(moves) if i % 2 == 1])
+            puzzles.append({
+                'puzzle_id': p['id'],
+                'fen': p['fen'],
+                'setup_move': setup_move,
+                'rating': p['rating'],
+                'themes': p['themes'],
+                'total_moves': total_user_moves,
+            })
+
+        return {
+            'challenge_date': today,
+            'puzzles': puzzles,
+            'completed_ids': [],
+            'total_xp': 0,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting daily challenge: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get daily challenge")
+
+
+@app.get("/api/v1/coach/puzzle-bank/stats")
+async def get_puzzle_stats(
+    auth_user_id: str = Query(..., description="Authenticated user UUID"),
+):
+    """Get user's puzzle training statistics."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Get user rating
+        user_data = await _get_or_create_puzzle_rating(auth_user_id)
+
+        # Get rating history from recent attempts
+        attempts_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_attempts')
+            .select('rating_after, attempted_at, was_correct, puzzle_bank_id')
+            .eq('user_id', auth_user_id)
+            .not_.is_('puzzle_bank_id', 'null')
+            .order('attempted_at', desc=True)
+            .limit(100)
+            .execute()
+        )
+        attempts = attempts_result.data or []
+
+        # Build rating history (last 30 unique dates)
+        rating_history = []
+        seen_dates = set()
+        for a in attempts:
+            if a.get('rating_after') and a.get('attempted_at'):
+                d = a['attempted_at'][:10]
+                if d not in seen_dates:
+                    seen_dates.add(d)
+                    rating_history.append({'date': d, 'rating': a['rating_after']})
+                    if len(rating_history) >= 30:
+                        break
+        rating_history.reverse()
+
+        # Theme performance - fetch puzzle themes for recent attempts
+        theme_perf: Dict[str, Dict[str, int]] = {}
+        bank_ids = [a['puzzle_bank_id'] for a in attempts if a.get('puzzle_bank_id')]
+        if bank_ids:
+            # Fetch themes for attempted puzzles (batch)
+            unique_ids = list(set(bank_ids))[:50]
+            themes_result = await asyncio.to_thread(
+                lambda: supabase_service.table('puzzle_bank')
+                .select('id, themes')
+                .in_('id', unique_ids)
+                .execute()
+            )
+            puzzle_themes_map = {p['id']: p['themes'] for p in (themes_result.data or [])}
+
+            for a in attempts:
+                bid = a.get('puzzle_bank_id')
+                if bid and bid in puzzle_themes_map:
+                    for t in puzzle_themes_map[bid]:
+                        if t not in theme_perf:
+                            theme_perf[t] = {'attempted': 0, 'correct': 0}
+                        theme_perf[t]['attempted'] += 1
+                        if a.get('was_correct'):
+                            theme_perf[t]['correct'] += 1
+
+        # Streak calculation
+        from datetime import date, timedelta
+        daily_result = await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .select('challenge_date, completed_at')
+            .eq('user_id', auth_user_id)
+            .not_.is_('completed_at', 'null')
+            .order('challenge_date', desc=True)
+            .limit(365)
+            .execute()
+        )
+        completed_dates = set(r['challenge_date'] for r in (daily_result.data or []))
+
+        current_streak = 0
+        best_streak = 0
+        check_date = date.today()
+        # Count current streak
+        while str(check_date) in completed_dates:
+            current_streak += 1
+            check_date -= timedelta(days=1)
+
+        # Calculate best streak from sorted completed dates
+        sorted_dates = sorted(completed_dates)
+        best_streak = 0
+        temp = 0
+        prev_date = None
+        for d_str in sorted_dates:
+            d = date.fromisoformat(d_str)
+            if prev_date and (d - prev_date).days == 1:
+                temp += 1
+            else:
+                temp = 1
+            best_streak = max(best_streak, temp)
+            prev_date = d
+
+        best_streak = max(best_streak, current_streak)
+
+        solve_rate = 0
+        if user_data['puzzles_attempted'] > 0:
+            solve_rate = round(user_data['puzzles_correct'] / user_data['puzzles_attempted'] * 100, 1)
+
+        return {
+            'rating': user_data['rating'],
+            'highest_rating': user_data['highest_rating'],
+            'rd': user_data['rating_deviation'],
+            'puzzles_attempted': user_data['puzzles_attempted'],
+            'puzzles_correct': user_data['puzzles_correct'],
+            'solve_rate': solve_rate,
+            'xp': user_data['current_xp'],
+            'level': user_data['current_level'],
+            'xp_to_next_level': PuzzleRatingEngine.xp_to_next_level(
+                user_data['current_xp'], user_data['current_level']
+            ),
+            'rating_history': rating_history,
+            'current_streak': current_streak,
+            'best_streak': best_streak,
+            'daily_challenges_completed': len(completed_dates),
+            'theme_performance': theme_perf,
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting puzzle stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get puzzle stats")
 
 
 if __name__ == "__main__":

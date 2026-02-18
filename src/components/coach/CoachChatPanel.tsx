@@ -16,6 +16,7 @@ const SUGGESTIONS: Record<string, string[]> = {
   puzzle: ['Give me a hint', 'What pattern should I look for?', 'What pieces matter most here?'],
   play: ['What should I focus on?', 'Is my king safe?', 'What is my opponent planning?'],
   analysis: ['Why was this move bad?', 'What was the idea here?', 'How could I improve?'],
+  'game-review': ['Why was this move bad?', 'Show me the best continuation', 'How do I avoid this pattern?'],
 }
 
 export function CoachChatPanel() {

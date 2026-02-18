@@ -9,9 +9,10 @@ interface OpeningCardProps {
   opening: OpeningRepertoire
   onClick: () => void
   isExpanded: boolean
+  showPlatform?: boolean
 }
 
-export function OpeningCard({ opening, onClick, isExpanded }: OpeningCardProps) {
+export function OpeningCard({ opening, onClick, isExpanded, showPlatform }: OpeningCardProps) {
   const winRate = opening.win_rate ?? 0
   const winColor = winRate > 55 ? 'emerald' : winRate < 45 ? 'rose' : 'slate'
 
@@ -31,7 +32,18 @@ export function OpeningCard({ opening, onClick, isExpanded }: OpeningCardProps) 
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-semibold text-white truncate">{opening.opening_family}</h4>
-          <p className="text-xs text-slate-500">{opening.games_played} games</p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-slate-500">{opening.games_played} games</p>
+            {showPlatform && opening.platform && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
+                opening.platform === 'chess.com'
+                  ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                  : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+              }`}>
+                {opening.platform === 'chess.com' ? 'chess.com' : 'lichess'}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {isDue && (
@@ -42,7 +54,7 @@ export function OpeningCard({ opening, onClick, isExpanded }: OpeningCardProps) 
           <span className={`text-xs font-medium ${
             opening.color === 'white' ? 'text-slate-200' : 'text-slate-400'
           }`}>
-            {opening.color === 'white' ? '&#9812;' : '&#9818;'}
+            {opening.color === 'white' ? '\u2654' : '\u265A'}
           </span>
         </div>
       </div>

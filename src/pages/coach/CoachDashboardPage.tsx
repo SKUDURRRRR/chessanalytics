@@ -3,7 +3,6 @@
  * Main overview page for Coach tab
  */
 
-import { DailyLessonCard } from '../../components/coach/DailyLessonCard'
 import { WeaknessCard } from '../../components/coach/WeaknessCard'
 import { StrengthCard } from '../../components/coach/StrengthCard'
 import { useCoachDashboard } from '../../hooks/useCoachingData'
@@ -100,12 +99,12 @@ function CoachDashboardContent({
               <p className="text-xs text-emerald-200/70">Practice against AI</p>
             </Link>
             <Link
-              to="/coach/lessons"
+              to="/coach/review"
               className="rounded-xl border border-white/10 bg-white/[0.05] p-5 hover:bg-white/[0.08] transition-colors text-center"
             >
               <div className="text-2xl mb-1.5">&#9813;</div>
-              <h3 className="font-semibold text-white text-sm mb-0.5">Lessons</h3>
-              <p className="text-xs text-slate-400">Personalized lessons</p>
+              <h3 className="font-semibold text-white text-sm mb-0.5">Game Review</h3>
+              <p className="text-xs text-slate-400">Review with Coach</p>
             </Link>
             <Link
               to="/coach/puzzles"
@@ -150,9 +149,27 @@ function CoachDashboardContent({
           </div>
         </div>
 
-        {/* Daily Lesson */}
+        {/* Game Review CTA */}
         <div className="mb-8">
-          <DailyLessonCard lesson={dashboard?.daily_lesson || null} loading={loading} />
+          <Link
+            to="/coach/review"
+            className="block rounded-2xl border border-emerald-400/20 bg-emerald-500/5 hover:bg-emerald-500/10 p-6 transition-colors group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="text-3xl">&#9813;</div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-white group-hover:text-emerald-300 transition-colors">
+                  Review Your Games with Coach Tal
+                </h3>
+                <p className="text-sm text-slate-400 mt-1">
+                  Walk through key mistakes in your analyzed games and learn how to improve
+                </p>
+              </div>
+              <svg className="w-5 h-5 text-slate-500 group-hover:text-emerald-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </Link>
         </div>
 
         {/* Weaknesses and Strengths */}

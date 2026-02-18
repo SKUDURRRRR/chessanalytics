@@ -1,4 +1,4 @@
-import { ProcessedMove } from '../../pages/GameAnalysisPage'
+import type { ProcessedMove } from '../../utils/moveProcessor'
 
 interface EnhancedMoveCoachingProps {
   move: ProcessedMove

@@ -1,11 +1,12 @@
 /**
  * Openings Page
- * Opening repertoire trainer with stats, deviations, and drill mode
+ * Opening repertoire trainer with stats, deviations, and drill mode.
+ * Aggregates data from all linked chess platforms.
  */
 
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { OpeningRepertoire, OpeningDetail, Platform } from '../../types'
+import { OpeningRepertoire, OpeningDetail } from '../../types'
 import { CoachingService } from '../../services/coachingService'
 import { useCoachUser } from '../../hooks/useCoachUser'
 import { OpeningCard } from '../../components/coach/OpeningCard'
@@ -13,7 +14,7 @@ import { DrillMode } from '../../components/coach/DrillMode'
 import LoadingModal from '../../components/LoadingModal'
 
 export default function OpeningsPage() {
-  const { platform, platformUsername, authenticatedUserId } = useCoachUser()
+  const { platformUsername, authenticatedUserId, linkedAccounts } = useCoachUser()
 
   if (!authenticatedUserId) {
     return (
@@ -23,7 +24,7 @@ export default function OpeningsPage() {
     )
   }
 
-  if (!platformUsername) {
+  if (!platformUsername && linkedAccounts.length === 0) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
@@ -44,9 +45,8 @@ export default function OpeningsPage() {
 
   return (
     <OpeningsContent
-      platformUsername={platformUsername}
-      platform={platform}
       authUserId={authenticatedUserId}
+      linkedAccounts={linkedAccounts}
     />
   )
 }
@@ -60,13 +60,11 @@ interface DrillPosition {
 }
 
 function OpeningsContent({
-  platformUsername,
-  platform,
   authUserId,
+  linkedAccounts,
 }: {
-  platformUsername: string
-  platform: 'lichess' | 'chess.com'
   authUserId: string
+  linkedAccounts: Array<{ platform: 'chess.com' | 'lichess'; username: string }>
 }) {
   const navigate = useNavigate()
   const [repertoire, setRepertoire] = useState<OpeningRepertoire[]>([])
@@ -76,6 +74,7 @@ function OpeningsContent({
   const [expandedOpening, setExpandedOpening] = useState<string | null>(null)
   const [expandedDetail, setExpandedDetail] = useState<OpeningDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState(false)
   const [drillPositions, setDrillPositions] = useState<DrillPosition[] | null>(null)
   const [drillOpening, setDrillOpening] = useState<OpeningRepertoire | null>(null)
 
@@ -83,46 +82,71 @@ function OpeningsContent({
     try {
       if (refresh) setRefreshing(true)
       else setLoading(true)
-      const data = await CoachingService.getRepertoire(platformUsername, platform, authUserId, refresh)
-      setRepertoire(data)
+
+      // Fetch from all linked platforms in parallel
+      const results = await Promise.all(
+        linkedAccounts.map(async (account) => {
+          const data = await CoachingService.getRepertoire(
+            account.username, account.platform, authUserId, refresh
+          )
+          // Tag each entry with its platform
+          return data.map((entry) => ({ ...entry, platform: account.platform }))
+        })
+      )
+
+      // Merge results from all platforms
+      const merged = results.flat()
+
+      // Sort by games_played descending
+      merged.sort((a, b) => b.games_played - a.games_played)
+
+      setRepertoire(merged)
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to load repertoire'))
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [platformUsername, platform, authUserId])
+  }, [linkedAccounts, authUserId])
 
   useEffect(() => {
     fetchRepertoire()
   }, [fetchRepertoire])
 
   const handleOpeningClick = async (opening: OpeningRepertoire) => {
-    const key = `${opening.opening_family}|${opening.color}`
+    const key = `${opening.opening_family}|${opening.color}|${opening.platform}`
     if (expandedOpening === key) {
       setExpandedOpening(null)
       setExpandedDetail(null)
       return
     }
 
+    const account = linkedAccounts.find((a) => a.platform === opening.platform)
+    if (!account) return
+
     setExpandedOpening(key)
     setDetailLoading(true)
+    setDetailError(false)
     try {
       const detail = await CoachingService.getOpeningDetail(
-        platformUsername, platform, opening.opening_family, opening.color, authUserId
+        account.username, account.platform, opening.opening_family, opening.color, authUserId
       )
       setExpandedDetail(detail)
     } catch {
       setExpandedDetail(null)
+      setDetailError(true)
     } finally {
       setDetailLoading(false)
     }
   }
 
   const startDrill = async (opening: OpeningRepertoire) => {
+    const account = linkedAccounts.find((a) => a.platform === opening.platform)
+    if (!account) return
+
     try {
       const positions = await CoachingService.getDrillPositions(
-        platformUsername, platform, opening.opening_family, opening.color, authUserId
+        account.username, account.platform, opening.opening_family, opening.color, authUserId
       )
       setDrillPositions(positions)
       setDrillOpening(opening)
@@ -144,6 +168,7 @@ function OpeningsContent({
 
   const whiteOpenings = repertoire.filter((o) => o.color === 'white')
   const blackOpenings = repertoire.filter((o) => o.color === 'black')
+  const hasBothPlatforms = linkedAccounts.length > 1
 
   if (loading) {
     return <LoadingModal isOpen={true} message="Analyzing your opening repertoire..." />
@@ -195,11 +220,16 @@ function OpeningsContent({
               onClick={() => navigate('/coach')}
               className="mb-2 text-slate-400 hover:text-slate-300 transition-colors flex items-center gap-2 text-sm"
             >
-              ← Back to Dashboard
+              &larr; Back to Dashboard
             </button>
             <h1 className="text-3xl md:text-4xl font-bold text-white">Opening Repertoire</h1>
             <p className="text-slate-400 mt-1">
               {repertoire.length} opening{repertoire.length !== 1 ? 's' : ''} tracked
+              {hasBothPlatforms && (
+                <span className="text-slate-500">
+                  {' '}across {linkedAccounts.map((a) => a.platform).join(' & ')}
+                </span>
+              )}
             </p>
           </div>
 
@@ -224,61 +254,77 @@ function OpeningsContent({
             {/* White Repertoire */}
             <div>
               <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                <span>&#9812;</span> White Repertoire
+                <span>{'\u2654'}</span> White Repertoire
                 <span className="text-sm font-normal text-slate-500">({whiteOpenings.length})</span>
               </h2>
-              <div className="space-y-3">
-                {whiteOpenings.map((opening) => {
-                  const key = `${opening.opening_family}|${opening.color}`
-                  return (
-                    <div key={key}>
-                      <OpeningCard
-                        opening={opening}
-                        onClick={() => handleOpeningClick(opening)}
-                        isExpanded={expandedOpening === key}
-                      />
-                      {expandedOpening === key && (
-                        <ExpandedDetail
-                          detail={expandedDetail}
-                          loading={detailLoading}
+              {whiteOpenings.length === 0 ? (
+                <p className="text-sm text-slate-500 bg-white/[0.02] rounded-xl border border-white/5 p-4">
+                  No white openings found yet. Analyze more games to see your white repertoire.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {whiteOpenings.map((opening) => {
+                    const key = `${opening.opening_family}|${opening.color}|${opening.platform}`
+                    return (
+                      <div key={key}>
+                        <OpeningCard
                           opening={opening}
-                          onStartDrill={() => startDrill(opening)}
+                          onClick={() => handleOpeningClick(opening)}
+                          isExpanded={expandedOpening === key}
+                          showPlatform={hasBothPlatforms}
                         />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+                        {expandedOpening === key && (
+                          <ExpandedDetail
+                            detail={expandedDetail}
+                            loading={detailLoading}
+                            error={detailError}
+                            opening={opening}
+                            onStartDrill={() => startDrill(opening)}
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Black Repertoire */}
             <div>
               <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                <span>&#9818;</span> Black Repertoire
+                <span>{'\u265A'}</span> Black Repertoire
                 <span className="text-sm font-normal text-slate-500">({blackOpenings.length})</span>
               </h2>
-              <div className="space-y-3">
-                {blackOpenings.map((opening) => {
-                  const key = `${opening.opening_family}|${opening.color}`
-                  return (
-                    <div key={key}>
-                      <OpeningCard
-                        opening={opening}
-                        onClick={() => handleOpeningClick(opening)}
-                        isExpanded={expandedOpening === key}
-                      />
-                      {expandedOpening === key && (
-                        <ExpandedDetail
-                          detail={expandedDetail}
-                          loading={detailLoading}
+              {blackOpenings.length === 0 ? (
+                <p className="text-sm text-slate-500 bg-white/[0.02] rounded-xl border border-white/5 p-4">
+                  No black openings found yet. Analyze more games to see your black repertoire.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {blackOpenings.map((opening) => {
+                    const key = `${opening.opening_family}|${opening.color}|${opening.platform}`
+                    return (
+                      <div key={key}>
+                        <OpeningCard
                           opening={opening}
-                          onStartDrill={() => startDrill(opening)}
+                          onClick={() => handleOpeningClick(opening)}
+                          isExpanded={expandedOpening === key}
+                          showPlatform={hasBothPlatforms}
                         />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+                        {expandedOpening === key && (
+                          <ExpandedDetail
+                            detail={expandedDetail}
+                            loading={detailLoading}
+                            error={detailError}
+                            opening={opening}
+                            onStartDrill={() => startDrill(opening)}
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -290,11 +336,13 @@ function OpeningsContent({
 function ExpandedDetail({
   detail,
   loading,
+  error,
   opening,
   onStartDrill,
 }: {
   detail: OpeningDetail | null
   loading: boolean
+  error: boolean
   opening: OpeningRepertoire
   onStartDrill: () => void
 }) {
@@ -306,13 +354,27 @@ function ExpandedDetail({
     )
   }
 
+  if (error) {
+    return (
+      <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+        <p className="text-sm text-slate-500">Failed to load details for {opening.opening_family}.</p>
+      </div>
+    )
+  }
+
   if (!detail) return null
+
+  // Type-safe access for fields the backend returns but aren't in the strict TS type
+  const totalGames = (detail as Record<string, unknown>).total_games as number | undefined
+  const recentGames = (detail as Record<string, unknown>).recent_games as Array<{
+    result: string; opponent_rating?: number; played_at?: string
+  }> | undefined
 
   return (
     <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.03] p-4 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-400">
-          {detail.total_games} total games with {opening.opening_family}
+          {totalGames ?? opening.games_played} total games with {opening.opening_family}
         </p>
         <button
           onClick={(e) => {
@@ -334,7 +396,7 @@ function ExpandedDetail({
               <div key={i} className="flex items-center gap-3 text-xs bg-white/[0.03] rounded-lg p-2">
                 <span className="text-slate-500">Move {dev.move_number}</span>
                 <span className="text-white font-medium">{dev.expected_move}</span>
-                <span className="text-slate-600">→</span>
+                <span className="text-slate-600">&rarr;</span>
                 <span className="text-amber-300">{dev.actual_move}</span>
                 <span className="text-slate-500 ml-auto">
                   {dev.deviation_frequency}% of games
@@ -346,11 +408,11 @@ function ExpandedDetail({
       )}
 
       {/* Recent Games */}
-      {detail.recent_games && detail.recent_games.length > 0 && (
+      {recentGames && recentGames.length > 0 && (
         <div>
           <h4 className="text-sm font-medium text-white mb-2">Recent Games</h4>
           <div className="space-y-1">
-            {detail.recent_games.slice(0, 5).map((game, i) => (
+            {recentGames.slice(0, 5).map((game, i) => (
               <div key={i} className="flex items-center gap-3 text-xs text-slate-400">
                 <span className={`font-medium ${
                   game.result === 'win' ? 'text-emerald-400' : game.result === 'loss' ? 'text-rose-400' : 'text-slate-400'

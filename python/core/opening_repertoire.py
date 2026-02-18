@@ -39,14 +39,14 @@ class OpeningRepertoireAnalyzer:
         from .opening_utils import normalize_opening_name
 
         try:
-            # 1. Fetch games with opening info
+            # 1. Fetch games with opening info (include opening_family as ECO fallback)
             games_result = await asyncio.to_thread(
                 lambda: self.supabase.table('games')
-                .select('id, opening, result, color, my_rating, opponent_rating')
+                .select('id, opening, opening_family, result, color, my_rating, opponent_rating')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
                 .order('played_at', desc=True)
-                .limit(500)
+                .limit(5000)
                 .execute()
             )
             games = games_result.data or []
@@ -85,11 +85,15 @@ class OpeningRepertoireAnalyzer:
             )
 
             for game in games:
-                opening = game.get('opening', 'Unknown')
+                opening = game.get('opening') or ''
+                opening_fam = game.get('opening_family') or ''
                 color = game.get('color', 'white')
                 result = game.get('result', '')
 
-                family = normalize_opening_name(opening)
+                # Try full opening name first, then ECO code fallback
+                family = normalize_opening_name(opening) if opening else 'Unknown'
+                if family == 'Unknown' and opening_fam:
+                    family = normalize_opening_name(opening_fam)
                 if family == 'Unknown':
                     continue
 
@@ -150,7 +154,7 @@ class OpeningRepertoireAnalyzer:
                     .execute()
                 )
 
-            logger.info(f"[REPERTOIRE] Analyzed {len(repertoire_entries)} openings for {canonical_user_id}")
+            logger.info(f"[REPERTOIRE] Analyzed {len(repertoire_entries)} openings from {len(games)} games for {canonical_user_id}")
             return repertoire_entries
 
         except Exception as e:
@@ -162,15 +166,13 @@ class OpeningRepertoireAnalyzer:
         user_id: str,
         platform: str
     ) -> List[Dict[str, Any]]:
-        """Get stored repertoire for a user."""
+        """Get stored repertoire for a user. Platform can be 'all' to get both."""
         try:
+            query = self.supabase.table('opening_repertoire').select('*').eq('user_id', user_id)
+            if platform != 'all':
+                query = query.eq('platform', platform)
             result = await asyncio.to_thread(
-                lambda: self.supabase.table('opening_repertoire')
-                .select('*')
-                .eq('user_id', user_id)
-                .eq('platform', platform)
-                .order('games_played', desc=True)
-                .execute()
+                lambda: query.order('games_played', desc=True).execute()
             )
             return result.data or []
         except Exception as e:
@@ -209,7 +211,7 @@ class OpeningRepertoireAnalyzer:
             # Get recent games with this opening
             games_result = await asyncio.to_thread(
                 lambda: self.supabase.table('games')
-                .select('id, opening, result, color, my_rating, opponent_rating, played_at')
+                .select('id, opening, opening_family, result, color, my_rating, opponent_rating, played_at')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
                 .eq('color', color)
@@ -218,10 +220,14 @@ class OpeningRepertoireAnalyzer:
                 .execute()
             )
 
-            # Filter to matching opening family
+            # Filter to matching opening family (same fallback logic as analyze_repertoire)
             matching_games = []
             for game in (games_result.data or []):
-                family = normalize_opening_name(game.get('opening', ''))
+                opening_name = game.get('opening') or ''
+                opening_eco = game.get('opening_family') or ''
+                family = normalize_opening_name(opening_name) if opening_name else 'Unknown'
+                if family == 'Unknown' and opening_eco:
+                    family = normalize_opening_name(opening_eco)
                 if family == opening_family:
                     matching_games.append(game)
 
@@ -277,7 +283,7 @@ class OpeningRepertoireAnalyzer:
             # Get games with this opening
             games_result = await asyncio.to_thread(
                 lambda: self.supabase.table('games')
-                .select('id, opening, color')
+                .select('id, opening, opening_family, color')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
                 .eq('color', color)
@@ -288,7 +294,11 @@ class OpeningRepertoireAnalyzer:
 
             matching_ids = []
             for game in (games_result.data or []):
-                family = normalize_opening_name(game.get('opening', ''))
+                opening_name = game.get('opening') or ''
+                opening_eco = game.get('opening_family') or ''
+                family = normalize_opening_name(opening_name) if opening_name else 'Unknown'
+                if family == 'Unknown' and opening_eco:
+                    family = normalize_opening_name(opening_eco)
                 if family == opening_family:
                     matching_ids.append(game['id'])
 

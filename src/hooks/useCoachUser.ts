@@ -22,5 +22,10 @@ export function useCoachUser() {
   const authenticatedUserId = user?.id || ''
   const hasLinkedAccount = !!(user?.chessComUsername || user?.lichessUsername)
 
-  return { platform, platformUsername, authenticatedUserId, hasLinkedAccount }
+  // Expose both linked accounts for features that aggregate across platforms
+  const linkedAccounts: Array<{ platform: 'chess.com' | 'lichess'; username: string }> = []
+  if (user?.chessComUsername) linkedAccounts.push({ platform: 'chess.com', username: user.chessComUsername })
+  if (user?.lichessUsername) linkedAccounts.push({ platform: 'lichess', username: user.lichessUsername })
+
+  return { platform, platformUsername, authenticatedUserId, hasLinkedAccount, linkedAccounts }
 }

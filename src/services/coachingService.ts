@@ -5,8 +5,6 @@
 
 import {
   DashboardData,
-  Lesson,
-  LessonDetail,
   Puzzle,
   PuzzleSet,
   PuzzleAttempt,
@@ -20,6 +18,11 @@ import {
   OpeningDetail,
   StudyPlan,
   UserGoal,
+  BankPuzzle,
+  PuzzleMoveResult,
+  PuzzleCompletionResult,
+  DailyChallenge,
+  PuzzleStats,
 } from '../types'
 import { config } from '../lib/config'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
@@ -60,126 +63,6 @@ export class CoachingService {
       return data as DashboardData
     } catch (error) {
       logger.error('Error fetching coach dashboard:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Get all lessons for user
-   */
-  static async getLessons(
-    userId: string,
-    platform: Platform,
-    category?: string,
-    authUserId?: string
-  ): Promise<Lesson[]> {
-    try {
-      const url = new URL(`${API_URL}/api/v1/coach/lessons/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-      if (category) {
-        url.searchParams.append('category', category)
-      }
-      if (authUserId) {
-        url.searchParams.append('auth_user_id', authUserId)
-      }
-
-      const response = await fetchWithTimeout(
-        url.toString(),
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
-        TIMEOUT_CONFIG.DEFAULT
-      )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach features require premium subscription')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return (data.lessons || []) as Lesson[]
-    } catch (error) {
-      logger.error('Error fetching lessons:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Get full lesson detail by ID
-   */
-  static async getLessonDetail(lessonId: string): Promise<LessonDetail> {
-    try {
-      const url = `${API_URL}/api/v1/coach/lessons/${encodeURIComponent(lessonId)}`
-
-      const response = await fetchWithTimeout(
-        url,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
-        TIMEOUT_CONFIG.DEFAULT
-      )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach features require premium subscription')
-        }
-        if (response.status === 404) {
-          throw new Error('Lesson not found')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data as LessonDetail
-    } catch (error) {
-      logger.error('Error fetching lesson detail:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Mark lesson as complete
-   */
-  static async completeLesson(
-    lessonId: string,
-    timeSpent: number,
-    quizScore?: number
-  ): Promise<void> {
-    try {
-      const url = `${API_URL}/api/v1/coach/lessons/${encodeURIComponent(lessonId)}/complete`
-
-      const response = await fetchWithTimeout(
-        url,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            time_spent_seconds: timeSpent,
-            quiz_score: quizScore,
-          }),
-        },
-        TIMEOUT_CONFIG.DEFAULT
-      )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach features require premium subscription')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      await response.json()
-    } catch (error) {
-      logger.error('Error completing lesson:', error)
       throw error
     }
   }
@@ -391,6 +274,16 @@ export class CoachingService {
               puzzle_category: positionContext.puzzleCategory,
               move_classification: positionContext.moveClassification,
               evaluation: positionContext.evaluation,
+              best_move_san: positionContext.bestMoveSan,
+              centipawn_loss: positionContext.centipawnLoss,
+              coaching_comment: positionContext.coachingComment,
+              tactical_insights: positionContext.tacticalInsights,
+              positional_insights: positionContext.positionalInsights,
+              learning_points: positionContext.learningPoints,
+              key_moment_index: positionContext.keyMomentIndex,
+              total_key_moments: positionContext.totalKeyMoments,
+              game_result: positionContext.gameResult,
+              opponent_name: positionContext.opponentName,
             },
             conversation_history: conversationHistory,
           }),
@@ -453,6 +346,121 @@ export class CoachingService {
       logger.error('Error getting progress data:', error)
       throw error
     }
+  }
+
+  // ========================================================================
+  // PUZZLE BANK (Multi-move puzzles from Lichess)
+  // ========================================================================
+
+  /**
+   * Get next puzzle from bank, matched to user rating
+   */
+  static async getNextBankPuzzle(
+    authUserId: string,
+    theme?: string,
+    mode: string = 'rated'
+  ): Promise<BankPuzzle> {
+    const url = new URL(`${API_URL}/api/v1/coach/puzzle-bank/next`)
+    url.searchParams.append('auth_user_id', authUserId)
+    if (theme) url.searchParams.append('theme', theme)
+    url.searchParams.append('mode', mode)
+
+    const response = await fetchWithTimeout(
+      url.toString(),
+      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
+      TIMEOUT_CONFIG.DEFAULT
+    )
+    if (!response.ok) {
+      if (response.status === 403) throw new Error('Unlimited puzzles require premium subscription')
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    return await response.json() as BankPuzzle
+  }
+
+  /**
+   * Check a single move in a multi-move puzzle
+   */
+  static async checkPuzzleMove(
+    puzzleId: string,
+    moveUci: string,
+    moveIndex: number,
+    authUserId: string
+  ): Promise<PuzzleMoveResult> {
+    const url = `${API_URL}/api/v1/coach/puzzle-bank/${encodeURIComponent(puzzleId)}/check-move`
+
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ move_uci: moveUci, move_index: moveIndex, auth_user_id: authUserId }),
+      },
+      TIMEOUT_CONFIG.DEFAULT
+    )
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    return await response.json() as PuzzleMoveResult
+  }
+
+  /**
+   * Complete a puzzle (record result, update rating/XP)
+   */
+  static async completeBankPuzzle(
+    puzzleId: string,
+    solved: boolean,
+    timeSeconds: number,
+    movesMade: string[],
+    authUserId: string
+  ): Promise<PuzzleCompletionResult> {
+    const url = `${API_URL}/api/v1/coach/puzzle-bank/${encodeURIComponent(puzzleId)}/complete`
+
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          auth_user_id: authUserId,
+          solved,
+          time_seconds: timeSeconds,
+          moves_made: movesMade,
+        }),
+      },
+      TIMEOUT_CONFIG.DEFAULT
+    )
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    return await response.json() as PuzzleCompletionResult
+  }
+
+  /**
+   * Get today's daily challenge (5 puzzles)
+   */
+  static async getDailyChallenge(authUserId: string): Promise<DailyChallenge> {
+    const url = new URL(`${API_URL}/api/v1/coach/puzzle-bank/daily-challenge`)
+    url.searchParams.append('auth_user_id', authUserId)
+
+    const response = await fetchWithTimeout(
+      url.toString(),
+      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
+      TIMEOUT_CONFIG.DEFAULT
+    )
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    return await response.json() as DailyChallenge
+  }
+
+  /**
+   * Get puzzle training statistics
+   */
+  static async getPuzzleStats(authUserId: string): Promise<PuzzleStats> {
+    const url = new URL(`${API_URL}/api/v1/coach/puzzle-bank/stats`)
+    url.searchParams.append('auth_user_id', authUserId)
+
+    const response = await fetchWithTimeout(
+      url.toString(),
+      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
+      TIMEOUT_CONFIG.DEFAULT
+    )
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    return await response.json() as PuzzleStats
   }
 
   // ========================================================================
