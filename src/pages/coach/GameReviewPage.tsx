@@ -1,13 +1,17 @@
 /**
  * Game Review with Coach Page
  * Guided walkthrough of key mistakes in an analyzed game with Coach Tal.
+ * Features a "Think First" mode where the user sees the decision position
+ * before the mistake is revealed with arrows and coaching explanation.
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { Chessboard } from 'react-chessboard'
 import { Chess } from 'chess.js'
 import { PremiumGate } from '../../components/coach/PremiumGate'
-import { UnifiedChessAnalysis } from '../../components/debug/UnifiedChessAnalysis'
+import { ModernChessArrows } from '../../components/chess/ModernChessArrows'
+import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
 import { fetchGameAnalysisData } from '../../services/gameAnalysisService'
 import { useCoachChat } from '../../contexts/CoachChatContext'
 import { useMobileOptimizations } from '../../hooks/useResponsive'
@@ -64,7 +68,6 @@ const extractOpponentFromPGN = (pgn: string, color: 'white' | 'black'): string =
 const extractResultFromRecord = (game: Record<string, unknown>): 'win' | 'loss' | 'draw' => {
   const r = String(game?.result || game?.game_result || '').toLowerCase()
   if (r.includes('win') || r === '1-0' || r === '0-1') {
-    // Check if *this user* won
     const color = String(game?.color || '').toLowerCase()
     if (r === '1-0') return color === 'black' ? 'loss' : 'win'
     if (r === '0-1') return color === 'white' ? 'loss' : 'win'
@@ -91,6 +94,8 @@ const classificationIcon = (c: string) => {
   return ''
 }
 
+const NAV_BTN_CLASS = 'min-h-[36px] min-w-[36px] rounded-full border border-white/10 bg-white/10 px-2.5 py-1.5 transition hover:border-white/30 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 text-sm font-mono'
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -108,6 +113,7 @@ function GameReviewContent() {
   const [currentMomentIndex, setCurrentMomentIndex] = useState(0)
   const [currentBoardIndex, setCurrentBoardIndex] = useState(0)
   const [boardWidth, setBoardWidth] = useState(500)
+  const [isRevealed, setIsRevealed] = useState(false)
 
   // Data
   const [gameRecord, setGameRecord] = useState<Record<string, unknown> | null>(null)
@@ -201,19 +207,24 @@ function GameReviewContent() {
     }
   }, [processedData.moves.length, keyMoments.length, phase])
 
-  // ---- Board sizing ----
+  // ---- Board sizing (viewport-fit) ----
   useEffect(() => {
     const update = () => {
       const el = layoutRef.current
-      const w = el?.clientWidth ?? window.innerWidth
+      const containerWidth = el?.clientWidth ?? window.innerWidth
+      const viewportHeight = window.innerHeight
       const padding = 32
 
       if (mobileOpts.boardSize === 'small' || mobileOpts.boardSize === 'medium') {
         const cap = mobileOpts.boardSize === 'small' ? 320 : 400
-        setBoardWidth(Math.min(w - padding, cap))
+        setBoardWidth(Math.min(containerWidth - padding, cap))
       } else {
-        // Desktop: board takes roughly 50% of container
-        setBoardWidth(Math.min((w - padding) * 0.5, 560))
+        // Desktop: constrain by viewport height and available width
+        // Account for header (~56px), nav below board (~52px), container padding (~48px)
+        const heightBudget = viewportHeight - 56 - 52 - 48
+        // Leave room for 360px panel + 24px gap + padding
+        const widthBudget = containerWidth - 360 - 24 - padding
+        setBoardWidth(Math.max(300, Math.min(heightBudget, widthBudget, 560)))
       }
     }
 
@@ -222,28 +233,28 @@ function GameReviewContent() {
     return () => window.removeEventListener('resize', update)
   }, [mobileOpts.boardSize])
 
-  // ---- Current moment and move ----
+  // ---- Current moment ----
   const currentMoment: KeyMoment | null = phase === 'reviewing' ? keyMoments[currentMomentIndex] ?? null : null
-  const currentMove: ProcessedMove | null = currentBoardIndex > 0 ? processedData.moves[currentBoardIndex - 1] ?? null : null
   const currentPosition = processedData.positions[currentBoardIndex] || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
-  // ---- Arrows ----
-  const currentMoveArrows = useMemo(() => {
-    if (!currentMove || processedData.moves.length === 0) return []
+  // ---- Arrows (only shown after reveal) ----
+  const reviewArrows = useMemo(() => {
+    if (phase !== 'reviewing' || !isRevealed || !currentMoment) return []
 
+    const m = currentMoment.move
     try {
       const chess = new Chess()
-      chess.load(currentMove.fenBefore)
+      chess.load(m.fenBefore)
       return generateModernMoveArrows({
-        san: currentMove.san,
-        bestMoveSan: currentMove.bestMoveSan,
-        classification: currentMove.classification,
-        isUserMove: currentMove.isUserMove,
+        san: m.san,
+        bestMoveSan: m.bestMoveSan,
+        classification: m.classification,
+        isUserMove: m.isUserMove,
       }, chess)
     } catch {
       return []
     }
-  }, [currentMove, processedData.moves.length])
+  }, [phase, isRevealed, currentMoment])
 
   // ---- Navigation ----
   const navigateToMove = useCallback((index: number) => {
@@ -254,16 +265,18 @@ function GameReviewContent() {
   const goToMoment = useCallback((momentIdx: number) => {
     if (momentIdx < 0 || momentIdx >= keyMoments.length) return
     setCurrentMomentIndex(momentIdx)
-    // Navigate board to show the position AFTER the mistake move
+    // Navigate board to show position BEFORE the mistake (decision point)
     const moveIdx = keyMoments[momentIdx].moveIndex
-    setCurrentBoardIndex(moveIdx + 1) // +1 because positions[0] = start
+    setCurrentBoardIndex(moveIdx)
+    setIsRevealed(false)
   }, [keyMoments])
 
   const startReview = useCallback(() => {
     setPhase('reviewing')
     setCurrentMomentIndex(0)
+    setIsRevealed(false)
     if (keyMoments.length > 0) {
-      setCurrentBoardIndex(keyMoments[0].moveIndex + 1)
+      setCurrentBoardIndex(keyMoments[0].moveIndex)
     }
   }, [keyMoments])
 
@@ -280,6 +293,30 @@ function GameReviewContent() {
       goToMoment(currentMomentIndex - 1)
     }
   }, [currentMomentIndex, goToMoment])
+
+  // ---- Keyboard navigation ----
+  useEffect(() => {
+    if (phase !== 'reviewing') return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault()
+        if (!isRevealed) {
+          setIsRevealed(true)
+        } else {
+          nextMoment()
+        }
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        if (isRevealed && currentMomentIndex > 0) {
+          prevMoment()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [phase, isRevealed, currentMomentIndex, nextMoment, prevMoment])
 
   // ---- Coach Chat Position Context ----
   useEffect(() => {
@@ -386,10 +423,10 @@ function GameReviewContent() {
   const isMobile = mobileOpts.boardSize === 'small' || mobileOpts.boardSize === 'medium'
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white" ref={layoutRef}>
+    <div className="h-screen bg-slate-950 text-white flex flex-col overflow-hidden" ref={layoutRef}>
       {/* Header */}
-      <div className="border-b border-white/5 bg-white/[0.02] px-4 py-3">
-        <div className="max-w-7xl mx-auto flex items-center gap-3">
+      <div className="flex-shrink-0 border-b border-white/5 bg-white/[0.02] px-4 py-3">
+        <div className="max-w-6xl mx-auto flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
             className="text-slate-400 hover:text-white transition-colors"
@@ -414,50 +451,107 @@ function GameReviewContent() {
       </div>
 
       {/* Main content */}
-      <div className={`max-w-7xl mx-auto p-4 ${isMobile ? 'flex flex-col gap-4' : 'flex gap-6 items-start'}`}>
-        {/* Board */}
-        <div className={isMobile ? 'w-full flex justify-center' : 'flex-shrink-0'}>
-          <UnifiedChessAnalysis
-            currentPosition={currentPosition}
-            currentMove={currentMove}
-            allMoves={processedData.moves}
-            playerColor={playerColor}
-            currentIndex={currentBoardIndex}
-            boardWidth={boardWidth}
-            currentMoveArrows={currentMoveArrows}
-            onMoveNavigation={navigateToMove}
-            isLoadingAIComments={false}
-          />
-        </div>
+      <div className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+        <div className={`max-w-6xl mx-auto p-4 ${
+          isMobile ? 'flex flex-col gap-4' : 'flex gap-6 items-start h-full'
+        }`}>
+          {/* Board column */}
+          <div className={`flex-shrink-0 ${isMobile ? 'w-full flex flex-col items-center' : ''}`}>
+            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+              <div className="relative" style={{ width: boardWidth, height: boardWidth }}>
+                <Chessboard
+                  id="game-review-board"
+                  position={currentPosition}
+                  boardWidth={boardWidth}
+                  boardOrientation={playerColor}
+                  arePiecesDraggable={false}
+                  showBoardNotation={true}
+                  {...getDarkChessBoardTheme('default')}
+                />
+                <ModernChessArrows
+                  arrows={reviewArrows}
+                  boardWidth={boardWidth}
+                  boardOrientation={playerColor}
+                  boardId="game-review-board"
+                />
+              </div>
+            </div>
 
-        {/* Review Panel */}
-        <div className={`${isMobile ? 'w-full' : 'flex-1 min-w-0 max-w-md'}`}>
-          {phase === 'intro' && (
-            <IntroPanel
-              meta={gameMeta}
-              stats={mistakeStats}
-              onStart={startReview}
-            />
-          )}
+            {/* Move navigation below board (only during reviewing) */}
+            {phase === 'reviewing' && (
+              <div className="flex items-center justify-center gap-1.5 mt-3 py-2 px-3 rounded-xl bg-white/[0.03] border border-white/5" style={{ width: boardWidth + 32 }}>
+                <button
+                  onClick={() => navigateToMove(0)}
+                  disabled={currentBoardIndex === 0}
+                  className={NAV_BTN_CLASS}
+                  aria-label="First position"
+                >
+                  {'|<'}
+                </button>
+                <button
+                  onClick={() => navigateToMove(currentBoardIndex - 1)}
+                  disabled={currentBoardIndex === 0}
+                  className={NAV_BTN_CLASS}
+                  aria-label="Previous move"
+                >
+                  {'<'}
+                </button>
+                <span className="text-xs text-slate-500 px-2">
+                  {currentBoardIndex} / {processedData.moves.length}
+                </span>
+                <button
+                  onClick={() => navigateToMove(currentBoardIndex + 1)}
+                  disabled={currentBoardIndex >= processedData.moves.length}
+                  className={NAV_BTN_CLASS}
+                  aria-label="Next move"
+                >
+                  {'>'}
+                </button>
+                <button
+                  onClick={() => navigateToMove(processedData.moves.length)}
+                  disabled={currentBoardIndex >= processedData.moves.length}
+                  className={NAV_BTN_CLASS}
+                  aria-label="Last position"
+                >
+                  {'>|'}
+                </button>
+              </div>
+            )}
+          </div>
 
-          {phase === 'reviewing' && currentMoment && (
-            <ReviewingPanel
-              moment={currentMoment}
-              momentIndex={currentMomentIndex}
-              totalMoments={keyMoments.length}
-              onPrev={prevMoment}
-              onNext={nextMoment}
-            />
-          )}
+          {/* Coaching panel */}
+          <div className={`${
+            isMobile ? 'w-full' : 'flex-1 min-w-0 max-w-[360px] max-h-full overflow-y-auto'
+          }`}>
+            {phase === 'intro' && (
+              <IntroPanel
+                meta={gameMeta}
+                stats={mistakeStats}
+                onStart={startReview}
+              />
+            )}
 
-          {phase === 'summary' && (
-            <SummaryPanel
-              stats={mistakeStats}
-              meta={gameMeta}
-              onReviewAgain={startReview}
-              onBack={() => navigate(-1)}
-            />
-          )}
+            {phase === 'reviewing' && currentMoment && (
+              <ReviewingPanel
+                moment={currentMoment}
+                momentIndex={currentMomentIndex}
+                totalMoments={keyMoments.length}
+                isRevealed={isRevealed}
+                onReveal={() => setIsRevealed(true)}
+                onPrev={prevMoment}
+                onNext={nextMoment}
+              />
+            )}
+
+            {phase === 'summary' && (
+              <SummaryPanel
+                stats={mistakeStats}
+                meta={gameMeta}
+                onReviewAgain={startReview}
+                onBack={() => navigate(-1)}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -506,6 +600,14 @@ function IntroPanel({ meta, stats, onStart }: IntroPanelProps) {
             <span className="text-white font-medium">{meta.accuracy.toFixed(1)}%</span>
           </div>
         )}
+        {meta.playedAt && (
+          <div className="flex justify-between">
+            <span className="text-slate-400">Played</span>
+            <span className="text-white font-medium">
+              {new Date(meta.playedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Mistake summary */}
@@ -546,17 +648,19 @@ interface ReviewingPanelProps {
   moment: KeyMoment
   momentIndex: number
   totalMoments: number
+  isRevealed: boolean
+  onReveal: () => void
   onPrev: () => void
   onNext: () => void
 }
 
-function ReviewingPanel({ moment, momentIndex, totalMoments, onPrev, onNext }: ReviewingPanelProps) {
+function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onReveal, onPrev, onNext }: ReviewingPanelProps) {
   const m = moment.move
   const isLast = momentIndex === totalMoments - 1
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 space-y-4">
-      {/* Progress */}
+      {/* Progress dots */}
       <div className="flex items-center justify-between text-xs text-slate-400">
         <span>Moment {momentIndex + 1} of {totalMoments}</span>
         <div className="flex gap-1">
@@ -574,81 +678,115 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, onPrev, onNext }: R
       {/* Move header */}
       <div className="flex items-center gap-2">
         <span className="text-white font-medium">Move {m.moveNumber}</span>
-        <span className={`text-xs px-2 py-0.5 rounded ${classificationBadgeStyles[moment.classification]}`}>
-          {classificationLabel[moment.classification]} {classificationIcon(moment.classification)}
-        </span>
-        {m.centipawnLoss !== null && m.centipawnLoss > 0 && (
-          <span className="text-xs text-slate-500">
-            ({Math.round(m.centipawnLoss)} cp)
+        {isRevealed && (
+          <span className={`text-xs px-2 py-0.5 rounded ${classificationBadgeStyles[moment.classification]}`}>
+            {classificationLabel[moment.classification]} {classificationIcon(moment.classification)}
           </span>
         )}
       </div>
 
-      {/* Played vs Best */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-sm">
-          <span className={`w-2 h-2 rounded-full ${
-            moment.classification === 'blunder' ? 'bg-rose-400' :
-            moment.classification === 'mistake' ? 'bg-orange-400' : 'bg-amber-400'
-          }`} />
-          <span className="text-slate-400">You played:</span>
-          <span className="text-white font-mono font-semibold">{m.san}</span>
-        </div>
-        {m.bestMoveSan && (
-          <div className="flex items-center gap-2 text-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="text-slate-400">Better was:</span>
-            <span className="text-emerald-300 font-mono font-semibold">{m.bestMoveSan}</span>
+      {/* Pre-reveal: "Think First" prompt */}
+      {!isRevealed && (
+        <div className="space-y-4">
+          <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-400/20 text-center">
+            <p className="text-amber-200 font-medium mb-1">
+              It&apos;s {m.player === 'white' ? "White's" : "Black's"} move
+            </p>
+            <p className="text-slate-400 text-sm">
+              Look at the position. What would you play here?
+            </p>
           </div>
-        )}
-      </div>
 
-      {/* Explanation */}
-      <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 text-sm text-slate-300 leading-relaxed">
-        {m.coachingComment || m.explanation}
-      </div>
+          <button
+            onClick={onReveal}
+            className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold transition-colors"
+          >
+            Show What Happened
+          </button>
 
-      {/* Insights */}
-      {((m.tacticalInsights && m.tacticalInsights.length > 0) || (m.positionalInsights && m.positionalInsights.length > 0)) && (
-        <div className="space-y-2">
-          {m.tacticalInsights && m.tacticalInsights.length > 0 && (
-            <div className="text-xs">
-              <span className="text-amber-300 font-medium">Tactical: </span>
-              <span className="text-slate-400">{m.tacticalInsights.join(', ')}</span>
-            </div>
-          )}
-          {m.positionalInsights && m.positionalInsights.length > 0 && (
-            <div className="text-xs">
-              <span className="text-sky-300 font-medium">Positional: </span>
-              <span className="text-slate-400">{m.positionalInsights.join(', ')}</span>
-            </div>
-          )}
+          <p className="text-xs text-slate-600 text-center">
+            Press Space or Right Arrow to reveal
+          </p>
         </div>
       )}
 
-      {/* Chat hint */}
-      <p className="text-xs text-slate-500 italic">
-        Ask Coach Tal for deeper analysis using the chat button.
-      </p>
+      {/* Post-reveal: Full analysis */}
+      {isRevealed && (
+        <div className="space-y-4">
+          {/* Played vs Best */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <span className={`w-2 h-2 rounded-full ${
+                moment.classification === 'blunder' ? 'bg-rose-400' :
+                moment.classification === 'mistake' ? 'bg-orange-400' : 'bg-amber-400'
+              }`} />
+              <span className="text-slate-400">You played:</span>
+              <span className="text-white font-mono font-semibold">{m.san}</span>
+            </div>
+            {m.bestMoveSan && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-slate-400">Better was:</span>
+                <span className="text-emerald-300 font-mono font-semibold">{m.bestMoveSan}</span>
+              </div>
+            )}
+          </div>
 
-      {/* Navigation */}
-      <div className="flex gap-3 pt-2">
-        <button
-          onClick={onPrev}
-          disabled={momentIndex === 0}
-          className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-medium transition-colors
-            disabled:opacity-30 disabled:cursor-not-allowed
-            hover:bg-white/5 text-slate-300"
-        >
-          Previous
-        </button>
-        <button
-          onClick={onNext}
-          className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors"
-        >
-          {isLast ? 'View Summary' : 'Next Moment'}
-        </button>
-      </div>
+          {/* Centipawn loss */}
+          {m.centipawnLoss !== null && m.centipawnLoss > 0 && (
+            <span className="text-xs text-slate-500 block">
+              Cost: ~{Math.round(m.centipawnLoss)} centipawns
+            </span>
+          )}
+
+          {/* Coaching explanation */}
+          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 text-sm text-slate-300 leading-relaxed">
+            {m.coachingComment || m.explanation}
+          </div>
+
+          {/* Insights */}
+          {((m.tacticalInsights && m.tacticalInsights.length > 0) || (m.positionalInsights && m.positionalInsights.length > 0)) && (
+            <div className="space-y-2">
+              {m.tacticalInsights && m.tacticalInsights.length > 0 && (
+                <div className="text-xs">
+                  <span className="text-amber-300 font-medium">Tactical: </span>
+                  <span className="text-slate-400">{m.tacticalInsights.join(', ')}</span>
+                </div>
+              )}
+              {m.positionalInsights && m.positionalInsights.length > 0 && (
+                <div className="text-xs">
+                  <span className="text-sky-300 font-medium">Positional: </span>
+                  <span className="text-slate-400">{m.positionalInsights.join(', ')}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Chat hint */}
+          <p className="text-xs text-slate-500 italic">
+            Ask Coach Tal for deeper analysis using the chat button.
+          </p>
+
+          {/* Navigation */}
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={onPrev}
+              disabled={momentIndex === 0}
+              className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-medium transition-colors
+                disabled:opacity-30 disabled:cursor-not-allowed
+                hover:bg-white/5 text-slate-300"
+            >
+              Previous
+            </button>
+            <button
+              onClick={onNext}
+              className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors"
+            >
+              {isLast ? 'View Summary' : 'Next Moment'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
