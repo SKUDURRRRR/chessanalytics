@@ -30,6 +30,7 @@ except ImportError as e:
     print(f"[ERROR] Stripe library import failed: {e}")
     print("   Run: pip install stripe>=7.0.0")
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +43,7 @@ import re
 import uvicorn
 import asyncio
 import uuid
+import traceback
 from datetime import datetime, timezone
 import time
 from supabase import create_client, Client
@@ -89,7 +91,9 @@ from .resilient_api_client import get_api_client as get_resilient_api_client
 from .lesson_generator import LessonGenerator
 from .puzzle_generator import PuzzleGenerator
 from .puzzle_rating import PuzzleRatingEngine
-from .progress_analyzer import ProgressAnalyzer
+from .progress_analyzer import ProgressAnalyzer, get_weakness_puzzle_themes
+from .player_profiles import FAMOUS_PLAYERS
+from .opening_style_profiles import OPENING_STYLES
 
 # Load environment configuration
 from .config import get_config
@@ -146,39 +150,29 @@ if JWT_ISSUER:
 if JWT_AUDIENCE:
     print(f"JWT validation configured with audience: {JWT_AUDIENCE}")
 
-# Simple in-memory cache for analytics with TTL
-_analytics_cache: Dict[str, Dict[str, Any]] = {}
+# Bounded in-memory cache for analytics with TTL (replaces unbounded dict)
 CACHE_TTL_SECONDS = 1800  # 30 minutes cache TTL (was 5 minutes)
+_analytics_cache = LRUCache(maxsize=500, ttl=CACHE_TTL_SECONDS, name="analytics")
+register_cache(_analytics_cache)
 
 def _get_from_cache(cache_key: str) -> Optional[Dict[str, Any]]:
     """Get data from cache if it exists and is not expired."""
-    if cache_key in _analytics_cache:
-        cached_entry = _analytics_cache[cache_key]
-        timestamp = cached_entry.get('timestamp', 0)
-        if time.time() - timestamp < CACHE_TTL_SECONDS:
-            if DEBUG:
-                print(f"[CACHE] Hit for key: {cache_key}")
-            return cached_entry.get('data')
-        else:
-            # Cache expired, remove it
-            if DEBUG:
-                print(f"[CACHE] Expired for key: {cache_key}")
-            del _analytics_cache[cache_key]
+    result = _analytics_cache.get(cache_key)
+    if result is not None:
+        if DEBUG:
+            print(f"[CACHE] Hit for key: {cache_key}")
+        return result
     return None
 
 def _set_in_cache(cache_key: str, data: Dict[str, Any]) -> None:
     """Store data in cache with current timestamp."""
-    _analytics_cache[cache_key] = {
-        'data': data,
-        'timestamp': time.time()
-    }
+    _analytics_cache.set(cache_key, data)
     if DEBUG:
         print(f"[CACHE] Set for key: {cache_key}")
 
 def _delete_from_cache(cache_key: str) -> None:
     """Delete a specific cache entry."""
-    if cache_key in _analytics_cache:
-        del _analytics_cache[cache_key]
+    if _analytics_cache.delete(cache_key):
         if DEBUG:
             print(f"[CACHE] Deleted key: {cache_key}")
 
@@ -189,17 +183,84 @@ def _invalidate_cache(user_id: str, platform: str) -> None:
     (e.g., "alice:lichess" should not match "malice:lichess:*" patterns).
     """
     keys_to_delete = []
-    for key in list(_analytics_cache.keys()):
-        parts = key.split(":")
-        # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
-        # Match exact user_id and platform segments (parts[1] and parts[2])
-        if len(parts) >= 3 and parts[1] == user_id and parts[2] == platform:
-            keys_to_delete.append(key)
+    with _analytics_cache._lock:
+        for key in list(_analytics_cache._cache.keys()):
+            parts = key.split(":")
+            # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
+            # Match exact user_id and platform segments (parts[1] and parts[2])
+            if len(parts) >= 3 and parts[1] == user_id and parts[2] == platform:
+                keys_to_delete.append(key)
 
-    for key in keys_to_delete:
-        del _analytics_cache[key]
+        for key in keys_to_delete:
+            if key in _analytics_cache._cache:
+                del _analytics_cache._cache[key]
     if DEBUG and keys_to_delete:
         print(f"[CACHE] Invalidated {len(keys_to_delete)} entries for {user_id}:{platform}")
+
+# Module-level singleton helpers to avoid per-request object creation
+_stockfish_path = None
+
+def _get_stockfish_path() -> str:
+    """Get the Stockfish path, cached after first lookup.
+
+    Uses the module-level analysis engine's config rather than
+    creating a new ChessAnalysisEngine on every call.
+    """
+    global _stockfish_path
+    if _stockfish_path is None:
+        from .analysis_engine import ChessAnalysisEngine, AnalysisConfig
+        _stockfish_path = ChessAnalysisEngine(config=AnalysisConfig()).stockfish_path
+    return _stockfish_path
+
+def _get_sync_engine_pool():
+    """Get the SyncEnginePool from the analysis engine singleton.
+
+    Returns the thread-safe synchronous engine pool for use in
+    asyncio.to_thread() workers and synchronous helper functions.
+    Avoids spawning a new Stockfish process per request.
+    """
+    engine = get_analysis_engine()
+    if engine and engine._sync_engine_pool:
+        return engine._sync_engine_pool
+    return None
+
+_ai_generator = None
+
+def _get_ai_generator():
+    """Get or create a singleton AIChessCommentGenerator instance."""
+    global _ai_generator
+    if _ai_generator is None:
+        from .ai_comment_generator import AIChessCommentGenerator
+        _ai_generator = AIChessCommentGenerator()
+    return _ai_generator
+
+_study_plan_generator = None
+_opening_repertoire_analyzer = None
+_progress_analyzer = None
+
+def _get_study_plan_generator():
+    """Get or create a singleton StudyPlanGenerator instance."""
+    global _study_plan_generator
+    if _study_plan_generator is None:
+        from .study_plan_generator import StudyPlanGenerator
+        _study_plan_generator = _get_study_plan_generator()
+    return _study_plan_generator
+
+def _get_opening_repertoire_analyzer():
+    """Get or create a singleton OpeningRepertoireAnalyzer instance."""
+    global _opening_repertoire_analyzer
+    if _opening_repertoire_analyzer is None:
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        _opening_repertoire_analyzer = _get_opening_repertoire_analyzer()
+    return _opening_repertoire_analyzer
+
+def _get_progress_analyzer():
+    """Get or create a singleton ProgressAnalyzer instance."""
+    global _progress_analyzer
+    if _progress_analyzer is None:
+        from .progress_analyzer import ProgressAnalyzer
+        _progress_analyzer = _get_progress_analyzer()
+    return _progress_analyzer
 
 # Initialize Supabase clients with fallback for missing config
 if config.database.url and config.database.anon_key:
@@ -330,6 +391,59 @@ def get_optional_auth():
     else:
         return None
 
+async def get_coach_user_id(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    auth_user_id: Optional[str] = Query(None, description="[Deprecated] Use Authorization header"),
+) -> Optional[str]:
+    """Extract user ID preferring JWT token, falling back to query param.
+
+    Used by coach endpoints that accept optional authentication.
+    JWT Authorization header is preferred; auth_user_id query param
+    is accepted for backward compatibility but logs a deprecation warning.
+    """
+    if credentials:
+        try:
+            token_data = await verify_token(credentials)
+            jwt_user_id = token_data.get('sub')
+            if jwt_user_id:
+                return jwt_user_id
+        except HTTPException:
+            pass  # Fall through to query param
+
+    if auth_user_id:
+        logger.warning(f"[DEPRECATION] auth_user_id query param used instead of JWT: {auth_user_id[:8]}...")
+        return auth_user_id
+
+    return None
+
+
+async def require_coach_user_id(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    auth_user_id: Optional[str] = Query(None, description="[Deprecated] Use Authorization header"),
+) -> str:
+    """Extract user ID from JWT or query param, raising 401 if neither is present.
+
+    Used by coach endpoints that require authentication.
+    """
+    if credentials:
+        try:
+            token_data = await verify_token(credentials)
+            jwt_user_id = token_data.get('sub')
+            if jwt_user_id:
+                return jwt_user_id
+        except HTTPException:
+            pass  # Fall through to query param
+
+    if auth_user_id:
+        logger.warning(f"[DEPRECATION] auth_user_id query param used instead of JWT: {auth_user_id[:8]}...")
+        return auth_user_id
+
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required. Please log in to access coach features."
+    )
+
+
 def get_client_ip(request: Request) -> str:
     """
     Extract client IP address from request.
@@ -368,23 +482,17 @@ def get_client_ip(request: Request) -> str:
     # Last resort - localhost
     return '127.0.0.1'
 
-# FastAPI app
-app = FastAPI(
-    title="Unified Chess Analysis API",
-    version="3.0.0",
-    description="Single, comprehensive chess analysis API with all functionality consolidated"
-)
-
 # Global instances for memory optimization
 _engine_pool_instance = None
 _memory_monitor_instance = None
 _cache_cleanup_task = None
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup with memory optimization."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup and shutdown logic."""
     global _engine_pool_instance, _memory_monitor_instance, _cache_cleanup_task
 
+    # --- STARTUP ---
     print("=" * 80)
     print("[START] Starting Chess Analytics API Server with Memory Optimizations")
     print("=" * 80)
@@ -395,8 +503,8 @@ async def startup_event():
         print(f"[STARTUP] Initializing Stockfish engine pool...")
         _engine_pool_instance = get_engine_pool(
             stockfish_path=stockfish_path,
-            max_size=4,  # 4 engines max (Phase 1 - Stage 1: increased from 3)
-            ttl=300.0,   # 5-minute TTL
+            max_size=4,
+            ttl=300.0,
             config={
                 'Skill Level': 20,
                 'UCI_LimitStrength': False,
@@ -412,9 +520,9 @@ async def startup_event():
     # Initialize memory monitor
     print("[STARTUP] Initializing memory monitor...")
     _memory_monitor_instance = get_memory_monitor(
-        interval=60.0,         # Check every 60 seconds
-        warning_threshold=0.70, # Warn at 70%
-        critical_threshold=0.85 # Critical at 85%
+        interval=60.0,
+        warning_threshold=0.70,
+        critical_threshold=0.85
     )
     await _memory_monitor_instance.start()
     print(f"[STARTUP] [OK] Memory monitor started")
@@ -426,14 +534,12 @@ async def startup_event():
         logger.info("[STARTUP] [OK] Analysis engine pre-initialized successfully")
     except Exception as e:
         logger.warning(f"[STARTUP] [WARNING] Analysis engine pre-initialization failed: {e}")
-        import traceback
         logger.debug(f"[STARTUP] Traceback: {traceback.format_exc()}")
 
     # Check AI status and log it
     logger.info("[STARTUP] Checking AI generation status...")
     try:
-        from .ai_comment_generator import AIChessCommentGenerator
-        ai_check = AIChessCommentGenerator()
+        ai_check = _get_ai_generator()
         if ai_check and ai_check.enabled:
             model = ai_check.config.ai_model if hasattr(ai_check, 'config') else 'unknown'
             logger.info(f"[STARTUP] [OK] AI Generation: ENABLED (Model: {model})")
@@ -441,7 +547,6 @@ async def startup_event():
         else:
             if ai_check:
                 ai_enabled = ai_check.config.ai_enabled if hasattr(ai_check, 'config') else False
-                # Check for the correct API key based on provider
                 provider = ai_check.config.ai_provider if hasattr(ai_check, 'config') else 'anthropic'
                 if provider == 'gemini':
                     has_api_key = bool(ai_check.config.gemini_api_key if hasattr(ai_check, 'config') else False)
@@ -456,29 +561,28 @@ async def startup_event():
         logger.warning(f"[STARTUP] [WARNING] AI Generation: CHECK FAILED - {ai_error}")
         logger.info("[STARTUP]    AI features will use template-based fallback")
 
-    # Clear analysis stats cache on startup to prevent stale data from wrong calculation function
+    # Clear analysis stats cache on startup to prevent stale data
     print("[STARTUP] Clearing analysis stats cache to ensure fresh calculations...")
     cleared_count = 0
-    for key in list(_analytics_cache.keys()):
-        if key.startswith('analysis_stats:'):
-            _analytics_cache.pop(key, None)
-            cleared_count += 1
+    with _analytics_cache._lock:
+        for key in list(_analytics_cache._cache.keys()):
+            if key.startswith('analysis_stats:'):
+                if key in _analytics_cache._cache:
+                    del _analytics_cache._cache[key]
+                    cleared_count += 1
     if cleared_count > 0:
-        print(f"[STARTUP] ✅ Cleared {cleared_count} cached analysis stats entries")
+        print(f"[STARTUP] Cleared {cleared_count} cached analysis stats entries")
 
     # Start cache cleanup background task
     async def cache_cleanup_loop():
         print("[STARTUP] Starting cache cleanup task (interval: 5 minutes)")
         while True:
             try:
-                await asyncio.sleep(300)  # Every 5 minutes
-
-                # Cleanup expired entries in all caches
+                await asyncio.sleep(300)
                 results = cleanup_all_caches()
                 total_cleaned = sum(results.values())
                 if total_cleaned > 0:
                     print(f"[CACHE_CLEANUP] Cleaned {total_cleaned} expired entries: {results}")
-
             except asyncio.CancelledError:
                 print("[CACHE_CLEANUP] Cleanup task cancelled")
                 break
@@ -493,11 +597,11 @@ async def startup_event():
         queue = get_analysis_queue()
         if queue._queue_processor_task is None or queue._queue_processor_task.done():
             queue._queue_processor_task = asyncio.create_task(queue._process_queue())
-            print("[STARTUP] ✅ Analysis queue processor started")
+            print("[STARTUP] Analysis queue processor started")
     except ImportError:
-        print("[STARTUP] ℹ️  Analysis queue not available")
+        print("[STARTUP] Analysis queue not available")
 
-    # Verify Stripe configuration (without logging sensitive values)
+    # Verify Stripe configuration
     stripe_key = os.getenv('STRIPE_SECRET_KEY')
     if stripe_key:
         logger.info("STRIPE_SECRET_KEY loaded")
@@ -508,14 +612,11 @@ async def startup_event():
     print("[OK] Server startup complete!")
     print("=" * 80)
 
+    yield  # Application runs here
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup resources on shutdown."""
-    global _engine_pool_instance, _memory_monitor_instance, _cache_cleanup_task
-
+    # --- SHUTDOWN ---
     print("\n" + "=" * 80)
-    print("🛑 Shutting down Chess Analytics API Server")
+    print("Shutting down Chess Analytics API Server")
     print("=" * 80)
 
     # Stop cache cleanup task
@@ -526,26 +627,26 @@ async def shutdown_event():
             await _cache_cleanup_task
         except asyncio.CancelledError:
             pass
-        print("[SHUTDOWN] ✅ Cache cleanup task stopped")
+        print("[SHUTDOWN] Cache cleanup task stopped")
 
     # Stop memory monitor
     if _memory_monitor_instance:
         print("[SHUTDOWN] Stopping memory monitor...")
         await stop_memory_monitor()
-        print("[SHUTDOWN] ✅ Memory monitor stopped")
+        print("[SHUTDOWN] Memory monitor stopped")
 
     # Close engine pool
     if _engine_pool_instance:
         print("[SHUTDOWN] Closing engine pool...")
         await close_global_engine_pool()
-        print("[SHUTDOWN] ✅ Engine pool closed")
+        print("[SHUTDOWN] Engine pool closed")
 
     # Close HTTP client
     global _shared_http_client
     if _shared_http_client:
         print("[SHUTDOWN] Closing HTTP client...")
         await _shared_http_client.close()
-        print("[SHUTDOWN] ✅ HTTP client closed")
+        print("[SHUTDOWN] HTTP client closed")
 
     # Clear all caches
     print("[SHUTDOWN] Clearing all caches...")
@@ -554,11 +655,19 @@ async def shutdown_event():
     cache_results['import_progress'] = large_import_progress.clear()
     cache_results['import_cancel_flags'] = large_import_cancel_flags.clear()
     total_cleared = sum(cache_results.values())
-    print(f"[SHUTDOWN] ✅ Cleared {total_cleared} cache entries: {cache_results}")
+    print(f"[SHUTDOWN] Cleared {total_cleared} cache entries: {cache_results}")
 
     print("=" * 80)
-    print("✅ Shutdown complete")
+    print("Shutdown complete")
     print("=" * 80)
+
+# FastAPI app
+app = FastAPI(
+    title="Unified Chess Analysis API",
+    version="3.0.0",
+    description="Single, comprehensive chess analysis API with all functionality consolidated",
+    lifespan=lifespan
+)
 
 # Add specific exception handler for rate limit errors (returns 429)
 @app.exception_handler(RateLimitError)
@@ -1105,8 +1214,7 @@ async def health_check():
     }
 
     try:
-        from .ai_comment_generator import AIChessCommentGenerator
-        ai_check = AIChessCommentGenerator()
+        ai_check = _get_ai_generator()
         ai_status["available"] = True
         if ai_check and ai_check.enabled:
             ai_status["enabled"] = True
@@ -1183,29 +1291,14 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
             # Validate FEN
             board = chess.Board(fen)
 
-            # Get Stockfish path from engine
-            from .analysis_engine import ChessAnalysisEngine, AnalysisConfig
-            temp_engine = ChessAnalysisEngine(config=AnalysisConfig())
-            stockfish_path = temp_engine.stockfish_path
-
-            if not stockfish_path:
+            pool = _get_sync_engine_pool()
+            if not pool:
                 raise ValueError("Stockfish not available")
 
             start_time = time.time()
 
-            # Analyze with Stockfish
-            with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
-                # Configure for speed
-                try:
-                    engine.configure({
-                        'Skill Level': 20,
-                        'Threads': 1,
-                        'Hash': 64,
-                        'UCI_AnalyseMode': True
-                    })
-                except:
-                    pass  # Some engines don't support all options
-
+            # Analyze with Stockfish using shared engine pool
+            with pool.acquire() as engine:
                 # Quick analysis
                 info = engine.analyse(board, chess.engine.Limit(depth=depth))
 
@@ -1255,7 +1348,7 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
                             try:
                                 pv_san.append(temp_board.san(move))
                                 temp_board.push(move)
-                            except:
+                            except Exception:
                                 break
                     except Exception as e:
                         print(f"Error extracting best move: {e}")
@@ -1272,7 +1365,6 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
 
         except Exception as e:
             print(f"Error in synchronous analysis: {e}")
-            import traceback
             traceback.print_exc()
             raise
 
@@ -1290,7 +1382,6 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
         raise HTTPException(status_code=400, detail=f"Invalid FEN: {str(e)}")
     except Exception as e:
         print(f"Error in quick position analysis: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
 
@@ -2578,7 +2669,6 @@ async def _fetch_remaining_games(
 
     except Exception as e:
         print(f"[BACKGROUND] Error fetching remaining games for {canonical_user_id}: {e}")
-        import traceback
         traceback.print_exc()
 
 
@@ -2673,7 +2763,6 @@ async def get_comprehensive_analytics(
                 )
             except Exception as e:
                 print(f"[ERROR] Error fetching games page at offset {offset}, range {range_start}-{range_end}: {e}")
-                import traceback
                 traceback.print_exc()
                 break
 
@@ -3275,7 +3364,6 @@ async def get_comprehensive_analytics(
         raise
     except Exception as e:
         print(f"[ERROR] Error in get_comprehensive_analytics: {type(e).__name__}: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching comprehensive analytics: {str(e)}")
 
@@ -3581,7 +3669,6 @@ async def get_single_game(
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
         error_details = traceback.format_exc()
         print(f"Error fetching single game for user_id={user_id}, platform={platform}, game_id={game_id}")
         print(f"Error: {e}")
@@ -3620,12 +3707,13 @@ async def clear_user_cache(
         # Sweep all keys matching this user/platform (handles analysis_type/limit variants)
         # Match exact segments to avoid clearing other users' cache (e.g., "alice" vs "malice")
         keys_to_delete = []
-        for key in list(_analytics_cache.keys()):
-            parts = key.split(":")
-            # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
-            # Match exact user_id and platform segments (parts[1] and parts[2])
-            if len(parts) >= 3 and parts[1] == canonical_user_id and parts[2] == platform:
-                keys_to_delete.append(key)
+        with _analytics_cache._lock:
+            for key in list(_analytics_cache._cache.keys()):
+                parts = key.split(":")
+                # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
+                # Match exact user_id and platform segments (parts[1] and parts[2])
+                if len(parts) >= 3 and parts[1] == canonical_user_id and parts[2] == platform:
+                    keys_to_delete.append(key)
 
         for key in keys_to_delete:
             _delete_from_cache(key)
@@ -3676,11 +3764,13 @@ async def get_deep_analysis(
         # PERFORMANCE: Reduced from 500 to 100 games (5x faster)
         # Recent games are more relevant for personality analysis
         # IMPORTANT: Also fetch 'id' field for proper game-analysis matching
-        games_response = db_client.table('games').select(
-            'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
-        ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-            'my_rating', 'null'
-        ).order('played_at', desc=True).limit(100).execute()
+        games_response = await asyncio.to_thread(
+            lambda: db_client.table('games').select(
+                'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
+            ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+                'my_rating', 'null'
+            ).order('played_at', desc=True).limit(100).execute()
+        )
         games = games_response.data or []
 
         # Fetch ALL games for accurate repertoire analysis (win rates, needs_work, etc.)
@@ -4791,10 +4881,8 @@ def _generate_ai_style_analysis(
 
     # Try AI generation first
     try:
-        from .ai_comment_generator import AIChessCommentGenerator
-
         logger.info("[STYLE ANALYSIS] Initializing AI generator...")
-        ai_generator = AIChessCommentGenerator()
+        ai_generator = _get_ai_generator()
 
         if ai_generator and ai_generator.enabled:
             logger.info("[STYLE ANALYSIS] ✅ AI generator is enabled and ready")
@@ -4820,7 +4908,6 @@ def _generate_ai_style_analysis(
                                    if key not in (ai_result or {})]
                     logger.warning(f"[STYLE ANALYSIS] ⚠️  AI generation returned incomplete result (missing: {missing_keys}), falling back to templates")
             except Exception as gen_error:
-                import traceback
                 logger.error(f"[STYLE ANALYSIS] ❌ AI generation call failed: {gen_error}")
                 logger.debug(f"[STYLE ANALYSIS] Generation error traceback: {traceback.format_exc()}")
                 logger.info("[STYLE ANALYSIS] Falling back to template-based generation")
@@ -4835,7 +4922,6 @@ def _generate_ai_style_analysis(
         logger.warning(f"[STYLE ANALYSIS] ⚠️  Failed to import AI generator: {import_error}")
         logger.info("[STYLE ANALYSIS] AI feature not available - using templates")
     except Exception as e:
-        import traceback
         logger.error(f"[STYLE ANALYSIS] ❌ Unexpected error during AI initialization: {e}")
         logger.debug(f"[STYLE ANALYSIS] Error traceback: {traceback.format_exc()}")
         logger.info("[STYLE ANALYSIS] Falling back to template-based generation")
@@ -5014,317 +5100,7 @@ def _generate_famous_player_comparisons(
 ) -> Dict[str, Any]:
     """Generate famous player comparisons based on personality scores."""
 
-    # Famous players database with personality profiles
-    # Database expanded from 26 to 39 players to improve matching accuracy
-    # Includes more modern players (2010s-present) for better coverage of contemporary styles
-    # NOTE: Profiles are currently estimated - Priority 1 improvement is to calculate from real games
-    famous_players = [
-        {
-            'name': 'Mikhail Tal',
-            'description': 'The "Magician from Riga" - known for his brilliant tactical combinations and sacrifices',
-            'era': '1950s-1990s',
-            'strengths': ['Tactical vision', 'Sacrificial attacks', 'Complex calculations'],
-            'profile': {'tactical': 85, 'aggressive': 90, 'positional': 55, 'patient': 45, 'novelty': 88, 'staleness': 35},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Garry Kasparov',
-            'description': 'Aggressive tactical player who dominated with dynamic, attacking chess',
-            'era': '1980s-2000s',
-            'strengths': ['Initiative', 'Tactical precision', 'Pressure play'],
-            'profile': {'tactical': 90, 'aggressive': 85, 'positional': 75, 'patient': 60, 'novelty': 75, 'staleness': 45},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Anatoly Karpov',
-            'description': 'Master of positional chess and endgame technique',
-            'era': '1970s-1990s',
-            'strengths': ['Positional understanding', 'Endgame mastery', 'Prophylaxis'],
-            'profile': {'tactical': 70, 'aggressive': 50, 'positional': 95, 'patient': 90, 'novelty': 45, 'staleness': 75},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Magnus Carlsen',
-            'description': 'Universal player with exceptional endgame skills and practical play',
-            'era': '2000s-present',
-            'strengths': ['Universal style', 'Endgame mastery', 'Practical play'],
-            'profile': {'tactical': 85, 'aggressive': 70, 'positional': 90, 'patient': 80, 'novelty': 72, 'staleness': 50},
-            'confidence': 90.0
-        },
-        {
-            'name': 'Bobby Fischer',
-            'description': 'Legendary American champion known for his fighting spirit and deep preparation',
-            'era': '1960s-1970s',
-            'strengths': ['Competitive spirit', 'Sharp tactics', 'Deep preparation'],
-            'profile': {'tactical': 88, 'aggressive': 80, 'positional': 85, 'patient': 65, 'novelty': 70, 'staleness': 55},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Tigran Petrosian',
-            'description': 'Master of prophylaxis and defensive play',
-            'era': '1950s-1980s',
-            'strengths': ['Defensive mastery', 'Prophylaxis', 'Safety'],
-            'profile': {'tactical': 65, 'aggressive': 40, 'positional': 90, 'patient': 95, 'novelty': 55, 'staleness': 65},
-            'confidence': 80.0
-        },
-        {
-            'name': 'José Raúl Capablanca',
-            'description': 'Natural talent with exceptional endgame technique',
-            'era': '1910s-1940s',
-            'strengths': ['Technical precision', 'Endgame mastery', 'Natural talent'],
-            'profile': {'tactical': 75, 'aggressive': 60, 'positional': 88, 'patient': 85, 'novelty': 50, 'staleness': 60},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Alexander Alekhine',
-            'description': 'Attacking genius known for complex combinations',
-            'era': '1920s-1940s',
-            'strengths': ['Attacking play', 'Initiative', 'Dynamic positions'],
-            'profile': {'tactical': 90, 'aggressive': 88, 'positional': 75, 'patient': 50, 'novelty': 85, 'staleness': 40},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Vladimir Kramnik',
-            'description': 'Solid positional player with creative understanding',
-            'era': '1990s-2010s',
-            'strengths': ['Positional understanding', 'Endgame technique', 'Creative play'],
-            'profile': {'tactical': 78, 'aggressive': 60, 'positional': 92, 'patient': 85, 'novelty': 68, 'staleness': 52},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Hikaru Nakamura',
-            'description': 'Modern attacking player known for rapid chess and initiative',
-            'era': '2000s-present',
-            'strengths': ['Modern attacks', 'Initiative', 'Practical play'],
-            'profile': {'tactical': 88, 'aggressive': 82, 'positional': 72, 'patient': 60, 'novelty': 80, 'staleness': 42},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Fabiano Caruana',
-            'description': 'Universal player with deep opening preparation',
-            'era': '2010s-present',
-            'strengths': ['Universal style', 'Opening preparation', 'Technical precision'],
-            'profile': {'tactical': 85, 'aggressive': 70, 'positional': 88, 'patient': 78, 'novelty': 65, 'staleness': 58},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Paul Morphy',
-            'description': 'Tactical genius of the romantic era',
-            'era': '1850s',
-            'strengths': ['Tactical genius', 'Natural talent', 'Attacking play'],
-            'profile': {'tactical': 95, 'aggressive': 92, 'positional': 65, 'patient': 40, 'novelty': 82, 'staleness': 38},
-            'confidence': 70.0
-        },
-        {
-            'name': 'Judit Polgar',
-            'description': 'Strongest female player ever, known for aggressive tactical play',
-            'era': '1990s-2010s',
-            'strengths': ['Tactical prowess', 'Aggressive style', 'Competitive spirit'],
-            'profile': {'tactical': 88, 'aggressive': 85, 'positional': 75, 'patient': 58, 'novelty': 72, 'staleness': 48},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Viswanathan Anand',
-            'description': 'Speed chess specialist with universal style and deep preparation',
-            'era': '1990s-2010s',
-            'strengths': ['Universal play', 'Speed', 'Opening preparation'],
-            'profile': {'tactical': 85, 'aggressive': 75, 'positional': 88, 'patient': 75, 'novelty': 70, 'staleness': 52},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Aron Nimzowitsch',
-            'description': 'Hypermodern pioneer who revolutionized chess understanding',
-            'era': '1920s-1930s',
-            'strengths': ['Hypermodern concepts', 'Prophylaxis', 'Strategic innovation'],
-            'profile': {'tactical': 72, 'aggressive': 65, 'positional': 92, 'patient': 80, 'novelty': 95, 'staleness': 30},
-            'confidence': 70.0
-        },
-        {
-            'name': 'Mikhail Botvinnik',
-            'description': 'Scientific approach to chess, founder of Soviet School',
-            'era': '1940s-1960s',
-            'strengths': ['Deep preparation', 'Scientific method', 'Endgame technique'],
-            'profile': {'tactical': 75, 'aggressive': 60, 'positional': 90, 'patient': 88, 'novelty': 55, 'staleness': 68},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Vasily Smyslov',
-            'description': 'Harmonious style with exceptional endgame mastery',
-            'era': '1950s-1980s',
-            'strengths': ['Endgame mastery', 'Harmonious play', 'Technical precision'],
-            'profile': {'tactical': 78, 'aggressive': 55, 'positional': 90, 'patient': 88, 'novelty': 52, 'staleness': 62},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Viktor Korchnoi',
-            'description': 'Fearless fighter known for resourcefulness and never giving up',
-            'era': '1960s-2000s',
-            'strengths': ['Fighting spirit', 'Resourcefulness', 'Universal style'],
-            'profile': {'tactical': 82, 'aggressive': 75, 'positional': 85, 'patient': 68, 'novelty': 68, 'staleness': 52},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Ding Liren',
-            'description': 'Solid positional player with deep calculation and modern style',
-            'era': '2010s-present',
-            'strengths': ['Solid play', 'Deep calculation', 'Modern openings'],
-            'profile': {'tactical': 85, 'aggressive': 68, 'positional': 90, 'patient': 82, 'novelty': 70, 'staleness': 50},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Alireza Firouzja',
-            'description': 'Young aggressive talent with dynamic attacking style',
-            'era': '2020s-present',
-            'strengths': ['Dynamic play', 'Aggression', 'Modern tactics'],
-            'profile': {'tactical': 88, 'aggressive': 90, 'positional': 70, 'patient': 52, 'novelty': 85, 'staleness': 35},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Hou Yifan',
-            'description': 'Multiple-time Women\'s World Champion with classical style',
-            'era': '2010s-present',
-            'strengths': ['Classical understanding', 'Solid technique', 'Endgame skill'],
-            'profile': {'tactical': 78, 'aggressive': 65, 'positional': 88, 'patient': 80, 'novelty': 62, 'staleness': 55},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Bent Larsen',
-            'description': 'Creative player with unconventional openings and fighting spirit',
-            'era': '1960s-1990s',
-            'strengths': ['Creativity', 'Unconventional openings', 'Fighting chess'],
-            'profile': {'tactical': 80, 'aggressive': 78, 'positional': 75, 'patient': 60, 'novelty': 88, 'staleness': 35},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Akiba Rubinstein',
-            'description': 'Endgame virtuoso and master of rook endgames',
-            'era': '1900s-1930s',
-            'strengths': ['Endgame mastery', 'Rook endgames', 'Technical precision'],
-            'profile': {'tactical': 75, 'aggressive': 52, 'positional': 92, 'patient': 90, 'novelty': 48, 'staleness': 70},
-            'confidence': 70.0
-        },
-        {
-            'name': 'David Bronstein',
-            'description': 'Creative genius who played beautiful, imaginative chess',
-            'era': '1940s-1990s',
-            'strengths': ['Creativity', 'Imagination', 'Sacrificial play'],
-            'profile': {'tactical': 85, 'aggressive': 78, 'positional': 80, 'patient': 62, 'novelty': 92, 'staleness': 32},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Levon Aronian',
-            'description': 'Creative and imaginative with rich tactical vision',
-            'era': '2000s-present',
-            'strengths': ['Creativity', 'Tactical vision', 'Universal play'],
-            'profile': {'tactical': 88, 'aggressive': 75, 'positional': 85, 'patient': 72, 'novelty': 82, 'staleness': 42},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Emanuel Lasker',
-            'description': 'Longest-reigning world champion, psychologist of chess',
-            'era': '1890s-1920s',
-            'strengths': ['Practical play', 'Psychology', 'Resourcefulness'],
-            'profile': {'tactical': 80, 'aggressive': 70, 'positional': 85, 'patient': 80, 'novelty': 72, 'staleness': 48},
-            'confidence': 70.0
-        },
-        {
-            'name': 'Ian Nepomniachtchi',
-            'description': 'Aggressive tactical player with dynamic attacking style',
-            'era': '2010s-present',
-            'strengths': ['Tactical aggression', 'Initiative', 'Complex positions'],
-            'profile': {'tactical': 90, 'aggressive': 88, 'positional': 72, 'patient': 58, 'novelty': 75, 'staleness': 48},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Maxime Vachier-Lagrave',
-            'description': 'Universal player with strong tactics and solid technique',
-            'era': '2010s-present',
-            'strengths': ['Universal style', 'Tactical sharpness', 'Calculation'],
-            'profile': {'tactical': 90, 'aggressive': 75, 'positional': 85, 'patient': 75, 'novelty': 68, 'staleness': 54},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Richard Rapport',
-            'description': 'Highly creative player known for unorthodox openings',
-            'era': '2010s-present',
-            'strengths': ['Creativity', 'Unconventional ideas', 'Surprising moves'],
-            'profile': {'tactical': 82, 'aggressive': 80, 'positional': 70, 'patient': 60, 'novelty': 95, 'staleness': 25},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Wesley So',
-            'description': 'Solid positional player with exceptional technique',
-            'era': '2010s-present',
-            'strengths': ['Solid play', 'Technical precision', 'Endgame mastery'],
-            'profile': {'tactical': 82, 'aggressive': 58, 'positional': 92, 'patient': 90, 'novelty': 52, 'staleness': 68},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Anish Giri',
-            'description': 'Solid positional player with deep opening preparation',
-            'era': '2010s-present',
-            'strengths': ['Positional understanding', 'Opening preparation', 'Defensive resources'],
-            'profile': {'tactical': 85, 'aggressive': 55, 'positional': 92, 'patient': 88, 'novelty': 58, 'staleness': 65},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Daniil Dubov',
-            'description': 'Creative aggressive player with unconventional ideas',
-            'era': '2015-present',
-            'strengths': ['Creativity', 'Aggressive play', 'Surprising ideas'],
-            'profile': {'tactical': 88, 'aggressive': 85, 'positional': 75, 'patient': 55, 'novelty': 92, 'staleness': 30},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Shakhriyar Mamedyarov',
-            'description': 'Dynamic player with aggressive style and tactical sharpness',
-            'era': '2010s-present',
-            'strengths': ['Dynamic play', 'Tactical aggression', 'Initiative'],
-            'profile': {'tactical': 88, 'aggressive': 88, 'positional': 75, 'patient': 60, 'novelty': 78, 'staleness': 42},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Teimour Radjabov',
-            'description': 'Solid positional player with excellent defensive skills',
-            'era': '2000s-present',
-            'strengths': ['Defensive mastery', 'Positional play', 'Solid preparation'],
-            'profile': {'tactical': 80, 'aggressive': 52, 'positional': 90, 'patient': 92, 'novelty': 55, 'staleness': 70},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Alexander Grischuk',
-            'description': 'Universal player with strong tactics and time pressure skills',
-            'era': '2000s-present',
-            'strengths': ['Universal play', 'Tactical vision', 'Time pressure'],
-            'profile': {'tactical': 90, 'aggressive': 78, 'positional': 82, 'patient': 68, 'novelty': 72, 'staleness': 50},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Boris Gelfand',
-            'description': 'Solid positional player with deep opening knowledge',
-            'era': '1990s-2010s',
-            'strengths': ['Opening preparation', 'Solid play', 'Technical precision'],
-            'profile': {'tactical': 82, 'aggressive': 58, 'positional': 90, 'patient': 88, 'novelty': 50, 'staleness': 72},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Peter Leko',
-            'description': 'Solid defensive player known for drawing ability',
-            'era': '1990s-2010s',
-            'strengths': ['Defensive resources', 'Solid play', 'Technical precision'],
-            'profile': {'tactical': 78, 'aggressive': 48, 'positional': 92, 'patient': 95, 'novelty': 45, 'staleness': 75},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Vassily Ivanchuk',
-            'description': 'Creative genius with unpredictable style and brilliant ideas',
-            'era': '1980s-2010s',
-            'strengths': ['Creativity', 'Tactical brilliance', 'Unpredictability'],
-            'profile': {'tactical': 92, 'aggressive': 80, 'positional': 82, 'patient': 60, 'novelty': 95, 'staleness': 28},
-            'confidence': 85.0
-        },
-    ]
-
+    famous_players = FAMOUS_PLAYERS
     # Calculate similarity scores using all 6 personality traits
     player_tactical = personality_scores.get('tactical', 50.0)
     player_aggressive = personality_scores.get('aggressive', 50.0)
@@ -5662,34 +5438,6 @@ def _generate_famous_player_comparisons(
 
     return result
 
-
-# Opening compatibility matrix
-OPENING_STYLES = {
-    # Aggressive openings
-    "King's Indian": {"aggressive": 80, "tactical": 70, "positional": 40, "patient": 30},
-    "Sicilian Defense": {"aggressive": 75, "tactical": 80, "positional": 50, "patient": 40},
-    "Dutch Defense": {"aggressive": 85, "tactical": 65, "positional": 35, "patient": 30},
-    "Benoni Defense": {"aggressive": 80, "tactical": 75, "positional": 40, "patient": 35},
-    "Dragon Variation": {"aggressive": 90, "tactical": 85, "positional": 30, "patient": 25},
-
-    # Tactical openings
-    "Scotch Game": {"aggressive": 65, "tactical": 80, "positional": 50, "patient": 45},
-    "Italian Game": {"aggressive": 60, "tactical": 75, "positional": 55, "patient": 50},
-    "Spanish Opening": {"aggressive": 50, "tactical": 70, "positional": 70, "patient": 60},
-
-    # Positional openings
-    "Queen's Gambit": {"aggressive": 40, "tactical": 55, "positional": 85, "patient": 70},
-    "English Opening": {"aggressive": 35, "tactical": 50, "positional": 85, "patient": 75},
-    "Ruy Lopez": {"aggressive": 45, "tactical": 65, "positional": 80, "patient": 70},
-    "Catalan Opening": {"aggressive": 35, "tactical": 55, "positional": 90, "patient": 75},
-
-    # Patient openings
-    "French Defense": {"aggressive": 35, "tactical": 50, "positional": 75, "patient": 85},
-    "Caro-Kann Defense": {"aggressive": 30, "tactical": 45, "positional": 80, "patient": 90},
-    "Queen's Pawn Game": {"aggressive": 40, "tactical": 50, "positional": 70, "patient": 75},
-    "Nimzo-Indian Defense": {"aggressive": 40, "tactical": 60, "positional": 80, "patient": 80},
-    "London System": {"aggressive": 30, "tactical": 40, "positional": 75, "patient": 85},
-}
 
 
 def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[str, Any]]) -> List[OpeningMistake]:
@@ -6391,7 +6139,6 @@ def _build_deep_analysis_response(
                 print(f"  - Insights: {len(enhanced_opening_analysis.actionable_insights)}")
                 print(f"  - Trend points: {len(enhanced_opening_analysis.improvement_trend)}")
         except Exception as e:
-            import traceback
             if DEBUG:
                 print(f"Error generating enhanced opening analysis: {e}")
                 print(traceback.format_exc())
@@ -6610,13 +6357,11 @@ async def _fetch_chesscom_games(
 
         except Exception as inner_e:
             print(f"[chess.com] ERROR in fetch loop: {inner_e}")
-            import traceback
             traceback.print_exc()
             return []
 
     except Exception as e:
         print(f"[chess.com] ERROR in _fetch_chesscom_games: {e}")
-        import traceback
         traceback.print_exc()
         return []
 
@@ -6632,99 +6377,97 @@ async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Option
     """
     print(f"[lichess] Fetching games for user: {user_id}, limit: {limit}, until: {until_timestamp}, since: {since_timestamp}")
     try:
-        import aiohttp
         import json
 
-        async with aiohttp.ClientSession() as session:
-            url = f"https://lichess.org/api/games/user/{user_id}"
-            params = {
-                'max': limit,
-                'pgnInJson': 'true',  # This makes Lichess return NDJSON format
-                'clocks': 'true',
-                'evals': 'false',
-                'opening': 'true'
-            }
+        session = await get_http_client()
+        url = f"https://lichess.org/api/games/user/{user_id}"
+        params = {
+            'max': limit,
+            'pgnInJson': 'true',  # This makes Lichess return NDJSON format
+            'clocks': 'true',
+            'evals': 'false',
+            'opening': 'true'
+        }
 
-            # Add until parameter if provided (fetch games BEFORE this time)
-            if until_timestamp:
-                params['until'] = until_timestamp
+        # Add until parameter if provided (fetch games BEFORE this time)
+        if until_timestamp:
+            params['until'] = until_timestamp
 
-            # Add since parameter if provided (fetch games AFTER this time)
-            if since_timestamp:
-                params['since'] = since_timestamp
+        # Add since parameter if provided (fetch games AFTER this time)
+        if since_timestamp:
+            params['since'] = since_timestamp
 
-            print(f"[lichess] Request URL: {url}")
-            print(f"[lichess] Request params: {params}")
+        print(f"[lichess] Request URL: {url}")
+        print(f"[lichess] Request params: {params}")
 
-            async with session.get(url, params=params, headers={'Accept': 'application/x-ndjson'}) as response:
-                if response.status != 200:
-                    print(f"[lichess] API error: {response.status}")
-                    response_text = await response.text()
-                    print(f"[lichess] Error response: {response_text[:500]}")
-                    return []
+        async with session.get(url, params=params, headers={'Accept': 'application/x-ndjson'}) as response:
+            if response.status != 200:
+                print(f"[lichess] API error: {response.status}")
+                response_text = await response.text()
+                print(f"[lichess] Error response: {response_text[:500]}")
+                return []
 
-                print(f"[lichess] Response status: {response.status}")
-                print(f"[lichess] Response content-type: {response.headers.get('content-type')}")
+            print(f"[lichess] Response status: {response.status}")
+            print(f"[lichess] Response content-type: {response.headers.get('content-type')}")
 
-                games = []
-                # Lichess returns NDJSON (newline-delimited JSON)
-                # Each line is a complete JSON object for one game
-                text = await response.text()
+            games = []
+            # Lichess returns NDJSON (newline-delimited JSON)
+            # Each line is a complete JSON object for one game
+            text = await response.text()
 
-                if not text.strip():
-                    print(f"[lichess] WARNING: Empty response from Lichess API")
-                    return []
+            if not text.strip():
+                print(f"[lichess] WARNING: Empty response from Lichess API")
+                return []
 
-                # Check if response starts with PGN or JSON
-                first_line = text.split('\n')[0].strip() if text else ""
-                print(f"[lichess] First line of response (first 100 chars): {first_line[:100]}")
+            # Check if response starts with PGN or JSON
+            first_line = text.split('\n')[0].strip() if text else ""
+            print(f"[lichess] First line of response (first 100 chars): {first_line[:100]}")
 
-                # Split by newlines and parse each line as JSON
-                lines = text.strip().split('\n')
-                print(f"[lichess] Total lines in response: {len(lines)}")
+            # Split by newlines and parse each line as JSON
+            lines = text.strip().split('\n')
+            print(f"[lichess] Total lines in response: {len(lines)}")
 
-                for line_num, line in enumerate(lines, 1):
-                    line = line.strip()
-                    if not line:
-                        continue
+            for line_num, line in enumerate(lines, 1):
+                line = line.strip()
+                if not line:
+                    continue
 
-                    # Skip if this looks like PGN format (starts with '[')
-                    if line.startswith('['):
-                        if line_num <= 3:  # Only log first few
-                            print(f"[lichess] WARNING: Line {line_num} looks like PGN, not JSON: {line[:50]}")
-                        continue
+                # Skip if this looks like PGN format (starts with '[')
+                if line.startswith('['):
+                    if line_num <= 3:  # Only log first few
+                        print(f"[lichess] WARNING: Line {line_num} looks like PGN, not JSON: {line[:50]}")
+                    continue
 
-                    try:
-                        game_data = json.loads(line)
-                        games.append(game_data)
+                try:
+                    game_data = json.loads(line)
+                    games.append(game_data)
 
-                        # Log first game for debugging
-                        if line_num == 1:
-                            game_id = game_data.get('id', 'unknown')
-                            has_pgn = 'pgn' in game_data
-                            print(f"[lichess] First game parsed successfully: id={game_id}, has_pgn={has_pgn}")
+                    # Log first game for debugging
+                    if line_num == 1:
+                        game_id = game_data.get('id', 'unknown')
+                        has_pgn = 'pgn' in game_data
+                        print(f"[lichess] First game parsed successfully: id={game_id}, has_pgn={has_pgn}")
 
-                    except json.JSONDecodeError as e:
-                        if line_num <= 5:  # Only log first few errors
-                            print(f"[lichess] JSON parse error on line {line_num}: {e}")
-                            print(f"[lichess] Problematic line (first 100 chars): {line[:100]}")
-                        continue
-                    except Exception as e:
-                        if line_num <= 5:
-                            print(f"[lichess] Unexpected error on line {line_num}: {e}")
-                        continue
+                except json.JSONDecodeError as e:
+                    if line_num <= 5:  # Only log first few errors
+                        print(f"[lichess] JSON parse error on line {line_num}: {e}")
+                        print(f"[lichess] Problematic line (first 100 chars): {line[:100]}")
+                    continue
+                except Exception as e:
+                    if line_num <= 5:
+                        print(f"[lichess] Unexpected error on line {line_num}: {e}")
+                    continue
 
-                print(f"[lichess] Successfully fetched and parsed {len(games)} games")
+            print(f"[lichess] Successfully fetched and parsed {len(games)} games")
 
-                if len(games) == 0 and len(lines) > 0:
-                    print(f"[lichess] ERROR: Fetched {len(lines)} lines but parsed 0 games!")
-                    print(f"[lichess] This suggests the response format is not NDJSON as expected")
+            if len(games) == 0 and len(lines) > 0:
+                print(f"[lichess] ERROR: Fetched {len(lines)} lines but parsed 0 games!")
+                print(f"[lichess] This suggests the response format is not NDJSON as expected")
 
-                return games
+            return games
 
     except Exception as e:
         print(f"[lichess] ERROR in _fetch_lichess_games: {e}")
-        import traceback
         traceback.print_exc()
         return []
 
@@ -6886,18 +6629,17 @@ async def _fetch_games_from_platform(
 async def _fetch_single_lichess_game(game_id: str) -> Optional[str]:
     """Fetch a single game PGN from Lichess by game ID"""
     try:
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            url = f"https://lichess.org/game/export/{game_id}"
-            params = {'pgnInJson': 'false'}
+        session = await get_http_client()
+        url = f"https://lichess.org/game/export/{game_id}"
+        params = {'pgnInJson': 'false'}
 
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    pgn_text = await response.text()
-                    return pgn_text
-                else:
-                    print(f"Lichess API error fetching game {game_id}: {response.status}")
-                    return None
+        async with session.get(url, params=params) as response:
+            if response.status == 200:
+                pgn_text = await response.text()
+                return pgn_text
+            else:
+                print(f"Lichess API error fetching game {game_id}: {response.status}")
+                return None
     except Exception as e:
         print(f"Error fetching Lichess game {game_id}: {e}")
         return None
@@ -7013,12 +6755,12 @@ def _extract_opponent_name_from_pgn(pgn: str, user_color: str) -> str:
             if line.startswith('[White '):
                 try:
                     white_name = line.split('"')[1]
-                except:
+                except Exception:
                     pass
             elif line.startswith('[Black '):
                 try:
                     black_name = line.split('"')[1]
-                except:
+                except Exception:
                     pass
 
         # Return opponent's name based on user's color
@@ -7047,7 +6789,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
         if end_time:
             try:
                 played_at_from_api = datetime.fromtimestamp(end_time, tz=timezone.utc).isoformat()
-            except:
+            except Exception:
                 pass
 
         pgn = game_data.get('pgn', '')
@@ -7065,7 +6807,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
                         if pgn_time_control and pgn_time_control != '-':
                             time_control = pgn_time_control
                             break
-                    except:
+                    except Exception:
                         pass
 
         # FALLBACK: If no PGN time control, use time_control or time_class from API
@@ -7085,7 +6827,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
                         time_control = 'rapid'
                     else:
                         time_control = 'classical'
-                except:
+                except Exception:
                     time_control = 'unknown'
 
         # Extract player info
@@ -7172,19 +6914,19 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
                 if line.startswith('[UTCDate '):
                     try:
                         date_str = line.split('"')[1]
-                    except:
+                    except Exception:
                         pass
                 elif line.startswith('[UTCTime '):
                     try:
                         time_str = line.split('"')[1]
-                    except:
+                    except Exception:
                         pass
 
             # Combine date and time if both found
             if date_str and time_str:
                 try:
                     played_at = f"{date_str}T{time_str}Z"
-                except:
+                except Exception:
                     pass
 
         return {
@@ -7208,6 +6950,136 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
 # ============================================================================
 # PROXY ENDPOINTS (for external APIs)
 # ============================================================================
+async def _check_import_auth_and_limits(
+    credentials: Optional[HTTPAuthorizationCredentials],
+    http_request: Request,
+    user_id: str,
+    platform: str,
+    rate_key_suffix: str,
+) -> tuple:
+    """Shared auth, usage-limit, and rate-limit checks for import endpoints.
+
+    Returns:
+        (auth_user_id, anonymous_limit_remaining) tuple.
+    """
+    auth_user_id = None
+    try:
+        if credentials:
+            token_data = await verify_token(credentials)
+            auth_user_id = token_data.get('sub')
+
+            if auth_user_id and usage_tracker:
+                try:
+                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
+                    if not can_proceed:
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                        )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Import limit check failed for user {auth_user_id} (non-critical): {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Auth check failed (non-critical): {e}")
+
+    anonymous_limit_remaining = None
+    if not auth_user_id and usage_tracker:
+        client_ip = get_client_ip(http_request)
+        try:
+            can_proceed, stats = await usage_tracker.check_anonymous_import_limit(client_ip)
+            if not can_proceed:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Import limit reached. {stats.get('reason', 'Anonymous users: 50 imports per 24 hours. Create a free account for 100 imports per day!')}"
+                )
+            import_limit = stats.get('import_limit', 50)
+            current_imports = stats.get('current_imports', 0)
+            anonymous_limit_remaining = max(0, import_limit - current_imports)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Anonymous import limit check failed for IP {client_ip} (non-critical): {e}")
+
+    _enforce_rate_limit(f"import:{user_id}:{platform}:{rate_key_suffix}", IMPORT_RATE_LIMIT)
+    return auth_user_id, anonymous_limit_remaining
+
+
+async def _track_import_usage(
+    auth_user_id: Optional[str],
+    http_request: Request,
+    imported_count: int,
+) -> None:
+    """Increment usage tracking after a successful import."""
+    if imported_count <= 0:
+        return
+    if auth_user_id and usage_tracker:
+        await usage_tracker.increment_usage(auth_user_id, 'import', count=imported_count)
+    elif usage_tracker:
+        client_ip = get_client_ip(http_request)
+        await usage_tracker.increment_anonymous_usage(client_ip, 'import', count=imported_count)
+
+
+def _parse_games_for_import(games_data: list) -> list:
+    """Parse raw game data into the format expected by import_games."""
+    parsed_games = []
+    for game_data in games_data:
+        total_moves = _count_moves_in_pgn(game_data.get('pgn', ''))
+        opponent_name = _extract_opponent_name_from_pgn(
+            game_data.get('pgn', ''),
+            game_data.get('color', 'white')
+        )
+        parsed_games.append({
+            'provider_game_id': game_data.get('id', ''),
+            'pgn': game_data.get('pgn', ''),
+            'result': game_data.get('result'),
+            'color': game_data.get('color'),
+            'time_control': game_data.get('time_control'),
+            'opening': game_data.get('opening'),
+            'opening_family': game_data.get('opening_family'),
+            'opponent_rating': game_data.get('opponent_rating'),
+            'my_rating': game_data.get('my_rating'),
+            'played_at': game_data.get('played_at'),
+            'total_moves': total_moves,
+            'opponent_name': opponent_name,
+        })
+    return parsed_games
+
+
+async def _update_highest_rating_profile(
+    user_id: str, platform: str, canonical_user_id: str, db_client,
+) -> None:
+    """Fetch chess.com stats and upsert highest rating into user profile."""
+    if platform != 'chess.com':
+        return
+    stats_data = await _fetch_chesscom_stats(user_id)
+    if not stats_data:
+        return
+    highest_rating = None
+    for time_control in ['chess_rapid', 'chess_blitz', 'chess_bullet', 'chess_daily']:
+        if time_control in stats_data:
+            best_rating = stats_data[time_control].get('best', {}).get('rating')
+            if best_rating and (highest_rating is None or best_rating > highest_rating):
+                highest_rating = best_rating
+    if highest_rating and db_client:
+        try:
+            profile_data = {
+                'user_id': canonical_user_id,
+                'platform': platform,
+                'display_name': user_id,
+                'current_rating': highest_rating,
+                'updated_at': datetime.utcnow().isoformat()
+            }
+            await asyncio.to_thread(
+                lambda: db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
+            )
+            print(f"Updated profile for {user_id} with highest rating: {highest_rating}")
+        except Exception as e:
+            print(f"Error updating profile with highest rating: {e}")
+
+
 @app.post("/api/v1/import-games-smart", response_model=BulkGameImportResponse)
 async def import_games_smart(request: Dict[str, Any], http_request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Smart import endpoint - imports only the most recent 100 games"""
@@ -7218,58 +7090,9 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
 
-        # Check usage limits for authenticated users
-        auth_user_id = None
-        try:
-            if credentials:
-                token_data = await verify_token(credentials)
-                auth_user_id = token_data.get('sub')
-
-                # Check import limit
-                if auth_user_id and usage_tracker:
-                    try:
-                        can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
-                        if not can_proceed:
-                            raise HTTPException(
-                                status_code=429,
-                                detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
-                            )
-                    except HTTPException:
-                        raise  # Re-raise HTTP exceptions (429 limit errors)
-                    except Exception as e:
-                        # If limit check fails, log but don't block - this prevents 500 errors
-                        # The limit check failure is non-critical and shouldn't break the API
-                        logger.warning(f"Import limit check failed for user {auth_user_id} (non-critical): {e}")
-                        # Continue without limit check - better to allow than to block with 500 error
-        except HTTPException:
-            raise  # Re-raise HTTP exceptions
-        except Exception as e:
-            # Log but don't fail - allow anonymous/failed auth to proceed
-            logger.warning(f"Auth check failed (non-critical): {e}")
-
-        # Check anonymous user limits if not authenticated
-        anonymous_limit_remaining = None
-        if not auth_user_id and usage_tracker:
-            client_ip = get_client_ip(http_request)
-            try:
-                can_proceed, stats = await usage_tracker.check_anonymous_import_limit(client_ip)
-                if not can_proceed:
-                    raise HTTPException(
-                        status_code=429,
-                        detail=f"Import limit reached. {stats.get('reason', 'Anonymous users: 50 imports per 24 hours. Create a free account for 100 imports per day!')}"
-                    )
-                # Calculate remaining limit for anonymous users
-                import_limit = stats.get('import_limit', 50)
-                current_imports = stats.get('current_imports', 0)
-                anonymous_limit_remaining = max(0, import_limit - current_imports)
-            except HTTPException:
-                raise  # Re-raise HTTP exceptions (429 limit errors)
-            except Exception as e:
-                # Log but allow anonymous user to proceed (fail-open)
-                logger.warning(f"Anonymous import limit check failed for IP {client_ip} (non-critical): {e}")
-
-        user_key = f"import:{user_id}:{platform}:smart"
-        _enforce_rate_limit(user_key, IMPORT_RATE_LIMIT)
+        auth_user_id, anonymous_limit_remaining = await _check_import_auth_and_limits(
+            credentials, http_request, user_id, platform, "smart"
+        )
 
         canonical_user_id = _canonical_user_id(user_id, platform)
         db_client = supabase_service or supabase
@@ -7399,92 +7222,24 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
                 message=message
             )
 
-        # For chess.com, also fetch stats to get highest ratings
-        highest_rating = None
-        if platform == 'chess.com':
-            stats_data = await _fetch_chesscom_stats(user_id)
-            if stats_data:
-                # Extract highest rating from stats
-                for time_control in ['chess_rapid', 'chess_blitz', 'chess_bullet', 'chess_daily']:
-                    if time_control in stats_data:
-                        best_rating = stats_data[time_control].get('best', {}).get('rating')
-                        if best_rating and (highest_rating is None or best_rating > highest_rating):
-                            highest_rating = best_rating
+        await _update_highest_rating_profile(user_id, platform, canonical_user_id, db_client)
 
-        # Parse PGN data and count moves
-        parsed_games = []
-        for game_data in new_games:
-            # Count moves from PGN
-            total_moves = _count_moves_in_pgn(game_data.get('pgn', ''))
-
-            # Extract opponent name from PGN
-            opponent_name = _extract_opponent_name_from_pgn(
-                game_data.get('pgn', ''),
-                game_data.get('color', 'white')
-            )
-
-            parsed_game = {
-                'provider_game_id': game_data.get('id', ''),
-                'pgn': game_data.get('pgn', ''),
-                'result': game_data.get('result'),
-                'color': game_data.get('color'),
-                'time_control': game_data.get('time_control'),
-                'opening': game_data.get('opening'),
-                'opening_family': game_data.get('opening_family'),
-                'opponent_rating': game_data.get('opponent_rating'),
-                'my_rating': game_data.get('my_rating'),
-                'played_at': game_data.get('played_at'),
-                'total_moves': total_moves,
-                'opponent_name': opponent_name
-            }
-            parsed_games.append(parsed_game)
-
-        # Create bulk import request
+        parsed_games = _parse_games_for_import(new_games)
         bulk_request = BulkGameImportRequest(
-            user_id=user_id,
-            platform=platform,
-            display_name=user_id,
-            games=parsed_games
+            user_id=user_id, platform=platform, display_name=user_id, games=parsed_games
         )
 
-        # Store highest rating in user profile if available
-        if highest_rating and platform == 'chess.com':
-            try:
-                # Upsert user profile with highest rating
-                profile_data = {
-                    'user_id': canonical_user_id,
-                    'platform': platform,
-                    'display_name': user_id,
-                    'current_rating': highest_rating,
-                    'updated_at': datetime.utcnow().isoformat()
-                }
-                await asyncio.to_thread(
-                    lambda: db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
-                )
-                print(f"Updated profile for {user_id} with highest rating: {highest_rating}")
-            except Exception as e:
-                print(f"Error updating profile with highest rating: {e}")
-
-        # Process the import
         result = await import_games(bulk_request)
 
         # Add smart import info to response
         result.new_games_count = len(new_games)
         result.had_existing_games = len(existing_game_ids) > 0
 
-        # Set appropriate message
         if hasattr(result, 'imported_games'):
             if result.imported_games > 0:
                 result.message = f"Imported {result.imported_games} new games"
                 print(f"[Smart import] Success: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
-
-                # Increment usage tracking
-                if auth_user_id and usage_tracker:
-                    await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
-                elif usage_tracker:
-                    # Increment for anonymous users
-                    client_ip = get_client_ip(http_request)
-                    await usage_tracker.increment_anonymous_usage(client_ip, 'import', count=result.imported_games)
+                await _track_import_usage(auth_user_id, http_request, result.imported_games)
             else:
                 result.message = "No new games found. You already have all recent games imported."
                 print(f"[Smart import] No new games: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
@@ -7506,58 +7261,9 @@ async def import_games_simple(request: Dict[str, Any], http_request: Request, cr
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
 
-        # Check usage limits for authenticated users
-        auth_user_id = None
-        try:
-            if credentials:
-                token_data = await verify_token(credentials)
-                auth_user_id = token_data.get('sub')
-
-                # Check import limit
-                if auth_user_id and usage_tracker:
-                    try:
-                        can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
-                        if not can_proceed:
-                            raise HTTPException(
-                                status_code=429,
-                                detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
-                            )
-                    except HTTPException:
-                        raise  # Re-raise HTTP exceptions (429 limit errors)
-                    except Exception as e:
-                        # If limit check fails, log but don't block - this prevents 500 errors
-                        # The limit check failure is non-critical and shouldn't break the API
-                        logger.warning(f"Import limit check failed for user {auth_user_id} (non-critical): {e}")
-                        # Continue without limit check - better to allow than to block with 500 error
-        except HTTPException:
-            raise  # Re-raise HTTP exceptions
-        except Exception as e:
-            # Log but don't fail - allow anonymous/failed auth to proceed
-            logger.warning(f"Auth check failed (non-critical): {e}")
-
-        # Check anonymous user limits if not authenticated
-        anonymous_limit_remaining = None
-        if not auth_user_id and usage_tracker:
-            client_ip = get_client_ip(http_request)
-            try:
-                can_proceed, stats = await usage_tracker.check_anonymous_import_limit(client_ip)
-                if not can_proceed:
-                    raise HTTPException(
-                        status_code=429,
-                        detail=f"Import limit reached. {stats.get('reason', 'Anonymous users: 50 imports per 24 hours. Create a free account for 100 imports per day!')}"
-                    )
-                # Calculate remaining limit for anonymous users
-                import_limit = stats.get('import_limit', 50)
-                current_imports = stats.get('current_imports', 0)
-                anonymous_limit_remaining = max(0, import_limit - current_imports)
-            except HTTPException:
-                raise  # Re-raise HTTP exceptions (429 limit errors)
-            except Exception as e:
-                # Log but allow anonymous user to proceed (fail-open)
-                logger.warning(f"Anonymous import limit check failed for IP {client_ip} (non-critical): {e}")
-
-        rate_key = f"import:{user_id}:{platform}:simple"
-        _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
+        auth_user_id, anonymous_limit_remaining = await _check_import_auth_and_limits(
+            credentials, http_request, user_id, platform, "simple"
+        )
 
         canonical_user_id = _canonical_user_id(user_id, platform)
         db_client = supabase_service or supabase
@@ -7568,89 +7274,19 @@ async def import_games_simple(request: Dict[str, Any], http_request: Request, cr
             effective_limit = anonymous_limit_remaining
             logger.info(f"Capping import limit for anonymous user: requested={limit}, remaining={anonymous_limit_remaining}, using={effective_limit}")
 
-        # Fetch games from platform
         games_data = await _fetch_games_from_platform(user_id, platform, effective_limit)
 
-        # For chess.com, also fetch stats to get highest ratings
-        highest_rating = None
-        if platform == 'chess.com':
-            stats_data = await _fetch_chesscom_stats(user_id)
-            if stats_data:
-                # Extract highest rating from stats
-                for time_control in ['chess_rapid', 'chess_blitz', 'chess_bullet', 'chess_daily']:
-                    if time_control in stats_data:
-                        best_rating = stats_data[time_control].get('best', {}).get('rating')
-                        if best_rating and (highest_rating is None or best_rating > highest_rating):
-                            highest_rating = best_rating
+        await _update_highest_rating_profile(user_id, platform, canonical_user_id, db_client)
 
-        # Parse PGN data and count moves
-        parsed_games = []
-        for game_data in games_data:
-            # Count moves from PGN
-            total_moves = _count_moves_in_pgn(game_data.get('pgn', ''))
-
-            # Extract opponent name from PGN
-            opponent_name = _extract_opponent_name_from_pgn(
-                game_data.get('pgn', ''),
-                game_data.get('color', 'white')
-            )
-
-            parsed_game = {
-                'provider_game_id': game_data.get('id', ''),
-                'pgn': game_data.get('pgn', ''),
-                'result': game_data.get('result'),
-                'color': game_data.get('color'),
-                'time_control': game_data.get('time_control'),
-                'opening': game_data.get('opening'),
-                'opening_family': game_data.get('opening_family'),
-                'opponent_rating': game_data.get('opponent_rating'),
-                'my_rating': game_data.get('my_rating'),
-                'played_at': game_data.get('played_at'),
-                'total_moves': total_moves,
-                'opponent_name': opponent_name
-            }
-            parsed_games.append(parsed_game)
-
-        # Create bulk import request
+        parsed_games = _parse_games_for_import(games_data)
         bulk_request = BulkGameImportRequest(
-            user_id=user_id,
-            platform=platform,
-            display_name=user_id,
-            games=parsed_games
+            user_id=user_id, platform=platform, display_name=user_id, games=parsed_games
         )
 
-        # Store highest rating in user profile if available
-        if highest_rating and platform == 'chess.com':
-            try:
-                canonical_user_id = _canonical_user_id(user_id, platform)
-                db_client = supabase_service or supabase
-                if db_client:
-                    # Upsert user profile with highest rating
-                    profile_data = {
-                        'user_id': canonical_user_id,
-                        'platform': platform,
-                        'display_name': user_id,
-                        'current_rating': highest_rating,
-                        'updated_at': datetime.utcnow().isoformat()
-                    }
-                    await asyncio.to_thread(
-                        lambda: db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
-                    )
-                    print(f"Updated profile for {user_id} with highest rating: {highest_rating}")
-            except Exception as e:
-                print(f"Error updating profile with highest rating: {e}")
-
-        # Process the import
         result = await import_games(bulk_request)
 
-        # Increment usage tracking
-        if hasattr(result, 'imported_games') and result.imported_games > 0:
-            if auth_user_id and usage_tracker:
-                await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
-            elif usage_tracker:
-                # Increment for anonymous users
-                client_ip = get_client_ip(http_request)
-                await usage_tracker.increment_anonymous_usage(client_ip, 'import', count=result.imported_games)
+        if hasattr(result, 'imported_games'):
+            await _track_import_usage(auth_user_id, http_request, result.imported_games)
 
         return result
 
@@ -7809,7 +7445,6 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
     except Exception as exc:
         error_msg = f"games upsert failed: {exc}"
         print(f'[import_games] ERROR: {error_msg}')
-        import traceback
         print(f'[import_games] Traceback: {traceback.format_exc()}')
         errors.append(error_msg)
         # CRITICAL: Return immediately - don't attempt PGN insert if games failed
@@ -8657,7 +8292,6 @@ async def validate_user(request: dict):
         raise
     except Exception as e:
         print(f"Unexpected error validating user: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
@@ -8697,20 +8331,12 @@ async def check_user_exists(request: dict):
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
 
-        # Check if user exists in user_profiles table
-        from supabase import create_client, Client
-        import os
-
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-        if not supabase_url or not supabase_key:
+        # Check if user exists in user_profiles table using module-level client
+        if not supabase_service:
             return {"exists": False}
 
-        supabase: Client = create_client(supabase_url, supabase_key)
-
         result = await asyncio.to_thread(
-            lambda: supabase.table("user_profiles").select("user_id").eq("user_id", canonical_user_id).eq("platform", platform).execute()
+            lambda: supabase_service.table("user_profiles").select("user_id").eq("user_id", canonical_user_id).eq("platform", platform).execute()
         )
 
         return {"exists": len(result.data) > 0}
@@ -9672,17 +9298,12 @@ async def _update_all_move_comments_in_db(
     try:
         canonical_user_id = _canonical_user_id(user_id, platform)
 
-        # Get database client
-        db_config_dict = config.get_database_config()
-        if not db_config_dict:
-            print(f"[AI_COMMENTS] No database config, cannot update comments for game {game_id}")
+        # Use module-level service client
+        if not supabase_service:
+            print(f"[AI_COMMENTS] No database client available, cannot update comments for game {game_id}")
             return False
 
-        from supabase import create_client
-        db_client = create_client(
-            db_config_dict['url'],
-            db_config_dict.get('service_role_key') or db_config_dict.get('key')
-        )
+        db_client = supabase_service
 
         # Update the entire moves_analysis JSONB column
         # Note: ai_comments_status column might not exist yet, but that's OK - Supabase will ignore it
@@ -9721,7 +9342,6 @@ async def _update_all_move_comments_in_db(
 
     except Exception as e:
         print(f"[AI_COMMENTS] Error updating AI comments in database: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
@@ -9812,7 +9432,6 @@ async def _generate_ai_comments_background(game_analysis: GameAnalysis) -> None:
         print(f"[AI_COMMENTS] ❌❌❌ ERROR in background AI comment generation ❌❌❌")
         print(f"[AI_COMMENTS] Error type: {type(e).__name__}")
         print(f"[AI_COMMENTS] Error message: {str(e)}")
-        import traceback
         print(f"[AI_COMMENTS] Full traceback:")
         traceback.print_exc()
         print(f"[AI_COMMENTS] ❌❌❌ END ERROR ❌❌❌")
@@ -9920,10 +9539,12 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
         print(f"[SAVE ANALYSIS] Data keys: {list(data.keys())}")
         print(f"[SAVE ANALYSIS] Number of moves: {len(moves_analysis_dict)}")
 
-        response = supabase_service.table('move_analyses').upsert(
-            data,
-            on_conflict='user_id,platform,game_id,analysis_method'
-        ).execute()
+        response = await asyncio.to_thread(
+            lambda: supabase_service.table('move_analyses').upsert(
+                data,
+                on_conflict='user_id,platform,game_id,analysis_method'
+            ).execute()
+        )
 
         success = bool(getattr(response, 'data', None))
         if success:
@@ -11028,7 +10649,6 @@ async def create_checkout_session(
         )
     except Exception as e:
         logger.error(f"Error creating checkout session: {e}")
-        import traceback
         traceback.print_exc()  # Print full stack trace
         return JSONResponse(
             status_code=500,
@@ -11202,9 +10822,11 @@ async def get_payment_tiers():
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        result = supabase.table('payment_tiers').select('*').eq(
-            'is_active', True
-        ).order('display_order').execute()
+        result = await asyncio.to_thread(
+            lambda: supabase.table('payment_tiers').select('*').eq(
+                'is_active', True
+            ).order('display_order').execute()
+        )
 
         return {'tiers': result.data or []}
     except Exception as e:
@@ -11311,7 +10933,7 @@ async def _check_premium_access(user_id: str, platform: Optional[str] = None) ->
 async def get_coach_dashboard(
     user_id: str,
     platform: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """
     Get Coach dashboard data (daily lesson, weaknesses, strengths).
@@ -11371,7 +10993,7 @@ async def get_coach_dashboard(
 
         # Initialize Coach modules
         lesson_generator = LessonGenerator(supabase_service)
-        progress_analyzer = ProgressAnalyzer(supabase_service)
+        progress_analyzer = _get_progress_analyzer()
         puzzle_generator = PuzzleGenerator(supabase_service)
 
         # Fetch recent game analyses (use canonical_user_id for game_analyses table)
@@ -11473,7 +11095,7 @@ async def get_coach_progress(
     user_id: str,
     platform: str,
     period_days: int = Query(90, description="Number of days to look back"),
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """
     Get progress tracking data for charts and streaks.
@@ -11491,7 +11113,7 @@ async def get_coach_progress(
 
     try:
         canonical = _canonical_user_id(user_id, platform)
-        progress_analyzer = ProgressAnalyzer(supabase_service)
+        progress_analyzer = _get_progress_analyzer()
 
         # Fetch game analyses and games data in parallel
         analyses_future = asyncio.to_thread(
@@ -11505,11 +11127,11 @@ async def get_coach_progress(
         )
         games_future = asyncio.to_thread(
             lambda: supabase_service.table('games')
-            .select('provider_game_id, result, color, opening_family, time_control, my_rating, opponent_rating')
+            .select('provider_game_id, result, color, opening_family, time_control, my_rating, opponent_rating, played_at')
             .eq('user_id', canonical)
             .eq('platform', platform)
             .order('played_at', desc=True)
-            .limit(500)
+            .limit(5000)
             .execute()
         )
 
@@ -11517,17 +11139,7 @@ async def get_coach_progress(
         game_analyses = analyses_result.data or []
         games_data = games_result.data or []
 
-        # Debug: log data counts and join success
-        games_lookup_debug = {g.get('provider_game_id'): g for g in games_data if g.get('provider_game_id')}
-        matched = sum(1 for a in game_analyses if a.get('game_id', '') in games_lookup_debug)
-        logger.info(f"[PROGRESS DEBUG] canonical={canonical}, platform={platform}, period_days={period_days}")
-        logger.info(f"[PROGRESS DEBUG] game_analyses: {len(game_analyses)}, games: {len(games_data)}, matched: {matched}")
-        if game_analyses:
-            sample_ids = [a.get('game_id', '')[:30] for a in game_analyses[:3]]
-            logger.info(f"[PROGRESS DEBUG] sample game_analyses game_ids: {sample_ids}")
-        if games_data:
-            sample_pids = [g.get('provider_game_id', '')[:30] for g in games_data[:3]]
-            logger.info(f"[PROGRESS DEBUG] sample games provider_game_ids: {sample_pids}")
+        logger.info(f"[PROGRESS] Fetched {len(game_analyses)} analyses, {len(games_data)} games for {canonical}/{platform}")
 
         # Get all data sets
         time_series = await progress_analyzer.get_progress_time_series(
@@ -11612,7 +11224,7 @@ async def get_lessons(
     user_id: str,
     platform: str,
     category: Optional[str] = Query(None, description="Filter by lesson category"),
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """
     Get all lessons for user with progress status.
@@ -11740,7 +11352,7 @@ async def get_lesson_detail(lesson_id: str):
             import json
             try:
                 lesson['lesson_content'] = json.loads(lesson['lesson_content'])
-            except:
+            except Exception:
                 lesson['lesson_content'] = {}
 
         logger.info(f"[LESSON_DETAIL] Returning lesson data for lesson_id={lesson_id}")
@@ -11818,7 +11430,7 @@ async def get_puzzles(
     user_id: str,
     platform: str,
     category: Optional[str] = Query(None, description="Filter by puzzle category"),
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """
     Get personalized puzzles for user.
@@ -11913,7 +11525,7 @@ async def get_puzzles(
 async def get_daily_puzzle(
     user_id: str,
     platform: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """
     Get or generate one daily puzzle for the user.
@@ -12033,7 +11645,7 @@ class PlayMoveResponse(BaseModel):
 @app.post("/api/v1/coach/play-move", response_model=PlayMoveResponse)
 async def get_engine_move(
     request: PlayMoveRequest,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID for premium check")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """
     Get engine move for playing against Tal Coach.
@@ -12062,17 +11674,13 @@ async def get_engine_move(
             # Validate FEN
             board = chess.Board(fen)
 
-            # Get Stockfish path from existing analysis engine
-            from .analysis_engine import ChessAnalysisEngine, AnalysisConfig
-            temp_engine = ChessAnalysisEngine(config=AnalysisConfig())
-            stockfish_path = temp_engine.stockfish_path
-
-            if not stockfish_path:
+            pool = _get_sync_engine_pool()
+            if not pool:
                 raise ValueError("Stockfish not available")
 
-            # Get engine move with improved config
-            with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
-                # Configure skill level with better resource allocation
+            # Get engine move using shared engine pool
+            with pool.acquire() as engine:
+                # Configure skill level for this request
                 try:
                     engine.configure({
                         'Skill Level': skill_level,
@@ -12266,23 +11874,18 @@ def _get_stockfish_top_moves(fen: str, num_moves: int = 3, depth: int = 14, time
     """Quick Stockfish evaluation returning top N moves with scores.
 
     Returns list of dicts with keys: move_san, eval_text, is_best.
-    Uses a temporary engine to avoid pool contention with ongoing analyses.
+    Uses the shared SyncEnginePool to avoid spawning a new Stockfish process per call.
     """
     import chess as _chess
     import chess.engine as _engine
 
-    try:
-        engine_instance = _get_analysis_engine()
-        sf_path = getattr(engine_instance, 'stockfish_path', None)
-        if not sf_path:
-            return []
-    except Exception:
+    pool = _get_sync_engine_pool()
+    if not pool:
         return []
 
     try:
         board = _chess.Board(fen)
-        with _engine.SimpleEngine.popen_uci(sf_path) as sf:
-            sf.configure({'Skill Level': 20, 'Threads': 1, 'Hash': 64})
+        with pool.acquire() as sf:
             limit = _engine.Limit(depth=depth, time=time_limit)
             info_list = sf.analyse(board, limit, multipv=num_moves)
 
@@ -12513,7 +12116,7 @@ Respond as Coach Tal. Be direct and helpful — give a clear opinion with a brie
 @app.post("/api/v1/coach/chat", response_model=CoachChatResponse)
 async def coach_chat(
     request: CoachChatRequest,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """
     Interactive chat with Tal Coach about the current chess position.
@@ -12562,9 +12165,8 @@ async def coach_chat(
             stockfish_moves=stockfish_moves,
         )
 
-        # Use existing AI generator
-        from .ai_comment_generator import AIChessCommentGenerator
-        generator = AIChessCommentGenerator()
+        # Use singleton AI generator
+        generator = _get_ai_generator()
 
         response_text = None
         model_used = None
@@ -12612,7 +12214,7 @@ async def coach_chat(
 async def get_study_plan(
     user_id: str,
     platform: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Get current active study plan. Premium-only."""
     if not supabase_service:
@@ -12624,7 +12226,7 @@ async def get_study_plan(
 
     try:
         from .study_plan_generator import StudyPlanGenerator
-        generator = StudyPlanGenerator(supabase_service)
+        generator = _get_study_plan_generator()
 
         plan = await generator.get_current_plan(auth_user_id, platform)
         return {'plan': plan}
@@ -12640,7 +12242,7 @@ async def get_study_plan(
 async def create_study_plan(
     user_id: str,
     platform: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Generate a new weekly study plan. Premium-only."""
     if not supabase_service:
@@ -12652,7 +12254,7 @@ async def create_study_plan(
 
     try:
         from .study_plan_generator import StudyPlanGenerator
-        generator = StudyPlanGenerator(supabase_service)
+        generator = _get_study_plan_generator()
 
         plan = await generator.generate_weekly_plan(auth_user_id, platform, user_id)
         return {'plan': plan}
@@ -12668,7 +12270,7 @@ async def create_study_plan(
 async def complete_study_activity(
     plan_id: str,
     activity_data: Dict[str, Any],
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Mark a daily activity as completed. Premium-only."""
     if not supabase_service:
@@ -12683,7 +12285,7 @@ async def complete_study_activity(
         activity_index = activity_data.get('activity_index', 0)
 
         from .study_plan_generator import StudyPlanGenerator
-        generator = StudyPlanGenerator(supabase_service)
+        generator = _get_study_plan_generator()
 
         plan = await generator.complete_daily_activity(auth_user_id, plan_id, day, activity_index)
         return {'plan': plan}
@@ -12699,7 +12301,7 @@ async def complete_study_activity(
 async def get_user_goals(
     user_id: str,
     platform: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Get user goals. Premium-only."""
     if not supabase_service:
@@ -12711,7 +12313,7 @@ async def get_user_goals(
 
     try:
         from .study_plan_generator import StudyPlanGenerator
-        generator = StudyPlanGenerator(supabase_service)
+        generator = _get_study_plan_generator()
 
         goals = await generator.get_goals(auth_user_id, platform)
         return {'goals': goals}
@@ -12731,7 +12333,7 @@ async def get_user_goals(
 async def get_opening_repertoire(
     user_id: str,
     platform: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID"),
+    auth_user_id: Optional[str] = Depends(get_coach_user_id),
     refresh: bool = Query(False, description="Force re-analysis of repertoire")
 ):
     """Get user's opening repertoire overview. Premium-only."""
@@ -12744,7 +12346,7 @@ async def get_opening_repertoire(
 
     try:
         from .opening_repertoire import OpeningRepertoireAnalyzer
-        analyzer = OpeningRepertoireAnalyzer(supabase_service)
+        analyzer = _get_opening_repertoire_analyzer()
 
         if refresh:
             entries = await analyzer.analyze_repertoire(auth_user_id, platform, user_id)
@@ -12770,7 +12372,7 @@ async def get_opening_detail(
     platform: str,
     opening_family: str,
     color: str = Query('white', description="Color: 'white' or 'black'"),
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Get detailed analysis for a specific opening. Premium-only."""
     if not supabase_service:
@@ -12782,7 +12384,7 @@ async def get_opening_detail(
 
     try:
         from .opening_repertoire import OpeningRepertoireAnalyzer
-        analyzer = OpeningRepertoireAnalyzer(supabase_service)
+        analyzer = _get_opening_repertoire_analyzer()
 
         import urllib.parse
         decoded_opening = urllib.parse.unquote(opening_family)
@@ -12802,7 +12404,7 @@ async def get_opening_detail(
 @app.post("/api/v1/coach/openings/drill")
 async def get_drill_positions(
     drill_request: Dict[str, Any],
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Get drill positions for an opening. Premium-only."""
     if not supabase_service:
@@ -12822,7 +12424,7 @@ async def get_drill_positions(
             raise HTTPException(status_code=400, detail="user_id, platform, and opening_family are required")
 
         from .opening_repertoire import OpeningRepertoireAnalyzer
-        analyzer = OpeningRepertoireAnalyzer(supabase_service)
+        analyzer = _get_opening_repertoire_analyzer()
 
         positions = await analyzer.get_drill_positions(
             auth_user_id, platform_val, user_id, opening_family, color
@@ -12839,7 +12441,7 @@ async def get_drill_positions(
 @app.post("/api/v1/coach/openings/drill/complete")
 async def complete_drill(
     completion_data: Dict[str, Any],
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Update spaced repetition after a drill. Premium-only."""
     if not supabase_service:
@@ -12855,7 +12457,7 @@ async def complete_drill(
             raise HTTPException(status_code=400, detail="repertoire_id is required")
 
         from .opening_repertoire import OpeningRepertoireAnalyzer
-        analyzer = OpeningRepertoireAnalyzer(supabase_service)
+        analyzer = _get_opening_repertoire_analyzer()
 
         result = await analyzer.update_spaced_repetition(
             auth_user_id, repertoire_id, confidence_delta
@@ -12876,7 +12478,7 @@ async def complete_drill(
 @app.post("/api/v1/coach/tags")
 async def add_game_tag(
     tag_data: Dict[str, Any],
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Add a tag to a game. Premium-only."""
     if not supabase_service:
@@ -12923,7 +12525,7 @@ async def add_game_tag(
 @app.delete("/api/v1/coach/tags/{tag_id}")
 async def delete_game_tag(
     tag_id: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Remove a tag. Premium-only."""
     if not supabase_service:
@@ -12964,7 +12566,7 @@ async def delete_game_tag(
 async def get_user_tags(
     user_id: str,
     platform: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Get all tags for a user. Premium-only."""
     if not supabase_service:
@@ -12996,7 +12598,7 @@ async def get_user_tags(
 @app.get("/api/v1/coach/tags/game/{game_id}")
 async def get_game_tags(
     game_id: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Get tags for a specific game. Premium-only."""
     if not supabase_service:
@@ -13029,7 +12631,7 @@ async def get_game_tags(
 @app.post("/api/v1/coach/positions")
 async def save_position(
     position_data: Dict[str, Any],
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Save a chess position. Premium-only."""
     if not supabase_service:
@@ -13082,7 +12684,7 @@ async def save_position(
 async def get_saved_positions(
     user_id: str,
     platform: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Get saved positions for a user. Premium-only."""
     if not supabase_service:
@@ -13115,7 +12717,7 @@ async def get_saved_positions(
 async def update_saved_position(
     position_id: str,
     update_data: Dict[str, Any],
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Update notes/title of a saved position. Premium-only."""
     if not supabase_service:
@@ -13160,7 +12762,7 @@ async def update_saved_position(
 @app.delete("/api/v1/coach/positions/{position_id}")
 async def delete_saved_position(
     position_id: str,
-    auth_user_id: Optional[str] = Query(None, description="Authenticated user UUID")
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
 ):
     """Delete a saved position. Premium-only."""
     if not supabase_service:
@@ -13278,15 +12880,138 @@ async def _ensure_puzzle_bank_populated() -> bool:
     return True
 
 
+async def _get_theme_performance(auth_user_id: str) -> Dict[str, Dict[str, Any]]:
+    """
+    Get puzzle theme solve rates from recent attempts.
+
+    Returns:
+        {theme: {attempted: int, correct: int, rate: float}}
+    """
+    attempts_result = await asyncio.to_thread(
+        lambda: supabase_service.table('puzzle_attempts')
+        .select('puzzle_bank_id, was_correct')
+        .eq('user_id', auth_user_id)
+        .not_.is_('puzzle_bank_id', 'null')
+        .order('attempted_at', desc=True)
+        .limit(100)
+        .execute()
+    )
+    attempts = attempts_result.data or []
+    bank_ids = [a['puzzle_bank_id'] for a in attempts if a.get('puzzle_bank_id')]
+    if not bank_ids:
+        return {}
+
+    unique_ids = list(set(bank_ids))[:50]
+    themes_result = await asyncio.to_thread(
+        lambda: supabase_service.table('puzzle_bank')
+        .select('id, themes')
+        .in_('id', unique_ids)
+        .execute()
+    )
+    puzzle_themes_map = {p['id']: p['themes'] for p in (themes_result.data or [])}
+
+    theme_perf: Dict[str, Dict[str, Any]] = {}
+    for a in attempts:
+        bid = a.get('puzzle_bank_id')
+        if bid and bid in puzzle_themes_map:
+            for t in puzzle_themes_map[bid]:
+                if t not in theme_perf:
+                    theme_perf[t] = {'attempted': 0, 'correct': 0, 'rate': 0}
+                theme_perf[t]['attempted'] += 1
+                if a.get('was_correct'):
+                    theme_perf[t]['correct'] += 1
+
+    for t, stats in theme_perf.items():
+        if stats['attempted'] > 0:
+            stats['rate'] = round(stats['correct'] / stats['attempted'] * 100, 1)
+
+    return theme_perf
+
+
+async def _get_personalized_theme(auth_user_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Determine a personalized puzzle theme based on user's game weaknesses.
+
+    Returns:
+        {theme: str, reason: str} or None if no game data available
+    """
+    try:
+        # Look up user's linked chess account
+        profile_result = await asyncio.to_thread(
+            lambda: supabase_service.table('user_profiles')
+            .select('user_id, platform')
+            .eq('auth_user_id', auth_user_id)
+            .limit(1)
+            .execute()
+        )
+        if not profile_result.data:
+            return None
+
+        profile = profile_result.data[0]
+        canonical_user_id = profile['user_id']
+        platform = profile['platform']
+
+        # Fetch recent game analyses (lightweight - no moves_analysis JSONB)
+        analyses_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('tactical_score, positional_score, opening_accuracy, middle_game_accuracy, endgame_accuracy, blunders, mistakes, my_rating')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(50)
+            .execute()
+        )
+        game_analyses = analyses_result.data or []
+
+        if len(game_analyses) < 5:
+            return None
+
+        # Get weaknesses using existing analyzer
+        analyzer = _get_progress_analyzer()
+        weaknesses = await analyzer.get_user_weaknesses(canonical_user_id, platform, game_analyses)
+
+        if not weaknesses:
+            return None
+
+        # Get puzzle theme performance for feedback loop
+        theme_solve_rates = await _get_theme_performance(auth_user_id)
+
+        # Map weaknesses to weighted themes
+        weighted_themes = get_weakness_puzzle_themes(weaknesses, theme_solve_rates)
+
+        if not weighted_themes:
+            return None
+
+        # Sample a theme weighted by priority
+        import random
+        themes = [t['theme'] for t in weighted_themes]
+        weights = [t['weight'] for t in weighted_themes]
+        chosen_theme = random.choices(themes, weights=weights, k=1)[0]
+
+        # Find the reason for the chosen theme
+        reason = next(
+            (t['reason'] for t in weighted_themes if t['theme'] == chosen_theme),
+            ''
+        )
+
+        return {'theme': chosen_theme, 'reason': reason}
+
+    except Exception as e:
+        logger.warning(f"[PUZZLE] Personalization failed, falling back to default: {e}")
+        return None
+
+
 @app.get("/api/v1/coach/puzzle-bank/next")
 async def get_next_bank_puzzle(
-    auth_user_id: str = Query(..., description="Authenticated user UUID"),
+    auth_user_id: str = Depends(require_coach_user_id),
     theme: Optional[str] = Query(None, description="Filter by theme (fork, pin, mate, etc.)"),
     mode: str = Query("rated", description="rated|daily|practice"),
+    personalized: bool = Query(True, description="Enable weakness-based personalization"),
 ):
     """
     Get next puzzle from the puzzle bank, matched to user rating.
-    Daily challenge mode is free; rated mode requires premium.
+    When personalized=true and no theme is specified, analyzes user's game
+    weaknesses to select the most impactful puzzle theme.
     """
     if not supabase_service:
         raise HTTPException(status_code=503, detail="Database not configured")
@@ -13318,6 +13043,15 @@ async def get_next_bank_puzzle(
         )
         recent_ids = [r['puzzle_bank_id'] for r in (recent_result.data or []) if r.get('puzzle_bank_id')]
 
+        # Personalization: auto-select theme from weaknesses if none specified
+        recommendation_reason = None
+        if not theme and personalized:
+            personalization = await _get_personalized_theme(auth_user_id)
+            if personalization:
+                theme = personalization['theme']
+                recommendation_reason = personalization['reason']
+                logger.info(f"[PUZZLE] Personalized theme for {auth_user_id}: {theme}")
+
         # Build query for next puzzle near user rating
         rating_range = 200
         query = supabase_service.table('puzzle_bank').select('*')
@@ -13340,15 +13074,31 @@ async def get_next_bank_puzzle(
         ]
 
         if not candidates:
-            # Widen search if no candidates found
+            # Widen search - first try wider rating range with same theme
             wider_query = supabase_service.table('puzzle_bank').select('*')
             wider_query = wider_query.gte('rating', user_rating - 400)
             wider_query = wider_query.lte('rating', user_rating + 400)
+            if theme:
+                wider_query = wider_query.contains('themes', [theme])
             wider_result = await asyncio.to_thread(
                 lambda: wider_query.limit(20).execute()
             )
             candidates = [
                 p for p in (wider_result.data or [])
+                if p['id'] not in recent_ids and len(p.get('moves', [])) >= 2
+            ]
+
+        if not candidates and theme:
+            # If themed search found nothing, fall back to unthemed
+            recommendation_reason = None
+            fallback_query = supabase_service.table('puzzle_bank').select('*')
+            fallback_query = fallback_query.gte('rating', user_rating - 400)
+            fallback_query = fallback_query.lte('rating', user_rating + 400)
+            fallback_result = await asyncio.to_thread(
+                lambda: fallback_query.limit(20).execute()
+            )
+            candidates = [
+                p for p in (fallback_result.data or [])
                 if p['id'] not in recent_ids and len(p.get('moves', [])) >= 2
             ]
 
@@ -13376,6 +13126,7 @@ async def get_next_bank_puzzle(
             'user_rating': user_rating_data['rating'],
             'user_xp': user_rating_data['current_xp'],
             'user_level': user_rating_data['current_level'],
+            'recommendation_reason': recommendation_reason,
         }
 
     except HTTPException:
@@ -13470,7 +13221,11 @@ async def check_puzzle_move(puzzle_id: str, move_data: Dict[str, Any]):
 
 
 @app.post("/api/v1/coach/puzzle-bank/{puzzle_id}/complete")
-async def complete_bank_puzzle(puzzle_id: str, completion_data: Dict[str, Any]):
+async def complete_bank_puzzle(
+    puzzle_id: str,
+    completion_data: Dict[str, Any],
+    auth_user_id: str = Depends(require_coach_user_id),
+):
     """
     Record completion of a puzzle bank puzzle.
     Updates rating, XP, streak, and daily challenge progress.
@@ -13479,13 +13234,9 @@ async def complete_bank_puzzle(puzzle_id: str, completion_data: Dict[str, Any]):
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        auth_user_id = completion_data.get('auth_user_id')
         solved = completion_data.get('solved', False)
         time_seconds = completion_data.get('time_seconds', 0)
         moves_made = completion_data.get('moves_made', [])
-
-        if not auth_user_id:
-            raise HTTPException(status_code=400, detail="auth_user_id is required")
 
         # Get puzzle rating
         puzzle_result = await asyncio.to_thread(
@@ -13642,7 +13393,7 @@ async def complete_bank_puzzle(puzzle_id: str, completion_data: Dict[str, Any]):
 
 @app.get("/api/v1/coach/puzzle-bank/daily-challenge")
 async def get_daily_challenge(
-    auth_user_id: str = Query(..., description="Authenticated user UUID"),
+    auth_user_id: str = Depends(require_coach_user_id),
 ):
     """
     Get today's daily challenge (5 puzzles).
@@ -13795,7 +13546,7 @@ async def get_daily_challenge(
 
 @app.get("/api/v1/coach/puzzle-bank/stats")
 async def get_puzzle_stats(
-    auth_user_id: str = Query(..., description="Authenticated user UUID"),
+    auth_user_id: str = Depends(require_coach_user_id),
 ):
     """Get user's puzzle training statistics."""
     if not supabase_service:
@@ -13830,29 +13581,8 @@ async def get_puzzle_stats(
                         break
         rating_history.reverse()
 
-        # Theme performance - fetch puzzle themes for recent attempts
-        theme_perf: Dict[str, Dict[str, int]] = {}
-        bank_ids = [a['puzzle_bank_id'] for a in attempts if a.get('puzzle_bank_id')]
-        if bank_ids:
-            # Fetch themes for attempted puzzles (batch)
-            unique_ids = list(set(bank_ids))[:50]
-            themes_result = await asyncio.to_thread(
-                lambda: supabase_service.table('puzzle_bank')
-                .select('id, themes')
-                .in_('id', unique_ids)
-                .execute()
-            )
-            puzzle_themes_map = {p['id']: p['themes'] for p in (themes_result.data or [])}
-
-            for a in attempts:
-                bid = a.get('puzzle_bank_id')
-                if bid and bid in puzzle_themes_map:
-                    for t in puzzle_themes_map[bid]:
-                        if t not in theme_perf:
-                            theme_perf[t] = {'attempted': 0, 'correct': 0}
-                        theme_perf[t]['attempted'] += 1
-                        if a.get('was_correct'):
-                            theme_perf[t]['correct'] += 1
+        # Theme performance (reuse shared helper)
+        theme_perf = await _get_theme_performance(auth_user_id)
 
         # Streak calculation
         from datetime import date, timedelta
@@ -13917,6 +13647,112 @@ async def get_puzzle_stats(
     except Exception as e:
         logger.error(f"Error getting puzzle stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get puzzle stats")
+
+
+@app.get("/api/v1/coach/puzzle-bank/recommendation-profile")
+async def get_recommendation_profile(
+    auth_user_id: str = Depends(require_coach_user_id),
+):
+    """
+    Get personalized puzzle recommendation profile based on game weaknesses.
+    Returns weakness-to-theme mapping with reasons for the frontend.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Look up user's linked chess account
+        profile_result = await asyncio.to_thread(
+            lambda: supabase_service.table('user_profiles')
+            .select('user_id, platform')
+            .eq('auth_user_id', auth_user_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not profile_result.data:
+            return {
+                'has_game_data': False,
+                'games_analyzed': 0,
+                'weaknesses': [],
+                'theme_solve_rates': {},
+                'top_recommended_theme': None,
+                'top_recommendation_reason': None,
+            }
+
+        profile = profile_result.data[0]
+        canonical_user_id = profile['user_id']
+        platform = profile['platform']
+
+        # Fetch game analyses (lightweight columns only)
+        analyses_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('tactical_score, positional_score, opening_accuracy, middle_game_accuracy, endgame_accuracy, blunders, mistakes, my_rating')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(50)
+            .execute()
+        )
+        game_analyses = analyses_result.data or []
+
+        if len(game_analyses) < 5:
+            return {
+                'has_game_data': len(game_analyses) > 0,
+                'games_analyzed': len(game_analyses),
+                'weaknesses': [],
+                'theme_solve_rates': {},
+                'top_recommended_theme': None,
+                'top_recommendation_reason': 'Analyze at least 5 games to get personalized recommendations',
+            }
+
+        # Get weaknesses
+        analyzer = _get_progress_analyzer()
+        weaknesses = await analyzer.get_user_weaknesses(canonical_user_id, platform, game_analyses)
+
+        # Get theme solve rates
+        theme_solve_rates = await _get_theme_performance(auth_user_id)
+
+        # Map weaknesses to themes
+        weighted_themes = get_weakness_puzzle_themes(weaknesses, theme_solve_rates)
+
+        # Build response with recommended themes per weakness
+        weakness_items = []
+        for w in weaknesses:
+            category = w.get('category', '')
+            from .progress_analyzer import WEAKNESS_TO_THEMES
+            recommended_themes = WEAKNESS_TO_THEMES.get(category, [])
+            weakness_items.append({
+                'category': category,
+                'title': w.get('title', ''),
+                'score': round(w.get('score', 0), 1),
+                'severity': w.get('severity', 'important'),
+                'recommended_themes': recommended_themes,
+                'reason': w.get('description', ''),
+            })
+
+        top_theme = weighted_themes[0] if weighted_themes else None
+
+        # Build top recommendation reason combining weakness + solve rate info
+        top_reason = None
+        if top_theme:
+            top_reason = top_theme['reason']
+            theme_stats = theme_solve_rates.get(top_theme['theme'])
+            if theme_stats and theme_stats.get('attempted', 0) >= 3:
+                top_reason += f" (You solve {top_theme['theme']} puzzles at {theme_stats['rate']}%)"
+
+        return {
+            'has_game_data': True,
+            'games_analyzed': len(game_analyses),
+            'weaknesses': weakness_items,
+            'theme_solve_rates': theme_solve_rates,
+            'top_recommended_theme': top_theme['theme'] if top_theme else None,
+            'top_recommendation_reason': top_reason,
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting recommendation profile: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get recommendation profile")
 
 
 if __name__ == "__main__":

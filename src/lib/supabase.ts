@@ -11,7 +11,6 @@ const hasValidCredentials =
   supabaseAnonKey &&
   supabaseUrl !== 'https://your-project.supabase.co' &&
   supabaseAnonKey !== 'your-anon-key' &&
-  supabaseUrl !== 'https://your-project.supabase.co' &&
   supabaseAnonKey !== 'your-anon-key-here'
 
 // Create a singleton instance to avoid multiple GoTrueClient instances

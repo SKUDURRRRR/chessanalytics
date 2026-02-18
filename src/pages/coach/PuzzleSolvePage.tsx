@@ -486,6 +486,16 @@ function BankPuzzleSolver({
               </div>
             </div>
 
+            {/* Recommendation reason */}
+            {puzzle.recommendation_reason && (
+              <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 px-4 py-2.5">
+                <p className="text-purple-300 text-xs">
+                  <span className="font-medium">Based on your games:</span>{' '}
+                  {puzzle.recommendation_reason}
+                </p>
+              </div>
+            )}
+
             {/* Hint button */}
             {status === 'awaiting_move' && !hintUsed && (
               <button
@@ -635,7 +645,7 @@ function LegacyPuzzleSolver({
     )
   }
 
-  const game = new Chess(currentPuzzle.fen_position)
+  const game = useMemo(() => new Chess(currentPuzzle.fen_position), [currentPuzzle.fen_position])
   const boardOrientation = game.turn() === 'w' ? 'white' : 'black'
 
   const onDrop = (sourceSquare: string, targetSquare: string) => {

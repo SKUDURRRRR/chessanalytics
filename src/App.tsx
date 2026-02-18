@@ -5,7 +5,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react'
 import { AuthProvider } from './contexts/AuthContext'
 import { ChessSoundProvider } from './contexts/ChessSoundContext'
 import { CoachChatProvider } from './contexts/CoachChatContext'
-import { CoachChatPanel } from './components/coach/CoachChatPanel'
+const CoachChatPanel = lazy(() => import('./components/coach/CoachChatPanel').then(m => ({ default: m.CoachChatPanel })))
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
 import { Navigation } from './components/Navigation'
 import { Footer } from './components/Footer'

@@ -42,7 +42,7 @@ class OpeningRepertoireAnalyzer:
             # 1. Fetch games with opening info (include opening_family as ECO fallback)
             games_result = await asyncio.to_thread(
                 lambda: self.supabase.table('games')
-                .select('id, opening, opening_family, result, color, my_rating, opponent_rating')
+                .select('id, provider_game_id, opening, opening_family, result, color, my_rating, opponent_rating')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
                 .order('played_at', desc=True)
@@ -54,14 +54,15 @@ class OpeningRepertoireAnalyzer:
             if not games:
                 return []
 
-            # 2. Get game IDs for accuracy lookup
-            game_ids = [g['id'] for g in games]
+            # 2. Get provider game IDs for accuracy lookup
+            # game_analyses.game_id stores provider_game_id, not UUID
+            provider_ids = [g['provider_game_id'] for g in games if g.get('provider_game_id')]
 
             # Fetch accuracy data from game_analyses in batches
             accuracy_map: Dict[str, float] = {}
             batch_size = 100
-            for i in range(0, len(game_ids), batch_size):
-                batch = game_ids[i:i + batch_size]
+            for i in range(0, len(provider_ids), batch_size):
+                batch = provider_ids[i:i + batch_size]
                 analysis_result = await asyncio.to_thread(
                     lambda b=batch: self.supabase.table('game_analyses')
                     .select('game_id, accuracy')
@@ -108,8 +109,9 @@ class OpeningRepertoireAnalyzer:
                 else:
                     stats['draws'] += 1
 
-                if game['id'] in accuracy_map:
-                    stats['accuracies'].append(accuracy_map[game['id']])
+                pgid = game.get('provider_game_id', '')
+                if pgid in accuracy_map:
+                    stats['accuracies'].append(accuracy_map[pgid])
 
                 if game.get('my_rating'):
                     stats['ratings'].append(game['my_rating'])
@@ -211,7 +213,7 @@ class OpeningRepertoireAnalyzer:
             # Get recent games with this opening
             games_result = await asyncio.to_thread(
                 lambda: self.supabase.table('games')
-                .select('id, opening, opening_family, result, color, my_rating, opponent_rating, played_at')
+                .select('id, provider_game_id, opening, opening_family, result, color, my_rating, opponent_rating, played_at')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
                 .eq('color', color)
@@ -232,22 +234,24 @@ class OpeningRepertoireAnalyzer:
                     matching_games.append(game)
 
             # Get PGN data for deviation analysis (last 20 games)
-            recent_game_ids = [g['id'] for g in matching_games[:20]]
+            recent_provider_ids = [g['provider_game_id'] for g in matching_games[:20] if g.get('provider_game_id')]
             move_sequences = []
 
-            if recent_game_ids:
+            if recent_provider_ids:
                 pgn_result = await asyncio.to_thread(
                     lambda: self.supabase.table('games_pgn')
-                    .select('game_id, pgn_text')
-                    .in_('game_id', recent_game_ids)
+                    .select('provider_game_id, pgn')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .in_('provider_game_id', recent_provider_ids)
                     .execute()
                 )
 
                 for row in (pgn_result.data or []):
-                    moves = self._extract_opening_moves(row.get('pgn_text', ''), max_moves=15)
+                    moves = self._extract_opening_moves(row.get('pgn', ''), max_moves=15)
                     if moves:
                         move_sequences.append({
-                            'game_id': row['game_id'],
+                            'game_id': row['provider_game_id'],
                             'moves': moves
                         })
 
@@ -283,7 +287,7 @@ class OpeningRepertoireAnalyzer:
             # Get games with this opening
             games_result = await asyncio.to_thread(
                 lambda: self.supabase.table('games')
-                .select('id, opening, opening_family, color')
+                .select('id, provider_game_id, opening, opening_family, color')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
                 .eq('color', color)
@@ -292,6 +296,7 @@ class OpeningRepertoireAnalyzer:
                 .execute()
             )
 
+            # move_analyses.game_id stores provider_game_id, not UUID
             matching_ids = []
             for game in (games_result.data or []):
                 opening_name = game.get('opening') or ''
@@ -299,8 +304,8 @@ class OpeningRepertoireAnalyzer:
                 family = normalize_opening_name(opening_name) if opening_name else 'Unknown'
                 if family == 'Unknown' and opening_eco:
                     family = normalize_opening_name(opening_eco)
-                if family == opening_family:
-                    matching_ids.append(game['id'])
+                if family == opening_family and game.get('provider_game_id'):
+                    matching_ids.append(game['provider_game_id'])
 
             if not matching_ids:
                 return []

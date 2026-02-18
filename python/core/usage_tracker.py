@@ -125,7 +125,7 @@ class UsageTracker:
 
     async def increment_usage(self, user_id: str, action_type: str, count: int = 1) -> bool:
         """
-        Increment usage counter for user with validation and race condition prevention.
+        Atomically increment usage counter via database function (row-lock prevents races).
 
         Args:
             user_id: User's UUID (must be non-empty string)
@@ -138,7 +138,6 @@ class UsageTracker:
         Raises:
             ValueError: If inputs are invalid
         """
-        # Input validation
         if not user_id or not isinstance(user_id, str) or not user_id.strip():
             raise ValueError("Valid user_id is required")
         if action_type not in ('import', 'analyze'):
@@ -149,75 +148,22 @@ class UsageTracker:
             raise ValueError("count cannot exceed 1000 in a single operation")
 
         try:
-            today = datetime.now(timezone.utc).date()
-            reset_at = datetime.now(timezone.utc)
-            cutoff_time = reset_at - timedelta(hours=24)
-
-            # Determine which field to increment
-            field_name = 'games_imported' if action_type == 'import' else 'games_analyzed'
-
-            # Try to get existing record within 24-hour window (matching check_usage_limits logic)
-            # Query for most recent record and filter by reset_at in Python since Supabase doesn't support
-            # complex date arithmetic in queries easily
-            all_records = await asyncio.to_thread(
-                lambda: self.supabase.table('usage_tracking').select('*').eq(
-                    'user_id', user_id
-                ).order('reset_at', desc=True).limit(10).execute()
+            result = await asyncio.to_thread(
+                lambda: self.supabase.rpc(
+                    'increment_usage_atomic',
+                    {'p_user_id': user_id, 'p_action_type': action_type, 'p_count': count}
+                ).execute()
             )
 
-            # Find the most recent record within 24-hour window
-            record = None
-            if all_records.data and len(all_records.data) > 0:
-                for r in all_records.data:
-                    record_reset_at = datetime.fromisoformat(r['reset_at'].replace('Z', '+00:00'))
-                    if record_reset_at > cutoff_time:
-                        record = r
-                        break
-
-            if record:
-                # Update existing record
-                current_value = record.get(field_name, 0)
-
-                # Check if we need to reset (24 hours passed - should not happen due to filter above, but keep for safety)
-                record_reset_at = datetime.fromisoformat(record['reset_at'].replace('Z', '+00:00'))
-                # Use timezone-aware datetime to avoid "can't subtract offset-naive and offset-aware datetimes" error
-                if datetime.now(timezone.utc) - record_reset_at > timedelta(hours=24):
-                    # Reset both counters when window expires
-                    update_data = {
-                        'games_imported': count if action_type == 'import' else 0,
-                        'games_analyzed': count if action_type == 'analyze' else 0,
-                        'reset_at': reset_at.isoformat(),
-                        'date': str(today)  # Update date to today
-                    }
-                else:
-                    # Increment the counter
-                    # Also update date to today to keep it consistent (in case record is from yesterday)
-                    update_data = {
-                        field_name: current_value + count,
-                        'date': str(today)  # Update date to today to keep consistency
-                    }
-
-                await asyncio.to_thread(
-                    lambda: self.supabase.table('usage_tracking').update(update_data).eq(
-                        'id', record['id']
-                    ).execute()
+            if result.data and result.data.get('success'):
+                logger.info(
+                    f"Incremented {action_type} usage for user {user_id} by {count} "
+                    f"(new_value={result.data.get('new_value')})"
                 )
-            else:
-                # Create new record
-                insert_data = {
-                    'user_id': user_id,
-                    'date': str(today),
-                    'games_imported': count if action_type == 'import' else 0,
-                    'games_analyzed': count if action_type == 'analyze' else 0,
-                    'reset_at': reset_at.isoformat()
-                }
+                return True
 
-                await asyncio.to_thread(
-                    lambda: self.supabase.table('usage_tracking').insert(insert_data).execute()
-                )
-
-            logger.info(f"Incremented {action_type} usage for user {user_id} by {count}")
-            return True
+            logger.warning(f"Atomic increment failed for user {user_id}: {result.data}")
+            return False
 
         except Exception as e:
             logger.error(f"Error incrementing usage for user {user_id}: {e}")

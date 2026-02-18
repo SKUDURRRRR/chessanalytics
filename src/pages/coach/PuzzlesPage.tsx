@@ -3,34 +3,25 @@
  */
 
 import { useNavigate, Link } from 'react-router-dom'
-import { usePuzzles, useDailyChallenge, usePuzzleStats } from '../../hooks/useCoachingData'
-import { useDailyPuzzle } from '../../hooks/useCoachingData'
-import LoadingModal from '../../components/LoadingModal'
+import { usePuzzles, useDailyChallenge, usePuzzleStats, useRecommendationProfile, useDailyPuzzle } from '../../hooks/useCoachingData'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCoachUser } from '../../hooks/useCoachUser'
-import type { BankPuzzle, PuzzleStats } from '../../types'
+import { CoachPageGuard } from '../../components/coach/CoachPageGuard'
+import type { BankPuzzle, PuzzleStats, RecommendationProfile } from '../../types'
 
 export default function PuzzlesPage() {
   const { usageStats } = useAuth()
-  const { platform, platformUsername, authenticatedUserId } = useCoachUser()
-
-  if (!authenticatedUserId) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400">Please log in to access puzzles</p>
-      </div>
-    )
-  }
+  const { platform, platformUsername, authenticatedUserId, isLoading } = useCoachUser()
 
   return (
-    <>
+    <CoachPageGuard isLoading={isLoading} authenticatedUserId={authenticatedUserId} platformUsername={platformUsername} requiresLinkedAccount={false}>
       <PuzzlesPageContent
         userId={platformUsername}
         platform={platform}
-        authUserId={authenticatedUserId}
+        authUserId={authenticatedUserId!}
         hasLinkedAccount={!!platformUsername}
       />
-    </>
+    </CoachPageGuard>
   )
 }
 
@@ -72,12 +63,20 @@ function PuzzlesPageContent({
   const navigate = useNavigate()
   const { stats, loading: statsLoading } = usePuzzleStats()
   const { challenge, loading: challengeLoading, refetch: refetchChallenge } = useDailyChallenge()
+  const { profile: recProfile, loading: recLoading } = useRecommendationProfile()
   const { puzzleSet, loading: puzzlesLoading } = usePuzzles(userId, platform)
 
   const loading = statsLoading || challengeLoading
 
   if (loading) {
-    return <LoadingModal isOpen={true} message="Loading puzzle trainer..." />
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <p className="text-sm text-slate-400">Loading puzzle trainer...</p>
+        </div>
+      </div>
+    )
   }
 
   const completedCount = challenge?.completed_ids?.length ?? 0
@@ -115,8 +114,10 @@ function PuzzlesPageContent({
             }
           />
 
-          {/* Quick Play Card */}
-          <QuickPlayCard
+          {/* Recommended / Quick Play Card */}
+          <SmartPlayCard
+            profile={recProfile}
+            profileLoading={recLoading}
             onStart={(theme) =>
               navigate('/coach/puzzles/solve', {
                 state: { mode: 'bank', theme },
@@ -135,7 +136,10 @@ function PuzzlesPageContent({
         {/* Theme Performance */}
         {stats && Object.keys(stats.theme_performance).length > 0 && (
           <div className="mb-8">
-            <ThemePerformance performance={stats.theme_performance} />
+            <ThemePerformance
+              performance={stats.theme_performance}
+              recommendedThemes={recProfile?.weaknesses?.flatMap(w => w.recommended_themes) ?? []}
+            />
           </div>
         )}
 
@@ -318,10 +322,86 @@ function DailyChallengeCard({
   )
 }
 
-/** Quick Play card for rated puzzles */
-function QuickPlayCard({ onStart }: { onStart: (theme?: string) => void }) {
-  const themes = ['fork', 'pin', 'mate', 'sacrifice', 'discoveredAttack', 'backRankMate', 'endgame', 'hanging']
+/** Smart play card - shows personalized recommendations or quick play fallback */
+function SmartPlayCard({
+  profile,
+  profileLoading,
+  onStart,
+}: {
+  profile: RecommendationProfile | null
+  profileLoading: boolean
+  onStart: (theme?: string) => void
+}) {
+  const hasRecommendations = profile?.has_game_data && profile.weaknesses.length > 0
+  const manualThemes = ['fork', 'pin', 'mate', 'sacrifice', 'discoveredAttack', 'backRankMate', 'endgame', 'hanging']
 
+  if (hasRecommendations && profile) {
+    return (
+      <div className="rounded-3xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-indigo-500/10 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-2xl">&#x1F3AF;</span>
+          <h2 className="text-xl font-bold text-white">Recommended for You</h2>
+        </div>
+        <p className="text-slate-300 text-sm mb-4">
+          Based on {profile.games_analyzed} analyzed games
+        </p>
+
+        {/* Start recommended button - backend auto-selects theme */}
+        <button
+          onClick={() => onStart()}
+          className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-6 rounded-xl transition-colors mb-4"
+        >
+          Start Recommended Puzzle
+        </button>
+
+        {/* Weakness-based theme buttons with reasons */}
+        <div className="space-y-2 mb-4">
+          {profile.weaknesses.slice(0, 3).map((w) => {
+            const topTheme = w.recommended_themes[0]
+            if (!topTheme) return null
+            return (
+              <button
+                key={w.category}
+                onClick={() => onStart(topTheme)}
+                className="w-full text-left rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 p-3 transition-colors group"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-white text-sm font-medium">{w.title}</span>
+                    {w.severity === 'critical' && (
+                      <span className="ml-2 text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full">
+                        Focus area
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-slate-500 text-xs group-hover:text-slate-300">
+                    {THEME_LABELS[topTheme] || topTheme}  &rarr;
+                  </span>
+                </div>
+                <p className="text-slate-400 text-xs mt-1">{w.reason}</p>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Manual theme picker as secondary option */}
+        <p className="text-slate-500 text-xs mb-2">Or pick a theme:</p>
+        <div className="flex flex-wrap gap-2">
+          {manualThemes.map((theme) => (
+            <button
+              key={theme}
+              onClick={() => onStart(theme)}
+              className="text-xs bg-white/10 hover:bg-white/20 text-slate-300 px-3 py-1.5 rounded-lg transition-colors capitalize"
+            >
+              {THEME_LABELS[theme] || theme}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Fallback: standard Quick Play (no game data or still loading)
   return (
     <div className="rounded-3xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-indigo-500/10 p-6">
       <div className="flex items-center gap-2 mb-4">
@@ -329,7 +409,10 @@ function QuickPlayCard({ onStart }: { onStart: (theme?: string) => void }) {
         <h2 className="text-xl font-bold text-white">Quick Play</h2>
       </div>
       <p className="text-slate-300 text-sm mb-4">
-        Solve rated puzzles matched to your skill level.
+        {profileLoading
+          ? 'Checking your game data...'
+          : 'Solve rated puzzles matched to your skill level. Analyze games to get personalized recommendations!'
+        }
       </p>
 
       <button
@@ -340,7 +423,7 @@ function QuickPlayCard({ onStart }: { onStart: (theme?: string) => void }) {
       </button>
 
       <div className="flex flex-wrap gap-2">
-        {themes.map((theme) => (
+        {manualThemes.map((theme) => (
           <button
             key={theme}
             onClick={() => onStart(theme)}
@@ -402,8 +485,10 @@ function RatingTrend({ history }: { history: Array<{ date: string; rating: numbe
 /** Theme performance grid */
 function ThemePerformance({
   performance,
+  recommendedThemes = [],
 }: {
   performance: Record<string, { attempted: number; correct: number }>
+  recommendedThemes?: string[]
 }) {
   const themes = Object.entries(performance)
     .filter(([, data]) => data.attempted >= 2)
@@ -411,6 +496,8 @@ function ThemePerformance({
     .slice(0, 8)
 
   if (themes.length === 0) return null
+
+  const recommendedSet = new Set(recommendedThemes)
 
   return (
     <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
@@ -420,14 +507,26 @@ function ThemePerformance({
           const rate = Math.round((data.correct / data.attempted) * 100)
           const color =
             rate >= 75 ? 'emerald' : rate >= 50 ? 'amber' : 'red'
+          const isRecommended = recommendedSet.has(theme)
           return (
             <div
               key={theme}
-              className="rounded-xl bg-white/[0.04] border border-white/10 p-3"
+              className={`rounded-xl bg-white/[0.04] p-3 ${
+                isRecommended
+                  ? 'border-2 border-purple-500/50'
+                  : 'border border-white/10'
+              }`}
             >
-              <p className="text-slate-300 text-sm capitalize mb-1">
-                {THEME_LABELS[theme] || theme}
-              </p>
+              <div className="flex items-center gap-1 mb-1">
+                <p className="text-slate-300 text-sm capitalize">
+                  {THEME_LABELS[theme] || theme}
+                </p>
+                {isRecommended && (
+                  <span className="text-[9px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                    Train
+                  </span>
+                )}
+              </div>
               <div className="flex items-baseline gap-1">
                 <span
                   className={`text-xl font-bold ${

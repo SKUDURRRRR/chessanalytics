@@ -1,5 +1,5 @@
 // Responsive hooks for mobile optimizations
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface MobileOptimizations {
   isMobile: boolean
@@ -21,15 +21,15 @@ export function useMobileOptimizations(): MobileOptimizations {
   })
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
+
     const updateOptimizations = () => {
       const width = window.innerWidth
 
-      // Determine device type
       const isMobile = width < 768
       const isTablet = width >= 768 && width < 1024
       const isDesktop = width >= 1024
 
-      // Determine board size based on viewport
       let boardSize: 'small' | 'medium' | 'large' = 'large'
       if (width < 480) {
         boardSize = 'small'
@@ -37,10 +37,7 @@ export function useMobileOptimizations(): MobileOptimizations {
         boardSize = 'medium'
       }
 
-      // Check for touch capability
       const touchOptimized = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-
-      // Check for reduced motion preference
       const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
       setOptimizations({
@@ -53,18 +50,22 @@ export function useMobileOptimizations(): MobileOptimizations {
       })
     }
 
-    // Initial check
+    const debouncedUpdate = () => {
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(updateOptimizations, 100)
+    }
+
+    // Initial check fires immediately
     updateOptimizations()
 
-    // Listen for resize events
-    window.addEventListener('resize', updateOptimizations)
+    window.addEventListener('resize', debouncedUpdate)
 
-    // Listen for motion preference changes
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
     mediaQuery.addEventListener('change', updateOptimizations)
 
     return () => {
-      window.removeEventListener('resize', updateOptimizations)
+      clearTimeout(timeoutId)
+      window.removeEventListener('resize', debouncedUpdate)
       mediaQuery.removeEventListener('change', updateOptimizations)
     }
   }, [])
@@ -77,6 +78,8 @@ export function useBreakpoint() {
   const [breakpoint, setBreakpoint] = useState<string>('xs')
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
+
     const updateBreakpoint = () => {
       const width = window.innerWidth
 
@@ -95,10 +98,18 @@ export function useBreakpoint() {
       }
     }
 
-    updateBreakpoint()
-    window.addEventListener('resize', updateBreakpoint)
+    const debouncedUpdate = () => {
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(updateBreakpoint, 100)
+    }
 
-    return () => window.removeEventListener('resize', updateBreakpoint)
+    updateBreakpoint()
+    window.addEventListener('resize', debouncedUpdate)
+
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener('resize', debouncedUpdate)
+    }
   }, [])
 
   return breakpoint
@@ -112,6 +123,8 @@ export function useViewport() {
   })
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
+
     const updateViewport = () => {
       setViewport({
         width: window.innerWidth,
@@ -119,10 +132,18 @@ export function useViewport() {
       })
     }
 
-    updateViewport()
-    window.addEventListener('resize', updateViewport)
+    const debouncedUpdate = () => {
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(updateViewport, 100)
+    }
 
-    return () => window.removeEventListener('resize', updateViewport)
+    updateViewport()
+    window.addEventListener('resize', debouncedUpdate)
+
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener('resize', debouncedUpdate)
+    }
   }, [])
 
   return viewport

@@ -17,7 +17,7 @@ import {
 import { StudyPlan, UserGoal, DailyActivity, WeeklySummary } from '../../types'
 import { CoachingService } from '../../services/coachingService'
 import { useCoachUser } from '../../hooks/useCoachUser'
-import LoadingModal from '../../components/LoadingModal'
+import { CoachPageGuard } from '../../components/coach/CoachPageGuard'
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
@@ -55,41 +55,21 @@ const RADAR_LABELS: Record<string, string> = {
 }
 
 export default function StudyPlanPage() {
-  const { platform, platformUsername, authenticatedUserId } = useCoachUser()
-
-  if (!authenticatedUserId) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400">Please log in to access Coach features</p>
-      </div>
-    )
-  }
-
-  if (!platformUsername) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Connect your chess account</h2>
-          <p className="text-slate-300 mb-6">
-            Link your Chess.com or Lichess account to get a personalized study plan.
-          </p>
-          <Link
-            to="/profile"
-            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
-          >
-            Go to Profile to Connect
-          </Link>
-        </div>
-      </div>
-    )
-  }
+  const { platform, platformUsername, authenticatedUserId, isLoading } = useCoachUser()
 
   return (
-    <StudyPlanContent
+    <CoachPageGuard
+      isLoading={isLoading}
+      authenticatedUserId={authenticatedUserId}
       platformUsername={platformUsername}
-      platform={platform}
-      authUserId={authenticatedUserId}
-    />
+      connectMessage="Link your Chess.com or Lichess account to get a personalized study plan."
+    >
+      <StudyPlanContent
+        platformUsername={platformUsername!}
+        platform={platform}
+        authUserId={authenticatedUserId!}
+      />
+    </CoachPageGuard>
   )
 }
 
@@ -170,7 +150,14 @@ function StudyPlanContent({
   }
 
   if (loading) {
-    return <LoadingModal isOpen={true} message="Loading study plan..." />
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <p className="text-sm text-slate-400">Loading study plan...</p>
+        </div>
+      </div>
+    )
   }
 
   // Compute aggregate stats

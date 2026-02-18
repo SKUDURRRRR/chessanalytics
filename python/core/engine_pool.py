@@ -96,7 +96,9 @@ class StockfishEnginePool:
     async def _create_engine(self) -> chess.engine.SimpleEngine:
         """Create a new Stockfish engine instance with error handling."""
         try:
-            engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
+            engine = await asyncio.to_thread(
+                chess.engine.SimpleEngine.popen_uci, self.stockfish_path
+            )
 
             # Configure engine
             try:
@@ -169,8 +171,14 @@ class StockfishEnginePool:
             if engine_info is None:
                 logger.warning(f"Pool at capacity ({self.max_size}), waiting for engine...")
 
-        # Wait loop if no engine available
+        # Wait loop if no engine available (with timeout)
+        wait_start = time.time()
         while engine_info is None:
+            if time.time() - wait_start > 30.0:
+                raise RuntimeError(
+                    f"Timed out waiting for engine from pool after 30s "
+                    f"(pool size: {self.max_size})"
+                )
             await asyncio.sleep(0.1)
             async with self._lock:
                 # Check shutdown flag even while waiting

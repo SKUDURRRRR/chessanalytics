@@ -4,223 +4,121 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { CoachingService } from '../services/coachingService'
-import { DashboardData, Puzzle, PuzzleSet, Platform, ProgressData, PuzzleStats, DailyChallenge } from '../types'
+import { DashboardData, Puzzle, PuzzleSet, Platform, ProgressData, PuzzleStats, DailyChallenge, RecommendationProfile } from '../types'
 import { logger } from '../utils/logger'
 import { useAuth } from '../contexts/AuthContext'
 
 /**
- * Hook to fetch and manage Coach dashboard data
+ * Generic hook for coach data fetching with loading/error state management.
+ * Reduces boilerplate across all coach data hooks.
  */
+function useCoachData<T>(
+  fetchFn: () => Promise<T>,
+  deps: React.DependencyList,
+  guard: boolean = true,
+  resourceName: string = 'data'
+): { data: T | null; loading: boolean; error: Error | null; refetch: () => void } {
+  const [data, setData] = useState<T | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+
+  const fetch = useCallback(async () => {
+    if (!guard) {
+      setLoading(false)
+      return
+    }
+    try {
+      setLoading(true)
+      setError(null)
+      setData(await fetchFn())
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(`Failed to fetch ${resourceName}`)
+      setError(e)
+      logger.error(`Error fetching ${resourceName}:`, e)
+    } finally {
+      setLoading(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+
+  useEffect(() => { fetch() }, [fetch])
+
+  return { data, loading, error, refetch: fetch }
+}
+
 export function useCoachDashboard(userId: string, platform: Platform) {
   const { user } = useAuth()
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
-
-  const fetchDashboard = useCallback(async () => {
-    if (!userId || !platform) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-      // Pass authenticated user's UUID for premium check
-      const data = await CoachingService.getDashboard(userId, platform, user?.id)
-      setDashboard(data)
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to fetch dashboard')
-      setError(error)
-      logger.error('Error fetching coach dashboard:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [userId, platform, user?.id])
-
-  useEffect(() => {
-    fetchDashboard()
-  }, [fetchDashboard])
-
-  return { dashboard, loading, error, refetch: fetchDashboard }
+  const { data: dashboard, loading, error, refetch } = useCoachData(
+    () => CoachingService.getDashboard(userId, platform, user?.id),
+    [userId, platform, user?.id],
+    !!(userId && platform),
+    'dashboard'
+  )
+  return { dashboard, loading, error, refetch }
 }
 
-/**
- * Hook to fetch and manage puzzles
- */
 export function usePuzzles(userId: string, platform: Platform, category?: string) {
   const { user } = useAuth()
-  const [puzzleSet, setPuzzleSet] = useState<PuzzleSet | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
-
-  const fetchPuzzles = useCallback(async () => {
-    if (!userId || !platform) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await CoachingService.getPuzzles(userId, platform, category, user?.id)
-      setPuzzleSet(data)
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to fetch puzzles')
-      setError(error)
-      logger.error('Error fetching puzzles:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [userId, platform, category, user?.id])
-
-  useEffect(() => {
-    fetchPuzzles()
-  }, [fetchPuzzles])
-
-  return { puzzleSet, loading, error, refetch: fetchPuzzles }
+  const { data: puzzleSet, loading, error, refetch } = useCoachData(
+    () => CoachingService.getPuzzles(userId, platform, category, user?.id),
+    [userId, platform, category, user?.id],
+    !!(userId && platform),
+    'puzzles'
+  )
+  return { puzzleSet, loading, error, refetch }
 }
 
-/**
- * Hook to fetch daily puzzle
- */
 export function useDailyPuzzle(userId: string, platform: Platform) {
   const { user } = useAuth()
-  const [dailyPuzzle, setDailyPuzzle] = useState<Puzzle | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
-
-  const fetchDailyPuzzle = useCallback(async () => {
-    if (!userId || !platform) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await CoachingService.getDailyPuzzle(userId, platform, user?.id)
-      setDailyPuzzle(data)
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to fetch daily puzzle')
-      setError(error)
-      logger.error('Error fetching daily puzzle:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [userId, platform, user?.id])
-
-  useEffect(() => {
-    fetchDailyPuzzle()
-  }, [fetchDailyPuzzle])
-
-  return { dailyPuzzle, loading, error, refetch: fetchDailyPuzzle }
+  const { data: dailyPuzzle, loading, error, refetch } = useCoachData(
+    () => CoachingService.getDailyPuzzle(userId, platform, user?.id),
+    [userId, platform, user?.id],
+    !!(userId && platform),
+    'daily puzzle'
+  )
+  return { dailyPuzzle, loading, error, refetch }
 }
 
-/**
- * Hook to fetch progress tracking data (time series, streaks, weakness evolution)
- */
 export function useCoachProgress(userId: string, platform: Platform, periodDays: number = 90) {
   const { user } = useAuth()
-  const [progress, setProgress] = useState<ProgressData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
-
-  const fetchProgress = useCallback(async () => {
-    if (!userId || !platform) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await CoachingService.getProgress(userId, platform, periodDays, user?.id)
-      setProgress(data)
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to fetch progress data')
-      setError(error)
-      logger.error('Error fetching progress data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [userId, platform, periodDays, user?.id])
-
-  useEffect(() => {
-    fetchProgress()
-  }, [fetchProgress])
-
-  return { progress, loading, error, refetch: fetchProgress }
+  const { data: progress, loading, error, refetch } = useCoachData(
+    () => CoachingService.getProgress(userId, platform, periodDays, user?.id),
+    [userId, platform, periodDays, user?.id],
+    !!(userId && platform),
+    'progress'
+  )
+  return { progress, loading, error, refetch }
 }
 
-/**
- * Hook to fetch puzzle training statistics (rating, XP, streaks)
- */
 export function usePuzzleStats() {
   const { user } = useAuth()
-  const [stats, setStats] = useState<PuzzleStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
-
-  const fetchStats = useCallback(async () => {
-    if (!user?.id) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await CoachingService.getPuzzleStats(user.id)
-      setStats(data)
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to fetch puzzle stats')
-      setError(error)
-      logger.error('Error fetching puzzle stats:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [user?.id])
-
-  useEffect(() => {
-    fetchStats()
-  }, [fetchStats])
-
-  return { stats, loading, error, refetch: fetchStats }
+  const { data: stats, loading, error, refetch } = useCoachData(
+    () => CoachingService.getPuzzleStats(user!.id),
+    [user?.id],
+    !!user?.id,
+    'puzzle stats'
+  )
+  return { stats, loading, error, refetch }
 }
 
-/**
- * Hook to fetch today's daily challenge
- */
 export function useDailyChallenge() {
   const { user } = useAuth()
-  const [challenge, setChallenge] = useState<DailyChallenge | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const { data: challenge, loading, error, refetch } = useCoachData(
+    () => CoachingService.getDailyChallenge(user!.id),
+    [user?.id],
+    !!user?.id,
+    'daily challenge'
+  )
+  return { challenge, loading, error, refetch }
+}
 
-  const fetchChallenge = useCallback(async () => {
-    if (!user?.id) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-      const data = await CoachingService.getDailyChallenge(user.id)
-      setChallenge(data)
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to fetch daily challenge')
-      setError(error)
-      logger.error('Error fetching daily challenge:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [user?.id])
-
-  useEffect(() => {
-    fetchChallenge()
-  }, [fetchChallenge])
-
-  return { challenge, loading, error, refetch: fetchChallenge }
+export function useRecommendationProfile() {
+  const { user } = useAuth()
+  const { data: profile, loading, error, refetch } = useCoachData(
+    () => CoachingService.getRecommendationProfile(user!.id),
+    [user?.id],
+    !!user?.id,
+    'recommendation profile'
+  )
+  return { profile, loading, error, refetch }
 }

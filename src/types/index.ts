@@ -17,6 +17,71 @@ export interface PersonalityScores {
   staleness: number;
 }
 
+export interface TacticalPattern {
+  type: string
+  length?: number
+  moves: string[]
+  average_centipawn_loss?: number
+  count?: number
+}
+
+export interface PositionalPattern {
+  type: string
+  count: number
+  moves: string[]
+}
+
+export interface StrategicTheme {
+  type: string
+  description: string
+  strength: string
+}
+
+export interface MoveAnalysisEntry {
+  move: string
+  move_san: string
+  move_notation: string
+  best_move: string
+  best_move_san: string
+  best_move_pv: string[]
+  engine_move: string
+  fen_before: string
+  fen_after: string
+  evaluation: Record<string, unknown>
+  evaluation_before: number | null
+  evaluation_after: number | null
+  is_best: boolean
+  is_brilliant: boolean
+  is_great: boolean
+  is_excellent: boolean
+  is_blunder: boolean
+  is_mistake: boolean
+  is_inaccuracy: boolean
+  is_good: boolean
+  is_acceptable: boolean
+  centipawn_loss: number
+  depth_analyzed: number
+  is_user_move: boolean
+  player_color: string
+  ply_index: number
+  ply: number
+  opening_ply: number
+  explanation: string
+  heuristic_details: Record<string, unknown>
+  coaching_comment: string
+  what_went_right: string
+  what_went_wrong: string
+  how_to_improve: string
+  tactical_insights: string[]
+  positional_insights: string[]
+  risks: string[]
+  benefits: string[]
+  learning_points: string[]
+  encouragement_level: number
+  move_quality: string
+  game_phase: string
+}
+
 export interface Game {
   id: string
   user_id: string
@@ -58,9 +123,9 @@ export interface GameAnalysis {
   patient_score: number
   novelty_score: number
   staleness_score: number
-  tactical_patterns: any[]
-  positional_patterns: any[]
-  moves_analysis: any[]
+  tactical_patterns: TacticalPattern[]
+  positional_patterns: PositionalPattern[]
+  moves_analysis: MoveAnalysisEntry[]
   analysis_date: string
   analysis_method: string
   created_at: string
@@ -88,10 +153,10 @@ export interface MoveAnalysis {
   patient_score: number
   novelty_score: number
   staleness_score: number
-  tactical_patterns: any[]
-  positional_patterns: any[]
-  strategic_themes: any[]
-  moves_analysis: any[]
+  tactical_patterns: TacticalPattern[]
+  positional_patterns: PositionalPattern[]
+  strategic_themes: StrategicTheme[]
+  moves_analysis: MoveAnalysisEntry[]
   analysis_method: string
   stockfish_depth: number
   analysis_date: string
@@ -145,10 +210,10 @@ export interface GameAnalysisSummary {
   novelty_score: number
   staleness_score: number
   average_evaluation: number
-  moves_analysis: any[]
-  tactical_patterns: any[]
-  positional_patterns: any[]
-  strategic_themes: any[]
+  moves_analysis: MoveAnalysisEntry[]
+  tactical_patterns: TacticalPattern[]
+  positional_patterns: PositionalPattern[]
+  strategic_themes: StrategicTheme[]
   analysis_date: string
   processing_time_ms: number
   stockfish_depth: number
@@ -189,7 +254,14 @@ export interface AnalysisStats {
   total_games_with_elo?: number // Total games with ELO data processed
 }
 
-// Comprehensive Analytics Types - supports both camelCase and snake_case for backwards compatibility
+/**
+ * Comprehensive Analytics from backend deep analysis.
+ *
+ * NAMING: Contains both camelCase (frontend convention) and optional snake_case
+ * fields (direct from database/backend). The snake_case variants exist for backward
+ * compatibility with older API responses. New code should use camelCase fields only.
+ * Migration: When backend normalizes to camelCase responses, remove snake_case variants.
+ */
 export interface ComprehensiveAnalytics {
   totalGames: number
   total_games?: number  // Backwards compatibility
@@ -787,6 +859,7 @@ export interface BankPuzzle {
   user_rating: number
   user_xp: number
   user_level: number
+  recommendation_reason?: string
 }
 
 /** Result of checking a single move in a multi-move puzzle */
@@ -833,6 +906,23 @@ export interface PuzzleStats {
   best_streak: number
   daily_challenges_completed: number
   theme_performance: Record<string, { attempted: number; correct: number }>
+}
+
+/** Weakness-based puzzle recommendation profile */
+export interface RecommendationProfile {
+  has_game_data: boolean
+  games_analyzed: number
+  weaknesses: Array<{
+    category: string
+    title: string
+    score: number
+    severity: 'critical' | 'important'
+    recommended_themes: string[]
+    reason: string
+  }>
+  theme_solve_rates: Record<string, { attempted: number; correct: number; rate: number }>
+  top_recommended_theme: string | null
+  top_recommendation_reason: string | null
 }
 
 // ============================================================================
@@ -1017,8 +1107,7 @@ export interface TimeTroubleData {
   avg_accuracy_degradation: number
   by_time_control: Array<{
     category: string
-    avg_accuracy: number
-    avg_blunders: number
+    win_rate: number
     games: number
   }>
   weekly_trend: Array<{ week: string; degradation: number }>

@@ -189,11 +189,23 @@ class StudyPlanGenerator:
                 'status': 'active',
             }
 
-            result = await asyncio.to_thread(
-                lambda: self.supabase.table('study_plans')
-                .upsert(plan_data, on_conflict='user_id,platform,week_start')
-                .execute()
-            )
+            try:
+                result = await asyncio.to_thread(
+                    lambda: self.supabase.table('study_plans')
+                    .upsert(plan_data, on_conflict='user_id,platform,week_start')
+                    .execute()
+                )
+            except Exception as upsert_err:
+                # Fallback: if new columns don't exist yet, try without them
+                logger.warning(f"[STUDY_PLAN] Upsert with new columns failed, retrying without: {upsert_err}")
+                plan_data.pop('weakness_snapshot', None)
+                plan_data.pop('weekly_summary', None)
+                plan_data.pop('days_completed', None)
+                result = await asyncio.to_thread(
+                    lambda: self.supabase.table('study_plans')
+                    .upsert(plan_data, on_conflict='user_id,platform,week_start')
+                    .execute()
+                )
 
             plan = result.data[0] if result.data else plan_data
 

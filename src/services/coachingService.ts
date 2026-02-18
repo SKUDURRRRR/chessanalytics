@@ -23,48 +23,87 @@ import {
   PuzzleCompletionResult,
   DailyChallenge,
   PuzzleStats,
+  RecommendationProfile,
 } from '../types'
 import { config } from '../lib/config'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
 import { logger } from '../utils/logger'
+import { withCache, generateCacheKey } from '../utils/apiCache'
+import { supabase } from '../lib/supabase'
 
 const API_URL = config.getApi().baseUrl
+const COACH_CACHE_TTL = 3 * 60 * 1000 // 3 minutes for coach data
+
+interface CoachFetchOptions {
+  method?: string
+  body?: unknown
+  /** @deprecated Ignored - auth is now sent via JWT Authorization header automatically. */
+  authUserId?: string
+  params?: Record<string, string>
+  timeout?: number
+}
 
 export class CoachingService {
+  /**
+   * Shared fetch helper for coach API endpoints.
+   * Handles: URL building, JWT auth header, fetchWithTimeout, 403 check, JSON parse.
+   * Auth is sent via Authorization: Bearer header (JWT from Supabase session).
+   */
+  private static async coachFetch<T>(endpoint: string, options?: CoachFetchOptions): Promise<T> {
+    const url = new URL(`${API_URL}${endpoint}`)
+    if (options?.params) {
+      for (const [key, value] of Object.entries(options.params)) {
+        url.searchParams.append(key, value)
+      }
+    }
+
+    // Build headers with JWT auth from Supabase session
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+    } catch {
+      // Continue without auth header - backend will handle accordingly
+    }
+
+    const response = await fetchWithTimeout(
+      url.toString(),
+      {
+        method: options?.method || 'GET',
+        headers,
+        ...(options?.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      },
+      options?.timeout || TIMEOUT_CONFIG.DEFAULT
+    )
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error('Coach features require premium subscription')
+      }
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    return await response.json() as T
+  }
+
   /**
    * Get Coach dashboard data (daily lesson, weaknesses, strengths)
    */
   static async getDashboard(userId: string, platform: Platform, authUserId?: string): Promise<DashboardData> {
-    try {
-      const url = new URL(`${API_URL}/api/v1/coach/dashboard/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-      if (authUserId) {
-        url.searchParams.append('auth_user_id', authUserId)
+    const cacheKey = generateCacheKey('coach_dashboard', userId, platform)
+    return withCache(cacheKey, async () => {
+      try {
+        return await this.coachFetch<DashboardData>(
+          `/api/v1/coach/dashboard/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+          { authUserId }
+        )
+      } catch (error) {
+        logger.error('Error fetching coach dashboard:', error)
+        throw error
       }
-
-      const response = await fetchWithTimeout(
-        url.toString(),
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
-        TIMEOUT_CONFIG.DEFAULT
-      )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach features require premium subscription')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data as DashboardData
-    } catch (error) {
-      logger.error('Error fetching coach dashboard:', error)
-      throw error
-    }
+    }, COACH_CACHE_TTL)
   }
 
   /**
@@ -76,39 +115,20 @@ export class CoachingService {
     category?: string,
     authUserId?: string
   ): Promise<PuzzleSet> {
-    try {
-      const url = new URL(`${API_URL}/api/v1/coach/puzzles/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-      if (category) {
-        url.searchParams.append('category', category)
+    const cacheKey = generateCacheKey('coach_puzzles', userId, platform, { category })
+    return withCache(cacheKey, async () => {
+      try {
+        const params: Record<string, string> = {}
+        if (category) params.category = category
+        return await this.coachFetch<PuzzleSet>(
+          `/api/v1/coach/puzzles/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+          { authUserId, params }
+        )
+      } catch (error) {
+        logger.error('Error fetching puzzles:', error)
+        throw error
       }
-      if (authUserId) {
-        url.searchParams.append('auth_user_id', authUserId)
-      }
-
-      const response = await fetchWithTimeout(
-        url.toString(),
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
-        TIMEOUT_CONFIG.DEFAULT
-      )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach features require premium subscription')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data as PuzzleSet
-    } catch (error) {
-      logger.error('Error fetching puzzles:', error)
-      throw error
-    }
+    }, COACH_CACHE_TTL)
   }
 
   /**
@@ -116,34 +136,10 @@ export class CoachingService {
    */
   static async getDailyPuzzle(userId: string, platform: Platform, authUserId?: string): Promise<Puzzle> {
     try {
-      const url = new URL(`${API_URL}/api/v1/coach/puzzles/daily/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-      if (authUserId) {
-        url.searchParams.append('auth_user_id', authUserId)
-      }
-
-      const response = await fetchWithTimeout(
-        url,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
-        TIMEOUT_CONFIG.DEFAULT
+      return await this.coachFetch<Puzzle>(
+        `/api/v1/coach/puzzles/daily/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+        { authUserId }
       )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach features require premium subscription')
-        }
-        if (response.status === 404) {
-          throw new Error('No daily puzzle available')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data as Puzzle
     } catch (error) {
       logger.error('Error fetching daily puzzle:', error)
       throw error
@@ -160,32 +156,13 @@ export class CoachingService {
     movesMade: string[] = []
   ): Promise<void> {
     try {
-      const url = `${API_URL}/api/v1/coach/puzzles/${encodeURIComponent(puzzleId)}/attempt`
-
-      const response = await fetchWithTimeout(
-        url,
+      await this.coachFetch<unknown>(
+        `/api/v1/coach/puzzles/${encodeURIComponent(puzzleId)}/attempt`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            was_correct: wasCorrect,
-            time_to_solve_seconds: timeTaken,
-            moves_made: movesMade,
-          }),
-        },
-        TIMEOUT_CONFIG.DEFAULT
-      )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach features require premium subscription')
+          body: { was_correct: wasCorrect, time_to_solve_seconds: timeTaken, moves_made: movesMade },
         }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      await response.json()
+      )
     } catch (error) {
       logger.error('Error recording puzzle attempt:', error)
       throw error
@@ -200,38 +177,12 @@ export class CoachingService {
     skillLevel: number = 10,
     depth: number = 10,
     authUserId?: string
-  ): Promise<{ move: { san: string; uci: string; from: string; to: string }; evaluation: any; pv_line: string[] }> {
+  ): Promise<{ move: { san: string; uci: string; from: string; to: string }; evaluation: Record<string, unknown>; pv_line: string[] }> {
     try {
-      const url = new URL(`${API_URL}/api/v1/coach/play-move`)
-      if (authUserId) {
-        url.searchParams.append('auth_user_id', authUserId)
-      }
-
-      const response = await fetchWithTimeout(
-        url.toString(),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            fen,
-            skill_level: skillLevel,
-            depth,
-          }),
-        },
-        TIMEOUT_CONFIG.DEFAULT
+      return await this.coachFetch(
+        '/api/v1/coach/play-move',
+        { method: 'POST', authUserId, body: { fen, skill_level: skillLevel, depth } }
       )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach features require premium subscription')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data
     } catch (error) {
       logger.error('Error getting engine move:', error)
       throw error
@@ -248,61 +199,39 @@ export class CoachingService {
     authUserId: string
   ): Promise<CoachChatResponse> {
     try {
-      const url = new URL(`${API_URL}/api/v1/coach/chat`)
-      url.searchParams.append('auth_user_id', authUserId)
-
-      const response = await fetchWithTimeout(
-        url.toString(),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+      return await this.coachFetch<CoachChatResponse>('/api/v1/coach/chat', {
+        method: 'POST',
+        authUserId,
+        body: {
+          message,
+          position_context: {
+            fen: positionContext.fen,
+            move_history: positionContext.moveHistory,
+            player_color: positionContext.playerColor,
+            move_number: positionContext.moveNumber,
+            last_move: positionContext.lastMove,
+            last_user_move: positionContext.lastUserMove,
+            last_opponent_move: positionContext.lastOpponentMove,
+            game_phase: positionContext.gamePhase,
+            context_type: positionContext.contextType,
+            puzzle_theme: positionContext.puzzleTheme,
+            puzzle_category: positionContext.puzzleCategory,
+            move_classification: positionContext.moveClassification,
+            evaluation: positionContext.evaluation,
+            best_move_san: positionContext.bestMoveSan,
+            centipawn_loss: positionContext.centipawnLoss,
+            coaching_comment: positionContext.coachingComment,
+            tactical_insights: positionContext.tacticalInsights,
+            positional_insights: positionContext.positionalInsights,
+            learning_points: positionContext.learningPoints,
+            key_moment_index: positionContext.keyMomentIndex,
+            total_key_moments: positionContext.totalKeyMoments,
+            game_result: positionContext.gameResult,
+            opponent_name: positionContext.opponentName,
           },
-          body: JSON.stringify({
-            message,
-            position_context: {
-              fen: positionContext.fen,
-              move_history: positionContext.moveHistory,
-              player_color: positionContext.playerColor,
-              move_number: positionContext.moveNumber,
-              last_move: positionContext.lastMove,
-              last_user_move: positionContext.lastUserMove,
-              last_opponent_move: positionContext.lastOpponentMove,
-              game_phase: positionContext.gamePhase,
-              context_type: positionContext.contextType,
-              puzzle_theme: positionContext.puzzleTheme,
-              puzzle_category: positionContext.puzzleCategory,
-              move_classification: positionContext.moveClassification,
-              evaluation: positionContext.evaluation,
-              best_move_san: positionContext.bestMoveSan,
-              centipawn_loss: positionContext.centipawnLoss,
-              coaching_comment: positionContext.coachingComment,
-              tactical_insights: positionContext.tacticalInsights,
-              positional_insights: positionContext.positionalInsights,
-              learning_points: positionContext.learningPoints,
-              key_moment_index: positionContext.keyMomentIndex,
-              total_key_moments: positionContext.totalKeyMoments,
-              game_result: positionContext.gameResult,
-              opponent_name: positionContext.opponentName,
-            },
-            conversation_history: conversationHistory,
-          }),
+          conversation_history: conversationHistory,
         },
-        TIMEOUT_CONFIG.DEFAULT
-      )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach chat requires premium subscription')
-        }
-        if (response.status === 429) {
-          throw new Error('Chat rate limit reached. Please try again later.')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data as CoachChatResponse
+      })
     } catch (error) {
       logger.error('Error chatting with coach:', error)
       throw error
@@ -318,34 +247,18 @@ export class CoachingService {
     periodDays: number = 90,
     authUserId?: string
   ): Promise<ProgressData> {
-    try {
-      const url = new URL(`${API_URL}/api/v1/coach/progress/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-      url.searchParams.append('period_days', String(periodDays))
-      if (authUserId) {
-        url.searchParams.append('auth_user_id', authUserId)
+    const cacheKey = generateCacheKey('coach_progress', userId, platform, { periodDays })
+    return withCache(cacheKey, async () => {
+      try {
+        return await this.coachFetch<ProgressData>(
+          `/api/v1/coach/progress/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+          { authUserId, params: { period_days: String(periodDays) } }
+        )
+      } catch (error) {
+        logger.error('Error getting progress data:', error)
+        throw error
       }
-
-      const response = await fetchWithTimeout(
-        url.toString(),
-        {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        },
-        TIMEOUT_CONFIG.DEFAULT
-      )
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Coach features require premium subscription')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      return await response.json() as ProgressData
-    } catch (error) {
-      logger.error('Error getting progress data:', error)
-      throw error
-    }
+    }, COACH_CACHE_TTL)
   }
 
   // ========================================================================
@@ -360,21 +273,9 @@ export class CoachingService {
     theme?: string,
     mode: string = 'rated'
   ): Promise<BankPuzzle> {
-    const url = new URL(`${API_URL}/api/v1/coach/puzzle-bank/next`)
-    url.searchParams.append('auth_user_id', authUserId)
-    if (theme) url.searchParams.append('theme', theme)
-    url.searchParams.append('mode', mode)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) {
-      if (response.status === 403) throw new Error('Unlimited puzzles require premium subscription')
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    return await response.json() as BankPuzzle
+    const params: Record<string, string> = { mode }
+    if (theme) params.theme = theme
+    return this.coachFetch<BankPuzzle>('/api/v1/coach/puzzle-bank/next', { authUserId, params })
   }
 
   /**
@@ -386,19 +287,10 @@ export class CoachingService {
     moveIndex: number,
     authUserId: string
   ): Promise<PuzzleMoveResult> {
-    const url = `${API_URL}/api/v1/coach/puzzle-bank/${encodeURIComponent(puzzleId)}/check-move`
-
-    const response = await fetchWithTimeout(
-      url,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ move_uci: moveUci, move_index: moveIndex, auth_user_id: authUserId }),
-      },
-      TIMEOUT_CONFIG.DEFAULT
+    return this.coachFetch<PuzzleMoveResult>(
+      `/api/v1/coach/puzzle-bank/${encodeURIComponent(puzzleId)}/check-move`,
+      { method: 'POST', body: { move_uci: moveUci, move_index: moveIndex } }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    return await response.json() as PuzzleMoveResult
   }
 
   /**
@@ -411,56 +303,40 @@ export class CoachingService {
     movesMade: string[],
     authUserId: string
   ): Promise<PuzzleCompletionResult> {
-    const url = `${API_URL}/api/v1/coach/puzzle-bank/${encodeURIComponent(puzzleId)}/complete`
-
-    const response = await fetchWithTimeout(
-      url,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          auth_user_id: authUserId,
-          solved,
-          time_seconds: timeSeconds,
-          moves_made: movesMade,
-        }),
-      },
-      TIMEOUT_CONFIG.DEFAULT
+    return this.coachFetch<PuzzleCompletionResult>(
+      `/api/v1/coach/puzzle-bank/${encodeURIComponent(puzzleId)}/complete`,
+      { method: 'POST', body: { solved, time_seconds: timeSeconds, moves_made: movesMade } }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    return await response.json() as PuzzleCompletionResult
   }
 
   /**
    * Get today's daily challenge (5 puzzles)
    */
   static async getDailyChallenge(authUserId: string): Promise<DailyChallenge> {
-    const url = new URL(`${API_URL}/api/v1/coach/puzzle-bank/daily-challenge`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    return await response.json() as DailyChallenge
+    const cacheKey = generateCacheKey('coach_daily_challenge', authUserId, 'all')
+    return withCache(cacheKey, async () => {
+      return this.coachFetch<DailyChallenge>('/api/v1/coach/puzzle-bank/daily-challenge', { authUserId })
+    }, COACH_CACHE_TTL)
   }
 
   /**
    * Get puzzle training statistics
    */
   static async getPuzzleStats(authUserId: string): Promise<PuzzleStats> {
-    const url = new URL(`${API_URL}/api/v1/coach/puzzle-bank/stats`)
-    url.searchParams.append('auth_user_id', authUserId)
+    const cacheKey = generateCacheKey('coach_puzzle_stats', authUserId, 'all')
+    return withCache(cacheKey, async () => {
+      return this.coachFetch<PuzzleStats>('/api/v1/coach/puzzle-bank/stats', { authUserId })
+    }, COACH_CACHE_TTL)
+  }
 
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    return await response.json() as PuzzleStats
+  /**
+   * Get personalized recommendation profile based on game weaknesses
+   */
+  static async getRecommendationProfile(authUserId: string): Promise<RecommendationProfile> {
+    const cacheKey = generateCacheKey('coach_rec_profile', authUserId, 'all')
+    return withCache(cacheKey, async () => {
+      return this.coachFetch<RecommendationProfile>('/api/v1/coach/puzzle-bank/recommendation-profile', { authUserId })
+    }, COACH_CACHE_TTL)
   }
 
   // ========================================================================
@@ -474,61 +350,35 @@ export class CoachingService {
     authUserId: string,
     tagType: 'user' | 'system' = 'user'
   ): Promise<GameTag> {
-    const url = new URL(`${API_URL}/api/v1/coach/tags`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ game_id: gameId, platform, tag, tag_type: tagType }),
-      },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.tag as GameTag
+    const data = await this.coachFetch<{ tag: GameTag }>('/api/v1/coach/tags', {
+      method: 'POST', authUserId, body: { game_id: gameId, platform, tag, tag_type: tagType },
+    })
+    return data.tag
   }
 
   static async deleteTag(tagId: string, authUserId: string): Promise<void> {
-    const url = new URL(`${API_URL}/api/v1/coach/tags/${encodeURIComponent(tagId)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'DELETE', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    await this.coachFetch<unknown>(`/api/v1/coach/tags/${encodeURIComponent(tagId)}`, {
+      method: 'DELETE', authUserId,
+    })
   }
 
   static async getUserTags(userId: string, platform: Platform, authUserId: string): Promise<GameTag[]> {
-    const url = new URL(`${API_URL}/api/v1/coach/tags/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.tags as GameTag[]
+    const cacheKey = generateCacheKey('coach_user_tags', userId, platform)
+    return withCache(cacheKey, async () => {
+      const data = await this.coachFetch<{ tags: GameTag[] }>(
+        `/api/v1/coach/tags/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+        { authUserId }
+      )
+      return data.tags
+    }, COACH_CACHE_TTL)
   }
 
   static async getGameTags(gameId: string, authUserId: string): Promise<GameTag[]> {
-    const url = new URL(`${API_URL}/api/v1/coach/tags/game/${encodeURIComponent(gameId)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
+    const data = await this.coachFetch<{ tags: GameTag[] }>(
+      `/api/v1/coach/tags/game/${encodeURIComponent(gameId)}`,
+      { authUserId }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.tags as GameTag[]
+    return data.tags
   }
 
   // ========================================================================
@@ -539,35 +389,21 @@ export class CoachingService {
     position: { fen: string; platform: Platform; title?: string; notes?: string; source_game_id?: string; source_move_number?: number; tags?: string[] },
     authUserId: string
   ): Promise<SavedPosition> {
-    const url = new URL(`${API_URL}/api/v1/coach/positions`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(position),
-      },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.position as SavedPosition
+    const data = await this.coachFetch<{ position: SavedPosition }>('/api/v1/coach/positions', {
+      method: 'POST', authUserId, body: position,
+    })
+    return data.position
   }
 
   static async getSavedPositions(userId: string, platform: Platform, authUserId: string): Promise<SavedPosition[]> {
-    const url = new URL(`${API_URL}/api/v1/coach/positions/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.positions as SavedPosition[]
+    const cacheKey = generateCacheKey('coach_positions', userId, platform)
+    return withCache(cacheKey, async () => {
+      const data = await this.coachFetch<{ positions: SavedPosition[] }>(
+        `/api/v1/coach/positions/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+        { authUserId }
+      )
+      return data.positions
+    }, COACH_CACHE_TTL)
   }
 
   static async updatePosition(
@@ -575,33 +411,17 @@ export class CoachingService {
     update: { title?: string; notes?: string; tags?: string[] },
     authUserId: string
   ): Promise<SavedPosition> {
-    const url = new URL(`${API_URL}/api/v1/coach/positions/${encodeURIComponent(positionId)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(update),
-      },
-      TIMEOUT_CONFIG.DEFAULT
+    const data = await this.coachFetch<{ position: SavedPosition }>(
+      `/api/v1/coach/positions/${encodeURIComponent(positionId)}`,
+      { method: 'PUT', authUserId, body: update }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.position as SavedPosition
+    return data.position
   }
 
   static async deletePosition(positionId: string, authUserId: string): Promise<void> {
-    const url = new URL(`${API_URL}/api/v1/coach/positions/${encodeURIComponent(positionId)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'DELETE', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+    await this.coachFetch<unknown>(`/api/v1/coach/positions/${encodeURIComponent(positionId)}`, {
+      method: 'DELETE', authUserId,
+    })
   }
 
   // ========================================================================
@@ -614,18 +434,13 @@ export class CoachingService {
     authUserId: string,
     refresh: boolean = false
   ): Promise<OpeningRepertoire[]> {
-    const url = new URL(`${API_URL}/api/v1/coach/openings/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-    if (refresh) url.searchParams.append('refresh', 'true')
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
+    const params: Record<string, string> = {}
+    if (refresh) params.refresh = 'true'
+    const data = await this.coachFetch<{ repertoire: OpeningRepertoire[] }>(
+      `/api/v1/coach/openings/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+      { authUserId, params }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.repertoire as OpeningRepertoire[]
+    return data.repertoire
   }
 
   static async getOpeningDetail(
@@ -635,17 +450,10 @@ export class CoachingService {
     color: string,
     authUserId: string
   ): Promise<OpeningDetail> {
-    const url = new URL(`${API_URL}/api/v1/coach/openings/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}/${encodeURIComponent(openingFamily)}`)
-    url.searchParams.append('color', color)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
+    return this.coachFetch<OpeningDetail>(
+      `/api/v1/coach/openings/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}/${encodeURIComponent(openingFamily)}`,
+      { authUserId, params: { color } }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    return await response.json() as OpeningDetail
   }
 
   static async getDrillPositions(
@@ -655,20 +463,10 @@ export class CoachingService {
     color: string,
     authUserId: string
   ): Promise<Array<{ fen: string; move_number: number; your_move: string; classification: string; description: string }>> {
-    const url = new URL(`${API_URL}/api/v1/coach/openings/drill`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, platform, opening_family: openingFamily, color }),
-      },
-      TIMEOUT_CONFIG.DEFAULT
+    const data = await this.coachFetch<{ positions: Array<{ fen: string; move_number: number; your_move: string; classification: string; description: string }> }>(
+      '/api/v1/coach/openings/drill',
+      { method: 'POST', authUserId, body: { user_id: userId, platform, opening_family: openingFamily, color } }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
     return data.positions
   }
 
@@ -677,20 +475,9 @@ export class CoachingService {
     confidenceDelta: number,
     authUserId: string
   ): Promise<{ confidence_level: number; next_review: string; days_until_review: number }> {
-    const url = new URL(`${API_URL}/api/v1/coach/openings/drill/complete`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repertoire_id: repertoireId, confidence_delta: confidenceDelta }),
-      },
-      TIMEOUT_CONFIG.DEFAULT
-    )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    return await response.json()
+    return this.coachFetch('/api/v1/coach/openings/drill/complete', {
+      method: 'POST', authUserId, body: { repertoire_id: repertoireId, confidence_delta: confidenceDelta },
+    })
   }
 
   // ========================================================================
@@ -698,62 +485,34 @@ export class CoachingService {
   // ========================================================================
 
   static async getStudyPlan(userId: string, platform: Platform, authUserId: string): Promise<StudyPlan | null> {
-    const url = new URL(`${API_URL}/api/v1/coach/study-plan/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
+    const data = await this.coachFetch<{ plan: StudyPlan | null }>(
+      `/api/v1/coach/study-plan/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+      { authUserId }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.plan as StudyPlan | null
+    return data.plan
   }
 
   static async createStudyPlan(userId: string, platform: Platform, authUserId: string): Promise<StudyPlan> {
-    const url = new URL(`${API_URL}/api/v1/coach/study-plan/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
+    const data = await this.coachFetch<{ plan: StudyPlan }>(
+      `/api/v1/coach/study-plan/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+      { method: 'POST', authUserId }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.plan as StudyPlan
+    return data.plan
   }
 
   static async completeActivity(planId: string, day: number, activityIndex: number, authUserId: string): Promise<StudyPlan> {
-    const url = new URL(`${API_URL}/api/v1/coach/study-plan/${encodeURIComponent(planId)}/activity`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ day, activity_index: activityIndex }),
-      },
-      TIMEOUT_CONFIG.DEFAULT
+    const data = await this.coachFetch<{ plan: StudyPlan }>(
+      `/api/v1/coach/study-plan/${encodeURIComponent(planId)}/activity`,
+      { method: 'POST', authUserId, body: { day, activity_index: activityIndex } }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.plan as StudyPlan
+    return data.plan
   }
 
   static async getGoals(userId: string, platform: Platform, authUserId: string): Promise<UserGoal[]> {
-    const url = new URL(`${API_URL}/api/v1/coach/goals/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`)
-    url.searchParams.append('auth_user_id', authUserId)
-
-    const response = await fetchWithTimeout(
-      url.toString(),
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } },
-      TIMEOUT_CONFIG.DEFAULT
+    const data = await this.coachFetch<{ goals: UserGoal[] }>(
+      `/api/v1/coach/goals/${encodeURIComponent(userId)}/${encodeURIComponent(platform)}`,
+      { authUserId }
     )
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
-    const data = await response.json()
-    return data.goals as UserGoal[]
+    return data.goals
   }
 }

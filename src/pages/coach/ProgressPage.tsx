@@ -23,8 +23,8 @@ import {
 } from 'recharts'
 import { useCoachProgress } from '../../hooks/useCoachingData'
 import { useCoachUser } from '../../hooks/useCoachUser'
-import LoadingModal from '../../components/LoadingModal'
 import { Link } from 'react-router-dom'
+import { CoachPageGuard } from '../../components/coach/CoachPageGuard'
 import type { AdvancedProgressMetrics } from '../../types'
 
 const PERIOD_OPTIONS = [
@@ -44,8 +44,17 @@ const CHART_COLORS = {
   slate: '#94a3b8',
 }
 
+const accentBorderClasses: Record<string, string> = {
+  emerald: 'border-emerald-500/30',
+  blue: 'border-blue-500/30',
+  amber: 'border-amber-500/30',
+  rose: 'border-rose-500/30',
+  purple: 'border-purple-500/30',
+  cyan: 'border-cyan-500/30',
+}
+
 function StatCard({ label, value, subtitle, accent }: { label: string; value: string | number; subtitle?: string; accent?: string }) {
-  const borderClass = accent ? `border-${accent}-500/30` : 'border-white/10'
+  const borderClass = accent ? (accentBorderClasses[accent] || 'border-white/10') : 'border-white/10'
   return (
     <div className={`rounded-2xl border ${borderClass} bg-white/[0.04] p-5`}>
       <p className="text-sm text-slate-400 mb-1">{label}</p>
@@ -94,37 +103,18 @@ const chartTooltipStyle = {
 }
 
 export default function ProgressPage() {
-  const { platform, platformUsername, authenticatedUserId } = useCoachUser()
-  const navigate = useNavigate()
+  const { platform, platformUsername, authenticatedUserId, isLoading } = useCoachUser()
 
-  if (!authenticatedUserId) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400">Please log in to access Coach features</p>
-      </div>
-    )
-  }
-
-  if (!platformUsername) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Connect your chess account</h2>
-          <p className="text-slate-300 mb-6">
-            Link your Chess.com or Lichess account to track your progress.
-          </p>
-          <Link
-            to="/profile"
-            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
-          >
-            Go to Profile to Connect
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  return <ProgressContent platformUsername={platformUsername} platform={platform} />
+  return (
+    <CoachPageGuard
+      isLoading={isLoading}
+      authenticatedUserId={authenticatedUserId}
+      platformUsername={platformUsername}
+      connectMessage="Link your Chess.com or Lichess account to track your progress."
+    >
+      <ProgressContent platformUsername={platformUsername!} platform={platform} />
+    </CoachPageGuard>
+  )
 }
 
 function ProgressContent({
@@ -139,7 +129,14 @@ function ProgressContent({
   const { progress, loading, error } = useCoachProgress(platformUsername, platform, periodDays)
 
   if (loading) {
-    return <LoadingModal isOpen={true} message="Loading progress data..." />
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <p className="text-sm text-slate-400">Loading progress data...</p>
+        </div>
+      </div>
+    )
   }
 
   if (error) {
@@ -626,7 +623,7 @@ function AdvancedMetricsSection({ advanced }: { advanced: AdvancedProgressMetric
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             {/* Time Control Performance */}
             {timeTrouble?.by_time_control && timeTrouble.by_time_control.length > 0 && (
-              <ChartCard title="Accuracy by Time Control">
+              <ChartCard title="Win Rate by Time Control">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={timeTrouble.by_time_control} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 60 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -634,9 +631,12 @@ function AdvancedMetricsSection({ advanced }: { advanced: AdvancedProgressMetric
                     <YAxis type="category" dataKey="category" stroke="rgba(226,232,240,0.4)" fontSize={11} tickLine={false} axisLine={false} />
                     <Tooltip
                       {...chartTooltipStyle}
-                      formatter={(value: number, name: string) => [`${value}%`, name]}
+                      formatter={(value: number, name: string) => {
+                        if (name === 'Games') return [value, name]
+                        return [`${value}%`, name]
+                      }}
                     />
-                    <Bar dataKey="avg_accuracy" fill={CHART_COLORS.cyan} name="Avg Accuracy" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="win_rate" fill={CHART_COLORS.cyan} name="Win Rate" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>

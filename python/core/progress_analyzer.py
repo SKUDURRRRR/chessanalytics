@@ -12,6 +12,79 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+# Maps weakness categories (from get_user_weaknesses) → puzzle bank themes
+WEAKNESS_TO_THEMES = {
+    'tactical':    ['fork', 'pin', 'sacrifice', 'hangingPiece', 'trappedPiece'],
+    'positional':  ['advantage', 'crushing', 'long'],
+    'opening':     ['opening', 'short'],
+    'middlegame':  ['middlegame', 'fork', 'pin', 'sacrifice'],
+    'endgame':     ['endgame', 'bishopEndgame', 'knightEndgame', 'rookEndgame'],
+    'blunders':    ['mateIn1', 'mateIn3', 'hangingPiece', 'fork'],
+}
+
+
+def get_weakness_puzzle_themes(
+    weaknesses: List[Dict[str, Any]],
+    theme_solve_rates: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Map user weaknesses to weighted puzzle themes for personalized selection.
+
+    Args:
+        weaknesses: Weakness list from get_user_weaknesses()
+        theme_solve_rates: {theme: {attempted, correct, rate}} from puzzle history
+
+    Returns:
+        List of {theme, weight, reason} sorted by weight descending
+    """
+    if not weaknesses:
+        return []
+
+    theme_solve_rates = theme_solve_rates or {}
+
+    # Build weighted theme list from weaknesses
+    theme_weights: Dict[str, float] = {}
+    theme_reasons: Dict[str, str] = {}
+
+    for w in weaknesses:
+        category = w.get('category', '')
+        severity = w.get('severity', 'important')
+        description = w.get('description', '')
+        themes = WEAKNESS_TO_THEMES.get(category, [])
+
+        # Weight by severity: critical=3.0, important=1.5
+        base_weight = 3.0 if severity == 'critical' else 1.5
+
+        for t in themes:
+            theme_weights[t] = theme_weights.get(t, 0) + base_weight
+            # Keep the most relevant reason (first one wins)
+            if t not in theme_reasons:
+                theme_reasons[t] = description
+
+    if not theme_weights:
+        return []
+
+    # Adjust weights by puzzle solve rates (feedback loop)
+    for t, w in list(theme_weights.items()):
+        stats = theme_solve_rates.get(t)
+        if stats and stats.get('attempted', 0) >= 3:
+            rate = stats.get('rate', 50)
+            if rate > 75:
+                # Already good at this theme - reduce priority
+                theme_weights[t] = w * 0.3
+            elif rate < 50:
+                # Struggling - boost priority
+                theme_weights[t] = w * 1.5
+
+    # Sort by weight, return top themes
+    result = [
+        {'theme': t, 'weight': round(w, 2), 'reason': theme_reasons.get(t, '')}
+        for t, w in theme_weights.items()
+        if w > 0
+    ]
+    result.sort(key=lambda x: x['weight'], reverse=True)
+    return result
+
 
 class ProgressAnalyzer:
     """Analyzes user progress and generates recommendations."""
@@ -870,9 +943,10 @@ class ProgressAnalyzer:
                 if abs(eg_eval - (mg_eval or 0)) > 150:
                     endgame_decided += 1
 
-        # Phase 2: Opening repertoire and time trouble
-        opening_repertoire = self._compute_opening_repertoire(game_analyses, games_data, game_weeks_map)
-        time_trouble = self._compute_time_trouble_proxy(game_analyses, games_data, game_weeks_map)
+        # Phase 2: Opening repertoire (uses games table directly for full dataset)
+        # and time trouble (degradation from game_analyses, time control from games)
+        opening_repertoire = self._compute_opening_repertoire(games_data, game_analyses, period_days)
+        time_trouble = self._compute_time_trouble_proxy(game_analyses, games_data, game_weeks_map, period_days)
 
         # Phase 3: Deep per-move metrics
         deep_metrics = self._compute_deep_move_metrics(game_analyses, games_data, game_weeks_map)
@@ -936,30 +1010,45 @@ class ProgressAnalyzer:
             return 'unknown'
 
     def _compute_opening_repertoire(
-        self, game_analyses: List[Dict[str, Any]],
-        games_data: List[Dict[str, Any]],
-        game_weeks_map: Dict[str, str]
+        self, games_data: List[Dict[str, Any]],
+        game_analyses: List[Dict[str, Any]],
+        period_days: int = 90
     ) -> Optional[Dict[str, Any]]:
-        """Compute opening repertoire performance by grouping games by opening + color."""
-        games_lookup = self._build_games_lookup(games_data)
+        """Compute opening repertoire performance using games table directly.
 
-        # Group by (opening_family, color)
+        Uses games_data (all imported games) for win rate and game count,
+        and optionally joins with game_analyses for accuracy data.
+        This gives much richer data than requiring the game_analyses join.
+        """
+        cutoff = datetime.utcnow() - timedelta(days=period_days)
+
+        # Build accuracy lookup from game_analyses (game_id -> accuracy)
+        accuracy_lookup: Dict[str, float] = {}
+        for a in game_analyses:
+            gid = a.get('game_id', '')
+            acc = a.get('accuracy', 0)
+            if gid and acc and acc > 0:
+                accuracy_lookup[gid] = acc
+
+        # Group by (opening_family, color) using games table directly
         opening_stats: Dict[Tuple[str, str], Dict[str, Any]] = defaultdict(
             lambda: {'wins': 0, 'losses': 0, 'draws': 0, 'accuracies': [], 'games': 0}
         )
 
-        for a in game_analyses:
-            game_id = a.get('game_id', '')
-            if game_id not in game_weeks_map:
-                continue  # Outside period
-            game = games_lookup.get(game_id)
-            if not game:
-                continue
+        for game in games_data:
+            # Period filter using played_at
+            played_at = game.get('played_at', '')
+            if isinstance(played_at, str) and played_at:
+                try:
+                    game_date = datetime.fromisoformat(played_at.replace('Z', '+00:00')).replace(tzinfo=None)
+                    if game_date < cutoff:
+                        continue
+                except (ValueError, TypeError):
+                    pass
 
             opening = game.get('opening_family') or 'Unknown'
             color = game.get('color') or 'white'
             result = game.get('result', '')
-            accuracy = a.get('accuracy', 0)
 
             key = (opening, color)
             stats = opening_stats[key]
@@ -970,8 +1059,11 @@ class ProgressAnalyzer:
                 stats['losses'] += 1
             elif result == 'draw':
                 stats['draws'] += 1
-            if accuracy and accuracy > 0:
-                stats['accuracies'].append(accuracy)
+
+            # Add accuracy from game_analyses if available
+            game_id = game.get('provider_game_id', '')
+            if game_id in accuracy_lookup:
+                stats['accuracies'].append(accuracy_lookup[game_id])
 
         if not opening_stats:
             return None
@@ -986,7 +1078,11 @@ class ProgressAnalyzer:
             avg_acc = round(
                 sum(stats['accuracies']) / len(stats['accuracies']), 1
             ) if stats['accuracies'] else 0
-            performance = round(win_rate * 0.6 + avg_acc * 0.4, 1)
+            # Performance score: weight win rate more if no accuracy data
+            if avg_acc > 0:
+                performance = round(win_rate * 0.6 + avg_acc * 0.4, 1)
+            else:
+                performance = win_rate
 
             openings.append({
                 'opening_family': opening,
@@ -1020,16 +1116,19 @@ class ProgressAnalyzer:
     def _compute_time_trouble_proxy(
         self, game_analyses: List[Dict[str, Any]],
         games_data: List[Dict[str, Any]],
-        game_weeks_map: Dict[str, str]
+        game_weeks_map: Dict[str, str],
+        period_days: int = 90
     ) -> Optional[Dict[str, Any]]:
-        """Compute time trouble proxy via accuracy degradation in endgame vs earlier phases."""
+        """Compute time trouble proxy via accuracy degradation in endgame vs earlier phases.
+
+        Accuracy degradation uses game_analyses (needs per-phase accuracy).
+        Time control distribution uses games table directly (much more data).
+        """
         games_lookup = self._build_games_lookup(games_data)
+        cutoff = datetime.utcnow() - timedelta(days=period_days)
 
         degradations: List[float] = []
         weekly_degs: Dict[str, List[float]] = defaultdict(list)
-        tc_stats: Dict[str, Dict[str, Any]] = defaultdict(
-            lambda: {'accuracies': [], 'blunders': [], 'games': 0}
-        )
 
         for a in game_analyses:
             game_id = a.get('game_id', '')
@@ -1060,35 +1159,52 @@ class ProgressAnalyzer:
             degradations.append(degradation)
             weekly_degs[wk].append(degradation)
 
-            # Time control stats
-            game = games_lookup.get(game_id)
-            if game:
-                tc = game.get('time_control', '')
-                category = self._parse_time_control_category(tc)
-                if category != 'unknown':
-                    tc_stats[category]['accuracies'].append(a.get('accuracy', 0) or 0)
-                    tc_stats[category]['blunders'].append(a.get('blunders', 0) or 0)
-                    tc_stats[category]['games'] += 1
+        # Time control stats from games table directly (all games, not just analyzed)
+        tc_stats: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {'wins': 0, 'losses': 0, 'draws': 0, 'games': 0}
+        )
+        for game in games_data:
+            played_at = game.get('played_at', '')
+            if isinstance(played_at, str) and played_at:
+                try:
+                    game_date = datetime.fromisoformat(played_at.replace('Z', '+00:00')).replace(tzinfo=None)
+                    if game_date < cutoff:
+                        continue
+                except (ValueError, TypeError):
+                    pass
 
-        if not degradations:
-            return None
-
-        avg_degradation = round(sum(degradations) / len(degradations), 1)
+            tc = game.get('time_control', '')
+            category = self._parse_time_control_category(tc)
+            if category == 'unknown':
+                continue
+            result = game.get('result', '')
+            tc_stats[category]['games'] += 1
+            if result == 'win':
+                tc_stats[category]['wins'] += 1
+            elif result == 'loss':
+                tc_stats[category]['losses'] += 1
+            elif result == 'draw':
+                tc_stats[category]['draws'] += 1
 
         by_time_control = []
         for cat in ['Bullet', 'Blitz', 'Rapid', 'Classical']:
             if cat in tc_stats and tc_stats[cat]['games'] >= 2:
                 stats = tc_stats[cat]
+                total = stats['games']
+                win_rate = round(stats['wins'] / total * 100, 1) if total > 0 else 0
                 by_time_control.append({
                     'category': cat,
-                    'avg_accuracy': round(
-                        sum(stats['accuracies']) / len(stats['accuracies']), 1
-                    ) if stats['accuracies'] else 0,
-                    'avg_blunders': round(
-                        sum(stats['blunders']) / len(stats['blunders']), 1
-                    ) if stats['blunders'] else 0,
-                    'games': stats['games'],
+                    'win_rate': win_rate,
+                    'games': total,
                 })
+
+        has_degradation = len(degradations) > 0
+        has_tc = len(by_time_control) > 0
+
+        if not has_degradation and not has_tc:
+            return None
+
+        avg_degradation = round(sum(degradations) / len(degradations), 1) if degradations else 0
 
         weekly_trend = []
         for wk in sorted(weekly_degs.keys()):

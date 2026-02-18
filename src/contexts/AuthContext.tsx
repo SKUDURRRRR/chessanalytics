@@ -1,6 +1,7 @@
 // Enhanced Authentication Context with Usage Tracking and Linked Chess Accounts
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
 
@@ -41,6 +42,7 @@ interface UsageStats {
 interface AuthContextType {
   user: User | null
   loading: boolean
+  profileLoaded: boolean
   usageStats: UsageStats | null
   signIn: (email: string, password: string) => Promise<{ error: any }>
   signUp: (email: string, password: string) => Promise<{ error: any }>
@@ -63,6 +65,7 @@ const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [profileLoaded, setProfileLoaded] = useState(false)
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null)
 
   // Helper to update user from usage stats response
@@ -78,42 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: any } }) => {
-      if (session?.user) {
-        setUser({
-          id: session.user.id,
-          email: session.user.email!
-        })
-        // Fetch usage stats for authenticated users
-        fetchUsageStats(session.user.id, session.user.email!)
-      }
-      setLoading(false)
-    })
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
-      if (session?.user) {
-        setUser({
-          id: session.user.id,
-          email: session.user.email!
-        })
-        // Fetch usage stats when user logs in
-        fetchUsageStats(session.user.id, session.user.email!)
-      } else {
-        setUser(null)
-        setUsageStats(null)
-      }
-      setLoading(false)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const fetchUsageStats = async (userId: string, email?: string) => {
+  const fetchUsageStats = useCallback(async (userId: string, email?: string) => {
     // Input validation
     if (!userId || typeof userId !== 'string') {
       logger.error('Invalid userId provided to fetchUsageStats')
@@ -166,16 +134,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logger.error('Error fetching usage stats:', error)
       }
       // Don't throw - fail gracefully
+    } finally {
+      setProfileLoaded(true)
     }
-  }
+  }, [updateUserFromStats])
+
+  useEffect(() => {
+    // Listen for auth changes (fires immediately with current session on mount)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email!
+        })
+        fetchUsageStats(session.user.id, session.user.email!)
+      } else {
+        setUser(null)
+        setUsageStats(null)
+        setProfileLoaded(true)
+      }
+      setLoading(false)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [fetchUsageStats])
 
   const refreshUsageStats = useCallback(async () => {
     if (user) {
       await fetchUsageStats(user.id, user.email)
     }
-  }, [user])
+  }, [user, fetchUsageStats])
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string) => {
     // Input validation
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return { error: new Error('Valid email is required') }
@@ -201,9 +193,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.error('Sign in error:', error)
       return { error: error as Error }
     }
-  }
+  }, [])
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = useCallback(async (email: string, password: string) => {
     // Input validation
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return { error: new Error('Valid email is required') }
@@ -236,17 +228,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.error('Sign up error:', error)
       return { error: error as Error }
     }
-  }
+  }, [])
 
-  const signInWithGoogle = async () => {
-    return signInWithOAuth('google')
-  }
-
-  const signInWithChessCom = async () => {
-    return signInWithOAuth('chess_com')
-  }
-
-  const signInWithOAuth = async (provider: 'google' | 'lichess' | 'chess_com', returnTo: string = '/') => {
+  const signInWithOAuth = useCallback(async (provider: 'google' | 'lichess' | 'chess_com', returnTo: string = '/') => {
     // Input validation
     const validProviders = ['google', 'lichess', 'chess_com']
     if (!validProviders.includes(provider)) {
@@ -282,14 +266,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.error('OAuth error:', error)
       return { error: error as Error }
     }
-  }
+  }, [])
 
-  const signOut = async () => {
+  const signInWithGoogle = useCallback(async () => {
+    return signInWithOAuth('google')
+  }, [signInWithOAuth])
+
+  const signInWithChessCom = useCallback(async () => {
+    return signInWithOAuth('chess_com')
+  }, [signInWithOAuth])
+
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut()
     setUsageStats(null)
-  }
+  }, [])
 
-  const resetPassword = async (email: string) => {
+  const resetPassword = useCallback(async (email: string) => {
     // Input validation
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return { error: new Error('Valid email is required') }
@@ -311,9 +303,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.error('Password reset error:', error)
       return { error: error as Error }
     }
-  }
+  }, [])
 
-  const updateProfile = async (data: Record<string, any>) => {
+  const updateProfile = useCallback(async (data: Record<string, any>) => {
     // Input validation
     if (!data || typeof data !== 'object') {
       return { error: new Error('Valid data object is required') }
@@ -351,9 +343,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.error('Profile update error:', error)
       return { error: error as Error }
     }
-  }
+  }, [])
 
-  const linkChessAccount = async (platform: 'chess.com' | 'lichess', username: string) => {
+  const linkChessAccount = useCallback(async (platform: 'chess.com' | 'lichess', username: string) => {
     try {
       const { data: session } = await supabase.auth.getSession()
       if (!session.session) {
@@ -387,9 +379,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.error('Link chess account error:', error)
       return { error: error as Error }
     }
-  }
+  }, [refreshUsageStats])
 
-  const unlinkChessAccount = async (platform: 'chess.com' | 'lichess') => {
+  const unlinkChessAccount = useCallback(async (platform: 'chess.com' | 'lichess') => {
     try {
       const { data: session } = await supabase.auth.getSession()
       if (!session.session) {
@@ -421,9 +413,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.error('Unlink chess account error:', error)
       return { error: error as Error }
     }
-  }
+  }, [refreshUsageStats])
 
-  const completeOnboarding = async () => {
+  const completeOnboarding = useCallback(async () => {
     try {
       const { data: session } = await supabase.auth.getSession()
       if (!session.session) {
@@ -454,11 +446,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.error('Complete onboarding error:', error)
       return { error: error as Error }
     }
-  }
+  }, [])
 
-  const value = {
+  const value = useMemo(() => ({
     user,
     loading,
+    profileLoaded,
     usageStats,
     signIn,
     signUp,
@@ -472,7 +465,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     linkChessAccount,
     unlinkChessAccount,
     completeOnboarding
-  }
+  }), [user, loading, profileLoaded, usageStats, signIn, signUp, signInWithGoogle, signInWithChessCom, signInWithOAuth, signOut, resetPassword, updateProfile, refreshUsageStats, linkChessAccount, unlinkChessAccount, completeOnboarding])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

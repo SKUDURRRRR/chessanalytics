@@ -566,7 +566,7 @@ class ChessCoachingGenerator:
                 temp_board = board.copy()
                 temp_board.pop()  # Go back to before the move
                 move_san = temp_board.san(move)
-            except:
+            except Exception:
                 move_san = move.uci() if hasattr(move, 'uci') else str(move)
 
         # Get player color - CRITICAL for correct greeting
@@ -1449,7 +1449,7 @@ Write the phase transition comment now:"""
                     best_move_obj = chess.Move.from_uci(best_move)
                     best_move_san = board.san(best_move_obj)
                     suggestions.append(f"Your opponent should have played {best_move_san} instead.")
-                except:
+                except Exception:
                     pass
 
             if suggestions:
@@ -1463,7 +1463,7 @@ Write the phase transition comment now:"""
                 best_move_obj = chess.Move.from_uci(best_move)
                 best_move_san = board.san(best_move_obj)
                 suggestions.append(f"Consider {best_move_san} instead.")
-            except:
+            except Exception:
                 pass
 
         # General improvement suggestions based on move quality

@@ -382,7 +382,7 @@ class EnhancedCommentGenerator:
             try:
                 best_move_obj = chess.Move.from_uci(best_move)
                 best_move_san = board.san(best_move_obj)
-            except:
+            except Exception:
                 pass
 
         # Convert PV from UCI to SAN for display (first move is best move, rest is continuation)
@@ -400,7 +400,7 @@ class EnhancedCommentGenerator:
                     # Try to undo the move if we're at the position after
                     try:
                         temp_board.pop()
-                    except:
+                    except Exception:
                         pass
 
                 for uci_move in best_move_pv[:8]:  # Show up to 8 moves in PV
@@ -409,9 +409,9 @@ class EnhancedCommentGenerator:
                         san_move = temp_board.san(move_obj)
                         pv_san.append(san_move)
                         temp_board.push(move_obj)
-                    except:
+                    except Exception:
                         break
-            except:
+            except Exception:
                 pass
 
         if centipawn_loss == 0:
@@ -455,7 +455,7 @@ class EnhancedCommentGenerator:
                     best_move_obj = chess.Move.from_uci(best_move)
                     best_move_san = board.san(best_move_obj)
                     details['improvement_suggestion'] = f"Consider {best_move_san} instead."
-                except:
+                except Exception:
                     details['improvement_suggestion'] = "Consider a more accurate move that improves your position."
 
         return details

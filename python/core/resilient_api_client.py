@@ -187,9 +187,10 @@ class ResilientAPIClient:
             success_threshold=2
         )
 
-        # Cache
+        # Cache (bounded to prevent unbounded memory growth)
         self.cache: Dict[str, CacheEntry] = {}
         self.cache_ttl = timedelta(seconds=cache_ttl_seconds)
+        self._cache_max_size = 500
 
         # Request deduplication
         self.pending_requests: Dict[str, asyncio.Future] = {}
@@ -217,7 +218,13 @@ class ResilientAPIClient:
         return None
 
     def _set_cache(self, cache_key: str, data: Any):
-        """Store response in cache"""
+        """Store response in cache, evicting oldest entries if at capacity."""
+        if len(self.cache) >= self._cache_max_size:
+            self._clean_expired_cache()
+            # If still at capacity after cleaning expired, evict oldest
+            while len(self.cache) >= self._cache_max_size:
+                oldest_key = next(iter(self.cache))
+                del self.cache[oldest_key]
         self.cache[cache_key] = CacheEntry(
             data=data,
             expires_at=datetime.now() + self.cache_ttl

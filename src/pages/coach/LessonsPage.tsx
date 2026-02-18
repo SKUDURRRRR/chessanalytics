@@ -59,7 +59,7 @@ const parseResult = (result: string | undefined, color: string | undefined): 'wi
 
 export default function GameReviewListPage() {
   const { user } = useAuth()
-  const { platform, platformUsername, authenticatedUserId } = useCoachUser()
+  const { platform, platformUsername, authenticatedUserId, isLoading: authLoading } = useCoachUser()
   const navigate = useNavigate()
 
   const [games, setGames] = useState<ReviewableGame[]>([])
@@ -67,35 +67,13 @@ export default function GameReviewListPage() {
   const [error, setError] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<SortOption>('recent')
 
-  if (!authenticatedUserId) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400">Please log in to access game reviews</p>
-      </div>
-    )
-  }
-
-  if (!platformUsername) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Connect your chess account</h2>
-          <p className="text-slate-300 mb-6">
-            Link your Chess.com or Lichess account to review your games with Coach Tal.
-          </p>
-          <Link
-            to="/profile"
-            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
-          >
-            Go to Profile to Connect
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  // Fetch analyzed games with mistakes
+  // Hooks must be called before any conditional returns (React Rules of Hooks)
   useEffect(() => {
+    if (!platformUsername || !platform) {
+      setLoading(false)
+      return
+    }
+
     let cancelled = false
 
     async function fetchReviewableGames() {
@@ -218,6 +196,42 @@ export default function GameReviewListPage() {
     }
     return sorted
   }, [games, sortBy])
+
+  // Auth/loading guards (placed after all hooks to comply with React Rules of Hooks)
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (!authenticatedUserId) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <p className="text-slate-400">Please log in to access game reviews</p>
+      </div>
+    )
+  }
+
+  if (!platformUsername) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
+          <h2 className="text-2xl font-bold text-white mb-4">Connect your chess account</h2>
+          <p className="text-slate-300 mb-6">
+            Link your Chess.com or Lichess account to review your games with Coach Tal.
+          </p>
+          <Link
+            to="/profile"
+            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+          >
+            Go to Profile to Connect
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 p-4 md:p-8">

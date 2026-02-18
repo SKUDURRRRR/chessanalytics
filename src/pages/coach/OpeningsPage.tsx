@@ -4,50 +4,30 @@
  * Aggregates data from all linked chess platforms.
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { OpeningRepertoire, OpeningDetail } from '../../types'
 import { CoachingService } from '../../services/coachingService'
 import { useCoachUser } from '../../hooks/useCoachUser'
+import { CoachPageGuard } from '../../components/coach/CoachPageGuard'
 import { OpeningCard } from '../../components/coach/OpeningCard'
 import { DrillMode } from '../../components/coach/DrillMode'
-import LoadingModal from '../../components/LoadingModal'
 
 export default function OpeningsPage() {
-  const { platformUsername, authenticatedUserId, linkedAccounts } = useCoachUser()
-
-  if (!authenticatedUserId) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400">Please log in to access Coach features</p>
-      </div>
-    )
-  }
-
-  if (!platformUsername && linkedAccounts.length === 0) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Connect your chess account</h2>
-          <p className="text-slate-300 mb-6">
-            Link your Chess.com or Lichess account to analyze your opening repertoire.
-          </p>
-          <Link
-            to="/profile"
-            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
-          >
-            Go to Profile to Connect
-          </Link>
-        </div>
-      </div>
-    )
-  }
+  const { platformUsername, authenticatedUserId, linkedAccounts, isLoading } = useCoachUser()
 
   return (
-    <OpeningsContent
-      authUserId={authenticatedUserId}
-      linkedAccounts={linkedAccounts}
-    />
+    <CoachPageGuard
+      isLoading={isLoading}
+      authenticatedUserId={authenticatedUserId}
+      platformUsername={platformUsername || (linkedAccounts.length > 0 ? linkedAccounts[0].username : null)}
+      connectMessage="Link your Chess.com or Lichess account to analyze your opening repertoire."
+    >
+      <OpeningsContent
+        authUserId={authenticatedUserId!}
+        linkedAccounts={linkedAccounts}
+      />
+    </CoachPageGuard>
   )
 }
 
@@ -166,12 +146,19 @@ function OpeningsContent({
     }
   }
 
-  const whiteOpenings = repertoire.filter((o) => o.color === 'white')
-  const blackOpenings = repertoire.filter((o) => o.color === 'black')
+  const whiteOpenings = useMemo(() => repertoire.filter((o) => o.color === 'white'), [repertoire])
+  const blackOpenings = useMemo(() => repertoire.filter((o) => o.color === 'black'), [repertoire])
   const hasBothPlatforms = linkedAccounts.length > 1
 
   if (loading) {
-    return <LoadingModal isOpen={true} message="Analyzing your opening repertoire..." />
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <p className="text-sm text-slate-400">Analyzing your opening repertoire...</p>
+        </div>
+      </div>
+    )
   }
 
   if (error) {

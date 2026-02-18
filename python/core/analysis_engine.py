@@ -47,8 +47,13 @@ PIECE_VALUES = {
 
 class SyncEnginePool:
     """
-    Simple synchronous engine pool for use in thread pool executors.
+    Synchronous engine pool for use inside asyncio.to_thread() workers.
     Thread-safe pool that reuses Stockfish engines to avoid startup overhead.
+
+    This pool uses threading locks and blocking waits, making it suitable
+    for CPU-bound analysis tasks running in the thread pool executor.
+
+    For async FastAPI endpoint handlers, use StockfishEnginePool from engine_pool.py.
     """
     def __init__(self, stockfish_path: str, max_size: int = 8, config: Optional[dict] = None):
         self.stockfish_path = stockfish_path
@@ -116,7 +121,7 @@ class SyncEnginePool:
             for engine in self._pool:
                 try:
                     engine.quit()
-                except:
+                except Exception:
                     pass
             self._pool.clear()
             self._in_use.clear()
@@ -463,66 +468,27 @@ class ChessAnalysisEngine:
         self.coaching_generator = ChessCoachingGenerator()
 
     def _find_stockfish_path(self, custom_path: Optional[str]) -> Optional[str]:
-        """Find the best available Stockfish executable."""
+        """Find the best available Stockfish executable.
+
+        Delegates to config.py as the single source of truth for path discovery,
+        with a custom_path override for direct specification.
+        """
         if custom_path and os.path.exists(custom_path):
             print(f"[ENGINE] Using custom Stockfish path: {custom_path}")
             return custom_path
 
-        # Check environment variable
-        env_path = os.getenv("STOCKFISH_PATH")
-        if env_path:
-            if os.path.exists(env_path):
-                print(f"[ENGINE] Using Stockfish from STOCKFISH_PATH env: {env_path}")
-                return env_path
-            elif env_path in ["stockfish", "stockfish.exe"] and self._check_command_exists(env_path):
-                print(f"[ENGINE] Using Stockfish from PATH via env: {env_path}")
-                return env_path
-
-        # Determine OS-specific paths
-        import platform
-        is_windows = platform.system() == "Windows"
-
-        if is_windows:
-            # Windows paths for local development
-            possible_paths = [
-                # Local stockfish directory
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), "stockfish", "stockfish-windows-x86-64-avx2.exe"),
-                # Windows winget installation
-                os.path.expanduser("~\\AppData\\Local\\Microsoft\\WinGet\\Packages\\"
-                                 "Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe\\"
-                                 "stockfish\\stockfish-windows-x86-64-avx2.exe"),
-                "stockfish.exe",
-                "stockfish"
-            ]
-        else:
-            # Linux/Unix paths for production (Railway, etc.)
-            possible_paths = [
-                "/usr/games/stockfish",      # Common Debian/Ubuntu location (Railway default)
-                "/usr/bin/stockfish",        # Alternative Linux location
-                "/usr/local/bin/stockfish",  # Custom installation location
-                "stockfish"                   # Try PATH as fallback
-            ]
-
-        print(f"[ENGINE] Checking Stockfish paths: {possible_paths}")
-        for path in possible_paths:
-            if os.path.exists(path):
-                print(f"[ENGINE] Found Stockfish at: {path}")
-                return path
-            elif path in ["stockfish", "stockfish.exe"] and self._check_command_exists(path):
-                print(f"[ENGINE] Found Stockfish in PATH: {path}")
-                return path
+        # Delegate to config.py for path discovery
+        try:
+            from .config import get_config
+            config_path = get_config().stockfish.path
+            if config_path:
+                print(f"[ENGINE] Using Stockfish from config: {config_path}")
+                return config_path
+        except Exception as e:
+            print(f"[ENGINE] Config-based path lookup failed: {e}")
 
         print(f"[ENGINE] No Stockfish executable found")
         return None
-
-    def _check_command_exists(self, command: str) -> bool:
-        """Check if a command exists in the system PATH."""
-        try:
-            import subprocess
-            subprocess.run([command, "--version"], capture_output=True, timeout=5)
-            return True
-        except:
-            return False
 
     def clear_caches(self) -> dict:
         """
@@ -2010,7 +1976,7 @@ class ChessAnalysisEngine:
                                     'Threads': 1,
                                     'Hash': 32,  # Small hash for speed
                                 })
-                            except:
+                            except Exception:
                                 pass  # Some engines don't support all options
 
                             # Analyze position BEFORE the move to get best move
@@ -2310,11 +2276,11 @@ class ChessAnalysisEngine:
                     try:
                         move_san_debug = move_san  # Use SAN notation from above (calculated before push)
                         move_uci_debug = current_move.uci()  # Also keep UCI for debugging
-                    except:
+                    except Exception:
                         try:
                             move_san_debug = current_move.uci()  # Fallback to UCI
                             move_uci_debug = current_move.uci()
-                        except:
+                        except Exception:
                             move_san_debug = str(current_move)
                             move_uci_debug = str(current_move)
 
@@ -2324,7 +2290,7 @@ class ChessAnalysisEngine:
                             f.write(f"\n{'='*80}\n")
                             f.write(f"MOVE: {move_san_debug} ({move_uci_debug})\n")
                             f.write(f"{'='*80}\n")
-                    except:
+                    except Exception:
                         pass
 
                     # DEBUG: Always log centipawn loss for ALL moves (before the check)
@@ -2332,7 +2298,7 @@ class ChessAnalysisEngine:
                     try:
                         with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                             f.write(f"[BRILLIANT DEBUG] {move_san_debug} ({move_uci_debug}): centipawn_loss={centipawn_loss:.1f}, best_cp={best_cp:.1f}, actual_cp={actual_cp:.1f}\n")
-                    except:
+                    except Exception:
                         pass
 
                     # KEY INSIGHT: Chess.com allows higher centipawn loss for clear tactical sacrifices
@@ -2379,7 +2345,7 @@ class ChessAnalysisEngine:
                                             try:
                                                 with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                     f.write(debug_msg + "\n")
-                                            except:
+                                            except Exception:
                                                 pass
 
                         # Always restore board state if we haven't already
@@ -2391,10 +2357,10 @@ class ChessAnalysisEngine:
                             # Try to restore if board is invalid (move not on board)
                             if not any(current_move == m for m in board.legal_moves):
                                 board.push(current_move)
-                        except:
+                        except Exception:
                             try:
                                 board.push(current_move)  # Fallback: just try to push
-                            except:
+                            except Exception:
                                 pass
 
                     if centipawn_loss <= tactical_sacrifice_threshold:  # Dynamic threshold: 10cp default, 60cp for clear tactical sacrifices
@@ -2410,7 +2376,7 @@ class ChessAnalysisEngine:
                         try:
                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                 f.write(f"[BRILLIANT DEBUG] {move_san_debug} SKIPPED: centipawn_loss too high ({centipawn_loss:.1f} > {tactical_sacrifice_threshold})\n")
-                        except:
+                        except Exception:
                             pass
                         # Skip brilliant detection if centipawn loss is too high
                         is_brilliant = False
@@ -2715,7 +2681,7 @@ class ChessAnalysisEngine:
                                         try:
                                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                 f.write(debug_msg + "\n")
-                                        except:
+                                        except Exception:
                                             pass
 
                                     # Additional filter: If it's a Queen capture and Queen can't be captured, it's NOT a sacrifice
@@ -2797,7 +2763,7 @@ class ChessAnalysisEngine:
                                         try:
                                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                 f.write(debug_msg + "\n")
-                                        except:
+                                        except Exception:
                                             pass
 
                             # Type 2: Non-Capture Sacrifices (moving piece to hanging square OR leaving other pieces hanging)
@@ -3099,14 +3065,14 @@ class ChessAnalysisEngine:
                                                             if len(attackers) > 0:  # Piece can be captured
                                                                 # Override - it's a clear tactical sacrifice
                                                                 brilliant_via_sacrifice = True
-                                    except:
+                                    except Exception:
                                         pass
                                     finally:
                                         # Ensure board is restored (only push if we didn't already push it)
                                         if not board_restored:
                                             try:
                                                 board.push(move)
-                                            except:
+                                            except Exception:
                                                 pass
 
                                 # Require non-obvious: move should not be forced or trivial
@@ -3128,7 +3094,7 @@ class ChessAnalysisEngine:
                                         try:
                                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                 f.write(debug_msg + "\n")
-                                        except:
+                                        except Exception:
                                             pass
                                         if num_legal < 2:
                                             brilliant_via_sacrifice = False
@@ -3137,7 +3103,7 @@ class ChessAnalysisEngine:
                                             try:
                                                 with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                     f.write(debug_msg + "\n")
-                                            except:
+                                            except Exception:
                                                 pass
                                     except Exception as e:
                                         debug_msg = f"[BRILLIANT DEBUG] {move_san_debug}: error in non-obvious check: {e}"
@@ -3145,7 +3111,7 @@ class ChessAnalysisEngine:
                                         try:
                                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                 f.write(debug_msg + "\n")
-                                        except:
+                                        except Exception:
                                             pass
                             else:
                                 # Piece can't be captured - this is just winning material, not a sacrifice
@@ -3265,7 +3231,7 @@ class ChessAnalysisEngine:
                                 f.write(f"  brilliant_via_sacrifice={brilliant_via_sacrifice}\n")
                                 f.write(f"  sacrifice_trigger={sacrifice_trigger}\n")
                                 f.write(f"  clear_tactical_sacrifice={clear_tactical_sacrifice}\n")
-                        except:
+                        except Exception:
                             pass
 
                     # Convert evaluation to dict

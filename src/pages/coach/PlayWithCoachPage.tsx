@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Chessboard } from 'react-chessboard'
-import { Chess, type Square } from 'chess.js'
+import { Chess, Move, type Square } from 'chess.js'
 import { CoachingService } from '../../services/coachingService'
 import UnifiedAnalysisService from '../../services/unifiedAnalysisService'
 import { fetchGameAnalysisData } from '../../services/gameAnalysisService'
@@ -19,7 +19,7 @@ import { config } from '../../lib/config'
 import { supabase } from '../../lib/supabase'
 import type { ProcessedMove } from '../../utils/moveProcessor'
 import { TalCoachIcon } from '../../components/ui/TalCoachIcon'
-import { ChatPositionContext } from '../../types'
+import { ChatPositionContext, MoveAnalysisEntry } from '../../types'
 import { useCoachChat } from '../../contexts/CoachChatContext'
 import { useChessSound } from '../../hooks/useChessSound'
 import { useChessSoundSettings } from '../../contexts/ChessSoundContext'
@@ -42,18 +42,29 @@ type CoachingCommentsMap = Map<number, MoveWithComment>
 /**
  * Extract move analysis from the backend response, handling all known response shapes.
  */
-function extractMoveAnalysis(data: any): any | null {
+interface AnalysisApiResponse {
+  data?: {
+    move?: string
+    move_san?: string
+    moves_analysis?: Record<string, unknown>[]
+    [key: string]: unknown
+  }
+  moves_analysis?: Record<string, unknown>[]
+  [key: string]: unknown
+}
+
+function extractMoveAnalysis(data: AnalysisApiResponse): Record<string, unknown> | null {
   if (!data?.data) return null
   // Shape 1: Single move analysis (data.data IS the MoveAnalysis)
   if (data.data.move || data.data.move_san) {
-    return data.data
+    return data.data as Record<string, unknown>
   }
   // Shape 2: Game analysis with moves_analysis array
-  if (data.data.moves_analysis?.length > 0) {
+  if (data.data.moves_analysis && data.data.moves_analysis.length > 0) {
     return data.data.moves_analysis[0]
   }
   // Shape 3: Root-level moves_analysis (legacy)
-  if (data.moves_analysis?.length > 0) {
+  if (data.moves_analysis && data.moves_analysis.length > 0) {
     return data.moves_analysis[0]
   }
   return null
@@ -386,7 +397,7 @@ export default function PlayWithCoachPage() {
   }
 
   // Analyze a move on-demand for coaching feedback
-  const analyzeMoveForCoaching = useCallback(async (fenBefore: string, move: any, moveNumber: number, halfMoveIndex: number) => {
+  const analyzeMoveForCoaching = useCallback(async (fenBefore: string, move: Move, moveNumber: number, halfMoveIndex: number) => {
     if (!user?.id) return
 
     if (analyzingMoveRef.current?.moveNumber === moveNumber &&
@@ -499,8 +510,9 @@ export default function PlayWithCoachPage() {
 
     try {
       let attempts = 0
-      const maxAttempts = 20
+      const maxAttempts = 6
       let analysisData = null
+      let delay = 2000
 
       while (attempts < maxAttempts) {
         try {
@@ -508,23 +520,25 @@ export default function PlayWithCoachPage() {
 
           if (result.analysis?.moves_analysis) {
             const movesWithComments = result.analysis.moves_analysis.filter(
-              (move: any) => move.coaching_comment && move.coaching_comment.trim() &&
+              (move: MoveAnalysisEntry) => move.coaching_comment && move.coaching_comment.trim() &&
                 !isRawEngineOutput(move.coaching_comment)
             )
 
-            if (movesWithComments.length > 0 || attempts >= 5) {
+            if (movesWithComments.length > 0 || attempts >= 3) {
               analysisData = result
               break
             }
           }
 
-          await new Promise(resolve => setTimeout(resolve, 5000))
+          await new Promise(resolve => setTimeout(resolve, delay))
+          delay = Math.min(delay * 1.5, 10000)
           attempts++
         } catch (err) {
           console.error('Error fetching analysis:', err)
           attempts++
           if (attempts >= maxAttempts) break
-          await new Promise(resolve => setTimeout(resolve, 5000))
+          await new Promise(resolve => setTimeout(resolve, delay))
+          delay = Math.min(delay * 1.5, 10000)
         }
       }
 
@@ -533,7 +547,7 @@ export default function PlayWithCoachPage() {
         const moves = analysisData.analysis.moves_analysis
 
         const chess = new Chess()
-        moves.forEach((move: any, idx: number) => {
+        moves.forEach((move: MoveAnalysisEntry, idx: number) => {
           try {
             const moveNumber = Math.floor(idx / 2) + 1
             const isUserMove = move.is_user_move ?? (idx % 2 === (playerColor === 'white' ? 0 : 1))

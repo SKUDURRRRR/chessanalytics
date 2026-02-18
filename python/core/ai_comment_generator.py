@@ -1622,7 +1622,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
                                     temp_board.push(move_obj)
                                 else:
                                     break
-                            except:
+                            except Exception:
                                 break
 
                     if pv_san:
