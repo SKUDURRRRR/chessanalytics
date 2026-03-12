@@ -26,10 +26,7 @@ export default function ProfilePage() {
   const [hasPasswordAuth, setHasPasswordAuth] = useState(false)
 
   useEffect(() => {
-    if (!user) {
-      navigate('/login')
-      return
-    }
+    if (!user) return
 
     // Check if user has email/password authentication
     const checkPasswordAuth = async () => {
@@ -486,7 +483,7 @@ export default function ProfilePage() {
         />
 
         {/* Usage Stats */}
-        {usageStats && (
+        {usageStats ? (
           <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
             <h2 className="text-xl font-bold text-white mb-4">Usage Statistics</h2>
 
@@ -648,6 +645,27 @@ export default function ProfilePage() {
                 )}
               </div>
             )}
+          </div>
+        ) : (
+          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
+            <h2 className="text-xl font-bold text-white mb-4">Usage Statistics</h2>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-slate-300">Account Tier</span>
+                  <span className="text-white font-semibold">Free</span>
+                </div>
+              </div>
+              <p className="text-sm text-slate-400">Usage data is currently unavailable. Please check your connection or try again later.</p>
+              <div className="mt-4">
+                <a
+                  href="/pricing"
+                  className="block w-full text-center rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30"
+                >
+                  Upgrade to Pro for Unlimited Access
+                </a>
+              </div>
+            </div>
           </div>
         )}
 

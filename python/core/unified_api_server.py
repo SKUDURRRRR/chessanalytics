@@ -111,6 +111,12 @@ print_performance_config(performance_config)
 cors_origins = config.api.cors_origins or ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"]
 print(f"CORS Origins configured: {cors_origins}")
 
+# Allow Vercel preview deployments via regex pattern (CORS_ORIGIN_REGEX env var)
+# Default pattern matches *.vercel.app for Vercel preview/staging deployments
+cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+if cors_origin_regex:
+    print(f"CORS Origin Regex: {cors_origin_regex}")
+
 # Use production CORS config if we have custom origins, otherwise use default
 if config.api.cors_origins:
     cors_config = CORSSecurityConfig(
@@ -689,9 +695,11 @@ async def rate_limit_exception_handler(request: Request, exc: RateLimitError):
 app.add_exception_handler(Exception, global_exception_handler)
 
 # CORS middleware with secure configuration
+# allow_origin_regex enables Vercel preview/staging deployments (*.vercel.app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_config.allowed_origins,
+    allow_origin_regex=cors_origin_regex if cors_origin_regex else None,
     allow_credentials=cors_config.allow_credentials,
     allow_methods=cors_config.allowed_methods,
     allow_headers=cors_config.allowed_headers,

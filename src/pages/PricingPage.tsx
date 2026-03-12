@@ -15,6 +15,77 @@ interface PaymentTier {
   features: string[]
 }
 
+// Fallback pricing tiers shown when backend is unreachable
+const FALLBACK_TIERS: PaymentTier[] = [
+  {
+    id: 'free',
+    name: 'Free',
+    description: 'Perfect for trying out chess analytics',
+    price_monthly: 0,
+    price_yearly: 0,
+    import_limit: 100,
+    analysis_limit: 5,
+    features: [
+      '5 game analyses per day',
+      '100 game imports per day',
+      'New Games Auto Import',
+      'Advanced chess analytics',
+      'Deep analysis with Stockfish',
+      'Opening repertoire analysis',
+      'Personality insights',
+      'Position exploration',
+      'Tal inspired comments',
+      'Playstyle analysis',
+      'Learning suggestions',
+    ],
+  },
+  {
+    id: 'pro_monthly',
+    name: 'Pro Monthly',
+    description: 'Unlimited access to all chess analytics features',
+    price_monthly: 5.45,
+    price_yearly: null,
+    import_limit: null,
+    analysis_limit: null,
+    features: [
+      'Unlimited game imports',
+      'Unlimited game analyses',
+      'New Games Auto Import',
+      'Advanced chess analytics',
+      'Deep analysis with Stockfish',
+      'Opening repertoire analysis',
+      'Personality insights',
+      'Position exploration',
+      'Tal inspired comments',
+      'Playstyle analysis',
+      'Learning suggestions',
+    ],
+  },
+  {
+    id: 'pro_yearly',
+    name: 'Pro Yearly',
+    description: 'Save 25% with annual billing',
+    price_monthly: null,
+    price_yearly: 49.05,
+    import_limit: null,
+    analysis_limit: null,
+    features: [
+      'Unlimited game imports',
+      'Unlimited game analyses',
+      'New Games Auto Import',
+      'Advanced chess analytics',
+      'Deep analysis with Stockfish',
+      'Opening repertoire analysis',
+      'Personality insights',
+      'Position exploration',
+      'Tal inspired comments',
+      'Playstyle analysis',
+      'Learning suggestions',
+      '25% savings vs monthly',
+    ],
+  },
+]
+
 export default function PricingPage() {
   const { user, usageStats } = useAuth()
   const [tiers, setTiers] = useState<PaymentTier[]>([])
@@ -51,12 +122,12 @@ export default function PricingPage() {
         const errorText = await response.text()
         console.error('❌ API Error Response:', errorText)
         logger.warn('Failed to fetch pricing tiers:', response.status)
-        // Fail gracefully - UI will show empty state
+        setTiers(FALLBACK_TIERS)
       }
     } catch (error) {
       console.error('❌ Fetch error:', error)
-      logger.error('Error fetching tiers:', error)
-      // Fail gracefully - UI will show empty state
+      logger.error('Error fetching tiers, using fallback:', error)
+      setTiers(FALLBACK_TIERS)
     } finally {
       setLoading(false)
     }

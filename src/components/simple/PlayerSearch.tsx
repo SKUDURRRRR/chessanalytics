@@ -32,7 +32,7 @@ interface PlayerSearchProps {
 
 export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedPlatform, setSelectedPlatform] = useState<'lichess' | 'chess.com'>('lichess')
+  const [selectedPlatform, setSelectedPlatform] = useState<'lichess' | 'chess.com'>('chess.com')
   const [isSearching, setIsSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [showResults, setShowResults] = useState(false)

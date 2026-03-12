@@ -1,8 +1,8 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
-import { AuthProvider } from './contexts/AuthContext'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ChessSoundProvider } from './contexts/ChessSoundContext'
 import { CoachChatProvider } from './contexts/CoachChatContext'
 const CoachChatPanel = lazy(() => import('./components/coach/CoachChatPanel').then(m => ({ default: m.CoachChatPanel })))
@@ -80,6 +80,22 @@ function PageLoader() {
   )
 }
 
+// Route guard: requires authentication (waits for auth to initialize)
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth()
+  if (loading) return <PageLoader />
+  if (!user) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+// Route guard: redirects authenticated users away (e.g., login/signup pages)
+function PublicOnlyRoute({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth()
+  if (loading) return <PageLoader />
+  if (user) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 function App() {
   return (
     <PageErrorBoundary>
@@ -96,11 +112,11 @@ function App() {
                   <Route path="/simple-analytics" element={<ComponentErrorBoundary><SimpleAnalyticsPage /></ComponentErrorBoundary>} />
                   <Route path="/profile/:userId/:platform" element={<ComponentErrorBoundary><SimpleAnalyticsPage /></ComponentErrorBoundary>} />
                   <Route path="/analysis/:platform/:userId/:gameId" element={<ComponentErrorBoundary><GameAnalysisPage /></ComponentErrorBoundary>} />
-                  <Route path="/login" element={<ComponentErrorBoundary><LoginPage /></ComponentErrorBoundary>} />
-                  <Route path="/signup" element={<ComponentErrorBoundary><SignUpPage /></ComponentErrorBoundary>} />
+                  <Route path="/login" element={<ComponentErrorBoundary><PublicOnlyRoute><LoginPage /></PublicOnlyRoute></ComponentErrorBoundary>} />
+                  <Route path="/signup" element={<ComponentErrorBoundary><PublicOnlyRoute><SignUpPage /></PublicOnlyRoute></ComponentErrorBoundary>} />
                   <Route path="/forgot-password" element={<ComponentErrorBoundary><ForgotPasswordPage /></ComponentErrorBoundary>} />
                   <Route path="/reset-password" element={<ComponentErrorBoundary><ResetPasswordPage /></ComponentErrorBoundary>} />
-                  <Route path="/profile" element={<ComponentErrorBoundary><ProfilePage /></ComponentErrorBoundary>} />
+                  <Route path="/profile" element={<ComponentErrorBoundary><ProtectedRoute><ProfilePage /></ProtectedRoute></ComponentErrorBoundary>} />
                   <Route path="/pricing" element={<ComponentErrorBoundary><PricingPage /></ComponentErrorBoundary>} />
                   <Route path="/terms" element={<ComponentErrorBoundary><TermsOfServicePage /></ComponentErrorBoundary>} />
                   <Route path="/privacy" element={<ComponentErrorBoundary><PrivacyPolicyPage /></ComponentErrorBoundary>} />

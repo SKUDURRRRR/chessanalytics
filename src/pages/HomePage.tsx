@@ -125,8 +125,8 @@ export default function HomePage() {
   }, [user, navigate])
 
   const handlePlayerSelect = (userId: string, platform: 'lichess' | 'chess.com') => {
-    // Redirect directly to the full user profile page
-    window.location.href = `/simple-analytics?user=${userId}&platform=${platform}`
+    // Navigate to the full user profile page using React Router
+    navigate(`/simple-analytics?user=${encodeURIComponent(userId)}&platform=${encodeURIComponent(platform)}`)
   }
 
   const howItWorksSteps = [
