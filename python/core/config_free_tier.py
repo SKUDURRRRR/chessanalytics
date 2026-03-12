@@ -84,15 +84,15 @@ STARTER_TIER_CONFIG = TierConfig(
 
 
 # Railway Hobby Tier Configuration (8 GB RAM, 8 vCPU)
-# Phase 1: Speed + Accuracy optimizations
+# Cost-optimized: Reduced memory footprint for scale-to-zero efficiency
 RAILWAY_HOBBY_CONFIG = TierConfig(
-    # Analysis settings - optimized for Railway Hobby tier
+    # Analysis settings - optimized for Railway Hobby tier with lower memory
     analysis_depth=14,          # Increased from 12 (better accuracy)
     skill_level=20,             # Maximum strength (not 10!)
     time_limit=0.8,             # Faster than 1.0s
     threads=1,                  # Deterministic (not 4!)
-    hash_size=96,               # Better balance (not 128)
-    max_concurrent_analyses=4,  # Conservative for vCPU (not 6)
+    hash_size=32,               # Reduced from 96 MB (save memory, still accurate for depth 14)
+    max_concurrent_analyses=2,  # Reduced from 4 (sufficient for 15-25 daily users)
     enable_deep_mode=True,      # Enable deep analysis
     max_batch_size=10,          # Larger batches
 
@@ -106,17 +106,17 @@ RAILWAY_HOBBY_CONFIG = TierConfig(
 )
 
 # Railway Pro Tier Configuration (Railway Pro: Unlimited hours, scalable resources)
-# Optimized configuration with memory-efficient engine pooling and caching
-# After memory optimizations: baseline ~400 MB (down from 1.4 GB)
+# Cost-optimized: Reduced memory footprint for scale-to-zero efficiency
+# After memory optimizations: baseline ~250 MB (down from 1.4 GB)
 # Speed optimizations: Phase-based time limits, skip redundant analysis, opening book, caching
 RAILWAY_PRO_CONFIG = TierConfig(
-    # Analysis settings - optimized for Railway Pro with memory efficiency and speed
+    # Analysis settings - optimized for Railway Pro with lower memory footprint
     analysis_depth=14,          # High accuracy
     skill_level=20,             # Maximum strength
     time_limit=0.3,             # Base time limit (phase-based system uses 0.1s-0.5s dynamically)
     threads=1,                  # Deterministic results
-    hash_size=96,               # Balanced for pooled engines
-    max_concurrent_analyses=4,  # Conservative start (can increase to 6-8 after monitoring)
+    hash_size=32,               # Reduced from 96 MB (save memory, still accurate for depth 14)
+    max_concurrent_analyses=2,  # Reduced from 4 (sufficient for 15-25 daily users)
     enable_deep_mode=True,      # Full deep analysis support
     max_batch_size=10,          # Can increase to 15-20 after monitoring
 
