@@ -3,6 +3,7 @@
  * Main overview page for Coach tab
  */
 
+import { Link } from 'react-router-dom'
 import { WeaknessCard } from '../../components/coach/WeaknessCard'
 import { StrengthCard } from '../../components/coach/StrengthCard'
 import { useCoachDashboard } from '../../hooks/useCoachingData'
