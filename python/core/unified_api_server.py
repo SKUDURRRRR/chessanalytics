@@ -265,7 +265,7 @@ def _get_progress_analyzer():
     global _progress_analyzer
     if _progress_analyzer is None:
         from .progress_analyzer import ProgressAnalyzer
-        _progress_analyzer = ProgressAnalyzer()
+        _progress_analyzer = ProgressAnalyzer(supabase_service)
     return _progress_analyzer
 
 # Initialize Supabase clients with fallback for missing config
