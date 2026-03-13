@@ -1,127 +1,94 @@
 # Chess Analytics - AI Agent Instructions
 
+For comprehensive project context, see [CLAUDE.md](../CLAUDE.md) in the project root.
+
 ## Project Overview
 
-This is a chess analytics platform built with React (frontend), Python FastAPI (backend), and Supabase (database). It provides player analysis, game insights, and personality scoring.
+Chess analytics platform built with React (frontend), Python FastAPI (backend), and Supabase (database). Provides player analysis, game insights, personality scoring, and AI coaching.
 
 Key components:
-- Frontend: TypeScript + React + Tailwind CSS
-- Backend: Python FastAPI + Stockfish chess engine
-- Database: PostgreSQL (Supabase) with 4 main tables
-- External: Integration with Lichess and Chess.com APIs
+- Frontend: TypeScript + React 18 + Tailwind CSS (port 3000)
+- Backend: Python FastAPI + Stockfish 17.1 engine (port 8002)
+- Database: PostgreSQL (Supabase) with RLS
+- AI: Google Gemini + Anthropic Claude for coaching comments
+- Payments: Stripe
+- Deploy: Vercel (frontend), Railway (backend)
 
 ## Critical Architecture Patterns
 
 ### Data Flow
 ```
-Frontend → Services → Supabase/Python Backend → External APIs
+Frontend -> Services -> Supabase/Python Backend -> External APIs
 ```
-Example: Player search in `src/components/simple/PlayerSearch.tsx` flows through:
-1. `AutoImportService` → Fetch games from Lichess/Chess.com
-2. `AnalysisService` → Process with Python backend
-3. Store in Supabase tables → Display results
+Player search in `src/components/simple/PlayerSearch.tsx` flows through:
+1. `AutoImportService` -> Fetch games from Lichess/Chess.com
+2. `UnifiedAnalysisService` -> Process with Python backend
+3. Store in Supabase tables -> Display results
 
 ### Component Structure
 - Simple components (`src/components/simple/`) - Core analytics
 - Deep components (`src/components/deep/`) - Advanced analysis
-- Each analytics feature follows: Search → Import → Analyze → Display
+- Debug components (`src/components/debug/`) - Diagnostic/analysis views
+- Chess components (`src/components/chess/`) - Chess UI (boards, arrows)
+- Each analytics feature follows: Search -> Import -> Analyze -> Display
 
 ### Database Schema
-Four core tables with relationships:
+Core tables with relationships:
 - `games` - Core chess game data
-- `user_profiles` - User profile management 
-- `game_analyses` - Analysis results
-- `game_features` - Detailed game feature extraction
+- `games_pgn` - PGN content storage
+- `game_analyses` - Stockfish analysis results
+- `move_analyses` - Move-by-move analysis data
+- `unified_analyses` - Consolidated analysis view
+- `user_profiles` - User profile management
+- `user_subscriptions` - Subscription tier tracking
+- `user_usage` - Rate limiting tracking
 
 ## Development Workflow
 
 ### Setting Up
 ```bash
-# 1. Install dependencies
 npm install
 cd python && pip install -r requirements.txt
+cp env.example .env.local  # Edit with your Supabase credentials
+```
 
-# 2. Configure environment
-cp env.example .env  # Edit with your Supabase credentials
+### Running
+```bash
+# Backend (required for analysis)
+cd python && python main.py    # Runs on port 8002
 
-# 3. Start backend (required for deep analysis)
-./start-backend.ps1
+# Frontend
+npm run dev                     # Runs on port 3000
 ```
 
 ### Testing
-- Run health check: `npm test`
-- Test contracts: `npm run test:contract`
-- Test frontend: `npm run test:fe`
-- Test imports: `npm run test:import`
+```bash
+npm test           # Vitest unit tests
+npm run e2e        # Playwright E2E tests
+pytest python/tests/  # Backend tests
+```
 
-### Common Patterns
-
-1. **Error Handling**
-   - Use `ErrorBoundary` for React components
-   - Backend errors structured as `{ success: boolean, message: string }`
-   - See `src/components/ErrorBoundary.tsx` for example
-
-2. **Analytics Components**
-   - Import data through service layer
-   - Handle loading/error states
-   - Use TypeScript interfaces
-   Example:
-   ```tsx
-   import { AnalysisService } from '../services/analysisService'
-   import { ErrorBoundary } from '../components/ErrorBoundary'
-   ```
-
-3. **Data Validation**
-   - Frontend: Zod schemas (see `src/services/simpleAnalytics.ts`)
-   - Backend: Pydantic models
-   - Database: RLS policies and constraints
-
-## Project-Specific Conventions
+## Conventions
 
 ### Code Organization
 - Services in `src/services/` handle data fetching and processing
 - Utils in `src/utils/` for shared helper functions
-- Components grouped by complexity (simple/deep)
+- Components grouped by complexity (simple/deep/debug/chess)
 
 ### Naming Conventions
-- Analysis components end with `Analytics` or `Analysis`
-- Service files end with `Service.ts`
-- Utility files end with `Utils.ts`
+- Components: PascalCase (e.g., `UnifiedChessAnalysis.tsx`)
+- Services: camelCase files ending with `Service.ts`
+- Python: snake_case files and functions, PascalCase classes
 
 ### State Management
-- React Context for auth state
+- React Context for auth state (`AuthContext`) and sound settings (`ChessSoundContext`)
 - Local component state for UI
-- Supabase for real-time updates
+- Service layer with caching for API calls
 
-## Integration Points
-
-### External APIs
-- Lichess API: Game history and player data
-- Chess.com API: Player statistics
-- Handle rate limits and pagination
-
-### Python Backend
-- REST API on `localhost:8001`
-- Health endpoint at `/health`
-- Analysis endpoints in `docs/API.md`
-
-### Database
-- Direct Supabase queries for simple data
-- Edge functions for complex operations
-- RLS policies for security
-
-## Common Workflows
-
-1. **Adding Analytics Features**
-   - Create service in `src/services/`
-   - Add component in `src/components/simple/` or `src/components/deep/`
-   - Update database schema if needed
-   - Add tests and documentation
-
-2. **Debugging Analysis**
-   - Check Python backend logs
-   - Verify Supabase connection
-   - Validate analysis parameters
-   - Test with sample games
-
-Remember: Prefer simple, direct solutions over complex implementations. The project started as a simplified version of a more complex system.
+## Common Pitfalls
+- Backend port is **8002**, not 8001
+- Frontend env vars must use `VITE_` prefix
+- Chess.com usernames are case-insensitive (lowercase); Lichess usernames are case-sensitive
+- Never use `any` type in TypeScript - use proper types
+- Never hardcode API URLs - use config
+- Never expose internal errors to users

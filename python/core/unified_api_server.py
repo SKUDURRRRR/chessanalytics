@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Unified Chess Analysis API Server
 A single, comprehensive API that consolidates all analysis functionality.
@@ -30,6 +30,7 @@ except ImportError as e:
     print(f"[ERROR] Stripe library import failed: {e}")
     print("   Run: pip install stripe>=7.0.0")
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,11 +43,17 @@ import re
 import uvicorn
 import asyncio
 import uuid
+import traceback
 from datetime import datetime, timezone
 import time
 from supabase import create_client, Client
 from jose import jwt as jose_jwt
 import logging
+
+# Suppress harmless asyncio connection cleanup errors on Windows
+# These occur when sockets are closed during cleanup and are not actual errors
+asyncio_logger = logging.getLogger('asyncio')
+asyncio_logger.setLevel(logging.WARNING)  # Suppress ERROR level, but keep CRITICAL visible
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -77,6 +84,17 @@ from .error_handlers import (
 # Import opening normalization utilities
 from .opening_utils import normalize_opening_name, get_opening_name_from_eco_code
 
+# Import resilient API client
+from .resilient_api_client import get_api_client as get_resilient_api_client
+
+# Import Coach modules
+from .lesson_generator import LessonGenerator
+from .puzzle_generator import PuzzleGenerator
+from .puzzle_rating import PuzzleRatingEngine
+from .progress_analyzer import ProgressAnalyzer, get_weakness_puzzle_themes
+from .player_profiles import FAMOUS_PLAYERS
+from .opening_style_profiles import OPENING_STYLES
+
 # Load environment configuration
 from .config import get_config
 config = get_config()
@@ -92,6 +110,12 @@ print_performance_config(performance_config)
 # Initialize secure CORS configuration
 cors_origins = config.api.cors_origins or ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"]
 print(f"CORS Origins configured: {cors_origins}")
+
+# Allow Vercel preview deployments and production domain via regex pattern (CORS_ORIGIN_REGEX env var)
+# Default pattern matches *.vercel.app and *chessdata.app (production domain)
+cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX", r"https://(.*\.vercel\.app|(www\.)?chessdata\.app)")
+if cors_origin_regex:
+    print(f"CORS Origin Regex: {cors_origin_regex}")
 
 # Use production CORS config if we have custom origins, otherwise use default
 if config.api.cors_origins:
@@ -132,39 +156,29 @@ if JWT_ISSUER:
 if JWT_AUDIENCE:
     print(f"JWT validation configured with audience: {JWT_AUDIENCE}")
 
-# Simple in-memory cache for analytics with TTL
-_analytics_cache: Dict[str, Dict[str, Any]] = {}
-CACHE_TTL_SECONDS = 300  # 5 minutes cache TTL
+# Bounded in-memory cache for analytics with TTL (replaces unbounded dict)
+CACHE_TTL_SECONDS = 1800  # 30 minutes cache TTL (was 5 minutes)
+_analytics_cache = LRUCache(maxsize=500, ttl=CACHE_TTL_SECONDS, name="analytics")
+register_cache(_analytics_cache)
 
 def _get_from_cache(cache_key: str) -> Optional[Dict[str, Any]]:
     """Get data from cache if it exists and is not expired."""
-    if cache_key in _analytics_cache:
-        cached_entry = _analytics_cache[cache_key]
-        timestamp = cached_entry.get('timestamp', 0)
-        if time.time() - timestamp < CACHE_TTL_SECONDS:
-            if DEBUG:
-                print(f"[CACHE] Hit for key: {cache_key}")
-            return cached_entry.get('data')
-        else:
-            # Cache expired, remove it
-            if DEBUG:
-                print(f"[CACHE] Expired for key: {cache_key}")
-            del _analytics_cache[cache_key]
+    result = _analytics_cache.get(cache_key)
+    if result is not None:
+        if DEBUG:
+            print(f"[CACHE] Hit for key: {cache_key}")
+        return result
     return None
 
 def _set_in_cache(cache_key: str, data: Dict[str, Any]) -> None:
     """Store data in cache with current timestamp."""
-    _analytics_cache[cache_key] = {
-        'data': data,
-        'timestamp': time.time()
-    }
+    _analytics_cache.set(cache_key, data)
     if DEBUG:
         print(f"[CACHE] Set for key: {cache_key}")
 
 def _delete_from_cache(cache_key: str) -> None:
     """Delete a specific cache entry."""
-    if cache_key in _analytics_cache:
-        del _analytics_cache[cache_key]
+    if _analytics_cache.delete(cache_key):
         if DEBUG:
             print(f"[CACHE] Deleted key: {cache_key}")
 
@@ -175,17 +189,84 @@ def _invalidate_cache(user_id: str, platform: str) -> None:
     (e.g., "alice:lichess" should not match "malice:lichess:*" patterns).
     """
     keys_to_delete = []
-    for key in list(_analytics_cache.keys()):
-        parts = key.split(":")
-        # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
-        # Match exact user_id and platform segments (parts[1] and parts[2])
-        if len(parts) >= 3 and parts[1] == user_id and parts[2] == platform:
-            keys_to_delete.append(key)
+    with _analytics_cache._lock:
+        for key in list(_analytics_cache._cache.keys()):
+            parts = key.split(":")
+            # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
+            # Match exact user_id and platform segments (parts[1] and parts[2])
+            if len(parts) >= 3 and parts[1] == user_id and parts[2] == platform:
+                keys_to_delete.append(key)
 
-    for key in keys_to_delete:
-        del _analytics_cache[key]
+        for key in keys_to_delete:
+            if key in _analytics_cache._cache:
+                del _analytics_cache._cache[key]
     if DEBUG and keys_to_delete:
         print(f"[CACHE] Invalidated {len(keys_to_delete)} entries for {user_id}:{platform}")
+
+# Module-level singleton helpers to avoid per-request object creation
+_stockfish_path = None
+
+def _get_stockfish_path() -> str:
+    """Get the Stockfish path, cached after first lookup.
+
+    Uses the module-level analysis engine's config rather than
+    creating a new ChessAnalysisEngine on every call.
+    """
+    global _stockfish_path
+    if _stockfish_path is None:
+        from .analysis_engine import ChessAnalysisEngine, AnalysisConfig
+        _stockfish_path = ChessAnalysisEngine(config=AnalysisConfig()).stockfish_path
+    return _stockfish_path
+
+def _get_sync_engine_pool():
+    """Get the SyncEnginePool from the analysis engine singleton.
+
+    Returns the thread-safe synchronous engine pool for use in
+    asyncio.to_thread() workers and synchronous helper functions.
+    Avoids spawning a new Stockfish process per request.
+    """
+    engine = get_analysis_engine()
+    if engine and engine._sync_engine_pool:
+        return engine._sync_engine_pool
+    return None
+
+_ai_generator = None
+
+def _get_ai_generator():
+    """Get or create a singleton AIChessCommentGenerator instance."""
+    global _ai_generator
+    if _ai_generator is None:
+        from .ai_comment_generator import AIChessCommentGenerator
+        _ai_generator = AIChessCommentGenerator()
+    return _ai_generator
+
+_study_plan_generator = None
+_opening_repertoire_analyzer = None
+_progress_analyzer = None
+
+def _get_study_plan_generator():
+    """Get or create a singleton StudyPlanGenerator instance."""
+    global _study_plan_generator
+    if _study_plan_generator is None:
+        from .study_plan_generator import StudyPlanGenerator
+        _study_plan_generator = _get_study_plan_generator()
+    return _study_plan_generator
+
+def _get_opening_repertoire_analyzer():
+    """Get or create a singleton OpeningRepertoireAnalyzer instance."""
+    global _opening_repertoire_analyzer
+    if _opening_repertoire_analyzer is None:
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        _opening_repertoire_analyzer = _get_opening_repertoire_analyzer()
+    return _opening_repertoire_analyzer
+
+def _get_progress_analyzer():
+    """Get or create a singleton ProgressAnalyzer instance."""
+    global _progress_analyzer
+    if _progress_analyzer is None:
+        from .progress_analyzer import ProgressAnalyzer
+        _progress_analyzer = ProgressAnalyzer(supabase_service)
+    return _progress_analyzer
 
 # Initialize Supabase clients with fallback for missing config
 if config.database.url and config.database.anon_key:
@@ -316,70 +397,198 @@ def get_optional_auth():
     else:
         return None
 
-# FastAPI app
-app = FastAPI(
-    title="Unified Chess Analysis API",
-    version="3.0.0",
-    description="Single, comprehensive chess analysis API with all functionality consolidated"
-)
+async def get_coach_user_id(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    auth_user_id: Optional[str] = Query(None, description="[Deprecated] Use Authorization header"),
+) -> Optional[str]:
+    """Extract user ID preferring JWT token, falling back to query param.
+
+    Used by coach endpoints that accept optional authentication.
+    JWT Authorization header is preferred; auth_user_id query param
+    is accepted for backward compatibility but logs a deprecation warning.
+    """
+    if credentials:
+        try:
+            token_data = await verify_token(credentials)
+            jwt_user_id = token_data.get('sub')
+            if jwt_user_id:
+                return jwt_user_id
+        except HTTPException:
+            pass  # Fall through to query param
+
+    if auth_user_id:
+        logger.warning(f"[DEPRECATION] auth_user_id query param used instead of JWT: {auth_user_id[:8]}...")
+        return auth_user_id
+
+    return None
+
+
+async def require_coach_user_id(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    auth_user_id: Optional[str] = Query(None, description="[Deprecated] Use Authorization header"),
+) -> str:
+    """Extract user ID from JWT or query param, raising 401 if neither is present.
+
+    Used by coach endpoints that require authentication.
+    """
+    if credentials:
+        try:
+            token_data = await verify_token(credentials)
+            jwt_user_id = token_data.get('sub')
+            if jwt_user_id:
+                return jwt_user_id
+        except HTTPException:
+            pass  # Fall through to query param
+
+    if auth_user_id:
+        logger.warning(f"[DEPRECATION] auth_user_id query param used instead of JWT: {auth_user_id[:8]}...")
+        return auth_user_id
+
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required. Please log in to access coach features."
+    )
+
+
+def get_client_ip(request: Request) -> str:
+    """
+    Extract client IP address from request.
+
+    Checks headers in order of priority:
+    1. X-Forwarded-For (handles proxies/load balancers like Railway, Vercel)
+    2. X-Real-IP
+    3. X-Remote-IP
+    4. request.client.host (direct connection)
+
+    Returns:
+        str: Client IP address (defaults to 127.0.0.1 if not found)
+    """
+    # Check X-Forwarded-For header (handles proxies, Railway, Vercel, etc.)
+    x_forwarded_for = request.headers.get('x-forwarded-for')
+    if x_forwarded_for:
+        # Take the first IP (client IP) from comma-separated list
+        ip = x_forwarded_for.split(',')[0].strip()
+        if ip:
+            return ip
+
+    # Check X-Real-IP header
+    x_real_ip = request.headers.get('x-real-ip')
+    if x_real_ip:
+        return x_real_ip.strip()
+
+    # Check X-Remote-IP header
+    x_remote_ip = request.headers.get('x-remote-ip')
+    if x_remote_ip:
+        return x_remote_ip.strip()
+
+    # Fall back to direct client host
+    if request.client and request.client.host:
+        return request.client.host
+
+    # Last resort - localhost
+    return '127.0.0.1'
 
 # Global instances for memory optimization
 _engine_pool_instance = None
 _memory_monitor_instance = None
 _cache_cleanup_task = None
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup with memory optimization."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup and shutdown logic."""
     global _engine_pool_instance, _memory_monitor_instance, _cache_cleanup_task
 
+    # --- STARTUP ---
     print("=" * 80)
-    print("🚀 Starting Chess Analytics API Server with Memory Optimizations")
+    print("[START] Starting Chess Analytics API Server with Memory Optimizations")
     print("=" * 80)
 
-    # Initialize Stockfish engine pool
+    # Initialize Stockfish engine pool (cost-optimized for scale-to-zero)
     stockfish_path = config.stockfish.path
     if stockfish_path:
         print(f"[STARTUP] Initializing Stockfish engine pool...")
         _engine_pool_instance = get_engine_pool(
             stockfish_path=stockfish_path,
-            max_size=3,  # 3 engines max
-            ttl=300.0,   # 5-minute TTL
+            max_size=2,  # Reduced from 4 to 2 for cost optimization (sufficient for 15-25 users)
+            ttl=60.0,    # Reduced from 5 min to 1 min for faster cleanup when idle
             config={
                 'Skill Level': 20,
                 'UCI_LimitStrength': False,
                 'Threads': 1,
-                'Hash': 96
+                'Hash': 32  # Reduced from 96 MB for lower memory footprint
             }
         )
         await _engine_pool_instance.start_cleanup_task()
-        print(f"[STARTUP] ✅ Engine pool initialized: {_engine_pool_instance}")
+        print(f"[STARTUP] [OK] Engine pool initialized: {_engine_pool_instance}")
     else:
-        print("[STARTUP] ⚠️  Stockfish path not configured - engine pool disabled")
+        print("[STARTUP] [WARNING] Stockfish path not configured - engine pool disabled")
 
     # Initialize memory monitor
     print("[STARTUP] Initializing memory monitor...")
     _memory_monitor_instance = get_memory_monitor(
-        interval=60.0,         # Check every 60 seconds
-        warning_threshold=0.70, # Warn at 70%
-        critical_threshold=0.85 # Critical at 85%
+        interval=60.0,
+        warning_threshold=0.70,
+        critical_threshold=0.85
     )
     await _memory_monitor_instance.start()
-    print(f"[STARTUP] ✅ Memory monitor started")
+    print(f"[STARTUP] [OK] Memory monitor started")
+
+    # Initialize analysis engine early to trigger AI comment generator initialization
+    logger.info("[STARTUP] Pre-initializing analysis engine (this will initialize AI comment generator)...")
+    try:
+        get_analysis_engine()
+        logger.info("[STARTUP] [OK] Analysis engine pre-initialized successfully")
+    except Exception as e:
+        logger.warning(f"[STARTUP] [WARNING] Analysis engine pre-initialization failed: {e}")
+        logger.debug(f"[STARTUP] Traceback: {traceback.format_exc()}")
+
+    # Check AI status and log it
+    logger.info("[STARTUP] Checking AI generation status...")
+    try:
+        ai_check = _get_ai_generator()
+        if ai_check and ai_check.enabled:
+            model = ai_check.config.ai_model if hasattr(ai_check, 'config') else 'unknown'
+            logger.info(f"[STARTUP] [OK] AI Generation: ENABLED (Model: {model})")
+            logger.info("[STARTUP] [OK] AI-powered style analysis and move comments are available")
+        else:
+            if ai_check:
+                ai_enabled = ai_check.config.ai_enabled if hasattr(ai_check, 'config') else False
+                provider = ai_check.config.ai_provider if hasattr(ai_check, 'config') else 'anthropic'
+                if provider == 'gemini':
+                    has_api_key = bool(ai_check.config.gemini_api_key if hasattr(ai_check, 'config') else False)
+                else:
+                    has_api_key = bool(ai_check.config.anthropic_api_key if hasattr(ai_check, 'config') else False)
+                logger.warning(f"[STARTUP] [WARNING] AI Generation: DISABLED")
+                logger.info(f"[STARTUP]    Provider={provider}, AI_ENABLED={ai_enabled}, API_KEY present={has_api_key}")
+            else:
+                logger.warning("[STARTUP] [WARNING] AI Generation: NOT AVAILABLE (generator failed to initialize)")
+            logger.info("[STARTUP]    Falling back to template-based generation")
+    except Exception as ai_error:
+        logger.warning(f"[STARTUP] [WARNING] AI Generation: CHECK FAILED - {ai_error}")
+        logger.info("[STARTUP]    AI features will use template-based fallback")
+
+    # Clear analysis stats cache on startup to prevent stale data
+    print("[STARTUP] Clearing analysis stats cache to ensure fresh calculations...")
+    cleared_count = 0
+    with _analytics_cache._lock:
+        for key in list(_analytics_cache._cache.keys()):
+            if key.startswith('analysis_stats:'):
+                if key in _analytics_cache._cache:
+                    del _analytics_cache._cache[key]
+                    cleared_count += 1
+    if cleared_count > 0:
+        print(f"[STARTUP] Cleared {cleared_count} cached analysis stats entries")
 
     # Start cache cleanup background task
     async def cache_cleanup_loop():
         print("[STARTUP] Starting cache cleanup task (interval: 5 minutes)")
         while True:
             try:
-                await asyncio.sleep(300)  # Every 5 minutes
-
-                # Cleanup expired entries in all caches
+                await asyncio.sleep(300)
                 results = cleanup_all_caches()
                 total_cleaned = sum(results.values())
                 if total_cleaned > 0:
                     print(f"[CACHE_CLEANUP] Cleaned {total_cleaned} expired entries: {results}")
-
             except asyncio.CancelledError:
                 print("[CACHE_CLEANUP] Cleanup task cancelled")
                 break
@@ -394,11 +603,11 @@ async def startup_event():
         queue = get_analysis_queue()
         if queue._queue_processor_task is None or queue._queue_processor_task.done():
             queue._queue_processor_task = asyncio.create_task(queue._process_queue())
-            print("[STARTUP] ✅ Analysis queue processor started")
+            print("[STARTUP] Analysis queue processor started")
     except ImportError:
-        print("[STARTUP] ℹ️  Analysis queue not available")
+        print("[STARTUP] Analysis queue not available")
 
-    # Verify Stripe configuration (without logging sensitive values)
+    # Verify Stripe configuration
     stripe_key = os.getenv('STRIPE_SECRET_KEY')
     if stripe_key:
         logger.info("STRIPE_SECRET_KEY loaded")
@@ -406,17 +615,14 @@ async def startup_event():
         logger.warning("STRIPE_SECRET_KEY not found in environment")
 
     print("=" * 80)
-    print("✅ Server startup complete!")
+    print("[OK] Server startup complete!")
     print("=" * 80)
 
+    yield  # Application runs here
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup resources on shutdown."""
-    global _engine_pool_instance, _memory_monitor_instance, _cache_cleanup_task
-
+    # --- SHUTDOWN ---
     print("\n" + "=" * 80)
-    print("🛑 Shutting down Chess Analytics API Server")
+    print("Shutting down Chess Analytics API Server")
     print("=" * 80)
 
     # Stop cache cleanup task
@@ -427,26 +633,26 @@ async def shutdown_event():
             await _cache_cleanup_task
         except asyncio.CancelledError:
             pass
-        print("[SHUTDOWN] ✅ Cache cleanup task stopped")
+        print("[SHUTDOWN] Cache cleanup task stopped")
 
     # Stop memory monitor
     if _memory_monitor_instance:
         print("[SHUTDOWN] Stopping memory monitor...")
         await stop_memory_monitor()
-        print("[SHUTDOWN] ✅ Memory monitor stopped")
+        print("[SHUTDOWN] Memory monitor stopped")
 
     # Close engine pool
     if _engine_pool_instance:
         print("[SHUTDOWN] Closing engine pool...")
         await close_global_engine_pool()
-        print("[SHUTDOWN] ✅ Engine pool closed")
+        print("[SHUTDOWN] Engine pool closed")
 
     # Close HTTP client
     global _shared_http_client
     if _shared_http_client:
         print("[SHUTDOWN] Closing HTTP client...")
         await _shared_http_client.close()
-        print("[SHUTDOWN] ✅ HTTP client closed")
+        print("[SHUTDOWN] HTTP client closed")
 
     # Clear all caches
     print("[SHUTDOWN] Clearing all caches...")
@@ -455,19 +661,45 @@ async def shutdown_event():
     cache_results['import_progress'] = large_import_progress.clear()
     cache_results['import_cancel_flags'] = large_import_cancel_flags.clear()
     total_cleared = sum(cache_results.values())
-    print(f"[SHUTDOWN] ✅ Cleared {total_cleared} cache entries: {cache_results}")
+    print(f"[SHUTDOWN] Cleared {total_cleared} cache entries: {cache_results}")
 
     print("=" * 80)
-    print("✅ Shutdown complete")
+    print("Shutdown complete")
     print("=" * 80)
+
+# FastAPI app
+app = FastAPI(
+    title="Unified Chess Analysis API",
+    version="3.0.0",
+    description="Single, comprehensive chess analysis API with all functionality consolidated",
+    lifespan=lifespan
+)
+
+# Add specific exception handler for rate limit errors (returns 429)
+@app.exception_handler(RateLimitError)
+async def rate_limit_exception_handler(request: Request, exc: RateLimitError):
+    """Handle rate limit errors with proper 429 status."""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": {
+                "code": "RATE_LIMIT_ERROR",
+                "message": str(exc),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "request_id": getattr(getattr(request, "state", None), "request_id", "unknown")
+            }
+        }
+    )
 
 # Add global exception handler
 app.add_exception_handler(Exception, global_exception_handler)
 
 # CORS middleware with secure configuration
+# allow_origin_regex enables Vercel preview/staging deployments (*.vercel.app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_config.allowed_origins,
+    allow_origin_regex=cors_origin_regex if cors_origin_regex else None,
     allow_credentials=cors_config.allow_credentials,
     allow_methods=cors_config.allowed_methods,
     allow_headers=cors_config.allowed_headers,
@@ -580,8 +812,8 @@ async def get_http_client():
         import aiohttp
         timeout = aiohttp.ClientTimeout(total=120, connect=30)
         connector = aiohttp.TCPConnector(
-            limit=15,  # Total concurrent connections across all hosts
-            limit_per_host=6,  # Increased from 3 to 6 - allows 2 concurrent imports per platform without bottleneck
+            limit=20,  # Total concurrent connections (Phase 1 - Stage 1: increased from 15)
+            limit_per_host=8,  # Per-host limit (Phase 1 - Stage 1: increased from 6)
             ttl_dns_cache=300  # DNS cache TTL
         )
         _shared_http_client = aiohttp.ClientSession(
@@ -589,6 +821,15 @@ async def get_http_client():
             timeout=timeout
         )
     return _shared_http_client
+
+# ============================================================================
+# HELPER CLASSES
+# ============================================================================
+
+class MockSingleResult:
+    """Mock result object for converting list results to single-item results."""
+    def __init__(self, data):
+        self.data = data
 
 # ============================================================================
 # UNIFIED PYDANTIC MODELS
@@ -609,6 +850,10 @@ class UnifiedAnalysisRequest(BaseModel):
     move: Optional[str] = Field(None, max_length=10, description="Move in UCI format for move analysis")
     game_id: Optional[str] = Field(None, max_length=100, description="Game ID for single game analysis")
     provider_game_id: Optional[str] = Field(None, max_length=100, description="Provider game ID for single game analysis")
+
+    # Single move coaching analysis parameters
+    fullmove_number: Optional[int] = Field(None, description="Full move number for coaching context (enables AI comments)")
+    is_user_move: Optional[bool] = Field(None, description="Whether this is a user move (enables AI comments)")
 
     @validator('user_id')
     def validate_user_id(cls, v):
@@ -891,6 +1136,47 @@ class LinkAnonymousDataRequest(BaseModel):
     platform: str = Field(..., description="Platform (lichess, chess.com)")
     anonymous_user_id: str = Field(..., min_length=1, max_length=100, description="Anonymous user ID to link")
 
+
+class LinkChessAccountRequest(BaseModel):
+    """Request model for linking a chess platform account."""
+    platform: str = Field(..., description="Platform: 'chess.com' or 'lichess'")
+    username: str = Field(..., min_length=1, max_length=100, description="Chess platform username")
+
+    @validator('platform')
+    def validate_platform(cls, v):
+        if v not in ('chess.com', 'lichess'):
+            raise ValueError("platform must be 'chess.com' or 'lichess'")
+        return v
+
+
+class UnlinkChessAccountRequest(BaseModel):
+    """Request model for unlinking a chess platform account."""
+    platform: str = Field(..., description="Platform: 'chess.com' or 'lichess'")
+
+    @validator('platform')
+    def validate_platform(cls, v):
+        if v not in ('chess.com', 'lichess'):
+            raise ValueError("platform must be 'chess.com' or 'lichess'")
+        return v
+
+
+class CreatePlayerLinkRequest(BaseModel):
+    """Request model for creating a cross-platform player link."""
+    chess_com_username: str = Field(..., min_length=1, max_length=100)
+    lichess_username: str = Field(..., min_length=1, max_length=100)
+
+
+class SetPrimaryPlatformRequest(BaseModel):
+    """Request model for setting the primary chess platform."""
+    platform: str = Field(..., description="Platform: 'chess.com' or 'lichess'")
+
+    @validator('platform')
+    def validate_platform(cls, v):
+        if v not in ('chess.com', 'lichess'):
+            raise ValueError("platform must be 'chess.com' or 'lichess'")
+        return v
+
+
 # ============================================================================
 # UNIFIED API ENDPOINTS
 # ============================================================================
@@ -923,9 +1209,32 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with AI status."""
     engine = get_analysis_engine()
     stockfish_available = engine.stockfish_path is not None
+
+    # Check AI generation status
+    ai_status = {
+        "available": False,
+        "enabled": False,
+        "model": None,
+        "error": None
+    }
+
+    try:
+        ai_check = _get_ai_generator()
+        ai_status["available"] = True
+        if ai_check and ai_check.enabled:
+            ai_status["enabled"] = True
+            ai_status["model"] = ai_check.config.ai_model if hasattr(ai_check, 'config') else 'unknown'
+        elif ai_check:
+            ai_status["enabled"] = False
+            if hasattr(ai_check, 'config'):
+                ai_status["model"] = ai_check.config.ai_model if hasattr(ai_check.config, 'ai_model') else None
+    except ImportError as e:
+        ai_status["error"] = f"Import failed: {str(e)}"
+    except Exception as e:
+        ai_status["error"] = f"Initialization failed: {str(e)}"
 
     return {
         "status": "healthy",
@@ -934,6 +1243,7 @@ async def health_check():
         "stockfish_available": stockfish_available,
         "analysis_types": ["stockfish", "deep"],
         "database_connected": True,
+        "ai_generation": ai_status,
         "timestamp": datetime.now().isoformat()
     }
 
@@ -989,29 +1299,14 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
             # Validate FEN
             board = chess.Board(fen)
 
-            # Get Stockfish path from engine
-            from .analysis_engine import ChessAnalysisEngine, AnalysisConfig
-            temp_engine = ChessAnalysisEngine(config=AnalysisConfig())
-            stockfish_path = temp_engine.stockfish_path
-
-            if not stockfish_path:
+            pool = _get_sync_engine_pool()
+            if not pool:
                 raise ValueError("Stockfish not available")
 
             start_time = time.time()
 
-            # Analyze with Stockfish
-            with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
-                # Configure for speed
-                try:
-                    engine.configure({
-                        'Skill Level': 20,
-                        'Threads': 1,
-                        'Hash': 64,
-                        'UCI_AnalyseMode': True
-                    })
-                except:
-                    pass  # Some engines don't support all options
-
+            # Analyze with Stockfish using shared engine pool
+            with pool.acquire() as engine:
                 # Quick analysis
                 info = engine.analyse(board, chess.engine.Limit(depth=depth))
 
@@ -1061,7 +1356,7 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
                             try:
                                 pv_san.append(temp_board.san(move))
                                 temp_board.push(move)
-                            except:
+                            except Exception:
                                 break
                     except Exception as e:
                         print(f"Error extracting best move: {e}")
@@ -1078,7 +1373,6 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
 
         except Exception as e:
             print(f"Error in synchronous analysis: {e}")
-            import traceback
             traceback.print_exc()
             raise
 
@@ -1096,13 +1390,13 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
         raise HTTPException(status_code=400, detail=f"Invalid FEN: {str(e)}")
     except Exception as e:
         print(f"Error in quick position analysis: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
 
 @app.post("/api/v1/analyze", response_model=UnifiedAnalysisResponse)
 async def unified_analyze(
     request: UnifiedAnalysisRequest,
+    http_request: Request,
     background_tasks: BackgroundTasks,
     # Optional parallel analysis flag
     use_parallel: bool = True,
@@ -1127,21 +1421,47 @@ async def unified_analyze(
 
                 # Check analysis limit
                 if auth_user_id and usage_tracker:
-                    can_proceed, stats = await usage_tracker.check_analysis_limit(auth_user_id)
-                    if not can_proceed:
-                        raise HTTPException(
-                            status_code=429,
-                            detail=f"Analysis limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
-                        )
+                    try:
+                        can_proceed, stats = await usage_tracker.check_analysis_limit(auth_user_id)
+                        if not can_proceed:
+                            raise HTTPException(
+                                status_code=429,
+                                detail=f"Analysis limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                            )
+                    except HTTPException:
+                        raise  # Re-raise HTTP exceptions (429 limit errors)
+                    except Exception as e:
+                        # If limit check fails, log but don't block - this prevents 500 errors
+                        # The limit check failure is non-critical and shouldn't break the API
+                        logger.warning(f"Analysis limit check failed for user {auth_user_id} (non-critical): {e}")
+                        # Continue without limit check - better to allow than to block with 500 error
         except HTTPException:
             raise  # Re-raise HTTP exceptions
         except Exception as e:
             # Log but don't fail - allow anonymous/failed auth to proceed
-            print(f"Auth check failed (non-critical): {e}")
+            logger.warning(f"Auth check failed (non-critical): {e}")
 
-        # Enforce rate limit per user
-        user_key = f"analysis:{request.user_id}:{request.platform}"
-        _enforce_rate_limit(user_key, ANALYSIS_RATE_LIMIT)
+        # Check anonymous user limits if not authenticated
+        if not auth_user_id and usage_tracker:
+            client_ip = get_client_ip(http_request)
+            try:
+                can_proceed, stats = await usage_tracker.check_anonymous_analysis_limit(client_ip)
+                if not can_proceed:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Analysis limit reached. {stats.get('reason', 'Anonymous users: 2 analyses per 24 hours. Create a free account for 5 analyses per day!')}"
+                    )
+            except HTTPException:
+                raise  # Re-raise HTTP exceptions (429 limit errors)
+            except Exception as e:
+                # Log but allow anonymous user to proceed (fail-open)
+                logger.warning(f"Anonymous analysis limit check failed for IP {client_ip} (non-critical): {e}")
+
+        # Enforce rate limit per user (skip for authenticated premium users who already passed usage check)
+        # Premium users are not rate limited since they already passed check_analysis_limit
+        if not auth_user_id:
+            user_key = f"analysis:{request.user_id}:{request.platform}"
+            _enforce_rate_limit(user_key, ANALYSIS_RATE_LIMIT)
 
         # Normalize and validate analysis type
         original_type = request.analysis_type
@@ -1161,24 +1481,36 @@ async def unified_analyze(
         if request.pgn:
             # Single game analysis with PGN
             result = await _handle_single_game_analysis(request)
-            # Increment usage for authenticated users
+            # Increment usage
             if auth_user_id and usage_tracker:
                 await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            elif usage_tracker:
+                # Increment for anonymous users
+                client_ip = get_client_ip(http_request)
+                await usage_tracker.increment_anonymous_usage(client_ip, 'analyze', count=1)
             return result
         elif request.game_id or request.provider_game_id:
             # Single game analysis by game_id - fetch PGN from database
             result = await _handle_single_game_by_id(request)
-            # Increment usage for authenticated users
+            # Increment usage
             if auth_user_id and usage_tracker:
                 await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+            elif usage_tracker:
+                # Increment for anonymous users
+                client_ip = get_client_ip(http_request)
+                await usage_tracker.increment_anonymous_usage(client_ip, 'analyze', count=1)
             return result
         elif request.fen:
             if request.move:
                 # Move analysis
                 result = await _handle_move_analysis(request)
-                # Increment usage for authenticated users
+                # Increment usage
                 if auth_user_id and usage_tracker:
                     await usage_tracker.increment_usage(auth_user_id, 'analyze', count=1)
+                elif usage_tracker:
+                    # Increment for anonymous users
+                    client_ip = get_client_ip(http_request)
+                    await usage_tracker.increment_anonymous_usage(client_ip, 'analyze', count=1)
                 return result
             else:
                 # Position analysis
@@ -1189,9 +1521,15 @@ async def unified_analyze(
             # Batch analysis - use the unified handler
             # NOTE: Usage tracking for batch analysis is handled in the queue completion handler
             # since batch analysis is async and the count is determined when it completes
-            return await _handle_batch_analysis(request, background_tasks, use_parallel)
+            return await _handle_batch_analysis(request, background_tasks, use_parallel, auth_user_id)
 
+    except RateLimitError as e:
+        # Re-raise rate limit errors with proper 429 status
+        raise HTTPException(status_code=429, detail=str(e))
     except ValidationError as e:
+        raise e
+    except HTTPException as e:
+        # Re-raise HTTP exceptions (already have proper status codes)
         raise e
     except Exception as e:
         raise AnalysisError(f"Failed to process analysis request: {str(e)}", "unified")
@@ -1272,31 +1610,80 @@ async def get_analysis_stats(
             print("[warn]  Database not available. Returning empty stats.")
             return _get_empty_stats()
 
-        # PERFORMANCE FIX: Limit to recent 100 analyses instead of ALL
+        # PERFORMANCE FIX: Limit to recent 100 analyses instead of ALL for calculating averages
         # Stats are representative with 100 analyses and this is 5-10x faster!
+        # However, we still need the TOTAL count for accurate "Total Games Analyzed" display
         db_client = supabase_service or supabase
+        data_source = None  # Track which table the data came from
+        total_count = 0  # Total count of all analyzed games
+
         if db_client:
+            # First, get the total count from the database
+            # Try move_analyses first (where new analyses are saved)
+            count_response = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('*', count='exact', head=True).eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).execute()
+            )
+            total_count = getattr(count_response, 'count', 0) or 0
+
+            # Fallback to unified_analyses if no data in move_analyses
+            if total_count == 0:
+                count_response = await asyncio.to_thread(
+                    lambda: db_client.table('unified_analyses').select('*', count='exact', head=True).eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).execute()
+                )
+                total_count = getattr(count_response, 'count', 0) or 0
+
+            if DEBUG:
+                print(f"[DEBUG] Total analyzed games count: {total_count}")
+
+            # Now fetch the sample of 100 analyses for calculating averages
+            # Try move_analyses first (where new analyses are saved)
             response = await asyncio.to_thread(
-                lambda: db_client.table('unified_analyses').select('*').eq(
+                lambda: db_client.table('move_analyses').select('*').eq(
                     'user_id', canonical_user_id
                 ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
             )
 
+            # Track that data came from move_analyses if we have data
+            if response.data and len(response.data) > 0:
+                data_source = 'move_analyses'
+
+            # Fallback to unified_analyses if no data in move_analyses
+            if not response.data or len(response.data) == 0:
+                response = await asyncio.to_thread(
+                    lambda: db_client.table('unified_analyses').select('*').eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+                )
+                # Track that data came from unified_analyses
+                if response.data and len(response.data) > 0:
+                    data_source = 'unified_analyses'
+
             if os.getenv("DEBUG", "false").lower() == "true":
-                print(f"[DEBUG] Stats query from unified_analyses: {len(response.data or [])} records (limited to 100 for performance)")
+                print(f"[DEBUG] Stats query: {len(response.data or [])} records (limited to 100 for performance)")
+                print(f"[DEBUG] Data source: {data_source}")
         else:
             response = type('MockResponse', (), {'data': []})()
 
         if not response.data or len(response.data) == 0:
             # Return mock data for development when no real data is available
             print(f"[stats] No data found for user {canonical_user_id} on {platform}, returning mock stats for development")
-            print(f"[stats] Query was: unified_analyses where user_id={canonical_user_id} AND platform={platform}")
             return _get_mock_stats()
 
         if DEBUG:
-            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses")
+            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses from {data_source} (total count: {total_count})")
 
-        result = _calculate_unified_analysis_stats(response.data)
+        # Use the appropriate calculation function based on data source
+        # move_analyses has moves_analysis array that needs to be processed
+        # unified_analyses has pre-calculated fields
+        # Pass total_count so it can be used for total_games_analyzed
+        if data_source == 'move_analyses':
+            result = _calculate_move_analysis_stats(response.data, total_count)
+        else:
+            result = _calculate_unified_analysis_stats(response.data, total_count)
         _set_in_cache(cache_key, result)
         return result
     except Exception as e:
@@ -1333,19 +1720,28 @@ async def get_game_analyses(
             print("[ERROR] No database connection available")
             return []
 
-        # Query unified_analyses view which combines game_analyses and move_analyses
-        # This view properly handles data priority and eliminates duplicates
+        # Query move_analyses first (where new analyses are saved), then fall back to unified_analyses
         db_client = supabase_service or supabase
         response = await asyncio.to_thread(
-            lambda: db_client.table("unified_analyses").select("*").eq(
+            lambda: db_client.table("move_analyses").select("*").eq(
                 "user_id", canonical_user_id
             ).eq("platform", platform).order("analysis_date", desc=True).range(
                 offset, offset + limit - 1
             ).execute()
         )
 
+        # Fallback to unified_analyses if no data in move_analyses
+        if not response.data or len(response.data) == 0:
+            response = await asyncio.to_thread(
+                lambda: db_client.table("unified_analyses").select("*").eq(
+                    "user_id", canonical_user_id
+                ).eq("platform", platform).order("analysis_date", desc=True).range(
+                    offset, offset + limit - 1
+                ).execute()
+            )
+
         if os.getenv("DEBUG", "false").lower() == "true":
-            print(f"[DEBUG] Query response from unified_analyses: {len(response.data) if response.data else 0} records found")
+            print(f"[DEBUG] Query response: {len(response.data) if response.data else 0} records found")
             if response.data:
                 print(f"[DEBUG] First record keys: {list(response.data[0].keys()) if response.data[0] else 'No keys'}")
                 print(f"[DEBUG] Sample record: {str(response.data[0])[:200]}..." if response.data[0] else "No sample")
@@ -1417,22 +1813,113 @@ async def get_game_analyses_count(
             print("[ERROR] No database connection available")
             return {"count": 0}
 
-        # Get count from unified_analyses view which handles deduplication
+        # Get count from move_analyses (primary storage), fall back to unified_analyses
         db_client = supabase_service or supabase
         response = await asyncio.to_thread(
-            lambda: db_client.table("unified_analyses").select("*", count="exact").eq(
+            lambda: db_client.table("move_analyses").select("*", count="exact").eq(
                 "user_id", canonical_user_id
             ).eq("platform", platform).execute()
         )
 
         total_count = response.count if hasattr(response, 'count') and response.count is not None else 0
 
-        print(f"[DEBUG] Total analyses count from unified_analyses: {total_count}")
+        # Fallback to unified_analyses if no data
+        if total_count == 0:
+            response = await asyncio.to_thread(
+                lambda: db_client.table("unified_analyses").select("*", count="exact").eq(
+                    "user_id", canonical_user_id
+                ).eq("platform", platform).execute()
+            )
+            total_count = response.count if hasattr(response, 'count') and response.count is not None else 0
+
+        print(f"[DEBUG] Total analyses count: {total_count}")
 
         return {"count": total_count}
     except Exception as e:
         print(f"Error fetching game analyses count: {e}")
         return {"count": 0}
+
+@app.post("/api/v1/analyses/{user_id}/{platform}/check")
+async def check_games_analyzed(
+    user_id: str,
+    platform: str,
+    game_ids: list[str],
+    analysis_type: str = Query("stockfish"),
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """
+    Efficiently check which games from a list are already analyzed.
+    Only returns game_id, provider_game_id, and accuracy for each analyzed game.
+    This is optimized for the Match History page to quickly check analyze button states.
+    """
+    try:
+        if not game_ids or len(game_ids) == 0:
+            return {"analyzed_games": []}
+
+        # Canonicalize user ID for database operations
+        canonical_user_id = _canonical_user_id(user_id, platform)
+
+        if not supabase and not supabase_service:
+            print("[ERROR] No database connection available")
+            return {"analyzed_games": []}
+
+        # Query only the fields we need: game_id, provider_game_id, and accuracy
+        # This is much faster than fetching all analysis data
+        # Check move_analyses first (where new analyses are saved), then fall back to unified_analyses
+        db_client = supabase_service or supabase
+
+        print(f"[CHECK ANALYZED] Checking {len(game_ids)} games for user={canonical_user_id}, platform={platform}")
+        print(f"[CHECK ANALYZED] Game IDs to check: {game_ids[:5]}...")  # Show first 5
+
+        # Try move_analyses first (game_id in move_analyses IS the provider_game_id)
+        response = await asyncio.to_thread(
+            lambda: db_client.table("move_analyses")
+            .select("game_id,accuracy")
+            .eq("user_id", canonical_user_id)
+            .eq("platform", platform)
+            .in_("game_id", game_ids)
+            .execute()
+        )
+
+        print(f"[CHECK ANALYZED] move_analyses query returned {len(response.data) if response.data else 0} results")
+        if response.data:
+            print(f"[CHECK ANALYZED] Found in move_analyses: {[r.get('game_id') for r in response.data[:5]]}")
+
+        # If no results, try unified_analyses
+        if not response.data or len(response.data) == 0:
+            print(f"[CHECK ANALYZED] No results in move_analyses, trying unified_analyses...")
+            response = await asyncio.to_thread(
+                lambda: db_client.table("unified_analyses")
+                .select("game_id,provider_game_id,accuracy")
+                .eq("user_id", canonical_user_id)
+                .eq("platform", platform)
+                .in_("game_id", game_ids)
+                .execute()
+            )
+            print(f"[CHECK ANALYZED] unified_analyses query returned {len(response.data) if response.data else 0} results")
+        else:
+            # For move_analyses, game_id IS the provider_game_id
+            # Add provider_game_id field for consistency with unified_analyses format
+            for row in response.data:
+                if 'provider_game_id' not in row:
+                    row['provider_game_id'] = row.get('game_id')
+
+        analyzed_games = []
+        if response.data:
+            for record in response.data:
+                analyzed_games.append({
+                    "game_id": record.get("game_id"),
+                    "provider_game_id": record.get("provider_game_id"),
+                    "accuracy": record.get("accuracy")
+                })
+
+        print(f"[check_games_analyzed] Found {len(analyzed_games)} analyzed games out of {len(game_ids)} requested")
+        return {"analyzed_games": analyzed_games}
+
+    except Exception as e:
+        print(f"Error checking analyzed games: {e}")
+        return {"analyzed_games": []}
 @app.get("/api/v1/progress/{user_id}/{platform}", response_model=AnalysisProgress)
 async def get_analysis_progress(
     user_id: str,
@@ -1742,29 +2229,34 @@ def _compute_personal_records(existing_records: Dict[str, Any], game: Dict[str, 
     result = game.get('result')
     accuracy = analysis.get('accuracy') if analysis else game.get('accuracy')
 
-    if result == 'win':
-        if records.get('fastest_win') is None or total_moves < records['fastest_win']['moves']:
-            records['fastest_win'] = {
-                'moves': total_moves,
-                'game_id': game.get('provider_game_id'),
-                'played_at': game.get('played_at')
-            }
-
-        if accuracy is not None:
-            if records.get('highest_accuracy_win') is None or accuracy > records['highest_accuracy_win']['accuracy']:
-                records['highest_accuracy_win'] = {
-                    'accuracy': round(float(accuracy), 2),
+    # Only process games with valid move counts (> 0)
+    if total_moves > 0:
+        if result == 'win':
+            # Fastest win: only update if we have a valid move count and it's better than existing
+            if records.get('fastest_win') is None or total_moves < records['fastest_win']['moves']:
+                records['fastest_win'] = {
+                    'moves': total_moves,
                     'game_id': game.get('provider_game_id'),
                     'played_at': game.get('played_at')
                 }
 
-    if total_moves and (records.get('longest_game') is None or total_moves > records['longest_game']['moves']):
-        records['longest_game'] = {
-            'moves': total_moves,
-            'result': result,
-            'game_id': game.get('provider_game_id'),
-            'played_at': game.get('played_at')
-        }
+            # Highest accuracy win: only if we have accuracy data
+            if accuracy is not None:
+                if records.get('highest_accuracy_win') is None or accuracy > records['highest_accuracy_win']['accuracy']:
+                    records['highest_accuracy_win'] = {
+                        'accuracy': round(float(accuracy), 2),
+                        'game_id': game.get('provider_game_id'),
+                        'played_at': game.get('played_at')
+                    }
+
+        # Longest game: update if this game is longer than existing record
+        if records.get('longest_game') is None or total_moves > records['longest_game']['moves']:
+            records['longest_game'] = {
+                'moves': total_moves,
+                'result': result,
+                'game_id': game.get('provider_game_id'),
+                'played_at': game.get('played_at')
+            }
 
     return records
 
@@ -1967,11 +2459,233 @@ def _calculate_performance_trends(games: List[Dict[str, Any]]) -> Dict[str, Any]
     }
 
 
+async def _fetch_game_analyses_batched(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str,
+    provider_ids: List[str],
+    batch_size: int = 400
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch game_analyses in batches with minimal delays."""
+    analyses_map: Dict[str, Dict[str, Any]] = {}
+    if not provider_ids:
+        return analyses_map
+
+    try:
+        for i in range(0, len(provider_ids), batch_size):
+            batch_ids = provider_ids[i:i + batch_size]
+            try:
+                analyses_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('game_analyses')
+                        .select('*')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .in_('game_id', ids)
+                        .execute()
+                )
+                for row in analyses_response.data or []:
+                    analyses_map[row['game_id']] = row
+                # Minimal delay between batches to avoid overwhelming Supabase
+                if i + batch_size < len(provider_ids):
+                    await asyncio.sleep(0.01)
+            except Exception as e:
+                print(f"[WARN] Error fetching game_analyses batch {i//batch_size + 1}: {e}")
+                # Continue with other batches even if one fails
+    except Exception as e:
+        print(f"[WARN] Error in _fetch_game_analyses_batched: {e}")
+
+    return analyses_map
+
+
+async def _fetch_move_analyses_batched(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str,
+    provider_ids: List[str],
+    batch_size: int = 400
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch move_analyses in batches with minimal delays."""
+    move_analyses_map: Dict[str, Dict[str, Any]] = {}
+    if not provider_ids:
+        return move_analyses_map
+
+    try:
+        for i in range(0, len(provider_ids), batch_size):
+            batch_ids = provider_ids[i:i + batch_size]
+            try:
+                move_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('move_analyses')
+                        .select('*')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .in_('game_id', ids)
+                        .execute()
+                )
+                for row in move_response.data or []:
+                    move_analyses_map[row['game_id']] = row
+                # Minimal delay between batches
+                if i + batch_size < len(provider_ids):
+                    await asyncio.sleep(0.01)
+            except Exception as e:
+                print(f"[WARN] Error fetching move_analyses batch {i//batch_size + 1}: {e}")
+                # Continue with other batches even if one fails
+    except Exception as e:
+        print(f"[WARN] Error in _fetch_move_analyses_batched: {e}")
+
+    return move_analyses_map
+
+
+async def _fetch_pgn_data_batched(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str,
+    provider_ids: List[str],
+    batch_size: int = 400
+) -> Dict[str, str]:
+    """Fetch games_pgn in batches with minimal delays."""
+    pgn_map: Dict[str, str] = {}
+    if not provider_ids:
+        return pgn_map
+
+    try:
+        for i in range(0, len(provider_ids), batch_size):
+            batch_ids = provider_ids[i:i + batch_size]
+            try:
+                pgn_response = await asyncio.to_thread(
+                    lambda ids=batch_ids: db_client.table('games_pgn')
+                        .select('provider_game_id, pgn')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .in_('provider_game_id', ids)
+                        .execute()
+                )
+                for row in pgn_response.data or []:
+                    pgn_map[row['provider_game_id']] = row.get('pgn', '')
+                # Minimal delay between batches
+                if i + batch_size < len(provider_ids):
+                    await asyncio.sleep(0.01)
+            except Exception as e:
+                print(f"[WARN] Error fetching games_pgn batch {i//batch_size + 1}: {e}")
+                # Continue with other batches even if one fails
+    except Exception as e:
+        print(f"[WARN] Error in _fetch_pgn_data_batched: {e}")
+
+    return pgn_map
+
+
+async def _fetch_opening_color_stats_games(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str
+) -> List[Dict[str, Any]]:
+    """Fetch all games for opening color stats calculation."""
+    # Check cache first
+    cache_key = f"opening_color_stats_games:{canonical_user_id}:{platform}"
+    cached_data = _get_from_cache(cache_key)
+    if cached_data is not None:
+        if DEBUG:
+            print(f"[CACHE] Hit for opening color stats games")
+        return cached_data
+
+    games_for_color_stats = []
+    opening_batch_size = 1000
+    opening_offset = 0
+
+    if DEBUG:
+        print(f"[DEBUG] Fetching ALL games for opening color stats")
+
+    while True:
+        try:
+            opening_batch = await asyncio.to_thread(
+                lambda off=opening_offset: db_client.table('games')
+                    .select('opening, opening_family, opening_normalized, color, result, my_rating')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .not_.is_('color', 'null')
+                    .range(off, off + opening_batch_size - 1)
+                    .execute()
+            )
+            batch_data = opening_batch.data or []
+            if not batch_data:
+                break
+            games_for_color_stats.extend(batch_data)
+
+            # If we got fewer than requested, we've reached the end
+            if len(batch_data) < opening_batch_size:
+                break
+
+            opening_offset += opening_batch_size
+        except Exception as e:
+            print(f"[WARN] Error fetching opening color stats batch at offset {opening_offset}: {e}")
+            break
+
+    if DEBUG:
+        print(f"[DEBUG] Fetched {len(games_for_color_stats)} total games for opening color stats")
+
+    # Cache the result
+    _set_in_cache(cache_key, games_for_color_stats)
+
+    return games_for_color_stats
+
+
+async def _fetch_remaining_games(
+    db_client: Client,
+    canonical_user_id: str,
+    platform: str,
+    start_count: int,
+    total_limit: int
+):
+    """Background task to fetch remaining games."""
+    try:
+        print(f"[BACKGROUND] Starting background fetch for {canonical_user_id}: {start_count} -> {total_limit} games")
+
+        remaining_games = []
+        page_size = 1000
+        offset = start_count
+
+        while len(remaining_games) < (total_limit - start_count):
+            remaining = total_limit - start_count - len(remaining_games)
+            current_page_size = min(page_size, remaining)
+            current_offset = offset
+
+            try:
+                games_response = await asyncio.to_thread(
+                    lambda start=current_offset, end=current_offset + current_page_size - 1: db_client.table('games')
+                        .select('*')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .order('played_at', desc=True)
+                        .range(start, end)
+                        .execute()
+                )
+
+                page_games = games_response.data or []
+                if not page_games:
+                    break
+
+                remaining_games.extend(page_games)
+                offset += current_page_size
+
+                if len(page_games) < current_page_size or len(remaining_games) >= (total_limit - start_count):
+                    break
+
+            except Exception as e:
+                print(f"[BACKGROUND] Error fetching games: {e}")
+                break
+
+        print(f"[BACKGROUND] Completed: Fetched {len(remaining_games)} additional games for {canonical_user_id}")
+
+    except Exception as e:
+        print(f"[BACKGROUND] Error fetching remaining games for {canonical_user_id}: {e}")
+        traceback.print_exc()
+
+
 @app.get("/api/v1/comprehensive-analytics/{user_id}/{platform}")
 async def get_comprehensive_analytics(
     user_id: str,
     platform: str,
     limit: int = Query(500, ge=1, le=10000, description="Number of games to analyze"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
 ):
@@ -1984,7 +2698,9 @@ async def get_comprehensive_analytics(
             print(f"[DEBUG] canonical_user_id={canonical_user_id}")
 
         # Check cache first
-        cache_key = f"comprehensive_analytics:{canonical_user_id}:{platform}:{limit}"
+        # Added v2 to cache key to force refresh - production was missing Enhanced Game Length Insights data
+        # This ensures fresh data is fetched for both limit=100 and limit=10000 calls
+        cache_key = f"comprehensive_analytics_v2:{canonical_user_id}:{platform}:{limit}"
         cached_data = _get_from_cache(cache_key)
         if cached_data is not None:
             return cached_data
@@ -1996,33 +2712,99 @@ async def get_comprehensive_analytics(
 
         # Determine total available games (for UI pagination context)
         count_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()
+            lambda: db_client.table('games').select('id', count='exact', head=True)
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .execute()
         )
         total_games_count = getattr(count_response, 'count', 0) or 0
 
-        # Base games query constrained by requested limit
+        # Supabase has a default limit of 1000 rows, so we need to paginate to fetch all games
         # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
-        games_query = db_client.table('games').select('*').eq('user_id', canonical_user_id).eq('platform', platform).order('played_at', desc=True)
-
-        # Supabase has a default limit of 1000 rows, so we need to explicitly set the limit
-        # If user requests >= 10000, fetch all available games
         effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
 
-        # Ensure we fetch at least the requested amount or all available games
-        if effective_limit > 0:
-            games_response = await asyncio.to_thread(
-                lambda: games_query.limit(effective_limit).execute()
-            )
-        else:
-            # Fallback: use the requested limit if we couldn't determine total
-            games_response = await asyncio.to_thread(
-                lambda: games_query.limit(limit).execute()
-            )
-
-        games = games_response.data or []
+        # PERFORMANCE: Always fetch all requested games upfront for accurate stats
+        # This ensures Color Performance and Opening Performance show full numbers
+        # Previously only fetched 500 games initially, which caused incomplete stats
+        initial_limit = effective_limit
+        needs_background = False
+        fetch_limit = effective_limit
 
         if DEBUG:
+            print(f"[DEBUG] Fetching {fetch_limit} games (effective_limit={effective_limit}, needs_background={needs_background})")
+
+        # Paginate through games in chunks of 1000 (Supabase's max per query)
+        # Match the pattern from import_games_smart which works correctly
+        games = []
+        page_size = 1000
+        offset = 0
+
+        while len(games) < fetch_limit:
+            # Calculate how many more games we need
+            remaining = fetch_limit - len(games)
+            current_page_size = min(page_size, remaining)
+            current_offset = offset  # Capture for lambda
+
+            # Fetch page using range (Supabase pagination)
+            # Use the exact pattern from match_history endpoint (line 2742) which works
+            try:
+                # Validate range values
+                range_start = current_offset
+                range_end = current_offset + current_page_size - 1
+
+                if range_start < 0 or range_end < range_start:
+                    print(f"[ERROR] Invalid range: start={range_start}, end={range_end}, page_size={current_page_size}")
+                    break
+
+                # Build entire query inside lambda to avoid closure issues
+                # Match the exact pattern from match_history endpoint (line 2748)
+                # Capture variables with default parameters to avoid closure issues
+                # Optimized: Select only fields needed for analytics (reduces data transfer by 60-70%)
+                games_response = await asyncio.to_thread(
+                    lambda start=range_start, end=range_end: db_client.table('games')
+                        .select('id,user_id,platform,provider_game_id,result,color,opening,opening_family,opening_normalized,my_rating,opponent_rating,time_control,total_moves,opponent_name,played_at')
+                        .eq('user_id', canonical_user_id)
+                        .eq('platform', platform)
+                        .order('played_at', desc=True)
+                        .range(start, end)
+                        .execute()
+                )
+            except Exception as e:
+                print(f"[ERROR] Error fetching games page at offset {offset}, range {range_start}-{range_end}: {e}")
+                traceback.print_exc()
+                break
+
+            page_games = games_response.data or []
+            if not page_games:
+                # No more games available
+                break
+
+            games.extend(page_games)
+
+            # If we got fewer games than requested, we've reached the end
+            if len(page_games) < current_page_size:
+                break
+
+            offset += current_page_size
+
+            # Safety check: if we've fetched enough, stop
+            if len(games) >= fetch_limit:
+                break
+
+        # Always log game fetching details for debugging
+        if needs_background:
+            print(f"[DEBUG] Fetched {len(games)} initial games (will fetch remaining {effective_limit - len(games)} in background)")
+        else:
             print(f"[DEBUG] Fetched {len(games)} games out of {total_games_count} total games (requested limit={limit}, effective_limit={effective_limit})")
+        if len(games) == 0 and total_games_count > 0:
+            print(f"[ERROR] CRITICAL: No games fetched despite {total_games_count} total games available!")
+            print(f"[ERROR] Query params: user_id={canonical_user_id}, platform={platform}")
+            print(f"[ERROR] This indicates the pagination query is failing. Check Supabase connection and query syntax.")
+
+        # Log color stats calculation for verification
+        white_count = len([g for g in games if g.get('color') == 'white'])
+        black_count = len([g for g in games if g.get('color') == 'black'])
+        print(f"[DEBUG] Color stats will be calculated from {len(games)} games: {white_count} white, {black_count} black")
 
         if not games:
             return {
@@ -2040,30 +2822,162 @@ async def get_comprehensive_analytics(
                 "resignation_timing": None
             }
 
-        # Fetch analysis data for the games for richer insights
-        provider_ids = [g['provider_game_id'] for g in games if g.get('provider_game_id')]
-        analyses_map: Dict[str, Dict[str, Any]] = {}
-        move_analyses_map: Dict[str, Dict[str, Any]] = {}
+        # Calculate basic analytics from games (can be done immediately, no analysis data needed)
+        # Normalize result values to handle any edge cases (whitespace, case sensitivity)
+        wins = len([g for g in games if str(g.get('result', '')).strip().lower() == 'win'])
+        draws = len([g for g in games if str(g.get('result', '')).strip().lower() == 'draw'])
+        losses = len([g for g in games if str(g.get('result', '')).strip().lower() == 'loss'])
 
-        if provider_ids:
-            # game_analyses
-            analyses_response = await asyncio.to_thread(
-                lambda: db_client.table('game_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+        # Count games with NULL or invalid results for diagnostics
+        games_without_result = len([g for g in games if not g.get('result') or g.get('result') == ''])
+        games_with_invalid_result = len([g for g in games if g.get('result') and str(g.get('result', '')).strip().lower() not in ['win', 'loss', 'draw']])
+
+        # Diagnostic logging: Check for unexpected result values
+        if DEBUG or wins == 0 or games_without_result > 0 or games_with_invalid_result > 0:
+            unique_results = set(g.get('result') for g in games if g.get('result'))
+            result_counts = {}
+            for g in games:
+                result = g.get('result')
+                result_counts[result] = result_counts.get(result, 0) + 1
+            print(f"[DEBUG] Result distribution for {canonical_user_id} on {platform}: {result_counts}")
+            print(f"[DEBUG] Unique result values: {unique_results}")
+            print(f"[DEBUG] Wins: {wins}, Draws: {draws}, Losses: {losses}, Total games: {len(games)}")
+            print(f"[DEBUG] Games without result: {games_without_result}, Games with invalid result: {games_with_invalid_result}")
+
+        # Use games_with_valid_results as denominator to ensure percentages add up to 100%
+        games_with_valid_results = wins + draws + losses
+        win_rate = _safe_divide(wins, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
+        draw_rate = _safe_divide(draws, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
+        loss_rate = _safe_divide(losses, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
+
+        # Color stats - use whatever games we fetched (frontend requests limit=10000 for all games)
+        white_games = [g for g in games if g.get('color') == 'white']
+        black_games = [g for g in games if g.get('color') == 'black']
+
+        white_wins = len([g for g in white_games if str(g.get('result', '')).strip().lower() == 'win'])
+        black_wins = len([g for g in black_games if str(g.get('result', '')).strip().lower() == 'win'])
+
+        white_elos = [g.get('my_rating') for g in white_games if g.get('my_rating')]
+        black_elos = [g.get('my_rating') for g in black_games if g.get('my_rating')]
+
+        color_stats = {
+            'white': {
+                'games': len(white_games),
+                'winRate': round(_safe_divide(white_wins, len(white_games)) * 100, 1) if white_games else 0,
+                'averageElo': round(sum(white_elos) / len(white_elos), 0) if white_elos else 0
+            },
+            'black': {
+                'games': len(black_games),
+                'winRate': round(_safe_divide(black_wins, len(black_games)) * 100, 1) if black_games else 0,
+                'averageElo': round(sum(black_elos) / len(black_elos), 0) if black_elos else 0
+            }
+        }
+
+        # Opening stats - use whatever games we fetched (frontend requests limit=10000 for all games)
+        opening_performance = {}
+        for game in games:
+            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+            if opening not in opening_performance:
+                opening_performance[opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
+
+            opening_performance[opening]['games'] += 1
+            result = game.get('result')
+            if result == 'win':
+                opening_performance[opening]['wins'] += 1
+            elif result == 'draw':
+                opening_performance[opening]['draws'] += 1
+            elif result == 'loss':
+                opening_performance[opening]['losses'] += 1
+
+            # Track ELO for this opening
+            if game.get('my_rating'):
+                opening_performance[opening]['elos'].append(game.get('my_rating'))
+
+        opening_stats = []
+        for opening, stats in opening_performance.items():
+            avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
+            opening_stats.append({
+                'opening': opening,
+                'games': stats['games'],
+                'wins': stats['wins'],
+                'draws': stats['draws'],
+                'losses': stats['losses'],
+                'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
+                'averageElo': avg_elo
+            })
+
+        # Sort by number of games played
+        opening_stats.sort(key=lambda x: x['games'], reverse=True)
+
+        # Start background task to fetch remaining games if needed
+        if needs_background and len(games) < effective_limit:
+            print(f"[PERF] Starting background task: {len(games)}/{effective_limit} games loaded, will fetch remaining {effective_limit - len(games)} in background")
+            background_tasks.add_task(
+                _fetch_remaining_games,
+                db_client,
+                canonical_user_id,
+                platform,
+                len(games),
+                effective_limit
             )
-            for row in analyses_response.data or []:
-                analyses_map[row['game_id']] = row
+        elif needs_background:
+            print(f"[PERF] Background task NOT started: needs_background={needs_background}, games={len(games)}, limit={effective_limit}")
 
-            move_response = await asyncio.to_thread(
-                lambda: db_client.table('move_analyses').select('*').eq('user_id', canonical_user_id).eq('platform', platform).in_('game_id', provider_ids).execute()
+        # Fetch analysis data and opening color stats in parallel for richer insights
+        # NOTE: This is optional - if it fails, we still return basic stats
+        # Only fetch analysis for recent 500 games to speed up response
+        recent_games = games[:500] if len(games) > 500 else games
+        provider_ids = [g['provider_game_id'] for g in recent_games if g.get('provider_game_id')]
+
+        # Use batch size of 400 (increased from 250, but not jumping to 500 to avoid connection issues)
+        batch_size = 400
+
+        # Fetch all data in parallel: analysis data (3 queries) + opening color stats
+        try:
+            # Run all 4 queries in parallel
+            results = await asyncio.gather(
+                _fetch_game_analyses_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
+                _fetch_move_analyses_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
+                _fetch_pgn_data_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
+                _fetch_opening_color_stats_games(db_client, canonical_user_id, platform),
+                return_exceptions=True
             )
-            for row in move_response.data or []:
-                move_analyses_map[row['game_id']] = row
 
-        # Quick map of PGN terminations
-        pgn_response = await asyncio.to_thread(
-            lambda: db_client.table('games_pgn').select('provider_game_id, pgn').eq('user_id', canonical_user_id).eq('platform', platform).in_('provider_game_id', provider_ids).execute()
-        )
-        pgn_map = {row['provider_game_id']: row.get('pgn') for row in (pgn_response.data or [])}
+            # Unpack results and handle exceptions
+            analyses_map_result, move_analyses_map_result, pgn_map_result, games_for_color_stats_result = results
+
+            # Handle exceptions from parallel execution
+            if isinstance(analyses_map_result, Exception):
+                print(f"[WARN] Error in parallel analysis fetching: {analyses_map_result}")
+                analyses_map: Dict[str, Dict[str, Any]] = {}
+            else:
+                analyses_map = analyses_map_result
+
+            if isinstance(move_analyses_map_result, Exception):
+                print(f"[WARN] Error in parallel move analysis fetching: {move_analyses_map_result}")
+                move_analyses_map: Dict[str, Dict[str, Any]] = {}
+            else:
+                move_analyses_map = move_analyses_map_result
+
+            if isinstance(pgn_map_result, Exception):
+                print(f"[WARN] Error in parallel PGN fetching: {pgn_map_result}")
+                pgn_map: Dict[str, str] = {}
+            else:
+                pgn_map = pgn_map_result
+
+            if isinstance(games_for_color_stats_result, Exception):
+                print(f"[WARN] Error fetching opening color stats games: {games_for_color_stats_result}")
+                games_for_color_stats: List[Dict[str, Any]] = []
+            else:
+                games_for_color_stats = games_for_color_stats_result
+
+        except Exception as e:
+            # If parallel fetching completely fails, log but continue with basic stats
+            print(f"[WARN] Analysis data fetching failed completely, continuing with basic stats: {e}")
+            analyses_map: Dict[str, Dict[str, Any]] = {}
+            move_analyses_map: Dict[str, Dict[str, Any]] = {}
+            pgn_map: Dict[str, str] = {}
+            games_for_color_stats: List[Dict[str, Any]] = []
 
         # Distribution counters
         distribution: Dict[str, Dict[str, Any]] = {}
@@ -2082,9 +2996,9 @@ async def get_comprehensive_analytics(
         }
         comeback_summaries: List[Dict[str, Any]] = []
 
-        last_fifty = games[:50]
-        last_fifty_moves = [g['total_moves'] for g in last_fifty if g.get('total_moves')]
-        baseline_moves = [g['total_moves'] for g in games[50:200] if g.get('total_moves')]
+        last_hundred = games[:100]
+        last_hundred_moves = [g['total_moves'] for g in last_hundred if g.get('total_moves')]
+        baseline_moves = [g['total_moves'] for g in games[100:300] if g.get('total_moves')]
 
         for game in games:
             bucket = _bucket_game_length(game.get('total_moves'))
@@ -2148,8 +3062,8 @@ async def get_comprehensive_analytics(
         # Compute aggregated metrics
         distribution_summary = {}
         for bucket, stats in distribution.items():
-            win_rate = _safe_divide(stats['wins'], stats['games']) * 100
-            distribution_summary[bucket] = {**stats, 'win_rate': round(win_rate, 2)}
+            bucket_win_rate = _safe_divide(stats['wins'], stats['games']) * 100
+            distribution_summary[bucket] = {**stats, 'win_rate': round(bucket_win_rate, 2)}
 
         quick_victory_summary = {label: count for label, count in quick_victory_breakdown.items()}
 
@@ -2169,8 +3083,8 @@ async def get_comprehensive_analytics(
             }
 
         recent_trend = {}
-        if last_fifty_moves:
-            recent_avg = sum(last_fifty_moves) / len(last_fifty_moves)
+        if last_hundred_moves:
+            recent_avg = sum(last_hundred_moves) / len(last_hundred_moves)
             baseline_avg = sum(baseline_moves) / len(baseline_moves) if baseline_moves else recent_avg
             recent_trend = {
                 'recent_average_moves': round(recent_avg, 2),
@@ -2190,127 +3104,121 @@ async def get_comprehensive_analytics(
                 )
             }
 
-        resignation_summary = None
-        if resignation_moves or opponent_resignation_moves:
-            # Calculate recent resignation timing (last 50 games)
-            recent_resignation_moves = []
-            for i, game in enumerate(games[:50]):
-                game_id = game.get('provider_game_id')
-                termination = _parse_termination_from_pgn(pgn_map.get(game_id)) if pgn_map else None
-                result = game.get('result')
-                if termination and 'resign' in termination.lower():
-                    # Determine if this is my resignation or opponent's
-                    if ('opponent' in termination.lower() or 'resigned' in termination.lower()) and result == 'win':
-                        # Opponent resigned
-                        pass
-                    else:
-                        # I resigned
-                        recent_resignation_moves.append(game.get('total_moves') or 0)
-
-            recent_avg = round(sum(recent_resignation_moves) / len(recent_resignation_moves), 2) if recent_resignation_moves else None
-            overall_avg = round(sum(resignation_moves) / len(resignation_moves), 2) if resignation_moves else None
-
-            # Calculate change and insight
-            change = round(recent_avg - overall_avg, 1) if (recent_avg and overall_avg) else None
-            insight = None
-            if change is not None:
-                abs_change = abs(change)
-                if change < 0:
-                    insight = f"You're resigning {abs_change} moves earlier than usual"
-                elif change > 0:
-                    insight = f"You're fighting {abs_change} moves longer before resigning"
+        # ALWAYS calculate resignation summary to ensure section renders consistently
+        # Calculate recent resignation timing (last 100 games)
+        recent_resignation_moves = []
+        for i, game in enumerate(games[:100]):
+            game_id = game.get('provider_game_id')
+            termination = _parse_termination_from_pgn(pgn_map.get(game_id)) if pgn_map else None
+            result = game.get('result')
+            if termination and 'resign' in termination.lower():
+                # Determine if this is my resignation or opponent's
+                if ('opponent' in termination.lower() or 'resigned' in termination.lower()) and result == 'win':
+                    # Opponent resigned
+                    pass
                 else:
-                    insight = "Your resignation timing is consistent"
+                    # I resigned
+                    recent_resignation_moves.append(game.get('total_moves') or 0)
 
-            resignation_summary = {
-                'my_average_resignation_move': overall_avg,
-                'opponent_average_resignation_move': round(sum(opponent_resignation_moves) / len(opponent_resignation_moves), 2) if opponent_resignation_moves else None,
-                'my_resignations': len(resignation_moves),
-                'opponent_resignations': len(opponent_resignation_moves),
-                'recent_average_resignation_move': recent_avg,
-                'recent_resignations': len(recent_resignation_moves),
-                'change': change,
-                'insight': insight
-            }
+        recent_avg = round(sum(recent_resignation_moves) / len(recent_resignation_moves), 2) if recent_resignation_moves else None
+        overall_avg = round(sum(resignation_moves) / len(resignation_moves), 2) if resignation_moves else None
 
-        # Calculate basic analytics from games
-        wins = len([g for g in games if g.get('result') == 'win'])
-        draws = len([g for g in games if g.get('result') == 'draw'])
-        losses = len([g for g in games if g.get('result') == 'loss'])
+        # Calculate change and insight
+        change = round(recent_avg - overall_avg, 1) if (recent_avg and overall_avg) else None
+        insight = None
+        if change is not None:
+            abs_change = abs(change)
+            if change < 0:
+                insight = f"You're resigning {abs_change} moves earlier than usual"
+            elif change > 0:
+                insight = f"You're fighting {abs_change} moves longer before resigning"
+            else:
+                insight = "Your resignation timing is consistent"
 
-        win_rate = _safe_divide(wins, len(games)) * 100
-        draw_rate = _safe_divide(draws, len(games)) * 100
-        loss_rate = _safe_divide(losses, len(games)) * 100
-
-        # Color stats
-        white_games = [g for g in games if g.get('color') == 'white']
-        black_games = [g for g in games if g.get('color') == 'black']
-
-        white_wins = len([g for g in white_games if g.get('result') == 'win'])
-        black_wins = len([g for g in black_games if g.get('result') == 'win'])
-
-        white_elos = [g.get('my_rating') for g in white_games if g.get('my_rating')]
-        black_elos = [g.get('my_rating') for g in black_games if g.get('my_rating')]
-
-        color_stats = {
-            'white': {
-                'games': len(white_games),
-                'winRate': round(_safe_divide(white_wins, len(white_games)) * 100, 1) if white_games else 0,
-                'averageElo': round(sum(white_elos) / len(white_elos), 0) if white_elos else 0
-            },
-            'black': {
-                'games': len(black_games),
-                'winRate': round(_safe_divide(black_wins, len(black_games)) * 100, 1) if black_games else 0,
-                'averageElo': round(sum(black_elos) / len(black_elos), 0) if black_elos else 0
-            }
+        # CRITICAL: Always return resignation_summary (even if null values) so frontend section always renders
+        resignation_summary = {
+            'my_average_resignation_move': overall_avg,
+            'opponent_average_resignation_move': round(sum(opponent_resignation_moves) / len(opponent_resignation_moves), 2) if opponent_resignation_moves else None,
+            'my_resignations': len(resignation_moves),
+            'opponent_resignations': len(opponent_resignation_moves),
+            'recent_average_resignation_move': recent_avg,
+            'recent_resignations': len(recent_resignation_moves),
+            'change': change,
+            'insight': insight
         }
 
-        # Opening stats
-        opening_performance = {}
-        for game in games:
-            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
-            if opening not in opening_performance:
-                opening_performance[opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
-
-            opening_performance[opening]['games'] += 1
-            result = game.get('result')
-            if result == 'win':
-                opening_performance[opening]['wins'] += 1
-            elif result == 'draw':
-                opening_performance[opening]['draws'] += 1
-            elif result == 'loss':
-                opening_performance[opening]['losses'] += 1
-
-            # Track ELO for this opening
-            if game.get('my_rating'):
-                opening_performance[opening]['elos'].append(game.get('my_rating'))
-
-        opening_stats = []
-        for opening, stats in opening_performance.items():
-            avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
-            opening_stats.append({
-                'opening': opening,
-                'games': stats['games'],
-                'wins': stats['wins'],
-                'draws': stats['draws'],
-                'losses': stats['losses'],
-                'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
-                'averageElo': avg_elo
-            })
-
-        # Sort by number of games played
-        opening_stats.sort(key=lambda x: x['games'], reverse=True)
-
         # Opening stats by color
+        # Show all openings for each color - this shows what positions the player encountered
+        # For white: shows all openings (both what white played and what defenses they faced)
+        # For black: shows all defenses and systems the player used
+        # games_for_color_stats was already fetched in parallel above, but fall back to games if empty
+
+        games_for_opening_color = games_for_color_stats if games_for_color_stats else games
+        if DEBUG:
+            print(f"[DEBUG] Using {len(games_for_opening_color)} games for opening color stats (games_for_color_stats={len(games_for_color_stats)}, games={len(games)})")
+
+        # FALLBACK: If games_for_color_stats is empty, use the main games list
+        # This ensures we always have data to calculate opening color stats
+        games_to_use_for_color_stats = games_for_color_stats if games_for_color_stats else games
+
+        if DEBUG:
+            print(f"[DEBUG] Using {len(games_to_use_for_color_stats)} games for opening color stats calculation")
+            if not games_for_color_stats:
+                print(f"[DEBUG] WARNING: games_for_color_stats was empty, using main games list as fallback")
+
         opening_color_performance = {'white': {}, 'black': {}}
-        for game in games:
+        filtered_white_openings = {}  # Debug: track what we filtered out for white
+        games_without_opening = 0  # Debug: track games without opening data
+        total_games_processed = 0  # Debug: track total games
+
+        for game in games_to_use_for_color_stats:  # Use all games, not just the limited sample
             color = game.get('color')
             if color not in ['white', 'black']:
                 continue
 
-            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
+            total_games_processed += 1
+
+            # Get opening with proper fallback - handle empty strings and None
+            opening_normalized = game.get('opening_normalized')
+            opening_raw = game.get('opening')
+            opening_family = game.get('opening_family')
+
+            # Normalize empty strings to None for proper fallback
+            if opening_normalized == '':
+                opening_normalized = None
+            if opening_raw == '':
+                opening_raw = None
+            if opening_family == '':
+                opening_family = None
+
+            # Use opening_normalized first, then opening_family, then opening, then 'Unknown'
+            opening = opening_normalized or opening_family or opening_raw or 'Unknown'
+
+            # Track games without proper opening data
+            if opening == 'Unknown':
+                games_without_opening += 1
+
+            # CRITICAL FIX: Filter out opponent's openings
+            # Only count openings that the player actually chose to play
+            # e.g., skip "Caro-Kann Defense" when player is white (that's opponent's opening)
+            # This bug has been reported multiple times - see docs/CARO_KANN_FIX_2025.md
+            # NOTE: 'Unknown' openings are considered neutral and should be counted for both colors
+            if not _should_count_opening_for_color(opening, color):
+                # Track filtered openings for debugging
+                if color == 'white':
+                    filtered_white_openings[opening] = filtered_white_openings.get(opening, 0) + 1
+                continue
+
             if opening not in opening_color_performance[color]:
-                opening_color_performance[color][opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
+                opening_color_performance[color][opening] = {
+                    'games': 0,
+                    'wins': 0,
+                    'draws': 0,
+                    'losses': 0,
+                    'elos': [],
+                    'opening_families': set(),  # Track unique opening families
+                    'openings': set()  # Track unique opening names
+                }
 
             opening_color_performance[color][opening]['games'] += 1
             result = game.get('result')
@@ -2324,10 +3232,21 @@ async def get_comprehensive_analytics(
             if game.get('my_rating'):
                 opening_color_performance[color][opening]['elos'].append(game.get('my_rating'))
 
+            # Track opening families and openings for identifiers
+            if game.get('opening_family'):
+                opening_color_performance[color][opening]['opening_families'].add(game.get('opening_family'))
+            if game.get('opening'):
+                opening_color_performance[color][opening]['openings'].add(game.get('opening'))
+
         opening_color_stats = {'white': [], 'black': []}
         for color in ['white', 'black']:
             for opening, stats in opening_color_performance[color].items():
                 avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
+
+                # Convert sets to lists for JSON serialization (sets are not JSON serializable)
+                opening_families_set = stats.get('opening_families', set())
+                openings_set = stats.get('openings', set())
+
                 opening_color_stats[color].append({
                     'opening': opening,
                     'games': stats['games'],
@@ -2335,10 +3254,37 @@ async def get_comprehensive_analytics(
                     'draws': stats['draws'],
                     'losses': stats['losses'],
                     'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
-                    'averageElo': avg_elo
+                    'averageElo': avg_elo,
+                    'identifiers': {
+                        'openingFamilies': sorted([f for f in opening_families_set if f]),
+                        'openings': sorted([o for o in openings_set if o])
+                    }
                 })
             # Sort by number of games
             opening_color_stats[color].sort(key=lambda x: x['games'], reverse=True)
+
+        # Debug logging for opening color stats
+        if DEBUG:
+            print(f"[DEBUG] Opening Color Stats Summary:")
+            print(f"  - Total games processed: {total_games_processed}")
+            print(f"  - Games without opening data (Unknown): {games_without_opening}")
+            print(f"  - White openings found: {len(opening_color_performance['white'])}")
+            print(f"  - Black openings found: {len(opening_color_performance['black'])}")
+            print(f"  - White stats entries: {len(opening_color_stats['white'])}")
+            print(f"  - Black stats entries: {len(opening_color_stats['black'])}")
+
+            if filtered_white_openings:
+                print(f"[DEBUG] Filtered {len(filtered_white_openings)} unique openings from White stats:")
+                for opening, count in sorted(filtered_white_openings.items(), key=lambda x: x[1], reverse=True)[:10]:
+                    print(f"  - {opening}: {count} games")
+
+            # Show sample of openings found
+            if opening_color_performance['white']:
+                sample_white = list(opening_color_performance['white'].keys())[:5]
+                print(f"[DEBUG] Sample white openings: {sample_white}")
+            if opening_color_performance['black']:
+                sample_black = list(opening_color_performance['black'].keys())[:5]
+                print(f"[DEBUG] Sample black openings: {sample_black}")
 
         # Highest ELO
         highest_elo = None
@@ -2382,6 +3328,9 @@ async def get_comprehensive_analytics(
         result = {
             'total_games': total_games_count,
             'totalGames': len(games),  # Actual games analyzed
+            'loading_more': needs_background and len(games) < effective_limit,
+            'games_loaded': len(games),
+            'games_total': effective_limit,
             'winRate': round(win_rate, 1),
             'drawRate': round(draw_rate, 1),
             'lossRate': round(loss_rate, 1),
@@ -2395,25 +3344,34 @@ async def get_comprehensive_analytics(
             'performanceTrends': performance_trends,
             'games': games,
             'sample_size': len(games),
-            'game_length_distribution': distribution_summary,
-            'quick_victory_breakdown': quick_victory_summary,
-            'marathon_performance': marathon_summary,
-            'recent_trend': recent_trend,
-            'personal_records': records,
-            'patience_rating': patience_rating,
-            'comeback_potential': comeback_summary,
-            'resignation_timing': resignation_summary
+            # Standardized to camelCase for consistency (support both during transition)
+            'gameLengthDistribution': distribution_summary,
+            'game_length_distribution': distribution_summary,  # Backwards compatibility
+            'quickVictoryBreakdown': quick_victory_summary,
+            'quick_victory_breakdown': quick_victory_summary,  # Backwards compatibility
+            'marathonPerformance': marathon_summary,
+            'marathon_performance': marathon_summary,  # Backwards compatibility
+            'recentTrend': recent_trend,
+            'recent_trend': recent_trend,  # Backwards compatibility
+            'personalRecords': records,
+            'personal_records': records,  # Backwards compatibility
+            'patienceRating': patience_rating,
+            'patience_rating': patience_rating,  # Backwards compatibility
+            'comebackPotential': comeback_summary,
+            'comeback_potential': comeback_summary,  # Backwards compatibility
+            'resignationTiming': resignation_summary,
+            'resignation_timing': resignation_summary  # Backwards compatibility
         }
 
-        # Cache the result before returning
-        _set_in_cache(cache_key, result)
+        # Only cache complete results (not partial)
+        if not needs_background or len(games) >= effective_limit:
+            _set_in_cache(cache_key, result)
         return result
 
     except HTTPException:
         raise
     except Exception as e:
         print(f"[ERROR] Error in get_comprehensive_analytics: {type(e).__name__}: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching comprehensive analytics: {str(e)}")
 
@@ -2578,6 +3536,15 @@ async def get_match_history(
         page_start = (page - 1) * limit
         page_end = page * limit - 1
 
+        # Supabase has a default limit of 1000 rows per query.
+        # If we're requesting rows beyond 1000, we need to explicitly set a higher limit.
+        # Add a small buffer to ensure we can access the requested range.
+        if page_end >= 1000:
+            # Set limit to at least page_end + 1, with a reasonable maximum
+            # This ensures we can access rows beyond the default 1000 limit
+            required_limit = min(page_end + 1, 10000)  # Cap at 10000 for performance
+            query = query.limit(required_limit)
+
         response = query.order('played_at', desc=True).range(page_start, page_end).execute()
 
         if not response.data:
@@ -2589,6 +3556,131 @@ async def get_match_history(
         raise
     except Exception as e:
         print(f"Error fetching match history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/game/{user_id}/{platform}/{game_id}")
+async def get_single_game(
+    user_id: str,
+    platform: str,
+    game_id: str,
+    # Optional authentication
+    _: Optional[bool] = get_optional_auth()
+):
+    """Get a single game with its analysis and PGN.
+
+    This endpoint is used by the Game Analysis Page to fetch game data without
+    requiring direct Supabase access from the frontend.
+    Handles both UUID-based auth users and username-based anonymous users.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
+        if not db_client:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        # Try to find the game by provider_game_id first, then by id (if game_id is a valid UUID)
+        # Only query by id if game_id is a valid UUID format to avoid PostgreSQL UUID type errors
+        if _is_valid_uuid(game_id):
+            # game_id is a UUID, so we can safely query both fields
+            game_response = await asyncio.to_thread(
+                lambda: db_client.table('games')
+                .select('*')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .or_(f'provider_game_id.eq.{game_id},id.eq.{game_id}')
+                .limit(1)
+                .execute()
+            )
+        else:
+            # game_id is not a UUID (e.g., chess.com numeric ID), only query by provider_game_id
+            game_response = await asyncio.to_thread(
+                lambda: db_client.table('games')
+                .select('*')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .eq('provider_game_id', game_id)
+                .limit(1)
+                .execute()
+            )
+
+        if not game_response.data or len(game_response.data) == 0:
+            raise HTTPException(status_code=404, detail="Game not found")
+
+        game = game_response.data[0]
+        game_identifier = game.get('provider_game_id') or game.get('id')
+
+        # Fetch PGN - use limit(1) instead of maybe_single() to avoid 204 errors
+        pgn_data = None
+        try:
+            pgn_response = await asyncio.to_thread(
+                lambda: db_client.table('games_pgn')
+                .select('pgn')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .eq('provider_game_id', game_identifier)
+                .limit(1)
+                .execute()
+            )
+            if pgn_response.data and len(pgn_response.data) > 0:
+                pgn_data = pgn_response.data[0].get('pgn') if isinstance(pgn_response.data[0], dict) else None
+        except Exception as pgn_error:
+            # Log but don't fail - PGN might not exist yet for unanalyzed games
+            print(f"PGN not found for game {game_identifier}: {pgn_error}")
+            pgn_data = None
+
+        # Fetch analysis - use limit(1) instead of maybe_single() to avoid 204 errors
+        # Try move_analyses table first (where analyses are actually saved)
+        analysis_data = None
+        try:
+            # First try move_analyses table (primary storage)
+            analysis_response = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses')
+                .select('*')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .eq('game_id', game_identifier)
+                .limit(1)
+                .execute()
+            )
+            if analysis_response.data and len(analysis_response.data) > 0:
+                analysis_data = analysis_response.data[0]
+            else:
+                # Fallback to unified_analyses table for backwards compatibility
+                analysis_response = await asyncio.to_thread(
+                    lambda: db_client.table('unified_analyses')
+                    .select('*')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .eq('provider_game_id', game_identifier)
+                    .limit(1)
+                    .execute()
+                )
+                if analysis_response.data and len(analysis_response.data) > 0:
+                    analysis_data = analysis_response.data[0]
+        except Exception as analysis_error:
+            # Log but don't fail - analysis might not exist yet for unanalyzed games
+            print(f"Analysis not found for game {game_identifier}: {analysis_error}")
+            analysis_data = None
+
+        # Extract ai_comments_status from analysis_data if available
+        ai_comments_status = None
+        if analysis_data:
+            ai_comments_status = analysis_data.get('ai_comments_status', 'pending')
+
+        return {
+            'game': game,
+            'pgn': pgn_data,
+            'analysis': analysis_data,
+            'ai_comments_status': ai_comments_status or 'pending'
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_details = traceback.format_exc()
+        print(f"Error fetching single game for user_id={user_id}, platform={platform}, game_id={game_id}")
+        print(f"Error: {e}")
+        print(f"Traceback: {error_details}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/v1/clear-cache/{user_id}/{platform}", response_model=ClearCacheResponse)
@@ -2623,12 +3715,13 @@ async def clear_user_cache(
         # Sweep all keys matching this user/platform (handles analysis_type/limit variants)
         # Match exact segments to avoid clearing other users' cache (e.g., "alice" vs "malice")
         keys_to_delete = []
-        for key in list(_analytics_cache.keys()):
-            parts = key.split(":")
-            # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
-            # Match exact user_id and platform segments (parts[1] and parts[2])
-            if len(parts) >= 3 and parts[1] == canonical_user_id and parts[2] == platform:
-                keys_to_delete.append(key)
+        with _analytics_cache._lock:
+            for key in list(_analytics_cache._cache.keys()):
+                parts = key.split(":")
+                # Cache keys follow pattern: {prefix}:{canonical_user_id}:{platform}:{optional_suffixes}
+                # Match exact user_id and platform segments (parts[1] and parts[2])
+                if len(parts) >= 3 and parts[1] == canonical_user_id and parts[2] == platform:
+                    keys_to_delete.append(key)
 
         for key in keys_to_delete:
             _delete_from_cache(key)
@@ -2679,17 +3772,113 @@ async def get_deep_analysis(
         # PERFORMANCE: Reduced from 500 to 100 games (5x faster)
         # Recent games are more relevant for personality analysis
         # IMPORTANT: Also fetch 'id' field for proper game-analysis matching
-        games_response = db_client.table('games').select(
-            'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at'
-        ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-            'my_rating', 'null'
-        ).order('played_at', desc=True).limit(100).execute()
+        games_response = await asyncio.to_thread(
+            lambda: db_client.table('games').select(
+                'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
+            ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+                'my_rating', 'null'
+            ).order('played_at', desc=True).limit(100).execute()
+        )
         games = games_response.data or []
 
-        profile_response = db_client.table('user_profiles').select('current_rating').eq(
-            'user_id', canonical_user_id
-        ).eq('platform', platform).maybe_single().execute()
-        profile = getattr(profile_response, 'data', None) or {}
+        # Fetch ALL games for accurate repertoire analysis (win rates, needs_work, etc.)
+        # This ensures repertoire stats match the opening performance stats shown elsewhere
+        all_games_for_repertoire = []
+        page_size = 1000
+        offset = 0
+        while True:
+            try:
+                all_games_response = await asyncio.to_thread(
+                    lambda start=offset, size=page_size: db_client.table('games').select(
+                        'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
+                    ).eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .not_.is_('color', 'null')
+                    .order('played_at', desc=True)
+                    .range(start, start + size - 1)
+                    .execute()
+                )
+                batch = all_games_response.data or []
+                if not batch:
+                    break
+                all_games_for_repertoire.extend(batch)
+                if len(batch) < page_size:
+                    break
+                offset += page_size
+            except Exception as e:
+                if DEBUG:
+                    print(f"[WARN] Error fetching all games for repertoire at offset {offset}: {e}")
+                break
+
+        if DEBUG:
+            print(f"[DEBUG] Fetched {len(games)} games for personality analysis, {len(all_games_for_repertoire)} games for repertoire analysis")
+
+        # Get count of analyzed games (games with analysis records) from database
+        analyzed_games_count = 0
+        try:
+            # Count unique game_ids from move_analyses table
+            move_analyses_count_response = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('game_id', count='exact', head=True)
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            move_analyses_count = getattr(move_analyses_count_response, 'count', 0) or 0
+
+            # Count unique game_ids from game_analyses table
+            game_analyses_count_response = await asyncio.to_thread(
+                lambda: db_client.table('game_analyses').select('game_id', count='exact', head=True)
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            game_analyses_count = getattr(game_analyses_count_response, 'count', 0) or 0
+
+            # Get unique game_ids from both tables to avoid double-counting
+            # Fetch distinct game_ids from move_analyses
+            move_analyses_games = await asyncio.to_thread(
+                lambda: db_client.table('move_analyses').select('game_id')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            analyzed_game_ids = set()
+            if move_analyses_games.data:
+                analyzed_game_ids.update(row.get('game_id') for row in move_analyses_games.data if row.get('game_id'))
+
+            # Fetch distinct game_ids from game_analyses
+            game_analyses_games = await asyncio.to_thread(
+                lambda: db_client.table('game_analyses').select('game_id')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .execute()
+            )
+            if game_analyses_games.data:
+                analyzed_game_ids.update(row.get('game_id') for row in game_analyses_games.data if row.get('game_id'))
+
+            analyzed_games_count = len(analyzed_game_ids)
+            if DEBUG:
+                print(f"[DEBUG] Analyzed games count: {analyzed_games_count} (from {move_analyses_count} move_analyses + {game_analyses_count} game_analyses records)")
+        except Exception as e:
+            if DEBUG:
+                print(f"[WARN] Could not get analyzed games count: {e}")
+            # Fallback: will be set after analyses are fetched
+            analyzed_games_count = None
+
+        # Fetch user profile - handle Postgrest 204 errors gracefully
+        profile = {}
+        try:
+            profile_response = db_client.table('user_profiles').select('current_rating').eq(
+                'user_id', canonical_user_id
+            ).eq('platform', platform).limit(1).execute()
+            if profile_response.data and len(profile_response.data) > 0:
+                profile = profile_response.data[0] or {}
+            else:
+                profile = {}
+        except Exception as profile_error:
+            # Profile might not exist for new users
+            print(f"Profile not found for user {canonical_user_id}: {profile_error}")
+            profile = {}
 
         # PERFORMANCE: Try unified_analyses first, fallback to move_analyses
         # unified_analyses combines both tables but may have structure differences
@@ -2766,12 +3955,21 @@ async def get_deep_analysis(
                 else:
                     print(f"[DEBUG] First analysis keys: {list(first_analysis.keys())}")
 
+        # If analyzed_games_count wasn't set (query failed), calculate from analyses list
+        if analyzed_games_count is None:
+            if analyses:
+                analyzed_games_count = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')})
+                if DEBUG:
+                    print(f"[DEBUG] Fallback: calculated analyzed games count from analyses list: {analyzed_games_count}")
+            else:
+                analyzed_games_count = 0
+
         if not analyses:
             print(f"[INFO] No analyses found for {canonical_user_id} - returning fallback data")
-            result = _build_fallback_deep_analysis(canonical_user_id, games, profile)
+            result = _build_fallback_deep_analysis(canonical_user_id, games, profile, analyzed_games_count)
         else:
             print(f"[INFO] Building deep analysis from {len(analyses)} analysis records")
-            result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile)
+            result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile, all_games_for_repertoire, analyzed_games_count)
 
         # Cache the result before returning (15 minute TTL via CACHE_TTL_SECONDS)
         _set_in_cache(cache_key, result)
@@ -3356,8 +4554,17 @@ def _build_recommendations(
     player_style: Dict[str, Any],
     strengths: List[str],
     improvements: List[str],
-    phase_accuracies: Dict[str, float]
+    phase_accuracies: Dict[str, float],
+    analyses: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, str]:
+    """
+    Build improvement roadmap recommendations using personality scores and move analysis data.
+    Enhanced with AI move analysis insights for more specific, actionable recommendations.
+    """
+    # Analyze move-level data if available
+    move_insights = _analyze_move_patterns_for_recommendations(analyses) if analyses else {}
+
+    # Rank personality traits
     ranked = sorted(
         ((key, personality_scores.get(key, 0.0)) for key in CORE_PERSONALITY_KEYS),
         key=lambda item: item[1],
@@ -3365,20 +4572,306 @@ def _build_recommendations(
     )
     top_key, top_value = ranked[0]
     lowest_key, lowest_value = ranked[-1]
-    primary = f"Focus targeted training on {PERSONALITY_LABELS[lowest_key].lower()} (currently {lowest_value:.0f})."
-    if phase_accuracies.get('endgame', 0.0) < 50.0:
-        primary += ' Add dedicated endgame study sessions to stabilise long games.'
-    secondary = f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples."
-    if personality_scores.get('staleness', 50.0) <= 40.0:
-        secondary = 'Develop a more structured opening repertoire for consistent play.'
-    leverage = (
-        f"Lean into a {player_style['category']} approach - {player_style['description'].rstrip('.')} to steer games into favourable territory."
+
+    # PRIMARY FOCUS: Use move analysis insights when available, otherwise fall back to personality scores
+    primary = _generate_primary_focus(
+        personality_scores, lowest_key, lowest_value, phase_accuracies, move_insights
     )
+
+    # SECONDARY FOCUS: Build on strengths identified in move analysis
+    secondary = _generate_secondary_focus(
+        personality_scores, top_key, top_value, move_insights
+    )
+
+    # LEVERAGE STRENGTH: Use player style and move analysis insights
+    leverage = _generate_leverage_strength(
+        player_style, personality_scores, move_insights
+    )
+
     return {
         'primary': primary,
         'secondary': secondary,
         'leverage': leverage,
     }
+
+
+def _analyze_move_patterns_for_recommendations(analyses: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Analyze move patterns from AI move analysis to identify specific improvement areas.
+    Returns insights about blunders, mistakes, tactical/positional patterns, and phase weaknesses.
+    """
+    if not analyses:
+        return {}
+
+    insights = {
+        'blunder_phase_distribution': {'opening': 0, 'middlegame': 0, 'endgame': 0},
+        'mistake_phase_distribution': {'opening': 0, 'middlegame': 0, 'endgame': 0},
+        'tactical_insight_count': 0,
+        'positional_insight_count': 0,
+        'tactical_mistakes': 0,
+        'positional_mistakes': 0,
+        'common_learning_points': [],
+        'common_improvements': [],
+        'total_user_moves': 0,
+        'blunder_rate': 0.0,
+        'mistake_rate': 0.0,
+        'weakest_phase': None,
+        'strongest_phase': None,
+    }
+
+    all_user_moves = []
+    learning_points_counter = Counter()
+    improvement_counter = Counter()
+
+    for analysis in analyses:
+        moves = analysis.get('moves_analysis') or []
+        if not moves:
+            continue
+
+        for move in moves:
+            # Only analyze user moves
+            if not move.get('is_user_move', False):
+                continue
+
+            all_user_moves.append(move)
+            game_phase = move.get('game_phase', 'middlegame').lower()
+
+            # Track phase distribution of errors
+            if move.get('is_blunder', False):
+                if game_phase in insights['blunder_phase_distribution']:
+                    insights['blunder_phase_distribution'][game_phase] += 1
+                elif game_phase == 'opening':
+                    insights['blunder_phase_distribution']['opening'] += 1
+                elif 'end' in game_phase:
+                    insights['blunder_phase_distribution']['endgame'] += 1
+                else:
+                    insights['blunder_phase_distribution']['middlegame'] += 1
+
+            if move.get('is_mistake', False):
+                if game_phase in insights['mistake_phase_distribution']:
+                    insights['mistake_phase_distribution'][game_phase] += 1
+                elif game_phase == 'opening':
+                    insights['mistake_phase_distribution']['opening'] += 1
+                elif 'end' in game_phase:
+                    insights['mistake_phase_distribution']['endgame'] += 1
+                else:
+                    insights['mistake_phase_distribution']['middlegame'] += 1
+
+            # Count tactical vs positional insights
+            tactical_insights = move.get('tactical_insights') or []
+            positional_insights = move.get('positional_insights') or []
+
+            if tactical_insights:
+                insights['tactical_insight_count'] += len(tactical_insights)
+                if move.get('is_mistake', False) or move.get('is_blunder', False):
+                    insights['tactical_mistakes'] += 1
+
+            if positional_insights:
+                insights['positional_insight_count'] += len(positional_insights)
+                if move.get('is_mistake', False) or move.get('is_blunder', False):
+                    insights['positional_mistakes'] += 1
+
+            # Collect learning points and improvement suggestions
+            learning_points = move.get('learning_points') or []
+            for point in learning_points:
+                if point and len(point.strip()) > 0:
+                    learning_points_counter[point.strip()] += 1
+
+            how_to_improve = move.get('how_to_improve', '')
+            if how_to_improve and len(how_to_improve.strip()) > 0:
+                improvement_counter[how_to_improve.strip()] += 1
+
+    insights['total_user_moves'] = len(all_user_moves)
+
+    if all_user_moves:
+        blunders = sum(1 for m in all_user_moves if m.get('is_blunder', False))
+        mistakes = sum(1 for m in all_user_moves if m.get('is_mistake', False))
+        insights['blunder_rate'] = (blunders / len(all_user_moves)) * 100
+        insights['mistake_rate'] = (mistakes / len(all_user_moves)) * 100
+
+    # Identify weakest and strongest phases
+    phase_error_totals = {}
+    for phase in ['opening', 'middlegame', 'endgame']:
+        phase_error_totals[phase] = (
+            insights['blunder_phase_distribution'].get(phase, 0) +
+            insights['mistake_phase_distribution'].get(phase, 0)
+        )
+
+    if phase_error_totals:
+        insights['weakest_phase'] = max(phase_error_totals.items(), key=lambda x: x[1])[0]
+        insights['strongest_phase'] = min(phase_error_totals.items(), key=lambda x: x[1])[0]
+
+    # Get most common learning points and improvements
+    insights['common_learning_points'] = [point for point, count in learning_points_counter.most_common(3)]
+    insights['common_improvements'] = [improvement for improvement, count in improvement_counter.most_common(3)]
+
+    return insights
+
+
+def _generate_primary_focus(
+    personality_scores: Dict[str, float],
+    lowest_key: str,
+    lowest_value: float,
+    phase_accuracies: Dict[str, float],
+    move_insights: Dict[str, Any]
+) -> str:
+    """Generate primary focus recommendation using move analysis insights when available."""
+
+    # If we have move analysis insights, use them for more specific recommendations
+    if move_insights and move_insights.get('total_user_moves', 0) > 0:
+        total_moves = move_insights.get('total_user_moves', 0)
+
+        # Check for high blunder rate - critical issue
+        blunder_rate = move_insights.get('blunder_rate', 0.0)
+        if blunder_rate > 5.0:  # More than 5% blunder rate
+            weakest_phase = move_insights.get('weakest_phase')
+            if weakest_phase:
+                phase_label = weakest_phase.capitalize()
+                blunders_count = int((blunder_rate / 100) * total_moves)
+                return f"Focus targeted training on reducing blunders in {phase_label.lower()} play (currently {blunder_rate:.1f}% blunder rate, {blunders_count} blunders). Take extra time to calculate candidate moves and check for tactical threats before committing."
+
+        # Check for tactical vs positional mistakes with specific counts
+        tactical_mistakes = move_insights.get('tactical_mistakes', 0)
+        positional_mistakes = move_insights.get('positional_mistakes', 0)
+        total_mistakes = tactical_mistakes + positional_mistakes
+
+        if tactical_mistakes > positional_mistakes * 1.5 and tactical_mistakes > 5:
+            tactical_score = personality_scores.get('tactical', 50.0)
+            return f"Focus targeted training on tactical awareness (currently {tactical_score:.0f}). Your move analysis reveals {tactical_mistakes} tactical mistakes compared to {positional_mistakes} positional ones—practice puzzle solving daily to improve pattern recognition and calculation."
+        elif positional_mistakes > tactical_mistakes * 1.5 and positional_mistakes > 5:
+            positional_score = personality_scores.get('positional', 50.0)
+            return f"Focus targeted training on positional understanding (currently {positional_score:.0f}). Your move analysis shows {positional_mistakes} positional mistakes compared to {tactical_mistakes} tactical ones—study strategic plans, pawn structures, and long-term piece placement."
+
+        # Use weakest phase if identified with personalized context
+        weakest_phase = move_insights.get('weakest_phase')
+        if weakest_phase:
+            phase_label = weakest_phase.capitalize()
+            phase_blunders = move_insights['blunder_phase_distribution'].get(weakest_phase, 0)
+            phase_mistakes = move_insights['mistake_phase_distribution'].get(weakest_phase, 0)
+            phase_errors = phase_blunders + phase_mistakes
+
+            if phase_errors > 0:
+                # Calculate percentage of total errors in this phase
+                total_errors = sum(
+                    move_insights['blunder_phase_distribution'].get(p, 0) +
+                    move_insights['mistake_phase_distribution'].get(p, 0)
+                    for p in ['opening', 'middlegame', 'endgame']
+                )
+                error_percentage = (phase_errors / total_errors * 100) if total_errors > 0 else 0
+
+                # Get phase accuracy for context (map phase names correctly)
+                phase_key = 'middle' if weakest_phase == 'middlegame' else weakest_phase
+                phase_accuracy = phase_accuracies.get(phase_key, 0.0)
+                if phase_accuracy > 0:
+                    return f"Focus targeted training on {phase_label.lower()} play (currently {phase_errors} significant errors, {error_percentage:.0f}% of your total mistakes, accuracy: {phase_accuracy:.0f}%). Review your best {phase_label.lower()} examples to identify patterns that work."
+                else:
+                    return f"Focus targeted training on {phase_label.lower()} play—your move analysis shows {phase_errors} significant errors in this phase ({error_percentage:.0f}% of total mistakes). Study your strongest {phase_label.lower()} games to identify what you did right."
+
+        # Use common learning points if available
+        common_learning = move_insights.get('common_learning_points', [])
+        if common_learning:
+            # Extract the most actionable learning point
+            learning_point = common_learning[0]
+            if len(learning_point) < 150:  # Keep it concise
+                return f"Focus targeted training on {PERSONALITY_LABELS[lowest_key].lower()} (currently {lowest_value:.0f}). {learning_point}"
+
+    # Fall back to personality-based recommendation
+    primary = f"Focus targeted training on {PERSONALITY_LABELS[lowest_key].lower()} (currently {lowest_value:.0f})."
+    if phase_accuracies.get('endgame', 0.0) < 50.0:
+        primary += " Add dedicated endgame study sessions to stabilize long games."
+
+    return primary
+
+
+def _generate_secondary_focus(
+    personality_scores: Dict[str, float],
+    top_key: str,
+    top_value: float,
+    move_insights: Dict[str, Any]
+) -> str:
+    """Generate secondary focus recommendation to build on strengths."""
+
+    # If we have move analysis insights, reference specific strengths
+    if move_insights and move_insights.get('total_user_moves', 0) > 0:
+        strongest_phase = move_insights.get('strongest_phase')
+        weakest_phase = move_insights.get('weakest_phase')
+
+        if strongest_phase and strongest_phase != weakest_phase:
+            phase_label = strongest_phase.capitalize()
+            phase_blunders = move_insights['blunder_phase_distribution'].get(strongest_phase, 0)
+            phase_mistakes = move_insights['mistake_phase_distribution'].get(strongest_phase, 0)
+            phase_errors = phase_blunders + phase_mistakes
+
+            if phase_errors == 0:
+                return f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples. Your {phase_label.lower()} play shows exceptional consistency with zero significant errors."
+            elif phase_errors < 3:
+                return f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples. Your {phase_label.lower()} play stands out with only {phase_errors} significant error{'s' if phase_errors > 1 else ''}—this is your strongest phase."
+
+        # Check for areas with many insights (indicating activity/engagement)
+        tactical_count = move_insights.get('tactical_insight_count', 0)
+        positional_count = move_insights.get('positional_insight_count', 0)
+        total_insights = tactical_count + positional_count
+
+        if total_insights > 10:  # Only if we have substantial insight data
+            if tactical_count > positional_count * 1.2 and top_key == 'tactical':
+                return f"Continue to cultivate tactical awareness (currently {top_value:.0f}) by reviewing your best examples. Your games contain {tactical_count} tactical patterns worth studying—analyze positions where you found tactical solutions."
+            elif positional_count > tactical_count * 1.2 and top_key == 'positional':
+                return f"Continue to cultivate positional understanding (currently {top_value:.0f}) by reviewing your best examples. Your strategic play shows {positional_count} clear positional patterns—identify what made these positions work."
+
+        # If we have strong phase data, reference it
+        if strongest_phase:
+            phase_blunders_check = move_insights['blunder_phase_distribution'].get(strongest_phase, 0)
+            phase_mistakes_check = move_insights['mistake_phase_distribution'].get(strongest_phase, 0)
+            phase_errors_check = phase_blunders_check + phase_mistakes_check
+            if phase_errors_check < 5:
+                phase_label = strongest_phase.capitalize()
+                return f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples. Your {phase_label.lower()} performance demonstrates this strength."
+
+    # Default recommendation
+    secondary = f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples."
+    if personality_scores.get('staleness', 50.0) <= 40.0:
+        secondary = 'Develop a more structured opening repertoire for consistent play.'
+
+    return secondary
+
+
+def _generate_leverage_strength(
+    player_style: Dict[str, Any],
+    personality_scores: Dict[str, float],
+    move_insights: Dict[str, Any]
+) -> str:
+    """Generate leverage strength recommendation using player style and move insights."""
+
+    style_category = player_style.get('category', 'balanced')
+    style_description = player_style.get('description', '').rstrip('.')
+
+    base_leverage = f"Lean into a {style_category} approach - {style_description} to steer games into favorable territory."
+
+    # Enhance with move analysis insights if available
+    if move_insights and move_insights.get('total_user_moves', 0) > 0:
+        tactical_count = move_insights.get('tactical_insight_count', 0)
+        positional_count = move_insights.get('positional_insight_count', 0)
+        total_insights = tactical_count + positional_count
+
+        # If player style matches move analysis patterns, reinforce it with specific data
+        if style_category == 'tactical' and tactical_count > positional_count and total_insights > 5:
+            if tactical_count > positional_count * 1.5:
+                return f"Lean into a tactical approach - {style_description} Your move analysis confirms this is where you excel with {tactical_count} tactical patterns identified. Seek positions with tactical complications and calculation challenges."
+            else:
+                return f"Lean into a tactical approach - {style_description} Your move analysis shows strong tactical intuition. Focus on positions where you can create complications and calculate variations."
+        elif style_category == 'positional' and positional_count > tactical_count and total_insights > 5:
+            if positional_count > tactical_count * 1.5:
+                return f"Lean into a positional approach - {style_description} Your move analysis shows strong strategic understanding with {positional_count} positional patterns identified. Prefer long-term advantages and structural edges over immediate tactics."
+            else:
+                return f"Lean into a positional approach - {style_description} Your move analysis confirms your strategic strength. Focus on accumulating small advantages and improving piece placement gradually."
+        elif style_category == 'aggressive' and total_insights > 5:
+            return f"Lean into an aggressive approach - {style_description} Your move analysis shows you thrive in dynamic positions. Look for opportunities to create threats and complicate the position."
+        elif style_category == 'balanced' and total_insights > 5:
+            # For balanced players, highlight their versatility
+            if tactical_count > 0 and positional_count > 0:
+                return f"Lean into a balanced approach - {style_description} Your move analysis shows versatility with both tactical ({tactical_count}) and positional ({positional_count}) patterns. Adapt your style based on the position's requirements."
+
+    return base_leverage
 
 
 def _generate_ai_style_analysis(
@@ -3389,7 +4882,79 @@ def _generate_ai_style_analysis(
     average_accuracy: float,
     phase_accuracies: Dict[str, float]
 ) -> Dict[str, str]:
-    """Generate personalized, data-driven style analysis with specific insights."""
+    """Generate personalized, data-driven style analysis with specific insights.
+
+    First tries AI generation if available, then falls back to template-based generation.
+    """
+
+    # Try AI generation first
+    try:
+        logger.info("[STYLE ANALYSIS] Initializing AI generator...")
+        ai_generator = _get_ai_generator()
+
+        if ai_generator and ai_generator.enabled:
+            logger.info("[STYLE ANALYSIS] ✅ AI generator is enabled and ready")
+            logger.info(f"[STYLE ANALYSIS] Model: {ai_generator.config.ai_model if hasattr(ai_generator, 'config') else 'unknown'}")
+            logger.info("[STYLE ANALYSIS] Attempting AI generation for style analysis...")
+
+            try:
+                ai_result = ai_generator.generate_style_analysis(
+                    personality_scores=personality_scores,
+                    player_style=player_style,
+                    player_level=player_level,
+                    total_games=total_games,
+                    average_accuracy=average_accuracy,
+                    phase_accuracies=phase_accuracies
+                )
+
+                if ai_result and all(key in ai_result for key in ['style_summary', 'characteristics', 'strengths', 'playing_patterns', 'improvement_focus']):
+                    logger.info("[STYLE ANALYSIS] ✅ AI generation successful - using AI-generated style analysis")
+                    logger.debug(f"[STYLE ANALYSIS] Generated fields: {list(ai_result.keys())}")
+                    return ai_result
+                else:
+                    missing_keys = [key for key in ['style_summary', 'characteristics', 'strengths', 'playing_patterns', 'improvement_focus']
+                                   if key not in (ai_result or {})]
+                    logger.warning(f"[STYLE ANALYSIS] ⚠️  AI generation returned incomplete result (missing: {missing_keys}), falling back to templates")
+            except Exception as gen_error:
+                logger.error(f"[STYLE ANALYSIS] ❌ AI generation call failed: {gen_error}")
+                logger.debug(f"[STYLE ANALYSIS] Generation error traceback: {traceback.format_exc()}")
+                logger.info("[STYLE ANALYSIS] Falling back to template-based generation")
+        else:
+            if ai_generator:
+                logger.warning("[STYLE ANALYSIS] ⚠️  AI generator exists but is disabled")
+                logger.info(f"[STYLE ANALYSIS] AI_ENABLED={ai_generator.config.ai_enabled if hasattr(ai_generator, 'config') else 'unknown'}")
+            else:
+                logger.warning("[STYLE ANALYSIS] ⚠️  AI generator not available - using templates")
+            logger.info("[STYLE ANALYSIS] Using template-based style analysis generation")
+    except ImportError as import_error:
+        logger.warning(f"[STYLE ANALYSIS] ⚠️  Failed to import AI generator: {import_error}")
+        logger.info("[STYLE ANALYSIS] AI feature not available - using templates")
+    except Exception as e:
+        logger.error(f"[STYLE ANALYSIS] ❌ Unexpected error during AI initialization: {e}")
+        logger.debug(f"[STYLE ANALYSIS] Error traceback: {traceback.format_exc()}")
+        logger.info("[STYLE ANALYSIS] Falling back to template-based generation")
+
+    # Fallback to template-based generation
+    logger.info("[STYLE ANALYSIS] Using template-based style analysis generation")
+    return _generate_template_style_analysis(
+        personality_scores,
+        player_style,
+        player_level,
+        total_games,
+        average_accuracy,
+        phase_accuracies
+    )
+
+
+def _generate_template_style_analysis(
+    personality_scores: Dict[str, float],
+    player_style: Dict[str, Any],
+    player_level: str,
+    total_games: int,
+    average_accuracy: float,
+    phase_accuracies: Dict[str, float]
+) -> Dict[str, str]:
+    """Generate template-based style analysis (fallback when AI is not available)."""
 
     # Get the dominant trait and its score
     ranked_traits = sorted(
@@ -3543,317 +5108,7 @@ def _generate_famous_player_comparisons(
 ) -> Dict[str, Any]:
     """Generate famous player comparisons based on personality scores."""
 
-    # Famous players database with personality profiles
-    # Database expanded from 26 to 39 players to improve matching accuracy
-    # Includes more modern players (2010s-present) for better coverage of contemporary styles
-    # NOTE: Profiles are currently estimated - Priority 1 improvement is to calculate from real games
-    famous_players = [
-        {
-            'name': 'Mikhail Tal',
-            'description': 'The "Magician from Riga" - known for his brilliant tactical combinations and sacrifices',
-            'era': '1950s-1990s',
-            'strengths': ['Tactical vision', 'Sacrificial attacks', 'Complex calculations'],
-            'profile': {'tactical': 85, 'aggressive': 90, 'positional': 55, 'patient': 45, 'novelty': 88, 'staleness': 35},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Garry Kasparov',
-            'description': 'Aggressive tactical player who dominated with dynamic, attacking chess',
-            'era': '1980s-2000s',
-            'strengths': ['Initiative', 'Tactical precision', 'Pressure play'],
-            'profile': {'tactical': 90, 'aggressive': 85, 'positional': 75, 'patient': 60, 'novelty': 75, 'staleness': 45},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Anatoly Karpov',
-            'description': 'Master of positional chess and endgame technique',
-            'era': '1970s-1990s',
-            'strengths': ['Positional understanding', 'Endgame mastery', 'Prophylaxis'],
-            'profile': {'tactical': 70, 'aggressive': 50, 'positional': 95, 'patient': 90, 'novelty': 45, 'staleness': 75},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Magnus Carlsen',
-            'description': 'Universal player with exceptional endgame skills and practical play',
-            'era': '2000s-present',
-            'strengths': ['Universal style', 'Endgame mastery', 'Practical play'],
-            'profile': {'tactical': 85, 'aggressive': 70, 'positional': 90, 'patient': 80, 'novelty': 72, 'staleness': 50},
-            'confidence': 90.0
-        },
-        {
-            'name': 'Bobby Fischer',
-            'description': 'Legendary American champion known for his fighting spirit and deep preparation',
-            'era': '1960s-1970s',
-            'strengths': ['Competitive spirit', 'Sharp tactics', 'Deep preparation'],
-            'profile': {'tactical': 88, 'aggressive': 80, 'positional': 85, 'patient': 65, 'novelty': 70, 'staleness': 55},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Tigran Petrosian',
-            'description': 'Master of prophylaxis and defensive play',
-            'era': '1950s-1980s',
-            'strengths': ['Defensive mastery', 'Prophylaxis', 'Safety'],
-            'profile': {'tactical': 65, 'aggressive': 40, 'positional': 90, 'patient': 95, 'novelty': 55, 'staleness': 65},
-            'confidence': 80.0
-        },
-        {
-            'name': 'José Raúl Capablanca',
-            'description': 'Natural talent with exceptional endgame technique',
-            'era': '1910s-1940s',
-            'strengths': ['Technical precision', 'Endgame mastery', 'Natural talent'],
-            'profile': {'tactical': 75, 'aggressive': 60, 'positional': 88, 'patient': 85, 'novelty': 50, 'staleness': 60},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Alexander Alekhine',
-            'description': 'Attacking genius known for complex combinations',
-            'era': '1920s-1940s',
-            'strengths': ['Attacking play', 'Initiative', 'Dynamic positions'],
-            'profile': {'tactical': 90, 'aggressive': 88, 'positional': 75, 'patient': 50, 'novelty': 85, 'staleness': 40},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Vladimir Kramnik',
-            'description': 'Solid positional player with creative understanding',
-            'era': '1990s-2010s',
-            'strengths': ['Positional understanding', 'Endgame technique', 'Creative play'],
-            'profile': {'tactical': 78, 'aggressive': 60, 'positional': 92, 'patient': 85, 'novelty': 68, 'staleness': 52},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Hikaru Nakamura',
-            'description': 'Modern attacking player known for rapid chess and initiative',
-            'era': '2000s-present',
-            'strengths': ['Modern attacks', 'Initiative', 'Practical play'],
-            'profile': {'tactical': 88, 'aggressive': 82, 'positional': 72, 'patient': 60, 'novelty': 80, 'staleness': 42},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Fabiano Caruana',
-            'description': 'Universal player with deep opening preparation',
-            'era': '2010s-present',
-            'strengths': ['Universal style', 'Opening preparation', 'Technical precision'],
-            'profile': {'tactical': 85, 'aggressive': 70, 'positional': 88, 'patient': 78, 'novelty': 65, 'staleness': 58},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Paul Morphy',
-            'description': 'Tactical genius of the romantic era',
-            'era': '1850s',
-            'strengths': ['Tactical genius', 'Natural talent', 'Attacking play'],
-            'profile': {'tactical': 95, 'aggressive': 92, 'positional': 65, 'patient': 40, 'novelty': 82, 'staleness': 38},
-            'confidence': 70.0
-        },
-        {
-            'name': 'Judit Polgar',
-            'description': 'Strongest female player ever, known for aggressive tactical play',
-            'era': '1990s-2010s',
-            'strengths': ['Tactical prowess', 'Aggressive style', 'Competitive spirit'],
-            'profile': {'tactical': 88, 'aggressive': 85, 'positional': 75, 'patient': 58, 'novelty': 72, 'staleness': 48},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Viswanathan Anand',
-            'description': 'Speed chess specialist with universal style and deep preparation',
-            'era': '1990s-2010s',
-            'strengths': ['Universal play', 'Speed', 'Opening preparation'],
-            'profile': {'tactical': 85, 'aggressive': 75, 'positional': 88, 'patient': 75, 'novelty': 70, 'staleness': 52},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Aron Nimzowitsch',
-            'description': 'Hypermodern pioneer who revolutionized chess understanding',
-            'era': '1920s-1930s',
-            'strengths': ['Hypermodern concepts', 'Prophylaxis', 'Strategic innovation'],
-            'profile': {'tactical': 72, 'aggressive': 65, 'positional': 92, 'patient': 80, 'novelty': 95, 'staleness': 30},
-            'confidence': 70.0
-        },
-        {
-            'name': 'Mikhail Botvinnik',
-            'description': 'Scientific approach to chess, founder of Soviet School',
-            'era': '1940s-1960s',
-            'strengths': ['Deep preparation', 'Scientific method', 'Endgame technique'],
-            'profile': {'tactical': 75, 'aggressive': 60, 'positional': 90, 'patient': 88, 'novelty': 55, 'staleness': 68},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Vasily Smyslov',
-            'description': 'Harmonious style with exceptional endgame mastery',
-            'era': '1950s-1980s',
-            'strengths': ['Endgame mastery', 'Harmonious play', 'Technical precision'],
-            'profile': {'tactical': 78, 'aggressive': 55, 'positional': 90, 'patient': 88, 'novelty': 52, 'staleness': 62},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Viktor Korchnoi',
-            'description': 'Fearless fighter known for resourcefulness and never giving up',
-            'era': '1960s-2000s',
-            'strengths': ['Fighting spirit', 'Resourcefulness', 'Universal style'],
-            'profile': {'tactical': 82, 'aggressive': 75, 'positional': 85, 'patient': 68, 'novelty': 68, 'staleness': 52},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Ding Liren',
-            'description': 'Solid positional player with deep calculation and modern style',
-            'era': '2010s-present',
-            'strengths': ['Solid play', 'Deep calculation', 'Modern openings'],
-            'profile': {'tactical': 85, 'aggressive': 68, 'positional': 90, 'patient': 82, 'novelty': 70, 'staleness': 50},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Alireza Firouzja',
-            'description': 'Young aggressive talent with dynamic attacking style',
-            'era': '2020s-present',
-            'strengths': ['Dynamic play', 'Aggression', 'Modern tactics'],
-            'profile': {'tactical': 88, 'aggressive': 90, 'positional': 70, 'patient': 52, 'novelty': 85, 'staleness': 35},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Hou Yifan',
-            'description': 'Multiple-time Women\'s World Champion with classical style',
-            'era': '2010s-present',
-            'strengths': ['Classical understanding', 'Solid technique', 'Endgame skill'],
-            'profile': {'tactical': 78, 'aggressive': 65, 'positional': 88, 'patient': 80, 'novelty': 62, 'staleness': 55},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Bent Larsen',
-            'description': 'Creative player with unconventional openings and fighting spirit',
-            'era': '1960s-1990s',
-            'strengths': ['Creativity', 'Unconventional openings', 'Fighting chess'],
-            'profile': {'tactical': 80, 'aggressive': 78, 'positional': 75, 'patient': 60, 'novelty': 88, 'staleness': 35},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Akiba Rubinstein',
-            'description': 'Endgame virtuoso and master of rook endgames',
-            'era': '1900s-1930s',
-            'strengths': ['Endgame mastery', 'Rook endgames', 'Technical precision'],
-            'profile': {'tactical': 75, 'aggressive': 52, 'positional': 92, 'patient': 90, 'novelty': 48, 'staleness': 70},
-            'confidence': 70.0
-        },
-        {
-            'name': 'David Bronstein',
-            'description': 'Creative genius who played beautiful, imaginative chess',
-            'era': '1940s-1990s',
-            'strengths': ['Creativity', 'Imagination', 'Sacrificial play'],
-            'profile': {'tactical': 85, 'aggressive': 78, 'positional': 80, 'patient': 62, 'novelty': 92, 'staleness': 32},
-            'confidence': 75.0
-        },
-        {
-            'name': 'Levon Aronian',
-            'description': 'Creative and imaginative with rich tactical vision',
-            'era': '2000s-present',
-            'strengths': ['Creativity', 'Tactical vision', 'Universal play'],
-            'profile': {'tactical': 88, 'aggressive': 75, 'positional': 85, 'patient': 72, 'novelty': 82, 'staleness': 42},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Emanuel Lasker',
-            'description': 'Longest-reigning world champion, psychologist of chess',
-            'era': '1890s-1920s',
-            'strengths': ['Practical play', 'Psychology', 'Resourcefulness'],
-            'profile': {'tactical': 80, 'aggressive': 70, 'positional': 85, 'patient': 80, 'novelty': 72, 'staleness': 48},
-            'confidence': 70.0
-        },
-        {
-            'name': 'Ian Nepomniachtchi',
-            'description': 'Aggressive tactical player with dynamic attacking style',
-            'era': '2010s-present',
-            'strengths': ['Tactical aggression', 'Initiative', 'Complex positions'],
-            'profile': {'tactical': 90, 'aggressive': 88, 'positional': 72, 'patient': 58, 'novelty': 75, 'staleness': 48},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Maxime Vachier-Lagrave',
-            'description': 'Universal player with strong tactics and solid technique',
-            'era': '2010s-present',
-            'strengths': ['Universal style', 'Tactical sharpness', 'Calculation'],
-            'profile': {'tactical': 90, 'aggressive': 75, 'positional': 85, 'patient': 75, 'novelty': 68, 'staleness': 54},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Richard Rapport',
-            'description': 'Highly creative player known for unorthodox openings',
-            'era': '2010s-present',
-            'strengths': ['Creativity', 'Unconventional ideas', 'Surprising moves'],
-            'profile': {'tactical': 82, 'aggressive': 80, 'positional': 70, 'patient': 60, 'novelty': 95, 'staleness': 25},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Wesley So',
-            'description': 'Solid positional player with exceptional technique',
-            'era': '2010s-present',
-            'strengths': ['Solid play', 'Technical precision', 'Endgame mastery'],
-            'profile': {'tactical': 82, 'aggressive': 58, 'positional': 92, 'patient': 90, 'novelty': 52, 'staleness': 68},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Anish Giri',
-            'description': 'Solid positional player with deep opening preparation',
-            'era': '2010s-present',
-            'strengths': ['Positional understanding', 'Opening preparation', 'Defensive resources'],
-            'profile': {'tactical': 85, 'aggressive': 55, 'positional': 92, 'patient': 88, 'novelty': 58, 'staleness': 65},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Daniil Dubov',
-            'description': 'Creative aggressive player with unconventional ideas',
-            'era': '2015-present',
-            'strengths': ['Creativity', 'Aggressive play', 'Surprising ideas'],
-            'profile': {'tactical': 88, 'aggressive': 85, 'positional': 75, 'patient': 55, 'novelty': 92, 'staleness': 30},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Shakhriyar Mamedyarov',
-            'description': 'Dynamic player with aggressive style and tactical sharpness',
-            'era': '2010s-present',
-            'strengths': ['Dynamic play', 'Tactical aggression', 'Initiative'],
-            'profile': {'tactical': 88, 'aggressive': 88, 'positional': 75, 'patient': 60, 'novelty': 78, 'staleness': 42},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Teimour Radjabov',
-            'description': 'Solid positional player with excellent defensive skills',
-            'era': '2000s-present',
-            'strengths': ['Defensive mastery', 'Positional play', 'Solid preparation'],
-            'profile': {'tactical': 80, 'aggressive': 52, 'positional': 90, 'patient': 92, 'novelty': 55, 'staleness': 70},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Alexander Grischuk',
-            'description': 'Universal player with strong tactics and time pressure skills',
-            'era': '2000s-present',
-            'strengths': ['Universal play', 'Tactical vision', 'Time pressure'],
-            'profile': {'tactical': 90, 'aggressive': 78, 'positional': 82, 'patient': 68, 'novelty': 72, 'staleness': 50},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Boris Gelfand',
-            'description': 'Solid positional player with deep opening knowledge',
-            'era': '1990s-2010s',
-            'strengths': ['Opening preparation', 'Solid play', 'Technical precision'],
-            'profile': {'tactical': 82, 'aggressive': 58, 'positional': 90, 'patient': 88, 'novelty': 50, 'staleness': 72},
-            'confidence': 85.0
-        },
-        {
-            'name': 'Peter Leko',
-            'description': 'Solid defensive player known for drawing ability',
-            'era': '1990s-2010s',
-            'strengths': ['Defensive resources', 'Solid play', 'Technical precision'],
-            'profile': {'tactical': 78, 'aggressive': 48, 'positional': 92, 'patient': 95, 'novelty': 45, 'staleness': 75},
-            'confidence': 80.0
-        },
-        {
-            'name': 'Vassily Ivanchuk',
-            'description': 'Creative genius with unpredictable style and brilliant ideas',
-            'era': '1980s-2010s',
-            'strengths': ['Creativity', 'Tactical brilliance', 'Unpredictability'],
-            'profile': {'tactical': 92, 'aggressive': 80, 'positional': 82, 'patient': 60, 'novelty': 95, 'staleness': 28},
-            'confidence': 85.0
-        },
-    ]
-
+    famous_players = FAMOUS_PLAYERS
     # Calculate similarity scores using all 6 personality traits
     player_tactical = personality_scores.get('tactical', 50.0)
     player_aggressive = personality_scores.get('aggressive', 50.0)
@@ -4191,34 +5446,6 @@ def _generate_famous_player_comparisons(
 
     return result
 
-
-# Opening compatibility matrix
-OPENING_STYLES = {
-    # Aggressive openings
-    "King's Indian": {"aggressive": 80, "tactical": 70, "positional": 40, "patient": 30},
-    "Sicilian Defense": {"aggressive": 75, "tactical": 80, "positional": 50, "patient": 40},
-    "Dutch Defense": {"aggressive": 85, "tactical": 65, "positional": 35, "patient": 30},
-    "Benoni Defense": {"aggressive": 80, "tactical": 75, "positional": 40, "patient": 35},
-    "Dragon Variation": {"aggressive": 90, "tactical": 85, "positional": 30, "patient": 25},
-
-    # Tactical openings
-    "Scotch Game": {"aggressive": 65, "tactical": 80, "positional": 50, "patient": 45},
-    "Italian Game": {"aggressive": 60, "tactical": 75, "positional": 55, "patient": 50},
-    "Spanish Opening": {"aggressive": 50, "tactical": 70, "positional": 70, "patient": 60},
-
-    # Positional openings
-    "Queen's Gambit": {"aggressive": 40, "tactical": 55, "positional": 85, "patient": 70},
-    "English Opening": {"aggressive": 35, "tactical": 50, "positional": 85, "patient": 75},
-    "Ruy Lopez": {"aggressive": 45, "tactical": 65, "positional": 80, "patient": 70},
-    "Catalan Opening": {"aggressive": 35, "tactical": 55, "positional": 90, "patient": 75},
-
-    # Patient openings
-    "French Defense": {"aggressive": 35, "tactical": 50, "positional": 75, "patient": 85},
-    "Caro-Kann Defense": {"aggressive": 30, "tactical": 45, "positional": 80, "patient": 90},
-    "Queen's Pawn Game": {"aggressive": 40, "tactical": 50, "positional": 70, "patient": 75},
-    "Nimzo-Indian Defense": {"aggressive": 40, "tactical": 60, "positional": 80, "patient": 80},
-    "London System": {"aggressive": 30, "tactical": 40, "positional": 75, "patient": 85},
-}
 
 
 def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[str, Any]]) -> List[OpeningMistake]:
@@ -4572,15 +5799,24 @@ def _should_count_opening_for_color(opening: str, player_color: str) -> bool:
         'scandinavian', 'alekhine', 'nimzowitsch defense', 'petrov', 'philidor',
         "king's indian", 'grunfeld', 'grünfeld', 'nimzo-indian',
         "queen's gambit declined", "queen's gambit accepted", 'slav', 'semi-slav',
-        "queen's indian", 'benoni', 'benko', 'dutch', 'budapest', 'tarrasch defense'
+        "queen's indian", 'benoni', 'benko', 'dutch', 'budapest', 'tarrasch defense',
+        'two knights defense', 'hungarian defense', 'latvian gambit',
+        'elephant gambit', 'damiano defense', 'portuguese opening'
     ]
 
     # White openings (systems/attacks) - only count when player is white
     white_openings = [
         'italian', 'ruy lopez', 'spanish', 'scotch', 'four knights', 'vienna',
-        "king's gambit", "bishop's opening", 'center game',
-        "queen's gambit", 'london', 'colle', 'torre', 'trompowsky',
-        'blackmar-diemer', 'english', 'reti', 'réti', "bird's", "larsen's"
+        "king's gambit", "king's pawn", "bishop's opening", 'center game', 'giuoco piano',
+        "queen's gambit", "queen's pawn", 'london', 'colle', 'torre', 'trompowsky',
+        'blackmar-diemer', 'english', 'reti', 'réti', "bird's", "larsen's",
+        'catalan', 'benko gambit declined', 'ponziani', 'danish gambit',
+        'alapin', 'morra', 'smith-morra', 'wing gambit', 'evans gambit',
+        'fried liver', 'max lange', 'greco', 'italian gambit',
+        'mieses opening', 'barnes opening', 'polish', 'orangutan', 'sokolsky',
+        'nimzowitsch-larsen', 'zukertort', 'old indian attack',
+        'kingside fianchetto', 'queenside fianchetto', 'stonewall',
+        'van geet', 'king pawn game', 'queen pawn game'
     ]
 
     # Check if it's a black opening
@@ -4596,6 +5832,11 @@ def _should_count_opening_for_color(opening: str, player_color: str) -> bool:
     # Heuristics
     if 'defense' in opening_lower or 'defence' in opening_lower:
         return player_color == 'black'
+
+    # Most things with "Opening" in the name are white's first move
+    # e.g., "King's Pawn Opening", "Italian Opening"
+    if ' opening' in opening_lower:
+        return player_color == 'white'
 
     if 'attack' in opening_lower or 'system' in opening_lower or 'gambit' in opening_lower:
         return player_color == 'white'
@@ -4615,8 +5856,9 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
         if not opening or opening == 'Unknown':
             continue
 
-        # Convert ECO codes to full opening names for better display
-        display_opening = get_opening_name_from_eco_code(opening)
+        # Normalize opening name - handles both ECO codes and already-normalized names
+        # This ensures consistent grouping (e.g., "D00" and "Queen's Pawn Game" both become "Queen's Pawn Game")
+        display_opening = normalize_opening_name(opening)
 
         color = game.get('color')
         result = game.get('result')
@@ -4659,7 +5901,9 @@ def _analyze_repertoire(games: List[Dict[str, Any]], personality_scores: Dict[st
 
         if win_rate > most_successful['win_rate']:
             most_successful = {'opening': opening, 'win_rate': win_rate, 'games': stats['total']}
-        if win_rate < needs_work['win_rate']:
+        # For needs_work, require at least 5 games to avoid small sample size issues
+        # This prevents misleading recommendations based on very few games
+        if stats['total'] >= 5 and win_rate < needs_work['win_rate']:
             needs_work = {'opening': opening, 'win_rate': win_rate, 'games': stats['total']}
 
     # Calculate style match score
@@ -4816,9 +6060,20 @@ def _generate_quick_tip(mistakes: List[OpeningMistake], patterns: List[str]) -> 
 def _generate_enhanced_opening_analysis(
     games: List[Dict[str, Any]],
     analyses: List[Dict[str, Any]],
-    personality_scores: Dict[str, float]
+    personality_scores: Dict[str, float],
+    all_games_for_repertoire: Optional[List[Dict[str, Any]]] = None
 ) -> EnhancedOpeningAnalysis:
-    """Generate comprehensive enhanced opening analysis."""
+    """Generate comprehensive enhanced opening analysis.
+
+    Args:
+        games: Limited games for personality/mistake analysis (typically 100 most recent)
+        analyses: Analysis records corresponding to games
+        personality_scores: Computed personality scores
+        all_games_for_repertoire: All games for accurate repertoire analysis (optional, defaults to games)
+    """
+    # Use all games for repertoire analysis if provided, otherwise use limited games
+    repertoire_games = all_games_for_repertoire if all_games_for_repertoire is not None else games
+
     opening_win_rate = _compute_opening_win_rate(analyses)
     specific_mistakes = _extract_opening_mistakes(analyses, games)
 
@@ -4826,8 +6081,8 @@ def _generate_enhanced_opening_analysis(
     patterns = _detect_mistake_patterns(specific_mistakes, games)
     quick_tip = _generate_quick_tip(specific_mistakes, patterns)
 
-    style_recommendations = _generate_style_recommendations(personality_scores, games)
-    base_insights = _generate_actionable_insights(personality_scores, games, analyses)
+    style_recommendations = _generate_style_recommendations(personality_scores, repertoire_games)
+    base_insights = _generate_actionable_insights(personality_scores, repertoire_games, analyses)
 
     # Combine patterns, quick tip, and style insights
     actionable_insights = []
@@ -4837,7 +6092,8 @@ def _generate_enhanced_opening_analysis(
     actionable_insights.extend(base_insights)
 
     improvement_trend = _generate_improvement_trend(games, analyses)
-    repertoire_analysis = _analyze_repertoire(games, personality_scores)
+    # Use all games for accurate repertoire analysis (win rates, needs_work, etc.)
+    repertoire_analysis = _analyze_repertoire(repertoire_games, personality_scores)
 
     return EnhancedOpeningAnalysis(
         opening_win_rate=opening_win_rate,
@@ -4853,9 +6109,15 @@ def _build_deep_analysis_response(
     canonical_user_id: str,
     games: List[Dict[str, Any]],
     analyses: List[Dict[str, Any]],
-    profile: Dict[str, Any]
+    profile: Dict[str, Any],
+    all_games_for_repertoire: Optional[List[Dict[str, Any]]] = None,
+    analyzed_games_count: Optional[int] = None
 ) -> DeepAnalysisData:
-    total_games = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')}) or len(games)
+    # Use analyzed_games_count if provided (from database), otherwise fall back to unique analyses or games length
+    if analyzed_games_count is not None and analyzed_games_count > 0:
+        total_games = analyzed_games_count
+    else:
+        total_games = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')}) or len(games)
     accuracy_values = [_coerce_float(analysis.get('best_move_percentage', analysis.get('accuracy'))) for analysis in analyses]
     average_accuracy = _round2(_safe_average([v for v in accuracy_values if v is not None]))
     current_rating = _infer_current_rating(games, profile)
@@ -4865,7 +6127,7 @@ def _build_deep_analysis_response(
     phase_accuracies = _compute_phase_accuracies(analyses)
     player_style, playing_style = _determine_player_style(personality_scores)
     strengths, improvements = _summarize_strengths_and_gaps(personality_scores)
-    recommendations = _build_recommendations(personality_scores, player_style, strengths, improvements, phase_accuracies)
+    recommendations = _build_recommendations(personality_scores, player_style, strengths, improvements, phase_accuracies, analyses)
     famous_players = _generate_famous_player_comparisons(personality_scores, player_style)
     ai_style_analysis = _generate_ai_style_analysis(personality_scores, player_style, player_level, total_games, average_accuracy, phase_accuracies)
 
@@ -4875,7 +6137,7 @@ def _build_deep_analysis_response(
         try:
             if DEBUG:
                 print(f"Generating enhanced opening analysis for {len(games)} games, {len(analyses)} analyses")
-            enhanced_opening_analysis = _generate_enhanced_opening_analysis(games, analyses, personality_scores)
+            enhanced_opening_analysis = _generate_enhanced_opening_analysis(games, analyses, personality_scores, all_games_for_repertoire)
             if DEBUG:
                 print(f"Enhanced opening analysis generated successfully")
             if DEBUG and enhanced_opening_analysis:
@@ -4885,7 +6147,6 @@ def _build_deep_analysis_response(
                 print(f"  - Insights: {len(enhanced_opening_analysis.actionable_insights)}")
                 print(f"  - Trend points: {len(enhanced_opening_analysis.improvement_trend)}")
         except Exception as e:
-            import traceback
             if DEBUG:
                 print(f"Error generating enhanced opening analysis: {e}")
                 print(traceback.format_exc())
@@ -4912,9 +6173,11 @@ def _build_deep_analysis_response(
 def _build_fallback_deep_analysis(
     canonical_user_id: str,
     games: List[Dict[str, Any]],
-    profile: Dict[str, Any]
+    profile: Dict[str, Any],
+    analyzed_games_count: Optional[int] = None
 ) -> DeepAnalysisData:
-    total_games = len(games)
+    # Use analyzed_games_count if provided (from database), otherwise fall back to len(games)
+    total_games = analyzed_games_count if analyzed_games_count is not None and analyzed_games_count > 0 else len(games)
     average_accuracy = _round2(_safe_average([
         _coerce_float(game.get('accuracy')) for game in games if _coerce_float(game.get('accuracy')) is not None
     ]))
@@ -5102,13 +6365,11 @@ async def _fetch_chesscom_games(
 
         except Exception as inner_e:
             print(f"[chess.com] ERROR in fetch loop: {inner_e}")
-            import traceback
             traceback.print_exc()
             return []
 
     except Exception as e:
         print(f"[chess.com] ERROR in _fetch_chesscom_games: {e}")
-        import traceback
         traceback.print_exc()
         return []
 
@@ -5124,99 +6385,97 @@ async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Option
     """
     print(f"[lichess] Fetching games for user: {user_id}, limit: {limit}, until: {until_timestamp}, since: {since_timestamp}")
     try:
-        import aiohttp
         import json
 
-        async with aiohttp.ClientSession() as session:
-            url = f"https://lichess.org/api/games/user/{user_id}"
-            params = {
-                'max': limit,
-                'pgnInJson': 'true',  # This makes Lichess return NDJSON format
-                'clocks': 'true',
-                'evals': 'false',
-                'opening': 'true'
-            }
+        session = await get_http_client()
+        url = f"https://lichess.org/api/games/user/{user_id}"
+        params = {
+            'max': limit,
+            'pgnInJson': 'true',  # This makes Lichess return NDJSON format
+            'clocks': 'true',
+            'evals': 'false',
+            'opening': 'true'
+        }
 
-            # Add until parameter if provided (fetch games BEFORE this time)
-            if until_timestamp:
-                params['until'] = until_timestamp
+        # Add until parameter if provided (fetch games BEFORE this time)
+        if until_timestamp:
+            params['until'] = until_timestamp
 
-            # Add since parameter if provided (fetch games AFTER this time)
-            if since_timestamp:
-                params['since'] = since_timestamp
+        # Add since parameter if provided (fetch games AFTER this time)
+        if since_timestamp:
+            params['since'] = since_timestamp
 
-            print(f"[lichess] Request URL: {url}")
-            print(f"[lichess] Request params: {params}")
+        print(f"[lichess] Request URL: {url}")
+        print(f"[lichess] Request params: {params}")
 
-            async with session.get(url, params=params, headers={'Accept': 'application/x-ndjson'}) as response:
-                if response.status != 200:
-                    print(f"[lichess] API error: {response.status}")
-                    response_text = await response.text()
-                    print(f"[lichess] Error response: {response_text[:500]}")
-                    return []
+        async with session.get(url, params=params, headers={'Accept': 'application/x-ndjson'}) as response:
+            if response.status != 200:
+                print(f"[lichess] API error: {response.status}")
+                response_text = await response.text()
+                print(f"[lichess] Error response: {response_text[:500]}")
+                return []
 
-                print(f"[lichess] Response status: {response.status}")
-                print(f"[lichess] Response content-type: {response.headers.get('content-type')}")
+            print(f"[lichess] Response status: {response.status}")
+            print(f"[lichess] Response content-type: {response.headers.get('content-type')}")
 
-                games = []
-                # Lichess returns NDJSON (newline-delimited JSON)
-                # Each line is a complete JSON object for one game
-                text = await response.text()
+            games = []
+            # Lichess returns NDJSON (newline-delimited JSON)
+            # Each line is a complete JSON object for one game
+            text = await response.text()
 
-                if not text.strip():
-                    print(f"[lichess] WARNING: Empty response from Lichess API")
-                    return []
+            if not text.strip():
+                print(f"[lichess] WARNING: Empty response from Lichess API")
+                return []
 
-                # Check if response starts with PGN or JSON
-                first_line = text.split('\n')[0].strip() if text else ""
-                print(f"[lichess] First line of response (first 100 chars): {first_line[:100]}")
+            # Check if response starts with PGN or JSON
+            first_line = text.split('\n')[0].strip() if text else ""
+            print(f"[lichess] First line of response (first 100 chars): {first_line[:100]}")
 
-                # Split by newlines and parse each line as JSON
-                lines = text.strip().split('\n')
-                print(f"[lichess] Total lines in response: {len(lines)}")
+            # Split by newlines and parse each line as JSON
+            lines = text.strip().split('\n')
+            print(f"[lichess] Total lines in response: {len(lines)}")
 
-                for line_num, line in enumerate(lines, 1):
-                    line = line.strip()
-                    if not line:
-                        continue
+            for line_num, line in enumerate(lines, 1):
+                line = line.strip()
+                if not line:
+                    continue
 
-                    # Skip if this looks like PGN format (starts with '[')
-                    if line.startswith('['):
-                        if line_num <= 3:  # Only log first few
-                            print(f"[lichess] WARNING: Line {line_num} looks like PGN, not JSON: {line[:50]}")
-                        continue
+                # Skip if this looks like PGN format (starts with '[')
+                if line.startswith('['):
+                    if line_num <= 3:  # Only log first few
+                        print(f"[lichess] WARNING: Line {line_num} looks like PGN, not JSON: {line[:50]}")
+                    continue
 
-                    try:
-                        game_data = json.loads(line)
-                        games.append(game_data)
+                try:
+                    game_data = json.loads(line)
+                    games.append(game_data)
 
-                        # Log first game for debugging
-                        if line_num == 1:
-                            game_id = game_data.get('id', 'unknown')
-                            has_pgn = 'pgn' in game_data
-                            print(f"[lichess] First game parsed successfully: id={game_id}, has_pgn={has_pgn}")
+                    # Log first game for debugging
+                    if line_num == 1:
+                        game_id = game_data.get('id', 'unknown')
+                        has_pgn = 'pgn' in game_data
+                        print(f"[lichess] First game parsed successfully: id={game_id}, has_pgn={has_pgn}")
 
-                    except json.JSONDecodeError as e:
-                        if line_num <= 5:  # Only log first few errors
-                            print(f"[lichess] JSON parse error on line {line_num}: {e}")
-                            print(f"[lichess] Problematic line (first 100 chars): {line[:100]}")
-                        continue
-                    except Exception as e:
-                        if line_num <= 5:
-                            print(f"[lichess] Unexpected error on line {line_num}: {e}")
-                        continue
+                except json.JSONDecodeError as e:
+                    if line_num <= 5:  # Only log first few errors
+                        print(f"[lichess] JSON parse error on line {line_num}: {e}")
+                        print(f"[lichess] Problematic line (first 100 chars): {line[:100]}")
+                    continue
+                except Exception as e:
+                    if line_num <= 5:
+                        print(f"[lichess] Unexpected error on line {line_num}: {e}")
+                    continue
 
-                print(f"[lichess] Successfully fetched and parsed {len(games)} games")
+            print(f"[lichess] Successfully fetched and parsed {len(games)} games")
 
-                if len(games) == 0 and len(lines) > 0:
-                    print(f"[lichess] ERROR: Fetched {len(lines)} lines but parsed 0 games!")
-                    print(f"[lichess] This suggests the response format is not NDJSON as expected")
+            if len(games) == 0 and len(lines) > 0:
+                print(f"[lichess] ERROR: Fetched {len(lines)} lines but parsed 0 games!")
+                print(f"[lichess] This suggests the response format is not NDJSON as expected")
 
-                return games
+            return games
 
     except Exception as e:
         print(f"[lichess] ERROR in _fetch_lichess_games: {e}")
-        import traceback
         traceback.print_exc()
         return []
 
@@ -5378,18 +6637,17 @@ async def _fetch_games_from_platform(
 async def _fetch_single_lichess_game(game_id: str) -> Optional[str]:
     """Fetch a single game PGN from Lichess by game ID"""
     try:
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            url = f"https://lichess.org/game/export/{game_id}"
-            params = {'pgnInJson': 'false'}
+        session = await get_http_client()
+        url = f"https://lichess.org/game/export/{game_id}"
+        params = {'pgnInJson': 'false'}
 
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    pgn_text = await response.text()
-                    return pgn_text
-                else:
-                    print(f"Lichess API error fetching game {game_id}: {response.status}")
-                    return None
+        async with session.get(url, params=params) as response:
+            if response.status == 200:
+                pgn_text = await response.text()
+                return pgn_text
+            else:
+                print(f"Lichess API error fetching game {game_id}: {response.status}")
+                return None
     except Exception as e:
         print(f"Error fetching Lichess game {game_id}: {e}")
         return None
@@ -5505,12 +6763,12 @@ def _extract_opponent_name_from_pgn(pgn: str, user_color: str) -> str:
             if line.startswith('[White '):
                 try:
                     white_name = line.split('"')[1]
-                except:
+                except Exception:
                     pass
             elif line.startswith('[Black '):
                 try:
                     black_name = line.split('"')[1]
-                except:
+                except Exception:
                     pass
 
         # Return opponent's name based on user's color
@@ -5539,7 +6797,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
         if end_time:
             try:
                 played_at_from_api = datetime.fromtimestamp(end_time, tz=timezone.utc).isoformat()
-            except:
+            except Exception:
                 pass
 
         pgn = game_data.get('pgn', '')
@@ -5557,7 +6815,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
                         if pgn_time_control and pgn_time_control != '-':
                             time_control = pgn_time_control
                             break
-                    except:
+                    except Exception:
                         pass
 
         # FALLBACK: If no PGN time control, use time_control or time_class from API
@@ -5577,7 +6835,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
                         time_control = 'rapid'
                     else:
                         time_control = 'classical'
-                except:
+                except Exception:
                     time_control = 'unknown'
 
         # Extract player info
@@ -5664,19 +6922,19 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
                 if line.startswith('[UTCDate '):
                     try:
                         date_str = line.split('"')[1]
-                    except:
+                    except Exception:
                         pass
                 elif line.startswith('[UTCTime '):
                     try:
                         time_str = line.split('"')[1]
-                    except:
+                    except Exception:
                         pass
 
             # Combine date and time if both found
             if date_str and time_str:
                 try:
                     played_at = f"{date_str}T{time_str}Z"
-                except:
+                except Exception:
                     pass
 
         return {
@@ -5700,8 +6958,138 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
 # ============================================================================
 # PROXY ENDPOINTS (for external APIs)
 # ============================================================================
+async def _check_import_auth_and_limits(
+    credentials: Optional[HTTPAuthorizationCredentials],
+    http_request: Request,
+    user_id: str,
+    platform: str,
+    rate_key_suffix: str,
+) -> tuple:
+    """Shared auth, usage-limit, and rate-limit checks for import endpoints.
+
+    Returns:
+        (auth_user_id, anonymous_limit_remaining) tuple.
+    """
+    auth_user_id = None
+    try:
+        if credentials:
+            token_data = await verify_token(credentials)
+            auth_user_id = token_data.get('sub')
+
+            if auth_user_id and usage_tracker:
+                try:
+                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
+                    if not can_proceed:
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
+                        )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Import limit check failed for user {auth_user_id} (non-critical): {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Auth check failed (non-critical): {e}")
+
+    anonymous_limit_remaining = None
+    if not auth_user_id and usage_tracker:
+        client_ip = get_client_ip(http_request)
+        try:
+            can_proceed, stats = await usage_tracker.check_anonymous_import_limit(client_ip)
+            if not can_proceed:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Import limit reached. {stats.get('reason', 'Anonymous users: 50 imports per 24 hours. Create a free account for 100 imports per day!')}"
+                )
+            import_limit = stats.get('import_limit', 50)
+            current_imports = stats.get('current_imports', 0)
+            anonymous_limit_remaining = max(0, import_limit - current_imports)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Anonymous import limit check failed for IP {client_ip} (non-critical): {e}")
+
+    _enforce_rate_limit(f"import:{user_id}:{platform}:{rate_key_suffix}", IMPORT_RATE_LIMIT)
+    return auth_user_id, anonymous_limit_remaining
+
+
+async def _track_import_usage(
+    auth_user_id: Optional[str],
+    http_request: Request,
+    imported_count: int,
+) -> None:
+    """Increment usage tracking after a successful import."""
+    if imported_count <= 0:
+        return
+    if auth_user_id and usage_tracker:
+        await usage_tracker.increment_usage(auth_user_id, 'import', count=imported_count)
+    elif usage_tracker:
+        client_ip = get_client_ip(http_request)
+        await usage_tracker.increment_anonymous_usage(client_ip, 'import', count=imported_count)
+
+
+def _parse_games_for_import(games_data: list) -> list:
+    """Parse raw game data into the format expected by import_games."""
+    parsed_games = []
+    for game_data in games_data:
+        total_moves = _count_moves_in_pgn(game_data.get('pgn', ''))
+        opponent_name = _extract_opponent_name_from_pgn(
+            game_data.get('pgn', ''),
+            game_data.get('color', 'white')
+        )
+        parsed_games.append({
+            'provider_game_id': game_data.get('id', ''),
+            'pgn': game_data.get('pgn', ''),
+            'result': game_data.get('result'),
+            'color': game_data.get('color'),
+            'time_control': game_data.get('time_control'),
+            'opening': game_data.get('opening'),
+            'opening_family': game_data.get('opening_family'),
+            'opponent_rating': game_data.get('opponent_rating'),
+            'my_rating': game_data.get('my_rating'),
+            'played_at': game_data.get('played_at'),
+            'total_moves': total_moves,
+            'opponent_name': opponent_name,
+        })
+    return parsed_games
+
+
+async def _update_highest_rating_profile(
+    user_id: str, platform: str, canonical_user_id: str, db_client,
+) -> None:
+    """Fetch chess.com stats and upsert highest rating into user profile."""
+    if platform != 'chess.com':
+        return
+    stats_data = await _fetch_chesscom_stats(user_id)
+    if not stats_data:
+        return
+    highest_rating = None
+    for time_control in ['chess_rapid', 'chess_blitz', 'chess_bullet', 'chess_daily']:
+        if time_control in stats_data:
+            best_rating = stats_data[time_control].get('best', {}).get('rating')
+            if best_rating and (highest_rating is None or best_rating > highest_rating):
+                highest_rating = best_rating
+    if highest_rating and db_client:
+        try:
+            profile_data = {
+                'user_id': canonical_user_id,
+                'platform': platform,
+                'display_name': user_id,
+                'current_rating': highest_rating,
+                'updated_at': datetime.utcnow().isoformat()
+            }
+            await asyncio.to_thread(
+                lambda: db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
+            )
+            print(f"Updated profile for {user_id} with highest rating: {highest_rating}")
+        except Exception as e:
+            print(f"Error updating profile with highest rating: {e}")
+
+
 @app.post("/api/v1/import-games-smart", response_model=BulkGameImportResponse)
-async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+async def import_games_smart(request: Dict[str, Any], http_request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Smart import endpoint - imports only the most recent 100 games"""
     try:
         user_id = request.get('user_id')
@@ -5710,29 +7098,9 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
 
-        # Check usage limits for authenticated users
-        auth_user_id = None
-        try:
-            if credentials:
-                token_data = await verify_token(credentials)
-                auth_user_id = token_data.get('sub')
-
-                # Check import limit
-                if auth_user_id and usage_tracker:
-                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
-                    if not can_proceed:
-                        raise HTTPException(
-                            status_code=429,
-                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
-                        )
-        except HTTPException:
-            raise  # Re-raise HTTP exceptions
-        except Exception as e:
-            # Log but don't fail - allow anonymous/failed auth to proceed
-            print(f"Auth check failed (non-critical): {e}")
-
-        user_key = f"import:{user_id}:{platform}:smart"
-        _enforce_rate_limit(user_key, IMPORT_RATE_LIMIT)
+        auth_user_id, anonymous_limit_remaining = await _check_import_auth_and_limits(
+            credentials, http_request, user_id, platform, "smart"
+        )
 
         canonical_user_id = _canonical_user_id(user_id, platform)
         db_client = supabase_service or supabase
@@ -5741,33 +7109,49 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
 
         print(f"Smart import for {user_id}: starting...")
 
-        # Get all existing game IDs to avoid duplicates
-        # Supabase has a 1000 row default limit, we need to paginate to get ALL games
-        existing_game_ids = set()
-        offset = 0
-        page_size = 1000
+        # Fetch the most recent games from the platform first to check against
+        print(f"[Smart import] ===== FETCHING GAMES FROM {platform.upper()} =====")
+        games_data = await _fetch_games_from_platform(user_id, platform, 100)
+        print(f"[Smart import] Fetched {len(games_data) if games_data else 0} games from platform API")
 
-        while True:
-            existing_games_response = await asyncio.to_thread(
-                lambda: db_client.table('games').select('provider_game_id').eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).range(offset, offset + page_size - 1).execute()
+        if not games_data:
+            print(f"[Smart import] No games returned from platform")
+            message = (
+                "No games were returned from the platform. Please verify the username "
+                "has recent games or try again later."
+            )
+            return BulkGameImportResponse(
+                success=False,
+                imported_games=0,
+                errors=[message],
+                error_count=1,
+                new_games_count=0,
+                had_existing_games=False,
+                message=message
             )
 
-            if not existing_games_response.data or len(existing_games_response.data) == 0:
-                break
+        # Get only the IDs of the fetched games to check against database
+        fetched_game_ids = [g.get('id') or g.get('provider_game_id') for g in games_data if g.get('id') or g.get('provider_game_id')]
 
-            for game in existing_games_response.data:
-                if game.get('provider_game_id'):
-                    existing_game_ids.add(game.get('provider_game_id'))
+        # Query database for only these specific game IDs (much more efficient than fetching ALL games)
+        existing_game_ids = set()
+        if fetched_game_ids:
+            # Split into chunks of 100 to avoid query size limits
+            chunk_size = 100
+            for i in range(0, len(fetched_game_ids), chunk_size):
+                chunk = fetched_game_ids[i:i+chunk_size]
+                existing_games_response = await asyncio.to_thread(
+                    lambda ids=chunk: db_client.table('games').select('provider_game_id').eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).in_('provider_game_id', ids).execute()
+                )
 
-            # If we got fewer results than page_size, we've reached the end
-            if len(existing_games_response.data) < page_size:
-                break
+                if existing_games_response.data:
+                    for game in existing_games_response.data:
+                        if game.get('provider_game_id'):
+                            existing_game_ids.add(game.get('provider_game_id'))
 
-            offset += page_size
-
-        print(f"[Smart import] Paginated through {offset + len(existing_games_response.data) if existing_games_response.data else offset} total game records")
+        print(f"[Smart import] Checked {len(fetched_game_ids)} fetched games, found {len(existing_game_ids)} already in database")
 
         # DEBUG: Write to file for diagnosis (only when DEBUG=true)
         if os.getenv("DEBUG", "false").lower() == "true":
@@ -5784,12 +7168,9 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
         if existing_game_ids:
             print(f"[Smart import] Sample existing game IDs (first 3): {list(existing_game_ids)[:3]}")
         else:
-            print(f"[Smart import] WARNING: No existing games found in database!")
+            print(f"[Smart import] No existing games found in database (first time import)")
 
-        # Fetch the most recent 100 games from the platform
-        print(f"[Smart import] ===== FETCHING GAMES FROM {platform.upper()} =====")
-        games_data = await _fetch_games_from_platform(user_id, platform, 100)
-        print(f"[Smart import] Fetched {len(games_data) if games_data else 0} games from platform API")
+        # Add detailed logging about fetched games
         if games_data:
             sample_ids = [g.get('id') or g.get('provider_game_id') for g in games_data[:3]]
             sample_dates = []
@@ -5800,33 +7181,6 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
             print(f"[Smart import] Sample fetched game DATES (first 3): {sample_dates}")
             print(f"[Smart import] Most recent game date: {games_data[0].get('played_at', 'No date') if games_data else 'N/A'}")
             print(f"[Smart import] Oldest game date in batch: {games_data[-1].get('played_at', 'No date') if games_data else 'N/A'}")
-
-        if not games_data:
-            if existing_game_ids:
-                message = "No new games found. You already have all recent games imported."
-                return BulkGameImportResponse(
-                    success=True,
-                    imported_games=0,
-                    errors=[],
-                    error_count=0,
-                    new_games_count=0,
-                    had_existing_games=True,
-                    message=message
-                )
-
-            message = (
-                "No games were returned from the platform. Please verify the username "
-                "has recent games or try again later."
-            )
-            return BulkGameImportResponse(
-                success=False,
-                imported_games=0,
-                errors=[message],
-                error_count=1,
-                new_games_count=0,
-                had_existing_games=False,
-                message=message
-            )
 
         # Filter to get only new games (games not in our database)
         new_games = []
@@ -5853,6 +7207,13 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
 
         print(f"[Smart import] Duplicate check complete: fetched {len(games_data)} games, found {len(new_games)} new games, {len(games_data) - len(new_games)} already exist")
 
+        # Cap new games for anonymous users to their remaining limit
+        if anonymous_limit_remaining is not None and len(new_games) > anonymous_limit_remaining:
+            original_count = len(new_games)
+            new_games = new_games[:anonymous_limit_remaining]
+            logger.info(f"Capping smart import for anonymous user: found={original_count}, remaining={anonymous_limit_remaining}, importing={len(new_games)}")
+            print(f"[Smart import] CAPPED: {original_count} new games → {len(new_games)} (anonymous limit: {anonymous_limit_remaining})")
+
         # If no new games found, return early
         if len(new_games) == 0:
             message = "No new games found. You already have all recent games imported."
@@ -5869,88 +7230,24 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
                 message=message
             )
 
-        # For chess.com, also fetch stats to get highest ratings
-        highest_rating = None
-        if platform == 'chess.com':
-            stats_data = await _fetch_chesscom_stats(user_id)
-            if stats_data:
-                # Extract highest rating from stats
-                for time_control in ['chess_rapid', 'chess_blitz', 'chess_bullet', 'chess_daily']:
-                    if time_control in stats_data:
-                        best_rating = stats_data[time_control].get('best', {}).get('rating')
-                        if best_rating and (highest_rating is None or best_rating > highest_rating):
-                            highest_rating = best_rating
+        await _update_highest_rating_profile(user_id, platform, canonical_user_id, db_client)
 
-        # Parse PGN data and count moves
-        parsed_games = []
-        for game_data in new_games:
-            # Count moves from PGN
-            total_moves = _count_moves_in_pgn(game_data.get('pgn', ''))
-
-            # Extract opponent name from PGN
-            opponent_name = _extract_opponent_name_from_pgn(
-                game_data.get('pgn', ''),
-                game_data.get('color', 'white')
-            )
-
-            parsed_game = {
-                'provider_game_id': game_data.get('id', ''),
-                'pgn': game_data.get('pgn', ''),
-                'result': game_data.get('result'),
-                'color': game_data.get('color'),
-                'time_control': game_data.get('time_control'),
-                'opening': game_data.get('opening'),
-                'opening_family': game_data.get('opening_family'),
-                'opponent_rating': game_data.get('opponent_rating'),
-                'my_rating': game_data.get('my_rating'),
-                'played_at': game_data.get('played_at'),
-                'total_moves': total_moves,
-                'opponent_name': opponent_name
-            }
-            parsed_games.append(parsed_game)
-
-        # Create bulk import request
+        parsed_games = _parse_games_for_import(new_games)
         bulk_request = BulkGameImportRequest(
-            user_id=user_id,
-            platform=platform,
-            display_name=user_id,
-            games=parsed_games
+            user_id=user_id, platform=platform, display_name=user_id, games=parsed_games
         )
 
-        # Store highest rating in user profile if available
-        if highest_rating and platform == 'chess.com':
-            try:
-                # Upsert user profile with highest rating
-                profile_data = {
-                    'user_id': canonical_user_id,
-                    'platform': platform,
-                    'display_name': user_id,
-                    'current_rating': highest_rating,
-                    'updated_at': datetime.utcnow().isoformat()
-                }
-                await asyncio.to_thread(
-                    lambda: db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
-                )
-                print(f"Updated profile for {user_id} with highest rating: {highest_rating}")
-            except Exception as e:
-                print(f"Error updating profile with highest rating: {e}")
-
-        # Process the import
         result = await import_games(bulk_request)
 
         # Add smart import info to response
         result.new_games_count = len(new_games)
         result.had_existing_games = len(existing_game_ids) > 0
 
-        # Set appropriate message
         if hasattr(result, 'imported_games'):
             if result.imported_games > 0:
                 result.message = f"Imported {result.imported_games} new games"
                 print(f"[Smart import] Success: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
-
-                # Increment usage tracking for authenticated users
-                if auth_user_id and usage_tracker:
-                    await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
+                await _track_import_usage(auth_user_id, http_request, result.imported_games)
             else:
                 result.message = "No new games found. You already have all recent games imported."
                 print(f"[Smart import] No new games: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
@@ -5962,7 +7259,7 @@ async def import_games_smart(request: Dict[str, Any], credentials: Optional[HTTP
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/import-games", response_model=BulkGameImportResponse)
-async def import_games_simple(request: Dict[str, Any], credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+async def import_games_simple(request: Dict[str, Any], http_request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Import games endpoint for frontend - handles PGN parsing and move counting"""
     try:
         user_id = request.get('user_id')
@@ -5972,108 +7269,32 @@ async def import_games_simple(request: Dict[str, Any], credentials: Optional[HTT
         if not user_id or not platform:
             raise HTTPException(status_code=400, detail="user_id and platform are required")
 
-        # Check usage limits for authenticated users
-        auth_user_id = None
-        try:
-            if credentials:
-                token_data = await verify_token(credentials)
-                auth_user_id = token_data.get('sub')
-
-                # Check import limit
-                if auth_user_id and usage_tracker:
-                    can_proceed, stats = await usage_tracker.check_import_limit(auth_user_id)
-                    if not can_proceed:
-                        raise HTTPException(
-                            status_code=429,
-                            detail=f"Import limit reached. {stats.get('message', 'Please upgrade or wait for limit reset.')}"
-                        )
-        except HTTPException:
-            raise  # Re-raise HTTP exceptions
-        except Exception as e:
-            # Log but don't fail - allow anonymous/failed auth to proceed
-            print(f"Auth check failed (non-critical): {e}")
-
-        rate_key = f"import:{user_id}:{platform}:simple"
-        _enforce_rate_limit(rate_key, IMPORT_RATE_LIMIT)
-
-        # Fetch games from platform
-        games_data = await _fetch_games_from_platform(user_id, platform, limit)
-
-        # For chess.com, also fetch stats to get highest ratings
-        highest_rating = None
-        if platform == 'chess.com':
-            stats_data = await _fetch_chesscom_stats(user_id)
-            if stats_data:
-                # Extract highest rating from stats
-                for time_control in ['chess_rapid', 'chess_blitz', 'chess_bullet', 'chess_daily']:
-                    if time_control in stats_data:
-                        best_rating = stats_data[time_control].get('best', {}).get('rating')
-                        if best_rating and (highest_rating is None or best_rating > highest_rating):
-                            highest_rating = best_rating
-
-        # Parse PGN data and count moves
-        parsed_games = []
-        for game_data in games_data:
-            # Count moves from PGN
-            total_moves = _count_moves_in_pgn(game_data.get('pgn', ''))
-
-            # Extract opponent name from PGN
-            opponent_name = _extract_opponent_name_from_pgn(
-                game_data.get('pgn', ''),
-                game_data.get('color', 'white')
-            )
-
-            parsed_game = {
-                'provider_game_id': game_data.get('id', ''),
-                'pgn': game_data.get('pgn', ''),
-                'result': game_data.get('result'),
-                'color': game_data.get('color'),
-                'time_control': game_data.get('time_control'),
-                'opening': game_data.get('opening'),
-                'opening_family': game_data.get('opening_family'),
-                'opponent_rating': game_data.get('opponent_rating'),
-                'my_rating': game_data.get('my_rating'),
-                'played_at': game_data.get('played_at'),
-                'total_moves': total_moves,
-                'opponent_name': opponent_name
-            }
-            parsed_games.append(parsed_game)
-
-        # Create bulk import request
-        bulk_request = BulkGameImportRequest(
-            user_id=user_id,
-            platform=platform,
-            display_name=user_id,
-            games=parsed_games
+        auth_user_id, anonymous_limit_remaining = await _check_import_auth_and_limits(
+            credentials, http_request, user_id, platform, "simple"
         )
 
-        # Store highest rating in user profile if available
-        if highest_rating and platform == 'chess.com':
-            try:
-                canonical_user_id = _canonical_user_id(user_id, platform)
-                db_client = supabase_service or supabase
-                if db_client:
-                    # Upsert user profile with highest rating
-                    profile_data = {
-                        'user_id': canonical_user_id,
-                        'platform': platform,
-                        'display_name': user_id,
-                        'current_rating': highest_rating,
-                        'updated_at': datetime.utcnow().isoformat()
-                    }
-                    await asyncio.to_thread(
-                        lambda: db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
-                    )
-                    print(f"Updated profile for {user_id} with highest rating: {highest_rating}")
-            except Exception as e:
-                print(f"Error updating profile with highest rating: {e}")
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
 
-        # Process the import
+        # Cap the limit for anonymous users to their remaining limit
+        effective_limit = limit
+        if anonymous_limit_remaining is not None and anonymous_limit_remaining < limit:
+            effective_limit = anonymous_limit_remaining
+            logger.info(f"Capping import limit for anonymous user: requested={limit}, remaining={anonymous_limit_remaining}, using={effective_limit}")
+
+        games_data = await _fetch_games_from_platform(user_id, platform, effective_limit)
+
+        await _update_highest_rating_profile(user_id, platform, canonical_user_id, db_client)
+
+        parsed_games = _parse_games_for_import(games_data)
+        bulk_request = BulkGameImportRequest(
+            user_id=user_id, platform=platform, display_name=user_id, games=parsed_games
+        )
+
         result = await import_games(bulk_request)
 
-        # Increment usage tracking for authenticated users
-        if auth_user_id and usage_tracker and hasattr(result, 'imported_games') and result.imported_games > 0:
-            await usage_tracker.increment_usage(auth_user_id, 'import', count=result.imported_games)
+        if hasattr(result, 'imported_games'):
+            await _track_import_usage(auth_user_id, http_request, result.imported_games)
 
         return result
 
@@ -6114,6 +7335,11 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
             skipped_no_time_control += 1
             print(f'[import_games] Skipping game {game.provider_game_id} due to missing time_control')
             continue
+        # DIAGNOSTIC: Log result values to debug NULL issue
+        if game.result is None or game.result == '':
+            print(f'[import_games] WARNING: Game {game.provider_game_id} has NULL/empty result: {repr(game.result)}')
+        elif game.result not in ['win', 'loss', 'draw']:
+            print(f'[import_games] WARNING: Game {game.provider_game_id} has invalid result: {repr(game.result)}')
 
         played_at = _normalize_played_at(game.played_at)
         # Normalize opening name to family for efficient filtering and grouping
@@ -6227,7 +7453,6 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
     except Exception as exc:
         error_msg = f"games upsert failed: {exc}"
         print(f'[import_games] ERROR: {error_msg}')
-        import traceback
         print(f'[import_games] Traceback: {traceback.format_exc()}')
         errors.append(error_msg)
         # CRITICAL: Return immediately - don't attempt PGN insert if games failed
@@ -6889,7 +8114,7 @@ async def get_import_status(user_id: str, platform: str):
             ).eq('platform', platform).execute()
         )
 
-        oldest_game = oldest_game_query.data[0]['played_at'] if oldest_game_query.data else None
+        oldest_game = oldest_game_query.data[0].get('played_at') if oldest_game_query.data and len(oldest_game_query.data) > 0 else None
         total_games = getattr(total_games_query, 'count', 0)
 
         return {
@@ -6999,10 +8224,18 @@ async def proxy_chess_com_user(username: str):
 async def validate_user(request: dict):
     """Validate that a user exists on the specified platform.
 
+    Now uses resilient API client with:
+    - Connection pooling for better performance
+    - Rate limiting to prevent API overload
+    - Response caching to reduce redundant requests
+    - Retry logic with exponential backoff
+    - Request deduplication for concurrent requests
+    - Circuit breaker to fail fast when APIs are down
+
     Returns proper HTTP status codes:
     - 200: User validated successfully (check 'exists' field in response)
     - 400: Invalid request parameters
-    - 503: External API (Lichess/Chess.com) error
+    - 503: External API (Lichess/Chess.com) error or circuit breaker open
     - 504: External API timeout
     - 500: Unexpected server error
     """
@@ -7022,92 +8255,73 @@ async def validate_user(request: dict):
                 detail="Platform must be 'lichess' or 'chess.com'"
             )
 
-        # Validate user exists on the platform
-        if platform == "lichess":
-            # Check Lichess user exists
-            import aiohttp
-            try:
-                async with aiohttp.ClientSession() as session:
-                    url = f"https://lichess.org/api/user/{user_id}"
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                        if response.status == 200:
-                            return {"exists": True, "message": "User found on Lichess"}
-                        elif response.status == 404:
-                            return {
-                                "exists": False,
-                                "message": f"User '{user_id}' not found on Lichess"
-                            }
-                        elif response.status == 429:
-                            raise HTTPException(
-                                status_code=503,
-                                detail="Lichess API rate limit exceeded. Please try again in a moment."
-                            )
-                        else:
-                            raise HTTPException(
-                                status_code=503,
-                                detail=f"Lichess API returned status {response.status}"
-                            )
-            except asyncio.TimeoutError:
-                raise HTTPException(
-                    status_code=504,
-                    detail="Lichess API timeout. Please try again."
-                )
-            except aiohttp.ClientError as e:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Cannot connect to Lichess: {str(e)}"
-                )
-        else:  # chess.com
-            # Check Chess.com user exists
-            import httpx
-            headers = {
-                'User-Agent': 'ChessAnalytics/1.0 (Contact: your-email@example.com)'
-            }
-            try:
-                async with httpx.AsyncClient() as client:
-                    canonical_username = user_id.strip().lower()
-                    url = f"https://api.chess.com/pub/player/{canonical_username}"
-                    response = await client.get(url, headers=headers, timeout=10.0)
+        # Get resilient API client
+        api_client = get_resilient_api_client()
 
-                    if response.status_code == 200:
-                        return {"exists": True, "message": "User found on Chess.com"}
-                    elif response.status_code == 404:
-                        return {
-                            "exists": False,
-                            "message": f"User '{user_id}' not found on Chess.com"
-                        }
-                    elif response.status_code == 429:
-                        raise HTTPException(
-                            status_code=503,
-                            detail="Chess.com API rate limit exceeded. Please try again in a moment."
-                        )
-                    else:
-                        raise HTTPException(
-                            status_code=503,
-                            detail=f"Chess.com API returned status {response.status_code}"
-                        )
-            except httpx.TimeoutException:
-                raise HTTPException(
-                    status_code=504,
-                    detail="Chess.com API timeout. Please try again."
-                )
-            except httpx.RequestError as e:
+        # Validate user using resilient client
+        try:
+            if platform == "lichess":
+                exists, message = await api_client.validate_lichess_user(user_id)
+            else:  # chess.com
+                exists, message = await api_client.validate_chesscom_user(user_id)
+
+            return {"exists": exists, "message": message}
+
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail=f"{platform.title()} API timeout. Please try again."
+            )
+        except Exception as e:
+            error_msg = str(e)
+
+            # Check if circuit breaker is open
+            if "Circuit breaker" in error_msg and "unavailable" in error_msg:
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Cannot connect to Chess.com: {str(e)}"
+                    detail=f"{platform.title()} is temporarily unavailable. Please try again in a moment."
                 )
+
+            # Check for rate limit
+            if "rate limit" in error_msg.lower():
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"{platform.title()} API rate limit exceeded. Please try again in a moment."
+                )
+
+            # Generic error
+            raise HTTPException(
+                status_code=503,
+                detail=f"Cannot connect to {platform.title()}: {error_msg}"
+            )
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
         print(f"Unexpected error validating user: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail=f"Server error: {str(e)}"
         )
+
+@app.get("/api/v1/api-client-stats")
+async def get_api_client_stats():
+    """Get statistics about the resilient API client for monitoring."""
+    try:
+        api_client = get_resilient_api_client()
+        stats = api_client.get_stats()
+        return {
+            "success": True,
+            "stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 @app.post("/api/v1/check-user-exists")
 async def check_user_exists(request: dict):
@@ -7125,20 +8339,12 @@ async def check_user_exists(request: dict):
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
 
-        # Check if user exists in user_profiles table
-        from supabase import create_client, Client
-        import os
-
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-        if not supabase_url or not supabase_key:
+        # Check if user exists in user_profiles table using module-level client
+        if not supabase_service:
             return {"exists": False}
 
-        supabase: Client = create_client(supabase_url, supabase_key)
-
         result = await asyncio.to_thread(
-            lambda: supabase.table("user_profiles").select("user_id").eq("user_id", canonical_user_id).eq("platform", platform).execute()
+            lambda: supabase_service.table("user_profiles").select("user_id").eq("user_id", canonical_user_id).eq("platform", platform).execute()
         )
 
         return {"exists": len(result.data) > 0}
@@ -7168,12 +8374,23 @@ async def get_or_create_profile(request: dict):
         if not supabase_service:
             raise HTTPException(status_code=500, detail="Database service not available")
 
-        # Try to get existing profile
-        result = await asyncio.to_thread(
-            lambda: supabase_service.table("user_profiles").select("*").eq(
-                "user_id", canonical_user_id
-            ).eq("platform", platform).maybe_single().execute()
-        )
+        # Try to get existing profile - handle Postgrest 204 errors gracefully
+        result = None
+        try:
+            query_result = await asyncio.to_thread(
+                lambda: supabase_service.table("user_profiles").select("*").eq(
+                    "user_id", canonical_user_id
+                ).eq("platform", platform).limit(1).execute()
+            )
+            if query_result and query_result.data and len(query_result.data) > 0:
+                # Create a mock result object with data attribute
+                result = MockSingleResult(query_result.data[0])
+            else:
+                result = None
+        except Exception as query_error:
+            # Profile doesn't exist yet, will create it below
+            print(f"Profile query returned no results for {canonical_user_id}: {query_error}")
+            result = None
 
         if DEBUG:
             print(f"[get_or_create_profile] Query result: has_result={result is not None}, has_data={bool(result.data if result else False)}")
@@ -7209,7 +8426,7 @@ async def get_or_create_profile(request: dict):
         if DEBUG:
             print(f"[get_or_create_profile] Create result: has_result={create_result is not None}, has_data={bool(create_result.data if create_result else False)}")
 
-        if not create_result or not create_result.data:
+        if not create_result or not create_result.data or len(create_result.data) == 0:
             raise HTTPException(status_code=500, detail="Failed to create profile")
 
         return create_result.data[0]
@@ -7242,6 +8459,14 @@ VALID_PLATFORMS = ["chess.com", "lichess"]
 def _validate_platform(platform: str) -> bool:
     """Validate that platform is one of the allowed values."""
     return platform in VALID_PLATFORMS
+
+def _is_valid_uuid(uuid_string: str) -> bool:
+    """Check if a string is a valid UUID format."""
+    try:
+        uuid.UUID(uuid_string)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 def _canonical_user_id(user_id: str, platform: str) -> str:
     """Canonicalize user ID for database operations.
@@ -7278,13 +8503,19 @@ def _validate_single_game_analysis_request(request: UnifiedAnalysisRequest) -> T
 def get_analysis_engine() -> ChessAnalysisEngine:
     """Get or create the analysis engine instance."""
     global analysis_engine
+    if analysis_engine is not None:
+        return analysis_engine
+
     # Pass stockfish path from config to ensure production paths are checked
     stockfish_path = config.stockfish.path
     if stockfish_path:
         print(f"[ENGINE] Using Stockfish from config: {stockfish_path}")
     else:
         print(f"[ENGINE] Warning: No Stockfish path found in config")
+
+    print("[ENGINE] Initializing ChessAnalysisEngine (this will also initialize AI comment generator)...")
     analysis_engine = ChessAnalysisEngine(stockfish_path=stockfish_path)
+    print("[ENGINE] ✅ ChessAnalysisEngine initialized successfully")
     return analysis_engine
 
 async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:
@@ -7326,6 +8557,12 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
             # Save to database
             success = await _save_stockfish_analysis(game_analysis)
             if success:
+                # Queue background task for AI comment generation
+                print(f"[SINGLE GAME ANALYSIS] 🔄 Creating background task for AI comments...")
+                task = asyncio.create_task(_generate_ai_comments_background(game_analysis))
+                print(f"[SINGLE GAME ANALYSIS] ✅ Background task created: {task}")
+                print(f"[SINGLE GAME ANALYSIS] Queued background AI comment generation for game_id: {game_analysis.game_id}")
+
                 return UnifiedAnalysisResponse(
                     success=True,
                     message="Game analysis completed and saved",
@@ -7399,12 +8636,16 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             game_response = await asyncio.to_thread(
                 lambda: db_client.table('games_pgn').select('pgn, provider_game_id').eq(
                     'provider_game_id', game_id
-                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                ).eq('user_id', canonical_user_id).eq('platform', request.platform).limit(1).execute()
             )
             print(f"[SINGLE GAME ANALYSIS] Query result: {game_response}")
             print(f"[SINGLE GAME ANALYSIS] Has data: {game_response is not None and hasattr(game_response, 'data')}")
             if game_response and hasattr(game_response, 'data'):
                 print(f"[SINGLE GAME ANALYSIS] Data value: {game_response.data}")
+                if game_response.data and len(game_response.data) > 0:
+                    game_response.data = game_response.data[0]
+                else:
+                    game_response.data = None
         except Exception as query_error:
             print(f"[SINGLE GAME ANALYSIS] ERROR Database query error: {query_error}")
             return UnifiedAnalysisResponse(
@@ -7466,11 +8707,16 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         print(f"[SINGLE GAME ANALYSIS] Checking if game exists in games table: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
         games_check = None
         try:
-            games_check = await asyncio.to_thread(
+            games_check_result = await asyncio.to_thread(
                 lambda: db_client.table('games').select('id').eq(
                     'provider_game_id', game_id
-                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                ).eq('user_id', canonical_user_id).eq('platform', request.platform).limit(1).execute()
             )
+            if games_check_result and games_check_result.data and len(games_check_result.data) > 0:
+                # Create a mock result with single data item
+                games_check = MockSingleResult(games_check_result.data[0])
+            else:
+                games_check = None
             print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data if (games_check and hasattr(games_check, 'data')) else 'None'}")
         except Exception as check_error:
             print(f"[SINGLE GAME ANALYSIS] ERROR Error checking games table: {check_error}")
@@ -7597,11 +8843,16 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
             # Validate foreign key constraint before saving
             print(f"[SINGLE GAME ANALYSIS] Validating foreign key constraint before saving...")
             try:
-                fk_validation = await asyncio.to_thread(
+                fk_validation_result = await asyncio.to_thread(
                     lambda: db_client.table('games').select('id').eq(
                         'provider_game_id', analysis_game_id
-                    ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                    ).eq('user_id', canonical_user_id).eq('platform', request.platform).limit(1).execute()
                 )
+                # Convert to expected format
+                if fk_validation_result and fk_validation_result.data and len(fk_validation_result.data) > 0:
+                    fk_validation = MockSingleResult(fk_validation_result.data[0])
+                else:
+                    fk_validation = None
             except Exception as fk_error:
                 print(f"[SINGLE GAME ANALYSIS] ERROR Error during FK validation: {fk_error}")
                 fk_validation = None
@@ -7650,8 +8901,20 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         # Count moves
                         move_count = sum(1 for _ in game.mainline_moves())
 
+                        # Identify opening from actual moves (more accurate than PGN headers)
+                        from .opening_utils import identify_opening_from_pgn_moves
+                        identified_opening, identified_eco = identify_opening_from_pgn_moves(pgn_data, color)
+
+                        # Use identified opening if available, otherwise fall back to PGN headers
                         opening_value = headers.get('Opening', 'Unknown')
                         eco_value = headers.get('ECO', 'Unknown')
+
+                        # If we identified a specific opening from moves, use it
+                        if identified_opening and identified_opening != 'Unknown Opening':
+                            opening_value = identified_opening
+                            if identified_eco:
+                                eco_value = identified_eco
+
                         # Prioritize ECO code for normalization as it's more reliable
                         raw_opening_for_normalization = eco_value if eco_value != 'Unknown' else opening_value
                         # Normalize opening name to family for consistent filtering
@@ -7687,11 +8950,17 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                             print(f"[SINGLE GAME ANALYSIS] SUCCESS Successfully created/updated game record: {analysis_game_id}")
 
                             # Re-validate foreign key constraint
-                            fk_validation = await asyncio.to_thread(
+                            fk_validation_result = await asyncio.to_thread(
                                 lambda: db_client.table('games').select('id').eq(
                                     'provider_game_id', analysis_game_id
-                                ).eq('user_id', canonical_user_id).eq('platform', request.platform).maybe_single().execute()
+                                ).eq('user_id', canonical_user_id).eq('platform', request.platform).limit(1).execute()
                             )
+
+                            # Convert to expected format
+                            if fk_validation_result and fk_validation_result.data and len(fk_validation_result.data) > 0:
+                                fk_validation = MockSingleResult(fk_validation_result.data[0])
+                            else:
+                                fk_validation = None
 
                             if fk_validation and hasattr(fk_validation, 'data') and fk_validation.data:
                                 print(f"[SINGLE GAME ANALYSIS] SUCCESS Foreign key validation passed after creating game record")
@@ -7729,6 +8998,13 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 if success:
                     print(f"[SINGLE GAME ANALYSIS] SUCCESS Analysis completed and saved for game_id: {analysis_game_id}")
                     print(f"[SINGLE GAME ANALYSIS] This was a SINGLE game analysis - NOT starting batch analysis")
+
+                    # Queue background task for AI comment generation
+                    print(f"[SINGLE GAME ANALYSIS] 🔄 Creating background task for AI comments...")
+                    task = asyncio.create_task(_generate_ai_comments_background(game_analysis))
+                    print(f"[SINGLE GAME ANALYSIS] ✅ Background task created: {task}")
+                    print(f"[SINGLE GAME ANALYSIS] Queued background AI comment generation for game_id: {analysis_game_id}")
+
                     return UnifiedAnalysisResponse(
                         success=True,
                         message="Game analysis completed and saved",
@@ -7815,7 +9091,17 @@ async def _handle_move_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnaly
         board = chess.Board(request.fen)
         move = chess.Move.from_uci(request.move)
 
-        result = await engine.analyze_move(board, move, analysis_type_enum)
+        # Pass fullmove_number and is_user_move to enable AI coaching comments
+        # force_engine=True: always use Stockfish for single-move coaching feedback
+        # (skip the opening book heuristic which can misclassify blunders as "book moves")
+        result = await engine.analyze_move(
+            board,
+            move,
+            analysis_type_enum,
+            fullmove_number=request.fullmove_number,
+            is_user_move=request.is_user_move,
+            force_engine=True
+        )
 
         return UnifiedAnalysisResponse(
             success=True,
@@ -7825,7 +9111,7 @@ async def _handle_move_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnaly
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tasks: BackgroundTasks, use_parallel: bool = True) -> UnifiedAnalysisResponse:
+async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tasks: BackgroundTasks, use_parallel: bool = True, auth_user_id: Optional[str] = None) -> UnifiedAnalysisResponse:
     """Handle batch analysis using the queue system."""
     try:
         # Validate request parameters
@@ -7846,7 +9132,8 @@ async def _handle_batch_analysis(request: UnifiedAnalysisRequest, background_tas
             analysis_type=request.analysis_type,
             limit=request.limit or 5,
             depth=request.depth or 14,
-            skill_level=request.skill_level or 20
+            skill_level=request.skill_level or 20,
+            auth_user_id=auth_user_id
         )
 
         return UnifiedAnalysisResponse(
@@ -8005,6 +9292,160 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
     print(f"[info] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
     print(f"[info] Skipped {analyzed_count} already-analyzed games")
     return unanalyzed_games
+async def _update_all_move_comments_in_db(
+    game_id: str,
+    user_id: str,
+    platform: str,
+    moves_analysis: List[Dict[str, Any]]
+) -> bool:
+    """
+    Update the moves_analysis JSONB column with AI-generated comments.
+
+    This is called after all AI comments are generated in the background.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+
+        # Use module-level service client
+        if not supabase_service:
+            print(f"[AI_COMMENTS] No database client available, cannot update comments for game {game_id}")
+            return False
+
+        db_client = supabase_service
+
+        # Update the entire moves_analysis JSONB column
+        # Note: ai_comments_status column might not exist yet, but that's OK - Supabase will ignore it
+        update_data = {
+            'moves_analysis': moves_analysis
+            # ai_comments_status will be added via migration later
+            # For now, we'll just update the moves_analysis JSONB
+        }
+
+        print(f"[AI_COMMENTS] Updating database for game_id: {game_id}")
+        print(f"[AI_COMMENTS] Moves to update: {len(moves_analysis)}")
+
+        response = await asyncio.to_thread(
+            lambda: db_client.table('move_analyses')
+            .update(update_data)
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .eq('game_id', game_id)
+            .execute()
+        )
+
+        print(f"[AI_COMMENTS] Database update response: {type(response)}")
+        print(f"[AI_COMMENTS] Response has data: {hasattr(response, 'data')}")
+        if hasattr(response, 'data'):
+            print(f"[AI_COMMENTS] Response data: {response.data}")
+
+        success = bool(getattr(response, 'data', None))
+        if success:
+            print(f"[AI_COMMENTS] ✅ Successfully updated AI comments for game_id: {game_id}")
+            # Invalidate cache to ensure fresh data
+            _invalidate_cache(canonical_user_id, platform)
+        else:
+            print(f"[AI_COMMENTS] ❌ Failed to update AI comments for game_id: {game_id}")
+
+        return success
+
+    except Exception as e:
+        print(f"[AI_COMMENTS] Error updating AI comments in database: {e}")
+        traceback.print_exc()
+        return False
+
+
+async def _generate_ai_comments_background(game_analysis: GameAnalysis) -> None:
+    """
+    Background task to generate AI comments asynchronously after analysis saves.
+
+    This runs in the background and doesn't block the analysis response.
+    """
+    try:
+        print(f"[AI_COMMENTS] ========================================")
+        print(f"[AI_COMMENTS] 🚀 Starting background AI comment generation")
+        print(f"[AI_COMMENTS] Game ID: {game_analysis.game_id}")
+        print(f"[AI_COMMENTS] User ID: {game_analysis.user_id}")
+        print(f"[AI_COMMENTS] Platform: {game_analysis.platform}")
+        print(f"[AI_COMMENTS] Total moves: {len(game_analysis.moves_analysis)}")
+        print(f"[AI_COMMENTS] ========================================")
+
+        from .ai_comment_service import generate_comments_parallel, CommentGenerationConfig
+
+        # Generate comments in parallel batches
+        config = CommentGenerationConfig.from_env()
+        updated_analysis = await generate_comments_parallel(game_analysis, config)
+
+        # Convert moves back to dict format for database update
+        moves_analysis_dict = []
+        for move in updated_analysis.moves_analysis:
+            moves_analysis_dict.append({
+                'move': move.move,
+                'move_san': move.move_san,
+                'move_notation': move.move,
+                'best_move': move.best_move,
+                'best_move_san': getattr(move, 'best_move_san', ''),
+                'best_move_pv': getattr(move, 'best_move_pv', []),
+                'engine_move': move.best_move,
+                'fen_before': getattr(move, 'fen_before', ''),
+                'fen_after': getattr(move, 'fen_after', ''),
+                'evaluation': move.evaluation,
+                'evaluation_before': getattr(move, 'evaluation_before', None),
+                'evaluation_after': getattr(move, 'evaluation_after', None),
+                'is_best': move.is_best,
+                'is_brilliant': move.is_brilliant,
+                'is_great': move.is_great,
+                'is_excellent': move.is_excellent,
+                'is_blunder': move.is_blunder,
+                'is_mistake': move.is_mistake,
+                'is_inaccuracy': move.is_inaccuracy,
+                'is_good': move.is_good,
+                'is_acceptable': move.is_acceptable,
+                'centipawn_loss': move.centipawn_loss,
+                'depth_analyzed': move.depth_analyzed,
+                'is_user_move': move.is_user_move,
+                'player_color': move.player_color,
+                'ply_index': move.ply_index,
+                'ply': move.ply_index,
+                'opening_ply': move.ply_index,
+                'explanation': move.explanation,
+                'heuristic_details': move.heuristic_details,
+                'coaching_comment': move.coaching_comment,
+                'what_went_right': move.what_went_right,
+                'what_went_wrong': move.what_went_wrong,
+                'how_to_improve': move.how_to_improve,
+                'tactical_insights': move.tactical_insights,
+                'positional_insights': move.positional_insights,
+                'risks': move.risks,
+                'benefits': move.benefits,
+                'learning_points': move.learning_points,
+                'encouragement_level': move.encouragement_level,
+                'move_quality': move.move_quality,
+                'game_phase': move.game_phase
+            })
+
+        # Update database with AI comments
+        success = await _update_all_move_comments_in_db(
+            game_analysis.game_id,
+            game_analysis.user_id,
+            game_analysis.platform,
+            moves_analysis_dict
+        )
+
+        if success:
+            print(f"[AI_COMMENTS] ✅ Background AI comment generation completed for game_id: {game_analysis.game_id}")
+        else:
+            print(f"[AI_COMMENTS] ⚠️  Background AI comment generation completed but database update failed for game_id: {game_analysis.game_id}")
+
+    except Exception as e:
+        print(f"[AI_COMMENTS] ❌❌❌ ERROR in background AI comment generation ❌❌❌")
+        print(f"[AI_COMMENTS] Error type: {type(e).__name__}")
+        print(f"[AI_COMMENTS] Error message: {str(e)}")
+        print(f"[AI_COMMENTS] Full traceback:")
+        traceback.print_exc()
+        print(f"[AI_COMMENTS] ❌❌❌ END ERROR ❌❌❌")
+        # Don't raise - this is a background task, errors shouldn't crash the server
+
+
 async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
     """Persist Stockfish/deep analysis using reliable persistence fallback."""
     try:
@@ -8027,6 +9468,7 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 'move_notation': move.move,  # Legacy field
                 'best_move': move.best_move,  # UCI notation
                 'best_move_san': getattr(move, 'best_move_san', ''),  # SAN notation
+                'best_move_pv': getattr(move, 'best_move_pv', []),  # PV for best move line (UCI)
                 'engine_move': move.best_move,  # Legacy field
                 'fen_before': getattr(move, 'fen_before', ''),  # FEN before move
                 'fen_after': getattr(move, 'fen_after', ''),  # FEN after move
@@ -8097,18 +9539,37 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'analysis_method': str(analysis.analysis_type),
             'analysis_date': analysis.analysis_date.isoformat(),
             'processing_time_ms': analysis.processing_time_ms,
-            'stockfish_depth': analysis.stockfish_depth
+            'stockfish_depth': analysis.stockfish_depth,
+            'ai_comments_status': 'pending'  # Will be updated to 'completed' when AI comments are generated
         }
 
-        response = supabase_service.table('move_analyses').upsert(
-            data,
-            on_conflict='user_id,platform,game_id,analysis_method'
-        ).execute()
+        print(f"[SAVE ANALYSIS] Attempting to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+        print(f"[SAVE ANALYSIS] Data keys: {list(data.keys())}")
+        print(f"[SAVE ANALYSIS] Number of moves: {len(moves_analysis_dict)}")
+
+        response = await asyncio.to_thread(
+            lambda: supabase_service.table('move_analyses').upsert(
+                data,
+                on_conflict='user_id,platform,game_id,analysis_method'
+            ).execute()
+        )
 
         success = bool(getattr(response, 'data', None))
         if success:
+            print(f"[SAVE ANALYSIS] ✅ Successfully saved analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+            print(f"[SAVE ANALYSIS] Saved data game_id: {data.get('game_id')}")
+            print(f"[SAVE ANALYSIS] Response data exists: {bool(response.data)}")
+            if response.data:
+                print(f"[SAVE ANALYSIS] Response data game_id: {response.data[0].get('game_id') if isinstance(response.data, list) and len(response.data) > 0 else 'N/A'}")
             # Invalidate cache for this user/platform to ensure fresh stats
             _invalidate_cache(canonical_user_id, analysis.platform)
+        else:
+            print(f"[SAVE ANALYSIS] ❌ Failed to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+            print(f"[SAVE ANALYSIS] Response type: {type(response)}")
+            print(f"[SAVE ANALYSIS] Response has data attr: {hasattr(response, 'data')}")
+            if hasattr(response, 'data'):
+                print(f"[SAVE ANALYSIS] Response.data: {response.data}")
+            print(f"[SAVE ANALYSIS] Response str: {str(response)[:500]}")
             if DEBUG:
                 print(f"[CACHE] Invalidated cache for {canonical_user_id}:{analysis.platform} after successful analysis save (fallback path)")
         return success
@@ -8153,21 +9614,24 @@ def _map_move_analysis_to_response(analysis: dict) -> GameAnalysisSummary:
     acceptable_moves = analysis.get('acceptable_moves') or 0
 
     if isinstance(moves_analysis, list) and moves_analysis:
-        count_blunders = sum(1 for move in moves_analysis if move.get('is_blunder'))
-        count_mistakes = sum(1 for move in moves_analysis if move.get('is_mistake'))
-        count_inaccuracies = sum(1 for move in moves_analysis if move.get('is_inaccuracy'))
-        count_best_moves = sum(1 for move in moves_analysis if move.get('is_best'))
-        count_brilliants = sum(1 for move in moves_analysis if move.get('is_brilliant'))
-        count_good = sum(1 for move in moves_analysis if move.get('is_good'))
-        count_acceptable = sum(1 for move in moves_analysis if move.get('is_acceptable'))
+        # Only count user moves, not opponent moves
+        count_blunders = sum(1 for move in moves_analysis if move.get('is_blunder') and move.get('is_user_move', False))
+        count_mistakes = sum(1 for move in moves_analysis if move.get('is_mistake') and move.get('is_user_move', False))
+        count_inaccuracies = sum(1 for move in moves_analysis if move.get('is_inaccuracy') and move.get('is_user_move', False))
+        count_best_moves = sum(1 for move in moves_analysis if move.get('is_best') and move.get('is_user_move', False))
+        count_brilliants = sum(1 for move in moves_analysis if move.get('is_brilliant') and move.get('is_user_move', False))
+        count_good = sum(1 for move in moves_analysis if move.get('is_good') and move.get('is_user_move', False))
+        count_acceptable = sum(1 for move in moves_analysis if move.get('is_acceptable') and move.get('is_user_move', False))
 
-        blunders = blunders or count_blunders
-        mistakes = mistakes or count_mistakes
-        inaccuracies = inaccuracies or count_inaccuracies
-        best_moves = best_moves or count_best_moves
-        brilliant_moves = brilliant_moves or count_brilliants
-        good_moves = good_moves or count_good
-        acceptable_moves = acceptable_moves or count_acceptable
+        # Always use recalculated values from moves_analysis when available
+        # This ensures stats are always correct even if stored values are wrong
+        blunders = count_blunders
+        mistakes = count_mistakes
+        inaccuracies = count_inaccuracies
+        best_moves = count_best_moves
+        brilliant_moves = count_brilliants
+        good_moves = count_good
+        acceptable_moves = count_acceptable
 
         # Use opening_ply <= 20 (10 full moves) to match Chess.com's typical opening phase
         opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 20 and move.get('is_user_move', False)]
@@ -8280,12 +9744,19 @@ def _calculate_unified_stats(analyses: list, analysis_type: str) -> AnalysisStat
             brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
             material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
         )
-def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
-    """Calculate statistics from unified_analyses view data."""
+def _calculate_unified_analysis_stats(analyses: list, total_count: int = None) -> AnalysisStats:
+    """Calculate statistics from unified_analyses view data.
+
+    Args:
+        analyses: List of analysis records (limited sample for performance)
+        total_count: Total count of all analyzed games in database. If None, uses len(analyses)
+    """
     if not analyses:
         return _get_empty_stats()
 
-    total_games = len(analyses)
+    # Use total_count if provided, otherwise fall back to sample size
+    total_games = total_count if total_count is not None else len(analyses)
+    sample_size = len(analyses)  # Use sample for calculating averages
 
     # Helper function to safely get numeric values, handling None
     def safe_get_numeric(data, key, default=0):
@@ -8299,15 +9770,16 @@ def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
     total_brilliant_moves = sum(safe_get_numeric(a, 'brilliant_moves') for a in analyses)
     total_material_sacrifices = sum(safe_get_numeric(a, 'material_sacrifices') for a in analyses)
 
-    # Calculate averages, handling None values
-    average_accuracy = round(sum(safe_get_numeric(a, 'accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_opening_accuracy = round(sum(safe_get_numeric(a, 'opening_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_middle_game_accuracy = round(sum(safe_get_numeric(a, 'middle_game_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_endgame_accuracy = round(sum(safe_get_numeric(a, 'endgame_accuracy') for a in analyses) / total_games, 1) if total_games > 0 else 0
-    average_aggressiveness_index = round(sum(safe_get_numeric(a, 'aggressiveness_index') for a in analyses) / total_games, 1) if total_games > 0 else 0
+    # Calculate averages from the sample (not total_games)
+    # Averages are calculated from the sample, but total_games_analyzed shows the real total
+    average_accuracy = round(sum(safe_get_numeric(a, 'accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_opening_accuracy = round(sum(safe_get_numeric(a, 'opening_accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_middle_game_accuracy = round(sum(safe_get_numeric(a, 'middle_game_accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_endgame_accuracy = round(sum(safe_get_numeric(a, 'endgame_accuracy') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
+    average_aggressiveness_index = round(sum(safe_get_numeric(a, 'aggressiveness_index') for a in analyses) / sample_size, 1) if sample_size > 0 else 0
 
     return AnalysisStats(
-        total_games_analyzed=total_games,
+        total_games_analyzed=total_games,  # Use total_count for accurate display
         average_accuracy=average_accuracy,
         total_blunders=total_blunders,
         total_mistakes=total_mistakes,
@@ -8318,30 +9790,77 @@ def _calculate_unified_analysis_stats(analyses: list) -> AnalysisStats:
         average_middle_game_accuracy=average_middle_game_accuracy,
         average_endgame_accuracy=average_endgame_accuracy,
         average_aggressiveness_index=average_aggressiveness_index,
-        blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
-        mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
-        inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
-        brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
-        material_sacrifices_per_game=round(total_material_sacrifices / total_games, 2) if total_games > 0 else 0
+        blunders_per_game=round(total_blunders / sample_size, 2) if sample_size > 0 else 0,
+        mistakes_per_game=round(total_mistakes / sample_size, 2) if sample_size > 0 else 0,
+        inaccuracies_per_game=round(total_inaccuracies / sample_size, 2) if sample_size > 0 else 0,
+        brilliant_moves_per_game=round(total_brilliant_moves / sample_size, 2) if sample_size > 0 else 0,
+        material_sacrifices_per_game=round(total_material_sacrifices / sample_size, 2) if sample_size > 0 else 0
     )
 
-def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
-    """Calculate statistics from move_analyses table data."""
+def _calculate_move_analysis_stats(analyses: list, total_count: int = None) -> AnalysisStats:
+    """Calculate statistics from move_analyses table data.
+
+    The move_analyses table has both:
+    1. Pre-calculated fields (best_move_percentage, middle_game_accuracy, endgame_accuracy)
+    2. moves_analysis JSONB array (for detailed move-by-move data)
+
+    We prefer stored fields when available, but calculate from moves_analysis as fallback.
+
+    Args:
+        analyses: List of analysis records (limited sample for performance)
+        total_count: Total count of all analyzed games in database. If None, uses len(analyses)
+    """
     if not analyses:
         return _get_empty_stats()
 
-    total_games = len(analyses)
+    # Use total_count if provided, otherwise fall back to sample size
+    total_games = total_count if total_count is not None else len(analyses)
+    sample_size = len(analyses)  # Use sample for calculating averages
     total_blunders = 0
     total_mistakes = 0
     total_inaccuracies = 0
     total_brilliant_moves = 0
     total_opening_accuracy = 0
+    games_with_opening_moves = 0
+
+    # Track accuracies - use stored values when available, calculate from moves otherwise
+    total_accuracy = 0
+    games_with_stored_accuracy = 0
+    total_accuracy_from_moves = 0
+    games_with_accuracy_from_moves = 0
+
+    total_middle_game_accuracy_stored = 0
+    games_with_middle_game_stored = 0
+    total_middle_game_accuracy_calculated = 0
+    games_with_middle_game_calculated = 0
+
+    total_endgame_accuracy_stored = 0
+    games_with_endgame_stored = 0
+    total_endgame_accuracy_calculated = 0
+    games_with_endgame_calculated = 0
 
     for analysis in analyses:
+        # Use stored accuracy if available (preferred)
+        stored_accuracy = analysis.get('best_move_percentage') or analysis.get('accuracy')
+        if stored_accuracy is not None and stored_accuracy > 0:
+            total_accuracy += stored_accuracy
+            games_with_stored_accuracy += 1
+
+        # Count move quality metrics from moves_analysis array
         moves_analysis = analysis.get('moves_analysis', [])
-        if isinstance(moves_analysis, list):
+        if isinstance(moves_analysis, list) and len(moves_analysis) > 0:
+            # Get all user moves for calculation fallbacks
+            user_moves = [move for move in moves_analysis if move.get('is_user_move', False)]
+
+            # Calculate overall accuracy from moves if we don't have stored value
+            if not stored_accuracy and user_moves:
+                centipawn_losses = [move.get('centipawn_loss', 0) for move in user_moves]
+                game_accuracy = _calculate_accuracy_from_cpl(centipawn_losses)
+                total_accuracy_from_moves += game_accuracy
+                games_with_accuracy_from_moves += 1
+
+            # Count move quality metrics
             for move in moves_analysis:
-                # Only count user moves, not opponent moves
                 if move.get('is_user_move', False):
                     if move.get('is_blunder', False):
                         total_blunders += 1
@@ -8352,30 +9871,85 @@ def _calculate_move_analysis_stats(analyses: list) -> AnalysisStats:
                     if move.get('is_brilliant', False):
                         total_brilliant_moves += 1
 
-            # Calculate opening accuracy for this game (user moves only)
+            # Calculate opening accuracy from moves (always calculate, not stored)
             opening_moves = [move for move in moves_analysis if move.get('opening_ply', 0) <= 20 and move.get('is_user_move', False)]
             if opening_moves:
-                # Use Chess.com win probability method for opening accuracy
                 opening_accuracy = _calculate_opening_accuracy_chesscom(opening_moves)
                 total_opening_accuracy += opening_accuracy
+                games_with_opening_moves += 1
+
+            # Use stored middle game accuracy if available, otherwise calculate from moves
+            stored_middle_game = analysis.get('middle_game_accuracy')
+            if stored_middle_game is not None and stored_middle_game > 0:
+                total_middle_game_accuracy_stored += stored_middle_game
+                games_with_middle_game_stored += 1
+            elif user_moves:
+                user_move_count = len(user_moves)
+                if user_move_count > 15:
+                    opening_end = min(10, user_move_count)
+                    endgame_start = max(opening_end, user_move_count - 10)
+                    middle_game_moves = user_moves[opening_end:endgame_start]
+                    if middle_game_moves:
+                        middle_game_cpl = [move.get('centipawn_loss', 0) for move in middle_game_moves]
+                        middle_game_acc = _calculate_accuracy_from_cpl(middle_game_cpl)
+                        total_middle_game_accuracy_calculated += middle_game_acc
+                        games_with_middle_game_calculated += 1
+
+            # Use stored endgame accuracy if available, otherwise calculate from moves
+            stored_endgame = analysis.get('endgame_accuracy')
+            if stored_endgame is not None and stored_endgame > 0:
+                total_endgame_accuracy_stored += stored_endgame
+                games_with_endgame_stored += 1
+            elif user_moves:
+                user_move_count = len(user_moves)
+                if user_move_count > 10:
+                    endgame_start = max(0, user_move_count - 10)
+                    endgame_moves = user_moves[endgame_start:]
+                    if endgame_moves:
+                        endgame_cpl = [move.get('centipawn_loss', 0) for move in endgame_moves]
+                        endgame_acc = _calculate_accuracy_from_cpl(endgame_cpl)
+                        total_endgame_accuracy_calculated += endgame_acc
+                        games_with_endgame_calculated += 1
+
+    # Calculate final accuracies - prefer stored, fall back to calculated
+    if games_with_stored_accuracy > 0:
+        final_accuracy = round(total_accuracy / games_with_stored_accuracy, 1)
+    elif games_with_accuracy_from_moves > 0:
+        final_accuracy = round(total_accuracy_from_moves / games_with_accuracy_from_moves, 1)
+    else:
+        final_accuracy = 0
+
+    if games_with_middle_game_stored > 0:
+        final_middle_game_accuracy = round(total_middle_game_accuracy_stored / games_with_middle_game_stored, 1)
+    elif games_with_middle_game_calculated > 0:
+        final_middle_game_accuracy = round(total_middle_game_accuracy_calculated / games_with_middle_game_calculated, 1)
+    else:
+        final_middle_game_accuracy = 0
+
+    if games_with_endgame_stored > 0:
+        final_endgame_accuracy = round(total_endgame_accuracy_stored / games_with_endgame_stored, 1)
+    elif games_with_endgame_calculated > 0:
+        final_endgame_accuracy = round(total_endgame_accuracy_calculated / games_with_endgame_calculated, 1)
+    else:
+        final_endgame_accuracy = 0
 
     return AnalysisStats(
-        total_games_analyzed=total_games,
-        average_accuracy=round(sum(a.get('best_move_percentage', a.get('accuracy', 0)) for a in analyses) / total_games, 1),
+        total_games_analyzed=total_games,  # Use total_count for accurate display
+        average_accuracy=final_accuracy,
         total_blunders=total_blunders,
         total_mistakes=total_mistakes,
         total_inaccuracies=total_inaccuracies,
         total_brilliant_moves=total_brilliant_moves,
         total_material_sacrifices=sum(a.get('material_sacrifices', 0) for a in analyses),
-        average_opening_accuracy=round(total_opening_accuracy / total_games, 1) if total_games > 0 else 0,
-        average_middle_game_accuracy=round(sum(a.get('middle_game_accuracy', 0) for a in analyses) / total_games, 1),
-        average_endgame_accuracy=round(sum(a.get('endgame_accuracy', 0) for a in analyses) / total_games, 1),
-        average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / total_games, 1),
-        blunders_per_game=round(total_blunders / total_games, 2) if total_games > 0 else 0,
-        mistakes_per_game=round(total_mistakes / total_games, 2) if total_games > 0 else 0,
-        inaccuracies_per_game=round(total_inaccuracies / total_games, 2) if total_games > 0 else 0,
-        brilliant_moves_per_game=round(total_brilliant_moves / total_games, 2) if total_games > 0 else 0,
-        material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / total_games, 2) if total_games > 0 else 0
+        average_opening_accuracy=round(total_opening_accuracy / games_with_opening_moves, 1) if games_with_opening_moves > 0 else 0,
+        average_middle_game_accuracy=final_middle_game_accuracy,
+        average_endgame_accuracy=final_endgame_accuracy,
+        average_aggressiveness_index=round(sum(a.get('aggressive_score', 0) for a in analyses) / sample_size, 1) if sample_size > 0 else 0,
+        blunders_per_game=round(total_blunders / sample_size, 2) if sample_size > 0 else 0,
+        mistakes_per_game=round(total_mistakes / sample_size, 2) if sample_size > 0 else 0,
+        inaccuracies_per_game=round(total_inaccuracies / sample_size, 2) if sample_size > 0 else 0,
+        brilliant_moves_per_game=round(total_brilliant_moves / sample_size, 2) if sample_size > 0 else 0,
+        material_sacrifices_per_game=round(sum(a.get('material_sacrifices', 0) for a in analyses) / sample_size, 2) if sample_size > 0 else 0
     )
 
 def _get_empty_stats() -> AnalysisStats:
@@ -8573,7 +10147,7 @@ async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
             ).execute()
         )
 
-        if not result.data:
+        if not result.data or len(result.data) == 0:
             return JSONResponse(
                 status_code=404,
                 content={"success": False, "message": "User profile not found"}
@@ -8640,6 +10214,398 @@ async def update_user_profile(
         content={"success": False, "message": "No valid fields to update"}
     )
 
+
+@app.post("/api/v1/auth/link-chess-account")
+async def link_chess_account(
+    request: LinkChessAccountRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Link a chess platform account to the authenticated user.
+    Validates the username exists on the platform, stores it, and claims any
+    previously imported anonymous data.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    username = request.username.strip()
+    platform = request.platform
+
+    # Normalize chess.com username to lowercase (case-insensitive platform)
+    if platform == 'chess.com':
+        username = username.lower()
+
+    try:
+        # Validate the username exists on the platform
+        api_client = get_resilient_api_client()
+        if api_client:
+            if platform == 'lichess':
+                exists, msg = await api_client.validate_lichess_user(username)
+            else:
+                exists, msg = await api_client.validate_chesscom_user(username)
+
+            if not exists:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": f"Username '{username}' not found on {platform}"}
+                )
+        else:
+            logger.warning("Resilient client not available, skipping username validation")
+
+        # Determine which column to update
+        column = 'chess_com_username' if platform == 'chess.com' else 'lichess_username'
+
+        # Get current user data to check if primary_platform needs to be set
+        user_result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').select(
+                'chess_com_username, lichess_username, primary_platform'
+            ).eq('id', user_id).execute()
+        )
+
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        current_user = user_result.data[0]
+
+        # Build update data
+        update_data = {
+            column: username,
+            'onboarding_completed': True,
+            'updated_at': 'now()'
+        }
+
+        # Set primary_platform if not already set or if this is the only linked account
+        if not current_user.get('primary_platform'):
+            update_data['primary_platform'] = platform
+
+        # Update authenticated_users
+        await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').update(
+                update_data
+            ).eq('id', user_id).execute()
+        )
+
+        # Claim any previously imported anonymous data for this username
+        games_claimed = 0
+        if usage_tracker:
+            try:
+                claim_result = await usage_tracker.claim_anonymous_data(
+                    auth_user_id=user_id,
+                    platform=platform,
+                    anonymous_user_id=username
+                )
+                games_claimed = claim_result.get('games_claimed', 0) if isinstance(claim_result, dict) else 0
+            except Exception as e:
+                logger.warning(f"Failed to claim anonymous data during account linking: {e}")
+
+        logger.info(f"Linked {platform} account '{username}' for user {user_id}, claimed {games_claimed} games")
+
+        # Auto-populate player_platform_links if user now has both accounts linked
+        try:
+            other_column = 'lichess_username' if platform == 'chess.com' else 'chess_com_username'
+            other_username = current_user.get(other_column)
+            if other_username:
+                chess_com = username if platform == 'chess.com' else other_username
+                lichess = username if platform == 'lichess' else other_username
+                await asyncio.to_thread(
+                    lambda: supabase_service.table('player_platform_links').upsert({
+                        'chess_com_username': chess_com,
+                        'lichess_username': lichess,
+                        'source': 'user_linked',
+                        'updated_at': 'now()'
+                    }, on_conflict='chess_com_username').execute()
+                )
+                logger.info(f"Auto-created player link: {chess_com} <-> {lichess}")
+        except Exception as e:
+            logger.warning(f"Failed to auto-create player link: {e}")
+
+        return {
+            "success": True,
+            "username": username,
+            "platform": platform,
+            "games_claimed": games_claimed
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error linking chess account for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to link chess account")
+
+
+@app.post("/api/v1/auth/unlink-chess-account")
+async def unlink_chess_account(
+    request: UnlinkChessAccountRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Unlink a chess platform account from the authenticated user.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    platform = request.platform
+    column = 'chess_com_username' if platform == 'chess.com' else 'lichess_username'
+    other_column = 'lichess_username' if platform == 'chess.com' else 'chess_com_username'
+
+    try:
+        # Get current user data
+        user_result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').select(
+                'chess_com_username, lichess_username, primary_platform'
+            ).eq('id', user_id).execute()
+        )
+
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        current_user = user_result.data[0]
+
+        update_data = {
+            column: None,
+            'updated_at': 'now()'
+        }
+
+        # If unlinking the primary platform, switch to the other one (or None)
+        if current_user.get('primary_platform') == platform:
+            other_username = current_user.get(other_column)
+            if other_username:
+                update_data['primary_platform'] = 'lichess' if platform == 'chess.com' else 'chess.com'
+            else:
+                update_data['primary_platform'] = None
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').update(
+                update_data
+            ).eq('id', user_id).execute()
+        )
+
+        logger.info(f"Unlinked {platform} account for user {user_id}")
+        return {"success": True, "platform": platform}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unlinking chess account for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to unlink chess account")
+
+
+@app.put("/api/v1/auth/set-primary-platform")
+async def set_primary_platform(
+    request: SetPrimaryPlatformRequest,
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Set the user's primary chess platform for default data lookup.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    platform = request.platform
+    column = 'chess_com_username' if platform == 'chess.com' else 'lichess_username'
+
+    try:
+        # Verify user has that platform linked
+        user_result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').select(
+                column
+            ).eq('id', user_id).execute()
+        )
+
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if not user_result.data[0].get(column):
+            raise HTTPException(
+                status_code=400,
+                detail=f"No {platform} account linked. Link an account first."
+            )
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').update(
+                {'primary_platform': platform, 'updated_at': 'now()'}
+            ).eq('id', user_id).execute()
+        )
+
+        logger.info(f"Set primary platform to {platform} for user {user_id}")
+        return {"success": True, "primary_platform": platform}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting primary platform for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to set primary platform")
+
+
+@app.get("/api/v1/player-links/{platform}/{username}")
+async def get_player_link(platform: str, username: str):
+    """
+    Look up a cross-platform link for any player.
+    Returns the linked username on the other platform, if one exists.
+    No authentication required.
+    """
+    if not supabase_service:
+        return {"linked": False}
+
+    if platform not in ('chess.com', 'lichess'):
+        return {"linked": False}
+
+    try:
+        # Normalize chess.com username to lowercase for lookup
+        lookup_username = username.strip().lower() if platform == 'chess.com' else username.strip()
+
+        # Check player_platform_links table first
+        if platform == 'chess.com':
+            result = await asyncio.to_thread(
+                lambda: supabase_service.table('player_platform_links').select(
+                    'chess_com_username, lichess_username'
+                ).ilike('chess_com_username', lookup_username).limit(1).execute()
+            )
+        else:
+            result = await asyncio.to_thread(
+                lambda: supabase_service.table('player_platform_links').select(
+                    'chess_com_username, lichess_username'
+                ).eq('lichess_username', lookup_username).limit(1).execute()
+            )
+
+        if result.data:
+            row = result.data[0]
+            return {
+                "linked": True,
+                "chess_com_username": row['chess_com_username'],
+                "lichess_username": row['lichess_username']
+            }
+
+        # Fallback: check authenticated_users table
+        if platform == 'chess.com':
+            result = await asyncio.to_thread(
+                lambda: supabase_service.table('authenticated_users').select(
+                    'chess_com_username, lichess_username'
+                ).ilike('chess_com_username', lookup_username).not_.is_('lichess_username', 'null').limit(1).execute()
+            )
+        else:
+            result = await asyncio.to_thread(
+                lambda: supabase_service.table('authenticated_users').select(
+                    'chess_com_username, lichess_username'
+                ).eq('lichess_username', lookup_username).not_.is_('chess_com_username', 'null').limit(1).execute()
+            )
+
+        if result.data:
+            row = result.data[0]
+            return {
+                "linked": True,
+                "chess_com_username": row['chess_com_username'],
+                "lichess_username": row['lichess_username']
+            }
+
+        return {"linked": False}
+
+    except Exception as e:
+        logger.error(f"Error looking up player link for {platform}/{username}: {e}")
+        return {"linked": False}
+
+
+@app.post("/api/v1/player-links")
+async def create_player_link(request: CreatePlayerLinkRequest):
+    """
+    Create a cross-platform player link.
+    Validates both usernames exist on their platforms before creating.
+    No authentication required.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    chess_com_user = request.chess_com_username.strip().lower()
+    lichess_user = request.lichess_username.strip()
+
+    if not chess_com_user or not lichess_user:
+        raise HTTPException(status_code=400, detail="Both usernames are required")
+
+    try:
+        # Validate both usernames exist on their platforms
+        api_client = get_resilient_api_client()
+        if api_client:
+            chess_exists, chess_msg = await api_client.validate_chesscom_user(chess_com_user)
+            if not chess_exists:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": f"Username '{chess_com_user}' not found on Chess.com"}
+                )
+
+            lichess_exists, lichess_msg = await api_client.validate_lichess_user(lichess_user)
+            if not lichess_exists:
+                return JSONResponse(
+                    status_code=400,
+                    content={"success": False, "message": f"Username '{lichess_user}' not found on Lichess"}
+                )
+        else:
+            logger.warning("Resilient client not available, skipping username validation for player link")
+
+        # Insert into player_platform_links
+        await asyncio.to_thread(
+            lambda: supabase_service.table('player_platform_links').upsert({
+                'chess_com_username': chess_com_user,
+                'lichess_username': lichess_user,
+                'source': 'manual',
+                'updated_at': 'now()'
+            }, on_conflict='chess_com_username').execute()
+        )
+
+        logger.info(f"Created player link: {chess_com_user} (chess.com) <-> {lichess_user} (lichess)")
+
+        return {
+            "success": True,
+            "chess_com_username": chess_com_user,
+            "lichess_username": lichess_user
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating player link: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create player link")
+
+
+@app.post("/api/v1/auth/complete-onboarding")
+async def complete_onboarding(
+    token_data: Annotated[dict, Depends(verify_token)]
+):
+    """
+    Mark the user's onboarding as completed (e.g., when they skip the setup modal).
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    user_id = token_data.get('sub')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').update(
+                {'onboarding_completed': True, 'updated_at': 'now()'}
+            ).eq('id', user_id).execute()
+        )
+
+        return {"success": True}
+
+    except Exception as e:
+        logger.error(f"Error completing onboarding for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to complete onboarding")
+
+
 # ============================================================================
 # PAYMENT ENDPOINTS
 # ============================================================================
@@ -8691,7 +10657,6 @@ async def create_checkout_session(
         )
     except Exception as e:
         logger.error(f"Error creating checkout session: {e}")
-        import traceback
         traceback.print_exc()  # Print full stack trace
         return JSONResponse(
             status_code=500,
@@ -8865,14 +10830,2938 @@ async def get_payment_tiers():
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        result = supabase.table('payment_tiers').select('*').eq(
-            'is_active', True
-        ).order('display_order').execute()
+        result = await asyncio.to_thread(
+            lambda: supabase.table('payment_tiers').select('*').eq(
+                'is_active', True
+            ).order('display_order').execute()
+        )
 
         return {'tiers': result.data or []}
     except Exception as e:
         logger.error(f"Error getting payment tiers: {e}")
         raise HTTPException(status_code=500, detail="Failed to get payment tiers")
+
+
+# ============================================================================
+# COACH API ENDPOINTS
+# ============================================================================
+
+async def _check_premium_access(user_id: str, platform: Optional[str] = None) -> bool:
+    """
+    Check if user has premium access (pro or enterprise tier).
+
+    Args:
+        user_id: User ID (should be UUID for authenticated users, or username for anonymous)
+        platform: Platform (optional, used for username -> UUID lookup if user_id is username)
+
+    Returns:
+        True if user has premium access, False otherwise
+    """
+    if not supabase_service:
+        return False
+
+    try:
+        # Determine if user_id is a UUID or username
+        is_uuid = len(user_id) == 36 and '-' in user_id and user_id.count('-') == 4
+
+        if is_uuid:
+            # It's already a UUID, use it directly
+            check_user_id = user_id
+        elif platform:
+            # It's a username, need to look up the UUID from user_profiles
+            canonical_username = _canonical_user_id(user_id, platform)
+
+            # Look up auth_user_id from user_profiles
+            profile_result = await asyncio.to_thread(
+                lambda: supabase_service.table('user_profiles')
+                .select('auth_user_id')
+                .eq('platform', platform)
+                .eq('user_id', canonical_username)
+                .limit(1)
+                .execute()
+            )
+
+            if profile_result.data and profile_result.data[0].get('auth_user_id'):
+                check_user_id = profile_result.data[0]['auth_user_id']
+                logger.info(f"Found auth_user_id {check_user_id} for username {canonical_username} on {platform}")
+            else:
+                logger.warning(f"No auth_user_id found for username {canonical_username} on {platform}")
+                return False
+        else:
+            # No platform provided and not a UUID - can't look up
+            logger.warning(f"Cannot check premium access: user_id={user_id} is not a UUID and no platform provided")
+            return False
+
+        # Now check premium status using the UUID
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users')
+            .select('account_tier, subscription_status')
+            .eq('id', check_user_id)
+            .execute()
+        )
+
+        logger.info(f"[PREMIUM_CHECK] Query result for user_id={check_user_id}: found={bool(result.data)}")
+        if result.data:
+            logger.info(f"[PREMIUM_CHECK] User data: {result.data[0]}")
+
+        if not result.data:
+            logger.warning(f"[PREMIUM_CHECK] User not found in authenticated_users table: {check_user_id}")
+            return False
+
+        user = result.data[0]
+        account_tier = user.get('account_tier', 'free')
+        subscription_status = user.get('subscription_status', 'expired')
+
+        # Log for debugging
+        logger.info(f"[PREMIUM_CHECK] user_id={check_user_id}, account_tier={account_tier}, subscription_status={subscription_status}")
+
+        # Premium tiers
+        premium_tiers = ['pro', 'pro_monthly', 'pro_yearly', 'enterprise']
+        is_premium_tier = account_tier in premium_tiers
+        logger.info(f"[PREMIUM_CHECK] is_premium_tier={is_premium_tier} (account_tier={account_tier} in {premium_tiers})")
+
+        # Check subscription is active for premium tiers
+        if is_premium_tier:
+            is_active = subscription_status in ['active', 'trialing']
+            logger.info(f"[PREMIUM_CHECK] subscription_status={subscription_status}, is_active={is_active} (checking if in ['active', 'trialing'])")
+            if is_active:
+                logger.info(f"[PREMIUM_CHECK] ✅ ACCESS GRANTED for user {check_user_id}")
+            else:
+                logger.warning(f"[PREMIUM_CHECK] ❌ ACCESS DENIED: Premium tier but subscription not active. status={subscription_status}")
+            return is_active
+
+        logger.warning(f"[PREMIUM_CHECK] ❌ ACCESS DENIED: Not a premium tier. account_tier={account_tier}, premium_tiers={premium_tiers}")
+        return False
+    except Exception as e:
+        logger.error(f"Error checking premium access: {e}")
+        return False
+
+
+@app.get("/api/v1/coach/dashboard/{user_id}/{platform}")
+async def get_coach_dashboard(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """
+    Get Coach dashboard data (daily lesson, weaknesses, strengths).
+    Premium-only endpoint.
+    """
+    # Premium check: Always use authenticated user's UUID if provided
+    logger.info(f"[COACH_DASHBOARD] Request: user_id={user_id}, platform={platform}, auth_user_id={auth_user_id}")
+    if auth_user_id:
+        logger.info(f"[COACH_DASHBOARD] Using auth_user_id for premium check: {auth_user_id}")
+        premium_result = await _check_premium_access(auth_user_id, None)
+        logger.info(f"[COACH_DASHBOARD] Premium check result: {premium_result}")
+        if not premium_result:
+            logger.warning(f"[COACH_DASHBOARD] ❌ Premium check failed for auth_user_id={auth_user_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+        logger.info(f"[COACH_DASHBOARD] ✅ Premium check passed for auth_user_id={auth_user_id}")
+    else:
+        logger.info(f"[COACH_DASHBOARD] No auth_user_id provided, using user_id={user_id} with platform={platform}")
+        premium_result = await _check_premium_access(user_id, platform)
+        logger.info(f"[COACH_DASHBOARD] Premium check result: {premium_result}")
+        if not premium_result:
+            logger.warning(f"[COACH_DASHBOARD] ❌ Premium check failed for user_id={user_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+        logger.info(f"[COACH_DASHBOARD] ✅ Premium check passed for user_id={user_id}")
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+
+        # For Coach tables, we need the authenticated user's UUID, not the canonical username
+        # The lessons/puzzles tables use UUID user_id that references auth.users
+        coach_user_id = auth_user_id if auth_user_id else None
+
+        if not coach_user_id:
+            # Try to look up UUID from user_profiles if auth_user_id not provided
+            profile_result = await asyncio.to_thread(
+                lambda: supabase_service.table('user_profiles')
+                .select('auth_user_id')
+                .eq('platform', platform)
+                .eq('user_id', canonical_user_id)
+                .limit(1)
+                .execute()
+            )
+            if profile_result.data and profile_result.data[0].get('auth_user_id'):
+                coach_user_id = profile_result.data[0]['auth_user_id']
+                logger.info(f"[COACH_DASHBOARD] Found auth_user_id {coach_user_id} for username {canonical_user_id}")
+            else:
+                logger.warning(f"[COACH_DASHBOARD] No auth_user_id found for {canonical_user_id}, cannot generate lessons")
+                coach_user_id = None
+
+        # Initialize Coach modules
+        lesson_generator = LessonGenerator(supabase_service)
+        progress_analyzer = _get_progress_analyzer()
+        puzzle_generator = PuzzleGenerator(supabase_service)
+
+        # Fetch recent game analyses (use canonical_user_id for game_analyses table)
+        analyses_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('*')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(100)
+            .execute()
+        )
+
+        game_analyses = analyses_result.data or []
+
+        # Generate daily lesson (use coach_user_id UUID for lessons table, but pass game_analyses fetched with canonical_user_id)
+        all_lessons = []
+        if coach_user_id:
+            logger.info(f"[COACH_DASHBOARD] Generating lessons for coach_user_id={coach_user_id}, found {len(game_analyses)} game analyses")
+            all_lessons = await lesson_generator.get_all_lessons(
+                coach_user_id,  # UUID for lessons table
+                platform,
+                force_regenerate=False,
+                game_analyses=game_analyses  # Pass pre-fetched analyses (fetched with canonical_user_id)
+            )
+            logger.info(f"[COACH_DASHBOARD] Generated {len(all_lessons)} lessons")
+        daily_lesson = all_lessons[0] if all_lessons else None
+
+        # Get weaknesses and strengths
+        weaknesses = await progress_analyzer.get_user_weaknesses(canonical_user_id, platform, game_analyses)
+        strengths = await progress_analyzer.get_user_strengths(canonical_user_id, platform, game_analyses)
+
+        # Get recent activity (lesson completions, puzzle attempts)
+        recent_activity = []
+
+        # Get recent lesson completions (use coach_user_id UUID)
+        if coach_user_id:
+            try:
+                lesson_progress_result = await asyncio.to_thread(
+                    lambda: supabase_service.table('lesson_progress')
+                    .select('*, lessons(lesson_title)')
+                    .eq('user_id', coach_user_id)
+                    .eq('status', 'completed')
+                    .order('completed_at', desc=True)
+                    .limit(5)
+                    .execute()
+                )
+
+                for progress in (lesson_progress_result.data or [])[:3]:
+                    recent_activity.append({
+                        'type': 'lesson_completed',
+                        'title': progress.get('lessons', {}).get('lesson_title', 'Lesson'),
+                        'completed_at': progress.get('completed_at'),
+                    })
+            except Exception as e:
+                logger.warning(f"[COACH_DASHBOARD] Could not fetch lesson progress: {e}")
+
+            # Get recent puzzle attempts (use coach_user_id UUID)
+            try:
+                puzzle_attempts_result = await asyncio.to_thread(
+                    lambda: supabase_service.table('puzzle_attempts')
+                    .select('*, puzzles(fen_position, puzzle_category)')
+                    .eq('user_id', coach_user_id)
+                    .order('attempted_at', desc=True)
+                    .limit(5)
+                    .execute()
+                )
+
+                for attempt in (puzzle_attempts_result.data or [])[:3]:
+                    puzzle_data = attempt.get('puzzles', {})
+                    # Create a title from FEN or category
+                    category = puzzle_data.get('puzzle_category', 'Tactical')
+                    puzzle_title = f"{category.title()} Puzzle"
+                    recent_activity.append({
+                        'type': 'puzzle_attempted',
+                        'title': puzzle_title,
+                        'attempted_at': attempt.get('attempted_at'),
+                        'was_correct': attempt.get('was_correct', False),
+                    })
+            except Exception as e:
+                logger.warning(f"[COACH_DASHBOARD] Could not fetch puzzle attempts: {e}")
+
+        return {
+            'daily_lesson': daily_lesson,
+            'top_weaknesses': weaknesses,
+            'top_strengths': strengths,
+            'recent_activity': recent_activity,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting coach dashboard: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get coach dashboard")
+
+
+@app.get("/api/v1/coach/progress/{user_id}/{platform}")
+async def get_coach_progress(
+    user_id: str,
+    platform: str,
+    period_days: int = Query(90, description="Number of days to look back"),
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """
+    Get progress tracking data for charts and streaks.
+    Premium-only endpoint.
+    """
+    if auth_user_id:
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(status_code=403, detail="Coach features require premium subscription.")
+    else:
+        if not await _check_premium_access(user_id, platform):
+            raise HTTPException(status_code=403, detail="Coach features require premium subscription.")
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        canonical = _canonical_user_id(user_id, platform)
+        progress_analyzer = _get_progress_analyzer()
+
+        # Fetch game analyses and games data in parallel
+        analyses_future = asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('*')
+            .eq('user_id', canonical)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(500)
+            .execute()
+        )
+        games_future = asyncio.to_thread(
+            lambda: supabase_service.table('games')
+            .select('provider_game_id, result, color, opening_family, time_control, my_rating, opponent_rating, played_at')
+            .eq('user_id', canonical)
+            .eq('platform', platform)
+            .order('played_at', desc=True)
+            .limit(5000)
+            .execute()
+        )
+
+        analyses_result, games_result = await asyncio.gather(analyses_future, games_future)
+        game_analyses = analyses_result.data or []
+        games_data = games_result.data or []
+
+        logger.info(f"[PROGRESS] Fetched {len(game_analyses)} analyses, {len(games_data)} games for {canonical}/{platform}")
+
+        # Get all data sets
+        time_series = await progress_analyzer.get_progress_time_series(
+            canonical, platform, game_analyses, period_days
+        )
+
+        # For streak data, try auth_user_id first (for lesson/puzzle tables), fall back to canonical
+        streak_user_id = auth_user_id or canonical
+        streaks = await progress_analyzer.get_streak_data(streak_user_id, platform)
+
+        weakness_evolution = await progress_analyzer.get_weakness_evolution(
+            canonical, platform, game_analyses, weeks=max(4, period_days // 7)
+        )
+
+        # Advanced metrics
+        advanced_metrics = await progress_analyzer.get_advanced_metrics(
+            canonical, platform, game_analyses, games_data, period_days
+        )
+
+        # Peer comparison (best-effort, don't fail if unavailable)
+        peer_comparison = None
+        try:
+            # Get user rating from games data
+            ratings = [g.get('my_rating', 0) for g in games_data if g.get('my_rating')]
+            user_rating = round(sum(ratings) / len(ratings)) if ratings else 0
+
+            if user_rating > 0:
+                # Build user metrics summary for comparison
+                user_metrics = {
+                    'accuracy': round(
+                        sum(a.get('accuracy', 0) for a in game_analyses if a.get('accuracy'))
+                        / max(1, sum(1 for a in game_analyses if a.get('accuracy'))), 1
+                    ),
+                    'blunders_per_game': round(
+                        sum(a.get('blunders', 0) for a in game_analyses)
+                        / max(1, len(game_analyses)), 2
+                    ),
+                    'avg_cpl': round(
+                        sum(a.get('average_centipawn_loss', 0) for a in game_analyses if a.get('average_centipawn_loss'))
+                        / max(1, sum(1 for a in game_analyses if a.get('average_centipawn_loss'))), 1
+                    ),
+                    'tactical_score': round(
+                        sum(a.get('tactical_score', 0) for a in game_analyses if a.get('tactical_score'))
+                        / max(1, sum(1 for a in game_analyses if a.get('tactical_score'))), 1
+                    ),
+                }
+
+                peer_comparison = await progress_analyzer.get_peer_comparison(
+                    canonical, platform, user_metrics, user_rating
+                )
+                if peer_comparison:
+                    advanced_metrics['peer_comparison'] = peer_comparison
+        except Exception as e:
+            logger.warning(f"[PROGRESS] Peer comparison failed (non-critical): {e}")
+
+        # Diagnostic summary (template-based, fast)
+        try:
+            diagnostic = ProgressAnalyzer.generate_diagnostic_summary(
+                advanced_metrics, peer_comparison, user_rating if ratings else 1500
+            )
+        except Exception as e:
+            logger.warning(f"[PROGRESS] Diagnostic generation failed: {e}")
+            diagnostic = None
+
+        return {
+            'time_series': time_series,
+            'streaks': streaks,
+            'weakness_evolution': weakness_evolution,
+            'advanced_metrics': advanced_metrics,
+            'diagnostic': diagnostic,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting coach progress: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get progress data")
+
+
+@app.get("/api/v1/coach/lessons/{user_id}/{platform}")
+async def get_lessons(
+    user_id: str,
+    platform: str,
+    category: Optional[str] = Query(None, description="Filter by lesson category"),
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """
+    Get all lessons for user with progress status.
+    Premium-only endpoint.
+    """
+    # Premium check: Always use authenticated user's UUID if provided
+    if auth_user_id:
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+    else:
+        if not await _check_premium_access(user_id, platform):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        # lessons table uses UUID (auth.users), game_analyses uses platform username
+        db_user_id = auth_user_id or canonical_user_id
+        lesson_generator = LessonGenerator(supabase_service)
+
+        # Pre-fetch game analyses using platform username (game_analyses.user_id is TEXT)
+        analyses_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('*')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(100)
+            .execute()
+        )
+
+        # Get all lessons - pass UUID for lessons table, canonical username for game data tables
+        lessons = await lesson_generator.get_all_lessons(
+            db_user_id, platform, force_regenerate=False,
+            game_analyses=analyses_result.data or [], canonical_user_id=canonical_user_id
+        )
+
+        # Filter by category if provided
+        if category:
+            lessons = [l for l in lessons if l.get('lesson_type') == category]
+
+        return {'lessons': lessons}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting lessons: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get lessons")
+
+
+@app.get("/api/v1/coach/lessons/{lesson_id}")
+async def get_lesson_detail(lesson_id: str):
+    """
+    Get full lesson content by ID.
+    Premium-only endpoint.
+    """
+    logger.info(f"[LESSON_DETAIL] Request for lesson_id={lesson_id}")
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Get lesson
+        lesson_result = await asyncio.to_thread(
+            lambda: supabase_service.table('lessons')
+            .select('*')
+            .eq('id', lesson_id)
+            .execute()
+        )
+
+        logger.info(f"[LESSON_DETAIL] Lesson query result: found={bool(lesson_result.data)}")
+
+        if not lesson_result.data:
+            logger.warning(f"[LESSON_DETAIL] Lesson not found: {lesson_id}")
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        lesson = lesson_result.data[0]
+        lesson_user_id = lesson.get('user_id')
+        logger.info(f"[LESSON_DETAIL] Found lesson '{lesson.get('lesson_title')}' for user_id={lesson_user_id}")
+
+        # Premium check for lesson owner (user_id from lesson is already UUID)
+        premium_check = await _check_premium_access(lesson_user_id, None)
+        logger.info(f"[LESSON_DETAIL] Premium check result: {premium_check}")
+
+        if not premium_check:
+            logger.warning(f"[LESSON_DETAIL] Premium check failed for user_id={lesson_user_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+        # Get progress if exists
+        try:
+            progress_result = await asyncio.to_thread(
+                lambda: supabase_service.table('lesson_progress')
+                .select('*')
+                .eq('user_id', lesson_user_id)
+                .eq('lesson_id', lesson_id)
+                .execute()
+            )
+
+            if progress_result.data:
+                lesson['status'] = progress_result.data[0]['status']
+                lesson['completion_percentage'] = progress_result.data[0]['completion_percentage']
+                logger.info(f"[LESSON_DETAIL] Found progress: status={lesson['status']}, completion={lesson['completion_percentage']}")
+            else:
+                lesson['status'] = 'not_started'
+                lesson['completion_percentage'] = 0
+                logger.info(f"[LESSON_DETAIL] No progress found, using defaults")
+        except Exception as e:
+            logger.warning(f"[LESSON_DETAIL] Could not fetch progress: {e}")
+            lesson['status'] = 'not_started'
+            lesson['completion_percentage'] = 0
+
+        # Ensure lesson_content is a dict if it's stored as JSONB
+        if isinstance(lesson.get('lesson_content'), str):
+            import json
+            try:
+                lesson['lesson_content'] = json.loads(lesson['lesson_content'])
+            except Exception:
+                lesson['lesson_content'] = {}
+
+        logger.info(f"[LESSON_DETAIL] Returning lesson data for lesson_id={lesson_id}")
+        return lesson
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[LESSON_DETAIL] Error getting lesson detail: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get lesson detail: {str(e)}")
+
+
+@app.post("/api/v1/coach/lessons/{lesson_id}/complete")
+async def complete_lesson(lesson_id: str, completion_data: Dict[str, Any]):
+    """
+    Mark lesson as complete and record progress.
+    Premium-only endpoint.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Get lesson to verify ownership
+        lesson_result = await asyncio.to_thread(
+            lambda: supabase_service.table('lessons')
+            .select('user_id')
+            .eq('id', lesson_id)
+            .execute()
+        )
+
+        if not lesson_result.data:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        user_id = lesson_result.data[0]['user_id']
+
+        # Premium check (user_id from lesson is already UUID)
+        if not await _check_premium_access(user_id):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+        # Update or create lesson progress
+        time_spent = completion_data.get('time_spent_seconds', 0)
+        quiz_score = completion_data.get('quiz_score')
+
+        progress_data = {
+            'user_id': user_id,
+            'lesson_id': lesson_id,
+            'status': 'completed',
+            'completion_percentage': 100,
+            'time_spent_seconds': time_spent,
+            'quiz_score': quiz_score,
+            'completed_at': datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Upsert progress
+        await asyncio.to_thread(
+            lambda: supabase_service.table('lesson_progress')
+            .upsert(progress_data, on_conflict='user_id,lesson_id')
+            .execute()
+        )
+
+        return {'success': True, 'message': 'Lesson marked as complete'}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing lesson: {e}")
+        raise HTTPException(status_code=500, detail="Failed to complete lesson")
+
+
+@app.get("/api/v1/coach/puzzles/{user_id}/{platform}")
+async def get_puzzles(
+    user_id: str,
+    platform: str,
+    category: Optional[str] = Query(None, description="Filter by puzzle category"),
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """
+    Get personalized puzzles for user.
+    Premium-only endpoint.
+    """
+    # Premium check: Always use authenticated user's UUID if provided
+    if auth_user_id:
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+    else:
+        if not await _check_premium_access(user_id, platform):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        # puzzles table uses UUID (auth.users), game_analyses uses platform username
+        db_user_id = auth_user_id or canonical_user_id
+        puzzle_generator = PuzzleGenerator(supabase_service)
+
+        # Check if puzzles already exist (puzzles.user_id is UUID)
+        puzzles_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzles')
+            .select('*')
+            .eq('user_id', db_user_id)
+            .eq('platform', platform)
+            .execute()
+        )
+
+        puzzles = puzzles_result.data or []
+
+        # Generate puzzles if none exist
+        if not puzzles:
+            # Fetch game analyses using platform username (game_analyses.user_id is TEXT)
+            analyses_result = await asyncio.to_thread(
+                lambda: supabase_service.table('game_analyses')
+                .select('*')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .order('created_at', desc=True)
+                .limit(100)
+                .execute()
+            )
+
+            game_analyses = analyses_result.data or []
+
+            # Generate puzzles using UUID for puzzle table, canonical for game data
+            puzzles = await puzzle_generator.generate_puzzles_from_blunders(
+                db_user_id, platform, game_analyses, canonical_user_id=canonical_user_id
+            )
+
+            # Save puzzles to database
+            for puzzle in puzzles:
+                try:
+                    await asyncio.to_thread(
+                        lambda p=puzzle: supabase_service.table('puzzles')
+                        .insert(p)
+                        .execute()
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to save puzzle: {e}")
+
+        # Filter by category if provided
+        if category:
+            puzzles = [p for p in puzzles if p.get('puzzle_category') == category]
+
+        # Categorize puzzles
+        categorized = puzzle_generator.categorize_puzzles(puzzles)
+
+        return {
+            'puzzles': puzzles,
+            'categorized': categorized,
+            'total': len(puzzles),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting puzzles: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get puzzles")
+
+
+@app.get("/api/v1/coach/puzzles/daily/{user_id}/{platform}")
+async def get_daily_puzzle(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """
+    Get or generate one daily puzzle for the user.
+    Premium-only endpoint.
+    """
+    # Premium check: Always use authenticated user's UUID if provided
+    if auth_user_id:
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+    else:
+        if not await _check_premium_access(user_id, platform):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # puzzles table uses UUID (auth.users), game data uses canonical username
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_user_id = auth_user_id or canonical_user_id
+        puzzle_generator = PuzzleGenerator(supabase_service)
+
+        daily_puzzle = await puzzle_generator.get_daily_puzzle(
+            db_user_id, platform, canonical_user_id=canonical_user_id
+        )
+
+        if not daily_puzzle:
+            raise HTTPException(status_code=404, detail="No daily puzzle available")
+
+        return daily_puzzle
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting daily puzzle: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get daily puzzle")
+
+
+@app.post("/api/v1/coach/puzzles/{puzzle_id}/attempt")
+async def record_puzzle_attempt(puzzle_id: str, attempt_data: Dict[str, Any]):
+    """
+    Record a puzzle solving attempt.
+    Premium-only endpoint.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Get puzzle to verify ownership
+        puzzle_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzles')
+            .select('user_id')
+            .eq('id', puzzle_id)
+            .execute()
+        )
+
+        if not puzzle_result.data:
+            raise HTTPException(status_code=404, detail="Puzzle not found")
+
+        user_id = puzzle_result.data[0]['user_id']
+
+        # Premium check (user_id from lesson is already UUID)
+        if not await _check_premium_access(user_id):
+            raise HTTPException(
+                status_code=403,
+                detail="Coach features require premium subscription. Please upgrade to access."
+            )
+
+        # Record attempt
+        was_correct = attempt_data.get('was_correct', False)
+        time_taken = attempt_data.get('time_to_solve_seconds')
+        moves_made = attempt_data.get('moves_made', [])
+
+        attempt_record = {
+            'user_id': user_id,
+            'puzzle_id': puzzle_id,
+            'was_correct': was_correct,
+            'time_to_solve_seconds': time_taken,
+            'moves_made': moves_made,
+        }
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_attempts')
+            .insert(attempt_record)
+            .execute()
+        )
+
+        return {'success': True, 'message': 'Puzzle attempt recorded'}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recording puzzle attempt: {e}")
+        raise HTTPException(status_code=500, detail="Failed to record puzzle attempt")
+
+
+class PlayMoveRequest(BaseModel):
+    """Request for getting engine move in play mode."""
+    fen: str = Field(..., description="FEN string of current position")
+    skill_level: int = Field(10, ge=0, le=20, description="Engine skill level (0-20)")
+    depth: int = Field(10, ge=1, le=20, description="Analysis depth")
+
+
+class PlayMoveResponse(BaseModel):
+    """Response with engine move."""
+    move: Dict[str, str]  # {san, uci, from, to}
+    evaluation: Dict[str, Any]
+    pv_line: List[str] = []
+
+
+@app.post("/api/v1/coach/play-move", response_model=PlayMoveResponse)
+async def get_engine_move(
+    request: PlayMoveRequest,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """
+    Get engine move for playing against Tal Coach.
+    Premium-only endpoint.
+    """
+    import chess
+    import chess.engine
+    from concurrent.futures import ThreadPoolExecutor
+
+    # Premium check - require authentication
+    if not auth_user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Please log in to access coach features."
+        )
+
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Coach features require premium subscription. Please upgrade to access."
+        )
+
+    def _get_engine_move(fen: str, skill_level: int, depth: int):
+        """Synchronous function to get engine move."""
+        try:
+            # Validate FEN
+            board = chess.Board(fen)
+
+            pool = _get_sync_engine_pool()
+            if not pool:
+                raise ValueError("Stockfish not available")
+
+            # Get engine move using shared engine pool
+            with pool.acquire() as engine:
+                # Configure skill level for this request
+                try:
+                    engine.configure({
+                        'Skill Level': skill_level,
+                        'Threads': 2,
+                        'Hash': 128,
+                    })
+                except Exception:
+                    pass  # Some engines don't support all options
+
+                # Get best move with time limit fallback to prevent hangs
+                result = engine.play(board, chess.engine.Limit(depth=depth, time=5.0))
+                move = result.move
+
+                # Get evaluation and PV with time limit
+                info = engine.analyse(board, chess.engine.Limit(depth=depth, time=3.0))
+                score = info.get("score")
+                eval_dict = {"type": "cp", "value": 0, "score_for_white": 0}
+
+                if score:
+                    if score.is_mate():
+                        mate_value = score.relative.mate()
+                        score_for_white = 10000 if mate_value > 0 else -10000
+                        if not board.turn:
+                            score_for_white = -score_for_white
+                        eval_dict = {
+                            "type": "mate",
+                            "value": mate_value,
+                            "score_for_white": score_for_white / 100
+                        }
+                    else:
+                        cp_value = score.relative.score()
+                        score_for_white = cp_value if board.turn else -cp_value
+                        eval_dict = {
+                            "type": "cp",
+                            "value": cp_value,
+                            "score_for_white": score_for_white / 100
+                        }
+
+                # Extract PV
+                pv = info.get("pv", [])
+                pv_san = []
+                temp_board = board.copy()
+                for pv_move in pv[:5]:
+                    try:
+                        pv_san.append(temp_board.san(pv_move))
+                        temp_board.push(pv_move)
+                    except Exception:
+                        break
+
+                # Convert move to dict
+                move_dict = {
+                    "san": board.san(move),
+                    "uci": move.uci(),
+                    "from": chess.square_name(move.from_square),
+                    "to": chess.square_name(move.to_square)
+                }
+
+                return {
+                    "move": move_dict,
+                    "evaluation": eval_dict,
+                    "pv_line": pv_san
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting engine move: {e}")
+            raise
+
+    try:
+        # Run in thread pool with capacity for multiple concurrent games
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            result = await loop.run_in_executor(
+                executor,
+                _get_engine_move,
+                request.fen,
+                request.skill_level,
+                request.depth
+            )
+
+        return PlayMoveResponse(**result)
+
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except chess.InvalidMoveError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid FEN: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error getting engine move: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get engine move: {str(e)}")
+
+
+# ============================================================================
+# COACH CHAT - Interactive AI coaching chatbot
+# ============================================================================
+
+class ChatPositionContext(BaseModel):
+    """Chess position context for coach chat."""
+    fen: str = Field(..., description="FEN string of current position")
+    move_history: List[str] = Field(default_factory=list, description="Move history in SAN")
+    player_color: Optional[str] = Field(None, description="Player's color")
+    move_number: Optional[int] = Field(None, description="Current move number")
+    last_move: Optional[str] = Field(None, description="Last move in SAN")
+    last_user_move: Optional[str] = Field(None, description="Student's last move in SAN")
+    last_opponent_move: Optional[str] = Field(None, description="Opponent/engine's last move in SAN")
+    game_phase: Optional[str] = Field(None, description="opening/middlegame/endgame")
+    context_type: str = Field("play", description="play/puzzle/analysis")
+    puzzle_theme: Optional[str] = Field(None, description="Puzzle tactical theme")
+    puzzle_category: Optional[str] = Field(None, description="Puzzle category")
+    move_classification: Optional[str] = Field(None, description="Move classification from analysis")
+    evaluation: Optional[str] = Field(None, description="Engine evaluation string")
+    best_move_san: Optional[str] = None
+    centipawn_loss: Optional[float] = None
+    coaching_comment: Optional[str] = None
+    tactical_insights: Optional[List[str]] = None
+    positional_insights: Optional[List[str]] = None
+    learning_points: Optional[List[str]] = None
+    key_moment_index: Optional[int] = None
+    total_key_moments: Optional[int] = None
+    game_result: Optional[str] = None
+    opponent_name: Optional[str] = None
+
+
+class ConversationMessage(BaseModel):
+    """A message in the conversation history."""
+    role: str = Field(..., description="user or coach")
+    content: str = Field(..., description="Message content")
+
+
+class CoachChatRequest(BaseModel):
+    """Request for coach chat interaction."""
+    message: str = Field(..., min_length=1, max_length=500, description="User message")
+    position_context: ChatPositionContext
+    conversation_history: List[ConversationMessage] = Field(
+        default_factory=list,
+        description="Recent conversation history (max 20)"
+    )
+
+    @validator('conversation_history')
+    def limit_history(cls, v):
+        return v[-20:] if len(v) > 20 else v
+
+
+class CoachChatResponse(BaseModel):
+    """Response from coach chat."""
+    response: str
+    tokens_used: Optional[int] = None
+    model_used: Optional[str] = None
+
+
+# In-memory chat rate limiter
+# NOTE: This resets on server restart. Acceptable for now since Railway auto-restarts
+# are infrequent and the limit is generous. For persistent rate limiting, consider
+# moving to the usage_tracking table or Redis in a future infrastructure upgrade.
+_chat_usage: Dict[str, List[float]] = {}
+_CHAT_RATE_LIMIT = 50  # messages per hour per user
+
+
+def _check_chat_rate_limit(user_id: str) -> Tuple[bool, Dict]:
+    """Check if user has remaining chat messages this hour."""
+    import time as _time
+    now = _time.time()
+    one_hour_ago = now - 3600
+
+    if user_id not in _chat_usage:
+        _chat_usage[user_id] = []
+
+    # Prune old entries
+    _chat_usage[user_id] = [t for t in _chat_usage[user_id] if t > one_hour_ago]
+    count = len(_chat_usage[user_id])
+
+    if count >= _CHAT_RATE_LIMIT:
+        return False, {
+            'message': f'You have used {count}/{_CHAT_RATE_LIMIT} chat messages this hour.',
+            'remaining': 0,
+            'limit': _CHAT_RATE_LIMIT
+        }
+    return True, {
+        'remaining': _CHAT_RATE_LIMIT - count,
+        'limit': _CHAT_RATE_LIMIT
+    }
+
+
+def _increment_chat_usage(user_id: str):
+    """Record a chat message usage."""
+    import time as _time
+    if user_id not in _chat_usage:
+        _chat_usage[user_id] = []
+    _chat_usage[user_id].append(_time.time())
+
+
+def _get_stockfish_top_moves(fen: str, num_moves: int = 3, depth: int = 14, time_limit: float = 0.2) -> List[Dict[str, Any]]:
+    """Quick Stockfish evaluation returning top N moves with scores.
+
+    Returns list of dicts with keys: move_san, eval_text, is_best.
+    Uses the shared SyncEnginePool to avoid spawning a new Stockfish process per call.
+    """
+    import chess as _chess
+    import chess.engine as _engine
+
+    pool = _get_sync_engine_pool()
+    if not pool:
+        return []
+
+    try:
+        board = _chess.Board(fen)
+        with pool.acquire() as sf:
+            limit = _engine.Limit(depth=depth, time=time_limit)
+            info_list = sf.analyse(board, limit, multipv=num_moves)
+
+            results = []
+            for i, info in enumerate(info_list):
+                pv = info.get('pv', [])
+                if not pv:
+                    continue
+                move = pv[0]
+                score = info.get('score')
+                if score:
+                    pov = score.pov(board.turn)
+                    if pov.is_mate():
+                        mate_in = pov.mate()
+                        eval_text = f"mate in {abs(mate_in)}" if mate_in > 0 else f"getting mated in {abs(mate_in)}"
+                    else:
+                        cp = pov.score()
+                        eval_text = f"{cp/100:+.1f}" if cp is not None else "unclear"
+                else:
+                    eval_text = "unclear"
+                results.append({
+                    'move_san': board.san(move),
+                    'eval_text': eval_text,
+                    'is_best': i == 0,
+                })
+            return results
+    except Exception as e:
+        logger.warning(f"[COACH CHAT] Stockfish probe failed: {e}")
+        return []
+
+
+def _build_chat_system_prompt(context: ChatPositionContext) -> str:
+    """Build system prompt for direct chess coaching chat."""
+    context_specific = ""
+    if context.context_type == "puzzle":
+        context_specific = """
+PUZZLE CONTEXT:
+You are helping the student solve a chess puzzle. Don't reveal the full solution directly,
+but DO give concrete hints that narrow it down:
+- Name the tactical theme if you can see it: "This is a discovered attack pattern"
+- Point to the key pieces involved: "Your rook and their king are almost aligned — what's in the way?"
+- If they suggest a wrong move, explain specifically why it fails: "After Nxe5, they have Qd4+ forking king and rook"
+- If they're stuck after 2+ attempts, give a much stronger hint: "The key move starts with your bishop on g5"
+"""
+    elif context.context_type == "play":
+        context_specific = """
+LIVE GAME CONTEXT:
+The student is playing a live game. Give them practical, actionable coaching:
+- When they suggest a move, evaluate it directly: "Nc3 is solid here — it develops toward the center and prepares d4"
+- When their idea has problems, say so clearly and suggest alternatives: "e5 looks tempting but after dxe5 Nxe5, their knight dominates. Try Nc3 first to build pressure"
+- Name 1-2 candidate moves with brief reasons when they ask what to play, without insisting one is 'the' answer
+- Focus on the most important feature of the position: an unsafe king, a weak pawn, a strong outpost, etc.
+
+IMPORTANT: Each move in the context is labeled (student) or (opponent). When the student
+asks about "my move" or "my last move", refer ONLY to moves labeled (student). Do NOT
+confuse the opponent's moves with the student's moves.
+"""
+    elif context.context_type == "analysis":
+        context_specific = """
+GAME REVIEW CONTEXT:
+The student is reviewing a completed game. Be fully specific:
+- Name the best move and explain why it was strong
+- If the played move was a mistake, explain the concrete consequence: "After Bxh7+, the king is exposed and you win the queen in 3 moves"
+- Teach the underlying concept so they recognize similar positions: "This is a classic Greek Gift sacrifice pattern"
+"""
+    elif context.context_type == "game-review":
+        context_specific = """
+GAME REVIEW CONTEXT:
+The student is reviewing one of their completed games, focusing on key mistakes.
+You have the engine's analysis for this specific move: classification, centipawn loss, best alternative, and coaching insights.
+- Explain concretely why the played move was wrong (what it allows the opponent to do)
+- Compare to the best move and explain what it achieves tactically or positionally
+- Teach the underlying pattern so they recognize it in future games
+- Reference specific pieces and squares, not generic advice
+- If they ask follow-ups, go deeper into variations and candidate moves
+- You know which key moment this is (e.g. moment 3 of 7) - reference progress when appropriate
+"""
+
+    return f"""You are Mikhail Tal, the Magician from Riga, serving as a personal chess coach in an interactive chat. You give direct, actionable advice while teaching the ideas behind the moves.
+
+YOUR CORE TEACHING PHILOSOPHY:
+- Give CLEAR OPINIONS on the student's ideas: "That's a strong move because..." or "I'd avoid that here because..."
+- When the student suggests a move, evaluate it honestly with a brief reason (1-2 key points)
+- Suggest concrete alternatives when their idea has problems: "Instead, consider Nc3 — it develops with tempo"
+- Explain strategy in cause-and-effect terms: "If you play e5, their knight lands on d4 with no way to kick it out"
+- Celebrate good ideas: "Yes! That's exactly the spirit of this position!"
+- You may end with ONE brief guiding question occasionally to deepen their thinking, but not every message and never more than one
+
+YOUR VOICE:
+- Energetic, passionate, direct — you love chess and it shows
+- Concise: 2-4 sentences, MAXIMUM 4 sentences. This is a quick chat, not a lecture
+- Jump straight into the chess — no filler openings like "Great question!" or "Interesting idea!" or "Let's think about this..."
+- Use chess terminology naturally but explain concepts for intermediate players
+- Occasionally reference famous games or positions to illustrate points
+
+{context_specific}
+
+CRITICAL RULES:
+- NEVER respond with only questions and no concrete advice. Every response MUST contain at least one clear, actionable insight about the position
+- When the student asks about a specific move, give your opinion on THAT MOVE first, then teach
+- Keep responses SHORT. If you're writing more than 4 sentences, stop and trim
+- Always relate advice to the CURRENT POSITION (the FEN provided)
+- When the student is wrong, be direct but kind: "That loses material because of Bxf7+. Look at your knight instead — where can it go to create a double attack?"
+- PERSPECTIVE: The student's color is given in the position context. Only suggest moves for THEIR color. Use correct notation from their perspective (e.g. if student is White and can capture on d5, say "exd5", not "dxe4" which would be Black's move)
+- LEGAL MOVES: A list of legal moves is provided in the position context. ONLY suggest or reference moves from that list. If a move is not in the list, it is illegal — do not suggest it
+- ENGINE GUIDANCE: Stockfish engine evaluations of top moves are provided. Base your recommendations on these evaluations — they are objectively correct. Explain the engine's top choice in human-friendly terms
+- CONSISTENCY: Never contradict yourself in the same response (e.g. don't say "don't capture" then suggest a capture)
+
+RESPONSE FORMAT:
+- Plain text only, no markdown formatting
+- No bullet points or numbered lists in chat responses
+- Write naturally as if speaking to a student across the board"""
+
+
+def _build_chat_user_prompt(
+    user_message: str,
+    context: ChatPositionContext,
+    history: List[ConversationMessage],
+    stockfish_moves: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """Build the user prompt including position context and conversation history."""
+    position_info = f"Current position (FEN): {context.fen}"
+
+    # Compute legal moves from the FEN to prevent hallucinated moves
+    legal_moves_san = []
+    try:
+        import chess as _chess
+        board = _chess.Board(context.fen)
+        legal_moves_san = [board.san(m) for m in board.legal_moves]
+    except Exception:
+        pass
+
+    if context.player_color:
+        opponent_color = "black" if context.player_color == "white" else "white"
+        position_info += f"\nStudent is playing as: {context.player_color.upper()} (opponent is {opponent_color})"
+        # Determine whose turn it is from FEN
+        fen_parts = context.fen.split()
+        if len(fen_parts) >= 2:
+            side_to_move = "white" if fen_parts[1] == "w" else "black"
+            is_student_turn = side_to_move == context.player_color
+            turn_label = "student's turn" if is_student_turn else "opponent's turn"
+            position_info += f"\nSide to move: {side_to_move} ({turn_label})"
+
+    if legal_moves_san:
+        position_info += f"\nLegal moves in this position: {', '.join(sorted(legal_moves_san))}"
+        position_info += "\nIMPORTANT: ONLY reference moves from this legal moves list. Any move not in this list is ILLEGAL and must not be suggested."
+
+    # Include Stockfish evaluation of top moves
+    if stockfish_moves:
+        sf_lines = []
+        for mv in stockfish_moves:
+            label = "BEST" if mv['is_best'] else "good"
+            sf_lines.append(f"  {mv['move_san']} (eval: {mv['eval_text']}, {label})")
+        position_info += "\n\nSTOCKFISH ENGINE EVALUATION (top moves ranked by strength):\n" + "\n".join(sf_lines)
+        position_info += "\nUse these engine evaluations to guide your advice. Recommend moves from this list. Explain WHY the top move is strong in human terms."
+
+    # Format recent moves with clear attribution
+    if context.move_history:
+        recent = context.move_history[-10:]
+        start_idx = len(context.move_history) - len(recent)
+        formatted_moves = []
+        for j, san in enumerate(recent):
+            idx = start_idx + j
+            move_num = idx // 2 + 1
+            is_white = idx % 2 == 0
+            prefix = f"{move_num}." if is_white else f"{move_num}..."
+            who = "student" if context.player_color and (
+                (context.player_color == "white" and is_white) or
+                (context.player_color == "black" and not is_white)
+            ) else "opponent"
+            formatted_moves.append(f"{prefix}{san} ({who})")
+        position_info += f"\nRecent moves: {', '.join(formatted_moves)}"
+
+    if context.last_user_move:
+        position_info += f"\nStudent's last move: {context.last_user_move}"
+        if context.move_classification:
+            position_info += f" (classified as: {context.move_classification})"
+        if context.evaluation:
+            position_info += f" [eval: {context.evaluation}]"
+    if context.last_opponent_move:
+        position_info += f"\nOpponent's last move (NOT the student's): {context.last_opponent_move}"
+    elif context.last_move:
+        position_info += f"\nLast move played: {context.last_move}"
+    if context.game_phase:
+        position_info += f"\nGame phase: {context.game_phase}"
+    if context.puzzle_theme:
+        position_info += f"\nPuzzle theme: {context.puzzle_theme}"
+
+    # Game review context data
+    if context.context_type == "game-review":
+        if context.best_move_san:
+            position_info += f"\nBest move was: {context.best_move_san}"
+        if context.centipawn_loss is not None:
+            position_info += f"\nCentipawn loss from played move: {context.centipawn_loss}"
+        if context.coaching_comment:
+            position_info += f"\nPre-analysis coaching note: {context.coaching_comment}"
+        if context.tactical_insights:
+            position_info += f"\nTactical insights: {', '.join(context.tactical_insights)}"
+        if context.positional_insights:
+            position_info += f"\nPositional insights: {', '.join(context.positional_insights)}"
+        if context.learning_points:
+            position_info += f"\nLearning points: {', '.join(context.learning_points)}"
+        if context.key_moment_index and context.total_key_moments:
+            position_info += f"\nThis is key moment {context.key_moment_index} of {context.total_key_moments} in this game review"
+        if context.game_result:
+            position_info += f"\nGame result: {context.game_result}"
+        if context.opponent_name:
+            position_info += f"\nOpponent: {context.opponent_name}"
+
+    conv_text = ""
+    if history:
+        recent_history = history[-10:]
+        conv_lines = []
+        for msg in recent_history:
+            speaker = "Student" if msg.role == "user" else "Coach Tal"
+            conv_lines.append(f"{speaker}: {msg.content}")
+        conv_text = "\n--- Conversation so far ---\n" + "\n".join(conv_lines) + "\n---\n"
+
+    return f"""[POSITION CONTEXT]
+{position_info}
+
+{conv_text}
+Student's message: {user_message}
+
+Respond as Coach Tal. Be direct and helpful — give a clear opinion with a brief reason. Only suggest moves for the student's color. Max 4 sentences."""
+
+
+@app.post("/api/v1/coach/chat", response_model=CoachChatResponse)
+async def coach_chat(
+    request: CoachChatRequest,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """
+    Interactive chat with Tal Coach about the current chess position.
+    Premium-only endpoint with rate limiting.
+    """
+    # 1. Premium check
+    if not auth_user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Please log in to chat with Coach Tal."
+        )
+
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Coach chat requires premium subscription. Please upgrade to access."
+        )
+
+    # 2. Rate limiting
+    can_chat, chat_stats = _check_chat_rate_limit(auth_user_id)
+    if not can_chat:
+        raise HTTPException(
+            status_code=429,
+            detail=chat_stats.get('message', 'Chat rate limit reached. Please try again later.')
+        )
+
+    # 3. Validate FEN
+    try:
+        import chess
+        chess.Board(request.position_context.fen)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid chess position (FEN).")
+
+    # 4. Quick Stockfish evaluation for top moves (runs in thread to avoid blocking)
+    stockfish_moves = await asyncio.to_thread(
+        _get_stockfish_top_moves, request.position_context.fen
+    )
+
+    # 5. Build prompts and call AI
+    try:
+        system_prompt = _build_chat_system_prompt(request.position_context)
+        user_prompt = _build_chat_user_prompt(
+            request.message,
+            request.position_context,
+            request.conversation_history,
+            stockfish_moves=stockfish_moves,
+        )
+
+        # Use singleton AI generator
+        generator = _get_ai_generator()
+
+        response_text = None
+        model_used = None
+
+        if generator.enabled:
+            logger.info(f"[COACH CHAT] AI generator enabled, provider={generator.provider}, model={generator.config.ai_model}")
+            response_text = await generator.generate_chat_response(user_prompt, system_prompt)
+            model_used = generator.config.ai_model
+            if not response_text:
+                logger.warning("[COACH CHAT] AI generator returned None - API call may have failed")
+        else:
+            logger.warning(f"[COACH CHAT] AI generator NOT enabled. provider={generator.provider}, client={generator.client is not None}")
+
+        if not response_text:
+            response_text = (
+                "Let me think about this position differently... "
+                "Could you tell me what you notice about the piece activity here? "
+                "Sometimes looking at the board fresh reveals new ideas."
+            )
+            model_used = "fallback"
+
+        # 5. Increment usage
+        _increment_chat_usage(auth_user_id)
+
+        return CoachChatResponse(
+            response=response_text,
+            model_used=model_used
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Coach chat error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Coach is temporarily unavailable. Please try again in a moment."
+        )
+
+
+# ============================================================================
+# STUDY PLAN ENDPOINTS
+# ============================================================================
+
+@app.get("/api/v1/coach/study-plan/{user_id}/{platform}")
+async def get_study_plan(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Get current active study plan. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .study_plan_generator import StudyPlanGenerator
+        generator = _get_study_plan_generator()
+
+        plan = await generator.get_current_plan(auth_user_id, platform)
+        return {'plan': plan}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting study plan: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get study plan")
+
+
+@app.post("/api/v1/coach/study-plan/{user_id}/{platform}")
+async def create_study_plan(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Generate a new weekly study plan. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .study_plan_generator import StudyPlanGenerator
+        generator = _get_study_plan_generator()
+
+        plan = await generator.generate_weekly_plan(auth_user_id, platform, user_id)
+        return {'plan': plan}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating study plan: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create study plan")
+
+
+@app.post("/api/v1/coach/study-plan/{plan_id}/activity")
+async def complete_study_activity(
+    plan_id: str,
+    activity_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Mark a daily activity as completed. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        day = activity_data.get('day', 0)
+        activity_index = activity_data.get('activity_index', 0)
+
+        from .study_plan_generator import StudyPlanGenerator
+        generator = _get_study_plan_generator()
+
+        plan = await generator.complete_daily_activity(auth_user_id, plan_id, day, activity_index)
+        return {'plan': plan}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing activity: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to complete activity")
+
+
+@app.get("/api/v1/coach/goals/{user_id}/{platform}")
+async def get_user_goals(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Get user goals. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .study_plan_generator import StudyPlanGenerator
+        generator = _get_study_plan_generator()
+
+        goals = await generator.get_goals(auth_user_id, platform)
+        return {'goals': goals}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting goals: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get goals")
+
+
+# ============================================================================
+# OPENING REPERTOIRE ENDPOINTS
+# ============================================================================
+
+@app.get("/api/v1/coach/openings/{user_id}/{platform}")
+async def get_opening_repertoire(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id),
+    refresh: bool = Query(False, description="Force re-analysis of repertoire")
+):
+    """Get user's opening repertoire overview. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        analyzer = _get_opening_repertoire_analyzer()
+
+        if refresh:
+            entries = await analyzer.analyze_repertoire(auth_user_id, platform, user_id)
+            return {'repertoire': entries, 'refreshed': True}
+
+        entries = await analyzer.get_repertoire(auth_user_id, platform)
+
+        if not entries:
+            entries = await analyzer.analyze_repertoire(auth_user_id, platform, user_id)
+
+        return {'repertoire': entries, 'refreshed': not bool(entries)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting opening repertoire: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get opening repertoire")
+
+
+@app.get("/api/v1/coach/openings/{user_id}/{platform}/{opening_family}")
+async def get_opening_detail(
+    user_id: str,
+    platform: str,
+    opening_family: str,
+    color: str = Query('white', description="Color: 'white' or 'black'"),
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Get detailed analysis for a specific opening. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        analyzer = _get_opening_repertoire_analyzer()
+
+        import urllib.parse
+        decoded_opening = urllib.parse.unquote(opening_family)
+
+        detail = await analyzer.get_opening_detail(
+            auth_user_id, platform, user_id, decoded_opening, color
+        )
+        return detail
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting opening detail: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get opening detail")
+
+
+@app.post("/api/v1/coach/openings/drill")
+async def get_drill_positions(
+    drill_request: Dict[str, Any],
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Get drill positions for an opening. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        user_id = drill_request.get('user_id', '')
+        platform_val = drill_request.get('platform', '')
+        opening_family = drill_request.get('opening_family', '')
+        color = drill_request.get('color', 'white')
+
+        if not user_id or not platform_val or not opening_family:
+            raise HTTPException(status_code=400, detail="user_id, platform, and opening_family are required")
+
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        analyzer = _get_opening_repertoire_analyzer()
+
+        positions = await analyzer.get_drill_positions(
+            auth_user_id, platform_val, user_id, opening_family, color
+        )
+        return {'positions': positions}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting drill positions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get drill positions")
+
+
+@app.post("/api/v1/coach/openings/drill/complete")
+async def complete_drill(
+    completion_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Update spaced repetition after a drill. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        repertoire_id = completion_data.get('repertoire_id', '')
+        confidence_delta = completion_data.get('confidence_delta', 0)
+
+        if not repertoire_id:
+            raise HTTPException(status_code=400, detail="repertoire_id is required")
+
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        analyzer = _get_opening_repertoire_analyzer()
+
+        result = await analyzer.update_spaced_repetition(
+            auth_user_id, repertoire_id, confidence_delta
+        )
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing drill: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update drill completion")
+
+
+# ============================================================================
+# GAME TAGS ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/coach/tags")
+async def add_game_tag(
+    tag_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Add a tag to a game. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        game_id = tag_data.get('game_id')
+        platform = tag_data.get('platform')
+        tag = tag_data.get('tag', '').strip()
+        tag_type = tag_data.get('tag_type', 'user')
+
+        if not game_id or not platform or not tag:
+            raise HTTPException(status_code=400, detail="game_id, platform, and tag are required")
+        if tag_type not in ('user', 'system'):
+            raise HTTPException(status_code=400, detail="tag_type must be 'user' or 'system'")
+
+        insert_data = {
+            'user_id': auth_user_id,
+            'game_id': game_id,
+            'platform': platform,
+            'tag': tag,
+            'tag_type': tag_type,
+        }
+
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .upsert(insert_data, on_conflict='user_id,game_id,tag')
+            .execute()
+        )
+
+        return {'success': True, 'tag': result.data[0] if result.data else insert_data}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding game tag: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add tag")
+
+
+@app.delete("/api/v1/coach/tags/{tag_id}")
+async def delete_game_tag(
+    tag_id: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Remove a tag. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        # Verify ownership
+        tag_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .select('user_id')
+            .eq('id', tag_id)
+            .execute()
+        )
+        if not tag_result.data:
+            raise HTTPException(status_code=404, detail="Tag not found")
+        if tag_result.data[0]['user_id'] != auth_user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this tag")
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .delete()
+            .eq('id', tag_id)
+            .execute()
+        )
+
+        return {'success': True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting game tag: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete tag")
+
+
+@app.get("/api/v1/coach/tags/{user_id}/{platform}")
+async def get_user_tags(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Get all tags for a user. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .execute()
+        )
+
+        return {'tags': result.data or []}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user tags: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get tags")
+
+
+@app.get("/api/v1/coach/tags/game/{game_id}")
+async def get_game_tags(
+    game_id: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Get tags for a specific game. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_tags')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('game_id', game_id)
+            .execute()
+        )
+
+        return {'tags': result.data or []}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting game tags: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get game tags")
+
+
+# ============================================================================
+# SAVED POSITIONS ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/coach/positions")
+async def save_position(
+    position_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Save a chess position. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        fen = position_data.get('fen', '').strip()
+        platform = position_data.get('platform')
+        if not fen or not platform:
+            raise HTTPException(status_code=400, detail="fen and platform are required")
+
+        # Validate FEN
+        try:
+            import chess
+            chess.Board(fen)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid FEN string")
+
+        insert_data = {
+            'user_id': auth_user_id,
+            'platform': platform,
+            'fen': fen,
+            'title': position_data.get('title', ''),
+            'notes': position_data.get('notes', ''),
+            'source_game_id': position_data.get('source_game_id'),
+            'source_move_number': position_data.get('source_move_number'),
+            'tags': position_data.get('tags', []),
+        }
+
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .insert(insert_data)
+            .execute()
+        )
+
+        return {'success': True, 'position': result.data[0] if result.data else insert_data}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving position: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save position")
+
+
+@app.get("/api/v1/coach/positions/{user_id}/{platform}")
+async def get_saved_positions(
+    user_id: str,
+    platform: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Get saved positions for a user. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not await _check_premium_access(auth_user_id):
+        raise HTTPException(status_code=403, detail="Coach features require premium subscription")
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .execute()
+        )
+
+        return {'positions': result.data or []}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting saved positions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get saved positions")
+
+
+@app.put("/api/v1/coach/positions/{position_id}")
+async def update_saved_position(
+    position_id: str,
+    update_data: Dict[str, Any],
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Update notes/title of a saved position. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        # Verify ownership
+        pos_result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .select('user_id')
+            .eq('id', position_id)
+            .execute()
+        )
+        if not pos_result.data:
+            raise HTTPException(status_code=404, detail="Position not found")
+        if pos_result.data[0]['user_id'] != auth_user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to update this position")
+
+        allowed_fields = {'title', 'notes', 'tags'}
+        filtered = {k: v for k, v in update_data.items() if k in allowed_fields}
+        if not filtered:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .update(filtered)
+            .eq('id', position_id)
+            .execute()
+        )
+
+        return {'success': True, 'position': result.data[0] if result.data else None}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating saved position: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update position")
+
+
+@app.delete("/api/v1/coach/positions/{position_id}")
+async def delete_saved_position(
+    position_id: str,
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """Delete a saved position. Premium-only."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        # Verify ownership
+        pos_result = await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .select('user_id')
+            .eq('id', position_id)
+            .execute()
+        )
+        if not pos_result.data:
+            raise HTTPException(status_code=404, detail="Position not found")
+        if pos_result.data[0]['user_id'] != auth_user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this position")
+
+        await asyncio.to_thread(
+            lambda: supabase_service.table('saved_positions')
+            .delete()
+            .eq('id', position_id)
+            .execute()
+        )
+
+        return {'success': True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting saved position: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete position")
+
+
+# =============================================================================
+# PUZZLE BANK ENDPOINTS (Multi-move puzzles with rating & gamification)
+# =============================================================================
+
+
+async def _get_or_create_puzzle_rating(user_id: str) -> dict:
+    """Get or create user_puzzle_rating record. Returns dict with all fields."""
+    result = await asyncio.to_thread(
+        lambda: supabase_service.table('user_puzzle_rating')
+        .select('*')
+        .eq('user_id', user_id)
+        .execute()
+    )
+    if result.data:
+        return result.data[0]
+
+    # Create default record
+    new_record = {
+        'user_id': user_id,
+        'rating': PuzzleRatingEngine.INITIAL_RATING,
+        'rating_deviation': PuzzleRatingEngine.INITIAL_RD,
+        'puzzles_attempted': 0,
+        'puzzles_correct': 0,
+        'highest_rating': PuzzleRatingEngine.INITIAL_RATING,
+        'current_xp': 0,
+        'current_level': 1,
+    }
+    insert_result = await asyncio.to_thread(
+        lambda: supabase_service.table('user_puzzle_rating')
+        .insert(new_record)
+        .execute()
+    )
+    return insert_result.data[0] if insert_result.data else new_record
+
+
+async def _load_fallback_puzzles() -> list[dict]:
+    """Load fallback puzzles from bundled JSON file."""
+    import json
+    from pathlib import Path
+
+    fallback_path = Path(__file__).parent.parent / "data" / "fallback_puzzles.json"
+    if not fallback_path.exists():
+        return []
+
+    with open(fallback_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+async def _ensure_puzzle_bank_populated() -> bool:
+    """Check if puzzle_bank has data; if not, load fallback puzzles."""
+    count_result = await asyncio.to_thread(
+        lambda: supabase_service.table('puzzle_bank')
+        .select('id', count='exact')
+        .limit(1)
+        .execute()
+    )
+    if count_result.count and count_result.count > 0:
+        return True
+
+    # Try to load fallback puzzles
+    puzzles = await _load_fallback_puzzles()
+    if not puzzles:
+        return False
+
+    # Batch insert fallback puzzles
+    batch_size = 100
+    for i in range(0, len(puzzles), batch_size):
+        batch = puzzles[i:i + batch_size]
+        try:
+            await asyncio.to_thread(
+                lambda b=batch: supabase_service.table('puzzle_bank')
+                .insert(b)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to insert fallback puzzle batch: {e}")
+
+    logger.info(f"Loaded {len(puzzles)} fallback puzzles into puzzle_bank")
+    return True
+
+
+async def _get_theme_performance(auth_user_id: str) -> Dict[str, Dict[str, Any]]:
+    """
+    Get puzzle theme solve rates from recent attempts.
+
+    Returns:
+        {theme: {attempted: int, correct: int, rate: float}}
+    """
+    attempts_result = await asyncio.to_thread(
+        lambda: supabase_service.table('puzzle_attempts')
+        .select('puzzle_bank_id, was_correct')
+        .eq('user_id', auth_user_id)
+        .not_.is_('puzzle_bank_id', 'null')
+        .order('attempted_at', desc=True)
+        .limit(100)
+        .execute()
+    )
+    attempts = attempts_result.data or []
+    bank_ids = [a['puzzle_bank_id'] for a in attempts if a.get('puzzle_bank_id')]
+    if not bank_ids:
+        return {}
+
+    unique_ids = list(set(bank_ids))[:50]
+    themes_result = await asyncio.to_thread(
+        lambda: supabase_service.table('puzzle_bank')
+        .select('id, themes')
+        .in_('id', unique_ids)
+        .execute()
+    )
+    puzzle_themes_map = {p['id']: p['themes'] for p in (themes_result.data or [])}
+
+    theme_perf: Dict[str, Dict[str, Any]] = {}
+    for a in attempts:
+        bid = a.get('puzzle_bank_id')
+        if bid and bid in puzzle_themes_map:
+            for t in puzzle_themes_map[bid]:
+                if t not in theme_perf:
+                    theme_perf[t] = {'attempted': 0, 'correct': 0, 'rate': 0}
+                theme_perf[t]['attempted'] += 1
+                if a.get('was_correct'):
+                    theme_perf[t]['correct'] += 1
+
+    for t, stats in theme_perf.items():
+        if stats['attempted'] > 0:
+            stats['rate'] = round(stats['correct'] / stats['attempted'] * 100, 1)
+
+    return theme_perf
+
+
+async def _get_personalized_theme(auth_user_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Determine a personalized puzzle theme based on user's game weaknesses.
+
+    Returns:
+        {theme: str, reason: str} or None if no game data available
+    """
+    try:
+        # Look up user's linked chess account
+        profile_result = await asyncio.to_thread(
+            lambda: supabase_service.table('user_profiles')
+            .select('user_id, platform')
+            .eq('auth_user_id', auth_user_id)
+            .limit(1)
+            .execute()
+        )
+        if not profile_result.data:
+            return None
+
+        profile = profile_result.data[0]
+        canonical_user_id = profile['user_id']
+        platform = profile['platform']
+
+        # Fetch recent game analyses (lightweight - no moves_analysis JSONB)
+        analyses_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('tactical_score, positional_score, opening_accuracy, middle_game_accuracy, endgame_accuracy, blunders, mistakes, my_rating')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(50)
+            .execute()
+        )
+        game_analyses = analyses_result.data or []
+
+        if len(game_analyses) < 5:
+            return None
+
+        # Get weaknesses using existing analyzer
+        analyzer = _get_progress_analyzer()
+        weaknesses = await analyzer.get_user_weaknesses(canonical_user_id, platform, game_analyses)
+
+        if not weaknesses:
+            return None
+
+        # Get puzzle theme performance for feedback loop
+        theme_solve_rates = await _get_theme_performance(auth_user_id)
+
+        # Map weaknesses to weighted themes
+        weighted_themes = get_weakness_puzzle_themes(weaknesses, theme_solve_rates)
+
+        if not weighted_themes:
+            return None
+
+        # Sample a theme weighted by priority
+        import random
+        themes = [t['theme'] for t in weighted_themes]
+        weights = [t['weight'] for t in weighted_themes]
+        chosen_theme = random.choices(themes, weights=weights, k=1)[0]
+
+        # Find the reason for the chosen theme
+        reason = next(
+            (t['reason'] for t in weighted_themes if t['theme'] == chosen_theme),
+            ''
+        )
+
+        return {'theme': chosen_theme, 'reason': reason}
+
+    except Exception as e:
+        logger.warning(f"[PUZZLE] Personalization failed, falling back to default: {e}")
+        return None
+
+
+@app.get("/api/v1/coach/puzzle-bank/next")
+async def get_next_bank_puzzle(
+    auth_user_id: str = Depends(require_coach_user_id),
+    theme: Optional[str] = Query(None, description="Filter by theme (fork, pin, mate, etc.)"),
+    mode: str = Query("rated", description="rated|daily|practice"),
+    personalized: bool = Query(True, description="Enable weakness-based personalization"),
+):
+    """
+    Get next puzzle from the puzzle bank, matched to user rating.
+    When personalized=true and no theme is specified, analyzes user's game
+    weaknesses to select the most impactful puzzle theme.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    # Premium check for rated mode only
+    if mode == "rated":
+        if not await _check_premium_access(auth_user_id, None):
+            raise HTTPException(
+                status_code=403,
+                detail="Unlimited rated puzzles require premium subscription."
+            )
+
+    try:
+        await _ensure_puzzle_bank_populated()
+
+        # Get user rating
+        user_rating_data = await _get_or_create_puzzle_rating(auth_user_id)
+        user_rating = user_rating_data['rating']
+
+        # Get recently attempted puzzle IDs to avoid repeats
+        recent_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_attempts')
+            .select('puzzle_bank_id')
+            .eq('user_id', auth_user_id)
+            .not_.is_('puzzle_bank_id', 'null')
+            .order('attempted_at', desc=True)
+            .limit(50)
+            .execute()
+        )
+        recent_ids = [r['puzzle_bank_id'] for r in (recent_result.data or []) if r.get('puzzle_bank_id')]
+
+        # Personalization: auto-select theme from weaknesses if none specified
+        recommendation_reason = None
+        if not theme and personalized:
+            personalization = await _get_personalized_theme(auth_user_id)
+            if personalization:
+                theme = personalization['theme']
+                recommendation_reason = personalization['reason']
+                logger.info(f"[PUZZLE] Personalized theme for {auth_user_id}: {theme}")
+
+        # Build query for next puzzle near user rating
+        rating_range = 200
+        query = supabase_service.table('puzzle_bank').select('*')
+        query = query.gte('rating', user_rating - rating_range)
+        query = query.lte('rating', user_rating + rating_range)
+
+        if theme:
+            query = query.contains('themes', [theme])
+
+        result = await asyncio.to_thread(
+            lambda: query.limit(20).execute()
+        )
+
+        candidates = result.data or []
+
+        # Filter out recently attempted and malformed puzzles (need at least 2 moves)
+        candidates = [
+            p for p in candidates
+            if p['id'] not in recent_ids and len(p.get('moves', [])) >= 2
+        ]
+
+        if not candidates:
+            # Widen search - first try wider rating range with same theme
+            wider_query = supabase_service.table('puzzle_bank').select('*')
+            wider_query = wider_query.gte('rating', user_rating - 400)
+            wider_query = wider_query.lte('rating', user_rating + 400)
+            if theme:
+                wider_query = wider_query.contains('themes', [theme])
+            wider_result = await asyncio.to_thread(
+                lambda: wider_query.limit(20).execute()
+            )
+            candidates = [
+                p for p in (wider_result.data or [])
+                if p['id'] not in recent_ids and len(p.get('moves', [])) >= 2
+            ]
+
+        if not candidates and theme:
+            # If themed search found nothing, fall back to unthemed
+            recommendation_reason = None
+            fallback_query = supabase_service.table('puzzle_bank').select('*')
+            fallback_query = fallback_query.gte('rating', user_rating - 400)
+            fallback_query = fallback_query.lte('rating', user_rating + 400)
+            fallback_result = await asyncio.to_thread(
+                lambda: fallback_query.limit(20).execute()
+            )
+            candidates = [
+                p for p in (fallback_result.data or [])
+                if p['id'] not in recent_ids and len(p.get('moves', [])) >= 2
+            ]
+
+        if not candidates:
+            raise HTTPException(status_code=404, detail="No puzzles available")
+
+        # Pick the one closest to user rating with some randomness
+        import random
+        candidates.sort(key=lambda p: abs(p['rating'] - user_rating) + random.randint(0, 100))
+        puzzle = candidates[0]
+
+        # Compute setup_move and total user moves
+        moves = puzzle['moves']
+        setup_move = moves[0] if moves else ""
+        # User moves are at indices 1, 3, 5, ... (odd indices)
+        total_user_moves = len([m for i, m in enumerate(moves) if i % 2 == 1])
+
+        return {
+            'puzzle_id': puzzle['id'],
+            'fen': puzzle['fen'],
+            'setup_move': setup_move,
+            'rating': puzzle['rating'],
+            'themes': puzzle['themes'],
+            'total_moves': total_user_moves,
+            'user_rating': user_rating_data['rating'],
+            'user_xp': user_rating_data['current_xp'],
+            'user_level': user_rating_data['current_level'],
+            'recommendation_reason': recommendation_reason,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting next bank puzzle: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get next puzzle")
+
+
+@app.post("/api/v1/coach/puzzle-bank/{puzzle_id}/check-move")
+async def check_puzzle_move(puzzle_id: str, move_data: Dict[str, Any]):
+    """
+    Validate a single user move in a multi-move puzzle.
+
+    The moves array uses Lichess convention:
+      moves[0] = setup move (auto-played)
+      moves[1] = first user move
+      moves[2] = opponent response
+      moves[3] = second user move
+      ...
+
+    move_index is 0-based user move index:
+      move_index=0 checks moves[1]
+      move_index=1 checks moves[3]
+      move_index=2 checks moves[5]
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        move_uci = move_data.get('move_uci', '').lower().strip()
+        move_index = move_data.get('move_index', 0)
+
+        if not move_uci:
+            raise HTTPException(status_code=400, detail="move_uci is required")
+
+        # Fetch puzzle
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_bank')
+            .select('moves')
+            .eq('id', puzzle_id)
+            .execute()
+        )
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Puzzle not found")
+
+        moves = result.data[0]['moves']
+
+        # Calculate which move in the array we're checking
+        # User moves are at indices 1, 3, 5, ... (setup is 0, opponent responses at 2, 4, ...)
+        expected_idx = 1 + (move_index * 2)
+
+        if expected_idx >= len(moves):
+            raise HTTPException(status_code=400, detail="Invalid move index")
+
+        expected_move = moves[expected_idx].lower().strip()
+        is_correct = move_uci == expected_move
+
+        if is_correct:
+            # Check if there's an opponent response after this move
+            opponent_idx = expected_idx + 1
+            if opponent_idx < len(moves):
+                # More moves remain
+                opponent_move = moves[opponent_idx]
+                # Check if there are more user moves after the opponent response
+                next_user_idx = opponent_idx + 1
+                is_complete = next_user_idx >= len(moves)
+                return {
+                    'is_correct': True,
+                    'opponent_move': opponent_move,
+                    'is_complete': is_complete,
+                }
+            else:
+                # This was the last move - puzzle complete
+                return {
+                    'is_correct': True,
+                    'is_complete': True,
+                }
+        else:
+            return {
+                'is_correct': False,
+                'correct_move': moves[expected_idx],
+                'is_complete': False,
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking puzzle move: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to check move")
+
+
+@app.post("/api/v1/coach/puzzle-bank/{puzzle_id}/complete")
+async def complete_bank_puzzle(
+    puzzle_id: str,
+    completion_data: Dict[str, Any],
+    auth_user_id: str = Depends(require_coach_user_id),
+):
+    """
+    Record completion of a puzzle bank puzzle.
+    Updates rating, XP, streak, and daily challenge progress.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        solved = completion_data.get('solved', False)
+        time_seconds = completion_data.get('time_seconds', 0)
+        moves_made = completion_data.get('moves_made', [])
+
+        # Get puzzle rating
+        puzzle_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_bank')
+            .select('rating')
+            .eq('id', puzzle_id)
+            .execute()
+        )
+        if not puzzle_result.data:
+            raise HTTPException(status_code=404, detail="Puzzle not found")
+
+        puzzle_rating = puzzle_result.data[0]['rating']
+
+        # Get user rating
+        user_data = await _get_or_create_puzzle_rating(auth_user_id)
+        old_rating = user_data['rating']
+        old_rd = user_data['rating_deviation']
+        old_xp = user_data['current_xp']
+        old_level = user_data['current_level']
+
+        # Calculate new rating
+        new_rating, new_rd = PuzzleRatingEngine.update_rating(
+            old_rating, old_rd, puzzle_rating, solved
+        )
+
+        # Check streak - look at daily_challenge completions
+        from datetime import date, timedelta
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        streak_result = await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .select('challenge_date, completed_at')
+            .eq('user_id', auth_user_id)
+            .not_.is_('completed_at', 'null')
+            .order('challenge_date', desc=True)
+            .limit(30)
+            .execute()
+        )
+        completed_dates = [r['challenge_date'] for r in (streak_result.data or [])]
+        has_streak = str(yesterday) in completed_dates or str(today) in completed_dates
+
+        # Calculate XP
+        xp_earned = PuzzleRatingEngine.calculate_xp(
+            solved, puzzle_rating, old_rating, time_seconds, streak_bonus=has_streak
+        )
+        new_xp = old_xp + xp_earned
+        new_level = PuzzleRatingEngine.level_from_xp(new_xp)
+        level_up = new_level > old_level
+
+        # Update user rating
+        highest = max(user_data['highest_rating'], new_rating)
+        await asyncio.to_thread(
+            lambda: supabase_service.table('user_puzzle_rating')
+            .update({
+                'rating': new_rating,
+                'rating_deviation': new_rd,
+                'puzzles_attempted': user_data['puzzles_attempted'] + 1,
+                'puzzles_correct': user_data['puzzles_correct'] + (1 if solved else 0),
+                'highest_rating': highest,
+                'current_xp': new_xp,
+                'current_level': new_level,
+            })
+            .eq('user_id', auth_user_id)
+            .execute()
+        )
+
+        # Record attempt
+        attempt_record = {
+            'user_id': auth_user_id,
+            'puzzle_bank_id': puzzle_id,
+            'was_correct': solved,
+            'time_to_solve_seconds': time_seconds,
+            'moves_made': moves_made,
+            'rating_before': old_rating,
+            'rating_after': new_rating,
+            'xp_earned': xp_earned,
+        }
+        await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_attempts')
+            .insert(attempt_record)
+            .execute()
+        )
+
+        # Update daily challenge if active
+        daily_progress = None
+        daily_result = await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('challenge_date', str(today))
+            .execute()
+        )
+        if daily_result.data:
+            challenge = daily_result.data[0]
+            if puzzle_id in challenge['puzzle_ids'] and puzzle_id not in challenge['completed_ids']:
+                new_completed = challenge['completed_ids'] + [puzzle_id]
+                update_data = {
+                    'completed_ids': new_completed,
+                    'total_xp_earned': challenge['total_xp_earned'] + xp_earned,
+                }
+                if len(new_completed) >= len(challenge['puzzle_ids']):
+                    update_data['completed_at'] = datetime.now(timezone.utc).isoformat()
+                    # Bonus XP for completing daily challenge
+                    bonus_xp = 50
+                    new_xp += bonus_xp
+                    xp_earned += bonus_xp
+                    update_data['total_xp_earned'] += bonus_xp
+                    # Update user XP with bonus
+                    await asyncio.to_thread(
+                        lambda: supabase_service.table('user_puzzle_rating')
+                        .update({'current_xp': new_xp, 'current_level': PuzzleRatingEngine.level_from_xp(new_xp)})
+                        .eq('user_id', auth_user_id)
+                        .execute()
+                    )
+                await asyncio.to_thread(
+                    lambda: supabase_service.table('daily_challenge')
+                    .update(update_data)
+                    .eq('id', challenge['id'])
+                    .execute()
+                )
+                daily_progress = f"{len(new_completed)}/{len(challenge['puzzle_ids'])}"
+            else:
+                daily_progress = f"{len(challenge['completed_ids'])}/{len(challenge['puzzle_ids'])}"
+
+        # Calculate current streak
+        current_streak = 0
+        check_date = today
+        all_completed = set(completed_dates)
+        # Add today if daily challenge was just completed
+        if daily_result.data and daily_result.data[0].get('completed_at'):
+            all_completed.add(str(today))
+        while str(check_date) in all_completed:
+            current_streak += 1
+            check_date -= timedelta(days=1)
+
+        return {
+            'rating_change': new_rating - old_rating,
+            'new_rating': new_rating,
+            'xp_earned': xp_earned,
+            'new_xp_total': new_xp,
+            'level': PuzzleRatingEngine.level_from_xp(new_xp),
+            'level_up': level_up,
+            'daily_challenge_progress': daily_progress,
+            'streak': current_streak,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing bank puzzle: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to complete puzzle")
+
+
+@app.get("/api/v1/coach/puzzle-bank/daily-challenge")
+async def get_daily_challenge(
+    auth_user_id: str = Depends(require_coach_user_id),
+):
+    """
+    Get today's daily challenge (5 puzzles).
+    Creates a new challenge if none exists for today.
+    Daily challenges are FREE for all users.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        await _ensure_puzzle_bank_populated()
+
+        from datetime import date
+        today = str(date.today())
+
+        # Check for existing challenge
+        existing = await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .select('*')
+            .eq('user_id', auth_user_id)
+            .eq('challenge_date', today)
+            .execute()
+        )
+
+        if existing.data:
+            challenge = existing.data[0]
+            # Fetch the actual puzzles
+            puzzle_ids = challenge['puzzle_ids']
+            puzzles = []
+            for pid in puzzle_ids:
+                p_result = await asyncio.to_thread(
+                    lambda pid=pid: supabase_service.table('puzzle_bank')
+                    .select('*')
+                    .eq('id', pid)
+                    .execute()
+                )
+                if p_result.data:
+                    p = p_result.data[0]
+                    moves = p['moves']
+                    setup_move = moves[0] if moves else ""
+                    total_user_moves = len([m for i, m in enumerate(moves) if i % 2 == 1])
+                    puzzles.append({
+                        'puzzle_id': p['id'],
+                        'fen': p['fen'],
+                        'setup_move': setup_move,
+                        'rating': p['rating'],
+                        'themes': p['themes'],
+                        'total_moves': total_user_moves,
+                    })
+
+            return {
+                'challenge_date': challenge['challenge_date'],
+                'puzzles': puzzles,
+                'completed_ids': challenge['completed_ids'],
+                'total_xp': challenge['total_xp_earned'],
+            }
+
+        # Generate new daily challenge
+        user_data = await _get_or_create_puzzle_rating(auth_user_id)
+        user_rating = user_data['rating']
+
+        # Select 5 puzzles near user rating with varied themes
+        query = supabase_service.table('puzzle_bank').select('*')
+        query = query.gte('rating', user_rating - 300)
+        query = query.lte('rating', user_rating + 300)
+        query = query.order('popularity', desc=True)
+
+        result = await asyncio.to_thread(
+            lambda: query.limit(50).execute()
+        )
+
+        candidates = result.data or []
+
+        if len(candidates) < 5:
+            # Widen search
+            wider = supabase_service.table('puzzle_bank').select('*')
+            wider = wider.order('popularity', desc=True)
+            wider_result = await asyncio.to_thread(
+                lambda: wider.limit(50).execute()
+            )
+            candidates = wider_result.data or []
+
+        if not candidates:
+            raise HTTPException(status_code=404, detail="No puzzles available for daily challenge")
+
+        # Select 5 diverse puzzles (try different themes)
+        import random
+        random.shuffle(candidates)
+        selected = []
+        used_themes = set()
+        for p in candidates:
+            if len(selected) >= 5:
+                break
+            p_themes = set(p.get('themes', []))
+            # Prefer puzzles with new themes
+            if not p_themes.intersection(used_themes) or len(selected) >= 3:
+                selected.append(p)
+                used_themes.update(p_themes)
+
+        # Fill up to 5 if needed
+        if len(selected) < 5:
+            remaining = [p for p in candidates if p not in selected]
+            selected.extend(remaining[:5 - len(selected)])
+
+        selected = selected[:5]
+        puzzle_ids = [p['id'] for p in selected]
+
+        # Create daily challenge record
+        challenge_record = {
+            'user_id': auth_user_id,
+            'challenge_date': today,
+            'puzzle_ids': puzzle_ids,
+            'completed_ids': [],
+            'total_xp_earned': 0,
+        }
+        await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .insert(challenge_record)
+            .execute()
+        )
+
+        # Format response
+        puzzles = []
+        for p in selected:
+            moves = p['moves']
+            setup_move = moves[0] if moves else ""
+            total_user_moves = len([m for i, m in enumerate(moves) if i % 2 == 1])
+            puzzles.append({
+                'puzzle_id': p['id'],
+                'fen': p['fen'],
+                'setup_move': setup_move,
+                'rating': p['rating'],
+                'themes': p['themes'],
+                'total_moves': total_user_moves,
+            })
+
+        return {
+            'challenge_date': today,
+            'puzzles': puzzles,
+            'completed_ids': [],
+            'total_xp': 0,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting daily challenge: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get daily challenge")
+
+
+@app.get("/api/v1/coach/puzzle-bank/stats")
+async def get_puzzle_stats(
+    auth_user_id: str = Depends(require_coach_user_id),
+):
+    """Get user's puzzle training statistics."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Get user rating
+        user_data = await _get_or_create_puzzle_rating(auth_user_id)
+
+        # Get rating history from recent attempts
+        attempts_result = await asyncio.to_thread(
+            lambda: supabase_service.table('puzzle_attempts')
+            .select('rating_after, attempted_at, was_correct, puzzle_bank_id')
+            .eq('user_id', auth_user_id)
+            .not_.is_('puzzle_bank_id', 'null')
+            .order('attempted_at', desc=True)
+            .limit(100)
+            .execute()
+        )
+        attempts = attempts_result.data or []
+
+        # Build rating history (last 30 unique dates)
+        rating_history = []
+        seen_dates = set()
+        for a in attempts:
+            if a.get('rating_after') and a.get('attempted_at'):
+                d = a['attempted_at'][:10]
+                if d not in seen_dates:
+                    seen_dates.add(d)
+                    rating_history.append({'date': d, 'rating': a['rating_after']})
+                    if len(rating_history) >= 30:
+                        break
+        rating_history.reverse()
+
+        # Theme performance (reuse shared helper)
+        theme_perf = await _get_theme_performance(auth_user_id)
+
+        # Streak calculation
+        from datetime import date, timedelta
+        daily_result = await asyncio.to_thread(
+            lambda: supabase_service.table('daily_challenge')
+            .select('challenge_date, completed_at')
+            .eq('user_id', auth_user_id)
+            .not_.is_('completed_at', 'null')
+            .order('challenge_date', desc=True)
+            .limit(365)
+            .execute()
+        )
+        completed_dates = set(r['challenge_date'] for r in (daily_result.data or []))
+
+        current_streak = 0
+        best_streak = 0
+        check_date = date.today()
+        # Count current streak
+        while str(check_date) in completed_dates:
+            current_streak += 1
+            check_date -= timedelta(days=1)
+
+        # Calculate best streak from sorted completed dates
+        sorted_dates = sorted(completed_dates)
+        best_streak = 0
+        temp = 0
+        prev_date = None
+        for d_str in sorted_dates:
+            d = date.fromisoformat(d_str)
+            if prev_date and (d - prev_date).days == 1:
+                temp += 1
+            else:
+                temp = 1
+            best_streak = max(best_streak, temp)
+            prev_date = d
+
+        best_streak = max(best_streak, current_streak)
+
+        solve_rate = 0
+        if user_data['puzzles_attempted'] > 0:
+            solve_rate = round(user_data['puzzles_correct'] / user_data['puzzles_attempted'] * 100, 1)
+
+        return {
+            'rating': user_data['rating'],
+            'highest_rating': user_data['highest_rating'],
+            'rd': user_data['rating_deviation'],
+            'puzzles_attempted': user_data['puzzles_attempted'],
+            'puzzles_correct': user_data['puzzles_correct'],
+            'solve_rate': solve_rate,
+            'xp': user_data['current_xp'],
+            'level': user_data['current_level'],
+            'xp_to_next_level': PuzzleRatingEngine.xp_to_next_level(
+                user_data['current_xp'], user_data['current_level']
+            ),
+            'rating_history': rating_history,
+            'current_streak': current_streak,
+            'best_streak': best_streak,
+            'daily_challenges_completed': len(completed_dates),
+            'theme_performance': theme_perf,
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting puzzle stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get puzzle stats")
+
+
+@app.get("/api/v1/coach/puzzle-bank/recommendation-profile")
+async def get_recommendation_profile(
+    auth_user_id: str = Depends(require_coach_user_id),
+):
+    """
+    Get personalized puzzle recommendation profile based on game weaknesses.
+    Returns weakness-to-theme mapping with reasons for the frontend.
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Look up user's linked chess account
+        profile_result = await asyncio.to_thread(
+            lambda: supabase_service.table('user_profiles')
+            .select('user_id, platform')
+            .eq('auth_user_id', auth_user_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not profile_result.data:
+            return {
+                'has_game_data': False,
+                'games_analyzed': 0,
+                'weaknesses': [],
+                'theme_solve_rates': {},
+                'top_recommended_theme': None,
+                'top_recommendation_reason': None,
+            }
+
+        profile = profile_result.data[0]
+        canonical_user_id = profile['user_id']
+        platform = profile['platform']
+
+        # Fetch game analyses (lightweight columns only)
+        analyses_result = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('tactical_score, positional_score, opening_accuracy, middle_game_accuracy, endgame_accuracy, blunders, mistakes, my_rating')
+            .eq('user_id', canonical_user_id)
+            .eq('platform', platform)
+            .order('created_at', desc=True)
+            .limit(50)
+            .execute()
+        )
+        game_analyses = analyses_result.data or []
+
+        if len(game_analyses) < 5:
+            return {
+                'has_game_data': len(game_analyses) > 0,
+                'games_analyzed': len(game_analyses),
+                'weaknesses': [],
+                'theme_solve_rates': {},
+                'top_recommended_theme': None,
+                'top_recommendation_reason': 'Analyze at least 5 games to get personalized recommendations',
+            }
+
+        # Get weaknesses
+        analyzer = _get_progress_analyzer()
+        weaknesses = await analyzer.get_user_weaknesses(canonical_user_id, platform, game_analyses)
+
+        # Get theme solve rates
+        theme_solve_rates = await _get_theme_performance(auth_user_id)
+
+        # Map weaknesses to themes
+        weighted_themes = get_weakness_puzzle_themes(weaknesses, theme_solve_rates)
+
+        # Build response with recommended themes per weakness
+        weakness_items = []
+        for w in weaknesses:
+            category = w.get('category', '')
+            from .progress_analyzer import WEAKNESS_TO_THEMES
+            recommended_themes = WEAKNESS_TO_THEMES.get(category, [])
+            weakness_items.append({
+                'category': category,
+                'title': w.get('title', ''),
+                'score': round(w.get('score', 0), 1),
+                'severity': w.get('severity', 'important'),
+                'recommended_themes': recommended_themes,
+                'reason': w.get('description', ''),
+            })
+
+        top_theme = weighted_themes[0] if weighted_themes else None
+
+        # Build top recommendation reason combining weakness + solve rate info
+        top_reason = None
+        if top_theme:
+            top_reason = top_theme['reason']
+            theme_stats = theme_solve_rates.get(top_theme['theme'])
+            if theme_stats and theme_stats.get('attempted', 0) >= 3:
+                top_reason += f" (You solve {top_theme['theme']} puzzles at {theme_stats['rate']}%)"
+
+        return {
+            'has_game_data': True,
+            'games_analyzed': len(game_analyses),
+            'weaknesses': weakness_items,
+            'theme_solve_rates': theme_solve_rates,
+            'top_recommended_theme': top_theme['theme'] if top_theme else None,
+            'top_recommendation_reason': top_reason,
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting recommendation profile: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get recommendation profile")
+
 
 if __name__ == "__main__":
     import argparse

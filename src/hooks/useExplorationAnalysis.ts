@@ -76,7 +76,7 @@ export function useExplorationAnalysis(
       abortControllerRef.current = new AbortController()
 
       try {
-        const apiUrl = config.api.baseUrl || 'http://localhost:8000'
+        const apiUrl = config.api.baseUrl || 'http://localhost:8002'
         const response = await fetch(`${apiUrl}/api/v1/analyze-position-quick`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

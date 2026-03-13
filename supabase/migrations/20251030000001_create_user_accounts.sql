@@ -25,6 +25,12 @@ CREATE INDEX IF NOT EXISTS idx_authenticated_users_account_tier ON authenticated
 -- Enable RLS
 ALTER TABLE authenticated_users ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist (for re-running migration)
+DROP POLICY IF EXISTS "Users can view own profile" ON authenticated_users;
+DROP POLICY IF EXISTS "Users can update own profile" ON authenticated_users;
+DROP POLICY IF EXISTS "Users can insert own profile on signup" ON authenticated_users;
+DROP POLICY IF EXISTS "Service role full access" ON authenticated_users;
+
 -- RLS Policies
 CREATE POLICY "Users can view own profile" ON authenticated_users
     FOR SELECT
@@ -80,6 +86,10 @@ CREATE INDEX IF NOT EXISTS idx_payment_tiers_active ON payment_tiers(is_active, 
 -- Enable RLS
 ALTER TABLE payment_tiers ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Anyone can view active tiers" ON payment_tiers;
+DROP POLICY IF EXISTS "Service role can manage tiers" ON payment_tiers;
+
 -- Everyone can view active tiers
 CREATE POLICY "Anyone can view active tiers" ON payment_tiers
     FOR SELECT
@@ -122,6 +132,10 @@ CREATE INDEX IF NOT EXISTS idx_usage_tracking_reset_at ON usage_tracking(reset_a
 -- Enable RLS
 ALTER TABLE usage_tracking ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own usage" ON usage_tracking;
+DROP POLICY IF EXISTS "Service role full access on usage" ON usage_tracking;
+
 -- Users can view own usage
 CREATE POLICY "Users can view own usage" ON usage_tracking
     FOR SELECT
@@ -163,6 +177,10 @@ CREATE INDEX IF NOT EXISTS idx_user_credits_expires_at ON user_credits(expires_a
 
 -- Enable RLS
 ALTER TABLE user_credits ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own credits" ON user_credits;
+DROP POLICY IF EXISTS "Service role full access on credits" ON user_credits;
 
 -- Users can view own credits
 CREATE POLICY "Users can view own credits" ON user_credits
@@ -211,6 +229,10 @@ CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON payment_transactio
 -- Enable RLS
 ALTER TABLE payment_transactions ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own transactions" ON payment_transactions;
+DROP POLICY IF EXISTS "Service role full access on transactions" ON payment_transactions;
+
 -- Users can view own transactions
 CREATE POLICY "Users can view own transactions" ON payment_transactions
     FOR SELECT
@@ -242,6 +264,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Drop existing triggers if they exist (for re-running migration)
+DROP TRIGGER IF EXISTS update_authenticated_users_updated_at ON authenticated_users;
+DROP TRIGGER IF EXISTS update_payment_tiers_updated_at ON payment_tiers;
+DROP TRIGGER IF EXISTS update_usage_tracking_updated_at ON usage_tracking;
+DROP TRIGGER IF EXISTS update_user_credits_updated_at ON user_credits;
+DROP TRIGGER IF EXISTS update_payment_transactions_updated_at ON payment_transactions;
+
 -- Add triggers for updated_at
 CREATE TRIGGER update_authenticated_users_updated_at
     BEFORE UPDATE ON authenticated_users
@@ -269,6 +298,45 @@ CREATE TRIGGER update_payment_transactions_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================================
+-- 7. AUTO-CREATE USER PROFILE ON SIGNUP
+-- ============================================================================
+
+-- Function to automatically create authenticated_users entry when a new user signs up
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER
+SECURITY DEFINER  -- This is critical - runs with elevated privileges
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO public.authenticated_users (id, account_tier, subscription_status)
+    VALUES (NEW.id, 'free', 'active')
+    ON CONFLICT (id) DO NOTHING;
+
+    RETURN NEW;
+END;
+$$;
+
+-- Trigger on auth.users to auto-create profile
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION handle_new_user();
+
+-- Backfill existing users (creates authenticated_users for existing auth.users)
+INSERT INTO authenticated_users (id, account_tier, subscription_status)
+SELECT
+    au.id,
+    'free',
+    'active'
+FROM auth.users au
+LEFT JOIN authenticated_users pu ON au.id = pu.id
+WHERE pu.id IS NULL
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
 -- SUMMARY
 -- ============================================================================
 -- Created tables:
@@ -277,6 +345,14 @@ CREATE TRIGGER update_payment_transactions_updated_at
 -- 3. usage_tracking - Daily usage limits (24h rolling window)
 -- 4. user_credits - One-time credit purchases
 -- 5. payment_transactions - Payment audit log
+--
+-- Created functions:
+-- 1. update_updated_at_column() - Auto-updates updated_at timestamps
+-- 2. handle_new_user() - Auto-creates authenticated_users entry on signup
+--
+-- Created triggers:
+-- 1. on_auth_user_created - Automatically creates user profile on signup
+-- 2. update_*_updated_at - Auto-updates timestamps on all tables
 --
 -- All tables have:
 -- - RLS enabled

@@ -44,29 +44,39 @@ export function LongTermPlanner({ data, userId }: LongTermPlannerProps) {
           <div className="rounded-2xl border border-sky-400/30 bg-gradient-to-br from-sky-500/10 via-indigo-500/5 to-transparent p-5">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-sky-200">Style Analysis</h3>
             <div className="space-y-3">
-              <p className="text-sm text-slate-200">
-                {data.ai_style_analysis.style_summary}
-              </p>
+              {data.ai_style_analysis.style_summary && (
+                <p className="text-sm text-slate-200">
+                  {data.ai_style_analysis.style_summary}
+                </p>
+              )}
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
                   <h4 className="mb-1 text-sm font-semibold text-white">Key Characteristics</h4>
-                  <p className="text-xs text-slate-200">{data.ai_style_analysis.characteristics}</p>
+                  <p className="text-xs text-slate-200">
+                    {data.ai_style_analysis.characteristics || 'See style summary for details.'}
+                  </p>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
                   <h4 className="mb-1 text-sm font-semibold text-white">Main Strengths</h4>
-                  <p className="text-xs text-slate-200">{data.ai_style_analysis.strengths}</p>
+                  <p className="text-xs text-slate-200">
+                    {data.ai_style_analysis.strengths || 'See style summary for details.'}
+                  </p>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
                   <h4 className="mb-1 text-sm font-semibold text-white">Playing Patterns</h4>
-                  <p className="text-xs text-slate-200">{data.ai_style_analysis.playing_patterns}</p>
+                  <p className="text-xs text-slate-200">
+                    {data.ai_style_analysis.playing_patterns || 'See style summary for details.'}
+                  </p>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
                   <h4 className="mb-1 text-sm font-semibold text-white">Improvement Focus</h4>
-                  <p className="text-xs text-slate-200">{data.ai_style_analysis.improvement_focus}</p>
+                  <p className="text-xs text-slate-200">
+                    {data.ai_style_analysis.improvement_focus || 'See style summary for details.'}
+                  </p>
                 </div>
               </div>
             </div>

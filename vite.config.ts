@@ -17,20 +17,21 @@ export default defineConfig({
     host: true,
   },
   build: {
-    target: 'es2015',
+    target: 'es2020',
     minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
           router: ['react-router-dom'],
+          supabase: ['@supabase/supabase-js'],
           chess: ['chess.js', 'react-chessboard'],
           charts: ['recharts'],
           utils: ['zod'],
         },
       },
     },
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 500,
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom', 'chess.js', 'react-chessboard', 'recharts', 'zod'],

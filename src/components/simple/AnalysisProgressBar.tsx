@@ -83,7 +83,7 @@ export function AnalysisProgressBar({ analyzing, progress, statusMessage }: Anal
       {/* Status message above progress bar */}
       <div className="mt-3 text-center">
         <span className="text-xs font-medium text-slate-300 bg-white/10 px-3 py-1 rounded-full">
-          it might take few minutes, hold on!
+          it might take few minutes, have a look around
         </span>
       </div>
 
