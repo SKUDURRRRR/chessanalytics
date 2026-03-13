@@ -111,9 +111,9 @@ print_performance_config(performance_config)
 cors_origins = config.api.cors_origins or ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"]
 print(f"CORS Origins configured: {cors_origins}")
 
-# Allow Vercel preview deployments via regex pattern (CORS_ORIGIN_REGEX env var)
-# Default pattern matches *.vercel.app for Vercel preview/staging deployments
-cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+# Allow Vercel preview deployments and production domain via regex pattern (CORS_ORIGIN_REGEX env var)
+# Default pattern matches *.vercel.app and *chessdata.app (production domain)
+cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX", r"https://(.*\.vercel\.app|(www\.)?chessdata\.app)")
 if cors_origin_regex:
     print(f"CORS Origin Regex: {cors_origin_regex}")
 
