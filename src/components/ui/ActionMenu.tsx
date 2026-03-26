@@ -91,7 +91,7 @@ export function ActionMenu({ trigger, actions, title = 'Actions', className = ''
               }`}
             >
               <div className="flex items-center gap-2">
-                {action.icon && <span className="text-base">{action.icon}</span>}
+                {action.icon && <span className="text-sm">{action.icon}</span>}
                 <span>{action.label}</span>
               </div>
             </button>

@@ -474,7 +474,7 @@ export function EnhancedOpeningPlayerCard({
                 : 'text-gray-500 hover:text-gray-300 hover:bg-surface-3/50'
             }`}
           >
-            <span className="text-sm sm:text-base">{tab.icon}</span>
+            <span className="text-sm">{tab.icon}</span>
             <span className="hidden xs:inline sm:inline">{tab.label}</span>
           </button>
         ))}
@@ -555,7 +555,7 @@ export function EnhancedOpeningPlayerCard({
                   <div className={`text-xs text-gray-400 mb-1`}>{styleMatchExplanation.insight}</div>
                   <div className={`text-xs ${styleMatchExplanation.color}`}>{styleMatchExplanation.advice}</div>
                 </div>
-                <div className={`text-base font-semibold ${styleMatchExplanation.color} shrink-0`}>
+                <div className={`text-sm font-semibold ${styleMatchExplanation.color} shrink-0`}>
                   {enhancedAnalysis.repertoireAnalysis.styleMatchScore.toFixed(0)}%
                 </div>
               </div>
@@ -757,7 +757,7 @@ export function EnhancedOpeningPlayerCard({
                           <div className="text-xs text-gray-500">Style Match:</div>
                           <div className="flex-1 bg-surface-3 rounded-full h-2 overflow-hidden">
                             <div
-                              className="bg-gradient-to-r from-sky-500 to-emerald-500 h-full transition-colors"
+                              className="bg-emerald-400/40 h-full transition-colors"
                               style={{ width: `${rec.compatibilityScore}%` }}
                             />
                           </div>

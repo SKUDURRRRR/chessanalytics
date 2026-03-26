@@ -69,7 +69,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const errorConfig = {
       page: {
         containerClass: 'min-h-screen flex items-center justify-center bg-gray-50',
-        cardClass: 'bg-white border border-red-200 rounded-lg p-8 m-4 max-w-md w-full shadow-lg',
+        cardClass: 'bg-white border border-red-200 rounded-lg p-8 m-4 max-w-md w-full shadow-card',
         icon: 'Alert',
         title: isChunkError ? 'Update Available' : 'Application Error',
         description: isChunkError

@@ -27,12 +27,12 @@ export function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisPr
   return (
     <div className={`space-y-6 ${className}`}>
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-6 text-white">
+      <div className="bg-surface-2 rounded-lg p-6 text-white">
         <div className="flex items-center gap-3 mb-4">
           <h2 className="text-2xl font-semibold">Time Spent Playing Chess</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+          <div className="bg-surface-3 rounded-lg p-4">
             <div className="text-sm opacity-90 mb-1">Estimated Total Time</div>
             <div className="text-3xl font-semibold">
               {timeStats.breakdown.hours > 0 && `${timeStats.breakdown.hours}h `}
@@ -42,14 +42,14 @@ export function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisPr
               {timeStats.estimatedActualTime.totalTimeFormatted}
             </div>
           </div>
-          <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+          <div className="bg-surface-3 rounded-lg p-4">
             <div className="text-sm opacity-90 mb-1">Total Games</div>
             <div className="text-3xl font-semibold">{games.length}</div>
             <div className="text-xs opacity-75 mt-1">
               Avg: {games.length > 0 ? Math.round(timeStats.estimatedActualTime.totalTimeSeconds / games.length / 60) : 0} min/game
             </div>
           </div>
-          <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+          <div className="bg-surface-3 rounded-lg p-4">
             <div className="text-sm opacity-90 mb-1">Max Possible Time</div>
             <div className="text-3xl font-semibold">
               {Math.floor(timeStats.totalTimeSeconds / 3600)}h
@@ -90,12 +90,12 @@ export function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisPr
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className={`h-2 rounded-full bg-gradient-to-r ${
-                        tc.category === 'Bullet' ? 'from-red-500 to-red-600' :
-                        tc.category === 'Blitz' ? 'from-orange-500 to-orange-600' :
-                        tc.category === 'Rapid' ? 'from-blue-500 to-blue-600' :
-                        tc.category === 'Classical' ? 'from-purple-500 to-purple-600' :
-                        'from-green-500 to-green-600'
+                      className={`h-2 rounded-full ${
+                        tc.category === 'Bullet' ? 'bg-rose-400/40' :
+                        tc.category === 'Blitz' ? 'bg-amber-400/40' :
+                        tc.category === 'Rapid' ? 'bg-emerald-400/40' :
+                        tc.category === 'Classical' ? 'bg-emerald-400/40' :
+                        'bg-gray-400/40'
                       }`}
                       style={{ width: `${percentage}%` }}
                     />
@@ -175,7 +175,7 @@ export function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisPr
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500"
+                        className="h-2 rounded-full bg-[#e4e8ed]/40"
                         style={{ width: `${barWidth}%` }}
                       />
                     </div>

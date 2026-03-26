@@ -519,7 +519,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                 <div key={index} className="rounded-lg bg-surface-1 shadow-card p-3 hover:bg-white/[0.04] transition-colors duration-200">
                   {/* Header Row: Everything on one line */}
                   <div className="flex items-center gap-3 mb-2">
-                    <h4 className="text-base font-semibold text-white whitespace-nowrap">
+                    <h4 className="text-sm font-semibold text-white whitespace-nowrap">
                       {element.name}
                     </h4>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${
@@ -563,7 +563,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                             }}
                             className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors duration-200 ${
                               isSelected
-                                ? 'bg-emerald-500/90 text-white shadow-lg shadow-emerald-500/30'
+                                ? 'bg-emerald-500/90 text-white'
                                 : 'bg-surface-3/60 hover:bg-surface-3/70 text-gray-300 hover:text-white'
                             }`}
                           >
@@ -631,7 +631,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                                 }}
                                 className={`px-2 py-1 rounded text-xs transition-colors duration-200 hover:scale-105 ${
                                   isSelected
-                                    ? 'bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/30'
+                                    ? 'bg-emerald-500/80 text-white'
                                     : 'bg-surface-3/50 hover:bg-surface-3/70 hover:text-white'
                                 }`}
                               >
@@ -723,7 +723,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                 <div key={index} className="rounded-lg bg-surface-1 shadow-card p-3 hover:bg-white/[0.04] transition-colors duration-200">
                   {/* Header Row: Everything on one line */}
                   <div className="flex items-center gap-3 mb-2">
-                    <h4 className="text-base font-semibold text-white whitespace-nowrap">
+                    <h4 className="text-sm font-semibold text-white whitespace-nowrap">
                       {theme.name}
                     </h4>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${
@@ -766,7 +766,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                             }}
                             className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors duration-200 ${
                               isSelected
-                                ? 'bg-emerald-500/90 text-white shadow-lg shadow-emerald-500/30'
+                                ? 'bg-emerald-500/90 text-white'
                                 : 'bg-surface-3/60 hover:bg-surface-3/70 text-gray-300 hover:text-white'
                             }`}
                           >
@@ -834,7 +834,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                                 }}
                                 className={`px-2 py-1 rounded text-xs transition-colors duration-200 hover:scale-105 ${
                                   isSelected
-                                    ? 'bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/30'
+                                    ? 'bg-emerald-500/80 text-white'
                                     : 'bg-surface-3/50 hover:bg-surface-3/70 hover:text-white'
                                 }`}
                               >

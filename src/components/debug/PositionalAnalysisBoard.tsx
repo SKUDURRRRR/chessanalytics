@@ -342,7 +342,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
 
       {/* Move Info Header */}
       <div className="text-center bg-surface-2/30 rounded-lg p-2">
-        <div className="text-base font-semibold text-white">
+        <div className="text-sm font-semibold text-white">
           Move {Math.floor(currentMoveIndex / 2) + 1} • {currentMove?.player === 'white' ? 'White' : 'Black'}
         </div>
         <div className="flex items-center justify-center gap-2 mt-0.5">
@@ -429,7 +429,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
               }}
             />
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-xs font-semibold text-white drop-shadow-lg">
+              <span className="text-xs font-semibold text-white">
                 {currentMove.evaluation.type === 'mate'
                   ? (currentMove.evaluation.value > 0 ? `+M${currentMove.evaluation.value}` : `-M${Math.abs(currentMove.evaluation.value)}`)
                   : currentMove.evaluation.value > 0 ? `+${(currentMove.evaluation.value / 100).toFixed(1)}` : `${(currentMove.evaluation.value / 100).toFixed(1)}`

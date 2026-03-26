@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { Download, Search, RefreshCw, Sparkles, Lightbulb, Crown, BarChart3, Rocket, Zap, Star, X } from 'lucide-react'
 
 interface LimitReachedModalProps {
   isOpen: boolean
@@ -28,13 +29,13 @@ export default function LimitReachedModal({
   if (isGuest) {
     return createPortal(
       <>
-        {/* Backdrop with blur */}
-        <div className="fixed inset-0 z-[9999] bg-surface-base/95 backdrop-blur-md" onClick={onClose} />
+        {/* Backdrop */}
+        <div className="fixed inset-0 z-50 bg-[#0c0d0f]/90" onClick={onClose} />
 
         {/* Modal */}
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 pointer-events-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
           <div
-            className="relative w-full max-w-md bg-surface-1 rounded-lg shadow-card overflow-hidden transform transition-colors flex flex-col max-h-[90vh] pointer-events-auto"
+            className="relative w-full max-w-sm bg-surface-1 rounded-lg shadow-card overflow-hidden transition-colors flex flex-col max-h-[90vh] pointer-events-auto"
             onClick={(e) => e.stopPropagation()}
           >
           {/* Header */}
@@ -44,9 +45,7 @@ export default function LimitReachedModal({
               className="absolute top-3 right-3 text-gray-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-surface-3/30"
               aria-label="Close"
             >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="h-5 w-5" />
             </button>
 
           <div className="text-center">
@@ -54,14 +53,14 @@ export default function LimitReachedModal({
               Level Up Your Chess Game!
             </h2>
               <p className="text-gray-400 text-sm leading-relaxed">
-                You've reached your {actionText} limit. Create a <span className="text-emerald-400 font-semibold">free account</span> to unlock more power!
+                You've reached your {actionText} limit. Create a <span className="text-[#e4e8ed] font-semibold">free account</span> to unlock more power!
               </p>
             </div>
           </div>
 
           {/* Content - Scrollable */}
           <div className="relative px-5 py-4 overflow-y-auto flex-1 min-h-0">
-            {/* Benefits list - no gray boxes */}
+            {/* Benefits list */}
             <div className="mb-4">
               <h3 className="text-white font-semibold text-sm mb-3 text-center">
                 What you'll get with a free account:
@@ -69,12 +68,12 @@ export default function LimitReachedModal({
 
               <div className="space-y-2">
                 {[
-                  { text: '100 game imports per day', icon: '📥' },
-                  { text: '5 game analyses per day', icon: '🔍' },
-                  { text: 'Games auto-import', icon: '🔄' }
+                  { text: '100 game imports per day', icon: Download },
+                  { text: '5 game analyses per day', icon: Search },
+                  { text: 'Games auto-import', icon: RefreshCw }
                 ].map((feature, index) => (
                   <div key={index} className="flex items-center gap-2.5 text-gray-300">
-                    <span className="text-sm flex-shrink-0">{feature.icon}</span>
+                    <feature.icon className="w-4 h-4 flex-shrink-0 text-gray-400" />
                     <span className="text-xs">{feature.text}</span>
                   </div>
                 ))}
@@ -93,27 +92,25 @@ export default function LimitReachedModal({
             <Link
               to="/signup"
               onClick={onClose}
-              className="block w-full px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-center transition-colors text-sm"
+              className="block w-full px-5 py-3 bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] rounded-lg font-semibold text-center transition-colors text-sm"
+              style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3)' }}
             >
-                Create Free Account Now! 🎉
+                Create Free Account Now
               </Link>
               <div className="text-center">
                 <Link
                   to="/login"
                   onClick={onClose}
-                  className="text-gray-500 hover:text-white text-xs transition-colors"
+                  className="text-gray-500 hover:text-gray-400 text-xs transition-colors"
                 >
                   Already have an account? <span className="text-white font-semibold">Sign In</span>
                 </Link>
               </div>
-              <p className="text-center text-xs text-gray-500">
-                💡 Upgrade to Pro later for unlimited {actionNoun}
+              <p className="text-center text-xs text-gray-500 flex items-center justify-center gap-1">
+                <Lightbulb className="w-3 h-3" /> Upgrade to Pro later for unlimited {actionNoun}
               </p>
             </div>
           </div>
-
-          {/* Bottom gradient accent */}
-          <div className="h-1.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-orange-500" />
           </div>
         </div>
       </>,
@@ -125,12 +122,12 @@ export default function LimitReachedModal({
   return createPortal(
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-[9999] bg-surface-base/95 backdrop-blur-md" onClick={onClose} />
+      <div className="fixed inset-0 z-50 bg-[#0c0d0f]/90" onClick={onClose} />
 
       {/* Modal */}
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 pointer-events-none">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div
-          className="relative w-full max-w-md bg-surface-1 rounded-lg shadow-card overflow-hidden transform transition-colors flex flex-col max-h-[90vh] pointer-events-auto"
+          className="relative w-full max-w-sm bg-surface-1 rounded-lg shadow-card overflow-hidden transition-colors flex flex-col max-h-[90vh] pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
 
@@ -141,9 +138,7 @@ export default function LimitReachedModal({
             className="absolute top-3 right-3 text-gray-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-surface-3/30"
             aria-label="Close"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="h-5 w-5" />
           </button>
 
           <div className="text-center">
@@ -151,45 +146,45 @@ export default function LimitReachedModal({
               Unlock Unlimited Power!
             </h2>
             <p className="text-gray-400 text-sm leading-relaxed">
-              You've used all your free {actionNoun} for today. Upgrade to <span className="text-amber-400 font-semibold">Pro</span> for unlimited access!
+              You've used all your free {actionNoun} for today. Upgrade to <span className="text-[#e4e8ed] font-semibold">Pro</span> for unlimited access!
             </p>
           </div>
         </div>
 
         {/* Content - Scrollable */}
         <div className="relative px-5 py-4 overflow-y-auto flex-1 min-h-0">
-          {/* Comparison - no gray boxes */}
+          {/* Comparison */}
           <div className="mb-4">
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="text-center">
-                <div className="text-2xl mb-1.5">📊</div>
+                <BarChart3 className="w-6 h-6 mx-auto mb-1.5 text-gray-400" />
                 <div className="text-gray-500 text-xs mb-1">Current (Free)</div>
                 <div className="text-rose-400 font-semibold text-lg">
                   {usageStats?.[limitType === 'import' ? 'imports' : 'analyses']?.used || 0} / {usageStats?.[limitType === 'import' ? 'imports' : 'analyses']?.limit || 0}
                 </div>
               </div>
               <div className="text-center">
-                <div className="text-2xl mb-1.5">🚀</div>
+                <Rocket className="w-6 h-6 mx-auto mb-1.5 text-gray-400" />
                 <div className="text-gray-500 text-xs mb-1">With Pro</div>
                 <div className="text-emerald-400 font-semibold text-lg">∞</div>
               </div>
             </div>
           </div>
 
-          {/* Pro features list - no boxes */}
+          {/* Pro features list */}
           <div className="mb-4">
-            <h3 className="text-white font-semibold text-sm mb-3 text-center">
-              ⭐ Pro Features
+            <h3 className="text-white font-semibold text-sm mb-3 text-center flex items-center justify-center gap-1.5">
+              <Star className="w-4 h-4 text-gray-400" /> Pro Features
             </h3>
 
             <div className="space-y-2">
               {[
-                { text: 'Unlimited imports', icon: '📥' },
-                { text: 'Unlimited analyses', icon: '🔍' },
-                { text: 'Priority processing', icon: '⚡' }
+                { text: 'Unlimited imports', icon: Download },
+                { text: 'Unlimited analyses', icon: Search },
+                { text: 'Priority processing', icon: Zap }
               ].map((feature, index) => (
                 <div key={index} className="flex items-center gap-2.5 text-gray-300">
-                  <span className="text-base flex-shrink-0">{feature.icon}</span>
+                  <feature.icon className="w-4 h-4 flex-shrink-0 text-gray-400" />
                   <span className="text-xs">{feature.text}</span>
                 </div>
               ))}
@@ -201,23 +196,21 @@ export default function LimitReachedModal({
             <Link
               to="/pricing"
               onClick={onClose}
-              className="block w-full px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-center transition-colors text-sm"
+              className="flex items-center justify-center gap-2 w-full px-5 py-3 bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] rounded-lg font-semibold text-center transition-colors text-sm"
+              style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3)' }}
             >
-              Upgrade to Pro Now! 👑
+              <Crown className="w-4 h-4" /> Upgrade to Pro Now
             </Link>
             <div className="text-center">
               <button
                 onClick={onClose}
-                className="text-gray-500 hover:text-white text-xs font-medium transition-colors"
+                className="text-gray-500 hover:text-gray-400 text-xs font-medium transition-colors"
               >
                 Maybe later
               </button>
             </div>
           </div>
         </div>
-
-        {/* Bottom gradient accent */}
-        <div className="h-1.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-orange-500" />
         </div>
       </div>
     </>,

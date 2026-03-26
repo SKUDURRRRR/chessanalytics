@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feature Section Layout Options</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+  body { font-family: 'Inter', system-ui, sans-serif; }
+
+  :root {
+    --bg-base: #0c0d0f;
+    --bg-surface-1: #151618;
+    --bg-surface-2: #1c1d20;
+    --bg-surface-3: #232428;
+    --border: rgba(255,255,255,0.04);
+    --cta: #e4e8ed;
+    --text-primary: #f0f0f0;
+  }
+
+  .card {
+    background: var(--bg-surface-1);
+    box-shadow: 0 0 0 1px var(--border), 0 2px 4px rgba(0,0,0,0.2);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+  .card-2 {
+    background: var(--bg-surface-2);
+    box-shadow: 0 0 0 1px var(--border), 0 2px 4px rgba(0,0,0,0.2);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+  .label {
+    font-size: 11px;
+    color: #6b7280;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+    font-variant: all-small-caps;
+  }
+  .divider { height: 1px; background: rgba(255,255,255,0.04); }
+  .highlight-line {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(255,255,255,0.06), transparent);
+  }
+
+  /* Fake screenshot placeholder */
+  .screenshot {
+    background: var(--bg-surface-2);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--border), 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .screenshot-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--bg-surface-3);
+    border-bottom: 1px solid var(--border);
+  }
+  .screenshot-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+  }
+  .screenshot-url {
+    flex: 1;
+    text-align: center;
+    font-size: 10px;
+    color: #4b5563;
+    font-family: monospace;
+  }
+  .screenshot-body {
+    padding: 16px;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .screenshot-body .block-lg {
+    background: rgba(255,255,255,0.03);
+    border-radius: 6px;
+    height: 120px;
+  }
+  .screenshot-body .block-sm {
+    background: rgba(255,255,255,0.03);
+    border-radius: 4px;
+    height: 32px;
+  }
+  .screenshot-body .block-row {
+    display: flex;
+    gap: 8px;
+  }
+  .screenshot-body .block-row > * {
+    flex: 1;
+    background: rgba(255,255,255,0.03);
+    border-radius: 4px;
+    height: 40px;
+  }
+
+  .option-label {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-base);
+    padding: 12px 0;
+    border-bottom: 2px solid rgba(228,232,237,0.15);
+    margin-bottom: 0;
+  }
+
+  .check-icon {
+    color: rgba(251, 191, 36, 0.6);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+</style>
+</head>
+<body style="background: var(--bg-base); color: #d1d5db;">
+
+<div class="max-w-5xl mx-auto px-6 py-8">
+  <div class="text-center mb-6">
+    <h1 class="text-2xl font-semibold text-white tracking-[-0.03em] mb-2">Feature Section Layout Options</h1>
+    <p class="text-sm text-gray-500">5 layout approaches for the "Learn from every move" sections. Scroll to compare.</p>
+  </div>
+
+
+  <!-- ============================================================ -->
+  <!-- OPTION 1: Full-width screenshot with overlaid info strip -->
+  <!-- ============================================================ -->
+  <div class="option-label">
+    <h2 class="text-lg font-semibold text-white tracking-[-0.02em]">Option 1 — Full-width screenshot with info strip below</h2>
+    <p class="text-xs text-gray-500 mt-1">Screenshot dominates. Feature points live in a compact strip underneath. Clean, editorial feel.</p>
+  </div>
+
+  <div class="my-8 rounded-xl overflow-hidden" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">
+    <!-- Section header -->
+    <div class="px-8 pt-12 pb-6 text-center">
+      <div class="label text-amber-300/60 mb-3 flex items-center justify-center gap-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 6 8 12 8 12s8-6 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span>Your Chess Coach</span>
+      </div>
+      <h2 class="text-2xl font-semibold text-white tracking-[-0.03em] mb-2">Learn from every move</h2>
+      <p class="text-[13px] text-gray-500 max-w-md mx-auto">AI-powered commentary that explains the ideas behind each move.</p>
+    </div>
+
+    <!-- Full-width screenshot -->
+    <div class="px-8 pb-6">
+      <div class="screenshot max-w-3xl mx-auto">
+        <div class="screenshot-bar">
+          <div class="screenshot-dot"></div>
+          <div class="screenshot-dot"></div>
+          <div class="screenshot-dot"></div>
+          <div class="screenshot-url">chessdata.app</div>
+        </div>
+        <div class="screenshot-body" style="min-height: 280px;">
+          <div class="flex gap-4">
+            <div class="block-lg flex-1" style="height: 200px;"></div>
+            <div class="flex flex-col gap-3 w-[40%]">
+              <div class="block-sm" style="height: 48px;"></div>
+              <div class="block-sm flex-1"></div>
+              <div class="block-sm" style="height: 48px;"></div>
+            </div>
+          </div>
+          <div class="block-row">
+            <div></div><div></div><div></div><div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info strip -->
+    <div class="highlight-line"></div>
+    <div class="px-8 py-6">
+      <div class="grid grid-cols-3 gap-6 max-w-3xl mx-auto">
+        <div class="flex items-start gap-2.5">
+          <span class="check-icon text-sm">&#10003;</span>
+          <span class="text-[12px] text-gray-400 leading-relaxed">Move-by-move commentary explaining <span class="text-gray-300 font-medium">why</span>, not just numbers</span>
+        </div>
+        <div class="flex items-start gap-2.5">
+          <span class="check-icon text-sm">&#10003;</span>
+          <span class="text-[12px] text-gray-400 leading-relaxed">Written in the spirit of Mikhail Tal — passionate and insightful</span>
+        </div>
+        <div class="flex items-start gap-2.5">
+          <span class="check-icon text-sm">&#10003;</span>
+          <span class="text-[12px] text-gray-400 leading-relaxed">Covers principles, patterns, and ideas behind each decision</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============================================================ -->
+  <!-- OPTION 2: Asymmetric card with floating quote -->
+  <!-- ============================================================ -->
+  <div class="option-label mt-16">
+    <h2 class="text-lg font-semibold text-white tracking-[-0.02em]">Option 2 — Asymmetric card with floating accent</h2>
+    <p class="text-xs text-gray-500 mt-1">Everything in one contained card. Screenshot left (60%), stacked content right (40%), quote offset below. Feels like a product card.</p>
+  </div>
+
+  <div class="my-8">
+    <!-- Section header outside card -->
+    <div class="text-center mb-8">
+      <div class="label text-amber-300/60 mb-3">Your Chess Coach</div>
+      <h2 class="text-2xl font-semibold text-white tracking-[-0.03em]">Learn from every move</h2>
+    </div>
+
+    <!-- Main card -->
+    <div class="card p-0 max-w-4xl mx-auto">
+      <div class="highlight-line"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-5">
+        <!-- Screenshot side -->
+        <div class="lg:col-span-3 p-6" style="border-right: 1px solid var(--border);">
+          <div class="screenshot">
+            <div class="screenshot-bar">
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-url">chessdata.app</div>
+            </div>
+            <div class="screenshot-body" style="min-height: 260px;">
+              <div class="flex gap-4">
+                <div class="block-lg flex-1" style="height: 180px;"></div>
+                <div class="flex flex-col gap-3 w-[40%]">
+                  <div class="block-sm" style="height: 48px;"></div>
+                  <div class="block-sm flex-1"></div>
+                </div>
+              </div>
+              <div class="block-row">
+                <div></div><div></div><div></div><div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Content side -->
+        <div class="lg:col-span-2 p-6 flex flex-col justify-center gap-5">
+          <p class="text-[13px] text-gray-500 leading-relaxed">AI-powered commentary that explains the ideas behind each move, not just evaluation numbers.</p>
+          <ul class="space-y-3">
+            <li class="flex items-start gap-2.5">
+              <span class="check-icon text-sm">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Move-by-move commentary explaining <span class="text-gray-300 font-medium">why</span></span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="check-icon text-sm">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Passionate and insightful coaching style</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="check-icon text-sm">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Principles, patterns, and ideas behind each decision</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating quote below, offset -->
+    <div class="max-w-sm ml-auto mr-16 -mt-4 relative z-10">
+      <div class="card-2 p-4">
+        <p class="text-[12px] text-amber-200/60 italic leading-relaxed">"This move maintains the tension in the center while keeping your pieces flexible."</p>
+        <p class="text-[10px] text-gray-600 mt-1.5">- Tal Coach</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============================================================ -->
+  <!-- OPTION 3: Bento grid -->
+  <!-- ============================================================ -->
+  <div class="option-label mt-16">
+    <h2 class="text-lg font-semibold text-white tracking-[-0.02em]">Option 3 — Bento grid</h2>
+    <p class="text-xs text-gray-500 mt-1">All three features in one grid. Screenshot cards are large, text cards fill the gaps. Apple-style bento layout. Great for showing everything at once.</p>
+  </div>
+
+  <div class="my-8">
+    <div class="text-center mb-10">
+      <div class="label text-gray-500 mb-3">What You Get</div>
+      <h2 class="text-2xl font-semibold text-white tracking-[-0.03em]">Everything you need to improve</h2>
+    </div>
+
+    <div class="grid grid-cols-6 gap-3 max-w-4xl mx-auto">
+      <!-- AI Coach - spans 4 cols -->
+      <div class="col-span-4 card p-0">
+        <div class="highlight-line"></div>
+        <div class="p-5 pb-0">
+          <div class="label text-amber-300/60 mb-2">AI Coach</div>
+          <h3 class="text-[15px] font-semibold text-white tracking-[-0.01em] mb-1">Learn from every move</h3>
+          <p class="text-[12px] text-gray-500">Move-by-move AI commentary on your critical positions.</p>
+        </div>
+        <div class="p-4">
+          <div class="screenshot" style="box-shadow: none;">
+            <div class="screenshot-bar" style="padding: 6px 10px;">
+              <div class="screenshot-dot" style="width:6px;height:6px;"></div>
+              <div class="screenshot-dot" style="width:6px;height:6px;"></div>
+              <div class="screenshot-dot" style="width:6px;height:6px;"></div>
+              <div class="screenshot-url">chessdata.app</div>
+            </div>
+            <div style="padding: 12px; min-height: 160px;">
+              <div class="flex gap-3">
+                <div style="flex:1; height: 120px; background: rgba(255,255,255,0.03); border-radius: 4px;"></div>
+                <div style="width:35%; display: flex; flex-direction: column; gap: 6px;">
+                  <div style="height: 36px; background: rgba(255,255,255,0.03); border-radius: 4px;"></div>
+                  <div style="flex:1; background: rgba(255,255,255,0.03); border-radius: 4px;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quote card - spans 2 cols -->
+      <div class="col-span-2 card p-0 flex flex-col">
+        <div class="highlight-line"></div>
+        <div class="p-5 flex-1 flex flex-col justify-between">
+          <div>
+            <p class="text-[12px] text-amber-200/60 italic leading-relaxed">"This move maintains the tension in the center while keeping your pieces flexible. The knight can support the pawn push or retreat to safety."</p>
+            <p class="text-[10px] text-gray-600 mt-2">- Tal Coach</p>
+          </div>
+          <div class="mt-4 flex gap-2">
+            <span class="check-icon text-[11px]">&#10003;</span>
+            <span class="text-[11px] text-gray-500">Powered by Claude & Gemini</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Personality - spans 3 cols -->
+      <div class="col-span-3 card p-0">
+        <div class="highlight-line"></div>
+        <div class="p-5 pb-0">
+          <div class="label text-gray-500 mb-2">Personality</div>
+          <h3 class="text-[15px] font-semibold text-white tracking-[-0.01em] mb-1">Discover your style</h3>
+          <p class="text-[12px] text-gray-500">6-dimension personality radar with opening analysis.</p>
+        </div>
+        <div class="p-4">
+          <div class="screenshot" style="box-shadow: none;">
+            <div class="screenshot-bar" style="padding: 6px 10px;">
+              <div class="screenshot-dot" style="width:6px;height:6px;"></div>
+              <div class="screenshot-dot" style="width:6px;height:6px;"></div>
+              <div class="screenshot-dot" style="width:6px;height:6px;"></div>
+              <div class="screenshot-url">chessdata.app</div>
+            </div>
+            <div style="padding: 12px; min-height: 140px;">
+              <div class="flex gap-3">
+                <div style="flex:1; height: 100px; background: rgba(255,255,255,0.03); border-radius: 4px;"></div>
+                <div style="flex:1; height: 100px; background: rgba(255,255,255,0.03); border-radius: 4px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Performance - spans 3 cols -->
+      <div class="col-span-3 card p-0">
+        <div class="highlight-line"></div>
+        <div class="p-5 pb-0">
+          <div class="label text-gray-500 mb-2">Performance</div>
+          <h3 class="text-[15px] font-semibold text-white tracking-[-0.01em] mb-1">Track your progress</h3>
+          <p class="text-[12px] text-gray-500">ELO trends, opening stats, and time control breakdown.</p>
+        </div>
+        <div class="p-4">
+          <div class="screenshot" style="box-shadow: none;">
+            <div class="screenshot-bar" style="padding: 6px 10px;">
+              <div class="screenshot-dot" style="width:6px;height:6px;"></div>
+              <div class="screenshot-dot" style="width:6px;height:6px;"></div>
+              <div class="screenshot-dot" style="width:6px;height:6px;"></div>
+              <div class="screenshot-url">chessdata.app</div>
+            </div>
+            <div style="padding: 12px; min-height: 140px;">
+              <div style="height: 80px; background: rgba(255,255,255,0.03); border-radius: 4px; margin-bottom: 8px;"></div>
+              <div class="flex gap-2">
+                <div style="flex:1; height: 28px; background: rgba(255,255,255,0.03); border-radius: 4px;"></div>
+                <div style="flex:1; height: 28px; background: rgba(255,255,255,0.03); border-radius: 4px;"></div>
+                <div style="flex:1; height: 28px; background: rgba(255,255,255,0.03); border-radius: 4px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============================================================ -->
+  <!-- OPTION 4: Stacked cinematic sections -->
+  <!-- ============================================================ -->
+  <div class="option-label mt-16">
+    <h2 class="text-lg font-semibold text-white tracking-[-0.02em]">Option 4 — Stacked cinematic sections</h2>
+    <p class="text-xs text-gray-500 mt-1">Each feature is a full-width band. Screenshot bleeds to the edge. Text overlays on the content side with a dark gradient. Bold, immersive.</p>
+  </div>
+
+  <div class="my-8 space-y-0">
+    <!-- Feature 1 -->
+    <div class="relative overflow-hidden" style="background: var(--bg-surface-1); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+      <div class="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2">
+        <!-- Text -->
+        <div class="p-10 lg:p-14 flex flex-col justify-center">
+          <div class="label text-amber-300/60 mb-4">Your Chess Coach</div>
+          <h2 class="text-[1.75rem] font-semibold text-white tracking-[-0.03em] leading-tight mb-4">
+            Learn from<br>every move
+          </h2>
+          <p class="text-[13px] text-gray-500 leading-relaxed mb-6 max-w-sm">
+            AI-powered commentary that explains the ideas behind each move, not just evaluation numbers.
+          </p>
+          <ul class="space-y-2.5">
+            <li class="flex items-start gap-2.5">
+              <span class="check-icon text-sm">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Move-by-move commentary explaining <span class="text-gray-300 font-medium">why</span></span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="check-icon text-sm">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Passionate Tal-style coaching</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="check-icon text-sm">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Principles, patterns, and ideas</span>
+            </li>
+          </ul>
+        </div>
+        <!-- Screenshot -->
+        <div class="p-6 lg:p-8 flex items-center" style="border-left: 1px solid var(--border);">
+          <div class="screenshot w-full">
+            <div class="screenshot-bar">
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-url">chessdata.app</div>
+            </div>
+            <div class="screenshot-body" style="min-height: 240px;">
+              <div class="flex gap-3">
+                <div class="block-lg flex-1" style="height: 160px;"></div>
+                <div class="flex flex-col gap-3 w-[38%]">
+                  <div class="block-sm" style="height: 44px;"></div>
+                  <div class="block-sm flex-1"></div>
+                </div>
+              </div>
+              <div class="block-row"><div></div><div></div><div></div><div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature 2 -->
+    <div class="relative overflow-hidden" style="background: var(--bg-base); border-bottom: 1px solid var(--border);">
+      <div class="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2">
+        <!-- Screenshot -->
+        <div class="p-6 lg:p-8 flex items-center" style="border-right: 1px solid var(--border);">
+          <div class="screenshot w-full">
+            <div class="screenshot-bar">
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-url">chessdata.app</div>
+            </div>
+            <div class="screenshot-body" style="min-height: 220px;">
+              <div class="flex gap-3">
+                <div class="block-lg" style="height: 140px; width: 45%;"></div>
+                <div class="block-lg flex-1" style="height: 140px;"></div>
+              </div>
+              <div class="block-row"><div></div><div></div><div></div><div></div></div>
+            </div>
+          </div>
+        </div>
+        <!-- Text -->
+        <div class="p-10 lg:p-14 flex flex-col justify-center">
+          <div class="label text-gray-500 mb-4">Know Your Style</div>
+          <h2 class="text-[1.75rem] font-semibold text-white tracking-[-0.03em] leading-tight mb-4">
+            Discover your chess<br>personality
+          </h2>
+          <p class="text-[13px] text-gray-500 leading-relaxed mb-6 max-w-sm">
+            See your playing style visualized and find exactly where to focus your study.
+          </p>
+          <ul class="space-y-2.5">
+            <li class="flex items-start gap-2.5">
+              <span class="text-gray-600 text-sm flex-shrink-0 mt-0.5">&#10003;</span>
+              <span class="text-[12px] text-gray-400">6-dimension personality radar</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="text-gray-600 text-sm flex-shrink-0 mt-0.5">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Opening win rates and recommendations</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature 3 -->
+    <div class="relative overflow-hidden" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+      <div class="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2">
+        <!-- Text -->
+        <div class="p-10 lg:p-14 flex flex-col justify-center">
+          <div class="label text-gray-500 mb-4">Track Your Progress</div>
+          <h2 class="text-[1.75rem] font-semibold text-white tracking-[-0.03em] leading-tight mb-4">
+            Performance<br>tracking
+          </h2>
+          <p class="text-[13px] text-gray-500 leading-relaxed max-w-sm">
+            ELO trends, opening performance, time control statistics — all in one dashboard.
+          </p>
+        </div>
+        <!-- Screenshot -->
+        <div class="p-6 lg:p-8 flex items-center" style="border-left: 1px solid var(--border);">
+          <div class="screenshot w-full">
+            <div class="screenshot-bar">
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-url">chessdata.app</div>
+            </div>
+            <div class="screenshot-body" style="min-height: 220px;">
+              <div class="block-lg" style="height: 100px;"></div>
+              <div class="block-row"><div></div><div></div><div></div></div>
+              <div class="block-sm"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============================================================ -->
+  <!-- OPTION 5: Feature tabs (single section, switchable) -->
+  <!-- ============================================================ -->
+  <div class="option-label mt-16">
+    <h2 class="text-lg font-semibold text-white tracking-[-0.02em]">Option 5 — Tabbed feature showcase</h2>
+    <p class="text-xs text-gray-500 mt-1">One compact section. Three tabs switch between features. Screenshot and content update per tab. Keeps the page short and focused.</p>
+  </div>
+
+  <div class="my-8">
+    <div class="text-center mb-8">
+      <div class="label text-gray-500 mb-3">Features</div>
+      <h2 class="text-2xl font-semibold text-white tracking-[-0.03em]">Everything you need to improve</h2>
+    </div>
+
+    <div class="card p-0 max-w-4xl mx-auto">
+      <!-- Tab bar -->
+      <div class="flex" style="border-bottom: 1px solid var(--border);">
+        <button class="flex-1 px-4 py-3.5 text-[13px] font-medium text-white" style="background: var(--bg-surface-2); border-bottom: 2px solid var(--cta);">
+          <span class="mr-2 text-[11px]">&#9813;</span> AI Coach
+        </button>
+        <button class="flex-1 px-4 py-3.5 text-[13px] font-medium text-gray-500 hover:text-gray-400 transition-colors" style="border-right: 1px solid var(--border); border-left: 1px solid var(--border);">
+          <span class="mr-2 text-[11px]">&#9733;</span> Personality
+        </button>
+        <button class="flex-1 px-4 py-3.5 text-[13px] font-medium text-gray-500 hover:text-gray-400 transition-colors">
+          <span class="mr-2 text-[11px]">&#8593;</span> Performance
+        </button>
+      </div>
+
+      <!-- Tab content -->
+      <div class="grid grid-cols-1 lg:grid-cols-2">
+        <!-- Screenshot -->
+        <div class="p-6" style="border-right: 1px solid var(--border);">
+          <div class="screenshot">
+            <div class="screenshot-bar">
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-dot"></div>
+              <div class="screenshot-url">chessdata.app</div>
+            </div>
+            <div class="screenshot-body" style="min-height: 280px;">
+              <div class="flex gap-3">
+                <div class="block-lg flex-1" style="height: 180px;"></div>
+                <div class="flex flex-col gap-3 w-[38%]">
+                  <div class="block-sm" style="height: 44px;"></div>
+                  <div class="block-sm flex-1"></div>
+                  <div class="block-sm" style="height: 44px;"></div>
+                </div>
+              </div>
+              <div class="block-row"><div></div><div></div><div></div><div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Content -->
+        <div class="p-6 flex flex-col justify-center">
+          <h3 class="text-[18px] font-semibold text-white tracking-[-0.02em] mb-3">Learn from every move</h3>
+          <p class="text-[13px] text-gray-500 leading-relaxed mb-5">
+            AI-powered commentary that explains the ideas behind each move, not just evaluation numbers.
+          </p>
+          <ul class="space-y-3 mb-6">
+            <li class="flex items-start gap-2.5">
+              <span class="check-icon text-sm">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Move-by-move commentary explaining <span class="text-gray-300 font-medium">why</span></span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="check-icon text-sm">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Passionate Tal-style coaching</span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="check-icon text-sm">&#10003;</span>
+              <span class="text-[12px] text-gray-400">Principles, patterns, and ideas</span>
+            </li>
+          </ul>
+          <div class="card-2 p-4">
+            <p class="text-[12px] text-amber-200/60 italic leading-relaxed">"This move maintains the tension in the center while keeping your pieces flexible."</p>
+            <p class="text-[10px] text-gray-600 mt-1.5">- Tal Coach</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Summary -->
+  <div class="my-16 text-center">
+    <div class="divider mb-8"></div>
+    <h2 class="text-lg font-semibold text-white tracking-[-0.02em] mb-4">Summary</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 max-w-4xl mx-auto text-left">
+      <div class="card p-4">
+        <h3 class="text-[13px] font-semibold text-white mb-1">1. Full-width</h3>
+        <p class="text-[11px] text-gray-500 leading-relaxed">Screenshot hero, info strip below. Editorial, clean.</p>
+      </div>
+      <div class="card p-4">
+        <h3 class="text-[13px] font-semibold text-white mb-1">2. Asymmetric</h3>
+        <p class="text-[11px] text-gray-500 leading-relaxed">Single card, split layout, floating quote. Product-like.</p>
+      </div>
+      <div class="card p-4">
+        <h3 class="text-[13px] font-semibold text-white mb-1">3. Bento</h3>
+        <p class="text-[11px] text-gray-500 leading-relaxed">All features in one grid. Dense, Apple-style.</p>
+      </div>
+      <div class="card p-4">
+        <h3 class="text-[13px] font-semibold text-white mb-1">4. Cinematic</h3>
+        <p class="text-[11px] text-gray-500 leading-relaxed">Full-width bands, alternating bg. Bold, immersive.</p>
+      </div>
+      <div class="card p-4">
+        <h3 class="text-[13px] font-semibold text-white mb-1">5. Tabs</h3>
+        <p class="text-[11px] text-gray-500 leading-relaxed">One section, tab switching. Compact, interactive.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -86,7 +86,7 @@ export function PersonalityMockup() {
               <h3 className="text-xs font-semibold text-white">Enhanced Opening Analysis</h3>
             </div>
             <div className="text-right">
-              <div className="text-base font-semibold text-white">84%</div>
+              <div className="text-sm font-semibold text-white">84%</div>
               <div className="text-[7px] text-gray-400">Opening Win Rate</div>
             </div>
           </div>
@@ -96,7 +96,7 @@ export function PersonalityMockup() {
             {[{ label: 'Overview', icon: '📊', active: true }, { label: 'Mistakes', icon: '🔴' }, { label: 'Study', icon: '📗' }, { label: 'Progress', icon: '📈' }].map(tab => (
               <span key={tab.label} className={`flex-1 flex items-center justify-center gap-0.5 px-1 py-1 rounded-lg text-[7px] font-medium ${
                 tab.active
-                  ? 'bg-sky-500 text-white shadow-lg'
+                  ? 'bg-sky-500 text-white shadow-card'
                   : 'text-gray-500'
               }`}>
                 {tab.icon} {tab.label}

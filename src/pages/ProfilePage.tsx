@@ -416,7 +416,7 @@ export default function ProfilePage() {
 
         {/* Cancel Subscription Confirmation Modal */}
         {showCancelConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d0f]/90 px-4">
             <div className="max-w-md w-full rounded-lg bg-surface-1 p-6 shadow-card">
               <h3 className="text-lg font-semibold text-white mb-3">Cancel Subscription</h3>
               <p className="text-gray-400 text-sm mb-6">

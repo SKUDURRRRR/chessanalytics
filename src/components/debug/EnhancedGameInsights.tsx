@@ -118,7 +118,7 @@ function CriticalMomentCard({
         <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold flex-shrink-0 ${getNumberBadgeClass()}`}>
           #{index + 1}
         </div>
-        <span className="text-base font-semibold text-white whitespace-nowrap">Move {move.moveNumber}: {move.san}</span>
+        <span className="text-sm font-semibold text-white whitespace-nowrap">Move {move.moveNumber}: {move.san}</span>
         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase whitespace-nowrap ${getMoveClassificationBgColor(move.classification)}`}>
           {move.classification}
         </span>
@@ -311,7 +311,7 @@ function LearningPoint({ icon, text, color }: { icon: string; text: string; colo
 
   return (
     <div className={`flex items-start gap-3 p-2.5 rounded-lg border ${getColorClasses()}`}>
-      <span className="text-base flex-shrink-0">{icon}</span>
+      <span className="text-sm flex-shrink-0">{icon}</span>
       <span className="text-sm text-gray-300 leading-relaxed">{text}</span>
     </div>
   )
@@ -524,7 +524,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
             <div key={index} className="rounded-lg shadow-card bg-white/5 p-3">
               {/* Header Row: Everything on one line */}
               <div className="flex items-center gap-3 mb-2">
-                <h4 className="font-semibold text-white capitalize text-base whitespace-nowrap">{phase.phase}</h4>
+                <h4 className="font-semibold text-white capitalize text-sm whitespace-nowrap">{phase.phase}</h4>
                 <span className="text-xs text-gray-500 whitespace-nowrap">Moves {phase.startMove}-{phase.endMove}</span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${
                   phase.accuracy > 80

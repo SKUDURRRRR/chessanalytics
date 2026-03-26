@@ -156,88 +156,12 @@ const EvaluationBar = ({
           transition: 'height 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)', // Spring-like bounce
         }}
       >
-        {/* Animated depth gradient - HIGH CONTRAST */}
+        {/* Flat depth overlay */}
         <div className={`absolute inset-0 ${
           isWhiteAtBottom
-            ? 'bg-gradient-to-b from-surface-3/40 via-surface-2/20 to-transparent'
-            : 'bg-gradient-to-b from-surface-3/80 via-surface-3/60 to-gray-500/40'
-        }`} style={{
-          animationName: 'gentlePulse',
-          animationDuration: '8s',
-          animationTimingFunction: 'ease-in-out',
-          animationIterationCount: 'infinite',
-          filter: 'blur(15px)'
-        }} />
-
-        {/* Moving shimmer effect - HIGH CONTRAST BLOBS */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: isWhiteAtBottom
-              ? 'radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.25) 0%, transparent 35%)'
-              : 'radial-gradient(circle at 30% 50%, rgba(51, 65, 85, 0.85) 0%, rgba(71, 85, 105, 0.5) 25%, transparent 40%)',
-            animationName: 'shimmerBlob',
-            animationDuration: '12s',
-            animationTimingFunction: 'ease-in-out',
-            animationIterationCount: 'infinite',
-            filter: 'blur(15px)'
-          }}
-        />
-
-        {/* Second moving blob - HIGH CONTRAST */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: isWhiteAtBottom
-              ? 'radial-gradient(circle at 70% 50%, rgba(241, 245, 249, 0.2) 0%, transparent 35%)'
-              : 'radial-gradient(circle at 70% 50%, rgba(30, 41, 59, 0.9) 0%, rgba(51, 65, 85, 0.6) 25%, transparent 40%)',
-            animationName: 'shimmerBlob2',
-            animationDuration: '15s',
-            animationTimingFunction: 'ease-in-out',
-            animationIterationCount: 'infinite',
-            filter: 'blur(18px)'
-          }}
-        />
-
-        {/* Colored glow overlay - DARK COLORS FOR WHITE BACKGROUND */}
-        {!isWhiteAtBottom && (
-          <>
-            <div
-              className="absolute inset-0"
-              style={{
-                background: 'radial-gradient(ellipse at 40% 60%, rgba(30, 64, 175, 0.75) 0%, rgba(59, 130, 246, 0.45) 25%, transparent 50%)',
-                animationName: 'colorBlobShift',
-                animationDuration: '10s',
-                animationTimingFunction: 'ease-in-out',
-                animationIterationCount: 'infinite',
-                filter: 'blur(20px)'
-              }}
-            />
-            <div
-              className="absolute inset-0"
-              style={{
-                background: 'radial-gradient(ellipse at 60% 40%, rgba(8, 145, 178, 0.7) 0%, rgba(14, 165, 233, 0.4) 25%, transparent 50%)',
-                animationName: 'colorBlobShift2',
-                animationDuration: '13s',
-                animationDelay: '5s',
-                animationTimingFunction: 'ease-in-out',
-                animationIterationCount: 'infinite',
-                filter: 'blur(22px)'
-              }}
-            />
-          </>
-        )}
-
-        {/* Shadow animation - only for black section */}
-        {isWhiteAtBottom && (
-          <div
-            className="absolute inset-0"
-            style={{
-              animation: 'shadowPulse 3s ease-in-out infinite',
-              boxShadow: 'inset 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 2px 6px rgba(0, 0, 0, 0.2)'
-            }}
-          />
-        )}
+            ? 'bg-surface-2'
+            : 'bg-surface-3'
+        }`} />
       </div>
 
       {/* Bottom section with liquid effect */}
@@ -252,93 +176,12 @@ const EvaluationBar = ({
           transition: 'height 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)', // Spring-like bounce
         }}
       >
-        {/* Animated depth gradient - HIGH CONTRAST */}
+        {/* Flat depth overlay */}
         <div className={`absolute inset-0 ${
           isWhiteAtBottom
-            ? 'bg-gradient-to-t from-surface-3/80 via-surface-3/60 to-gray-500/40'
-            : 'bg-gradient-to-t from-surface-3/40 via-surface-2/20 to-transparent'
-        }`} style={{
-          animationName: 'gentlePulse',
-          animationDuration: '8s',
-          animationDelay: '4s',
-          animationTimingFunction: 'ease-in-out',
-          animationIterationCount: 'infinite',
-          filter: 'blur(15px)'
-        }} />
-
-        {/* Moving shimmer effect - HIGH CONTRAST BLOBS */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: isWhiteAtBottom
-              ? 'radial-gradient(circle at 30% 50%, rgba(51, 65, 85, 0.85) 0%, rgba(71, 85, 105, 0.5) 25%, transparent 40%)'
-              : 'radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.25) 0%, transparent 35%)',
-            animationName: 'shimmerBlob',
-            animationDuration: '12s',
-            animationDelay: '6s',
-            animationTimingFunction: 'ease-in-out',
-            animationIterationCount: 'infinite',
-            filter: 'blur(15px)'
-          }}
-        />
-
-        {/* Second moving blob - HIGH CONTRAST */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: isWhiteAtBottom
-              ? 'radial-gradient(circle at 70% 50%, rgba(30, 41, 59, 0.9) 0%, rgba(51, 65, 85, 0.6) 25%, transparent 40%)'
-              : 'radial-gradient(circle at 70% 50%, rgba(241, 245, 249, 0.2) 0%, transparent 35%)',
-            animationName: 'shimmerBlob2',
-            animationDuration: '15s',
-            animationDelay: '9s',
-            animationTimingFunction: 'ease-in-out',
-            animationIterationCount: 'infinite',
-            filter: 'blur(18px)'
-          }}
-        />
-
-        {/* Colored glow overlay - DARK COLORS FOR WHITE BACKGROUND */}
-        {isWhiteAtBottom && (
-          <>
-            <div
-              className="absolute inset-0"
-              style={{
-                background: 'radial-gradient(ellipse at 40% 60%, rgba(30, 64, 175, 0.75) 0%, rgba(59, 130, 246, 0.45) 25%, transparent 50%)',
-                animationName: 'colorBlobShift',
-                animationDuration: '10s',
-                animationDelay: '5s',
-                animationTimingFunction: 'ease-in-out',
-                animationIterationCount: 'infinite',
-                filter: 'blur(20px)'
-              }}
-            />
-            <div
-              className="absolute inset-0"
-              style={{
-                background: 'radial-gradient(ellipse at 60% 40%, rgba(8, 145, 178, 0.7) 0%, rgba(14, 165, 233, 0.4) 25%, transparent 50%)',
-                animationName: 'colorBlobShift2',
-                animationDuration: '13s',
-                animationDelay: '8s',
-                animationTimingFunction: 'ease-in-out',
-                animationIterationCount: 'infinite',
-                filter: 'blur(22px)'
-              }}
-            />
-          </>
-        )}
-
-        {/* Shadow animation - only for black section */}
-        {!isWhiteAtBottom && (
-          <div
-            className="absolute inset-0"
-            style={{
-              animation: 'shadowPulse 3s ease-in-out infinite',
-              animationDelay: '1.5s',
-              boxShadow: 'inset 0 -4px 12px rgba(0, 0, 0, 0.3), inset 0 -2px 6px rgba(0, 0, 0, 0.2)'
-            }}
-          />
-        )}
+            ? 'bg-surface-3'
+            : 'bg-surface-2'
+        }`} />
       </div>
 
       {/* Liquid wave effect at the boundary */}
@@ -383,7 +226,7 @@ const EvaluationBar = ({
           zIndex: 20
         }}
       >
-        <span className="block h-1 w-full bg-orange-400 shadow-lg transition-colors duration-500 ease-out"
+        <span className="block h-1 w-full bg-orange-400 transition-colors duration-500 ease-out"
               style={{
                 boxShadow: '0 0 8px rgba(251, 146, 60, 0.8), 0 0 4px rgba(251, 146, 60, 0.6)'
               }} />
@@ -854,24 +697,8 @@ export function UnifiedChessAnalysis({
         <div className="flex flex-col gap-4 lg:hidden">
         {/* Mobile: chessdata.app Badge */}
         <div className="flex items-center justify-center mb-2">
-          <div className="inline-flex items-center gap-2 rounded-full shadow-card px-3 py-1 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
-                 style={{
-                   background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
-                   animation: 'liquid-glow 4s ease-in-out infinite',
-                 }}>
-              {/* Liquid shimmer effect */}
-              <div className="absolute inset-0 opacity-40"
-                   style={{
-                     background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
-                     animation: 'liquid-shimmer 3s ease-in-out infinite',
-                   }}></div>
-              {/* Floating bubble effect */}
-              <div className="absolute inset-0 opacity-30"
-                   style={{
-                     background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
-                     animation: 'liquid-bubble 4s ease-in-out infinite',
-                   }}></div>
-              <span className="relative z-10">chessdata.app</span>
+          <div className="inline-flex items-center gap-2 rounded-full shadow-card px-3 py-1 text-xs uppercase tracking-wide text-cyan-100 font-semibold bg-cyan-500/20">
+              <span>chessdata.app</span>
             </div>
         </div>
 
@@ -1188,7 +1015,7 @@ export function UnifiedChessAnalysis({
               <div className="rounded-lg shadow-card bg-surface-1 p-3">
                 <div ref={mobileTimelineRef} className="max-h-[350px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-surface-3 scrollbar-track-transparent">
                   <table className="w-full table-fixed text-left">
-                    <thead className="sticky top-0 bg-surface-1/95 backdrop-blur z-10">
+                    <thead className="sticky top-0 bg-surface-1 z-10">
                       <tr className="text-xs uppercase text-gray-500 border-b border-white/10">
                         <th className="w-12 py-2 px-1">No.</th>
                         <th className="w-1/2 py-2 px-1">You</th>
@@ -1277,24 +1104,8 @@ export function UnifiedChessAnalysis({
         <div className="flex-shrink-0 flex flex-col items-center">
           {/* Desktop: chessdata.app Badge */}
           <div className="flex items-center justify-center mb-4">
-            <div className="inline-flex items-center gap-2 rounded-full shadow-card px-4 py-1.5 text-sm uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
-                 style={{
-                   background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
-                   animation: 'liquid-glow 4s ease-in-out infinite',
-                 }}>
-              {/* Liquid shimmer effect */}
-              <div className="absolute inset-0 opacity-40"
-                   style={{
-                     background: 'linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.3) 50%, transparent 70%)',
-                     animation: 'liquid-shimmer 3s ease-in-out infinite',
-                   }}></div>
-              {/* Floating bubble effect */}
-              <div className="absolute inset-0 opacity-30"
-                   style={{
-                     background: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%)',
-                     animation: 'liquid-bubble 4s ease-in-out infinite',
-                   }}></div>
-              <span className="relative z-10">chessdata.app</span>
+            <div className="inline-flex items-center gap-2 rounded-full shadow-card px-4 py-1.5 text-sm uppercase tracking-wide text-cyan-100 font-semibold bg-cyan-500/20">
+              <span>chessdata.app</span>
             </div>
           </div>
 
@@ -1540,7 +1351,7 @@ export function UnifiedChessAnalysis({
                   })()}
                 </>
               ) : isFreeExploration && explorationAnalysis?.isAnalyzing ? (
-                <div className="bg-gradient-to-r from-surface-2/50 to-surface-3/50 p-4 rounded-lg border-l-4 border-sky-400 lg:h-48 flex flex-col">
+                <div className="bg-surface-2 p-4 rounded-lg border-l-4 border-sky-400 lg:h-48 flex flex-col">
                   <p className="text-gray-300 leading-relaxed flex items-center gap-2">
                     <svg className="animate-spin h-4 w-4 text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -1550,7 +1361,7 @@ export function UnifiedChessAnalysis({
                   </p>
                 </div>
               ) : isFreeExploration && explorationAnalysis?.error ? (
-                <div className="bg-gradient-to-r from-surface-2/50 to-surface-3/50 p-4 rounded-lg border-l-4 border-rose-400 lg:h-48 flex flex-col">
+                <div className="bg-surface-2 p-4 rounded-lg border-l-4 border-rose-400 lg:h-48 flex flex-col">
                   <p className="text-red-300">{explorationAnalysis.error}</p>
                 </div>
               ) : (
@@ -1614,7 +1425,7 @@ export function UnifiedChessAnalysis({
             </div>
 
             {/* Divider */}
-            <div className="my-8 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+            <div className="my-8 h-px" style={{ background: 'rgba(255,255,255,0.03)' }}></div>
 
             {/* Move Timeline Section */}
             <div>
@@ -1624,7 +1435,7 @@ export function UnifiedChessAnalysis({
               </div>
               <div ref={timelineRef} className="max-h-[200px] overflow-y-auto pr-2 text-sm scrollbar-hide">
                 <table className="w-full table-fixed text-left">
-                  <thead className="sticky top-0 bg-surface-base/95 backdrop-blur">
+                  <thead className="sticky top-0 bg-surface-base">
                     <tr className="text-xs uppercase text-gray-500">
                       <th className="w-14 py-2">Move</th>
                       <th className="w-1/2 py-2">You</th>

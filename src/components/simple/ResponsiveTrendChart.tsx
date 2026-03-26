@@ -201,7 +201,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
       <div className={`p-4 ${isMobile ? 'px-2 py-2' : 'px-2 py-2'}`}>
         <div className={`mb-3 flex items-center justify-between ${isMobile ? 'flex-col gap-2 sm:flex-row sm:gap-0' : ''}`}>
           <div className="min-w-0 flex-1">
-            <h3 className={`font-semibold text-white ${isMobile ? 'text-base' : 'text-lg'}`}>ELO Trend</h3>
+            <h3 className={`font-semibold text-white ${isMobile ? 'text-sm' : 'text-lg'}`}>ELO Trend</h3>
             {selectedTimeControlLabel && (
               <p className={`uppercase tracking-wide text-gray-500 truncate ${isMobile ? 'text-xs' : 'text-xs'}`}>{selectedTimeControlLabel}</p>
             )}
@@ -275,7 +275,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                   }
 
                   return (
-                    <div className={`rounded-lg bg-gray-900/95 px-3 py-2 text-white shadow-lg ${isMobile ? 'text-xs max-w-[200px]' : 'text-xs'}`}>
+                    <div className={`rounded-lg bg-gray-900/95 px-3 py-2 text-white shadow-card ${isMobile ? 'text-xs max-w-[200px]' : 'text-xs'}`}>
                       <div className="font-semibold">Game {payload.index + 1}</div>
                       <div className="text-gray-300">Rating: {payload.rating}</div>
                       {payload.index > 0 && (

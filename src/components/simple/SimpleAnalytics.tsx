@@ -1167,11 +1167,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <span className="block text-xs text-gray-500 mb-1">Last 100 Games</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">{formatPercent(safeComprehensive.recentTrend.recent_average_moves, 1)} <span className="text-base sm:text-sm">moves</span></div>
+                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">{formatPercent(safeComprehensive.recentTrend.recent_average_moves, 1)} <span className="text-sm">moves</span></div>
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500 mb-1">Baseline</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-gray-400">{formatPercent(safeComprehensive.recentTrend.baseline_average_moves, 1)} <span className="text-base sm:text-sm">moves</span></div>
+                      <div className="text-2xl sm:text-xl font-semibold text-gray-400">{formatPercent(safeComprehensive.recentTrend.baseline_average_moves, 1)} <span className="text-sm">moves</span></div>
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500 mb-1">Change</span>
@@ -1212,7 +1212,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                             >
                               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                                 <span className="text-sm sm:text-xs text-gray-500">Fastest Win</span>
-                                <span className="text-2xl sm:text-lg font-semibold text-emerald-300">{safeComprehensive.personalRecords.fastest_win.moves} <span className="text-base sm:text-sm">moves</span></span>
+                                <span className="text-2xl sm:text-lg font-semibold text-emerald-300">{safeComprehensive.personalRecords.fastest_win.moves} <span className="text-sm">moves</span></span>
                               </div>
                             </div>
                           )}
@@ -1244,7 +1244,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                             >
                               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                                 <span className="text-sm sm:text-xs text-gray-500">Longest Game</span>
-                                <span className="text-2xl sm:text-lg font-semibold text-purple-300">{safeComprehensive.personalRecords.longest_game.moves} <span className="text-base sm:text-sm">moves</span></span>
+                                <span className="text-2xl sm:text-lg font-semibold text-purple-300">{safeComprehensive.personalRecords.longest_game.moves} <span className="text-sm">moves</span></span>
                               </div>
                             </div>
                           )}
@@ -1275,7 +1275,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500 mb-1">Baseline</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-gray-400">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} <span className="text-base sm:text-sm">moves</span></div>
+                      <div className="text-2xl sm:text-xl font-semibold text-gray-400">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} <span className="text-sm">moves</span></div>
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500 mb-1">Change</span>

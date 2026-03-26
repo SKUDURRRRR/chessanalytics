@@ -366,7 +366,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
 
       {/* Move Info Header */}
       <div className="text-center bg-surface-2/30 rounded-lg p-2">
-        <div className="text-base font-semibold text-white">
+        <div className="text-sm font-semibold text-white">
           Move {move.moveNumber} • {move.player === 'white' ? 'White' : 'Black'}
         </div>
         <div className="flex items-center justify-center gap-2 mt-0.5">

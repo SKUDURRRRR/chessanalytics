@@ -90,11 +90,11 @@ export function AnalysisProgressBar({ analyzing, progress, statusMessage }: Anal
       <div className="relative mt-2 h-2.5 w-full overflow-hidden rounded-full bg-white/10">
         {progress ? (
           <div
-            className="h-full rounded-full bg-gradient-to-r from-sky-400 to-sky-500 transition-[width] duration-300 ease-out"
+            className="h-full rounded-full bg-[#e4e8ed]/40 transition-[width] duration-300 ease-out"
             style={{ width: `${percentage}%` }}
           ></div>
         ) : (
-          <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-sky-300/50 via-sky-200/30 to-sky-300/50"></div>
+          <div className="absolute inset-0 animate-pulse bg-[#e4e8ed]/20 rounded-full"></div>
         )}
       </div>
 

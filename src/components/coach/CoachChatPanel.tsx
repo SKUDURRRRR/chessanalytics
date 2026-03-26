@@ -130,7 +130,7 @@ export function CoachChatPanel() {
       {isOpen && (
         <div className="w-[360px] max-h-[520px] rounded-lg bg-surface-1 shadow-card flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-200">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-sky-900/80 to-blue-900/80 border-b border-white/10">
+          <div className="flex items-center justify-between px-4 py-3 bg-surface-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
             <div className="flex items-center gap-2.5">
               <TalCoachIcon size={30} />
               <div>

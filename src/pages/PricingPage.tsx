@@ -280,22 +280,19 @@ export default function PricingPage() {
 
   return (
     <div className="relative min-h-screen bg-surface-base overflow-hidden">
-      {/* Background gradient */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.15),_transparent_50%),radial-gradient(circle_at_bottom,_rgba(14,116,144,0.15),_transparent_50%)]" />
-
       <div className="relative py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           {/* Hero Section */}
           <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 rounded-full shadow-card bg-blue-500/10 px-4 py-1.5 text-xs uppercase tracking-wide text-blue-200 mb-6">
-              <span className="text-base">♟</span>
+            <div className="inline-flex items-center gap-2 rounded-full shadow-card bg-white/[0.04] px-4 py-1.5 text-xs uppercase tracking-wide text-gray-400 mb-6">
+              <span className="text-sm">♟</span>
               <span>Professional Chess Analysis</span>
             </div>
             <h1 className="text-4xl md:text-5xl font-semibold text-white mb-6 leading-tight">
               Transform Your Chess Game
             </h1>
             <p className="text-xl text-gray-400 max-w-3xl mx-auto mb-8 leading-relaxed">
-              Powered by <span className="text-blue-400 font-semibold">Stockfish 17.1</span>, the world's strongest chess engine.
+              Powered by <span className="text-gray-300 font-medium">Stockfish 17.1</span>, the world's strongest chess engine.
               Understand your mistakes, discover your playing style, and improve faster with insights that help you play better chess.
             </p>
 
@@ -399,12 +396,12 @@ export default function PricingPage() {
                   key={tier.id}
                   className={`relative flex flex-col rounded-lg transition-colors duration-300 ${
                     isPopular
-                      ? 'ring-2 ring-blue-500/30 bg-surface-1 shadow-card scale-105 md:scale-105'
+                      ? 'bg-[#151618] scale-105 md:scale-105 [box-shadow:0_0_0_1px_rgba(228,232,237,0.15),0_2px_4px_rgba(0,0,0,0.2)]'
                       : 'bg-surface-1/50 shadow-card'
                   }`}
                 >
                   {isPopular && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-semibold px-4 py-1.5 rounded-full shadow-lg">
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-white/[0.08] text-gray-300 text-xs font-medium px-4 py-1.5 rounded-full shadow-card">
                       MOST POPULAR
                     </div>
                   )}
@@ -514,7 +511,7 @@ export default function PricingPage() {
                         ) : (
                           <a
                             href="/signup"
-                            className="block w-full text-center px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors shadow-lg"
+                            className="block w-full text-center px-6 py-3.5 bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] rounded-md font-medium text-[13px] transition-colors [box-shadow:0_1px_2px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.3)]"
                           >
                             Start Free
                           </a>
@@ -522,7 +519,7 @@ export default function PricingPage() {
                       ) : tier.id === 'enterprise' ? (
                         <a
                           href="mailto:support@chessdata.app"
-                          className="block w-full text-center px-6 py-3.5 bg-surface-3 hover:bg-surface-3 text-white rounded-lg font-semibold transition-colors"
+                          className="block w-full text-center px-6 py-3.5 text-gray-400 border border-white/[0.06] hover:text-gray-300 hover:border-white/[0.1] rounded-md font-medium text-[13px] transition-colors"
                         >
                           Contact Sales
                         </a>
@@ -531,11 +528,7 @@ export default function PricingPage() {
                           <button
                             onClick={() => handleUpgrade(tier.id)}
                             disabled={upgrading === tier.id}
-                            className={`w-full px-6 py-3.5 rounded-lg font-semibold transition-colors shadow-lg ${
-                              isPopular
-                                ? 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white disabled:opacity-50 disabled:cursor-not-allowed'
-                                : 'bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed'
-                            }`}
+                            className="w-full px-6 py-3.5 rounded-md font-medium text-[13px] transition-colors bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] disabled:opacity-50 disabled:cursor-not-allowed [box-shadow:0_1px_2px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.3)]"
                           >
                             {upgrading === tier.id ? (
                               <span className="flex items-center justify-center gap-2">
@@ -550,18 +543,14 @@ export default function PricingPage() {
                             )}
                           </button>
                         ) : (
-                          <div className="text-center py-3 px-4 rounded-lg bg-emerald-500/10 shadow-card text-emerald-400 font-semibold">
+                          <div className="text-center py-3 px-4 rounded-lg bg-emerald-500/10 shadow-card text-emerald-400 font-medium">
                             ✓ Current Plan
                           </div>
                         )
                       ) : (
                         <a
                           href="/signup"
-                          className={`block w-full text-center px-6 py-3.5 rounded-lg font-semibold transition-colors shadow-lg ${
-                            isPopular
-                              ? 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white'
-                              : 'bg-blue-600 hover:bg-blue-500 text-white'
-                          }`}
+                          className="block w-full text-center px-6 py-3.5 rounded-md font-medium text-[13px] transition-colors bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] [box-shadow:0_1px_2px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.3)]"
                         >
                           Become Pro
                         </a>

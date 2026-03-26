@@ -20,7 +20,7 @@ export default function AnonymousLimitModal({
       onClick={onClose}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-surface-base/95 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-[#0c0d0f]/90" />
 
       {/* Modal Container - Properly constrained */}
       <div
@@ -67,13 +67,13 @@ export default function AnonymousLimitModal({
           {/* Features card */}
           <div className="bg-surface-2/50 rounded-lg p-5 mb-4 shadow-card">
             <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/30 to-purple-500/30 flex items-center justify-center flex-shrink-0 shadow-card">
+              <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center flex-shrink-0 shadow-card">
                 <svg className="w-4 h-4 text-blue-300" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
                   <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
                 </svg>
               </div>
-              <h3 className="text-white font-semibold text-base">
+              <h3 className="text-white font-semibold text-sm">
                 Free Account Features
               </h3>
             </div>
@@ -110,7 +110,7 @@ export default function AnonymousLimitModal({
           {/* Pro tip */}
           <div className="bg-surface-2/50 rounded-lg p-3.5 mb-5 shadow-card">
             <div className="flex items-start gap-2.5">
-              <div className="flex-shrink-0 w-5 h-5 rounded-lg bg-gradient-to-br from-amber-400/30 to-orange-500/30 shadow-card flex items-center justify-center mt-0.5">
+              <div className="flex-shrink-0 w-5 h-5 rounded-lg bg-white/[0.06] shadow-card flex items-center justify-center mt-0.5">
                 <svg className="w-3 h-3 text-amber-300" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 100 2H4a1 1 0 01-1-1V4a1 1 0 011-1h7z" />
                 </svg>
@@ -142,8 +142,7 @@ export default function AnonymousLimitModal({
           </div>
         </div>
 
-        {/* Bottom gradient accent */}
-        <div className="h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
+
       </div>
     </div>
   )

@@ -1116,7 +1116,7 @@ ${pgn} ${result}`
                 ) : (
                   <div ref={moveListRef} className="max-h-[350px] overflow-y-auto pr-1">
                     <table className="w-full table-fixed text-left">
-                      <thead className="sticky top-0 bg-surface-base/95 backdrop-blur z-10">
+                      <thead className="sticky top-0 bg-surface-base z-10">
                         <tr className="text-[10px] uppercase text-gray-500 tracking-wider">
                           <th className="w-8 py-1.5 px-1">#</th>
                           <th className="py-1.5 px-1">White</th>
@@ -1190,7 +1190,8 @@ ${pgn} ${result}`
                   <button
                     onClick={reviewGame}
                     disabled={isAnalyzing}
-                    className="w-full px-4 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-card"
+                    className="w-full px-4 py-2.5 rounded-lg bg-[#e4e8ed] text-[#111] hover:bg-[#f0f2f5] font-semibold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-card"
+                    style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3)' }}
                   >
                     {isAnalyzing ? 'Analyzing...' : 'Review Game'}
                   </button>

@@ -345,7 +345,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       {/* Notification */}
       {notification && (
-        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 flex items-center justify-between rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur-sm ${notification.type === 'error' ? 'border-rose-400/30 bg-rose-500/10 text-rose-100' : 'border-sky-400/30 bg-sky-500/10 text-sky-100'}`}>
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 flex items-center justify-between rounded-xl border px-4 py-3 text-sm shadow-card ${notification.type === 'error' ? 'border-rose-400/30 bg-rose-500/10 text-rose-100' : 'border-sky-400/30 bg-sky-500/10 text-sky-100'}`}>
           <div className="flex items-center gap-3 flex-1">
             <span className="text-lg leading-none flex-shrink-0">{notification.type === 'error' ? '⚠' : 'ℹ'}</span>
             <span className="flex-1">{notification.message}</span>
@@ -362,8 +362,8 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       {/* Clear Confirmation Modal */}
       {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
-          <div className="max-w-md w-full rounded-lg bg-surface-1/95 p-6 shadow-card backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d0f]/90 px-4">
+          <div className="max-w-md w-full rounded-lg bg-surface-1 p-6 shadow-card">
             <h3 className="text-lg font-semibold text-white mb-3">Clear Recent Players</h3>
             <p className="text-gray-400 text-sm mb-6">
               Are you sure you want to clear all recent players?

@@ -88,7 +88,7 @@ export function GameResultModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d0f]/90 p-4"
       onClick={onClose}
     >
       <div
@@ -115,7 +115,7 @@ export function GameResultModal({
           {getMessage().map((msg, index) => (
             <p
               key={index}
-              className={`text-base ${
+              className={`text-sm ${
                 index === 0 ? 'text-white font-semibold' : 'text-gray-400'
               }`}
             >

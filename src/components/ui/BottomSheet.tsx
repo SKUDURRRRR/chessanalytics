@@ -82,7 +82,7 @@ export function BottomSheet({ isOpen, onClose, title, children, className = '' }
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[#0c0d0f]/90"
       onClick={(e) => {
         if (e.target === overlayRef.current) {
           onClose()

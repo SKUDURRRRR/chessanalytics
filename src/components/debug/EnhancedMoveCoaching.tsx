@@ -45,7 +45,7 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
     <div className={`space-y-4 ${className}`}>
       {/* Main Coaching Comment */}
       {text && (
-        <div className="bg-gradient-to-r from-surface-2/50 to-surface-3/50 p-4 rounded-lg border-l-4 border-sky-400">
+        <div className="bg-surface-2 p-4 rounded-lg border-l-4 border-sky-400">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-lg font-semibold text-white">
               Tal Coach Commentary

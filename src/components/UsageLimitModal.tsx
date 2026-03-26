@@ -37,7 +37,7 @@ export default function UsageLimitModal({
       onClick={onClose}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-surface-base/90 backdrop-blur-md" />
+      <div className="absolute inset-0 bg-[#0c0d0f]/90" />
 
       {/* Modal */}
       <div
@@ -110,7 +110,7 @@ export default function UsageLimitModal({
                       <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
                     </svg>
                   </div>
-                  <h3 className="text-white font-semibold text-base">
+                  <h3 className="text-white font-semibold text-sm">
                     What you're missing:
                   </h3>
                 </div>
@@ -173,7 +173,7 @@ export default function UsageLimitModal({
                         <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
                       </svg>
                     </div>
-                    <h3 className="text-white font-semibold text-base">
+                    <h3 className="text-white font-semibold text-sm">
                       Free Account Features
                     </h3>
                   </div>
@@ -209,7 +209,7 @@ export default function UsageLimitModal({
 
                 <div className="bg-surface-2/50 rounded-lg p-3.5 mb-5 shadow-card">
                   <div className="flex items-start gap-2.5">
-                    <div className="flex-shrink-0 w-5 h-5 rounded-lg bg-gradient-to-br from-amber-400/30 to-orange-500/30 shadow-card flex items-center justify-center mt-0.5">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-lg bg-white/[0.06] shadow-card flex items-center justify-center mt-0.5">
                       <svg className="w-3 h-3 text-amber-300" fill="currentColor" viewBox="0 0 20 20">
                         <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 100 2H4a1 1 0 01-1-1V4a1 1 0 011-1h7z" />
                       </svg>
