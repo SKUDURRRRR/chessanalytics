@@ -36,20 +36,20 @@ export function CoachChatMockup() {
           {...getDarkChessBoardTheme('default')}
         />
 
-        {/* Move info bar */}
-        <div style={{ width: 320, marginTop: 16, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#f0f0f0' }}>h6</span>
-            <span style={{ fontSize: 9, fontWeight: 600, color: '#fff', background: '#06b6d4', borderRadius: 9999, padding: '2px 8px' }}>Excellent</span>
-          </div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {['<<', '<', '>', '>>'].map(b => (
-              <span key={b} style={{ fontSize: 9, color: '#6b7280', background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '2px 6px' }}>{b}</span>
-            ))}
-          </div>
+        {/* Navigation arrows — centered below board */}
+        <div style={{ width: 320, marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+          {['<<', '<', '>', '>>'].map(b => (
+            <span key={b} style={{ fontSize: 10, color: '#6b7280', background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '4px 10px', cursor: 'pointer' }}>{b}</span>
+          ))}
         </div>
 
-        <div style={{ width: 320, marginTop: 8, fontSize: 10, color: '#6b7280', lineHeight: '1.5' }}>
+        {/* Move name + badge — right-aligned below arrows */}
+        <div style={{ width: 320, marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#f0f0f0' }}>h6</span>
+          <span style={{ fontSize: 9, fontWeight: 600, color: '#fff', background: '#06b6d4', borderRadius: 9999, padding: '2px 8px' }}>Excellent</span>
+        </div>
+
+        <div style={{ width: 320, marginTop: 6, fontSize: 10, color: '#6b7280', lineHeight: '1.5', textAlign: 'right' }}>
           Pirc Defense · Move 3 · Black weakens the kingside but gains space.
         </div>
       </div>

@@ -70,14 +70,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Helper to update user from usage stats response
   const updateUserFromStats = useCallback((userId: string, email: string, stats: UsageStats) => {
-    setUser({
-      id: userId,
-      email,
-      accountTier: stats.account_tier,
-      chessComUsername: stats.chess_com_username,
-      lichessUsername: stats.lichess_username,
-      primaryPlatform: stats.primary_platform as 'chess.com' | 'lichess' | undefined,
-      onboardingCompleted: stats.onboarding_completed
+    setUser(prev => {
+      const next = {
+        id: userId,
+        email,
+        accountTier: stats.account_tier,
+        chessComUsername: stats.chess_com_username,
+        lichessUsername: stats.lichess_username,
+        primaryPlatform: stats.primary_platform as 'chess.com' | 'lichess' | undefined,
+        onboardingCompleted: stats.onboarding_completed
+      }
+      // Only update if values actually changed to prevent infinite re-render loops
+      if (prev && prev.id === next.id && prev.email === next.email &&
+          prev.accountTier === next.accountTier &&
+          prev.chessComUsername === next.chessComUsername &&
+          prev.lichessUsername === next.lichessUsername &&
+          prev.primaryPlatform === next.primaryPlatform &&
+          prev.onboardingCompleted === next.onboardingCompleted) {
+        return prev
+      }
+      return next
     })
   }, [])
 
