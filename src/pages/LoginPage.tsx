@@ -55,6 +55,7 @@ export default function LoginPage() {
       <div className="max-w-sm w-full">
         <div className="bg-surface-1 shadow-card rounded-lg p-6">
           <div className="mb-6 text-center">
+            <img src="/logo.png" alt="chessdata.app" className="w-10 h-10 rounded-lg mx-auto mb-4" />
             <h2 className="text-title font-semibold tracking-heading text-[#f0f0f0]">Sign in</h2>
             <p className="mt-2 text-small text-gray-400">
               Or{' '}

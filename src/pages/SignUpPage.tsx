@@ -146,6 +146,7 @@ export default function SignUpPage() {
           <div className="flex flex-col lg:max-w-sm w-full mt-8 lg:mt-24 relative">
             <div className="bg-surface-1 shadow-card rounded-lg p-6 relative">
               <div className="mb-5">
+                <img src="/logo.png" alt="chessdata.app" className="w-10 h-10 rounded-lg mb-4" />
                 <h2 className="text-title font-semibold tracking-heading text-[#f0f0f0] mb-1">Create your account</h2>
                 <p className="text-small text-gray-400">
                   Already have an account?{' '}

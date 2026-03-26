@@ -5,9 +5,7 @@ export function Footer() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Brand */}
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded bg-cta flex items-center justify-center">
-              <span className="text-[#111] text-[9px] font-semibold">CD</span>
-            </div>
+            <img src="/logo.png" alt="chessdata.app" className="w-5 h-5 rounded" />
             <span className="text-small font-medium text-gray-400">chessdata.app</span>
           </div>
 

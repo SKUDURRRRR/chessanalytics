@@ -92,9 +92,7 @@ export function Navigation() {
         <div className="flex justify-between items-center h-14">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
-            <div className="w-7 h-7 rounded-md bg-cta flex items-center justify-center">
-              <span className="text-[#111] text-small font-semibold">CD</span>
-            </div>
+            <img src="/logo.png" alt="chessdata.app" className="w-7 h-7 rounded-md" />
             <span className="hidden sm:inline text-body font-medium text-gray-300">chessdata.app</span>
           </Link>
 
@@ -271,7 +269,7 @@ export function Navigation() {
                             className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
                             onClick={() => setIsDropdownOpen(false)}
                           >
-                            Last Player
+                            Recent Player
                           </Link>
                         )}
                         <Link
@@ -311,7 +309,7 @@ export function Navigation() {
                       to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
                       className={navLinkClass('/simple-analytics')}
                     >
-                      Last Player
+                      Recent Player
                     </Link>
                   )}
                   <Link to="/pricing" className={navLinkClass('/pricing')}>
