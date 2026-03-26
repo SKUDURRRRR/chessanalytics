@@ -91,16 +91,16 @@ const getClassificationLabel = (classification: string): string => {
 
 const MoveClassificationBadge = ({ classification }: { classification: string }) => {
   const classificationColors = {
-    brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
-    best: 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200',
-    excellent: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',  // Merged great+excellent
-    great: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',  // Alias for excellent
-    good: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',  // Merged good+acceptable
-    acceptable: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',  // Alias for good
-    inaccuracy: 'border border-amber-400/40 bg-amber-500/20 text-amber-200',
-    mistake: 'border border-orange-400/40 bg-orange-500/20 text-orange-200',
-    blunder: 'border border-rose-400/40 bg-rose-500/20 text-rose-200',
-    uncategorized: 'border border-slate-400/30 bg-slate-500/10 text-slate-200'
+    brilliant: 'shadow-card bg-purple-500/20 text-purple-200',
+    best: 'shadow-card bg-emerald-500/20 text-emerald-200',
+    excellent: 'shadow-card bg-cyan-500/20 text-cyan-200',  // Merged great+excellent
+    great: 'shadow-card bg-cyan-500/20 text-cyan-200',  // Alias for excellent
+    good: 'shadow-card bg-sky-500/20 text-sky-200',  // Merged good+acceptable
+    acceptable: 'shadow-card bg-sky-500/20 text-sky-200',  // Alias for good
+    inaccuracy: 'shadow-card bg-amber-500/20 text-amber-200',
+    mistake: 'shadow-card bg-orange-500/20 text-orange-200',
+    blunder: 'shadow-card bg-rose-500/20 text-rose-200',
+    uncategorized: 'shadow-card bg-surface-1 text-gray-300'
   }
 
   return (
@@ -141,13 +141,13 @@ const EvaluationBar = ({
 
   return (
     <div
-      className={`relative h-full overflow-hidden rounded-xl border-2 border-slate-700 shadow-lg ${className}`}
+      className={`relative h-full overflow-hidden rounded-lg border-2 border-white/[0.04] shadow-card ${className}`}
       style={{ width, height, marginTop: offsetTop }}
     >
       {/* Top section with liquid effect */}
       <div
         className={`absolute top-0 left-0 right-0 ${
-          isWhiteAtBottom ? 'bg-slate-900' : 'bg-white'
+          isWhiteAtBottom ? 'bg-surface-1' : 'bg-white'
         }`}
         style={{
           height: isWhiteAtBottom
@@ -159,8 +159,8 @@ const EvaluationBar = ({
         {/* Animated depth gradient - HIGH CONTRAST */}
         <div className={`absolute inset-0 ${
           isWhiteAtBottom
-            ? 'bg-gradient-to-b from-slate-700/40 via-slate-800/20 to-transparent'
-            : 'bg-gradient-to-b from-slate-700/80 via-slate-600/60 to-slate-500/40'
+            ? 'bg-gradient-to-b from-surface-3/40 via-surface-2/20 to-transparent'
+            : 'bg-gradient-to-b from-surface-3/80 via-surface-3/60 to-gray-500/40'
         }`} style={{
           animationName: 'gentlePulse',
           animationDuration: '8s',
@@ -243,7 +243,7 @@ const EvaluationBar = ({
       {/* Bottom section with liquid effect */}
       <div
         className={`absolute bottom-0 left-0 right-0 ${
-          isWhiteAtBottom ? 'bg-white' : 'bg-slate-900'
+          isWhiteAtBottom ? 'bg-white' : 'bg-surface-1'
         }`}
         style={{
           height: isWhiteAtBottom
@@ -255,8 +255,8 @@ const EvaluationBar = ({
         {/* Animated depth gradient - HIGH CONTRAST */}
         <div className={`absolute inset-0 ${
           isWhiteAtBottom
-            ? 'bg-gradient-to-t from-slate-700/80 via-slate-600/60 to-slate-500/40'
-            : 'bg-gradient-to-t from-slate-700/40 via-slate-800/20 to-transparent'
+            ? 'bg-gradient-to-t from-surface-3/80 via-surface-3/60 to-gray-500/40'
+            : 'bg-gradient-to-t from-surface-3/40 via-surface-2/20 to-transparent'
         }`} style={{
           animationName: 'gentlePulse',
           animationDuration: '8s',
@@ -372,7 +372,7 @@ const EvaluationBar = ({
       </div>
 
       {/* Center line marker */}
-      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-slate-500/40" />
+      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-gray-500/40" />
 
       {/* Position indicator with glow */}
       <div
@@ -383,7 +383,7 @@ const EvaluationBar = ({
           zIndex: 20
         }}
       >
-        <span className="block h-1 w-full bg-orange-400 shadow-lg transition-all duration-500 ease-out"
+        <span className="block h-1 w-full bg-orange-400 shadow-lg transition-colors duration-500 ease-out"
               style={{
                 boxShadow: '0 0 8px rgba(251, 146, 60, 0.8), 0 0 4px rgba(251, 146, 60, 0.6)'
               }} />
@@ -508,11 +508,11 @@ const getMoveTextColor = (classification: string): string => {
     great: 'text-teal-200',
     excellent: 'text-cyan-200',
     good: 'text-sky-200',
-    acceptable: 'text-slate-200',
+    acceptable: 'text-gray-300',
     inaccuracy: 'text-amber-200',
     mistake: 'text-orange-200',
     blunder: 'text-rose-200',
-    uncategorized: 'text-slate-200'
+    uncategorized: 'text-gray-300'
   }
   return colorMap[classification] || 'text-white'
 }
@@ -520,18 +520,18 @@ const getMoveTextColor = (classification: string): string => {
 // Helper function to get badge styles based on move classification
 const getMoveQualityColor = (classification: string): string => {
   const colorMap: Record<string, string> = {
-    brilliant: 'text-purple-300 bg-purple-500/20 border-purple-400/30',
-    best: 'text-emerald-300 bg-emerald-500/20 border-emerald-400/30',
-    great: 'text-teal-300 bg-teal-500/20 border-teal-400/30',
-    excellent: 'text-cyan-300 bg-cyan-500/20 border-cyan-400/30',
-    good: 'text-sky-300 bg-sky-500/20 border-sky-400/30',
-    acceptable: 'text-slate-300 bg-slate-500/20 border-slate-400/30',
-    inaccuracy: 'text-amber-300 bg-amber-500/20 border-amber-400/30',
-    mistake: 'text-orange-300 bg-orange-500/20 border-orange-400/30',
-    blunder: 'text-rose-300 bg-rose-500/20 border-rose-400/30',
-    uncategorized: 'text-slate-300 bg-slate-500/20 border-slate-400/30'
+    brilliant: 'text-purple-300 bg-purple-500/20 shadow-card',
+    best: 'text-emerald-300 bg-emerald-500/20 shadow-card',
+    great: 'text-teal-300 bg-teal-500/20 shadow-card',
+    excellent: 'text-cyan-300 bg-cyan-500/20 shadow-card',
+    good: 'text-sky-300 bg-sky-500/20 shadow-card',
+    acceptable: 'text-gray-400 bg-surface-1 shadow-card',
+    inaccuracy: 'text-amber-300 bg-amber-500/20 shadow-card',
+    mistake: 'text-orange-300 bg-orange-500/20 shadow-card',
+    blunder: 'text-rose-300 bg-rose-500/20 shadow-card',
+    uncategorized: 'text-gray-400 bg-surface-1 shadow-card'
   }
-  return colorMap[classification] || 'text-slate-300 bg-slate-500/20 border-slate-400/30'
+  return colorMap[classification] || 'text-gray-400 bg-surface-1 shadow-card'
 }
 
 
@@ -571,7 +571,7 @@ const getGamePhaseColor = (phase: string): string => {
     'MIDDLEGAME': 'text-amber-400',
     'ENDGAME': 'text-purple-400',
   }
-  return colorMap[phase] || 'text-slate-400'
+  return colorMap[phase] || 'text-gray-500'
 }
 
 export function UnifiedChessAnalysis({
@@ -849,12 +849,12 @@ export function UnifiedChessAnalysis({
 
   return (
     <>
-      <div className={`rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 lg:p-6 shadow-2xl shadow-black/50 ${className}`}>
+      <div className={`rounded-lg bg-surface-1 p-4 lg:p-6 shadow-card ${className}`}>
         {/* Mobile Layout: Stacked */}
         <div className="flex flex-col gap-4 lg:hidden">
         {/* Mobile: chessdata.app Badge */}
         <div className="flex items-center justify-center mb-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-3 py-1 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
+          <div className="inline-flex items-center gap-2 rounded-full shadow-card px-3 py-1 text-xs uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
                  style={{
                    background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
                    animation: 'liquid-glow 4s ease-in-out infinite',
@@ -932,8 +932,8 @@ export function UnifiedChessAnalysis({
         </div>
 
           {/* Mobile Navigation Controls */}
-          <div className="mt-4 flex flex-col items-center justify-center gap-3 text-sm text-slate-200">
-            <div className="text-xs text-slate-500">Use ← → arrow keys or tap buttons to navigate</div>
+          <div className="mt-4 flex flex-col items-center justify-center gap-3 text-sm text-gray-300">
+            <div className="text-xs text-gray-500">Use ← → arrow keys or tap buttons to navigate</div>
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => onMoveNavigation(0)}
@@ -943,7 +943,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(0)
                   }
                 }}
-                className="btn-touch-sm rounded-full border border-white/10 bg-white/10 transition hover:border-white/30 hover:bg-white/20"
+                className="btn-touch-sm rounded-full shadow-card bg-white/10 transition-colors hover:bg-white/[0.04]"
                 aria-label="First move"
               >
                 {NAVIGATION_ICONS.first}
@@ -956,7 +956,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(currentIndex - 1)
                   }
                 }}
-                className="btn-touch-sm rounded-full border border-white/10 bg-white/10 transition hover:border-white/30 hover:bg-white/20"
+                className="btn-touch-sm rounded-full shadow-card bg-white/10 transition-colors hover:bg-white/[0.04]"
                 aria-label="Previous move"
               >
                 {NAVIGATION_ICONS.prev}
@@ -969,7 +969,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(currentIndex + 1)
                   }
                 }}
-                className="btn-touch-sm rounded-full border border-white/10 bg-white/10 transition hover:border-white/30 hover:bg-white/20"
+                className="btn-touch-sm rounded-full shadow-card bg-white/10 transition-colors hover:bg-white/[0.04]"
                 aria-label="Next move"
               >
                 {NAVIGATION_ICONS.next}
@@ -982,7 +982,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(allMoves.length - 1)
                   }
                 }}
-                className="btn-touch-sm rounded-full border border-white/10 bg-white/10 transition hover:border-white/30 hover:bg-white/20"
+                className="btn-touch-sm rounded-full shadow-card bg-white/10 transition-colors hover:bg-white/[0.04]"
                 aria-label="Last move"
               >
                 {NAVIGATION_ICONS.last}
@@ -992,19 +992,19 @@ export function UnifiedChessAnalysis({
 
           {/* Mobile: Current Move Analysis */}
           {currentMove && showMoveAnalysis && (
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.08] p-4 shadow-xl shadow-black/40">
+            <div className="mt-4 rounded-lg bg-surface-1 p-4 shadow-card">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-white">
                     {currentMove.san}
                   </h3>
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-gray-500">
                     Move {currentMove.moveNumber} • {currentMove.isUserMove ? 'You' : 'Opponent'}
                   </span>
                 </div>
                 <button
                   onClick={() => setShowMoveAnalysis(false)}
-                  className="text-slate-400 hover:text-white transition-colors p-1"
+                  className="text-gray-500 hover:text-white transition-colors p-1"
                   aria-label="Hide analysis"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1033,11 +1033,11 @@ export function UnifiedChessAnalysis({
 
           {/* Mobile: Exploration Analysis */}
           {!currentMove && isFreeExploration && explorationAnalysis && (
-            <div className="mt-4 rounded-xl border border-blue-400/30 bg-blue-500/10 p-4 shadow-xl shadow-black/40">
+            <div className="mt-4 rounded-lg bg-blue-500/10 p-4 shadow-card">
               <h3 className="text-sm font-semibold text-blue-300 mb-2">Position Analysis</h3>
               <div className="space-y-2">
                 {explorationAnalysis.isAnalyzing ? (
-                  <p className="text-slate-200 text-xs leading-relaxed flex items-center gap-2">
+                  <p className="text-gray-300 text-xs leading-relaxed flex items-center gap-2">
                     <svg className="animate-spin h-3 w-3 text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -1048,7 +1048,7 @@ export function UnifiedChessAnalysis({
                   <p className="text-red-300 text-xs">{explorationAnalysis.error}</p>
                 ) : (
                   <>
-                    <p className="text-slate-200 text-xs leading-relaxed">
+                    <p className="text-gray-300 text-xs leading-relaxed">
                       {explorationAnalysis.bestMove ? (
                         <>
                           <span className="font-semibold text-blue-300">Best: {explorationAnalysis.bestMove.san}</span>
@@ -1067,12 +1067,12 @@ export function UnifiedChessAnalysis({
                       )}
                     </p>
                     {explorationAnalysis.pvLine && explorationAnalysis.pvLine.length > 0 && (
-                      <p className="text-slate-300 text-xs">
+                      <p className="text-gray-400 text-xs">
                         <span className="font-semibold">Line:</span> {explorationAnalysis.pvLine.slice(0, 3).join(' ')}
                         {explorationAnalysis.pvLine.length > 3 && '...'}
                       </p>
                     )}
-                    <p className="text-slate-300 text-xs leading-relaxed pt-1 border-t border-white/10">
+                    <p className="text-gray-400 text-xs leading-relaxed pt-1 border-t border-white/10">
                       {(() => {
                         const moveCount = explorationMoves.length
                         if (moveCount <= 10) {
@@ -1092,7 +1092,7 @@ export function UnifiedChessAnalysis({
 
           {/* Mobile Free Exploration Indicator - Show regardless of currentMove */}
           {isFreeExploration && onExitFreeExploration && (
-            <div className="mt-3 rounded-lg border border-blue-400/30 bg-blue-500/10 p-3">
+            <div className="mt-3 rounded-lg shadow-card bg-blue-500/10 p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
@@ -1112,7 +1112,7 @@ export function UnifiedChessAnalysis({
                 </div>
                 <button
                   onClick={onExitFreeExploration}
-                  className="flex items-center gap-1.5 rounded-lg border border-slate-400/30 bg-slate-500/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition-all hover:bg-slate-500/20 hover:border-slate-400/50"
+                  className="flex items-center gap-1.5 rounded-lg shadow-card bg-surface-1 px-3 py-1.5 text-xs font-medium text-gray-400 transition-colors hover:bg-white/[0.04]"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1124,7 +1124,7 @@ export function UnifiedChessAnalysis({
                 <div className="mt-2 flex gap-2">
                   <button
                     onClick={onUndoExplorationMove}
-                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-sky-400/30 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-300 transition-all hover:bg-sky-500/20 hover:border-sky-400/50"
+                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg shadow-card bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-300 transition-colors hover:bg-sky-500/20"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -1133,7 +1133,7 @@ export function UnifiedChessAnalysis({
                   </button>
                   <button
                     onClick={onResetExploration}
-                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 transition-all hover:bg-amber-500/20 hover:border-amber-400/50"
+                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg shadow-card bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -1148,7 +1148,7 @@ export function UnifiedChessAnalysis({
           {!showMoveAnalysis && currentMove && (
             <button
               onClick={() => setShowMoveAnalysis(true)}
-              className="mt-4 w-full rounded-xl border border-white/10 bg-white/[0.08] p-3 text-sm text-slate-300 hover:bg-white/[0.12] transition-colors"
+              className="mt-4 w-full rounded-lg shadow-card bg-surface-1 p-3 text-sm text-gray-400 hover:bg-white/[0.04] transition-colors"
             >
               Show Move Analysis
             </button>
@@ -1158,12 +1158,12 @@ export function UnifiedChessAnalysis({
           <div className="mt-4">
             <button
               onClick={() => setIsMoveListOpen(!isMoveListOpen)}
-              className="w-full flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.08] p-4 text-left hover:bg-white/[0.12] transition-colors"
+              className="w-full flex items-center justify-between rounded-lg shadow-card bg-surface-1 p-4 text-left hover:bg-white/[0.04] transition-colors"
               aria-expanded={isMoveListOpen}
             >
               <div className="flex items-center gap-3">
                 <svg
-                  className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${isMoveListOpen ? 'rotate-90' : ''}`}
+                  className={`w-5 h-5 text-gray-500 transition-transform duration-300 ${isMoveListOpen ? 'rotate-90' : ''}`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -1172,24 +1172,24 @@ export function UnifiedChessAnalysis({
                 </svg>
                 <div>
                   <h3 className="text-sm font-semibold text-white">All Moves</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">{allMoves.length} moves in this game</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{allMoves.length} moves in this game</p>
                 </div>
               </div>
-              <div className="text-xs text-slate-400">
+              <div className="text-xs text-gray-500">
                 {isMoveListOpen ? 'Hide' : 'Show'}
               </div>
             </button>
 
             <div
-              className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              className={`overflow-hidden transition-colors duration-300 ease-in-out ${
                 isMoveListOpen ? 'max-h-[400px] opacity-100 mt-3' : 'max-h-0 opacity-0'
               }`}
             >
-              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
-                <div ref={mobileTimelineRef} className="max-h-[350px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+              <div className="rounded-lg shadow-card bg-surface-1 p-3">
+                <div ref={mobileTimelineRef} className="max-h-[350px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-surface-3 scrollbar-track-transparent">
                   <table className="w-full table-fixed text-left">
-                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10">
-                      <tr className="text-xs uppercase text-slate-400 border-b border-white/10">
+                    <thead className="sticky top-0 bg-surface-1/95 backdrop-blur z-10">
+                      <tr className="text-xs uppercase text-gray-500 border-b border-white/10">
                         <th className="w-12 py-2 px-1">No.</th>
                         <th className="w-1/2 py-2 px-1">You</th>
                         <th className="w-1/2 py-2 px-1">Opponent</th>
@@ -1207,39 +1207,39 @@ export function UnifiedChessAnalysis({
 
                         return (
                           <tr key={row} className="border-b border-white/5 last:border-b-0">
-                            <td className="py-2 px-1 text-xs text-slate-400 font-medium">{row + 1}</td>
+                            <td className="py-2 px-1 text-xs text-gray-500 font-medium">{row + 1}</td>
                             <td className="py-2 px-1">
                               {userMove ? (
                                 <button
                                   onClick={() => onMoveNavigation(userMove.index + 1)}
-                                  className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
+                                  className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-colors duration-200 gap-1 ${
                                     currentIndex === userMove.index + 1
                                       ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
-                                      : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
+                                      : 'bg-white/5 text-gray-300 hover:bg-white/15 active:scale-95'
                                   }`}
                                 >
                                   <span className="text-xs font-medium truncate">{userMove.san}</span>
                                   <MoveClassificationBadge classification={userMove.classification} />
                                 </button>
                               ) : (
-                                <span className="text-slate-600 text-xs">—</span>
+                                <span className="text-gray-600 text-xs">—</span>
                               )}
                             </td>
                             <td className="py-2 px-1">
                               {opponentMove ? (
                                 <button
                                   onClick={() => onMoveNavigation(opponentMove.index + 1)}
-                                  className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-all duration-200 gap-1 ${
+                                  className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition-colors duration-200 gap-1 ${
                                     currentIndex === opponentMove.index + 1
                                       ? 'bg-white/25 text-white shadow-md shadow-black/40 scale-[1.02]'
-                                      : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
+                                      : 'bg-white/5 text-gray-300 hover:bg-white/15 active:scale-95'
                                   }`}
                                 >
                                   <span className="text-xs font-medium truncate">{opponentMove.san}</span>
                                   <MoveClassificationBadge classification={opponentMove.classification} />
                                 </button>
                               ) : (
-                                <span className="text-slate-600 text-xs">—</span>
+                                <span className="text-gray-600 text-xs">—</span>
                               )}
                             </td>
                           </tr>
@@ -1277,7 +1277,7 @@ export function UnifiedChessAnalysis({
         <div className="flex-shrink-0 flex flex-col items-center">
           {/* Desktop: chessdata.app Badge */}
           <div className="flex items-center justify-center mb-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 px-4 py-1.5 text-sm uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
+            <div className="inline-flex items-center gap-2 rounded-full shadow-card px-4 py-1.5 text-sm uppercase tracking-wide text-cyan-100 font-semibold relative overflow-hidden backdrop-blur-md"
                  style={{
                    background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.15), rgba(6, 182, 212, 0.25), rgba(8, 145, 178, 0.2))',
                    animation: 'liquid-glow 4s ease-in-out infinite',
@@ -1323,8 +1323,8 @@ export function UnifiedChessAnalysis({
           </div>
 
           {/* Navigation Controls */}
-          <div className="mt-6 flex flex-col items-center justify-center gap-2 text-sm text-slate-200">
-            <div className="text-xs text-slate-500">Use ← → arrow keys or click buttons to navigate</div>
+          <div className="mt-6 flex flex-col items-center justify-center gap-2 text-sm text-gray-300">
+            <div className="text-xs text-gray-500">Use ← → arrow keys or click buttons to navigate</div>
             <div className="flex items-center space-x-1.5">
               <button
                 onClick={() => onMoveNavigation(0)}
@@ -1334,7 +1334,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(0)
                   }
                 }}
-                className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                className="rounded-full shadow-card bg-white/10 px-2 py-1 transition-colors hover:bg-white/[0.04]"
                 aria-label="First move"
               >
                 {NAVIGATION_ICONS.first}
@@ -1347,7 +1347,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(currentIndex - 1)
                   }
                 }}
-                className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                className="rounded-full shadow-card bg-white/10 px-2 py-1 transition-colors hover:bg-white/[0.04]"
                 aria-label="Previous move"
               >
                 {NAVIGATION_ICONS.prev}
@@ -1360,7 +1360,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(currentIndex + 1)
                   }
                 }}
-                className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                className="rounded-full shadow-card bg-white/10 px-2 py-1 transition-colors hover:bg-white/[0.04]"
                 aria-label="Next move"
               >
                 {NAVIGATION_ICONS.next}
@@ -1373,7 +1373,7 @@ export function UnifiedChessAnalysis({
                     onMoveNavigation(allMoves.length - 1)
                   }
                 }}
-                className="rounded-full border border-white/10 bg-white/10 px-2 py-1 transition hover:border-white/30 hover:bg-white/20"
+                className="rounded-full shadow-card bg-white/10 px-2 py-1 transition-colors hover:bg-white/[0.04]"
                 aria-label="Last move"
               >
                 {NAVIGATION_ICONS.last}
@@ -1384,13 +1384,13 @@ export function UnifiedChessAnalysis({
 
         {/* Right: Move Analysis */}
         <div className="flex-1 min-w-0">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.08] p-6 shadow-xl shadow-black/40 h-full">
+          <div className="rounded-lg bg-surface-1 p-6 shadow-card h-full">
             {/* Current Move Analysis Section */}
             <div className="mb-6">
               <div className="flex items-start justify-between gap-3 mb-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Current Move</h3>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Current Move</h3>
                     {isLoadingAIComments && (
                       <div className="flex items-center gap-1.5">
                         <div className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-transparent"></div>
@@ -1410,29 +1410,29 @@ export function UnifiedChessAnalysis({
                     {/* Show evaluation badge for exploration mode */}
                     {isFreeExploration && explorationAnalysis && !explorationAnalysis.isAnalyzing && explorationMoves.length > 0 && (() => {
                       const evalScore = Math.abs(explorationAnalysis.evaluation.scoreForWhite)
-                      let badge = { text: 'Good', color: 'text-sky-300 bg-sky-500/20 border-sky-400/30' }
+                      let badge = { text: 'Good', color: 'text-sky-300 bg-sky-500/20 shadow-card' }
 
                       if (evalScore < 0.15) {
-                        badge = { text: 'Best', color: 'text-emerald-300 bg-emerald-500/20 border-emerald-400/30' }
+                        badge = { text: 'Best', color: 'text-emerald-300 bg-emerald-500/20 shadow-card' }
                       } else if (evalScore < 0.35) {
-                        badge = { text: 'Excellent', color: 'text-sky-300 bg-sky-500/20 border-sky-400/30' }
+                        badge = { text: 'Excellent', color: 'text-sky-300 bg-sky-500/20 shadow-card' }
                       } else if (evalScore < 0.75) {
-                        badge = { text: 'Good', color: 'text-sky-300 bg-sky-500/20 border-sky-400/30' }
+                        badge = { text: 'Good', color: 'text-sky-300 bg-sky-500/20 shadow-card' }
                       } else if (evalScore < 1.5) {
-                        badge = { text: 'Acceptable', color: 'text-amber-300 bg-amber-500/20 border-amber-400/30' }
+                        badge = { text: 'Acceptable', color: 'text-amber-300 bg-amber-500/20 shadow-card' }
                       } else {
-                        badge = { text: 'Inaccuracy', color: 'text-orange-300 bg-orange-500/20 border-orange-400/30' }
+                        badge = { text: 'Inaccuracy', color: 'text-orange-300 bg-orange-500/20 shadow-card' }
                       }
 
                       return (
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${badge.color}`}>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}>
                           {badge.text}
                         </span>
                       )
                     })()}
                     {/* Show classification badge for normal moves */}
                     {currentMove && (
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getMoveQualityColor(currentMove.classification)}`}>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getMoveQualityColor(currentMove.classification)}`}>
                         {getClassificationLabel(currentMove.classification)}
                       </span>
                     )}
@@ -1441,7 +1441,7 @@ export function UnifiedChessAnalysis({
                       const rawPhase = currentMove.gamePhase || getGamePhase(currentMove.moveNumber, currentMove.fenAfter || currentMove.fenBefore || '')
                       const gamePhase = normalizeGamePhase(rawPhase)
                       return (
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold border border-slate-700/50 bg-slate-800/40 ${getGamePhaseColor(gamePhase)}`}>
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold shadow-card bg-surface-2/40 ${getGamePhaseColor(gamePhase)}`}>
                           {gamePhase}
                         </span>
                       )
@@ -1452,7 +1452,7 @@ export function UnifiedChessAnalysis({
 
               {currentMove ? (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">
                     <span>{currentMove.isUserMove ? 'Your move' : 'Opponent move'}</span>
                     <span className="h-px w-8 bg-white/20" />
                     <span>Move {currentMove.moveNumber}</span>
@@ -1540,8 +1540,8 @@ export function UnifiedChessAnalysis({
                   })()}
                 </>
               ) : isFreeExploration && explorationAnalysis?.isAnalyzing ? (
-                <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400 lg:h-48 flex flex-col">
-                  <p className="text-slate-200 leading-relaxed flex items-center gap-2">
+                <div className="bg-gradient-to-r from-surface-2/50 to-surface-3/50 p-4 rounded-lg border-l-4 border-sky-400 lg:h-48 flex flex-col">
+                  <p className="text-gray-300 leading-relaxed flex items-center gap-2">
                     <svg className="animate-spin h-4 w-4 text-blue-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -1550,16 +1550,16 @@ export function UnifiedChessAnalysis({
                   </p>
                 </div>
               ) : isFreeExploration && explorationAnalysis?.error ? (
-                <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-rose-400 lg:h-48 flex flex-col">
+                <div className="bg-gradient-to-r from-surface-2/50 to-surface-3/50 p-4 rounded-lg border-l-4 border-rose-400 lg:h-48 flex flex-col">
                   <p className="text-red-300">{explorationAnalysis.error}</p>
                 </div>
               ) : (
-                <p className="text-sm text-slate-300">Use the move timeline to explore Stockfish feedback for each position.</p>
+                <p className="text-sm text-gray-400">Use the move timeline to explore Stockfish feedback for each position.</p>
               )}
 
               {/* Desktop Free Exploration Indicator - Show regardless of currentMove */}
               {isFreeExploration && onExitFreeExploration && (
-                <div className="pt-2 rounded-lg border border-blue-400/30 bg-blue-500/10 p-3">
+                <div className="pt-2 rounded-lg shadow-card bg-blue-500/10 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
@@ -1579,7 +1579,7 @@ export function UnifiedChessAnalysis({
                     </div>
                     <button
                       onClick={onExitFreeExploration}
-                      className="flex items-center gap-1.5 rounded-lg border border-slate-400/30 bg-slate-500/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition-all hover:bg-slate-500/20 hover:border-slate-400/50"
+                      className="flex items-center gap-1.5 rounded-lg shadow-card bg-surface-1 px-3 py-1.5 text-xs font-medium text-gray-400 transition-colors hover:bg-white/[0.04]"
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1591,7 +1591,7 @@ export function UnifiedChessAnalysis({
                     <div className="mt-2 flex gap-2">
                       <button
                         onClick={onUndoExplorationMove}
-                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-sky-400/30 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-300 transition-all hover:bg-sky-500/20 hover:border-sky-400/50"
+                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg shadow-card bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-300 transition-colors hover:bg-sky-500/20"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -1600,7 +1600,7 @@ export function UnifiedChessAnalysis({
                       </button>
                       <button
                         onClick={onResetExploration}
-                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 transition-all hover:bg-amber-500/20 hover:border-amber-400/50"
+                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg shadow-card bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -1619,13 +1619,13 @@ export function UnifiedChessAnalysis({
             {/* Move Timeline Section */}
             <div>
               <div className="mb-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Move Timeline</h3>
-                <div className="text-xs text-slate-500 mt-1">← → to navigate moves • Scroll to see all moves</div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Move Timeline</h3>
+                <div className="text-xs text-gray-500 mt-1">← → to navigate moves • Scroll to see all moves</div>
               </div>
               <div ref={timelineRef} className="max-h-[200px] overflow-y-auto pr-2 text-sm scrollbar-hide">
                 <table className="w-full table-fixed text-left">
-                  <thead className="sticky top-0 bg-slate-950/95 backdrop-blur">
-                    <tr className="text-xs uppercase text-slate-400">
+                  <thead className="sticky top-0 bg-surface-base/95 backdrop-blur">
+                    <tr className="text-xs uppercase text-gray-500">
                       <th className="w-14 py-2">Move</th>
                       <th className="w-1/2 py-2">You</th>
                       <th className="w-1/2 py-2">Opponent</th>
@@ -1643,7 +1643,7 @@ export function UnifiedChessAnalysis({
 
                       return (
                         <tr key={row} className="border-b border-white/10 last:border-b-0">
-                          <td className="py-2 pr-2 text-xs text-slate-400">{row + 1}</td>
+                          <td className="py-2 pr-2 text-xs text-gray-500">{row + 1}</td>
                           <td className="py-2 pr-2">
                             {userMove ? (
                               <button
@@ -1654,17 +1654,17 @@ export function UnifiedChessAnalysis({
                                     onMoveNavigation(userMove.index + 1)
                                   }
                                 }}
-                                className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
+                                className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left transition-colors gap-1 ${
                                   currentIndex === userMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
-                                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
                                 }`}
                               >
                                 <span className="text-xs font-medium truncate">{userMove.san}</span>
                                 <MoveClassificationBadge classification={userMove.classification} />
                               </button>
                             ) : (
-                              <span className="text-slate-600">—</span>
+                              <span className="text-gray-600">—</span>
                             )}
                           </td>
                           <td className="py-2 pr-2">
@@ -1677,17 +1677,17 @@ export function UnifiedChessAnalysis({
                                     onMoveNavigation(opponentMove.index + 1)
                                   }
                                 }}
-                                className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left transition gap-1 ${
+                                className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left transition-colors gap-1 ${
                                   currentIndex === opponentMove.index + 1
                                     ? 'bg-white/25 text-white shadow-inner shadow-black/40'
-                                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
                                 }`}
                               >
                                 <span className="text-xs font-medium truncate">{opponentMove.san}</span>
                                 <MoveClassificationBadge classification={opponentMove.classification} />
                               </button>
                             ) : (
-                              <span className="text-slate-600">—</span>
+                              <span className="text-gray-600">—</span>
                             )}
                           </td>
                         </tr>

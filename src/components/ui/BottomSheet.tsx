@@ -49,10 +49,10 @@ export function BottomSheet({ isOpen, onClose, title, children, className = '' }
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isDragging) return
-    
+
     const touchY = e.touches[0].clientY
     const deltaY = touchY - startY
-    
+
     if (deltaY > 0) {
       setCurrentY(touchY)
       if (sheetRef.current) {
@@ -63,15 +63,15 @@ export function BottomSheet({ isOpen, onClose, title, children, className = '' }
 
   const handleTouchEnd = () => {
     if (!isDragging) return
-    
+
     const deltaY = currentY - startY
-    
+
     if (deltaY > 50) {
       onClose()
     } else if (sheetRef.current) {
       sheetRef.current.style.transform = 'translateY(0)'
     }
-    
+
     setIsDragging(false)
     setStartY(0)
     setCurrentY(0)
@@ -91,7 +91,7 @@ export function BottomSheet({ isOpen, onClose, title, children, className = '' }
     >
       <div
         ref={sheetRef}
-        className={`w-full max-w-lg bg-slate-900 border-t border-white/10 rounded-t-2xl animate-slide-up ${className}`}
+        className={`w-full max-w-lg bg-surface-1 border-t border-white/10 rounded-t-2xl animate-slide-up ${className}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? 'sheet-title' : undefined}
@@ -101,7 +101,7 @@ export function BottomSheet({ isOpen, onClose, title, children, className = '' }
       >
         {/* Drag Handle */}
         <div className="flex justify-center pt-3 pb-2">
-          <div className="w-12 h-1 bg-slate-600 rounded-full" />
+          <div className="w-12 h-1 bg-surface-3 rounded-full" />
         </div>
 
         {/* Header */}
@@ -112,7 +112,7 @@ export function BottomSheet({ isOpen, onClose, title, children, className = '' }
             </h2>
             <button
               onClick={onClose}
-              className="btn-touch-sm rounded-full border border-white/10 bg-white/10 text-slate-300 hover:text-white hover:bg-white/20 transition-colors"
+              className="btn-touch-sm rounded-full shadow-card bg-white/10 text-gray-400 hover:text-white hover:bg-white/20 transition-colors"
               aria-label="Close"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

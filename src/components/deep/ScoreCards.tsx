@@ -28,7 +28,7 @@ export function ScoreCards({ scores }: ScoreCardsProps) {
           <div
             className={`w-16 h-16 ${color} rounded-full flex items-center justify-center mx-auto mb-2`}
           >
-            <span className="text-white font-bold text-lg">{score}</span>
+            <span className="text-white font-semibold text-lg">{score}</span>
           </div>
           <p className="text-sm font-medium text-gray-700">{label}</p>
         </div>

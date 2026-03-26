@@ -151,10 +151,10 @@ function StudyPlanContent({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-          <p className="text-sm text-slate-400">Loading study plan...</p>
+          <p className="text-sm text-gray-500">Loading study plan...</p>
         </div>
       </div>
     )
@@ -168,20 +168,20 @@ function StudyPlanContent({
   const completionPct = totalActivities > 0 ? Math.round((completedActivities / totalActivities) * 100) : 0
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-8">
+    <div className="min-h-screen bg-surface-base p-4 md:p-8">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
           <div>
             <button
               onClick={() => navigate('/coach')}
-              className="mb-2 text-slate-400 hover:text-slate-300 transition-colors flex items-center gap-2 text-sm"
+              className="mb-2 text-gray-500 hover:text-gray-400 transition-colors flex items-center gap-2 text-sm"
             >
               &larr; Back to Dashboard
             </button>
-            <h1 className="text-3xl md:text-4xl font-bold text-white">Study Plan</h1>
+            <h1 className="text-3xl md:text-4xl font-semibold text-white">Study Plan</h1>
             {plan && (
-              <p className="text-slate-400 mt-1">
+              <p className="text-gray-500 mt-1">
                 Week {plan.week_number} &middot; {plan.week_start}
               </p>
             )}
@@ -190,7 +190,7 @@ function StudyPlanContent({
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className="px-5 py-2.5 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition-colors disabled:opacity-50"
+            className="px-5 py-2.5 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors disabled:opacity-50"
           >
             {generating ? 'Generating...' : plan ? 'New Plan' : 'Generate Plan'}
           </button>
@@ -198,7 +198,7 @@ function StudyPlanContent({
 
         {/* Error banner */}
         {error && (
-          <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300 text-sm">
+          <div className="mb-6 rounded-lg shadow-card bg-red-500/10 p-4 text-red-300 text-sm">
             {error}
           </div>
         )}
@@ -226,7 +226,7 @@ function StudyPlanContent({
             {/* Goals Section */}
             {plan.goals && plan.goals.length > 0 && (
               <div className="mb-6">
-                <h2 className="text-lg font-bold text-white mb-3">Weekly Goals</h2>
+                <h2 className="text-lg font-semibold text-white mb-3">Weekly Goals</h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {plan.goals.map((goal, i) => {
                     const matchingGoal = goals.find((g) => g.goal_type === goal.type)
@@ -235,16 +235,16 @@ function StudyPlanContent({
                     const pct = Math.min(100, Math.round((current / target) * 100))
 
                     return (
-                      <div key={i} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                      <div key={i} className="rounded-lg shadow-card bg-surface-1 p-4">
                         <p className="text-sm font-medium text-white mb-2">{goal.description}</p>
                         <div className="flex items-center gap-3">
                           <div className="flex-1 h-2 bg-white/[0.06] rounded-full overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-emerald-500 transition-all"
+                              className="h-full rounded-full bg-emerald-500 transition-colors"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
-                          <span className="text-xs text-slate-400 whitespace-nowrap">
+                          <span className="text-xs text-gray-500 whitespace-nowrap">
                             {current}/{target}
                           </span>
                         </div>
@@ -265,7 +265,7 @@ function StudyPlanContent({
             />
 
             {/* Weekly Calendar */}
-            <h2 className="text-lg font-bold text-white mb-3">Daily Activities</h2>
+            <h2 className="text-lg font-semibold text-white mb-3">Daily Activities</h2>
             <div className="grid grid-cols-1 md:grid-cols-7 gap-3 mb-8">
               {DAY_NAMES.map((dayName, dayIdx) => {
                 const activities = (dailyActivities[String(dayIdx)] || []) as DailyActivity[]
@@ -276,12 +276,12 @@ function StudyPlanContent({
                 return (
                   <div
                     key={dayIdx}
-                    className={`rounded-2xl border p-3 transition-colors ${
+                    className={`rounded-lg p-3 transition-colors ${
                       isToday
-                        ? 'border-emerald-500/50 bg-emerald-500/[0.06]'
+                        ? 'shadow-[0_0_0_1px_rgba(16,185,129,0.5)] bg-emerald-500/[0.06]'
                         : allDone
-                          ? 'border-emerald-500/20 bg-emerald-500/[0.03]'
-                          : 'border-white/10 bg-white/[0.04]'
+                          ? 'shadow-[0_0_0_1px_rgba(16,185,129,0.2)] bg-emerald-500/[0.03]'
+                          : 'shadow-card bg-white/[0.04]'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
@@ -290,7 +290,7 @@ function StudyPlanContent({
                         {isToday && <span className="ml-1 text-[10px] text-emerald-400">today</span>}
                       </h3>
                       {activities.length > 0 && (
-                        <span className={`text-[10px] ${allDone ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        <span className={`text-[10px] ${allDone ? 'text-emerald-400' : 'text-gray-500'}`}>
                           {allDone ? '\u2713' : `${dayCompleted}/${activities.length}`}
                         </span>
                       )}
@@ -323,17 +323,17 @@ function StudyPlanContent({
 
 function EmptyState({ generating, onGenerate }: { generating: boolean; onGenerate: () => void }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-12 text-center">
+    <div className="rounded-lg shadow-card bg-surface-1 p-12 text-center">
       <div className="text-4xl mb-4 opacity-60">{'\u265A'}</div>
-      <p className="text-slate-300 text-lg mb-2">No active study plan</p>
-      <p className="text-slate-500 text-sm mb-6 max-w-md mx-auto">
+      <p className="text-gray-400 text-lg mb-2">No active study plan</p>
+      <p className="text-gray-500 text-sm mb-6 max-w-md mx-auto">
         Generate a personalized weekly plan based on your game analysis.
         Activities link directly to puzzles, lessons, and openings tailored to your weaknesses.
       </p>
       <button
         onClick={onGenerate}
         disabled={generating}
-        className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-8 rounded-xl transition-colors disabled:opacity-50"
+        className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-8 rounded-lg transition-colors disabled:opacity-50"
       >
         {generating ? 'Analyzing your games...' : 'Generate Study Plan'}
       </button>
@@ -362,13 +362,13 @@ function WeeklySummaryCard({
     : null
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-      <h2 className="text-lg font-bold text-white mb-3">Weekly Summary</h2>
+    <div className="rounded-lg shadow-card bg-surface-1 p-5">
+      <h2 className="text-lg font-semibold text-white mb-3">Weekly Summary</h2>
 
       {/* Last week review */}
       {hasLastWeek && (
         <div className="mb-4 space-y-2">
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-gray-500">
             Last week: {summary.activities_completed}/{summary.activities_total} activities
             ({Math.round(summary.completion_rate * 100)}% completion)
           </p>
@@ -376,7 +376,7 @@ function WeeklySummaryCard({
           {summary.improved_areas.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {summary.improved_areas.map((a) => (
-                <span key={a.area} className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">
+                <span key={a.area} className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 shadow-card">
                   {RADAR_LABELS[a.area] || a.area} +{a.change.toFixed(1)}
                 </span>
               ))}
@@ -386,7 +386,7 @@ function WeeklySummaryCard({
           {summary.declined_areas.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {summary.declined_areas.map((a) => (
-                <span key={a.area} className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/20">
+                <span key={a.area} className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 shadow-card">
                   {RADAR_LABELS[a.area] || a.area} {a.change.toFixed(1)}
                 </span>
               ))}
@@ -397,15 +397,15 @@ function WeeklySummaryCard({
 
       {/* Focus area */}
       {focusLabel && (
-        <div className="rounded-xl bg-white/[0.04] border border-white/5 p-3">
-          <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">This week's priority</p>
+        <div className="rounded-lg bg-white/[0.04] shadow-card p-3">
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">This week's priority</p>
           <p className="text-sm text-white font-medium">{focusLabel}</p>
         </div>
       )}
 
       {/* Plan streak */}
       {summary.plan_streak > 0 && (
-        <p className="text-xs text-slate-500 mt-3">
+        <p className="text-xs text-gray-500 mt-3">
           {summary.plan_streak} week streak of 50%+ plan completion
         </p>
       )}
@@ -428,7 +428,7 @@ function WeaknessRadar({ snapshot }: { snapshot?: Record<string, number> }) {
   if (!data || data.length < 3) return null
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+    <div className="rounded-lg shadow-card bg-surface-1 p-4">
       <h3 className="text-sm font-semibold text-white mb-2">Weakness Profile</h3>
       <ResponsiveContainer width="100%" height={180}>
         <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
@@ -481,9 +481,9 @@ function StatsRow({
 
 function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-center">
-      <p className={`text-lg font-bold ${accent ? 'text-emerald-400' : 'text-white'}`}>{value}</p>
-      <p className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</p>
+    <div className="rounded-lg shadow-card bg-white/[0.04] p-3 text-center">
+      <p className={`text-lg font-semibold ${accent ? 'text-emerald-400' : 'text-white'}`}>{value}</p>
+      <p className="text-[10px] text-gray-500 uppercase tracking-wide">{label}</p>
     </div>
   )
 }
@@ -498,12 +498,12 @@ function ActivityCard({
   onNavigate: () => void
 }) {
   const icon = ACTIVITY_ICONS[activity.type] || '\u2659'
-  const colorClass = ACTIVITY_COLORS[activity.type] || 'border-white/10 text-slate-300'
+  const colorClass = ACTIVITY_COLORS[activity.type] || 'border-white/10 text-gray-400'
   const bgClass = ACTIVITY_BG[activity.type] || 'bg-white/[0.05] hover:bg-white/[0.08]'
 
   if (activity.completed) {
     return (
-      <div className="w-full rounded-lg border border-white/5 bg-white/[0.02] p-1.5 text-[10px] text-slate-500 line-through opacity-50">
+      <div className="w-full rounded-lg shadow-card bg-white/[0.02] p-1.5 text-[10px] text-gray-500 line-through opacity-50">
         <span className="mr-1">{icon}</span>
         {activity.label}
       </div>
@@ -511,7 +511,7 @@ function ActivityCard({
   }
 
   return (
-    <div className={`w-full rounded-lg border ${colorClass} ${bgClass} transition-all`}>
+    <div className={`w-full rounded-lg border ${colorClass} ${bgClass} transition-colors`}>
       <button
         onClick={onNavigate}
         className="w-full text-left p-1.5 text-[10px]"
@@ -529,7 +529,7 @@ function ActivityCard({
             e.stopPropagation()
             onComplete()
           }}
-          className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-300 transition-colors"
+          className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-emerald-500/20 text-gray-500 hover:text-emerald-300 transition-colors"
           title="Mark as done"
         >
           Done

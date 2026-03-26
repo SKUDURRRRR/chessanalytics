@@ -200,7 +200,7 @@ export default function GameReviewListPage() {
   // Auth/loading guards (placed after all hooks to comply with React Rules of Hooks)
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
       </div>
     )
@@ -208,23 +208,23 @@ export default function GameReviewListPage() {
 
   if (!authenticatedUserId) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400">Please log in to access game reviews</p>
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
+        <p className="text-gray-500">Please log in to access game reviews</p>
       </div>
     )
   }
 
   if (!platformUsername) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Connect your chess account</h2>
-          <p className="text-slate-300 mb-6">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
+          <h2 className="text-2xl font-semibold text-white mb-4">Connect your chess account</h2>
+          <p className="text-gray-400 mb-6">
             Link your Chess.com or Lichess account to review your games with Coach Tal.
           </p>
           <Link
             to="/profile"
-            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
           >
             Go to Profile to Connect
           </Link>
@@ -234,12 +234,12 @@ export default function GameReviewListPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-8">
+    <div className="min-h-screen bg-surface-base p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-1">Game Review</h1>
-          <p className="text-slate-400">Review your games with Coach Tal to learn from your mistakes</p>
+          <h1 className="text-3xl font-semibold text-white mb-1">Game Review</h1>
+          <p className="text-gray-500">Review your games with Coach Tal to learn from your mistakes</p>
         </div>
 
         {/* Sort controls */}
@@ -255,8 +255,8 @@ export default function GameReviewListPage() {
                 onClick={() => setSortBy(opt.id)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   sortBy === opt.id
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
-                    : 'bg-white/[0.04] text-slate-400 border border-white/5 hover:bg-white/[0.06]'
+                    ? 'bg-emerald-500/20 text-emerald-300 shadow-card'
+                    : 'bg-white/[0.04] text-gray-500 shadow-card hover:bg-white/[0.06]'
                 }`}
               >
                 {opt.label}
@@ -270,15 +270,15 @@ export default function GameReviewListPage() {
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
               <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-slate-400">Loading analyzed games...</p>
+              <p className="text-gray-500">Loading analyzed games...</p>
             </div>
           </div>
         )}
 
         {/* Error */}
         {error && !loading && (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-8 text-center">
-            <p className="text-slate-300 mb-4">{error}</p>
+          <div className="rounded-lg shadow-card bg-surface-1 p-8 text-center">
+            <p className="text-gray-400 mb-4">{error}</p>
             <button
               onClick={() => window.location.reload()}
               className="text-emerald-400 hover:text-emerald-300 transition-colors text-sm"
@@ -290,10 +290,10 @@ export default function GameReviewListPage() {
 
         {/* Empty state */}
         {!loading && !error && games.length === 0 && (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-8 text-center">
+          <div className="rounded-lg shadow-card bg-surface-1 p-8 text-center">
             <div className="text-4xl mb-4">&#9813;</div>
-            <h2 className="text-xl font-bold text-white mb-2">No games to review</h2>
-            <p className="text-slate-400 mb-6">
+            <h2 className="text-xl font-semibold text-white mb-2">No games to review</h2>
+            <p className="text-gray-500 mb-6">
               Analyze some games first, then come back to review your mistakes with Coach Tal.
             </p>
             <Link
@@ -335,7 +335,7 @@ function GameReviewCard({ game, onClick }: GameReviewCardProps) {
   const resultColors: Record<string, string> = {
     win: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30',
     loss: 'bg-rose-500/20 text-rose-300 border-rose-400/30',
-    draw: 'bg-slate-500/20 text-slate-300 border-slate-400/30',
+    draw: 'bg-white/[0.04] text-gray-500 border-white/[0.06]',
   }
 
   const dateStr = game.playedAt
@@ -345,7 +345,7 @@ function GameReviewCard({ game, onClick }: GameReviewCardProps) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left rounded-xl border border-white/5 bg-white/[0.03] hover:bg-white/[0.06] p-4 transition-colors group"
+      className="w-full text-left rounded-lg shadow-card bg-white/[0.03] hover:bg-white/[0.06] p-4 transition-colors group"
     >
       <div className="flex items-center gap-3">
         {/* Result badge */}
@@ -357,9 +357,9 @@ function GameReviewCard({ game, onClick }: GameReviewCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-white font-medium truncate">vs {game.opponent}</span>
-            <span className="text-xs text-slate-500 capitalize">({game.playerColor})</span>
+            <span className="text-xs text-gray-500 capitalize">({game.playerColor})</span>
           </div>
-          <div className="text-xs text-slate-500 mt-0.5 truncate">
+          <div className="text-xs text-gray-500 mt-0.5 truncate">
             {game.opening} {dateStr && `\u00B7 ${dateStr}`}
           </div>
         </div>
@@ -368,7 +368,7 @@ function GameReviewCard({ game, onClick }: GameReviewCardProps) {
         <div className="flex items-center gap-3 shrink-0">
           {/* Accuracy */}
           <div className="text-right hidden sm:block">
-            <div className="text-xs text-slate-500">Accuracy</div>
+            <div className="text-xs text-gray-500">Accuracy</div>
             <div className={`text-sm font-semibold ${
               game.accuracy >= 90 ? 'text-emerald-400' :
               game.accuracy >= 70 ? 'text-amber-400' : 'text-rose-400'
@@ -379,7 +379,7 @@ function GameReviewCard({ game, onClick }: GameReviewCardProps) {
 
           {/* Key moments */}
           <div className="text-right">
-            <div className="text-xs text-slate-500 hidden sm:block">Moments</div>
+            <div className="text-xs text-gray-500 hidden sm:block">Moments</div>
             <div className="flex items-center gap-1">
               {game.blunders > 0 && (
                 <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 font-medium">
@@ -400,7 +400,7 @@ function GameReviewCard({ game, onClick }: GameReviewCardProps) {
           </div>
 
           {/* Arrow */}
-          <svg className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-gray-600 group-hover:text-gray-500 transition-colors shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </div>

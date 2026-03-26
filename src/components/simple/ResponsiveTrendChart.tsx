@@ -197,13 +197,13 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
   }
 
   return (
-    <div className={`overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.04] shadow-xl shadow-black/40 ${className} ${isMobile ? 'touch-manipulation' : ''}`}>
+    <div className={`overflow-hidden rounded-lg shadow-card bg-white/[0.04] ${className} ${isMobile ? 'touch-manipulation' : ''}`}>
       <div className={`p-4 ${isMobile ? 'px-2 py-2' : 'px-2 py-2'}`}>
         <div className={`mb-3 flex items-center justify-between ${isMobile ? 'flex-col gap-2 sm:flex-row sm:gap-0' : ''}`}>
           <div className="min-w-0 flex-1">
             <h3 className={`font-semibold text-white ${isMobile ? 'text-base' : 'text-lg'}`}>ELO Trend</h3>
             {selectedTimeControlLabel && (
-              <p className={`uppercase tracking-wide text-slate-400 truncate ${isMobile ? 'text-xs' : 'text-xs'}`}>{selectedTimeControlLabel}</p>
+              <p className={`uppercase tracking-wide text-gray-500 truncate ${isMobile ? 'text-xs' : 'text-xs'}`}>{selectedTimeControlLabel}</p>
             )}
           </div>
           <span
@@ -212,7 +212,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
                 ? 'bg-emerald-500'
                 : trendDirection === 'declining'
                   ? 'bg-rose-500'
-                  : 'bg-slate-600'
+                  : 'bg-surface-3'
             } ${isMobile ? 'self-start' : ''}`}
           >
             {trendDirection === 'improving'
@@ -336,17 +336,17 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
         </div>
       </div>
 
-      <div className={`flex flex-col gap-2 border-t border-white/10 bg-white/[0.03] text-slate-400 ${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-3 text-xs'}`}>
+      <div className={`flex flex-col gap-2 border-t border-white/10 bg-white/[0.03] text-gray-500 ${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-3 text-xs'}`}>
         <div className={`flex items-center justify-between ${isMobile ? 'flex-col gap-2 sm:flex-row sm:gap-0' : ''}`}>
           <div className={`flex items-center gap-2 min-w-0 ${isMobile ? 'flex-col sm:flex-row' : ''}`}>
-            <span className="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-xs font-semibold text-slate-200 whitespace-nowrap">
+            <span className="inline-flex items-center rounded-full shadow-card bg-white/10 px-2 py-0.5 text-xs font-semibold text-gray-300 whitespace-nowrap">
               {trendDirection === 'improving' ? 'Upward trend' : trendDirection === 'declining' ? 'Downward trend' : 'Stable trend'}
             </span>
             <span className="whitespace-nowrap">
               Average rating: <span className="font-semibold text-white">{averageRating}</span>
             </span>
           </div>
-          <div className="text-slate-300 font-semibold">{data[data.length - 1]?.rating}</div>
+          <div className="text-gray-400 font-semibold">{data[data.length - 1]?.rating}</div>
         </div>
         <div className={`flex justify-between items-center ${isMobile ? 'flex-col gap-1 sm:flex-row sm:gap-0' : ''}`}>
           <span className="whitespace-nowrap">Range: {displayMin} - {displayMax}</span>

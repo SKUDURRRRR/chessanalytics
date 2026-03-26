@@ -70,10 +70,10 @@ function PuzzlesPageContent({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-          <p className="text-sm text-slate-400">Loading puzzle trainer...</p>
+          <p className="text-sm text-gray-500">Loading puzzle trainer...</p>
         </div>
       </div>
     )
@@ -83,14 +83,14 @@ function PuzzlesPageContent({
   const totalChallenge = challenge?.puzzles?.length ?? 5
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-8">
+    <div className="min-h-screen bg-surface-base p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header with Stats */}
         <div className="mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-4xl font-bold text-white mb-1">Puzzle Trainer</h1>
-              <p className="text-slate-400">Solve tactical puzzles to sharpen your skills</p>
+              <h1 className="text-4xl font-semibold text-white mb-1">Puzzle Trainer</h1>
+              <p className="text-gray-500">Solve tactical puzzles to sharpen your skills</p>
             </div>
             {stats && <StatsHeader stats={stats} />}
           </div>
@@ -146,8 +146,8 @@ function PuzzlesPageContent({
         {/* Personalized Puzzles from Games */}
         {hasLinkedAccount && !puzzlesLoading && puzzleSet && puzzleSet.total > 0 && (
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-white mb-4">From Your Games</h2>
-            <p className="text-slate-400 text-sm mb-4">
+            <h2 className="text-2xl font-semibold text-white mb-4">From Your Games</h2>
+            <p className="text-gray-500 text-sm mb-4">
               Puzzles generated from your actual game mistakes
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -156,15 +156,15 @@ function PuzzlesPageContent({
                 return (
                   <div
                     key={category}
-                    className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 hover:bg-white/[0.08] transition-colors"
+                    className="rounded-lg shadow-card bg-surface-1 p-5 hover:bg-white/[0.04] transition-colors"
                   >
                     <h3 className="text-lg font-semibold text-white mb-1 capitalize">{category}</h3>
-                    <p className="text-slate-400 text-sm mb-3">{puzzles.length} puzzles</p>
+                    <p className="text-gray-500 text-sm mb-3">{puzzles.length} puzzles</p>
                     <button
                       onClick={() =>
                         navigate('/coach/puzzles/solve', { state: { puzzles, category } })
                       }
-                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-xl transition-colors text-sm"
+                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
                     >
                       Practice
                     </button>
@@ -177,14 +177,14 @@ function PuzzlesPageContent({
 
         {/* Connect account prompt if no linked account */}
         {!hasLinkedAccount && (
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
-            <h2 className="text-2xl font-bold text-white mb-4">Connect your chess account</h2>
-            <p className="text-slate-300 mb-6">
+          <div className="rounded-lg shadow-card bg-surface-1 p-8 text-center">
+            <h2 className="text-2xl font-semibold text-white mb-4">Connect your chess account</h2>
+            <p className="text-gray-400 mb-6">
               Link your Chess.com or Lichess account to get personalized puzzles from your game mistakes.
             </p>
             <Link
               to="/profile"
-              className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+              className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
             >
               Go to Profile to Connect
             </Link>
@@ -204,17 +204,17 @@ function StatsHeader({ stats }: { stats: PuzzleStats }) {
   return (
     <div className="flex items-center gap-4 flex-wrap">
       {/* Rating Badge */}
-      <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-2">
+      <div className="flex items-center gap-2 bg-amber-500/10 shadow-card rounded-lg px-4 py-2">
         <span className="text-amber-400 text-sm font-medium">Rating</span>
-        <span className="text-2xl font-bold text-amber-300">{stats.rating}</span>
+        <span className="text-2xl font-semibold text-amber-300">{stats.rating}</span>
       </div>
 
       {/* Level & XP */}
-      <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/30 rounded-2xl px-4 py-2">
+      <div className="flex items-center gap-2 bg-purple-500/10 shadow-card rounded-lg px-4 py-2">
         <span className="text-purple-400 text-sm font-medium">Lvl {stats.level}</span>
         <div className="w-20 h-2 bg-purple-900/50 rounded-full overflow-hidden">
           <div
-            className="h-full bg-purple-400 rounded-full transition-all"
+            className="h-full bg-purple-400 rounded-full transition-colors"
             style={{ width: `${xpProgress}%` }}
           />
         </div>
@@ -223,17 +223,17 @@ function StatsHeader({ stats }: { stats: PuzzleStats }) {
 
       {/* Streak */}
       {stats.current_streak > 0 && (
-        <div className="flex items-center gap-1 bg-orange-500/10 border border-orange-500/30 rounded-2xl px-4 py-2">
+        <div className="flex items-center gap-1 bg-orange-500/10 shadow-card rounded-lg px-4 py-2">
           <span className="text-orange-400 text-lg">&#x1F525;</span>
-          <span className="text-orange-300 font-bold">{stats.current_streak}</span>
+          <span className="text-orange-300 font-semibold">{stats.current_streak}</span>
           <span className="text-orange-400 text-sm">day streak</span>
         </div>
       )}
 
       {/* Solve Rate */}
-      <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl px-4 py-2">
+      <div className="flex items-center gap-2 bg-cyan-500/10 shadow-card rounded-lg px-4 py-2">
         <span className="text-cyan-400 text-sm font-medium">Solved</span>
-        <span className="text-cyan-300 font-bold">{stats.solve_rate}%</span>
+        <span className="text-cyan-300 font-semibold">{stats.solve_rate}%</span>
       </div>
     </div>
   )
@@ -260,16 +260,16 @@ function DailyChallengeCard({
 
   return (
     <div
-      className={`rounded-3xl border p-6 ${
+      className={`rounded-lg shadow-card p-6 ${
         allCompleted
-          ? 'border-emerald-500/50 bg-gradient-to-br from-emerald-500/10 to-green-500/10'
-          : 'border-cyan-500/50 bg-gradient-to-br from-cyan-500/10 to-blue-500/10'
+          ? 'bg-emerald-500/10'
+          : 'bg-cyan-500/10'
       }`}
     >
       <div className="flex items-center gap-2 mb-4">
         <span className="text-2xl">{allCompleted ? '\u2705' : '\u2B50'}</span>
-        <h2 className="text-xl font-bold text-white">Daily Challenge</h2>
-        <span className="ml-auto text-xs text-slate-400 bg-white/10 px-2 py-1 rounded-lg">
+        <h2 className="text-xl font-semibold text-white">Daily Challenge</h2>
+        <span className="ml-auto text-xs text-gray-500 bg-white/10 px-2 py-1 rounded-lg">
           FREE
         </span>
       </div>
@@ -279,18 +279,18 @@ function DailyChallengeCard({
         {Array.from({ length: totalChallenge }).map((_, i) => (
           <div
             key={i}
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
               i < completedCount
                 ? 'bg-emerald-500 text-white'
                 : i === completedCount
                   ? 'bg-cyan-500/30 border-2 border-cyan-400 text-cyan-300'
-                  : 'bg-white/10 text-slate-500'
+                  : 'bg-white/10 text-gray-500'
             }`}
           >
             {i < completedCount ? '\u2713' : i + 1}
           </div>
         ))}
-        <span className="ml-2 text-slate-300 text-sm font-medium">
+        <span className="ml-2 text-gray-400 text-sm font-medium">
           {completedCount}/{totalChallenge}
         </span>
       </div>
@@ -304,19 +304,19 @@ function DailyChallengeCard({
         </div>
       ) : nextPuzzle ? (
         <div>
-          <p className="text-slate-300 text-sm mb-3">
+          <p className="text-gray-400 text-sm mb-3">
             Puzzle {completedCount + 1} of {totalChallenge} &middot; Rating ~{nextPuzzle.rating} &middot;{' '}
             {nextPuzzle.total_moves} move{nextPuzzle.total_moves > 1 ? 's' : ''}
           </p>
           <button
             onClick={() => onStartPuzzle(nextPuzzle)}
-            className="bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2.5 px-6 rounded-xl transition-colors"
+            className="bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors"
           >
             {completedCount > 0 ? 'Continue Challenge' : 'Start Challenge'}
           </button>
         </div>
       ) : (
-        <p className="text-slate-400 text-sm">Loading challenge puzzles...</p>
+        <p className="text-gray-500 text-sm">Loading challenge puzzles...</p>
       )}
     </div>
   )
@@ -337,19 +337,19 @@ function SmartPlayCard({
 
   if (hasRecommendations && profile) {
     return (
-      <div className="rounded-3xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-indigo-500/10 p-6">
+      <div className="rounded-lg shadow-card bg-purple-500/10 p-6">
         <div className="flex items-center gap-2 mb-4">
           <span className="text-2xl">&#x1F3AF;</span>
-          <h2 className="text-xl font-bold text-white">Recommended for You</h2>
+          <h2 className="text-xl font-semibold text-white">Recommended for You</h2>
         </div>
-        <p className="text-slate-300 text-sm mb-4">
+        <p className="text-gray-400 text-sm mb-4">
           Based on {profile.games_analyzed} analyzed games
         </p>
 
         {/* Start recommended button - backend auto-selects theme */}
         <button
           onClick={() => onStart()}
-          className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-6 rounded-xl transition-colors mb-4"
+          className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors mb-4"
         >
           Start Recommended Puzzle
         </button>
@@ -363,7 +363,7 @@ function SmartPlayCard({
               <button
                 key={w.category}
                 onClick={() => onStart(topTheme)}
-                className="w-full text-left rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 p-3 transition-colors group"
+                className="w-full text-left rounded-lg bg-white/[0.06] hover:bg-white/[0.12] shadow-card p-3 transition-colors group"
               >
                 <div className="flex items-center justify-between">
                   <div>
@@ -374,24 +374,24 @@ function SmartPlayCard({
                       </span>
                     )}
                   </div>
-                  <span className="text-slate-500 text-xs group-hover:text-slate-300">
+                  <span className="text-gray-500 text-xs group-hover:text-gray-400">
                     {THEME_LABELS[topTheme] || topTheme}  &rarr;
                   </span>
                 </div>
-                <p className="text-slate-400 text-xs mt-1">{w.reason}</p>
+                <p className="text-gray-500 text-xs mt-1">{w.reason}</p>
               </button>
             )
           })}
         </div>
 
         {/* Manual theme picker as secondary option */}
-        <p className="text-slate-500 text-xs mb-2">Or pick a theme:</p>
+        <p className="text-gray-500 text-xs mb-2">Or pick a theme:</p>
         <div className="flex flex-wrap gap-2">
           {manualThemes.map((theme) => (
             <button
               key={theme}
               onClick={() => onStart(theme)}
-              className="text-xs bg-white/10 hover:bg-white/20 text-slate-300 px-3 py-1.5 rounded-lg transition-colors capitalize"
+              className="text-xs bg-white/10 hover:bg-white/20 text-gray-400 px-3 py-1.5 rounded-lg transition-colors capitalize"
             >
               {THEME_LABELS[theme] || theme}
             </button>
@@ -403,12 +403,12 @@ function SmartPlayCard({
 
   // Fallback: standard Quick Play (no game data or still loading)
   return (
-    <div className="rounded-3xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-indigo-500/10 p-6">
+    <div className="rounded-lg shadow-card bg-purple-500/10 p-6">
       <div className="flex items-center gap-2 mb-4">
         <span className="text-2xl">&#x26A1;</span>
-        <h2 className="text-xl font-bold text-white">Quick Play</h2>
+        <h2 className="text-xl font-semibold text-white">Quick Play</h2>
       </div>
-      <p className="text-slate-300 text-sm mb-4">
+      <p className="text-gray-400 text-sm mb-4">
         {profileLoading
           ? 'Checking your game data...'
           : 'Solve rated puzzles matched to your skill level. Analyze games to get personalized recommendations!'
@@ -417,7 +417,7 @@ function SmartPlayCard({
 
       <button
         onClick={() => onStart()}
-        className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-6 rounded-xl transition-colors mb-4"
+        className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors mb-4"
       >
         Start Rated Puzzle
       </button>
@@ -427,7 +427,7 @@ function SmartPlayCard({
           <button
             key={theme}
             onClick={() => onStart(theme)}
-            className="text-xs bg-white/10 hover:bg-white/20 text-slate-300 px-3 py-1.5 rounded-lg transition-colors capitalize"
+            className="text-xs bg-white/10 hover:bg-white/20 text-gray-400 px-3 py-1.5 rounded-lg transition-colors capitalize"
           >
             {THEME_LABELS[theme] || theme}
           </button>
@@ -452,10 +452,10 @@ function RatingTrend({ history }: { history: Array<{ date: string; rating: numbe
   const isUp = diff >= 0
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+    <div className="rounded-lg shadow-card bg-surface-1 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold text-white">Rating Trend</h2>
-        <span className={`text-sm font-bold ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+        <h2 className="text-lg font-semibold text-white">Rating Trend</h2>
+        <span className={`text-sm font-semibold ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
           {isUp ? '+' : ''}{diff} pts
         </span>
       </div>
@@ -465,7 +465,7 @@ function RatingTrend({ history }: { history: Array<{ date: string; rating: numbe
           return (
             <div
               key={i}
-              className={`flex-1 rounded-t transition-all ${
+              className={`flex-1 rounded-t transition-colors ${
                 isUp ? 'bg-emerald-500/60' : 'bg-red-500/60'
               }`}
               style={{ height: `${Math.max(4, height)}%` }}
@@ -474,7 +474,7 @@ function RatingTrend({ history }: { history: Array<{ date: string; rating: numbe
           )
         })}
       </div>
-      <div className="flex justify-between mt-2 text-xs text-slate-500">
+      <div className="flex justify-between mt-2 text-xs text-gray-500">
         <span>{history[0].date}</span>
         <span>{history[history.length - 1].date}</span>
       </div>
@@ -500,8 +500,8 @@ function ThemePerformance({
   const recommendedSet = new Set(recommendedThemes)
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-      <h2 className="text-lg font-bold text-white mb-4">Theme Performance</h2>
+    <div className="rounded-lg shadow-card bg-surface-1 p-6">
+      <h2 className="text-lg font-semibold text-white mb-4">Theme Performance</h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {themes.map(([theme, data]) => {
           const rate = Math.round((data.correct / data.attempted) * 100)
@@ -511,14 +511,14 @@ function ThemePerformance({
           return (
             <div
               key={theme}
-              className={`rounded-xl bg-white/[0.04] p-3 ${
+              className={`rounded-lg bg-white/[0.04] p-3 ${
                 isRecommended
-                  ? 'border-2 border-purple-500/50'
-                  : 'border border-white/10'
+                  ? 'shadow-[0_0_0_2px_rgba(168,85,247,0.5)]'
+                  : 'shadow-card'
               }`}
             >
               <div className="flex items-center gap-1 mb-1">
-                <p className="text-slate-300 text-sm capitalize">
+                <p className="text-gray-400 text-sm capitalize">
                   {THEME_LABELS[theme] || theme}
                 </p>
                 {isRecommended && (
@@ -529,7 +529,7 @@ function ThemePerformance({
               </div>
               <div className="flex items-baseline gap-1">
                 <span
-                  className={`text-xl font-bold ${
+                  className={`text-xl font-semibold ${
                     color === 'emerald'
                       ? 'text-emerald-400'
                       : color === 'amber'
@@ -539,7 +539,7 @@ function ThemePerformance({
                 >
                   {rate}%
                 </span>
-                <span className="text-slate-500 text-xs">
+                <span className="text-gray-500 text-xs">
                   ({data.correct}/{data.attempted})
                 </span>
               </div>

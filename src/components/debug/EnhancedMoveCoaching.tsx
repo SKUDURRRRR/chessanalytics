@@ -22,14 +22,14 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
 
   const getMoveQualityColor = (quality: string) => {
     switch (quality) {
-      case 'brilliant': return 'text-purple-300 bg-purple-500/20 border border-purple-400/30'
-      case 'best': return 'text-emerald-300 bg-emerald-500/20 border border-emerald-400/30'
-      case 'good': return 'text-sky-300 bg-sky-500/20 border border-sky-400/30'
-      case 'acceptable': return 'text-amber-300 bg-amber-500/20 border border-amber-400/30'
-      case 'inaccuracy': return 'text-orange-300 bg-orange-500/20 border border-orange-400/30'
-      case 'mistake': return 'text-rose-300 bg-rose-500/20 border border-rose-400/30'
-      case 'blunder': return 'text-red-300 bg-red-500/20 border border-red-400/30'
-      default: return 'text-slate-300 bg-slate-500/20 border border-slate-400/30'
+      case 'brilliant': return 'text-purple-300 bg-purple-500/20 shadow-card'
+      case 'best': return 'text-emerald-300 bg-emerald-500/20 shadow-card'
+      case 'good': return 'text-sky-300 bg-sky-500/20 shadow-card'
+      case 'acceptable': return 'text-amber-300 bg-amber-500/20 shadow-card'
+      case 'inaccuracy': return 'text-orange-300 bg-orange-500/20 shadow-card'
+      case 'mistake': return 'text-rose-300 bg-rose-500/20 shadow-card'
+      case 'blunder': return 'text-red-300 bg-red-500/20 shadow-card'
+      default: return 'text-gray-400 bg-surface-1 shadow-card'
     }
   }
 
@@ -45,7 +45,7 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
     <div className={`space-y-4 ${className}`}>
       {/* Main Coaching Comment */}
       {text && (
-        <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 p-4 rounded-lg border-l-4 border-sky-400">
+        <div className="bg-gradient-to-r from-surface-2/50 to-surface-3/50 p-4 rounded-lg border-l-4 border-sky-400">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-lg font-semibold text-white">
               Tal Coach Commentary
@@ -56,12 +56,12 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
               </span>
             )}
             {move.gamePhase && (
-              <span className="px-2 py-1 rounded-full text-xs font-semibold text-slate-300 bg-slate-600/30 border border-slate-500/30">
+              <span className="px-2 py-1 rounded-full text-xs font-semibold text-gray-400 bg-surface-3/40 shadow-card">
                 {move.gamePhase}
               </span>
             )}
           </div>
-          <p className="text-slate-200 leading-relaxed">
+          <p className="text-gray-300 leading-relaxed">
             {text}
           </p>
         </div>
@@ -70,7 +70,7 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
 
       {/* Risks */}
       {move.risks && move.risks.length > 0 && (
-        <div className="bg-orange-900/20 border border-orange-500/30 rounded-lg p-4">
+        <div className="bg-orange-900/20 shadow-card rounded-lg p-4">
           <h4 className="text-orange-300 font-semibold mb-2 flex items-center gap-2">
             <span className="text-lg">⚠️</span>
             Risks

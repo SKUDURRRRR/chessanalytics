@@ -112,27 +112,27 @@ function CriticalMomentCard({
   }
 
   return (
-    <div className={`rounded-2xl border ${getBorderColor()} ${getBgColor()} p-3 overflow-hidden transition-all duration-200 hover:bg-opacity-80`}>
+    <div className={`rounded-lg border ${getBorderColor()} ${getBgColor()} p-3 overflow-hidden transition-colors duration-200 hover:bg-opacity-80`}>
       {/* Header Row: Everything on one line */}
       <div className="flex items-center gap-3 mb-2">
-        <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold flex-shrink-0 ${getNumberBadgeClass()}`}>
+        <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold flex-shrink-0 ${getNumberBadgeClass()}`}>
           #{index + 1}
         </div>
-        <span className="text-base font-bold text-white whitespace-nowrap">Move {move.moveNumber}: {move.san}</span>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase whitespace-nowrap ${getMoveClassificationBgColor(move.classification)}`}>
+        <span className="text-base font-semibold text-white whitespace-nowrap">Move {move.moveNumber}: {move.san}</span>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase whitespace-nowrap ${getMoveClassificationBgColor(move.classification)}`}>
           {move.classification}
         </span>
-        <span className="text-xs text-slate-400 px-2 py-0.5 rounded-full bg-slate-700/50 whitespace-nowrap">{gamePhase}</span>
+        <span className="text-xs text-gray-500 px-2 py-0.5 rounded-full bg-surface-3/50 whitespace-nowrap">{gamePhase}</span>
         {move.centipawnLoss && (
           <>
-            <span className="text-slate-400 text-xs">•</span>
+            <span className="text-gray-500 text-xs">•</span>
             <div className="flex items-center gap-2">
               <div className={`h-2 w-2 rounded-full flex-shrink-0 ${
                 move.centipawnLoss > 500 ? 'bg-red-500' :
                 move.centipawnLoss > 200 ? 'bg-orange-500' :
                 'bg-yellow-500'
               }`}></div>
-              <span className="text-xs text-slate-300 whitespace-nowrap">
+              <span className="text-xs text-gray-400 whitespace-nowrap">
                 {move.centipawnLoss > 0 ? 'Lost' : 'Gained'} {Math.round(Math.abs(move.centipawnLoss))} pts
               </span>
               {impactSeverity && (
@@ -149,31 +149,31 @@ function CriticalMomentCard({
       <div className="flex items-center gap-2 flex-wrap">
         {move.bestMoveSan && (
           <>
-            <span className="text-xs text-slate-400 whitespace-nowrap">Better:</span>
-            <span className="font-mono font-semibold text-xs text-emerald-300 px-2 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded whitespace-nowrap">
+            <span className="text-xs text-gray-500 whitespace-nowrap">Better:</span>
+            <span className="font-mono font-semibold text-xs text-emerald-300 px-2 py-1 bg-emerald-500/10 shadow-card rounded whitespace-nowrap">
               {move.bestMoveSan}
             </span>
-            <span className="text-slate-400 text-xs">•</span>
+            <span className="text-gray-500 text-xs">•</span>
           </>
         )}
         <button
           onClick={() => setShowExplanation(!showExplanation)}
-          className="text-xs text-slate-400 hover:text-slate-200 transition-colors duration-200 whitespace-nowrap"
+          className="text-xs text-gray-500 hover:text-gray-300 transition-colors duration-200 whitespace-nowrap"
         >
           {showExplanation ? '▲ Hide' : '▼ Read'} Explanation
         </button>
         <button
           onClick={() => setShowDetails(!showDetails)}
-          className="text-xs text-slate-400 hover:text-slate-200 transition-colors duration-200 whitespace-nowrap"
+          className="text-xs text-gray-500 hover:text-gray-300 transition-colors duration-200 whitespace-nowrap"
         >
           {showDetails ? '▲ Hide' : '▼ Show'} Learning Points
         </button>
         <button
           onClick={() => setShowBoard(!showBoard)}
-          className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 whitespace-nowrap ${
+          className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors duration-200 whitespace-nowrap ${
             showBoard
-              ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'
-              : 'bg-slate-700/50 text-slate-300 border border-white/10 hover:bg-slate-600/70'
+              ? 'bg-emerald-500/20 text-emerald-200 shadow-card'
+              : 'bg-surface-3/50 text-gray-400 shadow-card hover:bg-surface-3/70'
           }`}
         >
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -186,8 +186,8 @@ function CriticalMomentCard({
       {/* Collapsible Explanation */}
       {showExplanation && (
         <div className="mt-2">
-          <div className="rounded-lg bg-slate-800/40 border border-slate-700/50 p-2">
-            <p className="text-xs text-slate-200 leading-relaxed">{move.explanation}</p>
+          <div className="rounded-lg bg-surface-2/40 shadow-card p-2">
+            <p className="text-xs text-gray-300 leading-relaxed">{move.explanation}</p>
           </div>
         </div>
       )}
@@ -207,13 +207,13 @@ function CriticalMomentCard({
 
       {/* Expandable Learning Details */}
       <div
-        className={`overflow-hidden transition-all duration-300 ease-in-out ${
+        className={`overflow-hidden transition-colors duration-300 ease-in-out ${
           showDetails ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
         }`}
       >
         <div className="border-t border-white/10 bg-black/20 p-4">
           <div className="space-y-3">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Key Learning Points</h4>
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">Key Learning Points</h4>
 
             {isBlunder && (
               <div className="space-y-2">
@@ -275,10 +275,10 @@ function CriticalMomentCard({
             {move.evaluation && (
               <div className="mt-4 pt-3 border-t border-white/10">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-400">Position Evaluation:</span>
+                  <span className="text-gray-500">Position Evaluation:</span>
                   <span className={`font-semibold ${
                     move.scoreForPlayer > 100 ? 'text-green-400' :
-                    move.scoreForPlayer > 0 ? 'text-slate-300' :
+                    move.scoreForPlayer > 0 ? 'text-gray-400' :
                     'text-red-400'
                   }`}>
                     {move.displayEvaluation}
@@ -305,14 +305,14 @@ function LearningPoint({ icon, text, color }: { icon: string; text: string; colo
       case 'sky':
         return 'bg-sky-500/10 border-sky-500/20'
       default:
-        return 'bg-slate-500/10 border-slate-500/20'
+        return 'bg-white/[0.04] border-white/[0.06]'
     }
   }
 
   return (
     <div className={`flex items-start gap-3 p-2.5 rounded-lg border ${getColorClasses()}`}>
       <span className="text-base flex-shrink-0">{icon}</span>
-      <span className="text-sm text-slate-200 leading-relaxed">{text}</span>
+      <span className="text-sm text-gray-300 leading-relaxed">{text}</span>
     </div>
   )
 }
@@ -517,16 +517,16 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
       /> */}
 
       {/* Phase Analysis */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-4 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-4 text-gray-300 shadow-card">
         <h3 className="mb-4 text-lg font-semibold text-white">Phase-by-Phase Analysis</h3>
         <div className="space-y-3">
           {phaseAnalysis.map((phase, index) => (
-            <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div key={index} className="rounded-lg shadow-card bg-white/5 p-3">
               {/* Header Row: Everything on one line */}
               <div className="flex items-center gap-3 mb-2">
-                <h4 className="font-bold text-white capitalize text-base whitespace-nowrap">{phase.phase}</h4>
-                <span className="text-xs text-slate-400 whitespace-nowrap">Moves {phase.startMove}-{phase.endMove}</span>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap ${
+                <h4 className="font-semibold text-white capitalize text-base whitespace-nowrap">{phase.phase}</h4>
+                <span className="text-xs text-gray-500 whitespace-nowrap">Moves {phase.startMove}-{phase.endMove}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${
                   phase.accuracy > 80
                     ? 'bg-emerald-500/20 text-emerald-200'
                     : phase.accuracy > 60
@@ -535,18 +535,18 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
                 }`}>
                   {phase.accuracy.toFixed(1)}%
                 </span>
-                <span className="text-slate-400 text-xs">•</span>
-                <p className="text-sm text-slate-200 flex-1 truncate">{phase.summary}</p>
+                <span className="text-gray-500 text-xs">•</span>
+                <p className="text-sm text-gray-300 flex-1 truncate">{phase.summary}</p>
               </div>
 
               {/* Key Moments Row: All inline */}
               {phase.keyMoments.length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-medium text-slate-400 uppercase tracking-wide whitespace-nowrap">Key Moments:</span>
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">Key Moments:</span>
                   {phase.keyMoments.slice(0, 5).map((move, moveIndex) => (
                     <div key={moveIndex} className="flex items-center gap-1.5">
-                      <span className="text-xs text-slate-300 whitespace-nowrap">Move {move.moveNumber}: {move.san}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap ${
+                      <span className="text-xs text-gray-400 whitespace-nowrap">Move {move.moveNumber}: {move.san}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${
                         move.classification === 'blunder'
                           ? 'bg-rose-500/20 text-rose-200'
                           : move.classification === 'mistake'
@@ -560,7 +560,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
                     </div>
                   ))}
                   {phase.keyMoments.length > 5 && (
-                    <span className="text-xs text-slate-400 whitespace-nowrap">+{phase.keyMoments.length - 5} more</span>
+                    <span className="text-xs text-gray-500 whitespace-nowrap">+{phase.keyMoments.length - 5} more</span>
                   )}
                 </div>
               )}
@@ -570,14 +570,14 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
       </div>
 
       {/* Critical Moments - REMOVED */}
-      {/* <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      {/* <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <div className="mb-6">
           <h3 className="mb-2 text-lg font-semibold text-white">Critical Moments</h3>
-          <p className="text-sm text-slate-400">Key turning points that shaped the game's outcome</p>
+          <p className="text-sm text-gray-500">Key turning points that shaped the game's outcome</p>
           {criticalMoments.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <div className="flex items-center gap-1 rounded-full bg-slate-700/50 px-3 py-1 text-xs">
-                <span className="text-slate-300">Total:</span>
+              <div className="flex items-center gap-1 rounded-full bg-surface-3/50 px-3 py-1 text-xs">
+                <span className="text-gray-400">Total:</span>
                 <span className="font-semibold text-white">{criticalMoments.length}</span>
               </div>
               <div className="flex items-center gap-1 rounded-full bg-rose-500/20 px-3 py-1 text-xs">
@@ -622,7 +622,7 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
               <div className="flex justify-center pt-4">
                 <button
                   onClick={() => setShowAllCriticalMoments(!showAllCriticalMoments)}
-                  className="px-6 py-2.5 bg-slate-700/50 hover:bg-slate-600/70 text-white rounded-lg border border-white/10 hover:border-white/20 transition-all duration-200 hover:scale-105 font-medium text-sm"
+                  className="px-6 py-2.5 bg-surface-3/50 hover:bg-surface-3/70 text-white rounded-lg shadow-card transition-colors duration-200 hover:scale-105 font-medium text-sm"
                 >
                   {showAllCriticalMoments ? 'See Less' : `See All (${criticalMoments.length - 1} more)`}
                 </button>
@@ -632,8 +632,8 @@ export function EnhancedGameInsights({ moves, playerColor, currentMove, gameReco
         ) : (
           <div className="text-center py-8">
             <div className="text-4xl mb-2">🎯</div>
-            <p className="text-sm text-slate-300">No critical moments identified in this game.</p>
-            <p className="text-xs text-slate-400 mt-1">This suggests consistent, solid play throughout!</p>
+            <p className="text-sm text-gray-400">No critical moments identified in this game.</p>
+            <p className="text-xs text-gray-500 mt-1">This suggests consistent, solid play throughout!</p>
           </div>
         )}
       </div> */}

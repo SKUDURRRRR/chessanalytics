@@ -173,16 +173,16 @@ export function EloTrendGraph({
 
   if (loading) {
     return (
-      <div className={`flex h-32 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] ${className}`}>
-        <div className="mr-3 h-6 w-6 animate-spin rounded-full border-b-2 border-sky-300" />
-        <div className="text-sm text-slate-300">Loading ELO trend…</div>
+      <div className={`flex h-32 items-center justify-center rounded-lg bg-surface-1 shadow-card ${className}`}>
+        <div className="mr-3 h-6 w-6 animate-spin rounded-full border-2 border-gray-700 border-t-gray-300" />
+        <div className="text-sm text-gray-400">Loading ELO trend…</div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className={`flex h-32 items-center justify-center rounded-2xl border border-rose-400/40 bg-rose-500/10 text-sm text-rose-100 ${className}`}>
+      <div className={`flex h-32 items-center justify-center rounded-lg bg-rose-500/10 shadow-card text-sm text-rose-100 ${className}`}>
         {error}
       </div>
     )
@@ -190,7 +190,7 @@ export function EloTrendGraph({
 
   if (eloData.length === 0) {
     return (
-      <div className={`flex h-32 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-sm text-slate-400 ${className}`}>
+      <div className={`flex h-32 items-center justify-center rounded-lg bg-surface-1 shadow-card text-sm text-gray-500 ${className}`}>
         No ELO data available
       </div>
     )
@@ -200,14 +200,14 @@ export function EloTrendGraph({
     <div className={className}>
       {availableTimeControls.length > 0 && (
         <div className="mb-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-          <label className="text-xs font-medium uppercase tracking-wide text-slate-400 flex-shrink-0" htmlFor="time-control-selector">
+          <label className="text-xs font-medium uppercase tracking-wide text-gray-500 flex-shrink-0" htmlFor="time-control-selector">
             Time Control
           </label>
           <select
             id="time-control-selector"
             value={activeTimeControl}
             onChange={handleTimeControlSelection}
-            className="rounded-full border border-white/10 bg-slate-800/50 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30 min-w-0 flex-1 sm:flex-none appearance-none"
+            className="rounded-md bg-surface-2 px-3 py-1 text-xs text-gray-300 shadow-input transition-colors focus:shadow-input-focus focus:outline-none min-w-0 flex-1 sm:flex-none appearance-none"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23cbd5e1' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
               backgroundPosition: 'right 4px center',
@@ -220,21 +220,21 @@ export function EloTrendGraph({
               <option
                 key={option.value}
                 value={option.value}
-                className="bg-slate-800 text-slate-100"
+                className="bg-surface-2 text-gray-300"
               >
                 {option.value} ({option.count} games)
               </option>
             ))}
           </select>
 
-          <label className="text-xs font-medium uppercase tracking-wide text-slate-400 flex-shrink-0" htmlFor="game-limit-selector">
+          <label className="text-xs font-medium uppercase tracking-wide text-gray-500 flex-shrink-0" htmlFor="game-limit-selector">
             Show Games
           </label>
           <select
             id="game-limit-selector"
             value={gameLimit}
             onChange={(e) => setGameLimit(Number(e.target.value))}
-            className="rounded-full border border-white/10 bg-slate-800/50 px-3 py-1 text-xs text-slate-100 transition focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30 min-w-0 flex-1 sm:flex-none appearance-none"
+            className="rounded-md bg-surface-2 px-3 py-1 text-xs text-gray-300 shadow-input transition-colors focus:shadow-input-focus focus:outline-none min-w-0 flex-1 sm:flex-none appearance-none"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23cbd5e1' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
               backgroundPosition: 'right 4px center',
@@ -243,11 +243,11 @@ export function EloTrendGraph({
               paddingRight: '24px'
             }}
           >
-            <option value={25} className="bg-slate-800 text-slate-100">Last 25</option>
-            <option value={50} className="bg-slate-800 text-slate-100">Last 50</option>
-            <option value={100} className="bg-slate-800 text-slate-100">Last 100</option>
-            <option value={200} className="bg-slate-800 text-slate-100">Last 200</option>
-            <option value={0} className="bg-slate-800 text-slate-100">All Games</option>
+            <option value={25} className="bg-surface-2 text-gray-300">Last 25</option>
+            <option value={50} className="bg-surface-2 text-gray-300">Last 50</option>
+            <option value={100} className="bg-surface-2 text-gray-300">Last 100</option>
+            <option value={200} className="bg-surface-2 text-gray-300">Last 200</option>
+            <option value={0} className="bg-surface-2 text-gray-300">All Games</option>
           </select>
         </div>
       )}

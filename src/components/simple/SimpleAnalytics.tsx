@@ -369,8 +369,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   if (loading) {
     return (
       <div className="space-y-4">
-        <div className="bg-white/[0.08] border border-white/10 p-6 rounded-lg shadow-2xl shadow-black/50">
-          <h2 className="text-xl font-bold mb-4 text-slate-200">Chess Analytics</h2>
+        <div className="bg-surface-1 p-6 rounded-lg shadow-card">
+          <h2 className="text-xl font-semibold mb-4 text-gray-300">Chess Analytics</h2>
           <div className="space-y-2">
             <div className="h-4 bg-white/10 rounded w-32"></div>
             <div className="h-4 bg-white/10 rounded w-24"></div>
@@ -383,8 +383,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
   if (error) {
     return (
-      <div className="bg-white/[0.08] border border-white/10 p-6 rounded-lg shadow-2xl shadow-black/50">
-        <h2 className="text-xl font-bold mb-4 text-slate-200">Error</h2>
+      <div className="bg-surface-1 p-6 rounded-lg shadow-card">
+        <h2 className="text-xl font-semibold mb-4 text-gray-300">Error</h2>
         <p className="text-rose-400 mb-4">{error}</p>
         <button
           onClick={() => loadData(true)}
@@ -398,9 +398,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
   if (!data && !comprehensiveData) {
     return (
-      <div className="bg-white/[0.08] border border-white/10 p-6 rounded-lg shadow-2xl shadow-black/50">
-        <h2 className="text-xl font-bold mb-4 text-slate-200">No Data</h2>
-        <p className="text-slate-300">No games found for this user.</p>
+      <div className="bg-surface-1 p-6 rounded-lg shadow-card">
+        <h2 className="text-xl font-semibold mb-4 text-gray-300">No Data</h2>
+        <p className="text-gray-400">No games found for this user.</p>
       </div>
     )
   }
@@ -580,15 +580,15 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     }
   }
 
-  const cardClass = 'rounded-2xl border border-white/10 bg-white/[0.05] p-6 shadow-lg shadow-black/40'
-  const subtleCardClass = 'rounded-2xl border border-white/10 bg-white/[0.03] p-6 shadow-inner shadow-black/30'
-  const pillBadgeClass = 'inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-slate-200'
+  const cardClass = 'rounded-lg bg-surface-1 p-6 shadow-card'
+  const subtleCardClass = 'rounded-lg bg-surface-2 p-6 shadow-card'
+  const pillBadgeClass = 'inline-flex items-center gap-2 rounded-md bg-white/[0.06] px-3 py-1 text-xs font-medium uppercase tracking-wide text-gray-300'
 
   return (
-    <div className="space-y-6 text-slate-100" data-testid="analytics-container">
+    <div className="space-y-6 text-gray-300" data-testid="analytics-container">
       {/* ELO Optimization Status */}
       {safeData.elo_optimization_active && (
-        <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-5 shadow-lg shadow-emerald-900/30">
+        <div className="rounded-lg bg-emerald-500/10 p-5 shadow-card">
           <div className="flex items-start space-x-3">
             <div className="text-xl text-emerald-200">*</div>
             <div>
@@ -597,7 +597,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 Your ELO statistics are calculated using the optimized approach for maximum performance.
                 This ensures accurate results even with thousands of games!
               </p>
-              <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4">
+              <div className="rounded-lg bg-emerald-500/10 p-4">
                 <p className="mb-2 text-sm font-medium text-emerald-100">Optimization Benefits:</p>
                 <ul className="space-y-1 text-xs text-emerald-200">
                   <li>• Fast ELO calculations (single database query)</li>
@@ -618,7 +618,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       {/* Mock Data Warning */}
       {isMockData && (
-        <div className="rounded-2xl border border-amber-300/30 bg-amber-500/10 p-5 shadow-lg shadow-amber-900/30">
+        <div className="rounded-lg bg-amber-500/10 p-5 shadow-card">
           <div className="flex items-start space-x-3">
             <div className="text-xl text-amber-200">!</div>
             <div>
@@ -626,7 +626,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <p className="mb-3 text-sm text-amber-100">
                 You're seeing sample analytics data because no analysis has been performed on your games yet.
               </p>
-              <div className="rounded-xl border border-amber-300/30 bg-amber-500/15 p-4">
+              <div className="rounded-lg bg-amber-500/15 p-4">
                 <p className="mb-2 text-sm font-medium text-amber-100">To see your real analytics:</p>
                 <p className="text-xs text-amber-100/90">
                   Games need to be analyzed to show real analytics data. Analysis can be triggered from individual games in the match history.
@@ -639,7 +639,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       {/* ELO Data Validation Warning */}
       {safeData.validation_issues && safeData.validation_issues.length > 0 && (
-        <div className="rounded-2xl border border-orange-400/30 bg-orange-500/10 p-5 shadow-lg shadow-orange-900/30">
+        <div className="rounded-lg bg-orange-500/10 p-5 shadow-card">
           <div className="flex items-start space-x-3">
             <div className="text-xl text-orange-200">!</div>
             <div>
@@ -647,7 +647,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <p className="mb-3 text-sm text-orange-100">
                 Some of your game data may have incorrect ELO ratings. This could affect the accuracy of your highest ELO calculation.
               </p>
-              <div className="rounded-xl border border-orange-300/30 bg-orange-500/15 p-4">
+              <div className="rounded-lg bg-orange-500/15 p-4">
                 <p className="mb-2 text-sm font-medium text-orange-100">Issues found:</p>
                 <ul className="list-disc space-y-1 text-xs text-orange-100/90">
                   {safeData.validation_issues.slice(0, 3).map((issue: string, index: number) => (
@@ -669,22 +669,22 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       {/* KPI Cards */}
       <div className="grid-responsive">
         <div className={cardClass}>
-          <h3 className="text-xs uppercase tracking-wide text-slate-300">Total Games Analyzed</h3>
+          <h3 className="text-xs uppercase tracking-wide text-gray-400">Total Games Analyzed</h3>
           <div className="mt-3 text-2xl font-semibold text-white">{safeData.total_games_analyzed}</div>
         </div>
 
         <div className={cardClass}>
-          <h3 className="text-xs uppercase tracking-wide text-slate-300">Average Accuracy</h3>
+          <h3 className="text-xs uppercase tracking-wide text-gray-400">Average Accuracy</h3>
           <div className="mt-3 text-2xl font-semibold text-emerald-300">{safeData.average_accuracy}%</div>
         </div>
 
         <div className={cardClass}>
-          <h3 className="text-xs uppercase tracking-wide text-slate-300">Highest Rating</h3>
+          <h3 className="text-xs uppercase tracking-wide text-gray-400">Highest Rating</h3>
           <div className="mt-3 text-2xl font-semibold text-sky-300">{safeComprehensive?.highestElo || 'N/A'}</div>
         </div>
 
         <div className={cardClass}>
-          <h3 className="text-xs uppercase tracking-wide text-slate-300">Time Control</h3>
+          <h3 className="text-xs uppercase tracking-wide text-gray-400">Time Control</h3>
           <div className="mt-3 text-2xl font-semibold text-amber-300">
             {safeComprehensive?.timeControlWithHighestElo ? getTimeControlCategory(safeComprehensive.timeControlWithHighestElo) : safeData.most_played_time_control ? getTimeControlCategory(safeData.most_played_time_control) : 'Unknown'}
           </div>
@@ -693,7 +693,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       {/* Backend Analysis Status */}
       {!data && safeComprehensive && safeComprehensive.totalGames > 0 && (
-        <div className="rounded-2xl border border-sky-400/30 bg-sky-500/10 p-5 shadow-lg shadow-sky-900/30">
+        <div className="rounded-lg bg-sky-500/10 p-5 shadow-card">
           <div className="flex items-start space-x-3">
             <div className="text-xl text-sky-200">…</div>
             <div>
@@ -714,19 +714,19 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             <h3 className="mb-4 text-lg font-semibold text-white">Basic Statistics</h3>
             <div className="grid-responsive text-sm">
               <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Total Games</span>
+                <span className="text-xs uppercase tracking-wide text-gray-500">Total Games</span>
                 <div className="text-xl font-semibold text-sky-300">{safeComprehensive.totalGames}</div>
               </div>
               <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Win Rate</span>
+                <span className="text-xs uppercase tracking-wide text-gray-500">Win Rate</span>
                 <div className="text-xl font-semibold text-emerald-300">{formatPercent(safeComprehensive.winRate, 1)}%</div>
               </div>
               <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Draw Rate</span>
+                <span className="text-xs uppercase tracking-wide text-gray-500">Draw Rate</span>
                 <div className="text-xl font-semibold text-amber-300">{formatPercent(safeComprehensive.drawRate, 1)}%</div>
               </div>
               <div>
-                <span className="text-xs uppercase tracking-wide text-slate-400">Loss Rate</span>
+                <span className="text-xs uppercase tracking-wide text-gray-500">Loss Rate</span>
                 <div className="text-xl font-semibold text-rose-300">{formatPercent(safeComprehensive.lossRate, 1)}%</div>
               </div>
             </div>
@@ -738,34 +738,34 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div className={subtleCardClass}>
                 <h4 className="mb-2 text-sm font-semibold text-white">White</h4>
-                <div className="space-y-2 text-sm text-slate-200">
+                <div className="space-y-2 text-sm text-gray-300">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Games:</span>
+                    <span className="text-gray-500">Games:</span>
                     <span className="font-semibold text-white">{safeColorStats.white.games}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Win Rate:</span>
+                    <span className="text-gray-500">Win Rate:</span>
                     <span className="font-semibold text-emerald-300">{formatPercent(safeColorStats.white.winRate, 1)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Avg ELO:</span>
+                    <span className="text-gray-500">Avg ELO:</span>
                     <span className="font-semibold text-white">{formatPercent(safeColorStats.white.averageElo, 0)}</span>
                   </div>
                 </div>
               </div>
               <div className={subtleCardClass}>
                 <h4 className="mb-2 text-sm font-semibold text-white">Black</h4>
-                <div className="space-y-2 text-sm text-slate-200">
+                <div className="space-y-2 text-sm text-gray-300">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Games:</span>
+                    <span className="text-gray-500">Games:</span>
                     <span className="font-semibold text-white">{safeColorStats.black.games}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Win Rate:</span>
+                    <span className="text-gray-500">Win Rate:</span>
                     <span className="font-semibold text-emerald-300">{formatPercent(safeColorStats.black.winRate, 1)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Avg ELO:</span>
+                    <span className="text-gray-500">Avg ELO:</span>
                     <span className="font-semibold text-white">{formatPercent(safeColorStats.black.averageElo, 0)}</span>
                   </div>
                 </div>
@@ -781,15 +781,15 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <div key={index} className={subtleCardClass}>
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-medium text-white">{stat.timeControl}</span>
-                    <span className="text-xs uppercase tracking-wide text-slate-400">{stat.games} games</span>
+                    <span className="text-xs uppercase tracking-wide text-gray-500">{stat.games} games</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 text-sm text-slate-200">
+                  <div className="grid grid-cols-2 gap-4 text-sm text-gray-300">
                     <div>
-                      <span className="text-slate-400">Win Rate:</span>
+                      <span className="text-gray-500">Win Rate:</span>
                       <span className="ml-2 font-semibold text-emerald-300">{formatPercent(stat.winRate, 1)}%</span>
                     </div>
                     <div>
-                      <span className="text-slate-400">Avg ELO:</span>
+                      <span className="text-gray-500">Avg ELO:</span>
                       <span className="ml-2 font-semibold text-white">{formatPercent(stat.averageElo, 0)}</span>
                     </div>
                   </div>
@@ -810,7 +810,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     safeOpeningStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
                     <div
                       key={index}
-                      className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
+                      className="cursor-pointer rounded-lg bg-emerald-500/10 p-4 shadow-card transition-colors hover:bg-emerald-500/15"
                       onClick={() =>
                         onOpeningClick?.(
                           buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, {
@@ -840,9 +840,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     </div>
                   ))
                   ) : (
-                    <div className="rounded-2xl border border-slate-500/40 bg-slate-500/10 p-6 text-center">
-                      <p className="text-sm text-slate-300">No winning openings yet</p>
-                      <p className="mt-2 text-xs text-slate-400">Play more games to build opening statistics</p>
+                    <div className="rounded-lg bg-surface-2 p-6 text-center shadow-card">
+                      <p className="text-sm text-gray-400">No winning openings yet</p>
+                      <p className="mt-2 text-xs text-gray-500">Play more games to build opening statistics</p>
                     </div>
                   )}
                 </div>
@@ -856,7 +856,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     safeOpeningStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => b.games - a.games).slice(0, 3).map((stat: any, index: number) => (
                       <div
                         key={index}
-                        className="cursor-pointer rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 transition hover:border-amber-300/60 hover:bg-amber-500/20"
+                        className="cursor-pointer rounded-lg bg-amber-500/10 p-4 shadow-card transition-colors hover:bg-amber-500/15"
                         onClick={() =>
                           onOpeningClick?.(
                             buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, {
@@ -886,9 +886,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-2xl border border-slate-500/40 bg-slate-500/10 p-6 text-center">
-                      <p className="text-sm text-slate-300">No losing openings yet</p>
-                      <p className="mt-2 text-xs text-slate-400">Great! All your openings have 50%+ win rate</p>
+                    <div className="rounded-lg bg-surface-2 p-6 text-center shadow-card">
+                      <p className="text-sm text-gray-400">No losing openings yet</p>
+                      <p className="mt-2 text-xs text-gray-500">Great! All your openings have 50%+ win rate</p>
                     </div>
                   )}
                 </div>
@@ -910,7 +910,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     {safeOpeningColorStats.white.slice(0, 3).map((stat: any, index: number) => (
                       <div
                         key={index}
-                        className="cursor-pointer rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 transition hover:border-emerald-300/60 hover:bg-emerald-500/20"
+                        className="cursor-pointer rounded-lg bg-emerald-500/10 p-4 shadow-card transition-colors hover:bg-emerald-500/15"
                         onClick={() =>
                           onOpeningClick?.(
                             buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, undefined, 'white')
@@ -939,7 +939,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       </div>
                     ))}
                     {safeOpeningColorStats.white.length === 0 && (
-                      <div className="py-4 text-center text-xs text-slate-400">
+                      <div className="py-4 text-center text-xs text-gray-500">
                         No white opening data available
                       </div>
                     )}
@@ -953,7 +953,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     {safeOpeningColorStats.black.slice(0, 3).map((stat: any, index: number) => (
                       <div
                         key={index}
-                        className="cursor-pointer rounded-2xl border border-sky-400/40 bg-sky-500/10 p-4 transition hover:border-sky-300/60 hover:bg-sky-500/20"
+                        className="cursor-pointer rounded-lg bg-sky-500/10 p-4 shadow-card transition-colors hover:bg-sky-500/15"
                         onClick={() =>
                           onOpeningClick?.(
                             buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, undefined, 'black')
@@ -982,7 +982,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       </div>
                     ))}
                     {safeOpeningColorStats.black.length === 0 && (
-                      <div className="py-4 text-center text-xs text-slate-400">
+                      <div className="py-4 text-center text-xs text-gray-500">
                         No black opening data available
                       </div>
                     )}
@@ -990,8 +990,8 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 </div>
               </div>
             ) : (
-              <div className="py-8 text-center text-slate-400">
-                <div className="mb-2 text-4xl text-slate-600">--</div>
+              <div className="py-8 text-center text-gray-500">
+                <div className="mb-2 text-4xl text-gray-600">--</div>
                 <p>No opening data available</p>
                 <p className="text-xs">Games need opening names to show color performance</p>
               </div>
@@ -1005,9 +1005,9 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               <div className="space-y-4 lg:col-span-1">
                 <div className={subtleCardClass}>
                   <div>
-                    <span className="text-xs uppercase tracking-wide text-slate-400">Recent Win Rate</span>
+                    <span className="text-xs uppercase tracking-wide text-gray-500">Recent Win Rate</span>
                     <div className="text-lg font-semibold text-emerald-300">{activePerformance ? formatPercent(activePerformance.recentWinRate, 1) : '--'}%</div>
-                    <div className="mt-1 text-xs text-slate-400">
+                    <div className="mt-1 text-xs text-gray-500">
                       {activePerformance
                         ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
                         : 'No data'}
@@ -1015,31 +1015,31 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   </div>
                 </div>
                 <div className={subtleCardClass}>
-                  <span className="text-xs uppercase tracking-wide text-slate-400">Current Rating</span>
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Current Rating</span>
                   <div className="text-lg font-semibold text-sky-300">
                     {selectedTimeControl && comprehensiveData?.currentEloPerTimeControl?.[selectedTimeControl]
                       ? safeComprehensive.currentEloPerTimeControl[selectedTimeControl]
                       : (comprehensiveData?.currentElo || '--')}
                   </div>
-                  <div className="mt-1 text-xs text-slate-400">
+                  <div className="mt-1 text-xs text-gray-500">
                     {activePerformance
                       ? `Avg: ${formatPercent(activePerformance.recentAverageElo, 0)} • ${activePerformance.sampleSize} games`
                       : 'No data'}
                   </div>
                 </div>
                 <div className={subtleCardClass}>
-                  <span className="text-xs uppercase tracking-wide text-slate-400">Most Played Opening</span>
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Most Played Opening</span>
                   {mostPlayedOpening ? (
                     <>
                       <div className="text-sm font-semibold text-purple-300 mt-2 break-words leading-tight">
                         {normalizeOpeningName(mostPlayedOpening.opening)}
                       </div>
-                      <div className="mt-1 text-xs text-slate-400">
+                      <div className="mt-1 text-xs text-gray-500">
                         {mostPlayedOpening.games} games • {selectedTimeControl || 'All'}
                       </div>
                     </>
                   ) : (
-                    <div className="text-sm font-semibold text-slate-500 mt-2">
+                    <div className="text-sm font-semibold text-gray-500 mt-2">
                       No data
                     </div>
                   )}
@@ -1125,18 +1125,18 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-2">
                       <div className={subtleCardClass}>
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-h-[60px] sm:min-h-0">
-                          <span className="text-sm sm:text-xs text-slate-400">Games</span>
+                          <span className="text-sm sm:text-xs text-gray-500">Games</span>
                           <span className="text-2xl sm:text-lg font-semibold text-sky-300">{safeComprehensive.marathonPerformance.count}</span>
                         </div>
                       </div>
                       {safeComprehensive.marathonPerformance.average_accuracy !== null && safeComprehensive.marathonPerformance.average_accuracy !== undefined && (
                         <div className={subtleCardClass}>
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-h-[60px] sm:min-h-0">
-                            <span className="text-sm sm:text-xs text-slate-400">Avg Accuracy</span>
+                            <span className="text-sm sm:text-xs text-gray-500">Avg Accuracy</span>
                             <div className="flex items-center gap-2">
                               <span className="text-2xl sm:text-lg font-semibold text-emerald-300">{formatPercent(safeComprehensive.marathonPerformance.average_accuracy, 1)}%</span>
                               {safeComprehensive.marathonPerformance.analyzed_count && safeComprehensive.marathonPerformance.analyzed_count < safeComprehensive.marathonPerformance.count && (
-                                <span className="text-xs text-slate-500">({safeComprehensive.marathonPerformance.analyzed_count} analyzed)</span>
+                                <span className="text-xs text-gray-500">({safeComprehensive.marathonPerformance.analyzed_count} analyzed)</span>
                               )}
                             </div>
                           </div>
@@ -1145,11 +1145,11 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                       {safeComprehensive.marathonPerformance.average_blunders !== null && safeComprehensive.marathonPerformance.average_blunders !== undefined && (
                         <div className={subtleCardClass}>
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-h-[60px] sm:min-h-0">
-                            <span className="text-sm sm:text-xs text-slate-400">Avg Blunders</span>
+                            <span className="text-sm sm:text-xs text-gray-500">Avg Blunders</span>
                             <div className="flex items-center gap-2">
                               <span className="text-2xl sm:text-lg font-semibold text-rose-300">{formatPercent(safeComprehensive.marathonPerformance.average_blunders, 1)}</span>
                               {safeComprehensive.marathonPerformance.analyzed_count && safeComprehensive.marathonPerformance.analyzed_count < safeComprehensive.marathonPerformance.count && (
-                                <span className="text-xs text-slate-500">({safeComprehensive.marathonPerformance.analyzed_count} analyzed)</span>
+                                <span className="text-xs text-gray-500">({safeComprehensive.marathonPerformance.analyzed_count} analyzed)</span>
                               )}
                             </div>
                           </div>
@@ -1166,22 +1166,22 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   <h4 className="mb-3 text-sm font-semibold text-sky-200">Recent Trend</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <span className="block text-xs text-slate-400 mb-1">Last 100 Games</span>
+                      <span className="block text-xs text-gray-500 mb-1">Last 100 Games</span>
                       <div className="text-2xl sm:text-xl font-semibold text-sky-300">{formatPercent(safeComprehensive.recentTrend.recent_average_moves, 1)} <span className="text-base sm:text-sm">moves</span></div>
                     </div>
                     <div>
-                      <span className="block text-xs text-slate-400 mb-1">Baseline</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-slate-300">{formatPercent(safeComprehensive.recentTrend.baseline_average_moves, 1)} <span className="text-base sm:text-sm">moves</span></div>
+                      <span className="block text-xs text-gray-500 mb-1">Baseline</span>
+                      <div className="text-2xl sm:text-xl font-semibold text-gray-400">{formatPercent(safeComprehensive.recentTrend.baseline_average_moves, 1)} <span className="text-base sm:text-sm">moves</span></div>
                     </div>
                     <div>
-                      <span className="block text-xs text-slate-400 mb-1">Change</span>
+                      <span className="block text-xs text-gray-500 mb-1">Change</span>
                       <div className={`text-2xl sm:text-xl font-semibold ${safeComprehensive.recentTrend.difference > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
                         {safeComprehensive.recentTrend.difference > 0 ? '+' : ''}{formatPercent(safeComprehensive.recentTrend.difference, 1)}
                       </div>
                     </div>
                   </div>
                   {safeComprehensive.recentTrend.difference !== 0 && (
-                    <p className="mt-3 text-sm sm:text-xs text-slate-400">
+                    <p className="mt-3 text-sm sm:text-xs text-gray-500">
                       {safeComprehensive.recentTrend.difference > 0
                         ? `Your recent games are ${Math.abs(safeComprehensive.recentTrend.difference).toFixed(1)} moves longer than usual`
                         : `Your recent games are ${Math.abs(safeComprehensive.recentTrend.difference).toFixed(1)} moves shorter than usual`
@@ -1211,7 +1211,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                               }}
                             >
                               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                                <span className="text-sm sm:text-xs text-slate-400">Fastest Win</span>
+                                <span className="text-sm sm:text-xs text-gray-500">Fastest Win</span>
                                 <span className="text-2xl sm:text-lg font-semibold text-emerald-300">{safeComprehensive.personalRecords.fastest_win.moves} <span className="text-base sm:text-sm">moves</span></span>
                               </div>
                             </div>
@@ -1227,7 +1227,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                               }}
                             >
                               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                                <span className="text-sm sm:text-xs text-slate-400">Most Accurate Win</span>
+                                <span className="text-sm sm:text-xs text-gray-500">Most Accurate Win</span>
                                 <span className="text-2xl sm:text-lg font-semibold text-sky-300">{formatPercent(safeComprehensive.personalRecords.highest_accuracy_win.accuracy, 1)}%</span>
                               </div>
                             </div>
@@ -1243,7 +1243,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                               }}
                             >
                               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                                <span className="text-sm sm:text-xs text-slate-400">Longest Game</span>
+                                <span className="text-sm sm:text-xs text-gray-500">Longest Game</span>
                                 <span className="text-2xl sm:text-lg font-semibold text-purple-300">{safeComprehensive.personalRecords.longest_game.moves} <span className="text-base sm:text-sm">moves</span></span>
                               </div>
                             </div>
@@ -1261,30 +1261,30 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                   <h4 className="mb-3 text-sm font-semibold text-rose-200">Resignation Timing</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <span className="block text-xs text-slate-400 mb-1">Last 50 Games</span>
+                      <span className="block text-xs text-gray-500 mb-1">Last 50 Games</span>
                       <div className="text-2xl sm:text-xl font-semibold text-sky-300">
                         {comprehensiveData.resignation_timing.recent_average_resignation_move != null
                           ? `${formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move, 1)} moves`
                           : 'N/A'}
                       </div>
                       {comprehensiveData.resignation_timing.insight && (
-                        <div className="text-sm text-slate-400 mt-2 flex items-center gap-1">
+                        <div className="text-sm text-gray-500 mt-2 flex items-center gap-1">
                           <span>{safeComprehensive.resignationTiming.insight}</span>
                         </div>
                       )}
                     </div>
                     <div>
-                      <span className="block text-xs text-slate-400 mb-1">Baseline</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-slate-300">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} <span className="text-base sm:text-sm">moves</span></div>
+                      <span className="block text-xs text-gray-500 mb-1">Baseline</span>
+                      <div className="text-2xl sm:text-xl font-semibold text-gray-400">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} <span className="text-base sm:text-sm">moves</span></div>
                     </div>
                     <div>
-                      <span className="block text-xs text-slate-400 mb-1">Change</span>
+                      <span className="block text-xs text-gray-500 mb-1">Change</span>
                       <div className={`text-2xl sm:text-xl font-semibold ${
                         comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change > 0
                           ? 'text-amber-300'
                           : comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change < 0
                             ? 'text-emerald-300'
-                            : 'text-slate-300'
+                            : 'text-gray-400'
                       }`}>
                         {comprehensiveData.resignation_timing.change != null
                           ? `${comprehensiveData.resignation_timing.change > 0 ? '+' : ''}${comprehensiveData.resignation_timing.change}`
@@ -1338,7 +1338,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           <button
             onClick={() => loadData(true)}
             disabled={refreshing}
-            className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-white/30 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-surface-2 px-4 py-2 text-sm font-medium text-gray-300 shadow-card transition-colors hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
@@ -1346,30 +1346,30 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div className={subtleCardClass}>
-            <div className="flex justify-between text-sm text-slate-200">
-              <span className="text-slate-400">Opening Accuracy</span>
+            <div className="flex justify-between text-sm text-gray-300">
+              <span className="text-gray-500">Opening Accuracy</span>
               <span className="font-semibold">{safeData.average_opening_accuracy ? Number(safeData.average_opening_accuracy).toFixed(1) : 'N/A'}%</span>
             </div>
-            <div className="mt-2 flex justify-between text-sm text-slate-200">
-              <span className="text-slate-400">Middle Game Accuracy</span>
+            <div className="mt-2 flex justify-between text-sm text-gray-300">
+              <span className="text-gray-500">Middle Game Accuracy</span>
               <span className="font-semibold">{safeData.average_middle_game_accuracy ? Number(safeData.average_middle_game_accuracy).toFixed(1) : 'N/A'}%</span>
             </div>
-            <div className="mt-2 flex justify-between text-sm text-slate-200">
-              <span className="text-slate-400">Endgame Accuracy</span>
+            <div className="mt-2 flex justify-between text-sm text-gray-300">
+              <span className="text-gray-500">Endgame Accuracy</span>
               <span className="font-semibold">{safeData.average_endgame_accuracy ? Number(safeData.average_endgame_accuracy).toFixed(1) : 'N/A'}%</span>
             </div>
           </div>
           <div className={subtleCardClass}>
-            <div className="flex justify-between text-sm text-slate-200">
-              <span className="text-slate-400">Blunders per Game</span>
+            <div className="flex justify-between text-sm text-gray-300">
+              <span className="text-gray-500">Blunders per Game</span>
               <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.blunders}`}>{Number(safeData.blunders_per_game).toFixed(2)}</span>
             </div>
-            <div className="mt-2 flex justify-between text-sm text-slate-200">
-              <span className="text-slate-400">Inaccuracies per Game</span>
+            <div className="mt-2 flex justify-between text-sm text-gray-300">
+              <span className="text-gray-500">Inaccuracies per Game</span>
               <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.inaccuracies}`}>{Number(safeData.inaccuracies_per_game).toFixed(2)}</span>
             </div>
-            <div className="mt-2 flex justify-between text-sm text-slate-200">
-              <span className="text-slate-400">Brilliant Moves per Game</span>
+            <div className="mt-2 flex justify-between text-sm text-gray-300">
+              <span className="text-gray-500">Brilliant Moves per Game</span>
               <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.brilliants}`}>{Number(safeData.brilliant_moves_per_game).toFixed(2)}</span>
             </div>
           </div>

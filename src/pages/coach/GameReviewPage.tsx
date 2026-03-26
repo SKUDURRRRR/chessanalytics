@@ -82,7 +82,7 @@ const resultBadge = (result: 'win' | 'loss' | 'draw') => {
   const styles: Record<string, string> = {
     win: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30',
     loss: 'bg-rose-500/20 text-rose-300 border-rose-400/30',
-    draw: 'bg-slate-500/20 text-slate-300 border-slate-400/30',
+    draw: 'bg-white/[0.04] text-gray-500 border-white/[0.06]',
   }
   return styles[result]
 }
@@ -94,7 +94,7 @@ const classificationIcon = (c: string) => {
   return ''
 }
 
-const NAV_BTN_CLASS = 'min-h-[36px] min-w-[36px] rounded-full border border-white/10 bg-white/10 px-2.5 py-1.5 transition hover:border-white/30 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 text-sm font-mono'
+const NAV_BTN_CLASS = 'min-h-[36px] min-w-[36px] rounded-full shadow-card bg-white/10 px-2.5 py-1.5 transition-colors hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-gray-400 text-sm font-mono'
 
 // ============================================================================
 // Component
@@ -370,10 +370,10 @@ function GameReviewContent() {
   // ---- Render: Loading ----
   if (phase === 'loading') {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-400">Loading game analysis...</p>
+          <p className="text-gray-500">Loading game analysis...</p>
         </div>
       </div>
     )
@@ -382,11 +382,11 @@ function GameReviewContent() {
   // ---- Render: Error ----
   if (phase === 'error') {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-2xl border border-white/10 bg-white/[0.04] p-8 text-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
           <div className="text-4xl mb-4">&#9888;</div>
-          <h2 className="text-xl font-bold text-white mb-2">Unable to Load Game</h2>
-          <p className="text-slate-400 mb-6">{loadError}</p>
+          <h2 className="text-xl font-semibold text-white mb-2">Unable to Load Game</h2>
+          <p className="text-gray-500 mb-6">{loadError}</p>
           <button
             onClick={() => navigate(-1)}
             className="text-emerald-400 hover:text-emerald-300 transition-colors"
@@ -401,11 +401,11 @@ function GameReviewContent() {
   // ---- Render: No mistakes ----
   if (phase === 'no-mistakes') {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-2xl border border-white/10 bg-white/[0.04] p-8 text-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
           <div className="text-4xl mb-4">&#9989;</div>
-          <h2 className="text-xl font-bold text-white mb-2">Great Game!</h2>
-          <p className="text-slate-400 mb-6">
+          <h2 className="text-xl font-semibold text-white mb-2">Great Game!</h2>
+          <p className="text-gray-500 mb-6">
             No significant mistakes found in this game. You played well!
           </p>
           <button
@@ -423,13 +423,13 @@ function GameReviewContent() {
   const isMobile = mobileOpts.boardSize === 'small' || mobileOpts.boardSize === 'medium'
 
   return (
-    <div className="h-screen bg-slate-950 text-white flex flex-col overflow-hidden" ref={layoutRef}>
+    <div className="h-screen bg-surface-base text-white flex flex-col overflow-hidden" ref={layoutRef}>
       {/* Header */}
       <div className="flex-shrink-0 border-b border-white/5 bg-white/[0.02] px-4 py-3">
         <div className="max-w-6xl mx-auto flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="text-slate-400 hover:text-white transition-colors"
+            className="text-gray-500 hover:text-white transition-colors"
             aria-label="Go back"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -439,7 +439,7 @@ function GameReviewContent() {
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold truncate">
               Game Review
-              <span className="text-slate-400 font-normal ml-2 text-sm">
+              <span className="text-gray-500 font-normal ml-2 text-sm">
                 vs {gameMeta.opponent}
               </span>
             </h1>
@@ -457,7 +457,7 @@ function GameReviewContent() {
         }`}>
           {/* Board column */}
           <div className={`flex-shrink-0 ${isMobile ? 'w-full flex flex-col items-center' : ''}`}>
-            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="rounded-lg shadow-card bg-surface-1 p-4">
               <div className="relative" style={{ width: boardWidth, height: boardWidth }}>
                 <Chessboard
                   id="game-review-board"
@@ -479,7 +479,7 @@ function GameReviewContent() {
 
             {/* Move navigation below board (only during reviewing) */}
             {phase === 'reviewing' && (
-              <div className="flex items-center justify-center gap-1.5 mt-3 py-2 px-3 rounded-xl bg-white/[0.03] border border-white/5" style={{ width: boardWidth + 32 }}>
+              <div className="flex items-center justify-center gap-1.5 mt-3 py-2 px-3 rounded-lg bg-white/[0.03] shadow-card" style={{ width: boardWidth + 32 }}>
                 <button
                   onClick={() => navigateToMove(0)}
                   disabled={currentBoardIndex === 0}
@@ -496,7 +496,7 @@ function GameReviewContent() {
                 >
                   {'<'}
                 </button>
-                <span className="text-xs text-slate-500 px-2">
+                <span className="text-xs text-gray-500 px-2">
                   {currentBoardIndex} / {processedData.moves.length}
                 </span>
                 <button
@@ -570,39 +570,39 @@ interface IntroPanelProps {
 
 function IntroPanel({ meta, stats, onStart }: IntroPanelProps) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6">
+    <div className="rounded-lg shadow-card bg-surface-1 p-6">
       <h2 className="text-lg font-semibold mb-4">Game Overview</h2>
 
       <div className="space-y-3 text-sm">
         <div className="flex justify-between">
-          <span className="text-slate-400">Opponent</span>
+          <span className="text-gray-500">Opponent</span>
           <span className="text-white font-medium">{meta.opponent}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-400">Result</span>
+          <span className="text-gray-500">Result</span>
           <span className={`font-medium capitalize ${
-            meta.result === 'win' ? 'text-emerald-400' : meta.result === 'loss' ? 'text-rose-400' : 'text-slate-300'
+            meta.result === 'win' ? 'text-emerald-400' : meta.result === 'loss' ? 'text-rose-400' : 'text-gray-400'
           }`}>
             {meta.result}
           </span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-400">Opening</span>
+          <span className="text-gray-500">Opening</span>
           <span className="text-white font-medium truncate ml-4">{meta.opening}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-400">Playing as</span>
+          <span className="text-gray-500">Playing as</span>
           <span className="text-white font-medium capitalize">{meta.playerColor}</span>
         </div>
         {meta.accuracy !== null && (
           <div className="flex justify-between">
-            <span className="text-slate-400">Accuracy</span>
+            <span className="text-gray-500">Accuracy</span>
             <span className="text-white font-medium">{meta.accuracy.toFixed(1)}%</span>
           </div>
         )}
         {meta.playedAt && (
           <div className="flex justify-between">
-            <span className="text-slate-400">Played</span>
+            <span className="text-gray-500">Played</span>
             <span className="text-white font-medium">
               {new Date(meta.playedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </span>
@@ -611,23 +611,23 @@ function IntroPanel({ meta, stats, onStart }: IntroPanelProps) {
       </div>
 
       {/* Mistake summary */}
-      <div className="mt-5 p-4 rounded-xl bg-white/[0.04] border border-white/5">
-        <p className="text-sm text-slate-300 mb-3">
+      <div className="mt-5 p-4 rounded-lg bg-white/[0.04] shadow-card">
+        <p className="text-sm text-gray-400 mb-3">
           We found <span className="text-white font-semibold">{stats.total} key moment{stats.total !== 1 ? 's' : ''}</span> to review:
         </p>
         <div className="flex gap-3 text-xs">
           {stats.blunders > 0 && (
-            <span className="px-2 py-1 rounded border border-rose-400/30 bg-rose-500/10 text-rose-300">
+            <span className="px-2 py-1 rounded shadow-card bg-rose-500/10 text-rose-300">
               {stats.blunders} blunder{stats.blunders !== 1 ? 's' : ''}
             </span>
           )}
           {stats.mistakes > 0 && (
-            <span className="px-2 py-1 rounded border border-orange-400/30 bg-orange-500/10 text-orange-300">
+            <span className="px-2 py-1 rounded shadow-card bg-orange-500/10 text-orange-300">
               {stats.mistakes} mistake{stats.mistakes !== 1 ? 's' : ''}
             </span>
           )}
           {stats.inaccuracies > 0 && (
-            <span className="px-2 py-1 rounded border border-amber-400/30 bg-amber-500/10 text-amber-300">
+            <span className="px-2 py-1 rounded shadow-card bg-amber-500/10 text-amber-300">
               {stats.inaccuracies} inaccurac{stats.inaccuracies !== 1 ? 'ies' : 'y'}
             </span>
           )}
@@ -636,7 +636,7 @@ function IntroPanel({ meta, stats, onStart }: IntroPanelProps) {
 
       <button
         onClick={onStart}
-        className="mt-6 w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+        className="mt-6 w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
       >
         Start Review
       </button>
@@ -659,16 +659,16 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onRevea
   const isLast = momentIndex === totalMoments - 1
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 space-y-4">
+    <div className="rounded-lg shadow-card bg-surface-1 p-5 space-y-4">
       {/* Progress dots */}
-      <div className="flex items-center justify-between text-xs text-slate-400">
+      <div className="flex items-center justify-between text-xs text-gray-500">
         <span>Moment {momentIndex + 1} of {totalMoments}</span>
         <div className="flex gap-1">
           {Array.from({ length: totalMoments }, (_, i) => (
             <div
               key={i}
               className={`w-2 h-2 rounded-full transition-colors ${
-                i === momentIndex ? 'bg-emerald-400' : i < momentIndex ? 'bg-emerald-400/30' : 'bg-slate-600'
+                i === momentIndex ? 'bg-emerald-400' : i < momentIndex ? 'bg-emerald-400/30' : 'bg-surface-3'
               }`}
             />
           ))}
@@ -688,23 +688,23 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onRevea
       {/* Pre-reveal: "Think First" prompt */}
       {!isRevealed && (
         <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-400/20 text-center">
+          <div className="p-4 rounded-lg bg-amber-500/5 shadow-card text-center">
             <p className="text-amber-200 font-medium mb-1">
               It&apos;s {m.player === 'white' ? "White's" : "Black's"} move
             </p>
-            <p className="text-slate-400 text-sm">
+            <p className="text-gray-500 text-sm">
               Look at the position. What would you play here?
             </p>
           </div>
 
           <button
             onClick={onReveal}
-            className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold transition-colors"
+            className="w-full py-3 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-semibold transition-colors"
           >
             Show What Happened
           </button>
 
-          <p className="text-xs text-slate-600 text-center">
+          <p className="text-xs text-gray-600 text-center">
             Press Space or Right Arrow to reveal
           </p>
         </div>
@@ -720,13 +720,13 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onRevea
                 moment.classification === 'blunder' ? 'bg-rose-400' :
                 moment.classification === 'mistake' ? 'bg-orange-400' : 'bg-amber-400'
               }`} />
-              <span className="text-slate-400">You played:</span>
+              <span className="text-gray-500">You played:</span>
               <span className="text-white font-mono font-semibold">{m.san}</span>
             </div>
             {m.bestMoveSan && (
               <div className="flex items-center gap-2 text-sm">
                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-slate-400">Better was:</span>
+                <span className="text-gray-500">Better was:</span>
                 <span className="text-emerald-300 font-mono font-semibold">{m.bestMoveSan}</span>
               </div>
             )}
@@ -734,13 +734,13 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onRevea
 
           {/* Centipawn loss */}
           {m.centipawnLoss !== null && m.centipawnLoss > 0 && (
-            <span className="text-xs text-slate-500 block">
+            <span className="text-xs text-gray-500 block">
               Cost: ~{Math.round(m.centipawnLoss)} centipawns
             </span>
           )}
 
           {/* Coaching explanation */}
-          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 text-sm text-slate-300 leading-relaxed">
+          <div className="p-3 rounded-lg bg-white/[0.03] shadow-card text-sm text-gray-400 leading-relaxed">
             {m.coachingComment || m.explanation}
           </div>
 
@@ -750,20 +750,20 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onRevea
               {m.tacticalInsights && m.tacticalInsights.length > 0 && (
                 <div className="text-xs">
                   <span className="text-amber-300 font-medium">Tactical: </span>
-                  <span className="text-slate-400">{m.tacticalInsights.join(', ')}</span>
+                  <span className="text-gray-500">{m.tacticalInsights.join(', ')}</span>
                 </div>
               )}
               {m.positionalInsights && m.positionalInsights.length > 0 && (
                 <div className="text-xs">
                   <span className="text-sky-300 font-medium">Positional: </span>
-                  <span className="text-slate-400">{m.positionalInsights.join(', ')}</span>
+                  <span className="text-gray-500">{m.positionalInsights.join(', ')}</span>
                 </div>
               )}
             </div>
           )}
 
           {/* Chat hint */}
-          <p className="text-xs text-slate-500 italic">
+          <p className="text-xs text-gray-500 italic">
             Ask Coach Tal for deeper analysis using the chat button.
           </p>
 
@@ -772,15 +772,15 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onRevea
             <button
               onClick={onPrev}
               disabled={momentIndex === 0}
-              className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-medium transition-colors
+              className="flex-1 py-2.5 rounded-lg shadow-card text-sm font-medium transition-colors
                 disabled:opacity-30 disabled:cursor-not-allowed
-                hover:bg-white/5 text-slate-300"
+                hover:bg-white/5 text-gray-400"
             >
               Previous
             </button>
             <button
               onClick={onNext}
-              className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors"
+              className="flex-1 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors"
             >
               {isLast ? 'View Summary' : 'Next Moment'}
             </button>
@@ -800,32 +800,32 @@ interface SummaryPanelProps {
 
 function SummaryPanel({ stats, meta, onReviewAgain, onBack }: SummaryPanelProps) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 space-y-5">
+    <div className="rounded-lg shadow-card bg-surface-1 p-6 space-y-5">
       <h2 className="text-lg font-semibold">Review Complete</h2>
 
-      <p className="text-sm text-slate-300">
+      <p className="text-sm text-gray-400">
         You reviewed {stats.total} key moment{stats.total !== 1 ? 's' : ''} from your game against{' '}
         <span className="text-white font-medium">{meta.opponent}</span>.
       </p>
 
       {/* Stats grid */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-center">
-          <div className="text-2xl font-bold text-rose-300">{stats.blunders}</div>
+        <div className="rounded-lg shadow-card bg-rose-500/10 p-3 text-center">
+          <div className="text-2xl font-semibold text-rose-300">{stats.blunders}</div>
           <div className="text-xs text-rose-400 mt-1">Blunders</div>
         </div>
-        <div className="rounded-xl border border-orange-400/20 bg-orange-500/10 p-3 text-center">
-          <div className="text-2xl font-bold text-orange-300">{stats.mistakes}</div>
+        <div className="rounded-lg shadow-card bg-orange-500/10 p-3 text-center">
+          <div className="text-2xl font-semibold text-orange-300">{stats.mistakes}</div>
           <div className="text-xs text-orange-400 mt-1">Mistakes</div>
         </div>
-        <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-center">
-          <div className="text-2xl font-bold text-amber-300">{stats.inaccuracies}</div>
+        <div className="rounded-lg shadow-card bg-amber-500/10 p-3 text-center">
+          <div className="text-2xl font-semibold text-amber-300">{stats.inaccuracies}</div>
           <div className="text-xs text-amber-400 mt-1">Inaccuracies</div>
         </div>
       </div>
 
       {meta.accuracy !== null && (
-        <div className="text-center text-sm text-slate-400">
+        <div className="text-center text-sm text-gray-500">
           Overall accuracy: <span className="text-white font-semibold">{meta.accuracy.toFixed(1)}%</span>
         </div>
       )}
@@ -833,13 +833,13 @@ function SummaryPanel({ stats, meta, onReviewAgain, onBack }: SummaryPanelProps)
       <div className="space-y-3 pt-2">
         <button
           onClick={onReviewAgain}
-          className="w-full py-2.5 rounded-xl border border-emerald-400/30 text-emerald-400 hover:bg-emerald-500/10 text-sm font-medium transition-colors"
+          className="w-full py-2.5 rounded-lg shadow-card text-emerald-400 hover:bg-emerald-500/10 text-sm font-medium transition-colors"
         >
           Review Again
         </button>
         <button
           onClick={onBack}
-          className="w-full py-2.5 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 text-sm font-medium transition-colors"
+          className="w-full py-2.5 rounded-lg shadow-card text-gray-400 hover:bg-white/5 text-sm font-medium transition-colors"
         >
           Back to Games
         </button>

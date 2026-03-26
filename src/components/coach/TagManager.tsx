@@ -106,17 +106,17 @@ export function TagManager({
           onFocus={() => setShowSuggestions(true)}
           onKeyDown={handleKeyDown}
           placeholder="+ tag"
-          className="w-16 bg-transparent text-xs text-slate-400 placeholder:text-slate-600 outline-none focus:w-24 transition-all"
+          className="w-16 bg-transparent text-xs text-gray-500 placeholder:text-gray-600 outline-none focus:w-24 transition-colors"
           disabled={adding}
         />
 
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute top-full left-0 mt-1 z-50 rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1 min-w-[120px]">
+          <div className="absolute top-full left-0 mt-1 z-50 rounded-lg bg-surface-1 shadow-card py-1 min-w-[120px]">
             {suggestions.map((s) => (
               <button
                 key={s}
                 onClick={() => addTag(s)}
-                className="block w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                className="block w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:bg-white/10 transition-colors"
               >
                 {s}
               </button>

@@ -114,10 +114,10 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
     { label: string; score: number; description: string; rect: DOMRect | null } | null
   >(null)
   const validatedScores = validateScores(scores)
-  
+
   if (!validatedScores) {
     return (
-      <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <h3 className="mb-4 text-lg font-semibold text-white">Your Chess Personality Radar</h3>
         <p>No personality data available. Run game analysis to generate personality insights.</p>
       </div>
@@ -137,10 +137,10 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
   }))
 
   return (
-    <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] p-6 pb-16 text-slate-200 shadow-xl shadow-black/40">
+    <div className="relative rounded-lg bg-surface-1 p-6 pb-16 text-gray-300 shadow-card">
       <h3 className="mb-4 flex items-center text-lg font-semibold text-white">
         Your Chess Personality Radar
-        <span className="ml-2 text-sm text-slate-400">?</span>
+        <span className="ml-2 text-sm text-gray-500">?</span>
       </h3>
 
       <div className="mb-8 h-64">
@@ -163,9 +163,9 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
 
       <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {traitBadges.map(({ trait, label, score, color }) => (
-          <div 
-            key={label} 
-            className="group flex cursor-pointer flex-col items-center rounded-xl sm:rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-3 sm:px-4 sm:py-5 text-center transition hover:border-white/30 hover:bg-white/[0.08]"
+          <div
+            key={label}
+            className="group flex cursor-pointer flex-col items-center rounded-lg shadow-card bg-surface-1 px-3 py-3 sm:px-4 sm:py-5 text-center transition-colors hover:bg-white/[0.04]"
             onMouseEnter={event => {
               const rect = event.currentTarget.getBoundingClientRect()
               setActiveTrait({
@@ -186,7 +186,7 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
             <div className="mt-1.5 sm:mt-2 w-full">
               <div className="h-0.5 sm:h-1 w-full rounded-full bg-white/10">
                 <div
-                  className="h-0.5 sm:h-1 rounded-full transition-all duration-300 bg-emerald-400"
+                  className="h-0.5 sm:h-1 rounded-full transition-colors duration-300 bg-emerald-400"
                   style={{ width: `${score}%` }}
                 />
               </div>
@@ -204,17 +204,17 @@ export function PersonalityRadar({ scores }: PersonalityRadarProps) {
             transform: 'translateX(-50%)',
           }}
         >
-          <div className="max-w-sm rounded-[28px] border border-white/20 bg-slate-950/95 px-6 py-5 text-sm text-slate-100 shadow-[0_20px_40px_-20px_rgba(15,23,42,0.8)] ring-1 ring-cyan-400/20">
+          <div className="max-w-sm rounded-lg bg-surface-base/95 px-6 py-5 text-sm text-gray-300 shadow-card">
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-300">Trait Focus</p>
+                <p className="text-xs uppercase tracking-wide text-gray-400">Trait Focus</p>
                 <h4 className="text-xl font-semibold text-white">{activeTrait.label}</h4>
               </div>
-              <div className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-100">
+              <div className="rounded-md bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-100">
                 Score {activeTrait.score}
               </div>
             </div>
-            <p className="mt-3 leading-relaxed text-slate-200">{activeTrait.description}</p>
+            <p className="mt-3 leading-relaxed text-gray-300">{activeTrait.description}</p>
           </div>
         </div>
       )}

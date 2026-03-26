@@ -17,7 +17,7 @@ export function WeaknessCard({ weakness, onClick }: WeaknessCardProps) {
 
   return (
     <div
-      className={`rounded-2xl border ${severityColor} p-6 cursor-pointer transition-all hover:border-white/30 hover:bg-white/[0.08] ${onClick ? '' : 'cursor-default'}`}
+      className={`rounded-lg border ${severityColor} p-6 cursor-pointer transition-colors hover:border-white/30 hover:bg-white/[0.08] ${onClick ? '' : 'cursor-default'}`}
       onClick={onClick}
     >
       <div className="flex items-start justify-between mb-3">
@@ -30,19 +30,19 @@ export function WeaknessCard({ weakness, onClick }: WeaknessCardProps) {
           {weakness.severity}
         </span>
       </div>
-      <p className="text-slate-300 text-sm mb-4">{weakness.description}</p>
+      <p className="text-gray-400 text-sm mb-4">{weakness.description}</p>
       <div className="flex items-center justify-between">
         <div className="flex-1">
           <div className="h-2 bg-white/10 rounded-full overflow-hidden">
             <div
-              className="h-full bg-rose-400 transition-all"
+              className="h-full bg-rose-400 transition-colors"
               style={{ width: `${Math.max(0, Math.min(100, 100 - weakness.score))}%` }}
             />
           </div>
-          <p className="text-xs text-slate-400 mt-1">Score: {weakness.score.toFixed(1)}</p>
+          <p className="text-xs text-gray-500 mt-1">Score: {weakness.score.toFixed(1)}</p>
         </div>
       </div>
-      <p className="text-slate-400 text-xs mt-4 italic">{weakness.recommendation}</p>
+      <p className="text-gray-500 text-xs mt-4 italic">{weakness.recommendation}</p>
     </div>
   )
 }

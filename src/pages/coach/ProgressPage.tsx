@@ -44,29 +44,19 @@ const CHART_COLORS = {
   slate: '#94a3b8',
 }
 
-const accentBorderClasses: Record<string, string> = {
-  emerald: 'border-emerald-500/30',
-  blue: 'border-blue-500/30',
-  amber: 'border-amber-500/30',
-  rose: 'border-rose-500/30',
-  purple: 'border-purple-500/30',
-  cyan: 'border-cyan-500/30',
-}
-
-function StatCard({ label, value, subtitle, accent }: { label: string; value: string | number; subtitle?: string; accent?: string }) {
-  const borderClass = accent ? (accentBorderClasses[accent] || 'border-white/10') : 'border-white/10'
+function StatCard({ label, value, subtitle }: { label: string; value: string | number; subtitle?: string; accent?: string }) {
   return (
-    <div className={`rounded-2xl border ${borderClass} bg-white/[0.04] p-5`}>
-      <p className="text-sm text-slate-400 mb-1">{label}</p>
-      <p className="text-3xl font-bold text-white">{value}</p>
-      {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
+    <div className="rounded-lg shadow-card bg-white/[0.04] p-5">
+      <p className="text-sm text-gray-500 mb-1">{label}</p>
+      <p className="text-3xl font-semibold text-white">{value}</p>
+      {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
     </div>
   )
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+    <div className="rounded-lg shadow-card bg-surface-1 p-6">
       <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
       <div className="h-64">
         {children}
@@ -78,8 +68,8 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div className="mb-4 mt-10 first:mt-0">
-      <h2 className="text-xl font-bold text-white">{title}</h2>
-      {subtitle && <p className="text-sm text-slate-400 mt-1">{subtitle}</p>}
+      <h2 className="text-xl font-semibold text-white">{title}</h2>
+      {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
     </div>
   )
 }
@@ -87,7 +77,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 function EmptyState() {
   return (
     <div className="flex items-center justify-center h-full">
-      <p className="text-slate-500 text-sm">Not enough data yet</p>
+      <p className="text-gray-500 text-sm">Not enough data yet</p>
     </div>
   )
 }
@@ -130,10 +120,10 @@ function ProgressContent({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-          <p className="text-sm text-slate-400">Loading progress data...</p>
+          <p className="text-sm text-gray-500">Loading progress data...</p>
         </div>
       </div>
     )
@@ -141,13 +131,13 @@ function ProgressContent({
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Error</h2>
-          <p className="text-slate-300 mb-6">{error.message}</p>
+      <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
+          <h2 className="text-2xl font-semibold text-white mb-4">Error</h2>
+          <p className="text-gray-400 mb-6">{error.message}</p>
           <button
             onClick={() => navigate('/coach')}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+            className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
           >
             Back to Dashboard
           </button>
@@ -163,19 +153,19 @@ function ProgressContent({
   const diagnostic = progress?.diagnostic
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-8">
+    <div className="min-h-screen bg-surface-base p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
           <div>
             <button
               onClick={() => navigate('/coach')}
-              className="mb-2 text-slate-400 hover:text-slate-300 transition-colors flex items-center gap-2 text-sm"
+              className="mb-2 text-gray-500 hover:text-gray-400 transition-colors flex items-center gap-2 text-sm"
             >
               ← Back to Dashboard
             </button>
-            <h1 className="text-3xl md:text-4xl font-bold text-white">Your Progress</h1>
-            <p className="text-slate-400 mt-1">Track your chess improvement over time</p>
+            <h1 className="text-3xl md:text-4xl font-semibold text-white">Your Progress</h1>
+            <p className="text-gray-500 mt-1">Track your chess improvement over time</p>
           </div>
 
           {/* Period Selector */}
@@ -184,10 +174,10 @@ function ProgressContent({
               <button
                 key={opt.value}
                 onClick={() => setPeriodDays(opt.value)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   periodDays === opt.value
                     ? 'bg-emerald-500 text-white'
-                    : 'bg-white/[0.05] text-slate-400 hover:bg-white/[0.08] hover:text-slate-300'
+                    : 'bg-white/[0.05] text-gray-500 hover:bg-white/[0.08] hover:text-gray-400'
                 }`}
               >
                 {opt.label}
@@ -198,10 +188,10 @@ function ProgressContent({
 
         {/* Diagnostic Card */}
         {diagnostic?.summary && (
-          <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/[0.04] p-6 mb-8">
+          <div className="rounded-lg shadow-card bg-cyan-500/[0.04] p-6 mb-8">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-cyan-400 text-sm font-bold">C</span>
+                <span className="text-cyan-400 text-sm font-semibold">C</span>
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
@@ -212,7 +202,7 @@ function ProgressContent({
                     </span>
                   )}
                 </div>
-                <p className="text-slate-300 text-sm leading-relaxed">{diagnostic.summary}</p>
+                <p className="text-gray-400 text-sm leading-relaxed">{diagnostic.summary}</p>
               </div>
             </div>
           </div>
@@ -530,26 +520,26 @@ function AdvancedMetricsSection({ advanced }: { advanced: AdvancedProgressMetric
           />
           {openings!.best_opening && openings!.worst_opening && (
             <div className="grid grid-cols-2 gap-4 mb-4">
-              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] p-4">
+              <div className="rounded-lg shadow-card bg-emerald-500/[0.06] p-4">
                 <p className="text-xs text-emerald-400 mb-1">Best Opening</p>
-                <p className="text-lg font-bold text-white">{openings!.best_opening.name}</p>
-                <p className="text-sm text-slate-400">
+                <p className="text-lg font-semibold text-white">{openings!.best_opening.name}</p>
+                <p className="text-sm text-gray-500">
                   as {openings!.best_opening.color} &middot; {openings!.best_opening.win_rate}% win rate
                 </p>
               </div>
-              <div className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.06] p-4">
+              <div className="rounded-lg shadow-card bg-rose-500/[0.06] p-4">
                 <p className="text-xs text-rose-400 mb-1">Weakest Opening</p>
-                <p className="text-lg font-bold text-white">{openings!.worst_opening.name}</p>
-                <p className="text-sm text-slate-400">
+                <p className="text-lg font-semibold text-white">{openings!.worst_opening.name}</p>
+                <p className="text-sm text-gray-500">
                   as {openings!.worst_opening.color} &middot; {openings!.worst_opening.win_rate}% win rate
                 </p>
               </div>
             </div>
           )}
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 mb-8 overflow-x-auto">
+          <div className="rounded-lg shadow-card bg-surface-1 p-6 mb-8 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-slate-400 border-b border-white/10">
+                <tr className="text-gray-500 border-b border-white/10">
                   <th className="text-left py-3 px-2 font-medium">Opening</th>
                   <th className="text-center py-3 px-2 font-medium">Color</th>
                   <th className="text-center py-3 px-2 font-medium">Games</th>
@@ -563,14 +553,14 @@ function AdvancedMetricsSection({ advanced }: { advanced: AdvancedProgressMetric
                   <tr key={`${o.opening_family}-${o.color}`} className={i % 2 === 0 ? 'bg-white/[0.02]' : ''}>
                     <td className="py-2.5 px-2 text-white font-medium">{o.opening_family}</td>
                     <td className="py-2.5 px-2 text-center">
-                      <span className={`inline-block w-3 h-3 rounded-full ${o.color === 'white' ? 'bg-white' : 'bg-slate-700 border border-slate-500'}`} />
+                      <span className={`inline-block w-3 h-3 rounded-full ${o.color === 'white' ? 'bg-white' : 'bg-surface-3 border border-surface-3'}`} />
                     </td>
-                    <td className="py-2.5 px-2 text-center text-slate-300">{o.games}</td>
+                    <td className="py-2.5 px-2 text-center text-gray-400">{o.games}</td>
                     <td className="py-2.5 px-2 text-center">
                       <span className={o.win_rate >= 50 ? 'text-emerald-400' : 'text-rose-400'}>{o.win_rate}%</span>
                     </td>
-                    <td className="py-2.5 px-2 text-center text-slate-400">{o.draw_rate}%</td>
-                    <td className="py-2.5 px-2 text-center text-slate-300">{o.avg_accuracy}%</td>
+                    <td className="py-2.5 px-2 text-center text-gray-500">{o.draw_rate}%</td>
+                    <td className="py-2.5 px-2 text-center text-gray-400">{o.avg_accuracy}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -750,17 +740,17 @@ function AdvancedMetricsSection({ advanced }: { advanced: AdvancedProgressMetric
             {advanced.peer_comparison.comparisons.map((c) => (
               <div
                 key={c.metric}
-                className="rounded-2xl border border-white/10 bg-white/[0.04] p-5"
+                className="rounded-lg shadow-card bg-white/[0.04] p-5"
               >
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm text-slate-400">{c.label}</p>
+                  <p className="text-sm text-gray-500">{c.label}</p>
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full ${
                       c.assessment === 'above_average'
                         ? 'bg-emerald-500/20 text-emerald-300'
                         : c.assessment === 'below_average'
                           ? 'bg-rose-500/20 text-rose-300'
-                          : 'bg-slate-500/20 text-slate-300'
+                          : 'bg-white/[0.04] text-gray-500'
                     }`}
                   >
                     {c.assessment === 'above_average' ? 'Above Avg' : c.assessment === 'below_average' ? 'Below Avg' : 'Average'}
@@ -768,12 +758,12 @@ function AdvancedMetricsSection({ advanced }: { advanced: AdvancedProgressMetric
                 </div>
                 <div className="flex items-end gap-4">
                   <div>
-                    <p className="text-2xl font-bold text-white">{c.your_value}</p>
-                    <p className="text-xs text-slate-500">You</p>
+                    <p className="text-2xl font-semibold text-white">{c.your_value}</p>
+                    <p className="text-xs text-gray-500">You</p>
                   </div>
                   <div>
-                    <p className="text-lg text-slate-400">{c.peer_avg}</p>
-                    <p className="text-xs text-slate-500">Peer Avg</p>
+                    <p className="text-lg text-gray-500">{c.peer_avg}</p>
+                    <p className="text-xs text-gray-500">Peer Avg</p>
                   </div>
                 </div>
               </div>
@@ -789,13 +779,13 @@ function HorizontalBar({ label, value, color }: { label: string; value: number; 
   const maxWidth = Math.max(value * 8, 4)
   return (
     <div className="flex items-center gap-4">
-      <span className="text-sm text-slate-400 w-48 text-right">{label}</span>
+      <span className="text-sm text-gray-500 w-48 text-right">{label}</span>
       <div className="flex-1 flex items-center gap-3">
         <div
-          className="h-8 rounded-lg flex items-center justify-end pr-3 min-w-[32px] transition-all"
+          className="h-8 rounded-lg flex items-center justify-end pr-3 min-w-[32px] transition-colors"
           style={{ width: `${Math.min(maxWidth, 100)}%`, backgroundColor: color + '30', borderLeft: `3px solid ${color}` }}
         >
-          <span className="text-sm font-bold text-white">{value}</span>
+          <span className="text-sm font-semibold text-white">{value}</span>
         </div>
       </div>
     </div>

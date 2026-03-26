@@ -450,28 +450,28 @@ export function EnhancedOpeningPlayerCard({
   ]
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+    <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-3 sm:space-y-0">
         <div className="flex items-center">
           <div className="mr-3 h-3 w-3 animate-pulse rounded-full bg-sky-300" />
           <h3 className="text-lg font-semibold text-white">Enhanced Opening Analysis</h3>
         </div>
         <div className="text-left sm:text-right">
-          <div className="text-2xl font-bold text-white">{Math.round(effectiveScore)}%</div>
-          <div className="text-xs text-slate-300">Opening Win Rate</div>
+          <div className="text-2xl font-semibold text-white">{Math.round(effectiveScore)}%</div>
+          <div className="text-xs text-gray-400">Opening Win Rate</div>
         </div>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex sm:flex sm:space-x-1 grid grid-cols-2 gap-2 sm:gap-0 mb-6 bg-slate-800/50 rounded-xl p-1 sm:p-1">
+      <div className="flex sm:flex sm:space-x-1 grid grid-cols-2 gap-2 sm:gap-0 mb-6 bg-surface-2/50 rounded-lg p-1 sm:p-1">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setSelectedTab(tab.id as any)}
-            className={`flex-1 sm:flex-1 min-w-0 flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+            className={`flex-1 sm:flex-1 min-w-0 flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
               selectedTab === tab.id
-                ? 'bg-sky-500 text-white shadow-lg'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                ? 'bg-sky-500 text-white shadow-card'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-surface-3/50'
             }`}
           >
             <span className="text-sm sm:text-base">{tab.icon}</span>
@@ -485,8 +485,8 @@ export function EnhancedOpeningPlayerCard({
         <div className="space-y-6">
           {/* Data-driven assessment */}
           {(enhancedAnalysis?.repertoireAnalysis || insights.totalOpeningGames > 0) && (
-            <div className="bg-slate-800/30 rounded-xl p-4">
-              <p className="text-sm text-slate-200 leading-relaxed">
+            <div className="bg-surface-2/30 rounded-lg p-4">
+              <p className="text-sm text-gray-300 leading-relaxed">
                 {effectiveScore >= 70
                   ? `You're performing well in the opening phase with a ${Math.round(effectiveScore)}% win rate across ${insights.totalOpeningGames} games.`
                   : effectiveScore >= 60
@@ -502,11 +502,11 @@ export function EnhancedOpeningPlayerCard({
           )}
 
           {/* Player Style Card - Always show for players with any personality scores */}
-          <div className="bg-gradient-to-r from-sky-500/20 to-purple-500/20 border border-sky-500/30 rounded-xl p-4">
+          <div className="bg-surface-2 rounded-lg p-4 shadow-card-highlight">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-slate-300 mb-1">Your Playing Style</div>
-                <div className="text-xl font-bold text-white">
+                <div className="text-sm text-gray-400 mb-1">Your Playing Style</div>
+                <div className="text-xl font-semibold text-white">
                   {playingStyle.description}
                 </div>
                 {playingStyle.primaryTrait !== 'balanced' && playingStyle.primaryTrait !== 'developing' && (
@@ -523,23 +523,23 @@ export function EnhancedOpeningPlayerCard({
 
           {/* Key Metrics Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className={`${bgColor} rounded-xl p-4`}>
-              <div className="text-lg font-bold text-white">{Math.round(effectiveScore)}%</div>
-              <div className="text-xs text-slate-300">Opening Win Rate</div>
+            <div className={`${bgColor} rounded-lg p-4`}>
+              <div className="text-lg font-semibold text-white">{Math.round(effectiveScore)}%</div>
+              <div className="text-xs text-gray-400">Opening Win Rate</div>
             </div>
-            <div className="bg-slate-800/50 rounded-xl p-4">
-              <div className="text-lg font-bold text-emerald-300">{insights.totalOpeningGames}</div>
-              <div className="text-xs text-slate-300">Games Played</div>
+            <div className="bg-surface-2/50 rounded-lg p-4">
+              <div className="text-lg font-semibold text-emerald-300">{insights.totalOpeningGames}</div>
+              <div className="text-xs text-gray-400">Games Played</div>
             </div>
-            <div className="bg-slate-800/50 rounded-xl p-4">
-              <div className="text-lg font-bold text-blue-300">{openingStats.length}</div>
-              <div className="text-xs text-slate-300">Openings</div>
+            <div className="bg-surface-2/50 rounded-lg p-4">
+              <div className="text-lg font-semibold text-blue-300">{openingStats.length}</div>
+              <div className="text-xs text-gray-400">Openings</div>
             </div>
-            <div className="bg-slate-800/50 rounded-xl p-4">
-              <div className="text-lg font-bold text-purple-300">
+            <div className="bg-surface-2/50 rounded-lg p-4">
+              <div className="text-lg font-semibold text-purple-300">
                 {enhancedAnalysis?.repertoireAnalysis?.styleMatchScore?.toFixed(0) || insights.averageWinRate.toFixed(0)}%
               </div>
-              <div className="text-xs text-slate-300">
+              <div className="text-xs text-gray-400">
                 {enhancedAnalysis?.repertoireAnalysis ? 'Style Match' : 'Win Rate'}
               </div>
             </div>
@@ -551,11 +551,11 @@ export function EnhancedOpeningPlayerCard({
               <div className="flex items-start gap-3">
                 <span className={`${styleMatchExplanation.color} text-lg`}>🎯</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-slate-200 mb-1">{styleMatchExplanation.message}</div>
-                  <div className={`text-xs text-slate-300 mb-1`}>{styleMatchExplanation.insight}</div>
+                  <div className="text-sm text-gray-300 mb-1">{styleMatchExplanation.message}</div>
+                  <div className={`text-xs text-gray-400 mb-1`}>{styleMatchExplanation.insight}</div>
                   <div className={`text-xs ${styleMatchExplanation.color}`}>{styleMatchExplanation.advice}</div>
                 </div>
-                <div className={`text-base font-bold ${styleMatchExplanation.color} shrink-0`}>
+                <div className={`text-base font-semibold ${styleMatchExplanation.color} shrink-0`}>
                   {enhancedAnalysis.repertoireAnalysis.styleMatchScore.toFixed(0)}%
                 </div>
               </div>
@@ -570,7 +570,7 @@ export function EnhancedOpeningPlayerCard({
           {enhancedAnalysis?.specificMistakes && enhancedAnalysis.specificMistakes.length > 0 ? (
             <>
               {/* Most Costly Mistakes Summary */}
-              <div className="bg-red-500/10 border border-red-400/50 rounded-xl p-4">
+              <div className="bg-red-500/10 shadow-card rounded-lg p-4">
                 <h5 className="font-semibold text-red-300 mb-3 flex items-center gap-2">
                   <span>🎯</span> Most Costly Mistakes
                 </h5>
@@ -592,15 +592,15 @@ export function EnhancedOpeningPlayerCard({
 
                     return (
                       <>
-                        <div className="flex items-center text-slate-200">
+                        <div className="flex items-center text-gray-300">
                           <span className="text-red-400 mr-2">├─</span>
                           <span className="text-sm">
                             <span className="font-semibold text-white">{blunders.length}</span> blunders in opening
-                            {blunders.length > 0 && <span className="text-slate-400"> (avg {avgCPL} CPL)</span>}
+                            {blunders.length > 0 && <span className="text-gray-500"> (avg {avgCPL} CPL)</span>}
                           </span>
                         </div>
                         {mistakes.length > 0 && (
-                          <div className="flex items-center text-slate-200">
+                          <div className="flex items-center text-gray-300">
                             <span className="text-orange-400 mr-2">├─</span>
                             <span className="text-sm">
                               <span className="font-semibold text-white">{mistakes.length}</span> major mistakes detected
@@ -609,7 +609,7 @@ export function EnhancedOpeningPlayerCard({
                         )}
                         {mostCommonOpening && (
                           <div
-                            className="flex items-center text-slate-200 cursor-pointer hover:bg-sky-500/5 rounded-lg p-2 -m-2 transition-colors"
+                            className="flex items-center text-gray-300 cursor-pointer hover:bg-sky-500/5 rounded-lg p-2 -m-2 transition-colors"
                             onClick={() => {
                               // Get all blunders for this opening
                               const openingBlunders = blunders.filter(b => b.mistake.split(' - ')[0] === mostCommonOpening[0])
@@ -620,7 +620,7 @@ export function EnhancedOpeningPlayerCard({
                             <span className="text-sky-400 mr-2">└─</span>
                             <span className="text-sm">
                               Study: <span className="font-semibold text-sky-300 underline decoration-dotted">{mostCommonOpening[0]}</span> tactics
-                              <span className="text-slate-400"> ({mostCommonOpening[1]} errors)</span>
+                              <span className="text-gray-500"> ({mostCommonOpening[1]} errors)</span>
                             </span>
                           </div>
                         )}
@@ -631,7 +631,7 @@ export function EnhancedOpeningPlayerCard({
               </div>
 
               {/* Recurring Patterns */}
-              <div className="bg-amber-500/10 border border-amber-400/50 rounded-xl p-4">
+              <div className="bg-amber-500/10 shadow-card rounded-lg p-4">
                 <h5 className="font-semibold text-amber-300 mb-3 flex items-center gap-2">
                   <span>🔍</span> Recurring Patterns
                 </h5>
@@ -642,14 +642,14 @@ export function EnhancedOpeningPlayerCard({
                         .filter(insight => !insight.includes('💡 Quick Tip') && !insight.includes('player ('))
                         .slice(0, 3)
                         .map((pattern, idx, arr) => (
-                          <div key={idx} className="flex items-start text-slate-200">
+                          <div key={idx} className="flex items-start text-gray-300">
                             <span className="text-amber-400 mr-2">{idx === arr.length - 1 ? '└─' : '├─'}</span>
                             <span className="text-sm flex-1">{pattern}</span>
                           </div>
                         ))}
                     </>
                   ) : (
-                    <div className="flex items-start text-slate-300">
+                    <div className="flex items-start text-gray-400">
                       <span className="text-emerald-400 mr-2">✓</span>
                       <span className="text-sm">No recurring patterns detected - your mistakes are varied and not systematic</span>
                     </div>
@@ -659,7 +659,7 @@ export function EnhancedOpeningPlayerCard({
 
               {/* Recent Improvement / Quick Tip */}
               {enhancedAnalysis.actionableInsights && enhancedAnalysis.actionableInsights.some(i => i.includes('💡 Quick Tip')) && (
-                <div className="bg-sky-500/10 border border-sky-400/50 rounded-xl p-4">
+                <div className="bg-sky-500/10 shadow-card rounded-lg p-4">
                   <h5 className="font-semibold text-sky-300 mb-3 flex items-center gap-2">
                     <span>💡</span> Action Plan
                   </h5>
@@ -667,7 +667,7 @@ export function EnhancedOpeningPlayerCard({
                     {enhancedAnalysis.actionableInsights
                       .filter(insight => insight.includes('💡 Quick Tip'))
                       .map((tip, idx) => (
-                        <div key={idx} className="flex items-start text-slate-200">
+                        <div key={idx} className="flex items-start text-gray-300">
                           <span className="text-sky-400 mr-2">└─</span>
                           <span className="text-sm flex-1">{tip.replace('💡 Quick Tip: ', '')}</span>
                         </div>
@@ -681,21 +681,21 @@ export function EnhancedOpeningPlayerCard({
             <div className="text-center py-8">
               <div className="text-4xl mb-4">🎉</div>
               <h5 className="font-semibold text-white mb-2">No Major Mistakes Found!</h5>
-              <p className="text-sm text-slate-300">Your opening play is solid. Keep up the good work!</p>
+              <p className="text-sm text-gray-400">Your opening play is solid. Keep up the good work!</p>
             </div>
           )}
 
           {/* Mistake Detail Modal */}
           {selectedMistake && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-slate-800 rounded-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="bg-surface-2 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
                 <div className="flex justify-between items-start mb-4">
-                  <h4 className="text-xl font-bold text-white">
+                  <h4 className="text-xl font-semibold text-white">
                     Move {selectedMistake.move} Analysis
                   </h4>
                   <button
                     onClick={() => setSelectedMistake(null)}
-                    className="text-slate-400 hover:text-white"
+                    className="text-gray-500 hover:text-white"
                   >
                     ✕
                   </button>
@@ -704,23 +704,23 @@ export function EnhancedOpeningPlayerCard({
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <div className="text-sm text-slate-400">Your Move</div>
+                      <div className="text-sm text-gray-500">Your Move</div>
                       <div className="text-lg font-semibold text-red-300">{selectedMistake.moveNotation}</div>
                     </div>
                     <div>
-                      <div className="text-sm text-slate-400">Best Move</div>
+                      <div className="text-sm text-gray-500">Best Move</div>
                       <div className="text-lg font-semibold text-green-300">{selectedMistake.correctMove}</div>
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-sm text-slate-400">Explanation</div>
-                    <div className="text-slate-200">{selectedMistake.explanation}</div>
+                    <div className="text-sm text-gray-500">Explanation</div>
+                    <div className="text-gray-300">{selectedMistake.explanation}</div>
                   </div>
 
-                  <div className="bg-slate-700/50 rounded-lg p-4">
-                    <div className="text-sm text-slate-400 mb-2">Learning Tip</div>
-                    <div className="text-slate-200">
+                  <div className="bg-surface-3/50 rounded-lg p-4">
+                    <div className="text-sm text-gray-500 mb-2">Learning Tip</div>
+                    <div className="text-gray-300">
                       {getLearningTip(selectedMistake.classification, selectedMistake.move)}
                     </div>
                   </div>
@@ -738,7 +738,7 @@ export function EnhancedOpeningPlayerCard({
           {enhancedAnalysis?.styleRecommendations && enhancedAnalysis.styleRecommendations.length > 0 ? (
             <div className="space-y-3">
               {enhancedAnalysis.styleRecommendations.slice(0, 3).map((rec, index) => (
-                <div key={index} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 hover:bg-slate-800/70 transition-colors">
+                <div key={index} className="bg-surface-2/50 shadow-card rounded-lg p-4 hover:bg-surface-2/70 transition-colors">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
@@ -747,29 +747,29 @@ export function EnhancedOpeningPlayerCard({
                         <span className={`px-2 py-1 rounded text-xs ${
                           rec.priority === 'high' ? 'bg-emerald-500/20 text-emerald-300' :
                           rec.priority === 'medium' ? 'bg-sky-500/20 text-sky-300' :
-                          'bg-slate-500/20 text-slate-300'
+                          'bg-white/[0.06] text-gray-400'
                         }`}>
                           {rec.priority} priority
                         </span>
                       </div>
                       <div className="mb-2">
                         <div className="flex items-center gap-2 mb-1">
-                          <div className="text-xs text-slate-400">Style Match:</div>
-                          <div className="flex-1 bg-slate-700 rounded-full h-2 overflow-hidden">
+                          <div className="text-xs text-gray-500">Style Match:</div>
+                          <div className="flex-1 bg-surface-3 rounded-full h-2 overflow-hidden">
                             <div
-                              className="bg-gradient-to-r from-sky-500 to-emerald-500 h-full transition-all"
+                              className="bg-gradient-to-r from-sky-500 to-emerald-500 h-full transition-colors"
                               style={{ width: `${rec.compatibilityScore}%` }}
                             />
                           </div>
                           <div className="text-xs font-semibold text-emerald-300">{Math.round(rec.compatibilityScore)}%</div>
                         </div>
                       </div>
-                      <p className="text-sm text-slate-300 leading-relaxed">{rec.reasoning}</p>
+                      <p className="text-sm text-gray-400 leading-relaxed">{rec.reasoning}</p>
                       {rec.suggestedLines && rec.suggestedLines.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-slate-700">
-                          <div className="text-xs text-slate-400 mb-1">Suggested Lines:</div>
+                        <div className="mt-3 pt-3 border-t border-white/[0.04]">
+                          <div className="text-xs text-gray-500 mb-1">Suggested Lines:</div>
                           {rec.suggestedLines.map((line, idx) => (
-                            <div key={idx} className="text-xs text-slate-300 font-mono">• {line}</div>
+                            <div key={idx} className="text-xs text-gray-400 font-mono">• {line}</div>
                           ))}
                         </div>
                       )}
@@ -800,7 +800,7 @@ export function EnhancedOpeningPlayerCard({
             <div className="text-center py-8">
               <div className="text-4xl mb-4">📚</div>
               <h5 className="font-semibold text-white mb-2">Analyzing Your Style</h5>
-              <p className="text-sm text-slate-300">Opening recommendations will appear here based on your playing style and performance.</p>
+              <p className="text-sm text-gray-400">Opening recommendations will appear here based on your playing style and performance.</p>
             </div>
           )}
         </div>
@@ -812,7 +812,7 @@ export function EnhancedOpeningPlayerCard({
 
           {enhancedAnalysis?.improvementTrend && enhancedAnalysis.improvementTrend.length > 0 ? (
             <div className="space-y-4">
-              <div className="bg-slate-800/50 rounded-xl p-4">
+              <div className="bg-surface-2/50 rounded-lg p-4">
                 <h6 className="font-semibold text-white mb-3">Opening Win Rate Over Time</h6>
                 <div className="flex items-end justify-between space-x-1 h-32 mb-2">
                   {enhancedAnalysis.improvementTrend.map((point, index) => {
@@ -822,52 +822,52 @@ export function EnhancedOpeningPlayerCard({
                                  point.openingWinRate >= 40 ? 'bg-amber-500' : 'bg-rose-500'
                     return (
                       <div key={index} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-                        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 px-2 py-1 rounded text-xs whitespace-nowrap z-10">
+                        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-1 px-2 py-1 rounded text-xs whitespace-nowrap z-10">
                           <div className="font-semibold">{point.openingWinRate.toFixed(1)}% win rate</div>
-                          <div className="text-slate-400">{point.games} games</div>
-                          <div className="text-slate-400">{new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                          <div className="text-gray-500">{point.games} games</div>
+                          <div className="text-gray-500">{new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
                         </div>
                         <div
-                          className={`w-full ${color} rounded-t transition-all hover:opacity-80`}
+                          className={`w-full ${color} rounded-t transition-colors hover:opacity-80`}
                           style={{ height: `${heightPercent}%` }}
                         ></div>
                       </div>
                     )
                   })}
                 </div>
-                <div className="flex justify-between text-xs text-slate-400 mt-2">
+                <div className="flex justify-between text-xs text-gray-500 mt-2">
                   <span>{new Date(enhancedAnalysis.improvementTrend[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                   <span>{new Date(enhancedAnalysis.improvementTrend[enhancedAnalysis.improvementTrend.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-800/50 rounded-xl p-4">
+                <div className="bg-surface-2/50 rounded-lg p-4">
                   <h6 className="font-semibold text-white mb-2">Recent Performance</h6>
-                  <div className="text-2xl font-bold text-emerald-300">
+                  <div className="text-2xl font-semibold text-emerald-300">
                     {enhancedAnalysis.improvementTrend[enhancedAnalysis.improvementTrend.length - 1]?.openingWinRate.toFixed(0) || 0}%
                   </div>
-                  <div className="text-xs text-slate-400">Last week's win rate</div>
+                  <div className="text-xs text-gray-500">Last week's win rate</div>
                 </div>
-                <div className="bg-slate-800/50 rounded-xl p-4">
+                <div className="bg-surface-2/50 rounded-lg p-4">
                   <h6 className="font-semibold text-white mb-2">Best Week</h6>
-                  <div className="text-2xl font-bold text-blue-300">
+                  <div className="text-2xl font-semibold text-blue-300">
                     {Math.max(...enhancedAnalysis.improvementTrend.map(t => t.openingWinRate)).toFixed(0)}%
                   </div>
-                  <div className="text-xs text-slate-400">Highest win rate achieved</div>
+                  <div className="text-xs text-gray-500">Highest win rate achieved</div>
                 </div>
               </div>
 
               {enhancedAnalysis.repertoireAnalysis && (
-                <div className="bg-slate-800/50 rounded-xl p-4">
+                <div className="bg-surface-2/50 rounded-lg p-4">
                   <h6 className="font-semibold text-white mb-3">Repertoire Insights</h6>
                   <div className="space-y-3">
                     {enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening !== 'None' && (
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-slate-300">Best Opening:</span>
+                        <span className="text-sm text-gray-400">Best Opening:</span>
                         <div className="text-right">
                           <div className="font-semibold text-emerald-300">{enhancedAnalysis.repertoireAnalysis.mostSuccessful.opening}</div>
-                          <div className="text-xs text-slate-400">
+                          <div className="text-xs text-gray-500">
                             {enhancedAnalysis.repertoireAnalysis.mostSuccessful.winRate.toFixed(0)}% win rate ({enhancedAnalysis.repertoireAnalysis.mostSuccessful.games} games)
                           </div>
                         </div>
@@ -875,17 +875,17 @@ export function EnhancedOpeningPlayerCard({
                     )}
                     {enhancedAnalysis.repertoireAnalysis.needsWork.opening !== 'None' && (
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-slate-300">Needs Work:</span>
+                        <span className="text-sm text-gray-400">Needs Work:</span>
                         <div className="text-right">
                           <div className="font-semibold text-rose-300">{enhancedAnalysis.repertoireAnalysis.needsWork.opening}</div>
-                          <div className="text-xs text-slate-400">
+                          <div className="text-xs text-gray-500">
                             {enhancedAnalysis.repertoireAnalysis.needsWork.winRate.toFixed(0)}% win rate ({enhancedAnalysis.repertoireAnalysis.needsWork.games} games)
                           </div>
                         </div>
                       </div>
                     )}
-                    <div className="flex justify-between items-center pt-3 border-t border-slate-700">
-                      <span className="text-sm text-slate-300">Repertoire Diversity:</span>
+                    <div className="flex justify-between items-center pt-3 border-t border-white/[0.04]">
+                      <span className="text-sm text-gray-400">Repertoire Diversity:</span>
                       <div className="text-right">
                         <div className="font-semibold text-sky-300">{enhancedAnalysis.repertoireAnalysis.diversityScore.toFixed(0)}%</div>
                       </div>
@@ -898,7 +898,7 @@ export function EnhancedOpeningPlayerCard({
             <div className="text-center py-8">
               <div className="text-4xl mb-4">📈</div>
               <h5 className="font-semibold text-white mb-2">Building Your Progress History</h5>
-              <p className="text-sm text-slate-300">Play more games to see your opening performance trends over time.</p>
+              <p className="text-sm text-gray-400">Play more games to see your opening performance trends over time.</p>
             </div>
           )}
         </div>
@@ -907,12 +907,12 @@ export function EnhancedOpeningPlayerCard({
       {/* Blunders Modal */}
       {showBlundersModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setShowBlundersModal(false)}>
-          <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 bg-slate-900 border-b border-white/10 p-4 flex justify-between items-center z-10">
+          <div className="bg-surface-1 rounded-lg shadow-card max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-surface-1 border-b border-white/10 p-4 flex justify-between items-center z-10">
               <h3 className="text-lg font-semibold text-white">Critical Blunders to Review </h3>
               <button
                 onClick={() => setShowBlundersModal(false)}
-                className="text-slate-400 hover:text-white transition-colors"
+                className="text-gray-500 hover:text-white transition-colors"
               >
                 ✕
               </button>
@@ -953,7 +953,7 @@ export function EnhancedOpeningPlayerCard({
                   <div
                     key={idx}
                     onClick={handleBlunderClick}
-                    className={`bg-red-500/5 border border-red-400/30 rounded-lg p-4 transition-all ${
+                    className={`bg-red-500/5 shadow-card rounded-lg p-4 transition-colors ${
                       gameId ? 'hover:bg-red-500/10 hover:border-red-400/50 cursor-pointer hover:scale-[1.02]' : ''
                     }`}
                   >
@@ -962,15 +962,15 @@ export function EnhancedOpeningPlayerCard({
                         <div className="text-sm font-medium text-red-300 mb-1">
                           {opening}
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-gray-500">
                           {moveInfo}
                         </div>
                       </div>
                       <div className="text-right ml-3">
-                        <div className="text-lg font-bold text-red-400">
+                        <div className="text-lg font-semibold text-red-400">
                           -{Math.round(blunder.centipawnLoss || blunder.centipawn_loss || 0)}
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-gray-500">
                           CPL
                         </div>
                       </div>
@@ -978,20 +978,20 @@ export function EnhancedOpeningPlayerCard({
 
                     <div className="grid grid-cols-2 gap-2 mb-3">
                       <div className="bg-red-500/10 rounded px-2 py-1.5">
-                        <div className="text-xs text-slate-400">You played</div>
+                        <div className="text-xs text-gray-500">You played</div>
                         <div className="text-sm font-mono font-semibold text-red-300">
                           {displayYourMove}
                         </div>
                       </div>
                       <div className="bg-emerald-500/10 rounded px-2 py-1.5">
-                        <div className="text-xs text-slate-400">Best move</div>
+                        <div className="text-xs text-gray-500">Best move</div>
                         <div className="text-sm font-mono font-semibold text-emerald-300">
                           {displayBestMove}
                         </div>
                       </div>
                     </div>
 
-                    <div className="text-xs text-slate-300 leading-relaxed mb-2">
+                    <div className="text-xs text-gray-400 leading-relaxed mb-2">
                       {blunder.explanation}
                     </div>
 

@@ -70,7 +70,7 @@ const GameReviewPage = lazyWithRetry(() => import('./pages/coach/GameReviewPage'
 function PageLoader() {
   return (
     <>
-      <div className="min-h-screen bg-slate-950" />
+      <div className="min-h-screen bg-surface-base" />
       <LoadingModal
         isOpen={true}
         message="Loading page..."
@@ -103,7 +103,7 @@ function App() {
         <ChessSoundProvider>
           <CoachChatProvider>
           <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <div className="min-h-screen bg-slate-950 flex flex-col">
+            <div className="min-h-screen bg-surface-base flex flex-col">
               <Navigation />
               <Suspense fallback={<PageLoader />}>
                 <Routes>

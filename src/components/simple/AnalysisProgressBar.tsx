@@ -72,17 +72,17 @@ export function AnalysisProgressBar({ analyzing, progress, statusMessage }: Anal
   const etaText = typeof eta === 'number' && eta > 0 ? formatEta(eta) : null
 
   return (
-    <div className="w-full max-w-md mx-auto mt-4 mb-6 rounded-lg border border-white/10 bg-white/[0.08] p-4 shadow-2xl shadow-black/50">
-      <div className="flex items-center justify-between text-sm text-slate-200">
+    <div className="w-full max-w-md mx-auto mt-4 mb-6 rounded-lg bg-surface-1 p-4 shadow-card">
+      <div className="flex items-center justify-between text-sm text-gray-300">
         <span className="font-medium">{phaseLabel}</span>
         {hasTotals && (
-          <span className="text-xs text-slate-300">{analyzedGames}/{totalGames} games</span>
+          <span className="text-xs text-gray-400">{analyzedGames}/{totalGames} games</span>
         )}
       </div>
 
       {/* Status message above progress bar */}
       <div className="mt-3 text-center">
-        <span className="text-xs font-medium text-slate-300 bg-white/10 px-3 py-1 rounded-full">
+        <span className="text-xs font-medium text-gray-400 bg-white/10 px-3 py-1 rounded-full">
           it might take few minutes, have a look around
         </span>
       </div>
@@ -98,14 +98,14 @@ export function AnalysisProgressBar({ analyzing, progress, statusMessage }: Anal
         )}
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-xs text-slate-300">
+      <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
         <span>{progress ? `${percentage}% complete` : 'Getting everything ready...'}</span>
         {etaText && <span>~{etaText} remaining</span>}
       </div>
 
-      <p className="mt-2 text-xs text-slate-300">{phaseDescription}</p>
+      <p className="mt-2 text-xs text-gray-400">{phaseDescription}</p>
       {statusMessage && (
-        <p className={`mt-1 text-xs ${progress?.all_games_analyzed ? 'text-green-400 font-medium' : 'text-slate-300 italic'}`}>
+        <p className={`mt-1 text-xs ${progress?.all_games_analyzed ? 'text-green-400 font-medium' : 'text-gray-400 italic'}`}>
           {statusMessage}
         </p>
       )}

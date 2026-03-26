@@ -111,16 +111,16 @@ export interface KeyMoment {
 const EVAL_CAP = 500
 
 export const classificationBadgeStyles: Record<MoveClassification, string> = {
-  brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
-  best: 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200',
-  excellent: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',
-  great: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',
-  good: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',
-  acceptable: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',
-  inaccuracy: 'border border-amber-400/40 bg-amber-500/20 text-amber-200',
-  mistake: 'border border-orange-400/40 bg-orange-500/20 text-orange-200',
-  blunder: 'border border-rose-400/40 bg-rose-500/20 text-rose-200',
-  uncategorized: 'border border-slate-400/30 bg-slate-500/10 text-slate-200',
+  brilliant: 'shadow-card bg-purple-500/20 text-purple-200',
+  best: 'shadow-card bg-emerald-500/20 text-emerald-200',
+  excellent: 'shadow-card bg-cyan-500/20 text-cyan-200',
+  great: 'shadow-card bg-cyan-500/20 text-cyan-200',
+  good: 'shadow-card bg-sky-500/20 text-sky-200',
+  acceptable: 'shadow-card bg-sky-500/20 text-sky-200',
+  inaccuracy: 'shadow-card bg-amber-500/20 text-amber-200',
+  mistake: 'shadow-card bg-orange-500/20 text-orange-200',
+  blunder: 'shadow-card bg-rose-500/20 text-rose-200',
+  uncategorized: 'shadow-card bg-slate-500/10 text-slate-200',
 }
 
 export const classificationLabel: Record<MoveClassification, string> = {

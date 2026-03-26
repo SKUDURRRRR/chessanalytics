@@ -63,10 +63,10 @@ export default function ResetPasswordPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full">
-          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
-            <div className="bg-green-900/50 border border-green-500 text-green-200 px-6 py-4 rounded-2xl">
+          <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
+            <div className="bg-green-900/50 shadow-card text-green-200 px-6 py-4 rounded-lg">
               <h3 className="text-lg font-medium mb-2">Password updated!</h3>
               <p className="text-sm">
                 Your password has been successfully reset. Redirecting to login...
@@ -85,12 +85,12 @@ export default function ResetPasswordPage() {
 
   if (!sessionReady) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full">
-          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40 text-center">
+          <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card text-center">
             <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-sky-200 mx-auto mb-4"></div>
-            <p className="text-slate-300">Verifying reset link...</p>
-            <p className="text-sm text-slate-500 mt-2">
+            <p className="text-gray-400">Verifying reset link...</p>
+            <p className="text-sm text-gray-500 mt-2">
               If this takes too long, your link may have expired.{' '}
               <Link to="/forgot-password" className="text-sky-300 hover:text-sky-200 underline">
                 Request a new one
@@ -103,25 +103,25 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-surface-base flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
+        <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
           <div className="mb-6 text-center">
             <h2 className="text-2xl font-semibold text-white">Set new password</h2>
-            <p className="mt-2 text-sm text-slate-300">
+            <p className="mt-2 text-sm text-gray-400">
               Enter your new password below.
             </p>
           </div>
 
           {error && (
-            <div className="mb-4 bg-rose-900/50 border border-rose-500 text-rose-200 px-4 py-3 rounded-2xl">
+            <div className="mb-4 bg-rose-900/50 shadow-card text-rose-200 px-4 py-3 rounded-lg">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-2">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-400 mb-2">
                 New password
               </label>
               <input
@@ -130,14 +130,14 @@ export default function ResetPasswordPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
                 placeholder="••••••••"
                 minLength={6}
               />
             </div>
 
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-300 mb-2">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-400 mb-2">
                 Confirm new password
               </label>
               <input
@@ -146,7 +146,7 @@ export default function ResetPasswordPage() {
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
                 placeholder="••••••••"
                 minLength={6}
               />
@@ -156,7 +156,7 @@ export default function ResetPasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full rounded-lg bg-sky-500/20 shadow-card px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? (
                   <div className="flex items-center justify-center space-x-2">

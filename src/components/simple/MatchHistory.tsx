@@ -558,7 +558,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       case 'draw':
         return 'text-yellow-600'
       default:
-        return 'text-slate-300'
+        return 'text-gray-400'
     }
   }
 
@@ -596,10 +596,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
   if (loading && games.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-6 text-slate-200">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <div className="flex items-center justify-center gap-3 text-sm">
           <span className="inline-flex h-6 w-6 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-          <span className="text-slate-200">Loading match history…</span>
+          <span className="text-gray-300">Loading match history…</span>
         </div>
       </div>
     )
@@ -607,7 +607,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-sm text-rose-100">
+      <div className="rounded-lg bg-rose-500/10 p-6 text-sm text-rose-100 shadow-card">
         <div className="flex items-center gap-2">
           <span className="text-lg">!</span>
           <span>{error}</span>
@@ -618,22 +618,22 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
   if (games.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-8 text-center text-slate-200">
-        <div className="text-4xl text-slate-500">♘</div>
+      <div className="rounded-lg bg-surface-1 p-8 text-center text-gray-300 shadow-card">
+        <div className="text-4xl text-gray-500">♘</div>
         <h3 className="mt-4 text-lg font-semibold text-white">No Games Found</h3>
-        <p className="mt-2 text-sm text-slate-400">We couldn’t locate any games for this filter yet.</p>
+        <p className="mt-2 text-sm text-gray-500">We couldn’t locate any games for this filter yet.</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4 text-slate-200">
-      <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6 shadow-xl shadow-black/50">
+    <div className="space-y-4 text-gray-300">
+      <div className="rounded-lg bg-surface-1 p-6 shadow-card">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-xl font-semibold text-white">Games Analysis</h2>
             {openingFilter && (
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-200">
+              <div className="inline-flex items-center gap-2 rounded-md bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-200">
                 <span>
                   Filtered by {openingFilter.normalized}
                   {openingFilter.color && ` (as ${openingFilter.color === 'white' ? 'White' : 'Black'})`}
@@ -650,7 +650,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           </div>
         </div>
 
-        <div className="py-4 text-xs uppercase tracking-wider text-slate-400">{games.length} games loaded</div>
+        <div className="py-4 text-xs uppercase tracking-wider text-gray-500">{games.length} games loaded</div>
 
         {analysisNotification && (
           <div className={`mb-4 flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${analysisNotification.type === 'success' ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-100' : 'border-rose-400/30 bg-rose-500/10 text-rose-100'}`}>
@@ -661,7 +661,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
             <button
               type="button"
               onClick={() => setAnalysisNotification(null)}
-              className="ml-3 text-xs font-medium text-slate-300 hover:text-white transition-colors flex-shrink-0"
+              className="ml-3 text-xs font-medium text-gray-400 hover:text-white transition-colors flex-shrink-0"
             >
               Close
             </button>
@@ -693,7 +693,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                       <span className={`text-sm font-semibold ${getResultColor(game.result)}`}>
                         {game.result.toUpperCase()}
                       </span>
-                      <span className="text-xs text-slate-400 capitalize">{game.color}</span>
+                      <span className="text-xs text-gray-500 capitalize">{game.color}</span>
                       {viewMode === 'combined' && game.platform && (
                         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
                           game.platform === 'lichess'
@@ -710,36 +710,36 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                       )}
                     </div>
                     <div className="text-sm font-medium text-white truncate">{game.opponent}</div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-gray-500">
                       {formatDate(game.played_at)} • {formatTime(game.played_at)}
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-medium text-white">{game.rating ?? '--'}</div>
-                    <div className="text-xs text-slate-400">vs {game.opponent_rating ?? '--'}</div>
+                    <div className="text-xs text-gray-500">vs {game.opponent_rating ?? '--'}</div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-slate-400">Time Control:</span>
-                    <div className="font-medium text-slate-200">{getTimeControlCategory(game.time_control)}</div>
+                    <span className="text-gray-500">Time Control:</span>
+                    <div className="font-medium text-gray-300">{getTimeControlCategory(game.time_control)}</div>
                   </div>
                   <div>
-                    <span className="text-slate-400">Moves:</span>
-                    <div className="font-medium text-slate-200">{game.moves}</div>
+                    <span className="text-gray-500">Moves:</span>
+                    <div className="font-medium text-gray-300">{game.moves}</div>
                   </div>
                   <div>
-                    <span className="text-slate-400">Opening:</span>
+                    <span className="text-gray-500">Opening:</span>
                     <div
-                      className="font-medium text-slate-200 truncate"
+                      className="font-medium text-gray-300 truncate"
                       title={getOpeningExplanation(game.opening_family, game.color, game)}
                     >
                       {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                     </div>
                   </div>
                   <div>
-                    <span className="text-slate-400">Accuracy:</span>
+                    <span className="text-gray-500">Accuracy:</span>
                     <div className="font-medium">
                       {accuracy !== null ? (
                         <span className={
@@ -751,7 +751,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                           {accuracy.toFixed(1)}%
                         </span>
                       ) : (
-                        <span className="text-slate-500">?%</span>
+                        <span className="text-gray-500">?%</span>
                       )}
                     </div>
                   </div>
@@ -774,10 +774,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                         disabled={pending || analyzed}
                         className={`btn-touch-sm rounded-full text-xs font-medium transition ${
                           analyzed
-                            ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
+                            ? 'cursor-default bg-emerald-500/10 text-emerald-200 shadow-card'
                             : pending
-                              ? 'cursor-wait border border-white/10 bg-white/5 text-slate-400'
-                              : 'border border-sky-400/40 bg-sky-500/10 text-sky-200 hover:border-sky-300/60 hover:bg-sky-500/20'
+                              ? 'cursor-wait bg-white/5 text-gray-500 shadow-card'
+                              : 'bg-sky-500/10 text-sky-200 shadow-card hover:bg-sky-500/15'
                         }`}
                       >
                         {pending ? (
@@ -801,7 +801,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full table-auto">
             <thead>
-              <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-gray-500">
                 <th className="py-3 px-2 text-left">Date</th>
                 <th className="py-3 px-2 text-left">Result</th>
                 <th className="py-3 px-2 text-left">Color</th>
@@ -844,11 +844,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                     role={isClickable ? 'button' : undefined}
                     title={isClickable ? (analyzed ? 'View analysis' : 'Click to analyze this game') : undefined}
                   >
-                    <td className="py-3 px-2 text-sm text-slate-300">
+                    <td className="py-3 px-2 text-sm text-gray-400">
                       <div className="flex items-center gap-2">
                         <div>
                           <div>{formatDate(game.played_at)}</div>
-                          <div className="text-xs text-slate-500">{formatTime(game.played_at)}</div>
+                          <div className="text-xs text-gray-500">{formatTime(game.played_at)}</div>
                         </div>
                         {queued && !analyzed && (
                           <span className="inline-flex items-center rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
@@ -873,10 +873,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                         </span>
                       </div>
                     </td>
-                    <td className="py-3 px-2 text-sm text-slate-300 capitalize">{game.color}</td>
-                    <td className="py-3 px-2 text-sm text-slate-100">{game.opponent}</td>
-                    <td className="py-3 px-2 text-sm text-slate-300">{getTimeControlCategory(game.time_control)}</td>
-                    <td className="py-3 px-2 text-sm text-slate-300">
+                    <td className="py-3 px-2 text-sm text-gray-400 capitalize">{game.color}</td>
+                    <td className="py-3 px-2 text-sm text-gray-300">{game.opponent}</td>
+                    <td className="py-3 px-2 text-sm text-gray-400">{getTimeControlCategory(game.time_control)}</td>
+                    <td className="py-3 px-2 text-sm text-gray-400">
                       <div
                         className="max-w-32 truncate"
                         title={getOpeningExplanation(game.opening_family, game.color, game)}
@@ -884,8 +884,8 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                         {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                       </div>
                     </td>
-                    <td className="py-3 px-2 text-sm text-slate-300">{game.moves}</td>
-                    <td className="py-3 px-2 text-sm text-slate-300">
+                    <td className="py-3 px-2 text-sm text-gray-400">{game.moves}</td>
+                    <td className="py-3 px-2 text-sm text-gray-400">
                       {(() => {
                         const accuracy = getGameAccuracy(game)
                         if (accuracy !== null) {
@@ -900,10 +900,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                             </span>
                           )
                         }
-                        return <span className="text-slate-500">?%</span>
+                        return <span className="text-gray-500">?%</span>
                       })()}
                     </td>
-                    <td className="py-3 px-2 text-sm text-slate-300" onClick={e => e.stopPropagation()}>
+                    <td className="py-3 px-2 text-sm text-gray-400" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-between gap-2">
                         <div
                           onClick={e => {
@@ -916,7 +916,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                             {game.rating ?? '--'}
                           </div>
                           <div
-                            className="text-xs text-slate-500"
+                            className="text-xs text-gray-500"
                             title={game.opponent_rating ? `Opponent rating: ${game.opponent_rating}` : 'Opponent rating not available'}
                           >
                             vs {game.opponent_rating ?? '--'}
@@ -928,10 +928,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                           disabled={pending || analyzed}
                           className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition ${
                             analyzed
-                              ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
+                              ? 'cursor-default bg-emerald-500/10 text-emerald-200 shadow-card'
                               : pending
-                                ? 'cursor-wait border border-white/10 bg-white/5 text-slate-400'
-                                : 'border border-sky-400/40 bg-sky-500/10 text-sky-200 hover:border-sky-300/60 hover:bg-sky-500/20'
+                                ? 'cursor-wait bg-white/5 text-gray-500 shadow-card'
+                                : 'bg-sky-500/10 text-sky-200 shadow-card hover:bg-sky-500/15'
                           }`}
                         >
                           {pending ? (
@@ -954,7 +954,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
             <button
               onClick={loadMore}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 transition hover:border-white/30 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-md bg-surface-2 px-4 py-2 text-sm font-medium text-gray-300 shadow-card transition-colors hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? 'Loading...' : 'Load More Games'}
             </button>

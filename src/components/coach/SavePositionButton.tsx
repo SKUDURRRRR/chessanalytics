@@ -59,7 +59,7 @@ export function SavePositionButton({
     <>
       <button
         onClick={() => setShowModal(true)}
-        className="text-xs text-slate-400 hover:text-emerald-400 transition-colors flex items-center gap-1"
+        className="text-xs text-gray-500 hover:text-emerald-400 transition-colors flex items-center gap-1"
         title="Save position"
       >
         <span>+</span> Save Position
@@ -68,39 +68,39 @@ export function SavePositionButton({
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowModal(false)}>
           <div
-            className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl"
+            className="w-full max-w-md rounded-lg bg-surface-1 p-6 shadow-card"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-white mb-4">Save Position</h3>
 
             <div className="mb-3">
-              <label className="block text-sm text-slate-400 mb-1">Title</label>
+              <label className="block text-sm text-gray-500 mb-1">Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Interesting endgame"
-                className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/50"
+                className="w-full rounded-lg shadow-card bg-surface-1 px-3 py-2 text-sm text-white placeholder:text-gray-500 outline-none focus:ring-1 focus:ring-emerald-500/50"
               />
             </div>
 
             <div className="mb-3">
-              <label className="block text-sm text-slate-400 mb-1">Notes</label>
+              <label className="block text-sm text-gray-500 mb-1">Notes</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="What's interesting about this position?"
                 rows={3}
-                className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/50 resize-none"
+                className="w-full rounded-lg shadow-card bg-surface-1 px-3 py-2 text-sm text-white placeholder:text-gray-500 outline-none focus:ring-1 focus:ring-emerald-500/50 resize-none"
               />
             </div>
 
-            <p className="text-xs text-slate-500 mb-4 font-mono truncate">{fen}</p>
+            <p className="text-xs text-gray-500 mb-4 font-mono truncate">{fen}</p>
 
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+                className="px-4 py-2 text-sm text-gray-500 hover:text-white transition-colors"
               >
                 Cancel
               </button>

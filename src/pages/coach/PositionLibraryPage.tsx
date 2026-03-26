@@ -101,10 +101,10 @@ function PositionLibraryContent({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-          <p className="text-sm text-slate-400">Loading position library...</p>
+          <p className="text-sm text-gray-500">Loading position library...</p>
         </div>
       </div>
     )
@@ -112,13 +112,13 @@ function PositionLibraryContent({
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Error</h2>
-          <p className="text-slate-300 mb-6">{error.message}</p>
+      <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
+          <h2 className="text-2xl font-semibold text-white mb-4">Error</h2>
+          <p className="text-gray-400 mb-6">{error.message}</p>
           <button
             onClick={() => navigate('/coach')}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+            className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
           >
             Back to Dashboard
           </button>
@@ -128,19 +128,19 @@ function PositionLibraryContent({
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-8">
+    <div className="min-h-screen bg-surface-base p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
           <div>
             <button
               onClick={() => navigate('/coach')}
-              className="mb-2 text-slate-400 hover:text-slate-300 transition-colors flex items-center gap-2 text-sm"
+              className="mb-2 text-gray-500 hover:text-gray-400 transition-colors flex items-center gap-2 text-sm"
             >
               ← Back to Dashboard
             </button>
-            <h1 className="text-3xl md:text-4xl font-bold text-white">Position Library</h1>
-            <p className="text-slate-400 mt-1">{positions.length} saved position{positions.length !== 1 ? 's' : ''}</p>
+            <h1 className="text-3xl md:text-4xl font-semibold text-white">Position Library</h1>
+            <p className="text-gray-500 mt-1">{positions.length} saved position{positions.length !== 1 ? 's' : ''}</p>
           </div>
 
           <input
@@ -148,16 +148,16 @@ function PositionLibraryContent({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search positions..."
-            className="w-full md:w-64 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/50"
+            className="w-full md:w-64 rounded-lg shadow-input bg-surface-1 px-4 py-2.5 text-sm text-white placeholder:text-gray-500 outline-none focus:shadow-input-focus"
           />
         </div>
 
         {filtered.length === 0 ? (
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-12 text-center">
-            <p className="text-slate-400 text-lg mb-2">
+          <div className="rounded-lg shadow-card bg-surface-1 p-12 text-center">
+            <p className="text-gray-500 text-lg mb-2">
               {positions.length === 0 ? 'No saved positions yet' : 'No positions match your search'}
             </p>
-            <p className="text-slate-500 text-sm">
+            <p className="text-gray-500 text-sm">
               Save positions from game analysis to build your library.
             </p>
           </div>
@@ -166,10 +166,10 @@ function PositionLibraryContent({
             {filtered.map((pos) => (
               <div
                 key={pos.id}
-                className={`rounded-2xl border transition-all cursor-pointer ${
+                className={`rounded-lg transition-colors cursor-pointer ${
                   expandedId === pos.id
-                    ? 'border-emerald-500/50 bg-white/[0.06] col-span-1 sm:col-span-2'
-                    : 'border-white/10 bg-white/[0.04] hover:border-white/20'
+                    ? 'shadow-[0_0_0_1px_rgba(16,185,129,0.5)] bg-white/[0.06] col-span-1 sm:col-span-2'
+                    : 'shadow-card bg-white/[0.04] hover:shadow-card-hover'
                 }`}
                 onClick={() => {
                   if (expandedId === pos.id) {
@@ -203,7 +203,7 @@ function PositionLibraryContent({
                           {pos.tags.map((t, i) => (
                             <span
                               key={i}
-                              className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30"
+                              className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-300 shadow-card"
                             >
                               {t}
                             </span>
@@ -218,7 +218,7 @@ function PositionLibraryContent({
                             onChange={(e) => setEditingNotes(e.target.value)}
                             placeholder="Add notes about this position..."
                             rows={4}
-                            className="w-full rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-emerald-500/50 resize-none mb-3"
+                            className="w-full rounded-lg shadow-input bg-surface-1 px-3 py-2 text-sm text-white placeholder:text-gray-500 outline-none focus:shadow-input-focus resize-none mb-3"
                           />
                           <div className="flex items-center gap-3">
                             <button
@@ -234,11 +234,11 @@ function PositionLibraryContent({
                               Delete
                             </button>
                           </div>
-                          <p className="text-[10px] text-slate-600 mt-2 font-mono truncate">{pos.fen}</p>
+                          <p className="text-[10px] text-gray-600 mt-2 font-mono truncate">{pos.fen}</p>
                         </div>
                       ) : (
                         pos.notes && (
-                          <p className="text-xs text-slate-400 line-clamp-2">{pos.notes}</p>
+                          <p className="text-xs text-gray-500 line-clamp-2">{pos.notes}</p>
                         )
                       )}
                     </div>

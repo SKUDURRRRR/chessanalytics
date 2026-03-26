@@ -24,13 +24,13 @@ export function PersonalityMockup() {
   }).join(' ') + ' Z'
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 shadow-lg shadow-black/40 text-slate-200" style={{ fontSize: '10px' }}>
+    <div className="rounded-lg shadow-card bg-surface-1 p-4 text-gray-300" style={{ fontSize: '10px' }}>
       <div className="grid grid-cols-2 gap-3">
         {/* Left - Radar */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-xl shadow-black/40 flex flex-col">
+        <div className="rounded-lg shadow-card bg-white/[0.04] p-4 flex flex-col">
           <h3 className="mb-2 flex items-center text-xs font-semibold text-white">
             Your Chess Personality Radar
-            <span className="ml-1.5 text-[10px] text-slate-400">?</span>
+            <span className="ml-1.5 text-[10px] text-gray-500">?</span>
           </h3>
 
           <svg viewBox="0 0 240 220" className="w-full h-auto block mx-auto" style={{ maxWidth: '210px' }}>
@@ -67,18 +67,18 @@ export function PersonalityMockup() {
           {/* Trait badges grid */}
           <div className="grid grid-cols-3 gap-1.5 mt-auto pt-3">
             {traits.map(t => (
-              <div key={t.label} className="flex flex-col items-center rounded-xl border border-white/10 bg-white/[0.05] px-2 py-2 text-center">
+              <div key={t.label} className="flex flex-col items-center rounded-lg shadow-card bg-surface-1 px-2 py-2 text-center">
                 <div className={`mb-1 flex h-8 w-8 items-center justify-center rounded-full font-semibold text-white text-[9px] ${t.color} bg-opacity-30`}>
                   {t.value}
                 </div>
-                <div className="text-[7px] text-slate-300">{t.label}</div>
+                <div className="text-[7px] text-gray-400">{t.label}</div>
               </div>
             ))}
           </div>
         </div>
 
         {/* Right - Opening Analysis */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-xl shadow-black/40 flex flex-col">
+        <div className="rounded-lg shadow-card bg-white/[0.04] p-4 flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center">
@@ -86,34 +86,34 @@ export function PersonalityMockup() {
               <h3 className="text-xs font-semibold text-white">Enhanced Opening Analysis</h3>
             </div>
             <div className="text-right">
-              <div className="text-base font-bold text-white">84%</div>
-              <div className="text-[7px] text-slate-300">Opening Win Rate</div>
+              <div className="text-base font-semibold text-white">84%</div>
+              <div className="text-[7px] text-gray-400">Opening Win Rate</div>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex space-x-1 mb-3 bg-slate-800/50 rounded-xl p-0.5">
+          <div className="flex space-x-1 mb-3 bg-surface-2/50 rounded-xl p-0.5">
             {[{ label: 'Overview', icon: '📊', active: true }, { label: 'Mistakes', icon: '🔴' }, { label: 'Study', icon: '📗' }, { label: 'Progress', icon: '📈' }].map(tab => (
               <span key={tab.label} className={`flex-1 flex items-center justify-center gap-0.5 px-1 py-1 rounded-lg text-[7px] font-medium ${
                 tab.active
                   ? 'bg-sky-500 text-white shadow-lg'
-                  : 'text-slate-400'
+                  : 'text-gray-500'
               }`}>
                 {tab.icon} {tab.label}
               </span>
             ))}
           </div>
 
-          <p className="text-[8px] text-slate-300 leading-relaxed mb-3">
+          <p className="text-[8px] text-gray-400 leading-relaxed mb-3">
             You're performing well in the opening phase with a 84% win rate across 500 games. Your Queen's Pawn Game is especially strong at 75% win rate.
           </p>
 
           {/* Playing Style Card */}
-          <div className="bg-gradient-to-r from-sky-500/20 to-purple-500/20 border border-sky-500/30 rounded-xl p-2.5 mb-3">
+          <div className="bg-surface-2 rounded-lg p-2.5 mb-3 shadow-card-highlight">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[7px] text-slate-300 mb-0.5">Your Playing Style</div>
-                <div className="text-sm font-bold text-white">Well-Rounded Player</div>
+                <div className="text-[7px] text-gray-400 mb-0.5">Your Playing Style</div>
+                <div className="text-sm font-semibold text-white">Well-Rounded Player</div>
                 <div className="text-[7px] text-sky-300 mt-0.5">Based on positional traits</div>
               </div>
               <div className="text-2xl">&#9823;</div>
@@ -124,29 +124,29 @@ export function PersonalityMockup() {
           <div className="grid grid-cols-4 gap-1.5 mb-3">
             {[
               { v: '84%', l: 'Opening Win Rate', color: 'text-white', bg: 'bg-emerald-500/20' },
-              { v: '500', l: 'Games Played', color: 'text-emerald-300', bg: 'bg-slate-800/50' },
-              { v: '23', l: 'Openings', color: 'text-blue-300', bg: 'bg-slate-800/50' },
-              { v: '50%', l: 'Style Match', color: 'text-purple-300', bg: 'bg-slate-800/50' },
+              { v: '500', l: 'Games Played', color: 'text-emerald-300', bg: 'bg-surface-2/50' },
+              { v: '23', l: 'Openings', color: 'text-blue-300', bg: 'bg-surface-2/50' },
+              { v: '50%', l: 'Style Match', color: 'text-purple-300', bg: 'bg-surface-2/50' },
             ].map(s => (
               <div key={s.l} className={`${s.bg} rounded-xl p-1.5`}>
-                <div className={`text-xs font-bold ${s.color}`}>{s.v}</div>
-                <div className="text-[6px] text-slate-300">{s.l}</div>
+                <div className={`text-xs font-semibold ${s.color}`}>{s.v}</div>
+                <div className="text-[6px] text-gray-400">{s.l}</div>
               </div>
             ))}
           </div>
 
           {/* Insight box */}
-          <div className="bg-amber-500/10 border border-amber-400/50 rounded-lg p-2 mt-auto">
+          <div className="bg-amber-500/10 shadow-card rounded-lg p-2 mt-auto">
             <div className="flex items-start gap-1.5">
               <span className="text-amber-300 text-[10px]">&#127919;</span>
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-start">
-                  <div className="text-[7px] text-slate-200 leading-relaxed">
+                  <div className="text-[7px] text-gray-300 leading-relaxed">
                     Your positional style (69/100) isn't being fully utilized by your current openings.
                   </div>
-                  <span className="text-[9px] font-bold text-amber-300 shrink-0 ml-1">50%</span>
+                  <span className="text-[9px] font-semibold text-amber-300 shrink-0 ml-1">50%</span>
                 </div>
-                <p className="text-[7px] text-slate-300 mt-0.5">Your Queen's Pawn Game may not match your positional style, though it has a 75% win rate.</p>
+                <p className="text-[7px] text-gray-400 mt-0.5">Your Queen's Pawn Game may not match your positional style, though it has a 75% win rate.</p>
                 <p className="text-[7px] text-sky-300 mt-0.5">Prioritize openings that match your positional. See the Study tab for recommendations.</p>
               </div>
             </div>

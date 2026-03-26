@@ -29,12 +29,12 @@ export function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisPr
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-6 text-white">
         <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-2xl font-bold">Time Spent Playing Chess</h2>
+          <h2 className="text-2xl font-semibold">Time Spent Playing Chess</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
             <div className="text-sm opacity-90 mb-1">Estimated Total Time</div>
-            <div className="text-3xl font-bold">
+            <div className="text-3xl font-semibold">
               {timeStats.breakdown.hours > 0 && `${timeStats.breakdown.hours}h `}
               {timeStats.breakdown.minutes > 0 && `${timeStats.breakdown.minutes}m`}
             </div>
@@ -44,14 +44,14 @@ export function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisPr
           </div>
           <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
             <div className="text-sm opacity-90 mb-1">Total Games</div>
-            <div className="text-3xl font-bold">{games.length}</div>
+            <div className="text-3xl font-semibold">{games.length}</div>
             <div className="text-xs opacity-75 mt-1">
               Avg: {games.length > 0 ? Math.round(timeStats.estimatedActualTime.totalTimeSeconds / games.length / 60) : 0} min/game
             </div>
           </div>
           <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
             <div className="text-sm opacity-90 mb-1">Max Possible Time</div>
-            <div className="text-3xl font-bold">
+            <div className="text-3xl font-semibold">
               {Math.floor(timeStats.totalTimeSeconds / 3600)}h
             </div>
             <div className="text-xs opacity-75 mt-1">
@@ -116,7 +116,7 @@ export function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisPr
                 Longest Game
               </h3>
               <div className="space-y-2">
-                <div className="text-3xl font-bold text-blue-600">
+                <div className="text-3xl font-semibold text-blue-600">
                   {timeStats.longestGame.estimatedDurationFormatted}
                 </div>
                 <div className="text-sm text-gray-600">
@@ -133,7 +133,7 @@ export function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisPr
                 Shortest Game
               </h3>
               <div className="space-y-2">
-                <div className="text-3xl font-bold text-orange-600">
+                <div className="text-3xl font-semibold text-orange-600">
                   {timeStats.shortestGame.estimatedDurationFormatted}
                 </div>
                 <div className="text-sm text-gray-600">
@@ -314,11 +314,11 @@ export function TimeSpentSummary({ userId, platform, fallbackGames = [], classNa
 
   if (loading) {
     return (
-      <div className={`rounded-xl border border-white/10 bg-white/10 p-6 shadow-inner shadow-black/30 ${className}`}>
+      <div className={`rounded-lg shadow-card bg-white/10 p-6 ${className}`}>
         <div className="flex items-center gap-2 mb-4">
-          <h3 className="text-sm uppercase tracking-wide text-slate-400 font-semibold">Time Spent Playing</h3>
+          <h3 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Time Spent Playing</h3>
         </div>
-        <div className="text-center text-slate-400 py-8">
+        <div className="text-center text-gray-500 py-8">
           <div className="text-xl animate-pulse">Calculating total time...</div>
         </div>
       </div>
@@ -326,27 +326,27 @@ export function TimeSpentSummary({ userId, platform, fallbackGames = [], classNa
   }
 
   return (
-    <div className={`rounded-xl border border-white/10 bg-white/10 p-6 shadow-inner shadow-black/30 ${className}`}>
+    <div className={`rounded-lg shadow-card bg-white/10 p-6 ${className}`}>
       <div className="flex items-center gap-2 mb-4">
-        <h3 className="text-sm uppercase tracking-wide text-slate-400 font-semibold">Time Spent Playing</h3>
+        <h3 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Time Spent Playing</h3>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
-          <div className="text-3xl font-bold text-cyan-300">
+          <div className="text-3xl font-semibold text-cyan-300">
             {timeStats.breakdown.hours > 0 && `${timeStats.breakdown.hours}h `}
             {timeStats.breakdown.minutes}m
           </div>
-          <div className="text-xs text-slate-400 mt-2">Estimated Total Time</div>
-          <div className="text-xs text-slate-500 mt-1">
+          <div className="text-xs text-gray-500 mt-2">Estimated Total Time</div>
+          <div className="text-xs text-gray-500 mt-1">
             {timeStats.estimatedActualTime.totalTimeFormatted}
           </div>
         </div>
         <div>
-          <div className="text-3xl font-bold text-white">
+          <div className="text-3xl font-semibold text-white">
             {games.length > 0 ? Math.round(timeStats.estimatedActualTime.totalTimeSeconds / games.length / 60) : 0} min
           </div>
-          <div className="text-xs text-slate-400 mt-2">Average per Game</div>
-          <div className="text-xs text-slate-500 mt-1">
+          <div className="text-xs text-gray-500 mt-2">Average per Game</div>
+          <div className="text-xs text-gray-500 mt-1">
             Based on {totalGamesCount.toLocaleString()} games
           </div>
         </div>
@@ -354,9 +354,9 @@ export function TimeSpentSummary({ userId, platform, fallbackGames = [], classNa
           <div>
             <div className="flex items-start gap-3">
               <div className="flex-1">
-                <div className="text-lg font-bold text-white">{timeStats.byTimeControl[0].category}</div>
-                <div className="text-xs text-slate-400 mt-1">Most Time Spent</div>
-                <div className="text-xs text-slate-500 mt-2">
+                <div className="text-lg font-semibold text-white">{timeStats.byTimeControl[0].category}</div>
+                <div className="text-xs text-gray-500 mt-1">Most Time Spent</div>
+                <div className="text-xs text-gray-500 mt-2">
                   {Math.round(timeStats.byTimeControl[0].totalTimeSeconds / 3600)}h · {timeStats.byTimeControl[0].gameCount.toLocaleString()} games
                 </div>
               </div>

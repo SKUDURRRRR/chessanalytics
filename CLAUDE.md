@@ -85,6 +85,20 @@ supabase/
   functions/                   # Edge functions
 ```
 
+## Design System
+
+**All frontend UI work MUST follow `docs/DESIGN_SYSTEM.md`** (Cool Silver Premium theme).
+
+Key rules (see the doc for full details):
+- **Palette**: Cool-tinted dark surfaces (`#0c0d0f`, `#151618`, `#1c1d20`, `#232428`), silver CTA (`#e4e8ed`)
+- **Font**: Inter (400/500/600 weights only, never 700/bold)
+- **Buttons**: 4 variants only (primary/secondary/ghost/danger) — use shared `<Button>` component
+- **Cards**: Ring shadow (`box-shadow: 0 0 0 1px`), never `border` utility. `rounded-lg` max
+- **Banned**: Gradients, glassmorphism, glow shadows, emoji icons, `transition-all`, `rounded-2xl+`, `z-[9999]`, `font-bold`, `text-base` in UI
+- **Move colors**: 3 semantic groups (emerald=good, amber=caution, rose=bad), not 7 rainbow colors
+- **Icons**: Lucide React only
+- **Hover states**: Max `bg-white/[0.04]`, use `transition-colors` only
+
 ## Coding Conventions
 
 ### TypeScript/React
@@ -98,7 +112,7 @@ supabase/
 - Zod validates env vars in `src/lib/env.ts`
 - All frontend env vars require `VITE_` prefix
 - Service layer pattern: all API calls go through `src/services/`
-- No inline styles - use Tailwind classes
+- No inline styles - use Tailwind classes (exception: CSS custom properties for design tokens)
 
 ### Python/FastAPI
 - Type hints on all function parameters and return types

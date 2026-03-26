@@ -771,27 +771,26 @@ export default function SimpleAnalyticsPage() {
   if (isLoading && !showSlowLoadingPopup) {
     // Show background while waiting for popup to appear after 1 second
     return (
-      <div className="min-h-screen bg-slate-950" />
+      <div className="min-h-screen bg-surface-base" />
     )
   }
 
   if (isLoading && showSlowLoadingPopup) {
     return (
-      <div className="min-h-screen bg-slate-950" />
+      <div className="min-h-screen bg-surface-base" />
     )
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-surface-base text-gray-300">
       <div className="container-responsive space-responsive py-8 content-fade">
         {userId && (
-          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-6 py-4 shadow-2xl shadow-black/60 sm:px-8 sm:py-5">
-            <div className="absolute inset-x-10 top-0 h-32 rounded-full bg-sky-400/10 blur-3xl" />
+          <section className="relative overflow-hidden rounded-lg bg-surface-1 shadow-card px-6 py-4 sm:px-8 sm:py-5">
             <div className="relative flex flex-col gap-4">
               <div className="flex items-center justify-end">
                 <button
                   onClick={() => navigate('/')}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-200 transition hover:border-white/30 hover:bg-white/20"
+                  className="inline-flex items-center gap-2 rounded-md bg-surface-2 shadow-input px-4 py-2 text-caption font-medium uppercase tracking-label text-gray-400 transition-colors hover:text-gray-300 hover:shadow-card-hover"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M10 19L3 12m0 0l7-7m-7 7h18" />
@@ -803,33 +802,33 @@ export default function SimpleAnalyticsPage() {
               <div className="text-center">
                 {hasBothAccounts ? (
                   /* Platform switcher for users with both accounts linked */
-                  <div className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.08] p-1 text-xs font-semibold">
+                  <div className="inline-flex items-center rounded-md bg-surface-2 shadow-input p-1 text-caption font-medium">
                     <button
                       onClick={() => handlePlatformSwitch('chess.com')}
-                      className={`rounded-full px-4 py-1.5 transition ${
+                      className={`rounded-md px-3.5 py-1.5 transition-colors ${
                         viewMode === 'single' && platform === 'chess.com'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-green-200 hover:text-white'
+                          ? 'bg-cta text-[#111] shadow-btn-primary'
+                          : 'text-gray-500 hover:text-gray-300'
                       }`}
                     >
                       Chess.com
                     </button>
                     <button
                       onClick={() => handlePlatformSwitch('lichess')}
-                      className={`rounded-full px-4 py-1.5 transition ${
+                      className={`rounded-md px-3.5 py-1.5 transition-colors ${
                         viewMode === 'single' && platform === 'lichess'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-yellow-200 hover:text-white'
+                          ? 'bg-cta text-[#111] shadow-btn-primary'
+                          : 'text-gray-500 hover:text-gray-300'
                       }`}
                     >
                       Lichess
                     </button>
                     <button
                       onClick={() => handlePlatformSwitch('combined')}
-                      className={`rounded-full px-4 py-1.5 transition ${
+                      className={`rounded-md px-3.5 py-1.5 transition-colors ${
                         viewMode === 'combined'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-sky-200 hover:text-white'
+                          ? 'bg-cta text-[#111] shadow-btn-primary'
+                          : 'text-gray-500 hover:text-gray-300'
                       }`}
                     >
                       Combined
@@ -856,18 +855,18 @@ export default function SimpleAnalyticsPage() {
                           onChange={e => { setLinkInputValue(e.target.value); setLinkError('') }}
                           onKeyDown={e => e.key === 'Enter' && handleCreateLink()}
                           placeholder={`${platform === 'chess.com' ? 'Lichess' : 'Chess.com'} username`}
-                          className="rounded-full border border-slate-600/50 bg-slate-800/60 px-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-slate-500 w-40"
+                          className="rounded-md bg-surface-2 shadow-input px-3 py-1 text-caption text-gray-300 placeholder-gray-600 focus:outline-none focus:shadow-input-focus w-40"
                         />
                         <button
                           onClick={handleCreateLink}
                           disabled={linkLoading || !linkInputValue.trim()}
-                          className="rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50"
+                          className="rounded-full shadow-card bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50"
                         >
                           {linkLoading ? '...' : 'Link'}
                         </button>
                         <button
                           onClick={() => { setShowLinkInput(false); setLinkError(''); setLinkInputValue('') }}
-                          className="text-xs text-slate-500 hover:text-slate-300"
+                          className="text-xs text-gray-500 hover:text-gray-400"
                         >
                           Cancel
                         </button>
@@ -875,7 +874,7 @@ export default function SimpleAnalyticsPage() {
                     ) : (
                       <button
                         onClick={() => setShowLinkInput(true)}
-                        className="text-xs text-slate-500 hover:text-slate-300 transition"
+                        className="text-xs text-gray-500 hover:text-gray-400 transition"
                       >
                         Know their {platform === 'chess.com' ? 'Lichess' : 'Chess.com'} username? Link it
                       </button>
@@ -888,7 +887,7 @@ export default function SimpleAnalyticsPage() {
                     ? `${userId} + ${getSecondaryUser() || ''}`
                     : userId}
                 </h1>
-                <p className="mt-1.5 text-sm text-slate-300">
+                <p className="mt-1.5 text-sm text-gray-400">
                   {viewMode === 'combined'
                     ? 'Combined analytics from both Chess.com and Lichess.'
                     : 'Import games, trigger fresh Stockfish evaluations, and explore openings without leaving this dashboard.'}
@@ -897,14 +896,14 @@ export default function SimpleAnalyticsPage() {
 
               <div className="flex flex-col items-center gap-3 text-sm">
                 {viewMode === 'combined' ? (
-                  <p className="text-xs text-slate-400">Switch to a single platform to import games</p>
+                  <p className="text-xs text-gray-500">Switch to a single platform to import games</p>
                 ) : (
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   {!hasGames ? (
                     <button
                       onClick={importGames}
                       disabled={importing}
-                      className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-full shadow-card bg-emerald-500/10 px-4 py-2 font-medium text-emerald-200 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {importing ? 'Importing…' : 'Import Games (100)'}
                     </button>
@@ -931,7 +930,7 @@ export default function SimpleAnalyticsPage() {
                           ? 'Upgrade to Pro to import more games'
                           : undefined
                       }
-                      className="inline-flex items-center gap-2 rounded-full border border-purple-400/40 bg-purple-500/10 px-4 py-2 font-medium text-purple-200 transition hover:border-purple-300/60 hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-full shadow-card bg-purple-500/10 px-4 py-2 font-medium text-purple-200 transition-colors hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {largeImportProgress?.status === 'importing' ? (
                         <>
@@ -945,7 +944,7 @@ export default function SimpleAnalyticsPage() {
                   )}
                 </div>
                 )}
-                <div className="flex items-center gap-3 text-xs text-slate-400">
+                <div className="flex items-center gap-3 text-xs text-gray-500">
                   {lastRefresh && <span>Updated · {lastRefresh.toLocaleTimeString()}</span>}
                 </div>
                 {importStatus && <div className="text-xs text-sky-300">{importStatus}</div>}
@@ -956,7 +955,7 @@ export default function SimpleAnalyticsPage() {
 
         {/* Auto-Sync Progress Bar */}
         {autoSyncing && (
-          <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4">
+          <div className="rounded-lg shadow-card bg-emerald-500/10 p-4">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-lg font-semibold text-emerald-200">
                 {autoSyncProgress.status === 'complete' ? 'Auto-Sync Complete' :
@@ -977,7 +976,7 @@ export default function SimpleAnalyticsPage() {
             {autoSyncProgress.status === 'importing' && (
               <div className="mb-2">
                 <div className="h-2 w-full rounded-full bg-emerald-900/30">
-                  <div className="h-2 rounded-full bg-emerald-400 transition-all duration-300 animate-pulse" />
+                  <div className="h-2 rounded-full bg-emerald-400 transition-colors duration-300 animate-pulse" />
                 </div>
               </div>
             )}
@@ -988,7 +987,7 @@ export default function SimpleAnalyticsPage() {
 
         {/* Large Import Progress Display */}
         {largeImportProgress && largeImportProgress.status !== 'idle' && (
-          <div className={`rounded-2xl border p-4 ${
+          <div className={`rounded-lg border p-4 ${
             largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
               ? 'border-amber-400/40 bg-amber-500/10'
               : largeImportProgress.status === 'error'
@@ -1026,7 +1025,7 @@ export default function SimpleAnalyticsPage() {
                 {(largeImportProgress.status === 'completed' || largeImportProgress.status === 'error') && (
                   <button
                     onClick={dismissImportProgress}
-                    className="text-sm text-slate-300 hover:text-white transition"
+                    className="text-sm text-gray-400 hover:text-white transition"
                   >
                     ✕
                   </button>
@@ -1038,7 +1037,7 @@ export default function SimpleAnalyticsPage() {
               <div className="mb-2">
                 <div className="h-2 w-full rounded-full bg-purple-900/30">
                   <div
-                    className="h-2 rounded-full bg-purple-400 transition-all duration-300"
+                    className="h-2 rounded-full bg-purple-400 transition-colors duration-300"
                     style={{ width: `${largeImportProgress.progress}%` }}
                   />
                 </div>
@@ -1055,33 +1054,33 @@ export default function SimpleAnalyticsPage() {
           </div>
         )}
 
-        <div className="mx-auto flex max-w-2xl items-center justify-between rounded-full border border-white/10 bg-white/[0.08] p-1 shadow-lg shadow-black/40">
+        <div className="mx-auto flex max-w-2xl items-center justify-between rounded-lg bg-surface-1 p-1 shadow-card">
           <button
             onClick={() => handleTabChange('analytics')}
-            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+            className={`flex-1 rounded-md px-4 py-2 text-[13px] font-medium transition-colors ${
               activeTab === 'analytics'
-                ? 'bg-white text-slate-900 shadow-inner'
-                : 'text-slate-300 hover:text-white'
+                ? 'bg-cta text-[#111] shadow-btn-primary'
+                : 'text-gray-400 hover:text-gray-300'
             }`}
           >
             Analytics
           </button>
           <button
             onClick={() => handleTabChange('matchHistory')}
-            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+            className={`flex-1 rounded-md px-4 py-2 text-[13px] font-medium transition-colors ${
               activeTab === 'matchHistory'
-                ? 'bg-white text-slate-900 shadow-inner'
-                : 'text-slate-300 hover:text-white'
+                ? 'bg-cta text-[#111] shadow-btn-primary'
+                : 'text-gray-400 hover:text-gray-300'
             }`}
           >
             Games Analysis
           </button>
           <button
             onClick={() => handleTabChange('coach')}
-            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
+            className={`flex-1 rounded-md px-4 py-2 text-[13px] font-medium transition-colors ${
               activeTab === 'coach'
-                ? 'bg-white text-slate-900 shadow-inner'
-                : 'text-slate-300 hover:text-white'
+                ? 'bg-cta text-[#111] shadow-btn-primary'
+                : 'text-gray-400 hover:text-gray-300'
             }`}
           >
             Coach
@@ -1142,22 +1141,22 @@ export default function SimpleAnalyticsPage() {
 
         {activeTab === 'coach' && (
           <ErrorBoundary>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-8 text-center text-slate-200">
-              <div className="text-4xl text-slate-500 mb-4">♔</div>
-              <h3 className="text-lg font-semibold text-white mb-2">Coach</h3>
-              <p className="text-sm text-slate-400 mb-4">Redirecting to Coach dashboard...</p>
+            <div className="rounded-lg bg-surface-1 shadow-card p-8 text-center">
+              <div className="text-4xl text-gray-600 mb-4">&#9812;</div>
+              <h3 className="text-section font-semibold tracking-section text-[#f0f0f0] mb-2">Coach</h3>
+              <p className="text-small text-gray-500 mb-4">Redirecting to Coach dashboard...</p>
               <button
                 onClick={() => navigate(`/coach?userId=${encodeURIComponent(userId)}&platform=${platform}`)}
-                className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-6 rounded-xl transition-colors"
+                className="bg-cta hover:bg-cta-hover text-[#111] font-medium py-2 px-5 rounded-md shadow-btn-primary transition-colors"
               >
-                Go to Coach →
+                Go to Coach
               </button>
             </div>
           </ErrorBoundary>
         )}
 
         {importError && (
-          <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">
+          <div className="rounded-lg shadow-card bg-amber-500/10 p-4 text-sm text-amber-200">
             <span className="font-semibold">Import warning:</span> {importError}
           </div>
         )}
@@ -1165,33 +1164,33 @@ export default function SimpleAnalyticsPage() {
 
       {/* Date Range Picker Modal */}
       {showDateRangePicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="rounded-2xl border border-white/10 bg-slate-900 p-6 max-w-md w-full mx-4 shadow-2xl">
-            <h3 className="text-xl font-semibold text-white mb-4">Select Date Range</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="rounded-lg bg-surface-1 shadow-modal p-6 max-w-sm w-full mx-4">
+            <h3 className="text-section font-semibold tracking-section text-[#f0f0f0] mb-4">Select Date Range</h3>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-slate-300 mb-2">From Date (optional)</label>
+                <label className="label text-gray-500 mb-1.5 block">From Date (optional)</label>
                 <input
                   type="date"
                   value={dateRange.fromDate || ''}
                   onChange={(e) => setDateRange(prev => ({ ...prev, fromDate: e.target.value }))}
-                  className="w-full rounded-lg border border-white/10 bg-slate-800 px-3 py-2 text-white focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400/40"
+                  className="w-full bg-surface-2 shadow-input rounded-md px-3.5 py-2.5 text-body text-gray-300 focus:shadow-input-focus focus:outline-none transition-shadow"
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-slate-300 mb-2">To Date (optional)</label>
+                <label className="label text-gray-500 mb-1.5 block">To Date (optional)</label>
                 <input
                   type="date"
                   value={dateRange.toDate || ''}
                   onChange={(e) => setDateRange(prev => ({ ...prev, toDate: e.target.value }))}
-                  className="w-full rounded-lg border border-white/10 bg-slate-800 px-3 py-2 text-white focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400/40"
+                  className="w-full bg-surface-2 shadow-input rounded-md px-3.5 py-2.5 text-body text-gray-300 focus:shadow-input-focus focus:outline-none transition-shadow"
                 />
               </div>
 
-              <p className="text-xs text-slate-400">
-                Leave dates empty to import all available games (up to 5,000). You can import more games by selecting different date ranges after this import completes.
+              <p className="text-caption text-gray-600">
+                Leave dates empty to import all available games (up to 5,000). You can import more by selecting different date ranges after.
               </p>
             </div>
 
@@ -1201,13 +1200,13 @@ export default function SimpleAnalyticsPage() {
                   startLargeImport()
                   setShowDateRangePicker(false)
                 }}
-                className="flex-1 rounded-lg bg-purple-500 px-4 py-2 text-white font-medium hover:bg-purple-600 transition"
+                className="flex-1 rounded-md bg-cta px-4 py-2 text-[#111] font-medium shadow-btn-primary hover:bg-cta-hover transition-colors"
               >
                 Start Import
               </button>
               <button
                 onClick={() => setShowDateRangePicker(false)}
-                className="flex-1 rounded-lg border border-white/10 px-4 py-2 text-slate-300 hover:bg-white/5 transition"
+                className="flex-1 rounded-md bg-surface-2 shadow-input px-4 py-2 text-gray-400 font-medium hover:text-gray-300 transition-colors"
               >
                 Cancel
               </button>

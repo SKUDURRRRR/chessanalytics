@@ -293,7 +293,7 @@ export function FollowUpExplorer({
       {!isExploring ? (
         <button
           onClick={handleShowFollowUp}
-          className="w-full flex items-center justify-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition-all hover:bg-emerald-500/20 hover:border-emerald-400/50"
+          className="w-full flex items-center justify-center gap-2 rounded-lg shadow-card bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -303,7 +303,7 @@ export function FollowUpExplorer({
       ) : (
         <div className="space-y-3">
           {/* Exploration Info */}
-          <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3">
+          <div className="rounded-lg shadow-card bg-emerald-500/10 p-3">
             <div className="flex items-center gap-2 mb-2">
               <svg className="w-4 h-4 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -315,12 +315,12 @@ export function FollowUpExplorer({
 
             {/* Show Stockfish PV line if available */}
             {currentMove.pvMoves && currentMove.pvMoves.length > 0 ? (
-              <div className="text-xs text-emerald-200/90 mt-2 p-2 rounded bg-emerald-500/10 border border-emerald-400/20">
+              <div className="text-xs text-emerald-200/90 mt-2 p-2 rounded bg-emerald-500/10 shadow-card">
                 <span className="font-semibold text-emerald-100">Stockfish's continuation ({currentMove.pvMoves.length} moves): </span>
                 <span className="font-mono">{currentMove.pvMoves.join(' ')}</span>
               </div>
             ) : (
-              <div className="text-xs text-yellow-200/90 mt-2 p-2 rounded bg-yellow-500/10 border border-yellow-400/20">
+              <div className="text-xs text-yellow-200/90 mt-2 p-2 rounded bg-yellow-500/10 shadow-card">
                 <span className="font-semibold text-yellow-100">⚠️ No PV data available</span>
                 <br />
                 <span className="text-yellow-200/70">This game may need to be re-analyzed to show the complete Stockfish continuation.</span>
@@ -335,7 +335,7 @@ export function FollowUpExplorer({
               <button
                 onClick={isAutoPlaying ? stopAutoPlay : startAutoPlay}
                 disabled={explorationMoves.length >= currentMove.pvMoves.length - 1}
-                className="flex-1 flex items-center justify-center gap-1 rounded border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-1 text-[11px] font-medium text-emerald-300 transition-all hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed min-w-0"
+                className="flex-1 flex items-center justify-center gap-1 rounded shadow-card bg-emerald-500/10 px-1.5 py-1 text-[11px] font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed min-w-0"
               >
                 {isAutoPlaying ? (
                   <>
@@ -361,7 +361,7 @@ export function FollowUpExplorer({
                 <button
                   onClick={onUndoExplorationMove}
                   disabled={isAutoPlaying}
-                  className="flex-1 flex items-center justify-center gap-1 rounded border border-sky-400/30 bg-sky-500/10 px-1.5 py-1 text-[11px] font-medium text-sky-300 transition-all hover:bg-sky-500/20 disabled:opacity-50 disabled:cursor-not-allowed min-w-0"
+                  className="flex-1 flex items-center justify-center gap-1 rounded shadow-card bg-sky-500/10 px-1.5 py-1 text-[11px] font-medium text-sky-300 transition-colors hover:bg-sky-500/20 disabled:opacity-50 disabled:cursor-not-allowed min-w-0"
                 >
                   <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -374,7 +374,7 @@ export function FollowUpExplorer({
                     onResetExploration()
                   }}
                   disabled={isAutoPlaying}
-                  className="flex-1 flex items-center justify-center gap-1 rounded border border-amber-400/30 bg-amber-500/10 px-1.5 py-1 text-[11px] font-medium text-amber-300 transition-all hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed min-w-0"
+                  className="flex-1 flex items-center justify-center gap-1 rounded shadow-card bg-amber-500/10 px-1.5 py-1 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed min-w-0"
                 >
                   <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -385,7 +385,7 @@ export function FollowUpExplorer({
             )}
             <button
               onClick={handleHideFollowUp}
-              className={`${explorationMoves.length > 0 || (currentMove.pvMoves && currentMove.pvMoves.length > 1) ? 'flex-1' : 'w-full'} flex items-center justify-center gap-1 rounded border border-slate-400/30 bg-slate-500/10 px-1.5 py-1 text-[11px] font-medium text-slate-300 transition-all hover:bg-slate-500/20 min-w-0`}
+              className={`${explorationMoves.length > 0 || (currentMove.pvMoves && currentMove.pvMoves.length > 1) ? 'flex-1' : 'w-full'} flex items-center justify-center gap-1 rounded shadow-card bg-white/[0.04] px-1.5 py-1 text-[11px] font-medium text-gray-400 transition-colors hover:bg-white/[0.04] min-w-0`}
             >
               <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

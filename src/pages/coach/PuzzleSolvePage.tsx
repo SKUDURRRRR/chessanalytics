@@ -61,8 +61,8 @@ export default function PuzzleSolvePage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <p className="text-slate-400">Please log in to solve puzzles</p>
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
+        <p className="text-gray-500">Please log in to solve puzzles</p>
       </div>
     )
   }
@@ -360,10 +360,10 @@ function BankPuzzleSolver({
 
   if (status === 'loading' || !puzzle) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-slate-400">Loading puzzle...</p>
+          <p className="text-gray-500">Loading puzzle...</p>
         </div>
       </div>
     )
@@ -372,12 +372,12 @@ function BankPuzzleSolver({
   const isSolvedOrFailed = status === 'solved' || status === 'failed'
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-8">
+    <div className="min-h-screen bg-surface-base p-4 md:p-8">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-2xl font-semibold text-white">
               Puzzle
               {puzzle.rating && (
                 <span className="ml-2 text-sm font-normal text-amber-400">
@@ -387,10 +387,10 @@ function BankPuzzleSolver({
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-slate-300 font-mono text-lg">{formatTime(timerSeconds)}</span>
+            <span className="text-gray-400 font-mono text-lg">{formatTime(timerSeconds)}</span>
             <button
               onClick={() => navigate('/coach/puzzles')}
-              className="px-4 py-2 border border-white/20 bg-white/5 hover:bg-white/10 text-white rounded-xl transition-colors text-sm"
+              className="px-4 py-2 shadow-card bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors text-sm"
             >
               Back
             </button>
@@ -399,11 +399,11 @@ function BankPuzzleSolver({
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
           {/* Board */}
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+          <div className="rounded-lg shadow-card bg-surface-1 p-4">
             {/* Status message */}
             <div className="mb-3 text-center">
               {status === 'setup' && (
-                <p className="text-slate-400 text-sm animate-pulse">Setting up position...</p>
+                <p className="text-gray-500 text-sm animate-pulse">Setting up position...</p>
               )}
               {status === 'awaiting_move' && (
                 <p className="text-white font-medium">
@@ -415,13 +415,13 @@ function BankPuzzleSolver({
                 <p className="text-cyan-400 text-sm animate-pulse">Checking...</p>
               )}
               {status === 'opponent_moving' && (
-                <p className="text-slate-400 text-sm animate-pulse">Opponent responds...</p>
+                <p className="text-gray-500 text-sm animate-pulse">Opponent responds...</p>
               )}
               {status === 'solved' && (
-                <p className="text-emerald-400 font-bold text-lg">Correct!</p>
+                <p className="text-emerald-400 font-semibold text-lg">Correct!</p>
               )}
               {status === 'failed' && (
-                <p className="text-red-400 font-bold text-lg">Incorrect</p>
+                <p className="text-red-400 font-semibold text-lg">Incorrect</p>
               )}
             </div>
 
@@ -443,24 +443,24 @@ function BankPuzzleSolver({
           {/* Info Panel */}
           <div className="space-y-4">
             {/* Progress */}
-            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-              <h3 className="text-sm font-medium text-slate-400 mb-3">Progress</h3>
+            <div className="rounded-lg shadow-card bg-surface-1 p-5">
+              <h3 className="text-sm font-medium text-gray-500 mb-3">Progress</h3>
               <div className="flex items-center gap-2 mb-3">
                 {Array.from({ length: totalMoves }).map((_, i) => (
                   <div
                     key={i}
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
                       i < moveIndex + (status === 'solved' ? 1 : 0)
                         ? 'bg-emerald-500 text-white'
                         : i === moveIndex && status === 'awaiting_move'
-                          ? 'bg-cyan-500/30 border border-cyan-400 text-cyan-300'
-                          : 'bg-white/10 text-slate-500'
+                          ? 'bg-cyan-500/30 shadow-card text-cyan-300'
+                          : 'bg-white/10 text-gray-500'
                     }`}
                   >
                     {i < moveIndex + (status === 'solved' ? 1 : 0) ? '\u2713' : i + 1}
                   </div>
                 ))}
-                <span className="text-slate-400 text-xs ml-1">
+                <span className="text-gray-500 text-xs ml-1">
                   Move {Math.min(moveIndex + 1, totalMoves)} of {totalMoves}
                 </span>
               </div>
@@ -472,14 +472,14 @@ function BankPuzzleSolver({
                     {puzzle.themes.slice(0, 4).map((t) => (
                       <span
                         key={t}
-                        className="bg-white/10 text-slate-300 px-2 py-0.5 rounded text-xs capitalize"
+                        className="bg-white/10 text-gray-400 px-2 py-0.5 rounded text-xs capitalize"
                       >
                         {t.replace(/([A-Z])/g, ' $1').trim()}
                       </span>
                     ))}
                   </div>
                 )}
-                <div className="flex justify-between text-slate-400">
+                <div className="flex justify-between text-gray-500">
                   <span>Your rating</span>
                   <span className="text-white">{puzzle.user_rating}</span>
                 </div>
@@ -488,7 +488,7 @@ function BankPuzzleSolver({
 
             {/* Recommendation reason */}
             {puzzle.recommendation_reason && (
-              <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 px-4 py-2.5">
+              <div className="rounded-lg shadow-card bg-purple-500/5 px-4 py-2.5">
                 <p className="text-purple-300 text-xs">
                   <span className="font-medium">Based on your games:</span>{' '}
                   {puzzle.recommendation_reason}
@@ -500,14 +500,14 @@ function BankPuzzleSolver({
             {status === 'awaiting_move' && !hintUsed && (
               <button
                 onClick={showHint}
-                className="w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-300 text-sm font-medium hover:bg-amber-500/20 transition-colors"
+                className="w-full rounded-lg shadow-card bg-amber-500/10 p-3 text-amber-300 text-sm font-medium hover:bg-amber-500/20 transition-colors"
               >
                 Show Hint (-50% XP)
               </button>
             )}
 
             {hintUsed && status === 'awaiting_move' && (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3">
+              <div className="rounded-lg shadow-card bg-amber-500/10 p-3">
                 <p className="text-amber-300 text-sm">
                   Look for a {puzzle.themes[0]?.replace(/([A-Z])/g, ' $1').trim().toLowerCase() || 'tactical'} pattern.
                 </p>
@@ -517,17 +517,17 @@ function BankPuzzleSolver({
             {/* Completion Result */}
             {isSolvedOrFailed && completionResult && (
               <div
-                className={`rounded-3xl border p-5 ${
+                className={`rounded-lg shadow-card p-5 ${
                   status === 'solved'
-                    ? 'border-emerald-500/50 bg-emerald-500/10'
-                    : 'border-red-500/50 bg-red-500/10'
+                    ? 'bg-emerald-500/10'
+                    : 'bg-red-500/10'
                 }`}
               >
                 {/* Rating change */}
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-slate-300 text-sm">Rating</span>
+                  <span className="text-gray-400 text-sm">Rating</span>
                   <span
-                    className={`text-lg font-bold ${
+                    className={`text-lg font-semibold ${
                       completionResult.rating_change >= 0
                         ? 'text-emerald-400'
                         : 'text-red-400'
@@ -538,21 +538,21 @@ function BankPuzzleSolver({
                   </span>
                 </div>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-slate-300 text-sm">New Rating</span>
-                  <span className="text-white font-bold">{completionResult.new_rating}</span>
+                  <span className="text-gray-400 text-sm">New Rating</span>
+                  <span className="text-white font-semibold">{completionResult.new_rating}</span>
                 </div>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-slate-300 text-sm">XP Earned</span>
-                  <span className="text-purple-400 font-bold">+{completionResult.xp_earned}</span>
+                  <span className="text-gray-400 text-sm">XP Earned</span>
+                  <span className="text-purple-400 font-semibold">+{completionResult.xp_earned}</span>
                 </div>
                 {completionResult.level_up && (
-                  <div className="bg-purple-500/20 border border-purple-500/30 rounded-xl p-3 mb-3 text-center">
-                    <p className="text-purple-300 font-bold">Level Up!</p>
+                  <div className="bg-purple-500/20 shadow-card rounded-lg p-3 mb-3 text-center">
+                    <p className="text-purple-300 font-semibold">Level Up!</p>
                     <p className="text-purple-200 text-sm">Level {completionResult.level}</p>
                   </div>
                 )}
                 {completionResult.daily_challenge_progress && (
-                  <div className="text-slate-400 text-xs">
+                  <div className="text-gray-500 text-xs">
                     Daily: {completionResult.daily_challenge_progress}
                   </div>
                 )}
@@ -569,13 +569,13 @@ function BankPuzzleSolver({
               <div className="flex flex-col gap-2">
                 <button
                   onClick={loadNextPuzzle}
-                  className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2.5 px-4 rounded-xl transition-colors"
+                  className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors"
                 >
                   Next Puzzle
                 </button>
                 <button
                   onClick={() => navigate('/coach/puzzles')}
-                  className="w-full border border-white/20 bg-white/5 hover:bg-white/10 text-white py-2.5 px-4 rounded-xl transition-colors text-sm"
+                  className="w-full shadow-card bg-white/5 hover:bg-white/10 text-white py-2.5 px-4 rounded-lg transition-colors text-sm"
                 >
                   Back to Puzzles
                 </button>
@@ -631,12 +631,12 @@ function LegacyPuzzleSolver({
 
   if (!currentPuzzle) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
-          <p className="text-slate-400 mb-4">No puzzle data available.</p>
+          <p className="text-gray-500 mb-4">No puzzle data available.</p>
           <button
             onClick={() => navigate('/coach/puzzles')}
-            className="px-6 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-xl transition-colors"
+            className="px-6 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-lg transition-colors"
           >
             Back to Puzzles
           </button>
@@ -708,30 +708,30 @@ function LegacyPuzzleSolver({
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-8">
+    <div className="min-h-screen bg-surface-base p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-white">
+            <h1 className="text-3xl font-semibold text-white">
               {state?.category ? `${state.category} Puzzles` : 'Puzzle'}
             </h1>
             {puzzles.length > 1 && (
-              <p className="text-slate-400 text-sm mt-1">
+              <p className="text-gray-500 text-sm mt-1">
                 Puzzle {currentIndex + 1} of {puzzles.length}
               </p>
             )}
           </div>
           <button
             onClick={() => navigate('/coach/puzzles')}
-            className="px-4 py-2 border border-white/20 bg-white/5 hover:bg-white/10 text-white rounded-xl transition-colors"
+            className="px-4 py-2 shadow-card bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors"
           >
             Back
           </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-            <p className="text-slate-300 mb-3 text-center font-medium">
+          <div className="rounded-lg shadow-card bg-surface-1 p-4">
+            <p className="text-gray-400 mb-3 text-center font-medium">
               {game.turn() === 'w' ? 'White' : 'Black'} to move - find the best move!
             </p>
             <Chessboard
@@ -744,16 +744,16 @@ function LegacyPuzzleSolver({
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-              <h2 className="text-lg font-bold text-white mb-3">Puzzle Info</h2>
+            <div className="rounded-lg shadow-card bg-surface-1 p-6">
+              <h2 className="text-lg font-semibold text-white mb-3">Puzzle Info</h2>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Difficulty</span>
+                  <span className="text-gray-500">Difficulty</span>
                   <span className="text-white">{currentPuzzle.difficulty_rating}</span>
                 </div>
                 {currentPuzzle.tactical_theme && (
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Theme</span>
+                    <span className="text-gray-500">Theme</span>
                     <span className="text-white capitalize">
                       {currentPuzzle.tactical_theme.replace('_', ' ')}
                     </span>
@@ -761,7 +761,7 @@ function LegacyPuzzleSolver({
                 )}
                 {currentPuzzle.puzzle_category && (
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Category</span>
+                    <span className="text-gray-500">Category</span>
                     <span className="text-white capitalize">{currentPuzzle.puzzle_category}</span>
                   </div>
                 )}
@@ -770,44 +770,44 @@ function LegacyPuzzleSolver({
 
             {result && (
               <div
-                className={`rounded-3xl border p-6 ${
+                className={`rounded-lg shadow-card p-6 ${
                   result === 'correct'
-                    ? 'border-emerald-500/50 bg-emerald-500/10'
-                    : 'border-red-500/50 bg-red-500/10'
+                    ? 'bg-emerald-500/10'
+                    : 'bg-red-500/10'
                 }`}
               >
                 <h3
-                  className={`text-xl font-bold mb-2 ${
+                  className={`text-xl font-semibold mb-2 ${
                     result === 'correct' ? 'text-emerald-400' : 'text-red-400'
                   }`}
                 >
                   {result === 'correct' ? 'Correct!' : 'Incorrect'}
                 </h3>
                 {userMove && (
-                  <p className="text-slate-300 text-sm mb-2">
-                    You played: <span className="font-mono font-bold">{userMove}</span>
+                  <p className="text-gray-400 text-sm mb-2">
+                    You played: <span className="font-mono font-semibold">{userMove}</span>
                   </p>
                 )}
                 {result === 'incorrect' && (
-                  <p className="text-slate-300 text-sm mb-2">
+                  <p className="text-gray-400 text-sm mb-2">
                     Best move:{' '}
-                    <span className="font-mono font-bold">{currentPuzzle.correct_move}</span>
+                    <span className="font-mono font-semibold">{currentPuzzle.correct_move}</span>
                   </p>
                 )}
-                <p className="text-slate-400 text-sm mt-3">{currentPuzzle.explanation}</p>
+                <p className="text-gray-500 text-sm mt-3">{currentPuzzle.explanation}</p>
 
                 <div className="flex gap-2 mt-4">
                   {result === 'incorrect' && (
                     <button
                       onClick={retryPuzzle}
-                      className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl transition-colors"
+                      className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg transition-colors"
                     >
                       Retry
                     </button>
                   )}
                   <button
                     onClick={nextPuzzle}
-                    className="flex-1 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-xl transition-colors"
+                    className="flex-1 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-lg transition-colors"
                   >
                     {currentIndex < puzzles.length - 1 ? 'Next Puzzle' : 'Done'}
                   </button>

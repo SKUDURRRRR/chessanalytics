@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom'
 export default function TermsOfServicePage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
-      <div className="bg-slate-900 rounded-lg border border-slate-700 p-8 md:p-12">
-        <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Terms of Service</h1>
-        <p className="text-slate-400 mb-2">Last updated: November 6, 2025</p>
-        <p className="text-slate-400 mb-8">Website: <a href="https://chessdata.app" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:text-sky-300 underline">https://chessdata.app</a></p>
+      <div className="bg-surface-1 rounded-lg shadow-card p-8 md:p-12">
+        <h1 className="text-3xl md:text-4xl font-semibold text-white mb-2">Terms of Service</h1>
+        <p className="text-gray-500 mb-2">Last updated: November 6, 2025</p>
+        <p className="text-gray-500 mb-8">Website: <a href="https://chessdata.app" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:text-sky-300 underline">https://chessdata.app</a></p>
 
-        <div className="prose prose-invert max-w-none space-y-6 text-slate-300">
+        <div className="prose prose-invert max-w-none space-y-6 text-gray-400">
           <section>
             <h2 className="text-2xl font-semibold text-white mt-8 mb-4">1. Acceptance of Terms</h2>
             <p>
@@ -348,7 +348,7 @@ export default function TermsOfServicePage() {
           </section>
         </div>
 
-        <div className="mt-12 pt-8 border-t border-slate-700">
+        <div className="mt-12 pt-8 border-t border-white/[0.04]">
           <a
             href="/"
             className="text-sky-400 hover:text-sky-300 underline"

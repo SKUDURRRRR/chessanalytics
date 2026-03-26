@@ -18,8 +18,8 @@ export function PremiumGate({ children }: PremiumGateProps) {
   // Wait for auth to load before checking premium
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-slate-400">Loading...</div>
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
       </div>
     )
   }
@@ -49,21 +49,21 @@ export function PremiumGate({ children }: PremiumGateProps) {
   if (!isPremium) {
     // Show upgrade modal
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Coach Features</h2>
-          <p className="text-slate-300 mb-6">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
+          <h2 className="text-2xl font-semibold text-white mb-4">Coach Features</h2>
+          <p className="text-gray-400 mb-6">
             Personalized lessons, puzzles, and progress tracking are available with a premium subscription.
           </p>
           <button
             onClick={() => navigate('/pricing')}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
           >
             Upgrade to Premium
           </button>
           <button
             onClick={() => navigate(-1)}
-            className="mt-4 w-full text-slate-400 hover:text-slate-300 transition-colors"
+            className="mt-4 w-full text-gray-500 hover:text-gray-400 transition-colors"
           >
             Go Back
           </button>

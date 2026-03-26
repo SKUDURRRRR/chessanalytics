@@ -362,16 +362,16 @@ export default function ProfilePage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-slate-400">Loading...</div>
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
       </div>
     )
   }
 
   if (verifyingPayment) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-slate-400">
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
+        <div className="text-gray-500">
           <div className="flex flex-col items-center gap-4">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400"></div>
             <p>Verifying your payment...</p>
@@ -382,24 +382,24 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-surface-base py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto space-y-8">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-extrabold text-white">Profile</h1>
-          <p className="mt-2 text-sm text-slate-400">
+          <p className="mt-2 text-sm text-gray-500">
             Manage your account settings and view your usage stats
           </p>
         </div>
 
         {error && (
-          <div className="bg-rose-900/50 border border-rose-500 text-rose-200 px-4 py-3 rounded-2xl">
+          <div className="bg-rose-900/50 shadow-card text-rose-200 px-4 py-3 rounded-lg">
             {error}
           </div>
         )}
 
         {notification && (
-          <div className={`flex items-start justify-between rounded-2xl border px-4 py-3 text-sm ${notification.type === 'success' ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100' : 'border-sky-400/40 bg-sky-500/10 text-sky-100'}`}>
+          <div className={`flex items-start justify-between rounded-lg shadow-card px-4 py-3 text-sm ${notification.type === 'success' ? 'bg-emerald-500/10 text-emerald-100' : 'bg-sky-500/10 text-sky-100'}`}>
             <div className="flex items-start gap-3">
               <span className="text-lg leading-none">{notification.type === 'success' ? '✓' : 'ℹ'}</span>
               <span>{notification.message}</span>
@@ -407,7 +407,7 @@ export default function ProfilePage() {
             <button
               type="button"
               onClick={() => setNotification(null)}
-              className="ml-3 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+              className="ml-3 text-xs font-medium text-gray-500 hover:text-gray-300 transition-colors"
             >
               OK
             </button>
@@ -417,22 +417,22 @@ export default function ProfilePage() {
         {/* Cancel Subscription Confirmation Modal */}
         {showCancelConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
-            <div className="max-w-md w-full rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
-              <h3 className="text-lg font-bold text-white mb-3">Cancel Subscription</h3>
-              <p className="text-slate-300 text-sm mb-6">
+            <div className="max-w-md w-full rounded-lg bg-surface-1 p-6 shadow-card">
+              <h3 className="text-lg font-semibold text-white mb-3">Cancel Subscription</h3>
+              <p className="text-gray-400 text-sm mb-6">
                 Are you sure you want to cancel your subscription? You will retain access until the end of your billing period.
               </p>
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={() => setShowCancelConfirm(false)}
-                  className="rounded-2xl border border-white/10 bg-white/[0.05] px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.08]"
+                  className="rounded-lg shadow-card bg-surface-1 px-6 py-2.5 text-sm font-semibold text-gray-300 transition-colors hover:bg-white/[0.04]"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCancelSubscription}
                   disabled={cancellingSubscription}
-                  className="rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-2.5 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="rounded-lg shadow-card bg-rose-500/20 px-6 py-2.5 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {cancellingSubscription ? 'Cancelling...' : 'OK'}
                 </button>
@@ -442,22 +442,22 @@ export default function ProfilePage() {
         )}
 
         {/* Account Information */}
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
-          <h2 className="text-xl font-bold text-white mb-4">Account Information</h2>
+        <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
+          <h2 className="text-xl font-semibold text-white mb-4">Account Information</h2>
 
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-slate-400">Email</label>
+              <label className="block text-sm font-medium text-gray-500">Email</label>
               <p className="text-white">{user.email}</p>
             </div>
 
             {usageStats?.account_tier && usageStats.account_tier !== 'free' && (
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Subscription Plan</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Subscription Plan</label>
                 <div className="flex justify-between items-baseline gap-4">
                   <p className="text-white">{usageStats.tier_name || usageStats.account_tier}</p>
                   {usageStats?.subscription_end_date ? (
-                    <p className={`text-sm font-medium ${usageStats.subscription_status === 'cancelled' ? 'text-amber-400' : 'text-slate-300'}`}>
+                    <p className={`text-sm font-medium ${usageStats.subscription_status === 'cancelled' ? 'text-amber-400' : 'text-gray-400'}`}>
                       {usageStats.subscription_status === 'cancelled' ? 'Valid until ' : 'Renews '}
                       {new Date(usageStats.subscription_end_date).toLocaleDateString('en-US', {
                         month: 'short',
@@ -466,7 +466,7 @@ export default function ProfilePage() {
                       })}
                     </p>
                   ) : (
-                    <p className="text-xs text-slate-500">(No end date)</p>
+                    <p className="text-xs text-gray-500">(No end date)</p>
                   )}
                 </div>
               </div>
@@ -484,13 +484,13 @@ export default function ProfilePage() {
 
         {/* Usage Stats */}
         {usageStats ? (
-          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
-            <h2 className="text-xl font-bold text-white mb-4">Usage Statistics</h2>
+          <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
+            <h2 className="text-xl font-semibold text-white mb-4">Usage Statistics</h2>
 
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-slate-300">Account Tier</span>
+                  <span className="text-sm font-medium text-gray-400">Account Tier</span>
                   <span className="text-white font-semibold">{usageStats.tier_name || 'Free'}</span>
                 </div>
               </div>
@@ -499,46 +499,46 @@ export default function ProfilePage() {
                 <>
                   <div>
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium text-slate-300">Game Imports</span>
+                      <span className="text-sm font-medium text-gray-400">Game Imports</span>
                       <span className="text-white">
                         {usageStats.imports?.used || 0} / {usageStats.imports?.limit || 0}
                       </span>
                     </div>
                     <div className="w-full bg-white/10 rounded-full h-2">
                       <div
-                        className="bg-sky-400 h-2 rounded-full transition-all"
+                        className="bg-sky-400 h-2 rounded-full transition-colors"
                         style={{
                           width: `${((usageStats.imports?.used || 0) / (usageStats.imports?.limit || 1)) * 100}%`
                         }}
                       />
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">
+                    <p className="text-xs text-gray-500 mt-1">
                       {usageStats.imports?.remaining || 0} remaining
                     </p>
                   </div>
 
                   <div>
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium text-slate-300">Game Analyses</span>
+                      <span className="text-sm font-medium text-gray-400">Game Analyses</span>
                       <span className="text-white">
                         {usageStats.analyses?.used || 0} / {usageStats.analyses?.limit || 0}
                       </span>
                     </div>
                     <div className="w-full bg-white/10 rounded-full h-2">
                       <div
-                        className="bg-emerald-400 h-2 rounded-full transition-all"
+                        className="bg-emerald-400 h-2 rounded-full transition-colors"
                         style={{
                           width: `${((usageStats.analyses?.used || 0) / (usageStats.analyses?.limit || 1)) * 100}%`
                         }}
                       />
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">
+                    <p className="text-xs text-gray-500 mt-1">
                       {usageStats.analyses?.remaining || 0} remaining
                     </p>
                   </div>
 
                   <div className="pt-2 border-t border-white/10">
-                    <p className="text-sm text-slate-400">
+                    <p className="text-sm text-gray-500">
                       Limits reset in {usageStats.resets_in_hours?.toFixed(1)} hours
                     </p>
                   </div>
@@ -548,7 +548,7 @@ export default function ProfilePage() {
               {usageStats.is_unlimited && (
                 <div className="text-center py-4">
                   <p className="text-emerald-400 font-semibold">✓ Unlimited Access</p>
-                  <p className="text-sm text-slate-400 mt-1">You have unlimited imports and analyses</p>
+                  <p className="text-sm text-gray-500 mt-1">You have unlimited imports and analyses</p>
                 </div>
               )}
             </div>
@@ -557,7 +557,7 @@ export default function ProfilePage() {
               <div className="mt-6">
                 <a
                   href="/pricing"
-                  className="block w-full text-center rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30"
+                  className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30"
                 >
                   Upgrade to Pro for Unlimited Access
                 </a>
@@ -571,14 +571,14 @@ export default function ProfilePage() {
                     <button
                       onClick={handleSwitchToMonthly}
                       disabled={loading}
-                      className="block w-full text-center rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Resubscribe to Pro Monthly'}
                     </button>
                     <button
                       onClick={handleUpgradeToYearly}
                       disabled={loading}
-                      className="block w-full text-center rounded-2xl border border-emerald-400/40 bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300/60 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Upgrade to Yearly Pro (Save 25%)'}
                     </button>
@@ -589,14 +589,14 @@ export default function ProfilePage() {
                     <button
                       onClick={handleUpgradeToYearly}
                       disabled={loading}
-                      className="block w-full text-center rounded-2xl border border-emerald-400/40 bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300/60 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Upgrade to Yearly Pro (Save 25%)'}
                     </button>
                     <button
                       onClick={() => setShowCancelConfirm(true)}
                       disabled={cancellingSubscription}
-                      className="block w-full text-center rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {cancellingSubscription ? 'Cancelling...' : 'Cancel Subscription'}
                     </button>
@@ -612,14 +612,14 @@ export default function ProfilePage() {
                     <button
                       onClick={handleSwitchToMonthly}
                       disabled={loading}
-                      className="block w-full text-center rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Switch to Pro Monthly'}
                     </button>
                     <button
                       onClick={handleUpgradeToYearly}
                       disabled={loading}
-                      className="block w-full text-center rounded-2xl border border-emerald-400/40 bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300/60 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Resubscribe to Pro Yearly'}
                     </button>
@@ -630,14 +630,14 @@ export default function ProfilePage() {
                     <button
                       onClick={handleSwitchToMonthly}
                       disabled={loading}
-                      className="block w-full text-center rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Switch to Monthly Pro'}
                     </button>
                     <button
                       onClick={() => setShowCancelConfirm(true)}
                       disabled={cancellingSubscription}
-                      className="block w-full text-center rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {cancellingSubscription ? 'Cancelling...' : 'Cancel Subscription'}
                     </button>
@@ -647,20 +647,20 @@ export default function ProfilePage() {
             )}
           </div>
         ) : (
-          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
-            <h2 className="text-xl font-bold text-white mb-4">Usage Statistics</h2>
+          <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
+            <h2 className="text-xl font-semibold text-white mb-4">Usage Statistics</h2>
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-slate-300">Account Tier</span>
+                  <span className="text-sm font-medium text-gray-400">Account Tier</span>
                   <span className="text-white font-semibold">Free</span>
                 </div>
               </div>
-              <p className="text-sm text-slate-400">Usage data is currently unavailable. Please check your connection or try again later.</p>
+              <p className="text-sm text-gray-500">Usage data is currently unavailable. Please check your connection or try again later.</p>
               <div className="mt-4">
                 <a
                   href="/pricing"
-                  className="block w-full text-center rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30"
+                  className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30"
                 >
                   Upgrade to Pro for Unlimited Access
                 </a>
@@ -671,20 +671,20 @@ export default function ProfilePage() {
 
         {/* Coach Usage (for free users with coach limits) */}
         {usageStats && !usageStats.is_unlimited && usageStats.coach_lessons && (
-          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
-            <h2 className="text-xl font-bold text-white mb-4">Coach Usage</h2>
+          <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
+            <h2 className="text-xl font-semibold text-white mb-4">Coach Usage</h2>
             <div className="space-y-4">
               {usageStats.coach_lessons && !usageStats.coach_lessons.unlimited && (
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-slate-300">Lessons (per week)</span>
+                    <span className="text-sm font-medium text-gray-400">Lessons (per week)</span>
                     <span className="text-white">
                       {usageStats.coach_lessons.used || 0} / {usageStats.coach_lessons.limit || 0}
                     </span>
                   </div>
                   <div className="w-full bg-white/10 rounded-full h-2">
                     <div
-                      className="bg-purple-400 h-2 rounded-full transition-all"
+                      className="bg-purple-400 h-2 rounded-full transition-colors"
                       style={{
                         width: `${((usageStats.coach_lessons.used || 0) / (usageStats.coach_lessons.limit || 1)) * 100}%`
                       }}
@@ -695,14 +695,14 @@ export default function ProfilePage() {
               {usageStats.coach_puzzles && !usageStats.coach_puzzles.unlimited && (
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-slate-300">Puzzles (per day)</span>
+                    <span className="text-sm font-medium text-gray-400">Puzzles (per day)</span>
                     <span className="text-white">
                       {usageStats.coach_puzzles.used || 0} / {usageStats.coach_puzzles.limit || 0}
                     </span>
                   </div>
                   <div className="w-full bg-white/10 rounded-full h-2">
                     <div
-                      className="bg-amber-400 h-2 rounded-full transition-all"
+                      className="bg-amber-400 h-2 rounded-full transition-colors"
                       style={{
                         width: `${((usageStats.coach_puzzles.used || 0) / (usageStats.coach_puzzles.limit || 1)) * 100}%`
                       }}
@@ -715,8 +715,8 @@ export default function ProfilePage() {
         )}
 
         {/* Actions */}
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
-          <h2 className="text-xl font-bold text-white mb-4">Actions</h2>
+        <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
+          <h2 className="text-xl font-semibold text-white mb-4">Actions</h2>
           <div className="space-y-3">
             {hasPasswordAuth && (
               <>
@@ -729,20 +729,20 @@ export default function ProfilePage() {
                       setNewPassword('')
                       setConfirmPassword('')
                     }}
-                    className="w-full rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30"
+                    className="w-full rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30"
                   >
                     Change Password
                   </button>
                 ) : (
                   <form onSubmit={handleChangePassword} className="space-y-4 pt-2 border-t border-white/10">
                     {passwordError && (
-                      <div className="bg-rose-900/50 border border-rose-500 text-rose-200 px-4 py-3 rounded-2xl text-sm">
+                      <div className="bg-rose-900/50 shadow-card text-rose-200 px-4 py-3 rounded-lg text-sm">
                         {passwordError}
                       </div>
                     )}
 
                     <div>
-                      <label htmlFor="currentPassword" className="block text-sm font-medium text-slate-300 mb-2">
+                      <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-400 mb-2">
                         Current Password
                       </label>
                       <input
@@ -753,13 +753,13 @@ export default function ProfilePage() {
                         required
                         value={currentPassword}
                         onChange={(e) => setCurrentPassword(e.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                        className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
                         placeholder="Enter your current password"
                       />
                     </div>
 
                     <div>
-                      <label htmlFor="newPassword" className="block text-sm font-medium text-slate-300 mb-2">
+                      <label htmlFor="newPassword" className="block text-sm font-medium text-gray-400 mb-2">
                         New Password
                       </label>
                       <input
@@ -770,13 +770,13 @@ export default function ProfilePage() {
                         required
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                        className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
                         placeholder="Enter your new password (min. 6 characters)"
                       />
                     </div>
 
                     <div>
-                      <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-300 mb-2">
+                      <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-400 mb-2">
                         Confirm New Password
                       </label>
                       <input
@@ -787,7 +787,7 @@ export default function ProfilePage() {
                         required
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                        className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
                         placeholder="Confirm your new password"
                       />
                     </div>
@@ -803,14 +803,14 @@ export default function ProfilePage() {
                           setConfirmPassword('')
                         }}
                         disabled={changingPassword}
-                        className="rounded-2xl border border-white/10 bg-white/[0.05] px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/[0.08] disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="rounded-lg shadow-card bg-surface-1 px-6 py-2.5 text-sm font-semibold text-gray-300 transition-colors hover:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Cancel
                       </button>
                       <button
                         type="submit"
                         disabled={changingPassword}
-                        className="rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-2.5 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="rounded-lg shadow-card bg-sky-500/20 px-6 py-2.5 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {changingPassword ? 'Changing...' : 'Change Password'}
                       </button>
@@ -821,7 +821,7 @@ export default function ProfilePage() {
             )}
             <button
               onClick={handleSignOut}
-              className="w-full rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30"
+              className="w-full rounded-lg shadow-card bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30"
             >
               Sign Out
             </button>
@@ -880,29 +880,29 @@ function ConnectedAccountsSection({
   }
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-100 shadow-xl shadow-black/40">
-      <h2 className="text-xl font-bold text-white mb-4">Connected Chess Accounts</h2>
-      <p className="text-sm text-slate-400 mb-5">
+    <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
+      <h2 className="text-xl font-semibold text-white mb-4">Connected Chess Accounts</h2>
+      <p className="text-sm text-gray-500 mb-5">
         Link your accounts to get personalized coaching, puzzles, and analytics.
       </p>
 
       <div className="space-y-4">
         {/* Chess.com */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Chess.com</label>
+          <label className="block text-sm font-medium text-gray-400 mb-2">Chess.com</label>
           {user.chessComUsername ? (
-            <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+            <div className="flex items-center justify-between rounded-lg shadow-card bg-emerald-500/10 px-4 py-3">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                 <span className="text-emerald-200 font-medium">{user.chessComUsername}</span>
                 {user.primaryPlatform === 'chess.com' && (
-                  <span className="text-xs text-emerald-400/60 border border-emerald-400/30 rounded-full px-2 py-0.5">Primary</span>
+                  <span className="text-xs text-emerald-400/60 shadow-card rounded-full px-2 py-0.5">Primary</span>
                 )}
               </div>
               <button
                 onClick={() => handleUnlink('chess.com')}
                 disabled={unlinkingChessCom}
-                className="text-xs text-slate-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+                className="text-xs text-gray-500 hover:text-rose-300 transition-colors disabled:opacity-50"
               >
                 {unlinkingChessCom ? 'Unlinking...' : 'Unlink'}
               </button>
@@ -916,12 +916,12 @@ function ConnectedAccountsSection({
                 onKeyDown={(e) => e.key === 'Enter' && handleLink('chess.com')}
                 placeholder="Your Chess.com username"
                 disabled={chessComLoading}
-                className="flex-1 rounded-xl border border-white/10 bg-slate-800 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40 transition disabled:opacity-50"
+                className="flex-1 rounded-lg shadow-card bg-surface-2 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40 transition-colors disabled:opacity-50"
               />
               <button
                 onClick={() => handleLink('chess.com')}
                 disabled={chessComLoading || !chessComInput.trim()}
-                className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="rounded-lg shadow-card bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {chessComLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect'}
               </button>
@@ -932,20 +932,20 @@ function ConnectedAccountsSection({
 
         {/* Lichess */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Lichess</label>
+          <label className="block text-sm font-medium text-gray-400 mb-2">Lichess</label>
           {user.lichessUsername ? (
-            <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+            <div className="flex items-center justify-between rounded-lg shadow-card bg-emerald-500/10 px-4 py-3">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                 <span className="text-emerald-200 font-medium">{user.lichessUsername}</span>
                 {user.primaryPlatform === 'lichess' && (
-                  <span className="text-xs text-emerald-400/60 border border-emerald-400/30 rounded-full px-2 py-0.5">Primary</span>
+                  <span className="text-xs text-emerald-400/60 shadow-card rounded-full px-2 py-0.5">Primary</span>
                 )}
               </div>
               <button
                 onClick={() => handleUnlink('lichess')}
                 disabled={unlinkingLichess}
-                className="text-xs text-slate-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+                className="text-xs text-gray-500 hover:text-rose-300 transition-colors disabled:opacity-50"
               >
                 {unlinkingLichess ? 'Unlinking...' : 'Unlink'}
               </button>
@@ -959,12 +959,12 @@ function ConnectedAccountsSection({
                 onKeyDown={(e) => e.key === 'Enter' && handleLink('lichess')}
                 placeholder="Your Lichess username"
                 disabled={lichessLoading}
-                className="flex-1 rounded-xl border border-white/10 bg-slate-800 px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40 transition disabled:opacity-50"
+                className="flex-1 rounded-lg shadow-card bg-surface-2 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40 transition-colors disabled:opacity-50"
               />
               <button
                 onClick={() => handleLink('lichess')}
                 disabled={lichessLoading || !lichessInput.trim()}
-                className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="rounded-lg shadow-card bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {lichessLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect'}
               </button>

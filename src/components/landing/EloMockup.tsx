@@ -16,26 +16,26 @@ export function EloMockup() {
   const yTicks = [1404, 1429, 1454, 1479, 1500]
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 shadow-lg shadow-black/40 text-white" style={{ fontSize: '10px' }}>
+    <div className="rounded-lg shadow-card bg-surface-1 p-4 text-white" style={{ fontSize: '10px' }}>
       <h3 className="mb-4 text-sm font-semibold text-white">Recent Performance</h3>
 
       <div className="grid gap-3" style={{ gridTemplateColumns: '150px 1fr' }}>
         {/* Left - Stat Cards */}
         <div className="flex flex-col gap-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 shadow-inner shadow-black/30 flex-1">
-            <span className="text-[8px] uppercase tracking-wide text-slate-400">Recent Win Rate</span>
+          <div className="rounded-lg shadow-card bg-white/[0.03] p-3 flex-1">
+            <span className="text-[8px] uppercase tracking-wide text-gray-500">Recent Win Rate</span>
             <div className="text-sm font-semibold text-emerald-300 mt-0.5">58.0%</div>
-            <div className="mt-1 text-[7px] text-slate-400">50 games &bull; Rapid</div>
+            <div className="mt-1 text-[7px] text-gray-500">50 games &bull; Rapid</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 shadow-inner shadow-black/30 flex-1">
-            <span className="text-[8px] uppercase tracking-wide text-slate-400">Current Rating</span>
+          <div className="rounded-lg shadow-card bg-white/[0.03] p-3 flex-1">
+            <span className="text-[8px] uppercase tracking-wide text-gray-500">Current Rating</span>
             <div className="text-sm font-semibold text-sky-300 mt-0.5">1500</div>
-            <div className="mt-1 text-[7px] text-slate-400">Avg: 1440 &bull; 50 games</div>
+            <div className="mt-1 text-[7px] text-gray-500">Avg: 1440 &bull; 50 games</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 shadow-inner shadow-black/30 flex-1">
-            <span className="text-[8px] uppercase tracking-wide text-slate-400">Most Played Opening</span>
+          <div className="rounded-lg shadow-card bg-white/[0.03] p-3 flex-1">
+            <span className="text-[8px] uppercase tracking-wide text-gray-500">Most Played Opening</span>
             <div className="text-xs font-semibold text-purple-300 leading-tight mt-1">Pirc Defense</div>
-            <div className="mt-1 text-[7px] text-slate-400">150 games &bull; Rapid</div>
+            <div className="mt-1 text-[7px] text-gray-500">150 games &bull; Rapid</div>
           </div>
         </div>
 
@@ -44,22 +44,22 @@ export function EloMockup() {
           {/* Filters */}
           <div className="mb-2 flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <label className="text-[8px] font-medium uppercase tracking-wide text-slate-400">Time Control</label>
-              <span className="rounded-full border border-white/10 bg-slate-800/50 px-2 py-0.5 text-[8px] text-slate-100">Rapid (297 games) &#9662;</span>
+              <label className="text-[8px] font-medium uppercase tracking-wide text-gray-500">Time Control</label>
+              <span className="rounded-full shadow-card bg-surface-2/50 px-2 py-0.5 text-[8px] text-gray-300">Rapid (297 games) &#9662;</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <label className="text-[8px] font-medium uppercase tracking-wide text-slate-400">Show Games</label>
-              <span className="rounded-full border border-white/10 bg-slate-800/50 px-2 py-0.5 text-[8px] text-slate-100">Last 50 &#9662;</span>
+              <label className="text-[8px] font-medium uppercase tracking-wide text-gray-500">Show Games</label>
+              <span className="rounded-full shadow-card bg-surface-2/50 px-2 py-0.5 text-[8px] text-gray-300">Last 50 &#9662;</span>
             </div>
           </div>
 
           {/* Chart Card */}
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] shadow-xl shadow-black/40 flex-1 flex flex-col">
+          <div className="overflow-hidden rounded-lg shadow-card bg-white/[0.04] flex-1 flex flex-col">
             <div className="p-3 flex-1">
               <div className="mb-2 flex items-center justify-between">
                 <div>
                   <h3 className="text-xs font-semibold text-white">ELO Trend</h3>
-                  <p className="text-[7px] uppercase tracking-wide text-slate-400">Rapid (297 Games)</p>
+                  <p className="text-[7px] uppercase tracking-wide text-gray-500">Rapid (297 Games)</p>
                 </div>
                 <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[7px] font-semibold uppercase tracking-wide text-white">
                   Improving
@@ -102,15 +102,15 @@ export function EloMockup() {
             </div>
 
             {/* Chart footer */}
-            <div className="border-t border-white/10 bg-white/[0.03] px-3 py-2 text-[7px] text-slate-400">
+            <div className="border-t border-white/10 bg-white/[0.03] px-3 py-2 text-[7px] text-gray-500">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-1.5 py-0.5 text-[7px] font-semibold text-slate-200">
+                  <span className="inline-flex items-center rounded-full shadow-card bg-white/10 px-1.5 py-0.5 text-[7px] font-semibold text-gray-300">
                     Upward trend
                   </span>
                   <span>Average rating: <span className="font-semibold text-white">1440</span></span>
                 </div>
-                <span className="text-slate-300 font-semibold">1500</span>
+                <span className="text-gray-400 font-semibold">1500</span>
               </div>
               <div className="flex justify-between items-center">
                 <span>Range: 1404 - 1500</span>
@@ -122,23 +122,23 @@ export function EloMockup() {
       </div>
 
       {/* Time Spent Summary */}
-      <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.06] p-4 shadow-inner shadow-black/30">
-        <h3 className="text-[8px] uppercase tracking-wide text-slate-400 font-semibold mb-3">Time Spent Playing</h3>
+      <div className="mt-4 rounded-lg shadow-card bg-white/[0.06] p-4">
+        <h3 className="text-[8px] uppercase tracking-wide text-gray-500 font-semibold mb-3">Time Spent Playing</h3>
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <div className="text-lg font-bold text-cyan-300">554h 14m</div>
-            <div className="text-[8px] text-slate-400 mt-1">Estimated Total Time</div>
-            <div className="text-[7px] text-slate-500 mt-0.5">23 days, 2 hours, 14 minutes</div>
+            <div className="text-lg font-semibold text-cyan-300">554h 14m</div>
+            <div className="text-[8px] text-gray-500 mt-1">Estimated Total Time</div>
+            <div className="text-[7px] text-gray-500 mt-0.5">23 days, 2 hours, 14 minutes</div>
           </div>
           <div>
-            <div className="text-lg font-bold text-white">9 min</div>
-            <div className="text-[8px] text-slate-400 mt-1">Average per Game</div>
-            <div className="text-[7px] text-slate-500 mt-0.5">Based on 3,892 games</div>
+            <div className="text-lg font-semibold text-white">9 min</div>
+            <div className="text-[8px] text-gray-500 mt-1">Average per Game</div>
+            <div className="text-[7px] text-gray-500 mt-0.5">Based on 3,892 games</div>
           </div>
           <div>
-            <div className="text-lg font-bold text-white">Rapid</div>
-            <div className="text-[8px] text-slate-400 mt-1">Most Time Spent</div>
-            <div className="text-[7px] text-slate-500 mt-0.5">486h &middot; 2,914 games</div>
+            <div className="text-lg font-semibold text-white">Rapid</div>
+            <div className="text-[8px] text-gray-500 mt-1">Most Time Spent</div>
+            <div className="text-[7px] text-gray-500 mt-0.5">486h &middot; 2,914 games</div>
           </div>
         </div>
       </div>

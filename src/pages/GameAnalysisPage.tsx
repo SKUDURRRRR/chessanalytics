@@ -1147,7 +1147,7 @@ export default function GameAnalysisPage() {
   if (loading) {
     return (
       <>
-        <div className="min-h-screen bg-slate-950" />
+        <div className="min-h-screen bg-surface-base" />
         <LoadingModal
           isOpen={true}
           message="Loading analysis..."
@@ -1159,19 +1159,16 @@ export default function GameAnalysisPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-surface-base">
         <div className="mx-auto max-w-4xl px-4 py-10">
-          <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-6 text-rose-100 shadow-xl shadow-black/40">
-            <div className="flex items-center space-x-3">
-              <span className="text-xl">!</span>
-              <div>
-                <h2 className="text-lg font-semibold text-white">Analysis unavailable</h2>
-                <p>{error}</p>
-              </div>
+          <div className="rounded-lg bg-surface-1 shadow-card p-6">
+            <div className="bg-rose-500/10 rounded-md p-4" style={{ boxShadow: '0 0 0 1px rgba(244,63,94,0.15)' }}>
+              <h2 className="text-section font-semibold tracking-section text-[#f0f0f0]">Analysis unavailable</h2>
+              <p className="mt-1 text-small text-rose-300/80">{error}</p>
             </div>
             <button
               onClick={handleBack}
-              className="mt-6 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:bg-white/20"
+              className="mt-5 rounded-md bg-surface-2 shadow-input px-4 py-2 text-body font-medium text-gray-400 hover:text-gray-300 transition-colors"
             >
               Return
             </button>
@@ -1183,40 +1180,40 @@ export default function GameAnalysisPage() {
 
   if (!analysisRecord || !processedData.moves.length) {
     return (
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-surface-base">
         <div className="mx-auto max-w-4xl px-4 py-10">
-          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+          <div className="rounded-lg bg-surface-1 shadow-card p-6">
             {autoAnalyzing ? (
               <>
-                <h2 className="text-lg font-semibold text-white">Analyzing Game</h2>
-                <p className="mt-2 text-slate-300">
+                <h2 className="text-section font-semibold tracking-section text-[#f0f0f0]">Analyzing Game</h2>
+                <p className="mt-2 text-small text-gray-400">
                   We're automatically analyzing this game for you. This may take a few minutes...
                 </p>
                 <div className="mt-4 flex items-center space-x-3">
-                  <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-sky-400" />
-                  <span className="text-sm text-slate-300">Analysis in progress...</span>
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-700 border-t-gray-300" />
+                  <span className="text-small text-gray-500">Analysis in progress...</span>
                 </div>
                 <button
                   onClick={handleBack}
-                  className="mt-6 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:bg-white/20"
+                  className="mt-5 rounded-md bg-surface-2 shadow-input px-4 py-2 text-body font-medium text-gray-400 hover:text-gray-300 transition-colors"
                 >
                   Back to profile
                 </button>
               </>
             ) : analysisError ? (
               <>
-                <h2 className="text-lg font-semibold text-white">Analysis Failed</h2>
-                <p className="mt-2 text-slate-300">{analysisError}</p>
+                <h2 className="text-section font-semibold tracking-section text-[#f0f0f0]">Analysis Failed</h2>
+                <p className="mt-2 text-small text-gray-400">{analysisError}</p>
                 <div className="mt-4 space-x-3">
                   <button
                     onClick={requestGameAnalysis}
-                    className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-400/60 hover:bg-sky-500/20"
+                    className="rounded-md bg-cta px-4 py-2 text-body font-medium text-[#111] shadow-btn-primary hover:bg-cta-hover transition-colors"
                   >
                     Try Again
                   </button>
                   <button
                     onClick={handleBack}
-                    className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:bg-white/20"
+                    className="rounded-md bg-surface-2 shadow-input px-4 py-2 text-body font-medium text-gray-400 hover:text-gray-300 transition-colors"
                   >
                     Back to profile
                   </button>
@@ -1224,13 +1221,13 @@ export default function GameAnalysisPage() {
               </>
             ) : (
               <>
-                <h2 className="text-lg font-semibold text-white">No Analysis Available</h2>
-                <p className="mt-2 text-slate-300">
+                <h2 className="text-section font-semibold tracking-section text-[#f0f0f0]">No Analysis Available</h2>
+                <p className="mt-2 text-small text-gray-400">
                   This game hasn't been analyzed yet. Request analysis to see insights and recommendations.
                 </p>
                 <button
                   onClick={requestGameAnalysis}
-                  className="mt-6 inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-400/60 hover:bg-sky-500/20"
+                  className="mt-5 rounded-md bg-cta px-4 py-2 text-body font-medium text-[#111] shadow-btn-primary hover:bg-cta-hover transition-colors"
                 >
                   Analyze this game
                 </button>
@@ -1279,22 +1276,22 @@ export default function GameAnalysisPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-surface-base text-gray-300">
       <div ref={layoutContainerRef} className="container-responsive py-6 content-fade">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={handleBack}
-            className="inline-flex items-center space-x-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/20"
+            className="inline-flex items-center space-x-2 rounded-full shadow-card bg-surface-2 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/[0.04]"
           >
             <span className="text-lg">&lt;</span>
             <span>Back</span>
           </button>
-          <div className="text-right text-xs text-slate-300">
+          <div className="text-right text-xs text-gray-400">
             {/* Mobile: Action Menu */}
             <div className="block lg:hidden">
               <ActionMenu
                 trigger={
-                  <button className="btn-touch-sm rounded-full border border-white/10 bg-white/10 text-slate-300 hover:text-white hover:bg-white/20 transition-colors">
+                  <button className="btn-touch-sm rounded-md bg-surface-2 shadow-input text-gray-400 hover:text-gray-300 hover:shadow-card-hover transition-colors">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                     </svg>
@@ -1338,7 +1335,7 @@ export default function GameAnalysisPage() {
               {/* Review with Coach Button */}
               <button
                 onClick={() => navigate(`/coach/review/${platform}/${encodeURIComponent(decodedUserId)}/${encodeURIComponent(decodedGameId)}`)}
-                className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-1.5 font-medium text-emerald-300 transition hover:border-emerald-400/50 hover:bg-emerald-500/20"
+                className="rounded-full shadow-card bg-emerald-500/10 px-4 py-1.5 font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
                 title="Review this game with Coach Tal"
               >
                 <span className="flex items-center gap-2">
@@ -1400,7 +1397,7 @@ export default function GameAnalysisPage() {
                     link.click()
                     URL.revokeObjectURL(url)
                   }}
-                  className="rounded-full border border-white/10 bg-white/10 px-3 py-1 font-medium text-white transition hover:border-white/30 hover:bg-white/20"
+                  className="rounded-full shadow-card bg-surface-2 px-3 py-1 font-medium text-white transition-colors hover:bg-white/[0.04]"
                 >
                   Download PGN
                 </button>
@@ -1411,7 +1408,7 @@ export default function GameAnalysisPage() {
 
         {/* Re-analysis Status Banner */}
         {analysisError && (
-          <div className="mb-4 rounded-lg border border-rose-400/30 bg-rose-500/10 p-4 text-rose-300">
+          <div className="mb-4 rounded-lg shadow-card bg-rose-500/10 p-4 text-rose-300">
             <div className="flex items-center gap-2">
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1422,9 +1419,9 @@ export default function GameAnalysisPage() {
         )}
 
         <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr,1fr]">
-          <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-4 shadow-xl shadow-black/40">
+          <div className="rounded-lg bg-surface-1 p-4 shadow-card">
             <h1 className="text-2xl font-semibold text-white">Game Overview</h1>
-            <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-2 text-base text-slate-200">
+            <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-2 text-body text-gray-300">
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Result: </span>
                 <span className={
@@ -1434,7 +1431,7 @@ export default function GameAnalysisPage() {
                       ? 'text-rose-300'
                       : gameRecord?.result === 'draw'
                         ? 'text-amber-200'
-                        : 'text-slate-200'
+                        : 'text-gray-300'
                 }>
                   {gameRecord?.result ? gameRecord.result.toUpperCase() : 'Unknown'}
                 </span>
@@ -1495,14 +1492,14 @@ export default function GameAnalysisPage() {
                )}
             </div>
           </div>
-          <div className="rounded-2xl border border-white/5 bg-white/[0.06] p-4 shadow-xl shadow-black/40">
+          <div className="rounded-lg bg-surface-1 p-4 shadow-card">
             <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
-            <p className="mt-0.5 text-xs text-slate-300">Your performance highlights from Stockfish analysis.</p>
+            <p className="mt-0.5 text-xs text-gray-400">Your performance highlights from Stockfish analysis.</p>
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
               {summaryCards.map(card => (
-                <div key={card.label} className="min-w-0 rounded-xl border border-white/10 bg-white/10 p-2.5 sm:p-3 text-center shadow-inner shadow-black/30">
-                  <div className="text-[0.65rem] sm:text-xs uppercase tracking-wide text-slate-300 break-words hyphens-auto leading-tight">{card.label}</div>
-                  <div className={`mt-1.5 text-lg sm:text-xl md:text-2xl font-bold ${card.color}`}>{card.value}</div>
+                <div key={card.label} className="min-w-0 rounded-lg bg-surface-2 p-2.5 sm:p-3 text-center shadow-card">
+                  <div className="text-[0.65rem] sm:text-xs uppercase tracking-wide text-gray-400 break-words hyphens-auto leading-tight">{card.label}</div>
+                  <div className={`mt-1.5 text-lg sm:text-xl md:text-2xl font-semibold ${card.color}`}>{card.value}</div>
                 </div>
               ))}
             </div>

@@ -107,10 +107,10 @@ function MoveCell({
   return (
     <button
       onClick={onNavigate}
-      className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left transition-all duration-150 gap-1 ${
+      className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left transition-colors duration-150 gap-1 ${
         isActive
           ? 'bg-sky-500/25 text-white ring-1 ring-sky-400/40'
-          : 'bg-white/5 text-slate-200 hover:bg-white/15 active:scale-95'
+          : 'bg-white/5 text-gray-300 hover:bg-white/15 active:scale-95'
       }`}
     >
       <span className="text-xs font-medium truncate font-mono">{san}</span>
@@ -128,10 +128,10 @@ function MoveCell({
         {isUserMove && canRequestFeedback && !isAnalyzing && (
           <button
             onClick={(e) => { e.stopPropagation(); onRequestFeedback() }}
-            className="w-4 h-4 rounded-full bg-sky-500/20 border border-sky-400/30 flex items-center justify-center hover:bg-sky-500/40 transition-colors"
+            className="w-4 h-4 rounded-full bg-sky-500/20 shadow-card flex items-center justify-center hover:bg-sky-500/40 transition-colors"
             title="Ask Coach Tal"
           >
-            <span className="text-[8px] text-sky-300 font-bold">?</span>
+            <span className="text-[8px] text-sky-300 font-semibold">?</span>
           </button>
         )}
       </span>
@@ -973,21 +973,21 @@ ${pgn} ${result}`
   const engineColor = playerColor === 'white' ? 'black' : 'white'
 
   // Navigation button styles
-  const navBtnClass = 'min-h-[36px] min-w-[36px] rounded-full border border-white/10 bg-white/10 px-2.5 py-1.5 transition hover:border-white/30 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 text-sm font-mono'
+  const navBtnClass = 'min-h-[36px] min-w-[36px] rounded-full shadow-card bg-white/10 px-2.5 py-1.5 transition-colors hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-gray-400 text-sm font-mono'
 
   return (
     <PremiumGate>
-      <div className="min-h-screen bg-slate-950 p-4 md:p-6">
+      <div className="min-h-screen bg-surface-base p-4 md:p-6">
         <div className="max-w-[1200px] mx-auto">
           {/* Compact Header */}
           <div className="mb-4 flex items-center gap-3">
             <button
               onClick={() => navigate('/coach')}
-              className="text-slate-400 hover:text-slate-300 transition-colors text-sm"
+              className="text-gray-500 hover:text-gray-400 transition-colors text-sm"
             >
               ← Coach
             </button>
-            <span className="text-slate-600">|</span>
+            <span className="text-gray-600">|</span>
             <h1 className="text-lg font-semibold text-white">Play with Coach Tal</h1>
             {error && (
               <span className="ml-auto text-red-400 text-xs">{error}</span>
@@ -1001,16 +1001,16 @@ ${pgn} ${result}`
             <div className="flex-shrink-0 w-full lg:w-auto">
               {/* Opponent Bar */}
               <div className="flex items-center gap-2.5 mb-2 px-1">
-                <div className={`w-3.5 h-3.5 rounded-sm border border-slate-600 ${
-                  engineColor === 'white' ? 'bg-white' : 'bg-slate-800'
+                <div className={`w-3.5 h-3.5 rounded-sm shadow-card ${
+                  engineColor === 'white' ? 'bg-white' : 'bg-surface-2'
                 }`} />
                 <TalCoachIcon size={24} />
                 <span className="text-white font-medium text-sm">Coach Tal</span>
                 {moveHistory.length > 0 ? (
-                  <span className="text-xs text-slate-500 ml-auto">Lvl {skillLevel}/20</span>
+                  <span className="text-xs text-gray-500 ml-auto">Lvl {skillLevel}/20</span>
                 ) : (
                   <div className="ml-auto flex items-center gap-2">
-                    <span className="text-xs text-slate-500">Lvl</span>
+                    <span className="text-xs text-gray-500">Lvl</span>
                     <input
                       type="range"
                       min="0"
@@ -1042,11 +1042,11 @@ ${pgn} ${result}`
 
               {/* Player Bar */}
               <div className="relative z-10 flex items-center gap-2.5 mt-2 px-1">
-                <div className={`w-3.5 h-3.5 rounded-sm border border-slate-600 ${
-                  playerColor === 'white' ? 'bg-white' : 'bg-slate-800'
+                <div className={`w-3.5 h-3.5 rounded-sm shadow-card ${
+                  playerColor === 'white' ? 'bg-white' : 'bg-surface-2'
                 }`} />
                 <span className="text-white font-medium text-sm">You</span>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-gray-500">
                   {getStatusMessage()}
                 </span>
                 {isViewingHistory && (
@@ -1060,7 +1060,7 @@ ${pgn} ${result}`
               </div>
 
               {/* Move Navigation */}
-              <div className="flex items-center justify-center gap-1.5 mt-3 py-2 px-3 rounded-xl bg-white/[0.03] border border-white/5">
+              <div className="flex items-center justify-center gap-1.5 mt-3 py-2 px-3 rounded-lg bg-white/[0.03] shadow-card">
                 <button
                   onClick={() => navigateToMove(0)}
                   disabled={moveHistory.length === 0}
@@ -1100,24 +1100,24 @@ ${pgn} ${result}`
             <div className="flex-1 min-w-0 lg:max-w-[340px] w-full">
               {/* Compact Welcome (pre-game only) */}
               {showInitialGreeting && moveHistory.length === 0 && (
-                <div className="flex items-start gap-2.5 rounded-xl border border-sky-400/20 bg-sky-900/10 px-4 py-3 mb-3">
+                <div className="flex items-start gap-2.5 rounded-lg shadow-card bg-sky-900/10 px-4 py-3 mb-3">
                   <TalCoachIcon size={24} className="flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-slate-300 leading-relaxed">
+                  <p className="text-sm text-gray-400 leading-relaxed">
                     Make your first move to begin! Adjust my skill level above, then use the chat bubble to ask me for advice anytime.
                   </p>
                 </div>
               )}
 
               {/* Two-Column Move History */}
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">Moves</h3>
+              <div className="rounded-lg shadow-card bg-surface-1 p-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Moves</h3>
                 {moveHistory.length === 0 ? (
-                  <p className="text-slate-600 text-xs py-4 text-center">No moves yet</p>
+                  <p className="text-gray-600 text-xs py-4 text-center">No moves yet</p>
                 ) : (
                   <div ref={moveListRef} className="max-h-[350px] overflow-y-auto pr-1">
                     <table className="w-full table-fixed text-left">
-                      <thead className="sticky top-0 bg-slate-950/95 backdrop-blur z-10">
-                        <tr className="text-[10px] uppercase text-slate-500 tracking-wider">
+                      <thead className="sticky top-0 bg-surface-base/95 backdrop-blur z-10">
+                        <tr className="text-[10px] uppercase text-gray-500 tracking-wider">
                           <th className="w-8 py-1.5 px-1">#</th>
                           <th className="py-1.5 px-1">White</th>
                           <th className="py-1.5 px-1">Black</th>
@@ -1132,7 +1132,7 @@ ${pgn} ${result}`
 
                           return (
                             <tr key={row} className="border-b border-white/5 last:border-b-0">
-                              <td className="py-1 px-1 text-xs text-slate-600 font-medium">{row + 1}.</td>
+                              <td className="py-1 px-1 text-xs text-gray-600 font-medium">{row + 1}.</td>
                               <td className="py-1 px-1">
                                 {whiteSan && (
                                   <MoveCell
@@ -1172,7 +1172,7 @@ ${pgn} ${result}`
                                     }
                                   />
                                 ) : (
-                                  <span className="text-slate-800 text-xs px-2">--</span>
+                                  <span className="text-surface-base text-xs px-2">--</span>
                                 )}
                               </td>
                             </tr>
@@ -1190,7 +1190,7 @@ ${pgn} ${result}`
                   <button
                     onClick={reviewGame}
                     disabled={isAnalyzing}
-                    className="w-full px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                    className="w-full px-4 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-card"
                   >
                     {isAnalyzing ? 'Analyzing...' : 'Review Game'}
                   </button>
@@ -1198,13 +1198,13 @@ ${pgn} ${result}`
                 <div className="flex gap-2">
                   <button
                     onClick={resetGame}
-                    className="flex-1 px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 text-sm transition-colors"
+                    className="flex-1 px-3 py-2 rounded-lg shadow-card bg-white/5 hover:bg-white/10 text-gray-400 text-sm transition-colors"
                   >
                     New Game
                   </button>
                   <button
                     onClick={changeColor}
-                    className="flex-1 px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 text-sm transition-colors"
+                    className="flex-1 px-3 py-2 rounded-lg shadow-card bg-white/5 hover:bg-white/10 text-gray-400 text-sm transition-colors"
                   >
                     Flip Color
                   </button>

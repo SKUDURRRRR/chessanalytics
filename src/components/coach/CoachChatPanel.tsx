@@ -128,7 +128,7 @@ export function CoachChatPanel() {
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
       {/* Chat popup */}
       {isOpen && (
-        <div className="w-[360px] max-h-[520px] rounded-2xl border border-sky-400/30 bg-slate-900 shadow-2xl shadow-black/50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-200">
+        <div className="w-[360px] max-h-[520px] rounded-lg bg-surface-1 shadow-card flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-200">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-sky-900/80 to-blue-900/80 border-b border-white/10">
             <div className="flex items-center gap-2.5">
@@ -145,7 +145,7 @@ export function CoachChatPanel() {
               {messages.length > 0 && (
                 <button
                   onClick={clearChat}
-                  className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded transition-colors"
+                  className="text-xs text-gray-500 hover:text-white px-2 py-1 rounded transition-colors"
                   title="Clear chat"
                 >
                   Clear
@@ -153,7 +153,7 @@ export function CoachChatPanel() {
               )}
               <button
                 onClick={() => setIsOpen(false)}
-                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                className="text-gray-500 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
                 title="Close"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -170,8 +170,8 @@ export function CoachChatPanel() {
                 <div className="mb-3">
                   <TalCoachIcon size={48} />
                 </div>
-                <p className="text-slate-300 text-sm font-medium mb-1">Ask Coach Tal</p>
-                <p className="text-slate-500 text-xs">
+                <p className="text-gray-400 text-sm font-medium mb-1">Ask Coach Tal</p>
+                <p className="text-gray-500 text-xs">
                   {positionContext.contextType === 'puzzle'
                     ? 'Stuck? I\'ll guide you with hints, not answers.'
                     : positionContext.contextType === 'play'
@@ -194,8 +194,8 @@ export function CoachChatPanel() {
                 <div
                   className={`max-w-[80%] px-3 py-2 text-[13px] leading-relaxed ${
                     msg.role === 'user'
-                      ? 'bg-sky-600/40 rounded-2xl rounded-br-sm text-white'
-                      : 'bg-slate-800/80 border border-white/5 rounded-2xl rounded-bl-sm text-slate-200'
+                      ? 'bg-sky-600/40 rounded-lg rounded-br-sm text-white'
+                      : 'bg-surface-2/80 shadow-card rounded-lg rounded-bl-sm text-gray-300'
                   }`}
                 >
                   {msg.content}
@@ -211,7 +211,7 @@ export function CoachChatPanel() {
                     <TalCoachIcon size={22} />
                   </div>
                 </div>
-                <div className="bg-slate-800/80 border border-white/5 rounded-2xl rounded-bl-sm px-3 py-2 text-sm text-slate-400">
+                <div className="bg-surface-2/80 shadow-card rounded-lg rounded-bl-sm px-3 py-2 text-sm text-gray-500">
                   <span className="inline-flex gap-1">
                     <span className="animate-bounce" style={{ animationDelay: '0ms' }}>.</span>
                     <span className="animate-bounce" style={{ animationDelay: '150ms' }}>.</span>
@@ -237,7 +237,7 @@ export function CoachChatPanel() {
                 <button
                   key={suggestion}
                   onClick={() => sendMessage(suggestion)}
-                  className="text-xs px-2.5 py-1 rounded-full border border-sky-500/30 text-sky-300 hover:bg-sky-500/10 hover:border-sky-400/50 transition-colors"
+                  className="text-xs px-2.5 py-1 rounded-full shadow-card text-sky-300 hover:bg-sky-500/10 transition-colors"
                 >
                   {suggestion}
                 </button>
@@ -246,7 +246,7 @@ export function CoachChatPanel() {
           )}
 
           {/* Input */}
-          <div className="p-3 border-t border-white/10 bg-slate-900/50">
+          <div className="p-3 border-t border-white/10 bg-surface-1/50">
             <div className="flex gap-2">
               <input
                 ref={inputRef}
@@ -257,12 +257,12 @@ export function CoachChatPanel() {
                 placeholder="Ask Coach Tal..."
                 maxLength={500}
                 disabled={isLoading || !user}
-                className="flex-1 bg-slate-800/60 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500/50 disabled:opacity-50"
+                className="flex-1 bg-surface-2/60 shadow-card rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-sky-500/50 disabled:opacity-50"
               />
               <button
                 onClick={() => sendMessage()}
                 disabled={!inputValue.trim() || isLoading || !user}
-                className="bg-sky-500 hover:bg-sky-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-xl px-3 py-2 transition-colors"
+                className="bg-sky-500 hover:bg-sky-600 disabled:bg-surface-3 disabled:cursor-not-allowed text-white rounded-lg px-3 py-2 transition-colors"
                 title="Send"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -277,10 +277,10 @@ export function CoachChatPanel() {
       {/* FAB button */}
       <button
         onClick={() => setIsOpen(prev => !prev)}
-        className={`group relative w-14 h-14 rounded-full shadow-lg shadow-black/40 flex items-center justify-center transition-all duration-200 ${
+        className={`group relative w-14 h-14 rounded-full shadow-card flex items-center justify-center transition-colors duration-200 ${
           isOpen
-            ? 'bg-slate-800 border border-white/20 scale-90'
-            : 'bg-gradient-to-br from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 hover:scale-105 hover:shadow-sky-500/25'
+            ? 'bg-surface-2 scale-90'
+            : 'bg-sky-500 hover:bg-sky-400 hover:scale-105'
         }`}
         title={isOpen ? 'Close chat' : 'Chat with Coach Tal'}
       >
@@ -294,7 +294,7 @@ export function CoachChatPanel() {
 
         {/* Unread badge */}
         {!isOpen && unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-[10px] font-bold text-white">
+          <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-[10px] font-semibold text-white">
             {unreadCount}
           </span>
         )}

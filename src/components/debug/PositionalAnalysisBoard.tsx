@@ -6,16 +6,16 @@ import { generateModernMoveArrows } from '../../utils/chessArrows'
 
 const MoveClassificationBadge = ({ classification }: { classification: string }) => {
   const classificationColors = {
-    brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
-    best: 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200',
-    excellent: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',  // Merged great+excellent
-    great: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',  // Alias for excellent
-    good: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',  // Merged good+acceptable
-    acceptable: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',  // Alias for good
-    inaccuracy: 'border border-amber-400/40 bg-amber-500/20 text-amber-200',
-    mistake: 'border border-orange-400/40 bg-orange-500/20 text-orange-200',
-    blunder: 'border border-rose-400/40 bg-rose-500/20 text-rose-200',
-    uncategorized: 'border border-slate-400/30 bg-slate-500/10 text-slate-200'
+    brilliant: 'shadow-card bg-purple-500/20 text-purple-200',
+    best: 'shadow-card bg-emerald-500/20 text-emerald-200',
+    excellent: 'shadow-card bg-cyan-500/20 text-cyan-200',  // Merged great+excellent
+    great: 'shadow-card bg-cyan-500/20 text-cyan-200',  // Alias for excellent
+    good: 'shadow-card bg-sky-500/20 text-sky-200',  // Merged good+acceptable
+    acceptable: 'shadow-card bg-sky-500/20 text-sky-200',  // Alias for good
+    inaccuracy: 'shadow-card bg-amber-500/20 text-amber-200',
+    mistake: 'shadow-card bg-orange-500/20 text-orange-200',
+    blunder: 'shadow-card bg-rose-500/20 text-rose-200',
+    uncategorized: 'shadow-card bg-surface-1 text-gray-300'
   }
 
   const classificationLabels = {
@@ -297,15 +297,15 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
         case 'strong': return 'text-emerald-300'
         case 'moderate': return 'text-amber-300'
         case 'weak': return 'text-rose-300'
-        default: return 'text-slate-300'
+        default: return 'text-gray-400'
       }
     } else {
       // StrategicTheme
       switch (element.importance) {
         case 'critical': return 'text-rose-300'
         case 'important': return 'text-sky-300'
-        case 'minor': return 'text-slate-300'
-        default: return 'text-slate-300'
+        case 'minor': return 'text-gray-400'
+        default: return 'text-gray-400'
       }
     }
   }
@@ -313,7 +313,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
   return (
     <div className={`space-y-2 w-full max-w-[400px] ${className}`}>
       {/* Board */}
-      <div className="relative bg-slate-800/20 rounded-lg p-4 pb-6">
+      <div className="relative bg-surface-2/20 rounded-lg p-4 pb-6">
         <style>{`
           #positional-analysis-${element.name.replace(/\s+/g, '-').toLowerCase()} .react-chessboard-notation {
             font-size: 5px !important;
@@ -341,12 +341,12 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
       </div>
 
       {/* Move Info Header */}
-      <div className="text-center bg-slate-800/30 rounded-lg p-2">
-        <div className="text-base font-bold text-white">
+      <div className="text-center bg-surface-2/30 rounded-lg p-2">
+        <div className="text-base font-semibold text-white">
           Move {Math.floor(currentMoveIndex / 2) + 1} • {currentMove?.player === 'white' ? 'White' : 'Black'}
         </div>
         <div className="flex items-center justify-center gap-2 mt-0.5">
-          <div className="text-sm font-bold text-emerald-300">
+          <div className="text-sm font-semibold text-emerald-300">
             {currentMove?.san}
           </div>
           {currentMove && (
@@ -365,7 +365,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
         <button
           onClick={() => navigateToMove('first')}
           disabled={!canGoBack}
-          className="rounded bg-slate-600/20 p-1.5 text-sm text-slate-300 transition hover:bg-slate-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded bg-surface-3/30 p-1.5 text-sm text-gray-400 transition-colors hover:bg-surface-3/50 disabled:opacity-30 disabled:cursor-not-allowed"
           title="First move"
         >
           ⏮
@@ -373,17 +373,17 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
         <button
           onClick={() => navigateToMove('prev')}
           disabled={!canGoBack}
-          className="rounded bg-slate-600/20 p-1.5 text-sm text-slate-300 transition hover:bg-slate-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded bg-surface-3/30 p-1.5 text-sm text-gray-400 transition-colors hover:bg-surface-3/50 disabled:opacity-30 disabled:cursor-not-allowed"
           title="Previous move"
         >
           ◀
         </button>
         <button
           onClick={() => navigateToMove('element')}
-          className={`rounded p-1.5 text-sm transition ${
+          className={`rounded p-1.5 text-sm transition-colors ${
             isElementMove
               ? 'bg-green-500/30 text-green-200'
-              : 'bg-green-600/20 text-slate-300 hover:bg-green-600/40'
+              : 'bg-green-600/20 text-gray-400 hover:bg-green-600/40'
           }`}
           title={`Go to ${element.name} move`}
         >
@@ -392,7 +392,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
         <button
           onClick={() => navigateToMove('next')}
           disabled={!canGoForward}
-          className="rounded bg-slate-600/20 p-1.5 text-sm text-slate-300 transition hover:bg-slate-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded bg-surface-3/30 p-1.5 text-sm text-gray-400 transition-colors hover:bg-surface-3/50 disabled:opacity-30 disabled:cursor-not-allowed"
           title="Next move"
         >
           ▶
@@ -400,7 +400,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
         <button
           onClick={() => navigateToMove('last')}
           disabled={!canGoForward}
-          className="rounded bg-slate-600/20 p-1.5 text-sm text-slate-300 transition hover:bg-slate-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded bg-surface-3/30 p-1.5 text-sm text-gray-400 transition-colors hover:bg-surface-3/50 disabled:opacity-30 disabled:cursor-not-allowed"
           title="Last move"
         >
           ⏭
@@ -410,15 +410,15 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
       {/* Evaluation Bar */}
       {currentMove?.evaluation && (
         <div className="space-y-1">
-          <div className="text-center text-xs text-slate-400">Position Evaluation</div>
-          <div className="relative h-3 w-full rounded-full bg-slate-700 overflow-hidden">
+          <div className="text-center text-xs text-gray-500">Position Evaluation</div>
+          <div className="relative h-3 w-full rounded-full bg-surface-3 overflow-hidden">
             <div
-              className={`h-full transition-all duration-300 ${
+              className={`h-full transition-colors duration-300 ${
                 currentMove.evaluation.type === 'mate'
                   ? currentMove.evaluation.value > 0 ? 'bg-green-500' : 'bg-red-500'
                   : currentMove.evaluation.value > 200 ? 'bg-green-500' :
                     currentMove.evaluation.value > 50 ? 'bg-green-400' :
-                    currentMove.evaluation.value > -50 ? 'bg-slate-500' :
+                    currentMove.evaluation.value > -50 ? 'bg-gray-500' :
                     currentMove.evaluation.value > -200 ? 'bg-red-400' : 'bg-red-500'
               }`}
               style={{
@@ -429,7 +429,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
               }}
             />
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-xs font-bold text-white drop-shadow-lg">
+              <span className="text-xs font-semibold text-white drop-shadow-lg">
                 {currentMove.evaluation.type === 'mate'
                   ? (currentMove.evaluation.value > 0 ? `+M${currentMove.evaluation.value}` : `-M${Math.abs(currentMove.evaluation.value)}`)
                   : currentMove.evaluation.value > 0 ? `+${(currentMove.evaluation.value / 100).toFixed(1)}` : `${(currentMove.evaluation.value / 100).toFixed(1)}`
@@ -437,7 +437,7 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
               </span>
             </div>
           </div>
-          <div className="flex justify-between text-xs text-slate-500 px-1">
+          <div className="flex justify-between text-xs text-gray-500 px-1">
             <span>Black</span>
             <span>Equal</span>
             <span>White</span>
@@ -447,13 +447,13 @@ export function PositionalAnalysisBoard({ element, allMoves, playerColor, classN
 
       {/* Centipawn loss indicator */}
       {currentMove?.centipawnLoss && Math.abs(currentMove.centipawnLoss) > 0 && (
-        <div className="flex items-center justify-center gap-2 text-xs bg-slate-800/30 rounded-lg px-2 py-1.5">
+        <div className="flex items-center justify-center gap-2 text-xs bg-surface-2/30 rounded-lg px-2 py-1.5">
           <div className={`h-3 w-3 rounded-full flex-shrink-0 ${
             currentMove.centipawnLoss > 500 ? 'bg-red-500' :
             currentMove.centipawnLoss > 200 ? 'bg-orange-500' :
             currentMove.centipawnLoss > 50 ? 'bg-yellow-500' : 'bg-green-500'
           }`}></div>
-          <span className="text-slate-200 font-medium">
+          <span className="text-gray-300 font-medium">
             {currentMove.centipawnLoss > 0 ? 'Lost' : 'Gained'} {Math.round(Math.abs(currentMove.centipawnLoss))} points
           </span>
         </div>

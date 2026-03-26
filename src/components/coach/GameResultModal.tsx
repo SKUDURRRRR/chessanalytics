@@ -92,19 +92,19 @@ export function GameResultModal({
       onClick={onClose}
     >
       <div
-        className={`rounded-3xl border-2 ${
+        className={`rounded-lg ${
           playerWon
-            ? 'border-emerald-400/50 bg-emerald-500/10 shadow-[0_0_32px_rgba(16,185,129,0.3)]'
+            ? 'bg-emerald-500/10'
             : resultType === 'draw' || resultType === 'stalemate'
-            ? 'border-amber-400/50 bg-amber-500/10 shadow-[0_0_32px_rgba(245,158,11,0.3)]'
-            : 'border-sky-400/50 bg-sky-500/10 shadow-[0_0_32px_rgba(14,165,233,0.3)]'
-        } bg-white/[0.08] p-8 text-center shadow-2xl shadow-black/50 max-w-md w-full mx-4 ${
+            ? 'bg-amber-500/10'
+            : 'bg-sky-500/10'
+        } bg-surface-1 p-8 text-center shadow-card max-w-md w-full mx-4 ${
           isAnimating ? 'animate-pulse' : ''
         }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Title */}
-        <h2 className={`text-3xl font-bold mb-4 ${
+        <h2 className={`text-3xl font-semibold mb-4 ${
           playerWon ? 'text-emerald-300' : resultType === 'draw' || resultType === 'stalemate' ? 'text-amber-300' : 'text-sky-300'
         }`}>
           {getTitle()}
@@ -116,7 +116,7 @@ export function GameResultModal({
             <p
               key={index}
               className={`text-base ${
-                index === 0 ? 'text-white font-semibold' : 'text-slate-300'
+                index === 0 ? 'text-white font-semibold' : 'text-gray-400'
               }`}
             >
               {msg}
@@ -125,8 +125,8 @@ export function GameResultModal({
         </div>
 
         {/* Result Details */}
-        <div className="mb-6 p-4 rounded-xl bg-slate-900/50 border border-white/10">
-          <p className="text-sm text-slate-400 mb-1">Game Result</p>
+        <div className="mb-6 p-4 rounded-lg bg-surface-1/50 shadow-card">
+          <p className="text-sm text-gray-500 mb-1">Game Result</p>
           <p className="text-lg font-semibold text-white capitalize">
             {resultType === 'checkmate'
               ? `${playerWon ? 'You' : 'Tal Coach'} won by checkmate`
@@ -134,8 +134,8 @@ export function GameResultModal({
               ? 'Stalemate'
               : 'Draw'}
           </p>
-          <p className="text-sm text-slate-400 mt-2">
-            You played as <span className="capitalize font-semibold text-slate-300">{playerColor}</span>
+          <p className="text-sm text-gray-500 mt-2">
+            You played as <span className="capitalize font-semibold text-gray-400">{playerColor}</span>
           </p>
         </div>
 
@@ -145,7 +145,7 @@ export function GameResultModal({
             <button
               onClick={onReviewGame}
               disabled={isAnalyzing}
-              className="flex-1 py-3 px-6 rounded-xl font-semibold border border-amber-400/40 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-500/20"
+              className="flex-1 py-3 px-6 rounded-lg font-medium shadow-card bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isAnalyzing ? 'Analyzing...' : 'Review Game'}
             </button>
@@ -153,10 +153,10 @@ export function GameResultModal({
           <button
             onClick={onNewGame}
             disabled={isAnalyzing}
-            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
               playerWon
-                ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/30'
-                : 'bg-sky-500 hover:bg-sky-600 text-white shadow-lg shadow-sky-500/30'
+                ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                : 'bg-sky-500 hover:bg-sky-600 text-white'
             }`}
           >
             {getButtonText()}
@@ -164,7 +164,7 @@ export function GameResultModal({
           <button
             onClick={onClose}
             disabled={isAnalyzing}
-            className="flex-1 py-3 px-6 rounded-xl font-semibold border border-white/20 bg-white/[0.05] text-slate-300 hover:bg-white/[0.08] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 py-3 px-6 rounded-lg font-medium shadow-card bg-surface-1 text-gray-400 hover:bg-white/[0.04] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Close
           </button>
