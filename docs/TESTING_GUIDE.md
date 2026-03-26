@@ -11,10 +11,14 @@ This document provides step-by-step testing instructions for the entire Chess An
 - Backend: `http://localhost:8002` (or Railway URL)
 - Platforms supported: Chess.com, Lichess
 
-**Test Accounts Needed:**
-- A free-tier account (email/password)
+**Test Accounts:**
+
+| Account | Email | Password | Tier | Linked Chess Account |
+|---------|-------|----------|------|---------------------|
+| AI Tester | `aitester@karjerospuslapis.com` | `mL4w&bWByDK7eH4S1Xj2` | Free | hikaru (Chess.com) |
+
+**Additional accounts needed for full coverage:**
 - A premium (pro) account with active subscription
-- Chess.com username(s) with game history
 - Lichess username(s) with game history
 - A Stripe test card (`4242 4242 4242 4242`)
 
