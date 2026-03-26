@@ -1,3 +1,4 @@
+// @refresh reset — file exports both a component and a hook
 /**
  * CoachChatContext - Provides position context for the floating coach chat widget.
  * Pages set their position context here; the global chat widget reads it.

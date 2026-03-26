@@ -41,7 +41,7 @@ function ScreenshotMockup({ children, contentWidth = DEFAULT_MOCKUP_WIDTH }: Scr
   }, [contentWidth])
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full mx-auto" style={{ maxWidth: contentWidth }}>
       <div className="relative w-full rounded-lg overflow-hidden bg-surface-1 shadow-card">
         {/* Browser top bar */}
         <div className="flex items-center gap-2 px-4 py-2 bg-surface-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
@@ -303,7 +303,7 @@ export default function HomePage() {
         {/* Full-width screenshot */}
         <div className="px-6 pb-6">
           <div className="max-w-4xl mx-auto">
-            <ScreenshotMockup contentWidth={900}>
+            <ScreenshotMockup>
               <CoachChatMockup />
             </ScreenshotMockup>
           </div>

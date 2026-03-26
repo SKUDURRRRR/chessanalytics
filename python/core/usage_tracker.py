@@ -220,7 +220,38 @@ class UsageTracker:
             )
 
             if not tier_result.data:
-                return {'success': False, 'message': 'Tier not found'}
+                # Try fallback: 'pro' -> 'pro_monthly', or default to 'free'
+                fallback_tier = None
+                if account_tier and account_tier.startswith('pro'):
+                    fallback_result = await asyncio.to_thread(
+                        lambda: self.supabase.table('payment_tiers').select(
+                            'import_limit, analysis_limit, name, coach_lessons_limit, coach_puzzles_daily_limit'
+                        ).eq('id', 'pro_monthly').execute()
+                    )
+                    if fallback_result.data:
+                        fallback_tier = fallback_result.data[0]
+                        logger.warning(f"[USAGE_STATS] Tier '{account_tier}' not found, falling back to 'pro_monthly' for user {user_id}")
+
+                if not fallback_tier:
+                    fallback_result = await asyncio.to_thread(
+                        lambda: self.supabase.table('payment_tiers').select(
+                            'import_limit, analysis_limit, name, coach_lessons_limit, coach_puzzles_daily_limit'
+                        ).eq('id', 'free').execute()
+                    )
+                    fallback_tier = fallback_result.data[0] if fallback_result.data else None
+                    logger.warning(f"[USAGE_STATS] Tier '{account_tier}' not found, falling back to 'free' for user {user_id}")
+
+                if not fallback_tier:
+                    return {
+                        'success': False,
+                        'message': f'No tiers found in payment_tiers',
+                        'chess_com_username': chess_com_username,
+                        'lichess_username': lichess_username,
+                        'primary_platform': primary_platform,
+                        'onboarding_completed': onboarding_completed,
+                    }
+
+                tier_result.data = [fallback_tier]
 
             tier = tier_result.data[0]
             import_limit = tier['import_limit']

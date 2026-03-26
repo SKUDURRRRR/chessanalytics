@@ -93,15 +93,15 @@ function CoachDashboardContent() {
 
   return (
     <div className="min-h-screen bg-surface-base">
-      <div className="max-w-5xl mx-auto px-4 md:px-8 py-6 md:py-10">
+      <div className="max-w-5xl mx-auto px-4 md:px-6 pt-2 pb-6">
         {/* Board + Chat */}
         <div
           className="rounded-lg overflow-hidden mb-6"
           style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)', background: '#0c0d0f' }}
         >
-          <div className="grid grid-cols-1 md:grid-cols-2" style={{ minHeight: 420 }}>
+          <div className="grid grid-cols-1 md:grid-cols-2" style={{ minHeight: 460 }}>
             {/* Left: Board */}
-            <div className="flex flex-col items-center justify-center p-5 md:p-6">
+            <div className="flex flex-col items-center justify-center px-5 py-6 md:pl-8 md:pr-4">
               <BoardSection
                 fen={currentFen}
                 currentMove={currentMove}

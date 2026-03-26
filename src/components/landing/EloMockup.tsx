@@ -120,28 +120,6 @@ export function EloMockup() {
           </div>
         </div>
       </div>
-
-      {/* Time Spent Summary */}
-      <div className="mt-4 rounded-lg shadow-card bg-white/[0.06] p-4">
-        <h3 className="text-[8px] uppercase tracking-wide text-gray-500 font-semibold mb-3">Time Spent Playing</h3>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <div className="text-lg font-semibold text-cyan-300">554h 14m</div>
-            <div className="text-[8px] text-gray-500 mt-1">Estimated Total Time</div>
-            <div className="text-[7px] text-gray-500 mt-0.5">23 days, 2 hours, 14 minutes</div>
-          </div>
-          <div>
-            <div className="text-lg font-semibold text-white">9 min</div>
-            <div className="text-[8px] text-gray-500 mt-1">Average per Game</div>
-            <div className="text-[7px] text-gray-500 mt-0.5">Based on 3,892 games</div>
-          </div>
-          <div>
-            <div className="text-lg font-semibold text-white">Rapid</div>
-            <div className="text-[8px] text-gray-500 mt-1">Most Time Spent</div>
-            <div className="text-[7px] text-gray-500 mt-0.5">486h &middot; 2,914 games</div>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

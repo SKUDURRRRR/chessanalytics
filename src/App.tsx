@@ -5,6 +5,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ChessSoundProvider } from './contexts/ChessSoundContext'
 import { CoachChatProvider } from './contexts/CoachChatContext'
+import { ToastProvider } from './contexts/ToastContext'
 const CoachChatPanel = lazy(() => import('./components/coach/CoachChatPanel').then(m => ({ default: m.CoachChatPanel })))
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
 import { Navigation } from './components/Navigation'
@@ -99,6 +100,7 @@ function PublicOnlyRoute({ children }: { children: ReactNode }) {
 function App() {
   return (
     <PageErrorBoundary>
+      <ToastProvider>
       <AuthProvider>
         <ChessSoundProvider>
           <CoachChatProvider>
@@ -146,6 +148,7 @@ function App() {
           </CoachChatProvider>
         </ChessSoundProvider>
       </AuthProvider>
+      </ToastProvider>
     </PageErrorBoundary>
   )
 }

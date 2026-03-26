@@ -77,24 +77,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   }, [comprehensiveData?.performanceTrends, selectedTimeControl, eloGraphGamesUsed])
 
   // Fetch analytics data for a single platform
+  // NOTE: getComprehensiveAnalytics now uses SQL aggregation (no 10k row fetch).
+  // ELO data comes from comprehensive analytics, so separate getEloStats call removed.
   const fetchPlatformData = useCallback(async (uid: string, plat: 'lichess' | 'chess.com', forceRefresh: boolean) => {
-    const [analysisResult, playerStats, gamesData, basicStatsData, analysisOnlyData, deepAnalysis, eloStats] = await Promise.all([
+    const [analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis] = await Promise.all([
       UnifiedAnalysisService.getAnalysisStats(uid, plat, 'stockfish'),
       UnifiedAnalysisService.getPlayerStats(uid, plat),
       UnifiedAnalysisService.getGameAnalyses(uid, plat, 'stockfish', 20, 0),
       UnifiedAnalysisService.getComprehensiveAnalytics(uid, plat, 10000),
-      UnifiedAnalysisService.getComprehensiveAnalytics(uid, plat, 100),
       UnifiedAnalysisService.fetchDeepAnalysis(uid, plat, forceRefresh),
-      UnifiedAnalysisService.getEloStats(uid, plat)
     ])
-    const comprehensiveAnalytics = {
-      ...basicStatsData,
-      marathon_performance: analysisOnlyData?.marathon_performance,
-      personal_records: analysisOnlyData?.personal_records,
-      resignation_timing: analysisOnlyData?.resignation_timing,
-      recent_trend: analysisOnlyData?.recent_trend,
-    }
-    return { analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis, eloStats }
+    return { analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis }
   }, [])
 
   const loadData = useCallback(async (forceRefresh = false) => {
@@ -117,7 +110,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       const plat = (platform as 'lichess' | 'chess.com') || 'lichess'
 
-      let analysisResult, playerStats, gamesData: ReturnType<typeof UnifiedAnalysisService.getGameAnalyses> extends Promise<infer T> ? T : never, comprehensiveAnalytics: Record<string, unknown>, deepAnalysis, eloStats
+      let analysisResult, playerStats, gamesData: ReturnType<typeof UnifiedAnalysisService.getGameAnalyses> extends Promise<infer T> ? T : never, comprehensiveAnalytics: Record<string, unknown>, deepAnalysis
 
       if (viewMode === 'combined' && secondaryUserId && secondaryPlatform) {
         // Combined view: fetch both platforms in parallel, then merge
@@ -137,8 +130,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         deepAnalysis = (primary.deepAnalysis && secondary.deepAnalysis)
           ? mergeDeepAnalysis(primary.deepAnalysis, secondary.deepAnalysis)
           : primary.deepAnalysis || secondary.deepAnalysis
-        // For ELO: use primary platform's stats (UI will show both ELO graphs separately)
-        eloStats = primary.eloStats
       } else {
         // Single platform: existing behavior
         const result = await fetchPlatformData(userId, plat, forceRefresh)
@@ -147,7 +138,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         gamesData = result.gamesData
         comprehensiveAnalytics = result.comprehensiveAnalytics as Record<string, unknown>
         deepAnalysis = result.deepAnalysis
-        eloStats = result.eloStats
       }
 
       // Set default values for removed services
@@ -162,7 +152,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         console.log('Opening Color Stats (camelCase):', comprehensiveAnalytics?.openingColorStats)
         console.log('Opening Color Stats (snake_case):', comprehensiveAnalytics?.opening_color_stats)
         console.log('Opening Stats:', comprehensiveAnalytics?.openingStats)
-        console.log('ELO stats from backend:', eloStats)
+        console.log('ELO data from comprehensive analytics:', comprehensiveAnalytics?.highestElo, comprehensiveAnalytics?.currentElo)
         console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
         console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
         console.log('Endgame accuracy:', analysisResult?.average_endgame_accuracy)
@@ -233,10 +223,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       // IMPORTANT: Preserve all fields from backend, including openingColorStats and game length insights
       setComprehensiveData({
         ...comprehensiveAnalytics,
-        // Override with backend API data if available (more reliable)
-        highestElo: eloStats.highest_elo || comprehensiveAnalytics?.highestElo,
-        timeControlWithHighestElo: eloStats.time_control || comprehensiveAnalytics?.timeControlWithHighestElo,
-        totalGames: eloStats.total_games || comprehensiveAnalytics?.totalGames || 0,
+        // ELO data now comes directly from comprehensive analytics (SQL aggregation)
+        highestElo: comprehensiveAnalytics?.highestElo,
+        timeControlWithHighestElo: comprehensiveAnalytics?.timeControlWithHighestElo,
+        totalGames: comprehensiveAnalytics?.totalGames || comprehensiveAnalytics?.total_games || 0,
         // Ensure openingColorStats is preserved (handle both camelCase and snake_case)
         openingColorStats: comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats || { white: [], black: [] },
         // Preserve all game length insight fields (these come from comprehensive analytics endpoint)

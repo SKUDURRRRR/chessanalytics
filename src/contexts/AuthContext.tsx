@@ -1,9 +1,11 @@
 // Enhanced Authentication Context with Usage Tracking and Linked Chess Accounts
-import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react'
+// @refresh reset — file exports both a component and a hook, which is incompatible with Fast Refresh
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
+import { useToast } from './ToastContext'
 
 interface User {
   id: string
@@ -63,10 +65,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { showToast } = useToast()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [profileLoaded, setProfileLoaded] = useState(false)
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null)
+  const shownConnectionError = useRef(false)
 
   // Helper to update user from usage stats response
   const updateUserFromStats = useCallback((userId: string, email: string, stats: UsageStats) => {
@@ -126,30 +130,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Update user with linked account info from stats
         const userEmail = email || session.session.user?.email || ''
         updateUserFromStats(userId, userEmail, stats)
+        shownConnectionError.current = false
         logger.log('Usage stats fetched successfully')
       } else {
-        // Only log non-connection errors
         if (response.status !== 0) {
           logger.warn(`Failed to fetch usage stats: ${response.status}`)
+          showToast('Could not load account data. Some features may be unavailable.', 'warning')
         }
       }
     } catch (error) {
-      // Check if it's a connection error - don't log these as errors when backend is down
       const errorMessage = error instanceof Error ? error.message : String(error)
       if (errorMessage.includes('Failed to fetch') ||
           errorMessage.includes('ERR_CONNECTION_REFUSED') ||
           errorMessage.includes('NetworkError') ||
           errorMessage.includes('Network request failed')) {
-        // Backend is not running - this is expected, don't log as error
         logger.log('Backend server not available, skipping usage stats fetch')
+        if (!shownConnectionError.current) {
+          shownConnectionError.current = true
+          showToast('Cannot connect to server. Please check your connection.', 'error')
+        }
       } else {
         logger.error('Error fetching usage stats:', error)
+        showToast('Something went wrong loading your account.', 'error')
       }
-      // Don't throw - fail gracefully
     } finally {
       setProfileLoaded(true)
     }
-  }, [updateUserFromStats])
+  }, [updateUserFromStats, showToast])
 
   useEffect(() => {
     // Listen for auth changes (fires immediately with current session on mount)
@@ -380,18 +387,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json()
 
       if (!response.ok) {
-        return { error: new Error(data.message || data.detail || 'Failed to link account') }
+        const msg = data.message || data.detail || 'Failed to link account'
+        showToast(msg, 'error')
+        return { error: new Error(msg) }
       }
 
       // Refresh usage stats to update linked account info
       await refreshUsageStats()
+      showToast(`Connected ${platform} account: ${username}`, 'success')
       logger.log(`Linked ${platform} account: ${username}`)
       return { error: null, games_claimed: data.games_claimed }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to link account'
       logger.error('Link chess account error:', error)
+      if (msg.includes('Failed to fetch') || msg.includes('ERR_CONNECTION_REFUSED')) {
+        showToast('Cannot connect to server. Is the backend running?', 'error')
+      } else {
+        showToast(`Failed to connect account: ${msg}`, 'error')
+      }
       return { error: error as Error }
     }
-  }, [refreshUsageStats])
+  }, [refreshUsageStats, showToast])
 
   const unlinkChessAccount = useCallback(async (platform: 'chess.com' | 'lichess') => {
     try {
@@ -415,17 +431,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const data = await response.json()
-        return { error: new Error(data.detail || 'Failed to unlink account') }
+        const msg = data.detail || 'Failed to unlink account'
+        showToast(msg, 'error')
+        return { error: new Error(msg) }
       }
 
       await refreshUsageStats()
+      showToast(`Disconnected ${platform} account`, 'info')
       logger.log(`Unlinked ${platform} account`)
       return { error: null }
     } catch (error) {
       logger.error('Unlink chess account error:', error)
+      showToast('Failed to disconnect account. Please try again.', 'error')
       return { error: error as Error }
     }
-  }, [refreshUsageStats])
+  }, [refreshUsageStats, showToast])
 
   const completeOnboarding = useCallback(async () => {
     try {

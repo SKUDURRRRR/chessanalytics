@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { logger } from '../utils/logger'
@@ -10,6 +11,7 @@ const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
 
 export default function ProfilePage() {
   const { user, usageStats, refreshUsageStats, signOut, linkChessAccount, unlinkChessAccount } = useAuth()
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -111,6 +113,7 @@ export default function ProfilePage() {
     } catch (error) {
       logger.error('Error verifying payment:', error)
       setError('Failed to verify payment. Please refresh the page.')
+      showToast('Payment verification failed. Please refresh the page.', 'error')
     } finally {
       setVerifyingPayment(false)
     }
@@ -205,6 +208,7 @@ export default function ProfilePage() {
     } catch (error) {
       logger.error('Error changing password:', error)
       setPasswordError('An unexpected error occurred. Please try again.')
+      showToast('Failed to change password. Please try again.', 'error')
     } finally {
       setChangingPassword(false)
     }
@@ -253,6 +257,7 @@ export default function ProfilePage() {
     } catch (error) {
       logger.error('Error cancelling subscription:', error)
       setError('Failed to cancel subscription. Please try again.')
+      showToast('Failed to cancel subscription. Please try again.', 'error')
     } finally {
       setCancellingSubscription(false)
     }

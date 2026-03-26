@@ -2689,7 +2689,13 @@ async def get_comprehensive_analytics(
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
 ):
-    """Get comprehensive game analytics and derive distribution metrics."""
+    """Get comprehensive game analytics and derive distribution metrics.
+
+    PERFORMANCE: Uses SQL aggregate functions for stats that need all games
+    (win rates, color stats, opening stats, game length distribution, ELO data).
+    Only fetches individual game rows for analysis-dependent stats (marathon,
+    records, resignation timing, etc.) which are bounded to 500 recent games.
+    """
     try:
         if DEBUG:
             print(f"[DEBUG] get_comprehensive_analytics called: user_id={user_id}, platform={platform}, limit={limit}")
@@ -2697,10 +2703,8 @@ async def get_comprehensive_analytics(
         if DEBUG:
             print(f"[DEBUG] canonical_user_id={canonical_user_id}")
 
-        # Check cache first
-        # Added v2 to cache key to force refresh - production was missing Enhanced Game Length Insights data
-        # This ensures fresh data is fetched for both limit=100 and limit=10000 calls
-        cache_key = f"comprehensive_analytics_v2:{canonical_user_id}:{platform}:{limit}"
+        # Check cache first (v3: SQL aggregation version)
+        cache_key = f"comprehensive_analytics_v3:{canonical_user_id}:{platform}"
         cached_data = _get_from_cache(cache_key)
         if cached_data is not None:
             return cached_data
@@ -2710,103 +2714,55 @@ async def get_comprehensive_analytics(
             print("[ERROR] Database not configured")
             raise HTTPException(status_code=503, detail="Database not configured")
 
-        # Determine total available games (for UI pagination context)
-        count_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select('id', count='exact', head=True)
-                .eq('user_id', canonical_user_id)
-                .eq('platform', platform)
-                .execute()
-        )
-        total_games_count = getattr(count_response, 'count', 0) or 0
+        # ── Phase 1: SQL aggregate queries (no row fetching) ──────────────
+        # These replace the old approach of fetching 10,000+ rows and iterating in Python.
+        # Each RPC call runs a single SQL query with GROUP BY, returning small result sets.
+        try:
+            agg_results = await asyncio.gather(
+                asyncio.to_thread(lambda: db_client.rpc('get_player_aggregate_stats', {
+                    'p_user_id': canonical_user_id, 'p_platform': platform
+                }).execute()),
+                asyncio.to_thread(lambda: db_client.rpc('get_player_opening_stats', {
+                    'p_user_id': canonical_user_id, 'p_platform': platform
+                }).execute()),
+                asyncio.to_thread(lambda: db_client.rpc('get_player_game_length_distribution', {
+                    'p_user_id': canonical_user_id, 'p_platform': platform
+                }).execute()),
+                asyncio.to_thread(lambda: db_client.rpc('get_player_opening_color_stats', {
+                    'p_user_id': canonical_user_id, 'p_platform': platform
+                }).execute()),
+                asyncio.to_thread(lambda: db_client.rpc('get_player_performance_trends', {
+                    'p_user_id': canonical_user_id, 'p_platform': platform
+                }).execute()),
+                asyncio.to_thread(lambda: db_client.rpc('get_player_elo_summary', {
+                    'p_user_id': canonical_user_id, 'p_platform': platform
+                }).execute()),
+                return_exceptions=True
+            )
+        except Exception as e:
+            print(f"[ERROR] SQL aggregate queries failed: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Error fetching analytics: {str(e)}")
 
-        # Supabase has a default limit of 1000 rows, so we need to paginate to fetch all games
-        # NOTE: For comprehensive color/opening stats, we need ALL games, not just a sample
-        effective_limit = min(limit, total_games_count) if limit < 10000 else total_games_count
+        # Unpack aggregate results with error handling
+        agg_stats_resp, opening_stats_resp, dist_resp, opening_color_resp, perf_trends_resp, elo_summary_resp = agg_results
 
-        # PERFORMANCE: Always fetch all requested games upfront for accurate stats
-        # This ensures Color Performance and Opening Performance show full numbers
-        # Previously only fetched 500 games initially, which caused incomplete stats
-        initial_limit = effective_limit
-        needs_background = False
-        fetch_limit = effective_limit
+        def _extract_rpc_data(resp, name: str, default=None):
+            if isinstance(resp, Exception):
+                print(f"[WARN] RPC {name} failed: {resp}")
+                return default
+            return resp.data if resp.data is not None else default
 
-        if DEBUG:
-            print(f"[DEBUG] Fetching {fetch_limit} games (effective_limit={effective_limit}, needs_background={needs_background})")
+        agg_stats = _extract_rpc_data(agg_stats_resp, 'get_player_aggregate_stats', {})
+        opening_stats_raw = _extract_rpc_data(opening_stats_resp, 'get_player_opening_stats', [])
+        distribution_raw = _extract_rpc_data(dist_resp, 'get_player_game_length_distribution', {})
+        opening_color_raw = _extract_rpc_data(opening_color_resp, 'get_player_opening_color_stats', [])
+        perf_trends_raw = _extract_rpc_data(perf_trends_resp, 'get_player_performance_trends', {})
+        elo_summary = _extract_rpc_data(elo_summary_resp, 'get_player_elo_summary', {})
 
-        # Paginate through games in chunks of 1000 (Supabase's max per query)
-        # Match the pattern from import_games_smart which works correctly
-        games = []
-        page_size = 1000
-        offset = 0
+        total_games_count = agg_stats.get('total_games', 0) or 0
 
-        while len(games) < fetch_limit:
-            # Calculate how many more games we need
-            remaining = fetch_limit - len(games)
-            current_page_size = min(page_size, remaining)
-            current_offset = offset  # Capture for lambda
-
-            # Fetch page using range (Supabase pagination)
-            # Use the exact pattern from match_history endpoint (line 2742) which works
-            try:
-                # Validate range values
-                range_start = current_offset
-                range_end = current_offset + current_page_size - 1
-
-                if range_start < 0 or range_end < range_start:
-                    print(f"[ERROR] Invalid range: start={range_start}, end={range_end}, page_size={current_page_size}")
-                    break
-
-                # Build entire query inside lambda to avoid closure issues
-                # Match the exact pattern from match_history endpoint (line 2748)
-                # Capture variables with default parameters to avoid closure issues
-                # Optimized: Select only fields needed for analytics (reduces data transfer by 60-70%)
-                games_response = await asyncio.to_thread(
-                    lambda start=range_start, end=range_end: db_client.table('games')
-                        .select('id,user_id,platform,provider_game_id,result,color,opening,opening_family,opening_normalized,my_rating,opponent_rating,time_control,total_moves,opponent_name,played_at')
-                        .eq('user_id', canonical_user_id)
-                        .eq('platform', platform)
-                        .order('played_at', desc=True)
-                        .range(start, end)
-                        .execute()
-                )
-            except Exception as e:
-                print(f"[ERROR] Error fetching games page at offset {offset}, range {range_start}-{range_end}: {e}")
-                traceback.print_exc()
-                break
-
-            page_games = games_response.data or []
-            if not page_games:
-                # No more games available
-                break
-
-            games.extend(page_games)
-
-            # If we got fewer games than requested, we've reached the end
-            if len(page_games) < current_page_size:
-                break
-
-            offset += current_page_size
-
-            # Safety check: if we've fetched enough, stop
-            if len(games) >= fetch_limit:
-                break
-
-        # Always log game fetching details for debugging
-        if needs_background:
-            print(f"[DEBUG] Fetched {len(games)} initial games (will fetch remaining {effective_limit - len(games)} in background)")
-        else:
-            print(f"[DEBUG] Fetched {len(games)} games out of {total_games_count} total games (requested limit={limit}, effective_limit={effective_limit})")
-        if len(games) == 0 and total_games_count > 0:
-            print(f"[ERROR] CRITICAL: No games fetched despite {total_games_count} total games available!")
-            print(f"[ERROR] Query params: user_id={canonical_user_id}, platform={platform}")
-            print(f"[ERROR] This indicates the pagination query is failing. Check Supabase connection and query syntax.")
-
-        # Log color stats calculation for verification
-        white_count = len([g for g in games if g.get('color') == 'white'])
-        black_count = len([g for g in games if g.get('color') == 'black'])
-        print(f"[DEBUG] Color stats will be calculated from {len(games)} games: {white_count} white, {black_count} black")
-
-        if not games:
+        if total_games_count == 0:
             return {
                 "total_games": 0,
                 "games": [],
@@ -2822,173 +2778,165 @@ async def get_comprehensive_analytics(
                 "resignation_timing": None
             }
 
-        # Calculate basic analytics from games (can be done immediately, no analysis data needed)
-        # Normalize result values to handle any edge cases (whitespace, case sensitivity)
-        wins = len([g for g in games if str(g.get('result', '')).strip().lower() == 'win'])
-        draws = len([g for g in games if str(g.get('result', '')).strip().lower() == 'draw'])
-        losses = len([g for g in games if str(g.get('result', '')).strip().lower() == 'loss'])
-
-        # Count games with NULL or invalid results for diagnostics
-        games_without_result = len([g for g in games if not g.get('result') or g.get('result') == ''])
-        games_with_invalid_result = len([g for g in games if g.get('result') and str(g.get('result', '')).strip().lower() not in ['win', 'loss', 'draw']])
-
-        # Diagnostic logging: Check for unexpected result values
-        if DEBUG or wins == 0 or games_without_result > 0 or games_with_invalid_result > 0:
-            unique_results = set(g.get('result') for g in games if g.get('result'))
-            result_counts = {}
-            for g in games:
-                result = g.get('result')
-                result_counts[result] = result_counts.get(result, 0) + 1
-            print(f"[DEBUG] Result distribution for {canonical_user_id} on {platform}: {result_counts}")
-            print(f"[DEBUG] Unique result values: {unique_results}")
-            print(f"[DEBUG] Wins: {wins}, Draws: {draws}, Losses: {losses}, Total games: {len(games)}")
-            print(f"[DEBUG] Games without result: {games_without_result}, Games with invalid result: {games_with_invalid_result}")
-
-        # Use games_with_valid_results as denominator to ensure percentages add up to 100%
+        # ── Build aggregate stats from SQL results ────────────────────────
+        wins = agg_stats.get('wins', 0) or 0
+        draws = agg_stats.get('draws', 0) or 0
+        losses = agg_stats.get('losses', 0) or 0
         games_with_valid_results = wins + draws + losses
+
         win_rate = _safe_divide(wins, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
         draw_rate = _safe_divide(draws, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
         loss_rate = _safe_divide(losses, games_with_valid_results) * 100 if games_with_valid_results > 0 else 0
 
-        # Color stats - use whatever games we fetched (frontend requests limit=10000 for all games)
-        white_games = [g for g in games if g.get('color') == 'white']
-        black_games = [g for g in games if g.get('color') == 'black']
-
-        white_wins = len([g for g in white_games if str(g.get('result', '')).strip().lower() == 'win'])
-        black_wins = len([g for g in black_games if str(g.get('result', '')).strip().lower() == 'win'])
-
-        white_elos = [g.get('my_rating') for g in white_games if g.get('my_rating')]
-        black_elos = [g.get('my_rating') for g in black_games if g.get('my_rating')]
+        white_games_count = agg_stats.get('white_games', 0) or 0
+        black_games_count = agg_stats.get('black_games', 0) or 0
+        white_wins = agg_stats.get('white_wins', 0) or 0
+        black_wins = agg_stats.get('black_wins', 0) or 0
 
         color_stats = {
             'white': {
-                'games': len(white_games),
-                'winRate': round(_safe_divide(white_wins, len(white_games)) * 100, 1) if white_games else 0,
-                'averageElo': round(sum(white_elos) / len(white_elos), 0) if white_elos else 0
+                'games': white_games_count,
+                'winRate': round(_safe_divide(white_wins, white_games_count) * 100, 1) if white_games_count else 0,
+                'averageElo': agg_stats.get('white_avg_elo') or 0
             },
             'black': {
-                'games': len(black_games),
-                'winRate': round(_safe_divide(black_wins, len(black_games)) * 100, 1) if black_games else 0,
-                'averageElo': round(sum(black_elos) / len(black_elos), 0) if black_elos else 0
+                'games': black_games_count,
+                'winRate': round(_safe_divide(black_wins, black_games_count) * 100, 1) if black_games_count else 0,
+                'averageElo': agg_stats.get('black_avg_elo') or 0
             }
         }
 
-        # Opening stats - use whatever games we fetched (frontend requests limit=10000 for all games)
-        opening_performance = {}
-        for game in games:
-            opening = game.get('opening_normalized') or game.get('opening') or 'Unknown'
-            if opening not in opening_performance:
-                opening_performance[opening] = {'games': 0, 'wins': 0, 'draws': 0, 'losses': 0, 'elos': []}
+        if DEBUG:
+            print(f"[DEBUG] SQL aggregate stats: {wins}W/{draws}D/{losses}L, white={white_games_count}, black={black_games_count}")
 
-            opening_performance[opening]['games'] += 1
-            result = game.get('result')
-            if result == 'win':
-                opening_performance[opening]['wins'] += 1
-            elif result == 'draw':
-                opening_performance[opening]['draws'] += 1
-            elif result == 'loss':
-                opening_performance[opening]['losses'] += 1
+        # Opening stats from SQL
+        opening_stats = opening_stats_raw if isinstance(opening_stats_raw, list) else []
 
-            # Track ELO for this opening
-            if game.get('my_rating'):
-                opening_performance[opening]['elos'].append(game.get('my_rating'))
+        # Game length distribution from SQL (already bucketed)
+        distribution_summary = {}
+        if isinstance(distribution_raw, dict):
+            for bucket, stats in distribution_raw.items():
+                if isinstance(stats, dict):
+                    bucket_win_rate = _safe_divide(stats.get('wins', 0), stats.get('games', 0)) * 100
+                    distribution_summary[bucket] = {**stats, 'win_rate': round(bucket_win_rate, 2)}
 
-        opening_stats = []
-        for opening, stats in opening_performance.items():
-            avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
-            opening_stats.append({
-                'opening': opening,
-                'games': stats['games'],
-                'wins': stats['wins'],
-                'draws': stats['draws'],
-                'losses': stats['losses'],
-                'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
-                'averageElo': avg_elo
-            })
+        # Opening color stats from SQL - apply _should_count_opening_for_color filter in Python
+        opening_color_stats = {'white': [], 'black': []}
+        if isinstance(opening_color_raw, list):
+            for row in opening_color_raw:
+                color = row.get('color')
+                opening = row.get('opening', 'Unknown')
+                if color not in ('white', 'black'):
+                    continue
+                # Apply the same opening-color filter as before
+                if not _should_count_opening_for_color(opening, color):
+                    continue
+                opening_color_stats[color].append({
+                    'opening': opening,
+                    'games': row.get('games', 0),
+                    'wins': row.get('wins', 0),
+                    'draws': row.get('draws', 0),
+                    'losses': row.get('losses', 0),
+                    'winRate': row.get('winRate', 0),
+                    'averageElo': row.get('averageElo', 0),
+                    'identifiers': {
+                        'openingFamilies': sorted([f for f in (row.get('opening_families') or []) if f]),
+                        'openings': sorted([o for o in (row.get('openings') or []) if o])
+                    }
+                })
+            # Already sorted by games DESC from SQL, but re-sort to be safe
+            for color in ('white', 'black'):
+                opening_color_stats[color].sort(key=lambda x: x['games'], reverse=True)
 
-        # Sort by number of games played
-        opening_stats.sort(key=lambda x: x['games'], reverse=True)
+        # ELO data from SQL
+        highest_elo = elo_summary.get('highestElo')
+        time_control_with_highest_elo = elo_summary.get('timeControlWithHighestElo')
+        current_elo = elo_summary.get('currentElo')
+        current_elo_per_time_control = elo_summary.get('currentEloPerTimeControl') or {}
 
-        # Start background task to fetch remaining games if needed
-        if needs_background and len(games) < effective_limit:
-            print(f"[PERF] Starting background task: {len(games)}/{effective_limit} games loaded, will fetch remaining {effective_limit - len(games)} in background")
-            background_tasks.add_task(
-                _fetch_remaining_games,
-                db_client,
-                canonical_user_id,
-                platform,
-                len(games),
-                effective_limit
+        # Performance trends from SQL
+        performance_trends = {}
+        if isinstance(perf_trends_raw, dict):
+            per_tc = perf_trends_raw.get('per_time_control', {}) or {}
+            most_played_tc = perf_trends_raw.get('most_played_time_control', 'Unknown')
+
+            # Build the same structure as _calculate_performance_trends
+            most_played_stats = per_tc.get(most_played_tc, {})
+            performance_trends = {
+                'recentWinRate': most_played_stats.get('recentWinRate', 0),
+                'recentAverageElo': most_played_stats.get('recentAverageElo', 0),
+                'eloTrend': most_played_stats.get('eloTrend', 'stable'),
+                'timeControlUsed': most_played_tc,
+                'sampleSize': most_played_stats.get('sampleSize', 0),
+                'totalGamesConsidered': total_games_count,
+                'perTimeControl': per_tc
+            }
+
+        # ── Phase 2: Fetch recent games for analysis-dependent stats ──────
+        # Only fetch 500 recent games (1 page max) for: marathon, records,
+        # resignation timing, quick victories, patience, comebacks.
+        # These stats need per-game analysis data that can't be aggregated in SQL.
+        analysis_game_limit = min(500, total_games_count)
+        games = []
+
+        try:
+            games_response = await asyncio.to_thread(
+                lambda: db_client.table('games')
+                    .select('id,user_id,platform,provider_game_id,result,color,opening,opening_family,opening_normalized,my_rating,opponent_rating,time_control,total_moves,opponent_name,played_at')
+                    .eq('user_id', canonical_user_id)
+                    .eq('platform', platform)
+                    .order('played_at', desc=True)
+                    .range(0, analysis_game_limit - 1)
+                    .execute()
             )
-        elif needs_background:
-            print(f"[PERF] Background task NOT started: needs_background={needs_background}, games={len(games)}, limit={effective_limit}")
+            games = games_response.data or []
+        except Exception as e:
+            print(f"[WARN] Error fetching recent games for analysis stats: {e}")
 
-        # Fetch analysis data and opening color stats in parallel for richer insights
-        # NOTE: This is optional - if it fails, we still return basic stats
-        # Only fetch analysis for recent 500 games to speed up response
-        recent_games = games[:500] if len(games) > 500 else games
-        provider_ids = [g['provider_game_id'] for g in recent_games if g.get('provider_game_id')]
+        if DEBUG:
+            print(f"[DEBUG] Fetched {len(games)} recent games for analysis-dependent stats")
 
-        # Use batch size of 400 (increased from 250, but not jumping to 500 to avoid connection issues)
+        # Fetch analysis data for these games in parallel
+        provider_ids = [g['provider_game_id'] for g in games if g.get('provider_game_id')]
         batch_size = 400
 
-        # Fetch all data in parallel: analysis data (3 queries) + opening color stats
-        try:
-            # Run all 4 queries in parallel
-            results = await asyncio.gather(
-                _fetch_game_analyses_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
-                _fetch_move_analyses_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
-                _fetch_pgn_data_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
-                _fetch_opening_color_stats_games(db_client, canonical_user_id, platform),
-                return_exceptions=True
-            )
+        analyses_map: Dict[str, Dict[str, Any]] = {}
+        move_analyses_map: Dict[str, Dict[str, Any]] = {}
+        pgn_map: Dict[str, str] = {}
 
-            # Unpack results and handle exceptions
-            analyses_map_result, move_analyses_map_result, pgn_map_result, games_for_color_stats_result = results
+        if provider_ids:
+            try:
+                analysis_results = await asyncio.gather(
+                    _fetch_game_analyses_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
+                    _fetch_move_analyses_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
+                    _fetch_pgn_data_batched(db_client, canonical_user_id, platform, provider_ids, batch_size),
+                    return_exceptions=True
+                )
 
-            # Handle exceptions from parallel execution
-            if isinstance(analyses_map_result, Exception):
-                print(f"[WARN] Error in parallel analysis fetching: {analyses_map_result}")
-                analyses_map: Dict[str, Dict[str, Any]] = {}
-            else:
-                analyses_map = analyses_map_result
+                if not isinstance(analysis_results[0], Exception):
+                    analyses_map = analysis_results[0]
+                else:
+                    print(f"[WARN] Error fetching analyses: {analysis_results[0]}")
 
-            if isinstance(move_analyses_map_result, Exception):
-                print(f"[WARN] Error in parallel move analysis fetching: {move_analyses_map_result}")
-                move_analyses_map: Dict[str, Dict[str, Any]] = {}
-            else:
-                move_analyses_map = move_analyses_map_result
+                if not isinstance(analysis_results[1], Exception):
+                    move_analyses_map = analysis_results[1]
+                else:
+                    print(f"[WARN] Error fetching move analyses: {analysis_results[1]}")
 
-            if isinstance(pgn_map_result, Exception):
-                print(f"[WARN] Error in parallel PGN fetching: {pgn_map_result}")
-                pgn_map: Dict[str, str] = {}
-            else:
-                pgn_map = pgn_map_result
+                if not isinstance(analysis_results[2], Exception):
+                    pgn_map = analysis_results[2]
+                else:
+                    print(f"[WARN] Error fetching PGN data: {analysis_results[2]}")
 
-            if isinstance(games_for_color_stats_result, Exception):
-                print(f"[WARN] Error fetching opening color stats games: {games_for_color_stats_result}")
-                games_for_color_stats: List[Dict[str, Any]] = []
-            else:
-                games_for_color_stats = games_for_color_stats_result
+            except Exception as e:
+                print(f"[WARN] Analysis data fetching failed: {e}")
 
-        except Exception as e:
-            # If parallel fetching completely fails, log but continue with basic stats
-            print(f"[WARN] Analysis data fetching failed completely, continuing with basic stats: {e}")
-            analyses_map: Dict[str, Dict[str, Any]] = {}
-            move_analyses_map: Dict[str, Dict[str, Any]] = {}
-            pgn_map: Dict[str, str] = {}
-            games_for_color_stats: List[Dict[str, Any]] = []
-
-        # Distribution counters
-        distribution: Dict[str, Dict[str, Any]] = {}
+        # ── Phase 3: Compute analysis-dependent stats from recent games ───
         quick_victory_breakdown = Counter()
-
-        total_moves = 0
         marathon_games = []
         resignation_moves = []
         opponent_resignation_moves = []
         patience_scores: List[float] = []
-
         records: Dict[str, Any] = {
             'fastest_win': None,
             'highest_accuracy_win': None,
@@ -2996,26 +2944,9 @@ async def get_comprehensive_analytics(
         }
         comeback_summaries: List[Dict[str, Any]] = []
 
-        last_hundred = games[:100]
-        last_hundred_moves = [g['total_moves'] for g in last_hundred if g.get('total_moves')]
-        baseline_moves = [g['total_moves'] for g in games[100:300] if g.get('total_moves')]
-
         for game in games:
-            bucket = _bucket_game_length(game.get('total_moves'))
             result = game.get('result')
             game_id = game.get('provider_game_id')
-            total_moves += game.get('total_moves') or 0
-
-            if bucket:
-                bucket_entry = distribution.setdefault(bucket, {'games': 0, 'wins': 0, 'losses': 0, 'draws': 0})
-                bucket_entry['games'] += 1
-                if result == 'win':
-                    bucket_entry['wins'] += 1
-                elif result == 'loss':
-                    bucket_entry['losses'] += 1
-                elif result == 'draw':
-                    bucket_entry['draws'] += 1
-
             analysis = analyses_map.get(game_id)
             move_analysis = move_analyses_map.get(game_id)
 
@@ -3039,7 +2970,6 @@ async def get_comprehensive_analytics(
             # Resignation timing derived from PGN header
             termination = _parse_termination_from_pgn(pgn_map.get(game_id)) if pgn_map else None
             if termination:
-                # Check for resignations
                 if 'resign' in termination.lower():
                     if ('opponent' in termination.lower() or 'resigned' in termination.lower()) and result == 'win':
                         opponent_resignation_moves.append(game.get('total_moves') or 0)
@@ -3059,37 +2989,33 @@ async def get_comprehensive_analytics(
             if comeback_stats:
                 comeback_summaries.append(comeback_stats)
 
-        # Compute aggregated metrics
-        distribution_summary = {}
-        for bucket, stats in distribution.items():
-            bucket_win_rate = _safe_divide(stats['wins'], stats['games']) * 100
-            distribution_summary[bucket] = {**stats, 'win_rate': round(bucket_win_rate, 2)}
-
         quick_victory_summary = {label: count for label, count in quick_victory_breakdown.items()}
 
         marathon_summary = {}
         if marathon_games:
-            # FIXED: Only include games with actual analysis data (filter out None values)
             accuracy_values = [g['accuracy'] for g in marathon_games if g.get('accuracy') is not None]
             blunders_values = [g['blunders'] for g in marathon_games if g.get('blunders') is not None]
             time_management_values = [g['time_management_score'] for g in marathon_games if g.get('time_management_score') is not None]
-
             marathon_summary = {
                 'count': len(marathon_games),
-                'analyzed_count': len(accuracy_values),  # Add count of analyzed games
+                'analyzed_count': len(accuracy_values),
                 'average_accuracy': round(sum(accuracy_values) / len(accuracy_values), 2) if accuracy_values else None,
                 'average_blunders': round(sum(blunders_values) / len(blunders_values), 2) if blunders_values else None,
                 'average_time_management': round(sum(time_management_values) / len(time_management_values), 2) if time_management_values else None
             }
 
+        # Recent trend (last 100 vs games 100-300)
+        last_hundred = games[:100]
+        last_hundred_moves = [g['total_moves'] for g in last_hundred if g.get('total_moves')]
+        baseline_moves = [g['total_moves'] for g in games[100:300] if g.get('total_moves')]
         recent_trend = {}
         if last_hundred_moves:
-            recent_avg = sum(last_hundred_moves) / len(last_hundred_moves)
-            baseline_avg = sum(baseline_moves) / len(baseline_moves) if baseline_moves else recent_avg
+            recent_avg_moves = sum(last_hundred_moves) / len(last_hundred_moves)
+            baseline_avg = sum(baseline_moves) / len(baseline_moves) if baseline_moves else recent_avg_moves
             recent_trend = {
-                'recent_average_moves': round(recent_avg, 2),
+                'recent_average_moves': round(recent_avg_moves, 2),
                 'baseline_average_moves': round(baseline_avg, 2),
-                'difference': round(recent_avg - baseline_avg, 2)
+                'difference': round(recent_avg_moves - baseline_avg, 2)
             }
 
         patience_rating = round(sum(patience_scores) / len(patience_scores), 2) if patience_scores else None
@@ -3099,31 +3025,24 @@ async def get_comprehensive_analytics(
             comeback_summary = {
                 'games': len(comeback_summaries),
                 'average_largest_swing': round(
-                    sum(entry['largest_swing'] for entry in comeback_summaries) / len(comeback_summaries),
-                    2
+                    sum(entry['largest_swing'] for entry in comeback_summaries) / len(comeback_summaries), 2
                 )
             }
 
-        # ALWAYS calculate resignation summary to ensure section renders consistently
-        # Calculate recent resignation timing (last 100 games)
+        # Resignation summary
         recent_resignation_moves = []
-        for i, game in enumerate(games[:100]):
+        for game in games[:100]:
             game_id = game.get('provider_game_id')
             termination = _parse_termination_from_pgn(pgn_map.get(game_id)) if pgn_map else None
             result = game.get('result')
             if termination and 'resign' in termination.lower():
-                # Determine if this is my resignation or opponent's
                 if ('opponent' in termination.lower() or 'resigned' in termination.lower()) and result == 'win':
-                    # Opponent resigned
                     pass
                 else:
-                    # I resigned
                     recent_resignation_moves.append(game.get('total_moves') or 0)
 
         recent_avg = round(sum(recent_resignation_moves) / len(recent_resignation_moves), 2) if recent_resignation_moves else None
         overall_avg = round(sum(resignation_moves) / len(resignation_moves), 2) if resignation_moves else None
-
-        # Calculate change and insight
         change = round(recent_avg - overall_avg, 1) if (recent_avg and overall_avg) else None
         insight = None
         if change is not None:
@@ -3135,7 +3054,6 @@ async def get_comprehensive_analytics(
             else:
                 insight = "Your resignation timing is consistent"
 
-        # CRITICAL: Always return resignation_summary (even if null values) so frontend section always renders
         resignation_summary = {
             'my_average_resignation_move': overall_avg,
             'opponent_average_resignation_move': round(sum(opponent_resignation_moves) / len(opponent_resignation_moves), 2) if opponent_resignation_moves else None,
@@ -3147,190 +3065,13 @@ async def get_comprehensive_analytics(
             'insight': insight
         }
 
-        # Opening stats by color
-        # Show all openings for each color - this shows what positions the player encountered
-        # For white: shows all openings (both what white played and what defenses they faced)
-        # For black: shows all defenses and systems the player used
-        # games_for_color_stats was already fetched in parallel above, but fall back to games if empty
-
-        games_for_opening_color = games_for_color_stats if games_for_color_stats else games
-        if DEBUG:
-            print(f"[DEBUG] Using {len(games_for_opening_color)} games for opening color stats (games_for_color_stats={len(games_for_color_stats)}, games={len(games)})")
-
-        # FALLBACK: If games_for_color_stats is empty, use the main games list
-        # This ensures we always have data to calculate opening color stats
-        games_to_use_for_color_stats = games_for_color_stats if games_for_color_stats else games
-
-        if DEBUG:
-            print(f"[DEBUG] Using {len(games_to_use_for_color_stats)} games for opening color stats calculation")
-            if not games_for_color_stats:
-                print(f"[DEBUG] WARNING: games_for_color_stats was empty, using main games list as fallback")
-
-        opening_color_performance = {'white': {}, 'black': {}}
-        filtered_white_openings = {}  # Debug: track what we filtered out for white
-        games_without_opening = 0  # Debug: track games without opening data
-        total_games_processed = 0  # Debug: track total games
-
-        for game in games_to_use_for_color_stats:  # Use all games, not just the limited sample
-            color = game.get('color')
-            if color not in ['white', 'black']:
-                continue
-
-            total_games_processed += 1
-
-            # Get opening with proper fallback - handle empty strings and None
-            opening_normalized = game.get('opening_normalized')
-            opening_raw = game.get('opening')
-            opening_family = game.get('opening_family')
-
-            # Normalize empty strings to None for proper fallback
-            if opening_normalized == '':
-                opening_normalized = None
-            if opening_raw == '':
-                opening_raw = None
-            if opening_family == '':
-                opening_family = None
-
-            # Use opening_normalized first, then opening_family, then opening, then 'Unknown'
-            opening = opening_normalized or opening_family or opening_raw or 'Unknown'
-
-            # Track games without proper opening data
-            if opening == 'Unknown':
-                games_without_opening += 1
-
-            # CRITICAL FIX: Filter out opponent's openings
-            # Only count openings that the player actually chose to play
-            # e.g., skip "Caro-Kann Defense" when player is white (that's opponent's opening)
-            # This bug has been reported multiple times - see docs/CARO_KANN_FIX_2025.md
-            # NOTE: 'Unknown' openings are considered neutral and should be counted for both colors
-            if not _should_count_opening_for_color(opening, color):
-                # Track filtered openings for debugging
-                if color == 'white':
-                    filtered_white_openings[opening] = filtered_white_openings.get(opening, 0) + 1
-                continue
-
-            if opening not in opening_color_performance[color]:
-                opening_color_performance[color][opening] = {
-                    'games': 0,
-                    'wins': 0,
-                    'draws': 0,
-                    'losses': 0,
-                    'elos': [],
-                    'opening_families': set(),  # Track unique opening families
-                    'openings': set()  # Track unique opening names
-                }
-
-            opening_color_performance[color][opening]['games'] += 1
-            result = game.get('result')
-            if result == 'win':
-                opening_color_performance[color][opening]['wins'] += 1
-            elif result == 'draw':
-                opening_color_performance[color][opening]['draws'] += 1
-            elif result == 'loss':
-                opening_color_performance[color][opening]['losses'] += 1
-
-            if game.get('my_rating'):
-                opening_color_performance[color][opening]['elos'].append(game.get('my_rating'))
-
-            # Track opening families and openings for identifiers
-            if game.get('opening_family'):
-                opening_color_performance[color][opening]['opening_families'].add(game.get('opening_family'))
-            if game.get('opening'):
-                opening_color_performance[color][opening]['openings'].add(game.get('opening'))
-
-        opening_color_stats = {'white': [], 'black': []}
-        for color in ['white', 'black']:
-            for opening, stats in opening_color_performance[color].items():
-                avg_elo = round(sum(stats['elos']) / len(stats['elos']), 0) if stats['elos'] else 0
-
-                # Convert sets to lists for JSON serialization (sets are not JSON serializable)
-                opening_families_set = stats.get('opening_families', set())
-                openings_set = stats.get('openings', set())
-
-                opening_color_stats[color].append({
-                    'opening': opening,
-                    'games': stats['games'],
-                    'wins': stats['wins'],
-                    'draws': stats['draws'],
-                    'losses': stats['losses'],
-                    'winRate': round(_safe_divide(stats['wins'], stats['games']) * 100, 1),
-                    'averageElo': avg_elo,
-                    'identifiers': {
-                        'openingFamilies': sorted([f for f in opening_families_set if f]),
-                        'openings': sorted([o for o in openings_set if o])
-                    }
-                })
-            # Sort by number of games
-            opening_color_stats[color].sort(key=lambda x: x['games'], reverse=True)
-
-        # Debug logging for opening color stats
-        if DEBUG:
-            print(f"[DEBUG] Opening Color Stats Summary:")
-            print(f"  - Total games processed: {total_games_processed}")
-            print(f"  - Games without opening data (Unknown): {games_without_opening}")
-            print(f"  - White openings found: {len(opening_color_performance['white'])}")
-            print(f"  - Black openings found: {len(opening_color_performance['black'])}")
-            print(f"  - White stats entries: {len(opening_color_stats['white'])}")
-            print(f"  - Black stats entries: {len(opening_color_stats['black'])}")
-
-            if filtered_white_openings:
-                print(f"[DEBUG] Filtered {len(filtered_white_openings)} unique openings from White stats:")
-                for opening, count in sorted(filtered_white_openings.items(), key=lambda x: x[1], reverse=True)[:10]:
-                    print(f"  - {opening}: {count} games")
-
-            # Show sample of openings found
-            if opening_color_performance['white']:
-                sample_white = list(opening_color_performance['white'].keys())[:5]
-                print(f"[DEBUG] Sample white openings: {sample_white}")
-            if opening_color_performance['black']:
-                sample_black = list(opening_color_performance['black'].keys())[:5]
-                print(f"[DEBUG] Sample black openings: {sample_black}")
-
-        # Highest ELO
-        highest_elo = None
-        time_control_with_highest_elo = None
-        elos_with_tc = [(g.get('my_rating'), g.get('time_control')) for g in games if g.get('my_rating')]
-        if elos_with_tc:
-            highest_elo_tuple = max(elos_with_tc, key=lambda x: x[0])
-            highest_elo = highest_elo_tuple[0]
-            time_control_with_highest_elo = highest_elo_tuple[1]
-
-        # Calculate performance trends (for Recent Performance section)
-        performance_trends = _calculate_performance_trends(games)
-
-        # Calculate current ELO (most recent rating across all games)
-        current_elo = None
-        games_sorted_by_date = sorted(games, key=lambda g: g.get('played_at', ''), reverse=True)
-        for game in games_sorted_by_date:
-            if game.get('my_rating'):
-                current_elo = game['my_rating']
-                break
-
-        # Calculate current ELO per time control (most recent rating for each time control)
-        current_elo_per_time_control = {}
-        games_by_tc = {}
-        for game in games:
-            tc = game.get('time_control', '')
-            if tc:
-                # Use the same time control categorization as performance trends
-                tc_category = _get_time_control_category(tc)
-                if tc_category not in games_by_tc:
-                    games_by_tc[tc_category] = []
-                games_by_tc[tc_category].append(game)
-
-        for tc_category, tc_games in games_by_tc.items():
-            tc_sorted = sorted(tc_games, key=lambda g: g.get('played_at', ''), reverse=True)
-            for game in tc_sorted:
-                if game.get('my_rating'):
-                    current_elo_per_time_control[tc_category] = game['my_rating']
-                    break
-
+        # ── Build final result ────────────────────────────────────────────
         result = {
             'total_games': total_games_count,
-            'totalGames': len(games),  # Actual games analyzed
-            'loading_more': needs_background and len(games) < effective_limit,
-            'games_loaded': len(games),
-            'games_total': effective_limit,
+            'totalGames': total_games_count,
+            'loading_more': False,
+            'games_loaded': total_games_count,
+            'games_total': total_games_count,
             'winRate': round(win_rate, 1),
             'drawRate': round(draw_rate, 1),
             'lossRate': round(loss_rate, 1),
@@ -3363,9 +3104,7 @@ async def get_comprehensive_analytics(
             'resignation_timing': resignation_summary  # Backwards compatibility
         }
 
-        # Only cache complete results (not partial)
-        if not needs_background or len(games) >= effective_limit:
-            _set_in_cache(cache_key, result)
+        _set_in_cache(cache_key, result)
         return result
 
     except HTTPException:
