@@ -41,8 +41,8 @@ function ScreenshotMockup({ children, contentWidth = DEFAULT_MOCKUP_WIDTH }: Scr
   }, [contentWidth])
 
   return (
-    <div className="relative">
-      <div className="relative rounded-lg overflow-hidden bg-surface-1 shadow-card">
+    <div className="relative w-full">
+      <div className="relative w-full rounded-lg overflow-hidden bg-surface-1 shadow-card">
         {/* Browser top bar */}
         <div className="flex items-center gap-2 px-4 py-2 bg-surface-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
           <div className="flex gap-1.5">
@@ -59,11 +59,12 @@ function ScreenshotMockup({ children, contentWidth = DEFAULT_MOCKUP_WIDTH }: Scr
         </div>
 
         {/* Auto-scaled content */}
-        <div ref={containerRef} className="overflow-hidden" style={{ height: scaledHeight }}>
+        <div ref={containerRef} className="overflow-hidden w-full" style={{ height: scaledHeight }}>
           <div
             ref={contentRef}
             style={{
               width: contentWidth,
+              maxWidth: contentWidth,
               transform: `scale(${scale})`,
               transformOrigin: 'top left',
             }}
@@ -104,6 +105,11 @@ const secondaryFeatures = [
     icon: '\u25C6', // diamond
     title: 'Game Review',
     description: 'Think First mode challenges you to find the best move before revealing the engine\'s answer.',
+  },
+  {
+    icon: '\u265F', // chess pawn
+    title: 'Play with Coach',
+    description: 'Play live games against an AI coach who gives real-time feedback and strategic advice on every move.',
   },
 ]
 
@@ -164,7 +170,7 @@ export default function HomePage() {
             Analyze Free
           </Button>
           <a href="/simple-analytics?user=hikaru&platform=chess.com">
-            <Button variant="secondary" className="px-5 py-2.5 text-sm">
+            <Button variant="secondary" className="px-5 py-2.5 text-sm border border-white/[0.15] hover:border-white/[0.25]">
               See Demo
             </Button>
           </a>
@@ -177,18 +183,18 @@ export default function HomePage() {
         style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
       >
         <div className="text-center">
-          <p className="text-section sm:text-lg font-semibold text-[#f0f0f0] tracking-heading">12,400+</p>
-          <p className="text-caption text-gray-600">Games analyzed</p>
+          <p className="text-section sm:text-lg font-semibold text-white tracking-heading">12,400+</p>
+          <p className="text-caption text-gray-400">Games analyzed</p>
         </div>
-        <div className="hidden sm:block w-px h-8 bg-white/[0.04]" />
+        <div className="hidden sm:block w-px h-8 bg-white/[0.10]" />
         <div className="text-center">
-          <p className="text-section sm:text-lg font-semibold text-[#f0f0f0] tracking-heading">2,100+</p>
-          <p className="text-caption text-gray-600">Players</p>
+          <p className="text-section sm:text-lg font-semibold text-white tracking-heading">2,100+</p>
+          <p className="text-caption text-gray-400">Players</p>
         </div>
-        <div className="hidden sm:block w-px h-8 bg-white/[0.04]" />
+        <div className="hidden sm:block w-px h-8 bg-white/[0.10]" />
         <div className="text-center">
-          <p className="text-section sm:text-lg font-semibold text-[#f0f0f0] tracking-heading">Chess.com & Lichess</p>
-          <p className="text-caption text-gray-600">Supported platforms</p>
+          <p className="text-section sm:text-lg font-semibold text-white tracking-heading">Chess.com &amp; Lichess</p>
+          <p className="text-caption text-gray-400">Supported platforms</p>
         </div>
       </div>
 
@@ -219,22 +225,20 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Secondary feature cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          {/* Secondary feature cards — same 3-col grid as primary */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
             {secondaryFeatures.map((f) => (
-              <div key={f.title} className="bg-surface-1 shadow-card rounded-lg overflow-hidden">
+              <div key={f.title} className="bg-surface-1 shadow-card rounded-lg overflow-hidden" style={{ minHeight: 160 }}>
                 <div
                   className="h-px"
                   style={{ background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.06), transparent)' }}
                 />
-                <div className="p-6 flex gap-5">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-white/[0.06]">
+                <div className="p-6">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-4 bg-white/[0.06]">
                     <span className="text-gray-300 text-sm">{f.icon}</span>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-[#f0f0f0] mb-2 tracking-section">{f.title}</h3>
-                    <p className="text-small text-gray-500 leading-relaxed">{f.description}</p>
-                  </div>
+                  <h3 className="text-sm font-semibold text-[#f0f0f0] mb-2 tracking-section">{f.title}</h3>
+                  <p className="text-small text-gray-500 leading-relaxed">{f.description}</p>
                 </div>
               </div>
             ))}
@@ -431,12 +435,22 @@ export default function HomePage() {
       </div>
 
       {/* ===== Testimonial ===== */}
-      <div className="px-6 py-16" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-        <div className="max-w-2xl mx-auto text-center">
-          <p className="text-sm text-gray-300 leading-relaxed italic mb-4">
-            "I went from 1100 to 1350 in two months. The coaching comments on my blunders were more useful than hours of YouTube tutorials."
-          </p>
-          <p className="text-small text-gray-600">— Chess.com rapid player</p>
+      <div className="px-6 py-12" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-surface-1 shadow-card rounded-lg relative" style={{ padding: '32px 40px' }}>
+            <div
+              className="absolute text-white/[0.08]"
+              style={{ top: 16, left: 24, fontSize: 48, lineHeight: 1, fontFamily: 'Georgia, serif' }}
+            >
+              &ldquo;
+            </div>
+            <div className="text-center pt-3">
+              <p className="text-sm text-gray-300 leading-relaxed italic mb-4">
+                &ldquo;I went from 1100 to 1350 in two months. The coaching comments on my blunders were more useful than hours of YouTube tutorials.&rdquo;
+              </p>
+              <p className="text-small text-gray-500">&mdash; Chess.com rapid player</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -458,7 +472,7 @@ export default function HomePage() {
               <a
                 key={player.name}
                 href={`/simple-analytics?user=${player.name}&platform=${player.platform}`}
-                className="bg-surface-1 shadow-card rounded-lg p-5 hover:shadow-card-hover transition-colors text-left"
+                className="bg-surface-1 shadow-card rounded-lg p-5 hover:shadow-card-hover hover:bg-white/[0.04] cursor-pointer transition-colors text-left"
               >
                 <div className="text-section font-medium text-[#f0f0f0]">{player.label}</div>
                 <div className="text-caption text-gray-500 mt-1">{player.platform} &middot; {player.rating}</div>
@@ -470,7 +484,7 @@ export default function HomePage() {
 
       {/* ===== Final CTA ===== */}
       <div
-        className="px-6 py-16 bg-surface-1"
+        className="px-6 py-16 bg-surface-2"
         style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
       >
         <div className="max-w-lg mx-auto text-center">
@@ -486,20 +500,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ===== Footer ===== */}
-      <div
-        className="px-6 py-5 flex items-center justify-between max-w-5xl mx-auto"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
-      >
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-semibold bg-cta text-[#111]">C</div>
-          <span className="text-small text-gray-600">ChessData</span>
-        </div>
-        <div className="flex gap-6">
-          <Link to="/pricing" className="text-small text-gray-600 hover:text-gray-400 transition-colors">Pricing</Link>
-          <a href="https://discord.gg/chessdata" className="text-small text-gray-600 hover:text-gray-400 transition-colors">Discord</a>
-        </div>
-      </div>
+      {/* Footer rendered globally by App.tsx <Footer /> component */}
     </div>
   )
 }

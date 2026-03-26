@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document provides step-by-step testing instructions for the entire Chess Analytics platform. It covers all user-facing features, data accuracy validation, edge cases, and cross-platform behavior.
+This document provides step-by-step testing instructions for the entire Chess Analytics platform. It covers functionality, visual design, UX quality, wording/copy, data accuracy, edge cases, and cross-platform behavior.
+
+**Intended audience:** Both human testers and AI testers (LLMs operating via browser automation, screenshots, or DOM inspection).
 
 **Test Environment:**
 - Frontend: `http://localhost:3000` (or Vercel preview URL)
@@ -15,6 +17,56 @@ This document provides step-by-step testing instructions for the entire Chess An
 - Chess.com username(s) with game history
 - Lichess username(s) with game history
 - A Stripe test card (`4242 4242 4242 4242`)
+
+---
+
+## AI Tester Instructions
+
+This section defines how an AI tester should approach testing to impersonate a thorough human QA tester.
+
+### Testing Methodology
+
+1. **Navigate like a real user.** Don't jump directly to URLs — start from the home page and click through the UI. This catches broken links, missing nav items, and dead-end flows.
+2. **Take a screenshot after every meaningful action** (page load, button click, modal open, form submit). Screenshots are your primary evidence.
+3. **Read all visible text on every page.** Check for typos, grammar errors, placeholder text left in, broken formatting, and inconsistent terminology.
+4. **Evaluate visual design on every page.** Check against the Cool Silver Premium design system (see Section 14). Flag any deviations.
+5. **Test the unhappy path first.** Submit empty forms, click buttons twice, use invalid inputs, navigate while loading. Users make mistakes — the platform should handle them gracefully.
+6. **Compare state before and after actions.** If you click "Import", verify the game count changed. If you upgrade, verify premium features unlock.
+7. **Check every loading and empty state.** Every data-dependent component should have a loading skeleton/spinner AND an empty state message. Never a blank white area.
+8. **Note anything that would confuse a first-time user.** Unlabeled icons, jargon without explanation, unclear next steps, hidden features.
+
+### How to Report Issues
+
+For each issue found, report with this structure:
+
+```
+[SEVERITY] CATEGORY — Short description
+- Test Case: #X.X.X (if applicable)
+- Page/URL: /path
+- Steps: What you did
+- Expected: What should happen
+- Actual: What happened
+- Screenshot: (reference number or description)
+- Design System Violation: (if applicable, cite the specific rule)
+```
+
+**Severity levels:**
+- **P0 BLOCKER**: Feature broken, data loss, security issue, payment failure
+- **P1 HIGH**: Feature partially broken, wrong data displayed, misleading UI
+- **P2 MEDIUM**: Visual bug, UX friction, wording issue, design system violation
+- **P3 LOW**: Minor polish, nice-to-have improvement, edge case cosmetic issue
+
+**Categories:** `FUNCTIONAL`, `VISUAL`, `UX`, `WORDING`, `DATA`, `PERFORMANCE`, `SECURITY`
+
+### Thinking Like a Human Tester
+
+When evaluating each page, ask yourself:
+- **First impression:** Does this page look professional and trustworthy? Would I pay for this?
+- **Clarity:** Do I immediately understand what this page does and what I should do next?
+- **Feedback:** After I take an action, does the UI confirm what happened? Do I know if it worked?
+- **Consistency:** Does this page look and feel like the rest of the app? Same colors, fonts, spacing, button styles?
+- **Accessibility:** Can I read all text? Is contrast sufficient? Are interactive elements obviously clickable?
+- **Error recovery:** If something goes wrong, can I recover without refreshing or losing my work?
 
 ---
 
@@ -33,6 +85,9 @@ This document provides step-by-step testing instructions for the entire Chess An
 11. [Edge Cases & Error Handling](#11-edge-cases--error-handling)
 12. [API Health & Performance](#12-api-health--performance)
 13. [Security Testing](#13-security-testing)
+14. [Visual & Design System Compliance](#14-visual--design-system-compliance)
+15. [UX Quality](#15-ux-quality)
+16. [Wording & Copy Review](#16-wording--copy-review)
 
 ---
 
@@ -666,6 +721,201 @@ These tests validate that the platform's calculations are correct.
 
 ---
 
+## 14. Visual & Design System Compliance
+
+All frontend pages must follow the Cool Silver Premium design system (`docs/DESIGN_SYSTEM.md`). Run these checks on **every page** you visit.
+
+### 14.1 Color Compliance
+
+| # | Test Case | What to Check | Expected Result |
+|---|-----------|---------------|-----------------|
+| 14.1.1 | Page background | Main page background color | `#0c0d0f` (cool-tinted near-black, not pure black or warm gray) |
+| 14.1.2 | Card backgrounds | Card/panel background color | `#151618` (surface-1) or `#1c1d20` (surface-2), never pure gray |
+| 14.1.3 | Hover states | Hover over cards and interactive elements | Max `bg-white/[0.04]`, no bright or jarring hover flashes |
+| 14.1.4 | Primary buttons | CTA/primary button color | Silver `#e4e8ed` background with dark text. Not blue, green, or any other color |
+| 14.1.5 | Semantic colors | Win/loss/error indicators | Emerald for positive, amber for caution, rose for negative. Never rainbow colors |
+| 14.1.6 | Move classification colors | Move badges in game analysis | 3 color groups only (emerald/neutral/rose-amber), not 7 different colors |
+| 14.1.7 | No banned effects | Scan page for visual effects | No gradients, glassmorphism, glow shadows, or neon effects anywhere |
+| 14.1.8 | Text colors | Check heading and body text | Headings: `#f0f0f0`, body: `text-gray-300`, secondary: `text-gray-400`. Never pure white `#fff` for body text |
+
+### 14.2 Typography
+
+| # | Test Case | What to Check | Expected Result |
+|---|-----------|---------------|-----------------|
+| 14.2.1 | Font family | All text on page | Inter font (check in dev tools or visually — clean sans-serif, not system default) |
+| 14.2.2 | Font weights | Headings and body | Only 400 (regular), 500 (medium), 600 (semibold). Never bold/700 anywhere |
+| 14.2.3 | Font sizes | All text elements | No `text-base` (16px) in UI components. Use the defined type scale only |
+| 14.2.4 | Monospace text | Move notation, evaluations | Uses monospace font (`SF Mono`, `Fira Code`, or `Consolas`) |
+| 14.2.5 | Letter spacing | Uppercase labels/captions | `tracking-wider` on uppercase text, `tracking-tight` on large headings |
+
+### 14.3 Components & Layout
+
+| # | Test Case | What to Check | Expected Result |
+|---|-----------|---------------|-----------------|
+| 14.3.1 | Card borders | Card outline/border style | Ring shadow (`box-shadow: 0 0 0 1px`), never Tailwind `border` utility |
+| 14.3.2 | Border radius | Cards, buttons, containers | Max `rounded-lg`. Never `rounded-2xl`, `rounded-3xl`, or `rounded-full` on containers |
+| 14.3.3 | Button variants | All buttons on page | Only 4 types: primary (silver), secondary (outline), ghost (transparent), danger (rose). No other styles |
+| 14.3.4 | Icons | All icons on page | Lucide React icons only. No emoji icons, no FontAwesome, no custom SVG icons |
+| 14.3.5 | Transitions | Hover/interact with elements | `transition-colors` only. Never `transition-all` (causes layout jank) |
+| 14.3.6 | Z-index | Check for stacking issues | No `z-[9999]` or absurdly high z-index values. Layers should stack naturally |
+| 14.3.7 | Spacing consistency | Compare padding/margins across similar elements | Cards, sections, and lists should use consistent spacing throughout the page |
+
+### 14.4 Page-Level Visual Audit
+
+Run this checklist on each major page. Mark pass/fail:
+
+| Page | BG Color | Card Style | Typography | Buttons | Icons | Semantic Colors | No Banned Effects |
+|------|----------|------------|------------|---------|-------|----------------|-------------------|
+| Home / Landing | | | | | | | |
+| Login / Sign Up | | | | | | | |
+| Profile | | | | | | | |
+| Simple Analytics | | | | | | | |
+| Game Analysis | | | | | | | |
+| Coach Dashboard | | | | | | | |
+| Coach Game Review | | | | | | | |
+| Coach Puzzles | | | | | | | |
+| Coach Progress | | | | | | | |
+| Coach Openings | | | | | | | |
+| Coach Study Plan | | | | | | | |
+| Coach Play | | | | | | | |
+| Pricing | | | | | | | |
+
+---
+
+## 15. UX Quality
+
+These tests evaluate the user experience — not whether features *work*, but whether they feel good, intuitive, and polished.
+
+### 15.1 Navigation & Wayfinding
+
+| # | Test Case | Steps | Expected Result |
+|---|-----------|-------|-----------------|
+| 15.1.1 | Breadcrumbs / back navigation | Navigate deep into coach features, then try to go back | Clear path back to parent page. No dead ends |
+| 15.1.2 | Current page indicator | Look at nav while on each page | Active nav item is visually highlighted |
+| 15.1.3 | Page titles | Check browser tab title on each page | Descriptive title (not just "Chess Analytics" on every page) |
+| 15.1.4 | Deep link sharing | Copy URL from any page, open in new tab | Page loads with same state (player, platform, game) |
+| 15.1.5 | First-time user flow | Log in with fresh account, no chess accounts linked | Clear guidance on what to do next (link account, search a player) |
+
+### 15.2 Loading & Feedback States
+
+| # | Test Case | Steps | Expected Result |
+|---|-----------|-------|-----------------|
+| 15.2.1 | Loading indicators | Trigger any data fetch (import, analysis, page load) | Visible loading state (spinner, skeleton, progress bar) — never a blank screen |
+| 15.2.2 | Loading duration feel | Time how long loading states persist | If > 3 seconds, should show progress or a message ("This may take a moment") |
+| 15.2.3 | Success feedback | Complete an action (import, save position, link account) | Clear success indicator (toast, checkmark, state change). Not just silently completing |
+| 15.2.4 | Error feedback | Trigger an error (bad username, network fail) | Error message is specific and actionable. Not just "Something went wrong" |
+| 15.2.5 | Button loading state | Click a submit/action button | Button shows loading state, prevents double-click |
+| 15.2.6 | Empty states | View any list/page with no data (new user, no games, no positions) | Friendly empty state with illustration or message + CTA to get started |
+| 15.2.7 | Skeleton screens | Load a data-heavy page | Content areas show skeleton placeholders during load, not just a spinner |
+
+### 15.3 Form & Input UX
+
+| # | Test Case | Steps | Expected Result |
+|---|-----------|-------|-----------------|
+| 15.3.1 | Input focus states | Tab through form inputs | Clear focus ring/highlight on active input |
+| 15.3.2 | Validation timing | Type invalid email, tab away | Validation shown on blur or submit, not on every keystroke |
+| 15.3.3 | Error field highlighting | Submit form with errors | The specific field with error is highlighted, not just a generic message |
+| 15.3.4 | Placeholder text | Check all input placeholders | Helpful examples (e.g., "e.g., hikaru"), not generic ("Enter text here") |
+| 15.3.5 | Autofocus | Open login/signup/search page | First input field is auto-focused, ready to type |
+| 15.3.6 | Keyboard submit | Fill form, press Enter | Form submits (not just clicking the button) |
+
+### 15.4 Transitions & Micro-interactions
+
+| # | Test Case | Steps | Expected Result |
+|---|-----------|-------|-----------------|
+| 15.4.1 | Page transitions | Navigate between pages | Smooth transition, no flash of unstyled content (FOUC) |
+| 15.4.2 | Modal open/close | Open any modal or dialog | Smooth fade/slide in, backdrop dims. Close is equally smooth |
+| 15.4.3 | Tooltip behavior | Hover over info icons or abbreviated text | Tooltip appears after brief delay, disappears on mouse leave |
+| 15.4.4 | Tab/filter switching | Switch tabs or filters on analytics | Content transitions smoothly, no layout shift |
+| 15.4.5 | Chart animations | Load a chart (ELO trend, radar) | Chart animates in on first render (not instantly popping in) |
+
+### 15.5 Information Hierarchy
+
+| # | Test Case | Steps | Expected Result |
+|---|-----------|-------|-----------------|
+| 15.5.1 | Visual hierarchy | Glance at any page for 3 seconds | The most important information stands out first (headings, key numbers) |
+| 15.5.2 | Data density | View analytics dashboard | Information is dense but not overwhelming. Logical grouping with whitespace |
+| 15.5.3 | Progressive disclosure | Complex sections (personality, openings) | Summary visible first, details available on expand/click |
+| 15.5.4 | CTAs are obvious | Check upgrade prompts, action buttons | Primary action is visually dominant. Secondary actions are subdued |
+| 15.5.5 | Related items grouped | Check card groupings on dashboard/coach | Related data is visually grouped (same card, same section, clear labels) |
+
+### 15.6 Contextual Help
+
+| # | Test Case | Steps | Expected Result |
+|---|-----------|-------|-----------------|
+| 15.6.1 | Chess jargon explained | Find terms like "centipawn loss", "accuracy", "personality" | Tooltip, info icon, or brief explanation for non-obvious chess terms |
+| 15.6.2 | Feature discoverability | Navigate coach features as a new premium user | Each feature has a clear description or onboarding hint |
+| 15.6.3 | Metric explanations | Hover/click on stats like "Advantage Conversion Rate" | Explanation of what the metric means and why it matters |
+
+---
+
+## 16. Wording & Copy Review
+
+Run these checks on **every page**. Read all visible text carefully.
+
+### 16.1 Grammar & Spelling
+
+| # | Test Case | What to Check | Expected Result |
+|---|-----------|---------------|-----------------|
+| 16.1.1 | Spelling | All visible text on page | No typos or misspellings |
+| 16.1.2 | Grammar | Sentences, labels, tooltips | Grammatically correct English |
+| 16.1.3 | Punctuation | Headings, buttons, labels | Headings: no trailing period. Sentences: proper punctuation. Buttons: no trailing period |
+| 16.1.4 | Capitalization | Headings, buttons, nav items | Title Case for headings/nav, Sentence case for descriptions. Consistent throughout |
+| 16.1.5 | Placeholder/debug text | Scan all pages | No "TODO", "Lorem ipsum", "test", "asdf", "undefined", or `{variable}` visible |
+
+### 16.2 Tone & Voice
+
+| # | Test Case | What to Check | Expected Result |
+|---|-----------|---------------|-----------------|
+| 16.2.1 | Professional tone | All user-facing text | Professional but approachable. Not overly casual ("yo!") or corporate ("pursuant to") |
+| 16.2.2 | Encouraging coach tone | AI coaching comments, lesson text | Encouraging and educational. Never condescending ("Obviously you should have...") |
+| 16.2.3 | Error message tone | All error messages | Empathetic and helpful ("We couldn't find that user"), never blaming ("You entered a wrong username") |
+| 16.2.4 | Consistent voice | Compare text across different pages | Same voice/personality throughout. Not formal on one page and casual on another |
+
+### 16.3 Chess Terminology Accuracy
+
+| # | Test Case | What to Check | Expected Result |
+|---|-----------|---------------|-----------------|
+| 16.3.1 | Move classifications | Labels on move badges | Exactly: brilliant, best, great, excellent, good, acceptable, inaccuracy, mistake, blunder (Chess.com standard) |
+| 16.3.2 | Opening names | Opening labels in analytics and coach | Standard names (e.g., "Sicilian Defense: Najdorf Variation", not "Sicilian Najdorf") |
+| 16.3.3 | Piece names | AI comments, tooltips | Standard names: king, queen, rook, bishop, knight, pawn. Never "horse" or abbreviated improperly |
+| 16.3.4 | Square notation | AI comments referencing squares | Standard algebraic notation (e.g., "e4", "Nf3"). Lowercase file, number rank |
+| 16.3.5 | Game result terms | Result indicators | "Win", "Loss", "Draw" (not "Won", "Lost", "Tied") in labels. Past tense in descriptions only |
+| 16.3.6 | Rating terminology | Rating displays | "Rating" or "Elo", not "ELO" (it's named after Arpad Elo, not an acronym) |
+
+### 16.4 Consistency Checks
+
+| # | Test Case | What to Check | Expected Result |
+|---|-----------|---------------|-----------------|
+| 16.4.1 | Platform names | References to chess platforms | Always "Chess.com" (with capital C, period) and "Lichess" (capital L, one word) |
+| 16.4.2 | Feature names | Coach feature names across pages | Same name everywhere (e.g., "Game Review" not sometimes "Review" and sometimes "Game Analysis") |
+| 16.4.3 | Number formatting | Statistics, percentages, ratings | Consistent format: "1,234" or "1234" (not mixed). Percentages always with "%" sign |
+| 16.4.4 | Date formatting | Dates across the app | Consistent format throughout (e.g., always "Mar 27, 2026" or always "2026-03-27", not mixed) |
+| 16.4.5 | Action labels | Button text for similar actions | Consistent verbs: "Save" not sometimes "Save" and sometimes "Submit". "Cancel" not sometimes "Close" |
+| 16.4.6 | Tier naming | References to subscription tiers | Consistent names: "Free" and "Pro" (not sometimes "Premium", "Starter", or "Basic") |
+
+### 16.5 Wording Audit by Page
+
+Run this on each page. For every piece of text ask: Is it correct? Is it clear? Is it consistent with the rest of the app?
+
+| Page | Headings OK | Labels OK | Buttons OK | Error Messages OK | Tooltips OK | No Placeholder Text |
+|------|-------------|-----------|------------|-------------------|-------------|---------------------|
+| Home / Landing | | | | | | |
+| Login / Sign Up | | | | | | |
+| Profile | | | | | | |
+| Simple Analytics | | | | | | |
+| Game Analysis | | | | | | |
+| Coach Dashboard | | | | | | |
+| Coach Game Review | | | | | | |
+| Coach Puzzles | | | | | | |
+| Coach Progress | | | | | | |
+| Coach Openings | | | | | | |
+| Coach Study Plan | | | | | | |
+| Coach Play | | | | | | |
+| Pricing | | | | | | |
+
+---
+
 ## Appendix A: Test Data Recommendations
 
 ### Recommended Test Users
@@ -724,7 +974,21 @@ When reporting issues found during testing:
 If time is limited, test in this priority order:
 
 1. **P0 - Critical Path:** Sign up > Link account > Import games > View analytics > Open game analysis
-2. **P1 - Data Accuracy:** Move classifications, accuracy scores, win rates, ELO trends
-3. **P2 - Premium Flow:** Pricing > Checkout > Coach access > Game review > Puzzles
-4. **P3 - Coach Features:** Progress tracking, openings, study plan, position library
-5. **P4 - Edge Cases:** Error handling, mobile, rate limiting, security
+2. **P1 - Visual & Wording:** Design system compliance on every visited page + copy review (catches the most user-facing issues)
+3. **P2 - Data Accuracy:** Move classifications, accuracy scores, win rates, ELO trends
+4. **P3 - UX Quality:** Loading states, empty states, error feedback, form UX, navigation flow
+5. **P4 - Premium Flow:** Pricing > Checkout > Coach access > Game review > Puzzles
+6. **P5 - Coach Features:** Progress tracking, openings, study plan, position library
+7. **P6 - Edge Cases:** Error handling, mobile, rate limiting, security
+
+### AI Tester Workflow
+
+For an AI tester, the recommended workflow per page is:
+
+1. **Navigate** to the page (via UI clicks, not direct URL)
+2. **Screenshot** the page at full viewport
+3. **Visual scan** — run Section 14 checklist (colors, typography, components)
+4. **Read all text** — run Section 16 checklist (spelling, grammar, tone, consistency)
+5. **Functional test** — run the relevant Section 1-13 tests for that page
+6. **UX evaluation** — run Section 15 checks (loading states, feedback, hierarchy)
+7. **Log all findings** with severity, category, and evidence

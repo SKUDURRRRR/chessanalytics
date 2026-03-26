@@ -392,11 +392,6 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       )}
 
       <div className="relative text-gray-300">
-        <div className="mb-6 text-center">
-          <h2 className="text-2xl font-semibold text-white">Search Player</h2>
-          <p className="mt-2 text-sm" style={{ color: '#B0B8C4' }}>Find and analyze any chess player's games</p>
-        </div>
-
       <form onSubmit={handleSearch} className="space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="flex-1">

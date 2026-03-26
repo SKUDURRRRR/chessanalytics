@@ -55,11 +55,11 @@
     padding: 8px 20px;
     border-radius: 6px;
     color: #9ca3af;
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
     letter-spacing: -0.01em;
-    transition: all 0.15s;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
   }
-  .btn-secondary:hover { color: #d1d5db; border-color: rgba(255,255,255,0.1); }
+  .btn-secondary:hover { color: #e5e7eb; border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.04); }
   .btn-ghost {
     font-size: 13px;
     font-weight: 500;
@@ -136,6 +136,32 @@
     pointer-events: none;
   }
   .page-nav a:hover .nav-label { opacity: 1; }
+
+  /* Mobile hamburger menu */
+  .mobile-menu-btn { display: none; cursor: pointer; padding: 6px; }
+  .mobile-menu-btn span { display: block; width: 18px; height: 2px; background: #9ca3af; margin: 4px 0; transition: all 0.2s; }
+  .mobile-menu { display: none; padding: 12px 24px 16px; border-top: 1px solid var(--border); background: var(--bg-surface-1); }
+  .mobile-menu a, .mobile-menu button { display: block; width: 100%; text-align: left; padding: 8px 0; }
+
+  @media (max-width: 767px) {
+    .desktop-nav { display: none !important; }
+    .mobile-menu-btn { display: block; }
+    .mobile-menu.open { display: block; }
+    .page-nav { display: none; }
+    .stat-row { flex-direction: column !important; gap: 16px !important; }
+    .stat-row .stat-divider { display: none; }
+    .feature-grid-3 { grid-template-columns: 1fr !important; }
+    .feature-grid-2 { grid-template-columns: 1fr !important; }
+    .hero-section { padding: 4rem 1.5rem 3rem !important; }
+    .hero-section h1 { font-size: 2rem !important; }
+    .pricing-grid { grid-template-columns: 1fr !important; }
+    .stats-5-grid { grid-template-columns: 1fr 1fr !important; }
+    .dashboard-grid { grid-template-columns: 1fr !important; }
+  }
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .feature-grid-3 { grid-template-columns: 1fr 1fr !important; }
+    .stats-5-grid { grid-template-columns: repeat(3, 1fr) !important; }
+  }
 </style>
 </head>
 <body style="background: var(--bg-base); color: #e5e7eb;">
@@ -172,7 +198,7 @@
           <div class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-semibold" style="background: var(--cta); color: #111;">C</div>
           <span class="text-white font-semibold text-sm tracking-[-0.01em]">ChessData</span>
         </div>
-        <div class="flex items-center gap-6">
+        <div class="desktop-nav flex items-center gap-6">
           <a href="#" class="text-[13px] text-gray-500 hover:text-gray-300 transition-colors">Features</a>
           <a href="#" class="text-[13px] text-gray-500 hover:text-gray-300 transition-colors">Pricing</a>
           <a href="#" class="text-[13px] text-gray-500 hover:text-gray-300 transition-colors">About</a>
@@ -180,10 +206,20 @@
           <a href="#" class="text-[13px] text-gray-400 hover:text-white transition-colors">Sign in</a>
           <button class="btn-primary">Get Started</button>
         </div>
+        <div class="mobile-menu-btn" onclick="this.nextElementSibling?.classList.toggle('open'); this.closest('.rounded-2xl')?.querySelector('.mobile-menu')?.classList.toggle('open')">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+      <div class="mobile-menu">
+        <a href="#" class="text-[13px] text-gray-400 hover:text-gray-300 transition-colors">Features</a>
+        <a href="#" class="text-[13px] text-gray-400 hover:text-gray-300 transition-colors">Pricing</a>
+        <a href="#" class="text-[13px] text-gray-400 hover:text-gray-300 transition-colors">About</a>
+        <a href="#" class="text-[13px] text-gray-400 hover:text-white transition-colors">Sign in</a>
+        <button class="btn-primary mt-2" style="width: 100%; text-align: center;">Get Started</button>
       </div>
 
       <!-- Hero -->
-      <div class="px-6 pt-28 pb-20 text-center max-w-2xl mx-auto">
+      <div class="hero-section px-6 pt-28 pb-20 text-center max-w-2xl mx-auto">
         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-6" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
           <span class="text-[11px] text-gray-400">Now with AI coaching powered by Claude & Gemini</span>
@@ -201,20 +237,20 @@
       </div>
 
       <!-- Social proof bar -->
-      <div class="px-6 py-5 flex items-center justify-center gap-12" style="border-top: 1px solid var(--border);">
+      <div class="stat-row px-6 py-5 flex items-center justify-center gap-12" style="border-top: 1px solid var(--border);">
         <div class="text-center">
           <p class="stat-number text-lg">12,400+</p>
-          <p class="text-[11px] text-gray-600">Games analyzed</p>
+          <p class="text-[11px] text-gray-400">Games analyzed</p>
         </div>
-        <div class="w-px h-8 bg-white/[0.04]"></div>
+        <div class="stat-divider w-px h-8 bg-white/[0.10]"></div>
         <div class="text-center">
           <p class="stat-number text-lg">2,100+</p>
-          <p class="text-[11px] text-gray-600">Players</p>
+          <p class="text-[11px] text-gray-400">Players</p>
         </div>
-        <div class="w-px h-8 bg-white/[0.04]"></div>
+        <div class="stat-divider w-px h-8 bg-white/[0.10]"></div>
         <div class="text-center">
           <p class="stat-number text-lg">Chess.com & Lichess</p>
-          <p class="text-[11px] text-gray-600">Supported platforms</p>
+          <p class="text-[11px] text-gray-400">Supported platforms</p>
         </div>
       </div>
 
@@ -226,8 +262,8 @@
             <h2 class="text-2xl font-semibold text-white tracking-[-0.03em]">Everything you need to improve</h2>
           </div>
 
-          <div class="grid grid-cols-3 gap-3">
-            <div class="card card-highlight">
+          <div class="feature-grid-3 grid grid-cols-3 gap-3">
+            <div class="card card-highlight" style="min-height: 160px;">
               <div class="p-6">
                 <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
                   <span class="text-gray-300 text-sm">&#9813;</span>
@@ -236,7 +272,7 @@
                 <p class="text-[12px] text-gray-500 leading-[1.7]">Stockfish-powered move-by-move analysis with AI coaching comments on your critical positions.</p>
               </div>
             </div>
-            <div class="card card-highlight">
+            <div class="card card-highlight" style="min-height: 160px;">
               <div class="p-6">
                 <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
                   <span class="text-gray-300 text-sm">&#9733;</span>
@@ -245,7 +281,7 @@
                 <p class="text-[12px] text-gray-500 leading-[1.7]">Personality profiling, opening repertoire analysis, and long-term improvement tracking across thousands of games.</p>
               </div>
             </div>
-            <div class="card card-highlight">
+            <div class="card card-highlight" style="min-height: 160px;">
               <div class="p-6">
                 <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
                   <span class="text-gray-300 text-sm">&#9823;</span>
@@ -256,28 +292,33 @@
             </div>
           </div>
 
-          <!-- Second row features -->
-          <div class="grid grid-cols-2 gap-3 mt-3">
-            <div class="card card-highlight">
-              <div class="p-6 flex gap-5">
-                <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: rgba(228,232,237,0.06);">
+          <!-- Second row features — same 3-col grid, 2 items centered -->
+          <div class="feature-grid-3 grid grid-cols-3 gap-3 mt-3">
+            <div class="card card-highlight" style="min-height: 160px;">
+              <div class="p-6">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
                   <span class="text-gray-300 text-sm">&#8644;</span>
                 </div>
-                <div>
-                  <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Auto Import</h3>
-                  <p class="text-[12px] text-gray-500 leading-[1.7]">Connect your Chess.com or Lichess account. Games import automatically — no PGN uploads needed.</p>
-                </div>
+                <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Auto Import</h3>
+                <p class="text-[12px] text-gray-500 leading-[1.7]">Connect your Chess.com or Lichess account. Games import automatically — no PGN uploads needed.</p>
               </div>
             </div>
-            <div class="card card-highlight">
-              <div class="p-6 flex gap-5">
-                <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: rgba(228,232,237,0.06);">
+            <div class="card card-highlight" style="min-height: 160px;">
+              <div class="p-6">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
                   <span class="text-gray-300 text-sm">&#9670;</span>
                 </div>
-                <div>
-                  <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Game Review</h3>
-                  <p class="text-[12px] text-gray-500 leading-[1.7]">Think First mode challenges you to find the best move before revealing the engine's answer.</p>
+                <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Game Review</h3>
+                <p class="text-[12px] text-gray-500 leading-[1.7]">Think First mode challenges you to find the best move before revealing the engine's answer.</p>
+              </div>
+            </div>
+            <div class="card card-highlight" style="min-height: 160px;">
+              <div class="p-6">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
+                  <span class="text-gray-300 text-sm">&#9823;</span>
                 </div>
+                <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Play with Coach</h3>
+                <p class="text-[12px] text-gray-500 leading-[1.7]">Play live games against an AI coach who gives real-time feedback and strategic advice on every move.</p>
               </div>
             </div>
           </div>
@@ -285,15 +326,20 @@
       </div>
 
       <!-- Testimonial / quote -->
-      <div class="px-8 py-16" style="border-top: 1px solid var(--border);">
-        <div class="max-w-2xl mx-auto text-center">
-          <p class="text-[17px] text-gray-300 leading-relaxed italic mb-4">"I went from 1100 to 1350 in two months. The coaching comments on my blunders were more useful than hours of YouTube tutorials."</p>
-          <p class="text-[12px] text-gray-600">— Chess.com rapid player</p>
+      <div class="px-8 py-12" style="border-top: 1px solid var(--border);">
+        <div class="max-w-2xl mx-auto">
+          <div class="card" style="padding: 32px 40px; position: relative;">
+            <div style="position: absolute; top: 16px; left: 24px; font-size: 48px; line-height: 1; color: rgba(228,232,237,0.1); font-family: Georgia, serif;">&ldquo;</div>
+            <div class="text-center" style="padding-top: 12px;">
+              <p class="text-[16px] text-gray-300 leading-relaxed italic mb-4">"I went from 1100 to 1350 in two months. The coaching comments on my blunders were more useful than hours of YouTube tutorials."</p>
+              <p class="text-[12px] text-gray-500">— Chess.com rapid player</p>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- CTA section -->
-      <div class="px-8 py-16" style="border-top: 1px solid var(--border); background: var(--bg-surface-1);">
+      <div class="px-8 py-16" style="border-top: 1px solid var(--border); background: var(--bg-surface-2);">
         <div class="max-w-lg mx-auto text-center">
           <h2 class="text-xl font-semibold text-white tracking-[-0.02em] mb-3">Ready to improve?</h2>
           <p class="text-[13px] text-gray-500 mb-6">Free tier includes 5 game analyses per day. No credit card required.</p>
@@ -348,7 +394,7 @@
             <p class="text-[15px] text-gray-500">Start free. Upgrade when you're ready.</p>
           </div>
 
-          <div class="grid grid-cols-3 gap-4">
+          <div class="pricing-grid grid grid-cols-3 gap-4">
             <!-- Free -->
             <div class="card card-highlight">
               <div class="p-6">
@@ -570,7 +616,7 @@
         </div>
 
         <!-- Stats overview -->
-        <div class="grid grid-cols-5 gap-3 mb-8">
+        <div class="stats-5-grid grid grid-cols-5 gap-3 mb-8">
           <div class="card card-highlight">
             <div class="p-4">
               <p class="label mb-1.5">Games</p>
@@ -604,7 +650,7 @@
         </div>
 
         <!-- Main content: Charts + Game list -->
-        <div class="grid grid-cols-3 gap-3">
+        <div class="dashboard-grid grid grid-cols-3 gap-3">
           <!-- Elo chart area -->
           <div class="col-span-2 card card-highlight">
             <div class="p-5">

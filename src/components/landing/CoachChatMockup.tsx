@@ -26,7 +26,7 @@ export function CoachChatMockup() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 380, background: '#0c0d0f' }}>
       {/* Left: Board + move info */}
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         <Chessboard
           id="coach-chat-mockup-board"
           position={fen}
@@ -37,7 +37,7 @@ export function CoachChatMockup() {
         />
 
         {/* Move info bar */}
-        <div style={{ width: 320, marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ width: 320, marginTop: 16, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: '#f0f0f0' }}>h6</span>
             <span style={{ fontSize: 9, fontWeight: 600, color: '#fff', background: '#06b6d4', borderRadius: 9999, padding: '2px 8px' }}>Excellent</span>
