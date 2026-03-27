@@ -864,14 +864,15 @@ ${pgn} ${result}`
     let lastOpponentMove: string | undefined
     let moveClassification: string | undefined
     let evaluation: string | undefined
+    let lastUserComment: MoveWithComment | undefined
     for (let i = moveHistory.length - 1; i >= 0; i--) {
       const isUserMove = i % 2 === (playerColor === 'white' ? 0 : 1)
       if (isUserMove && !lastUserMove) {
         lastUserMove = moveHistory[i]
         if (coachingComments.has(i)) {
-          const comment = coachingComments.get(i)
-          moveClassification = comment?.processedMove?.classification
-          evaluation = comment?.processedMove?.displayEvaluation
+          lastUserComment = coachingComments.get(i)
+          moveClassification = lastUserComment?.processedMove?.classification
+          evaluation = lastUserComment?.processedMove?.displayEvaluation
         }
       }
       if (!isUserMove && !lastOpponentMove) {
@@ -880,6 +881,7 @@ ${pgn} ${result}`
       if (lastUserMove && lastOpponentMove) break
     }
 
+    const pm = lastUserComment?.processedMove
     const ctx: ChatPositionContext = {
       fen: gamePosition,
       moveHistory,
@@ -892,6 +894,12 @@ ${pgn} ${result}`
       contextType: 'play',
       moveClassification,
       evaluation,
+      bestMoveSan: pm?.bestMoveSan ?? undefined,
+      centipawnLoss: pm?.centipawnLoss ?? undefined,
+      coachingComment: pm?.coachingComment,
+      tacticalInsights: pm?.tacticalInsights,
+      positionalInsights: pm?.positionalInsights,
+      learningPoints: pm?.learningPoints,
     }
     setPositionContext(ctx)
     setLocalPositionContext(ctx)

@@ -910,6 +910,12 @@ export default function GameAnalysisPage() {
       contextType: 'analysis',
       moveClassification: currentMove?.classification,
       evaluation: currentMove?.displayEvaluation,
+      bestMoveSan: currentMove?.bestMoveSan ?? undefined,
+      centipawnLoss: currentMove?.centipawnLoss ?? undefined,
+      coachingComment: currentMove?.coachingComment,
+      tacticalInsights: currentMove?.tacticalInsights,
+      positionalInsights: currentMove?.positionalInsights,
+      learningPoints: currentMove?.learningPoints,
     }
     setPositionContext(ctx)
     setLocalPositionContext(ctx)

@@ -76,17 +76,33 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     }
   }, [comprehensiveData?.performanceTrends, selectedTimeControl, eloGraphGamesUsed])
 
-  // Fetch analytics data for a single platform
-  // NOTE: getComprehensiveAnalytics now uses SQL aggregation (no 10k row fetch).
-  // ELO data comes from comprehensive analytics, so separate getEloStats call removed.
+  // Fetch analytics data for a single platform in two phases:
+  // Phase 1 (fast): comprehensive analytics (SQL aggregation) + player stats → renders page
+  // Phase 2 (slow): analysis stats, game analyses, deep analysis → fills in details
+  // Fetch all analytics data for a single platform.
+  // getComprehensiveAnalytics uses SQL aggregation (fast).
+  // All calls run in parallel — total time = slowest single call.
   const fetchPlatformData = useCallback(async (uid: string, plat: 'lichess' | 'chess.com', forceRefresh: boolean) => {
-    const [analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis] = await Promise.all([
-      UnifiedAnalysisService.getAnalysisStats(uid, plat, 'stockfish'),
-      UnifiedAnalysisService.getPlayerStats(uid, plat),
-      UnifiedAnalysisService.getGameAnalyses(uid, plat, 'stockfish', 20, 0),
-      UnifiedAnalysisService.getComprehensiveAnalytics(uid, plat, 10000),
-      UnifiedAnalysisService.fetchDeepAnalysis(uid, plat, forceRefresh),
+    const start = performance.now()
+    const timed = async <T,>(name: string, fn: Promise<T>): Promise<T> => {
+      const t0 = performance.now()
+      const result = await fn
+      if (import.meta.env.DEV) {
+        console.log(`[PERF] ${name}: ${Math.round(performance.now() - t0)}ms`)
+      }
+      return result
+    }
+    const results = await Promise.all([
+      timed('getAnalysisStats', UnifiedAnalysisService.getAnalysisStats(uid, plat, 'stockfish')),
+      timed('getPlayerStats', UnifiedAnalysisService.getPlayerStats(uid, plat)),
+      timed('getGameAnalyses', UnifiedAnalysisService.getGameAnalyses(uid, plat, 'stockfish', 20, 0)),
+      timed('getComprehensiveAnalytics', UnifiedAnalysisService.getComprehensiveAnalytics(uid, plat, 10000)),
+      timed('fetchDeepAnalysis', UnifiedAnalysisService.fetchDeepAnalysis(uid, plat, forceRefresh)),
     ])
+    if (import.meta.env.DEV) {
+      console.log(`[PERF] fetchPlatformData total: ${Math.round(performance.now() - start)}ms`)
+    }
+    const [analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis] = results
     return { analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis }
   }, [])
 
@@ -113,7 +129,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       let analysisResult, playerStats, gamesData: ReturnType<typeof UnifiedAnalysisService.getGameAnalyses> extends Promise<infer T> ? T : never, comprehensiveAnalytics: Record<string, unknown>, deepAnalysis
 
       if (viewMode === 'combined' && secondaryUserId && secondaryPlatform) {
-        // Combined view: fetch both platforms in parallel, then merge
         const [primary, secondary] = await Promise.all([
           fetchPlatformData(userId, plat, forceRefresh),
           fetchPlatformData(secondaryUserId, secondaryPlatform, forceRefresh)
@@ -131,7 +146,6 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           ? mergeDeepAnalysis(primary.deepAnalysis, secondary.deepAnalysis)
           : primary.deepAnalysis || secondary.deepAnalysis
       } else {
-        // Single platform: existing behavior
         const result = await fetchPlatformData(userId, plat, forceRefresh)
         analysisResult = result.analysisResult
         playerStats = result.playerStats
@@ -140,49 +154,17 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         deepAnalysis = result.deepAnalysis
       }
 
-      // Set default values for removed services
-      const optimizedEloStats = null
-
-      // Only log diagnostics in development mode
-      if (import.meta.env.DEV) {
-        console.log('SimpleAnalytics received data - total games:', analysisResult?.total_games_analyzed)
-        console.log('Comprehensive stats - total games:', comprehensiveAnalytics?.total_games)
-        console.log('Marathon analyzed:', comprehensiveAnalytics?.marathon_performance?.analyzed_count)
-        console.log('Merged comprehensive analytics:', comprehensiveAnalytics)
-        console.log('Opening Color Stats (camelCase):', comprehensiveAnalytics?.openingColorStats)
-        console.log('Opening Color Stats (snake_case):', comprehensiveAnalytics?.opening_color_stats)
-        console.log('Opening Stats:', comprehensiveAnalytics?.openingStats)
-        console.log('ELO data from comprehensive analytics:', comprehensiveAnalytics?.highestElo, comprehensiveAnalytics?.currentElo)
-        console.log('Opening accuracy:', analysisResult?.average_opening_accuracy)
-        console.log('Middle game accuracy:', analysisResult?.average_middle_game_accuracy)
-        console.log('Endgame accuracy:', analysisResult?.average_endgame_accuracy)
-
-        // Log validation issues if any
-        if (playerStats.validationIssues && playerStats.validationIssues.length > 0) {
-          console.warn('ELO data validation issues detected:', playerStats.validationIssues)
-        }
-
-        // Log comprehensive analytics benefits
-        if (comprehensiveAnalytics && (comprehensiveAnalytics.total_games || comprehensiveAnalytics.totalGames) > 0) {
-          console.log(`Comprehensive analytics: ${comprehensiveAnalytics.total_games || comprehensiveAnalytics.totalGames} games analyzed with single query`)
-        }
-      }
-
       // Calculate realistic accuracy from raw game data using player rating
       const playerRating = playerStats.currentRating || analysisResult?.current_rating || analysisResult?.highest_rating
       const realisticAccuracy = calculateAverageAccuracy(gamesData || [], playerRating)
 
-      // Merge analysis stats with player stats and new accuracy
       const enhancedData = analysisResult ? {
         ...analysisResult,
-        // Use realistic accuracy calculation
         average_accuracy: realisticAccuracy,
-        // Use player stats for ELO data
         current_rating: playerStats.currentRating,
         most_played_time_control: playerStats.mostPlayedTimeControl,
         validation_issues: playerStats.validationIssues
       } : {
-        // Fallback when no analysis stats available
         total_games_analyzed: comprehensiveAnalytics?.total_games || comprehensiveAnalytics?.totalGames || 0,
         average_accuracy: realisticAccuracy,
         current_rating: playerStats.currentRating,
@@ -203,33 +185,13 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         total_games_with_elo: comprehensiveAnalytics?.total_games || comprehensiveAnalytics?.totalGames || 0
       }
 
-      // Debug: Opening analytics data (only in development)
-      if (import.meta.env.DEV) {
-        console.log('Opening Analytics Debug:', {
-          totalGames: comprehensiveAnalytics?.total_games || comprehensiveAnalytics?.totalGames,
-          totalOpenings: comprehensiveAnalytics?.openingStats?.length,
-          winningOpenings: comprehensiveAnalytics?.openingStats?.filter(o => o.winRate >= 50).length,
-          losingOpenings: comprehensiveAnalytics?.openingStats?.filter(o => o.winRate < 50).length,
-          topOpenings: comprehensiveAnalytics?.openingStats?.slice(0, 5).map(o => ({
-            opening: o.opening,
-            games: o.games,
-            winRate: o.winRate.toFixed(1)
-          }))
-        })
-      }
-
       setData(enhancedData)
-      // Merge ELO stats from backend API into comprehensive data
-      // IMPORTANT: Preserve all fields from backend, including openingColorStats and game length insights
       setComprehensiveData({
         ...comprehensiveAnalytics,
-        // ELO data now comes directly from comprehensive analytics (SQL aggregation)
         highestElo: comprehensiveAnalytics?.highestElo,
         timeControlWithHighestElo: comprehensiveAnalytics?.timeControlWithHighestElo,
         totalGames: comprehensiveAnalytics?.totalGames || comprehensiveAnalytics?.total_games || 0,
-        // Ensure openingColorStats is preserved (handle both camelCase and snake_case)
         openingColorStats: comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats || { white: [], black: [] },
-        // Preserve all game length insight fields (these come from comprehensive analytics endpoint)
         game_length_distribution: comprehensiveAnalytics?.game_length_distribution,
         quick_victory_breakdown: comprehensiveAnalytics?.quick_victory_breakdown,
         marathon_performance: comprehensiveAnalytics?.marathon_performance,
@@ -240,71 +202,21 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         resignation_timing: comprehensiveAnalytics?.resignation_timing
       })
 
-      // Debug: Log opening color stats after setting state
-      if (import.meta.env.DEV) {
-        console.log('Setting comprehensiveData with openingColorStats:', comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats)
-      }
       if (comprehensiveAnalytics?.performanceTrends) {
         setSelectedTimeControl(prev => {
           const perTimeControl = comprehensiveAnalytics.performanceTrends.perTimeControl || {}
           const availableTimeControls = Object.keys(perTimeControl)
 
-          if (prev && availableTimeControls.includes(prev)) {
-            return prev
-          }
+          if (prev && availableTimeControls.includes(prev)) return prev
 
           const preferred = comprehensiveAnalytics.performanceTrends.timeControlUsed
-          if (preferred && (!availableTimeControls.length || availableTimeControls.includes(preferred))) {
-            return preferred
-          }
-
-          if (availableTimeControls.length > 0) {
-            return availableTimeControls[0]
-          }
+          if (preferred && (!availableTimeControls.length || availableTimeControls.includes(preferred))) return preferred
+          if (availableTimeControls.length > 0) return availableTimeControls[0]
 
           return prev ?? (preferred || null)
         })
       }
       setDeepAnalysisData(deepAnalysis)
-
-      // Development-mode data validation - warn when expected fields are missing
-      if (import.meta.env.DEV && comprehensiveAnalytics) {
-        const missingFields: string[] = []
-
-        // Check critical fields that frequently break
-        if (!comprehensiveAnalytics.openingColorStats) {
-          missingFields.push('openingColorStats')
-        }
-        if (!comprehensiveAnalytics.resignationTiming && !comprehensiveAnalytics.resignation_timing) {
-          missingFields.push('resignationTiming/resignation_timing')
-        }
-        if (!comprehensiveAnalytics.personalRecords && !comprehensiveAnalytics.personal_records) {
-          missingFields.push('personalRecords/personal_records')
-        }
-        if (!comprehensiveAnalytics.marathonPerformance && !comprehensiveAnalytics.marathon_performance) {
-          missingFields.push('marathonPerformance/marathon_performance')
-        }
-        if (!comprehensiveAnalytics.recentTrend && !comprehensiveAnalytics.recent_trend) {
-          missingFields.push('recentTrend/recent_trend')
-        }
-
-        if (missingFields.length > 0) {
-          console.warn('[SimpleAnalytics] Missing expected fields from backend:', missingFields)
-          console.warn('[SimpleAnalytics] Available fields:', Object.keys(comprehensiveAnalytics))
-        }
-
-        // Validate data structure
-        if (comprehensiveAnalytics.openingColorStats) {
-          const stats = comprehensiveAnalytics.openingColorStats
-          if (!stats.white || !Array.isArray(stats.white) || !stats.black || !Array.isArray(stats.black)) {
-            console.warn('[SimpleAnalytics] Invalid openingColorStats structure:', stats)
-          } else if (stats.white.length === 0 && stats.black.length === 0) {
-            console.info('[SimpleAnalytics] openingColorStats is empty (no games with opening names)')
-          }
-        }
-      }
-
-      // Increment refresh key to force EloTrendGraph to re-fetch data
       setDataRefreshKey(prev => prev + 1)
     } catch (err) {
       console.error('Failed to load analytics:', err)

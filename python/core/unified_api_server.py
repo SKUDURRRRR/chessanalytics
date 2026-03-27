@@ -2696,9 +2696,10 @@ async def get_comprehensive_analytics(
     Only fetches individual game rows for analysis-dependent stats (marathon,
     records, resignation timing, etc.) which are bounded to 500 recent games.
     """
+    import time as _time
     try:
-        if DEBUG:
-            print(f"[DEBUG] get_comprehensive_analytics called: user_id={user_id}, platform={platform}, limit={limit}")
+        _t0 = _time.time()
+        print(f"[PERF] get_comprehensive_analytics START: user_id={user_id}, platform={platform}, limit={limit}")
         canonical_user_id = _canonical_user_id(user_id, platform)
         if DEBUG:
             print(f"[DEBUG] canonical_user_id={canonical_user_id}")
@@ -2750,9 +2751,13 @@ async def get_comprehensive_analytics(
         def _extract_rpc_data(resp, name: str, default=None):
             if isinstance(resp, Exception):
                 print(f"[WARN] RPC {name} failed: {resp}")
+                traceback.print_exc()
                 return default
+            if DEBUG:
+                print(f"[DEBUG] RPC {name} response type={type(resp.data).__name__}, data={str(resp.data)[:200]}")
             return resp.data if resp.data is not None else default
 
+        print(f"[PERF] Phase 1 (SQL aggregates) took {round((_time.time() - _t0) * 1000)}ms")
         agg_stats = _extract_rpc_data(agg_stats_resp, 'get_player_aggregate_stats', {})
         opening_stats_raw = _extract_rpc_data(opening_stats_resp, 'get_player_opening_stats', [])
         distribution_raw = _extract_rpc_data(dist_resp, 'get_player_game_length_distribution', {})
@@ -2873,6 +2878,7 @@ async def get_comprehensive_analytics(
             }
 
         # ── Phase 2: Fetch recent games for analysis-dependent stats ──────
+        _t1 = _time.time()
         # Only fetch 500 recent games (1 page max) for: marathon, records,
         # resignation timing, quick victories, patience, comebacks.
         # These stats need per-game analysis data that can't be aggregated in SQL.
@@ -2931,6 +2937,7 @@ async def get_comprehensive_analytics(
             except Exception as e:
                 print(f"[WARN] Analysis data fetching failed: {e}")
 
+        print(f"[PERF] Phase 2 (recent games + analysis) took {round((_time.time() - _t1) * 1000)}ms")
         # ── Phase 3: Compute analysis-dependent stats from recent games ───
         quick_victory_breakdown = Counter()
         marathon_games = []
@@ -3065,6 +3072,8 @@ async def get_comprehensive_analytics(
             'insight': insight
         }
 
+        print(f"[PERF] Phase 3 (compute stats) took {round((_time.time() - _t1) * 1000)}ms")
+        print(f"[PERF] get_comprehensive_analytics TOTAL: {round((_time.time() - _t0) * 1000)}ms")
         # ── Build final result ────────────────────────────────────────────
         result = {
             'total_games': total_games_count,
@@ -11821,8 +11830,8 @@ def _build_chat_user_prompt(
     if context.puzzle_theme:
         position_info += f"\nPuzzle theme: {context.puzzle_theme}"
 
-    # Game review context data
-    if context.context_type == "game-review":
+    # Analysis data (available in game-review and play contexts when moves have been analyzed)
+    if context.context_type in ("game-review", "play", "analysis"):
         if context.best_move_san:
             position_info += f"\nBest move was: {context.best_move_san}"
         if context.centipawn_loss is not None:

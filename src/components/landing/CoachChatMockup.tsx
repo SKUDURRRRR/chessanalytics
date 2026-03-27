@@ -43,28 +43,30 @@ export function CoachChatMockup() {
       </div>
 
       {/* Bottom-left: Board + centered arrows */}
-      <div style={{ padding: '8px 20px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <Chessboard
-          id="coach-chat-mockup-board"
-          position={fen}
-          arePiecesDraggable={false}
-          boardWidth={320}
-          showBoardNotation={false}
-          {...getDarkChessBoardTheme('default')}
-        />
+      <div style={{ padding: '8px 0 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 320 }}>
+          <Chessboard
+            id="coach-chat-mockup-board"
+            position={fen}
+            arePiecesDraggable={false}
+            boardWidth={320}
+            showBoardNotation={false}
+            {...getDarkChessBoardTheme('default')}
+          />
 
-        {/* Navigation arrows — centered, with clear gap from board */}
-        <div style={{ width: 320, marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          {['<<', '<', '>', '>>'].map(b => (
-            <span key={b} style={{ fontSize: 10, color: '#6b7280', background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '4px 10px' }}>{b}</span>
-          ))}
+          {/* Navigation arrows — pinned to board width, centered */}
+          <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, paddingLeft: 16 }}>
+            {['<<', '<', '>', '>>'].map(b => (
+              <span key={b} style={{ fontSize: 10, color: '#6b7280', background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '4px 10px' }}>{b}</span>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Bottom-right: Chat messages + input */}
-      <div style={{ borderLeft: '1px solid rgba(255,255,255,0.04)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ borderLeft: '1px solid rgba(255,255,255,0.04)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
         {/* Messages */}
-        <div style={{ flex: 1, padding: '12px 16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ padding: '12px 16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {messages.map((msg, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
               <div style={{
