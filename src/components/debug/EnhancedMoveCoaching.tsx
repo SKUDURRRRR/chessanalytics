@@ -46,17 +46,17 @@ export function EnhancedMoveCoaching({ move, className = '' }: EnhancedMoveCoach
       {/* Main Coaching Comment */}
       {text && (
         <div className="bg-surface-2 p-4 rounded-lg border-l-4 border-sky-400">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg font-semibold text-white">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="text-base font-semibold text-white">
               Tal Coach Commentary
             </span>
             {move.moveQuality && (
-              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getMoveQualityColor(move.moveQuality)}`}>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getMoveQualityColor(move.moveQuality)}`}>
                 {move.moveQuality}
               </span>
             )}
             {move.gamePhase && (
-              <span className="px-2 py-1 rounded-full text-xs font-semibold text-gray-400 bg-surface-3/40 shadow-card">
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold text-gray-400 bg-surface-3/40 shadow-card">
                 {move.gamePhase}
               </span>
             )}

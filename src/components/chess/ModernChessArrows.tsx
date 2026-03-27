@@ -89,8 +89,12 @@ function getArrowHead(
 
   // Arrow head size scales with board size - larger and wider for better visibility
   // Minimum sizes ensure visibility on mobile devices
-  const headLength = Math.max(boardWidth / 25, 18) // Length of arrow head, minimum 18px
-  const headWidth = Math.max(boardWidth / 35, 12) // Half-width at the base, minimum 12px
+  const arrowLength = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+  const maxHeadLength = Math.max(boardWidth / 25, 18)
+  const maxHeadWidth = Math.max(boardWidth / 35, 12)
+  // Cap arrowhead to 30% of arrow length so short arrows (knight moves) don't look oversized
+  const headLength = arrowLength > 0 ? Math.min(maxHeadLength, arrowLength * 0.3) : maxHeadLength
+  const headWidth = arrowLength > 0 ? Math.min(maxHeadWidth, arrowLength * 0.22) : maxHeadWidth
 
   // Tip point should be exactly at the destination square center
   const tipX = x2
@@ -388,9 +392,8 @@ export function ModernChessArrows({
         const dy = to.y - from.y
         const arrowLength = Math.sqrt(dx * dx + dy * dy)
 
-        // For suggestion arrows (best moves with no tail), use a larger arrowhead for better visibility
-        // Scale up the board size used for arrowhead calculation
-        const arrowHeadBoardSize = arrow.isBestMove ? measuredBoardSize * 1.2 : measuredBoardSize
+        // Use consistent arrowhead size for all arrows
+        const arrowHeadBoardSize = measuredBoardSize
 
         // Calculate arrow head pointing at the destination square center
         // Use measuredBoardSize for arrow head calculation to match viewBox
@@ -433,9 +436,7 @@ export function ModernChessArrows({
         // ENSURE MINIMUM STROKE WIDTH for visibility
         // Use measuredBoardSize for consistent scaling
         const baseStrokeWidth = Math.max(measuredBoardSize / 50, 4) // 2% of board width, minimum 4px
-        const strokeWidth = arrow.isBestMove ? baseStrokeWidth * 1.3 :
-                           arrow.classification === 'blunder' ? baseStrokeWidth * 1.1 :
-                           baseStrokeWidth
+        const strokeWidth = arrow.classification === 'blunder' ? baseStrokeWidth * 1.1 : baseStrokeWidth
 
         // Apply glow to best move suggestions
         const filter = arrow.isBestMove ? 'url(#arrow-glow)' : 'url(#arrow-shadow)'
