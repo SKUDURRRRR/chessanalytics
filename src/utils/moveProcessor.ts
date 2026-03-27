@@ -419,7 +419,7 @@ export function buildProcessedMoves(
     let classification = determineClassification(move)
 
     // If classified as inaccuracy/mistake/blunder but no alternative best move exists,
-    // the engine's best candidate was the played move itself — downgrade to 'good'
+    // the engine's best candidate was the played move itself - downgrade to 'good'
     if (!bestMoveSan && (classification === 'inaccuracy' || classification === 'mistake' || classification === 'blunder')) {
       classification = 'good'
     }
