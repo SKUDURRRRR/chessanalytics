@@ -423,7 +423,7 @@ function BankPuzzleSolver({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
           {/* Board */}
           <div>
             {/* Status message */}
@@ -476,8 +476,11 @@ function BankPuzzleSolver({
             </div>
           </div>
 
-          {/* Right panel: tabbed (Info / Coach Tal) */}
-          <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col h-full">
+          {/* Right panel: tabbed (Info / Coach Tal) — offset to align with board top */}
+          <div
+            className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col mt-9"
+            style={{ height: boardWidth > 0 ? boardWidth - 34 : undefined }}
+          >
             {/* Tab header */}
             <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <button
@@ -677,6 +680,19 @@ function LegacyPuzzleSolver({
   const [userMove, setUserMove] = useState<string | null>(null)
   const [rightPanelTab, setRightPanelTab] = useState<'info' | 'coach'>('info')
   const startTime = useMemo(() => Date.now(), [currentIndex])
+  const [boardWidth, setBoardWidth] = useState(500)
+  const boardContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function update() {
+      if (!boardContainerRef.current) return
+      const w = boardContainerRef.current.clientWidth
+      if (w > 0) setBoardWidth(w)
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
 
   const currentPuzzle = puzzles[currentIndex]
 
@@ -795,11 +811,12 @@ function LegacyPuzzleSolver({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          <div className="p-1">
-            <p className="text-gray-400 mb-3 text-center font-medium">
-              {game.turn() === 'w' ? 'White' : 'Black'} to move - find the best move!
-            </p>
+        <p className="text-gray-400 mb-3 text-center font-medium">
+          {game.turn() === 'w' ? 'White' : 'Black'} to move - find the best move!
+        </p>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
+          <div ref={boardContainerRef} className="p-1">
             <Chessboard
               position={currentPuzzle.fen_position}
               onPieceDrop={onDrop}
@@ -810,7 +827,10 @@ function LegacyPuzzleSolver({
           </div>
 
           {/* Right panel: tabbed (Info / Coach Tal) */}
-          <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col h-full">
+          <div
+            className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col"
+            style={{ height: boardWidth > 0 ? boardWidth + 2 : undefined }}
+          >
             {/* Tab header */}
             <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <button
