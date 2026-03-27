@@ -17,11 +17,11 @@ import type { ChatPositionContext } from '../../types'
 
 // Demo game moves (Pirc Defense) for initial board state
 const DEMO_MOVES = [
-  'e4', 'd6', 'Nf3', 'Nf6', 'd3', 'h6', 'Bc4',
+  'e4', 'd6', 'Nf3', 'Nf6', 'Bc4', 'h6',
 ]
 
 const DEMO_CLASSIFICATIONS = [
-  'good', 'good', 'best', 'good', 'acceptable', 'excellent', 'good',
+  'good', 'good', 'best', 'good', 'good', 'excellent',
 ]
 
 const DEMO_OPENING = 'Pirc Defense'
@@ -185,38 +185,45 @@ function BoardSection({
     : ''
 
   return (
-    <div className="w-full max-w-[360px]">
+    <div style={{ width: 320 }}>
       <Chessboard
         id="coach-dashboard-board"
         position={fen}
         arePiecesDraggable={false}
-        boardWidth={360}
+        boardWidth={320}
         showBoardNotation={false}
         {...getDarkChessBoardTheme('default')}
       />
 
       {/* Move info bar */}
       <div
-        className="mt-4 pt-2 flex items-center justify-between"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
+        style={{
+          width: 320,
+          marginTop: 16,
+          paddingTop: 8,
+          borderTop: '1px solid rgba(255,255,255,0.04)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
       >
-        <div className="flex items-center gap-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {currentMove ? (
             <>
-              <span className="text-sm font-semibold text-white">{currentMove}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#f0f0f0' }}>{currentMove}</span>
               {classificationLabel && (
-                <span className={`text-[9px] font-semibold rounded-full px-2 py-0.5 ${badgeColor}`}>
+                <span className={badgeColor} style={{ fontSize: 9, fontWeight: 600, borderRadius: 9999, padding: '2px 8px' }}>
                   {classificationLabel}
                 </span>
               )}
             </>
           ) : (
-            <span className="text-sm text-gray-500">Starting position</span>
+            <span style={{ fontSize: 14, color: '#6b7280' }}>Starting position</span>
           )}
         </div>
 
         {/* Navigation arrows */}
-        <div className="flex gap-1">
+        <div style={{ display: 'flex', gap: 4 }}>
           {[
             { label: '<<', onClick: onFirst, disabled: moveIndex <= -1 },
             { label: '<', onClick: onPrev, disabled: moveIndex <= -1 },
@@ -227,8 +234,15 @@ function BoardSection({
               key={btn.label}
               onClick={btn.onClick}
               disabled={btn.disabled}
-              className="text-[9px] text-gray-500 rounded px-1.5 py-0.5 transition-colors hover:text-gray-300 disabled:opacity-30 disabled:cursor-default"
-              style={{ background: 'rgba(255,255,255,0.06)' }}
+              style={{
+                fontSize: 9,
+                color: btn.disabled ? '#374151' : '#6b7280',
+                background: 'rgba(255,255,255,0.06)',
+                borderRadius: 4,
+                padding: '2px 6px',
+                cursor: btn.disabled ? 'default' : 'pointer',
+                border: 'none',
+              }}
             >
               {btn.label}
             </button>
@@ -238,7 +252,7 @@ function BoardSection({
 
       {/* Opening info */}
       {currentMove && (
-        <div className="mt-2 text-[10px] text-gray-600 leading-relaxed">
+        <div style={{ width: 320, marginTop: 8, fontSize: 10, color: '#6b7280', lineHeight: '1.5' }}>
           {DEMO_OPENING} · Move {moveNumber} · {isWhiteMove ? 'White' : 'Black'}
         </div>
       )}

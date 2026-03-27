@@ -140,6 +140,7 @@ export default function GameAnalysisPage() {
   const [showLimitModal, setShowLimitModal] = useState(false)
   const [limitType, setLimitType] = useState<'import' | 'analyze'>('analyze')
   const { setPositionContext } = useCoachChat()
+  const [localPositionContext, setLocalPositionContext] = useState<ChatPositionContext | null>(null)
 
   const parseNumericValue = (value: unknown): number | null => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -911,6 +912,7 @@ export default function GameAnalysisPage() {
       evaluation: currentMove?.displayEvaluation,
     }
     setPositionContext(ctx)
+    setLocalPositionContext(ctx)
     return () => setPositionContext(null)
   }, [currentIndex, processedData, playerColor, currentMove, setPositionContext])
 
@@ -1527,6 +1529,7 @@ export default function GameAnalysisPage() {
           onAddExplorationMove={handleAddExplorationMove}
           onPieceDrop={handlePieceDrop}
           isLoadingAIComments={isLoadingAIComments}
+          positionContext={localPositionContext}
         />
 
         <div className="mt-8">

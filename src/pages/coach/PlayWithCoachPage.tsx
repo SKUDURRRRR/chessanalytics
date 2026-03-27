@@ -25,6 +25,7 @@ import { useChessSound } from '../../hooks/useChessSound'
 import { useChessSoundSettings } from '../../contexts/ChessSoundContext'
 import { getMoveSoundSimple } from '../../utils/chessSounds'
 import { getMoveClassificationBgColor } from '../../utils/chessColors'
+import { InlineCoachChat } from '../../components/coach/InlineCoachChat'
 
 type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'resignation'
 
@@ -164,6 +165,7 @@ export default function PlayWithCoachPage() {
 
   // Coach chat context
   const { setPositionContext } = useCoachChat()
+  const [localPositionContext, setLocalPositionContext] = useState<ChatPositionContext | null>(null)
 
   // Chess sound support
   const { soundEnabled, volume } = useChessSoundSettings()
@@ -892,6 +894,7 @@ ${pgn} ${result}`
       evaluation,
     }
     setPositionContext(ctx)
+    setLocalPositionContext(ctx)
     return () => setPositionContext(null)
   }, [gamePosition, moveHistory, playerColor, coachingComments, setPositionContext])
 
@@ -1096,101 +1099,83 @@ ${pgn} ${result}`
               </div>
             </div>
 
-            {/* RIGHT: Sidebar */}
-            <div className="flex-1 min-w-0 lg:max-w-[340px] w-full">
-              {/* Compact Welcome (pre-game only) */}
-              {showInitialGreeting && moveHistory.length === 0 && (
-                <div className="flex items-start gap-2.5 rounded-lg shadow-card bg-sky-900/10 px-4 py-3 mb-3">
-                  <TalCoachIcon size={24} className="flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-gray-400 leading-relaxed">
-                    Make your first move to begin! Adjust my skill level above, then use the chat bubble to ask me for advice anytime.
-                  </p>
-                </div>
-              )}
+            {/* RIGHT: Chat + Moves */}
+            <div className="flex-1 min-w-0 lg:max-w-[400px] w-full flex flex-col">
+              {/* Inline Coach Chat */}
+              <div
+                className="rounded-lg overflow-hidden"
+                style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)', background: '#0c0d0f', minHeight: 420 }}
+              >
+                <InlineCoachChat positionContext={localPositionContext} />
+              </div>
 
-              {/* Two-Column Move History */}
-              <div className="rounded-lg shadow-card bg-surface-1 p-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Moves</h3>
+              {/* Compact Move List */}
+              <div className="mt-3 rounded-lg shadow-card bg-surface-1 px-3 py-2">
                 {moveHistory.length === 0 ? (
-                  <p className="text-gray-600 text-xs py-4 text-center">No moves yet</p>
+                  <p className="text-gray-600 text-[10px] py-2 text-center">Make your first move to begin</p>
                 ) : (
-                  <div ref={moveListRef} className="max-h-[350px] overflow-y-auto pr-1">
-                    <table className="w-full table-fixed text-left">
-                      <thead className="sticky top-0 bg-surface-base z-10">
-                        <tr className="text-[10px] uppercase text-gray-500 tracking-wider">
-                          <th className="w-8 py-1.5 px-1">#</th>
-                          <th className="py-1.5 px-1">White</th>
-                          <th className="py-1.5 px-1">Black</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Array.from({ length: Math.ceil(moveHistory.length / 2) }).map((_, row) => {
-                          const whiteIdx = row * 2
-                          const blackIdx = row * 2 + 1
-                          const whiteSan = moveHistory[whiteIdx]
-                          const blackSan = moveHistory[blackIdx]
+                  <div ref={moveListRef} className="max-h-[120px] overflow-y-auto">
+                    <div className="flex flex-wrap gap-x-1 gap-y-0.5 text-[11px]">
+                      {Array.from({ length: Math.ceil(moveHistory.length / 2) }).map((_, row) => {
+                        const whiteIdx = row * 2
+                        const blackIdx = row * 2 + 1
+                        const whiteSan = moveHistory[whiteIdx]
+                        const blackSan = moveHistory[blackIdx]
 
-                          return (
-                            <tr key={row} className="border-b border-white/5 last:border-b-0">
-                              <td className="py-1 px-1 text-xs text-gray-600 font-medium">{row + 1}.</td>
-                              <td className="py-1 px-1">
-                                {whiteSan && (
-                                  <MoveCell
-                                    san={whiteSan}
-                                    halfMoveIndex={whiteIdx}
-                                    isActive={activeHalfMoveIndex === whiteIdx + 1}
-                                    isUserMove={whiteIdx % 2 === (playerColor === 'white' ? 0 : 1)}
-                                    hasComment={coachingComments.has(whiteIdx)}
-                                    isAnalyzing={analyzingMoveIndex === whiteIdx}
-                                    classification={coachingComments.get(whiteIdx)?.processedMove?.classification}
-                                    onNavigate={() => navigateToMove(whiteIdx + 1)}
-                                    onRequestFeedback={() => requestCoachFeedback(whiteIdx)}
-                                    canRequestFeedback={
-                                      analyzingMoveIndex === null &&
-                                      !coachingComments.has(whiteIdx) &&
-                                      moveFenHistoryRef.current.has(whiteIdx)
-                                    }
-                                  />
-                                )}
-                              </td>
-                              <td className="py-1 px-1">
-                                {blackSan ? (
-                                  <MoveCell
-                                    san={blackSan}
-                                    halfMoveIndex={blackIdx}
-                                    isActive={activeHalfMoveIndex === blackIdx + 1}
-                                    isUserMove={blackIdx % 2 === (playerColor === 'white' ? 0 : 1)}
-                                    hasComment={coachingComments.has(blackIdx)}
-                                    isAnalyzing={analyzingMoveIndex === blackIdx}
-                                    classification={coachingComments.get(blackIdx)?.processedMove?.classification}
-                                    onNavigate={() => navigateToMove(blackIdx + 1)}
-                                    onRequestFeedback={() => requestCoachFeedback(blackIdx)}
-                                    canRequestFeedback={
-                                      analyzingMoveIndex === null &&
-                                      !coachingComments.has(blackIdx) &&
-                                      moveFenHistoryRef.current.has(blackIdx)
-                                    }
-                                  />
-                                ) : (
-                                  <span className="text-surface-base text-xs px-2">--</span>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                        return (
+                          <span key={row} className="inline-flex items-center gap-0.5">
+                            <span className="text-gray-600">{row + 1}.</span>
+                            {whiteSan && (
+                              <MoveCell
+                                san={whiteSan}
+                                halfMoveIndex={whiteIdx}
+                                isActive={activeHalfMoveIndex === whiteIdx + 1}
+                                isUserMove={whiteIdx % 2 === (playerColor === 'white' ? 0 : 1)}
+                                hasComment={coachingComments.has(whiteIdx)}
+                                isAnalyzing={analyzingMoveIndex === whiteIdx}
+                                classification={coachingComments.get(whiteIdx)?.processedMove?.classification}
+                                onNavigate={() => navigateToMove(whiteIdx + 1)}
+                                onRequestFeedback={() => requestCoachFeedback(whiteIdx)}
+                                canRequestFeedback={
+                                  analyzingMoveIndex === null &&
+                                  !coachingComments.has(whiteIdx) &&
+                                  moveFenHistoryRef.current.has(whiteIdx)
+                                }
+                              />
+                            )}
+                            {blackSan && (
+                              <MoveCell
+                                san={blackSan}
+                                halfMoveIndex={blackIdx}
+                                isActive={activeHalfMoveIndex === blackIdx + 1}
+                                isUserMove={blackIdx % 2 === (playerColor === 'white' ? 0 : 1)}
+                                hasComment={coachingComments.has(blackIdx)}
+                                isAnalyzing={analyzingMoveIndex === blackIdx}
+                                classification={coachingComments.get(blackIdx)?.processedMove?.classification}
+                                onNavigate={() => navigateToMove(blackIdx + 1)}
+                                onRequestFeedback={() => requestCoachFeedback(blackIdx)}
+                                canRequestFeedback={
+                                  analyzingMoveIndex === null &&
+                                  !coachingComments.has(blackIdx) &&
+                                  moveFenHistoryRef.current.has(blackIdx)
+                                }
+                              />
+                            )}
+                          </span>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* Game Controls */}
-              <div className="mt-3 space-y-2">
+              <div className="mt-2 space-y-2">
                 {moveHistory.length > 0 && (
                   <button
                     onClick={reviewGame}
                     disabled={isAnalyzing}
-                    className="w-full px-4 py-2.5 rounded-lg bg-[#e4e8ed] text-[#111] hover:bg-[#f0f2f5] font-semibold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-card"
+                    className="w-full px-4 py-2 rounded-lg bg-[#e4e8ed] text-[#111] hover:bg-[#f0f2f5] font-medium text-[13px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3)' }}
                   >
                     {isAnalyzing ? 'Analyzing...' : 'Review Game'}
@@ -1199,13 +1184,13 @@ ${pgn} ${result}`
                 <div className="flex gap-2">
                   <button
                     onClick={resetGame}
-                    className="flex-1 px-3 py-2 rounded-lg shadow-card bg-white/5 hover:bg-white/10 text-gray-400 text-sm transition-colors"
+                    className="flex-1 px-3 py-1.5 rounded-lg shadow-card bg-white/5 hover:bg-white/10 text-gray-400 text-[12px] transition-colors"
                   >
                     New Game
                   </button>
                   <button
                     onClick={changeColor}
-                    className="flex-1 px-3 py-2 rounded-lg shadow-card bg-white/5 hover:bg-white/10 text-gray-400 text-sm transition-colors"
+                    className="flex-1 px-3 py-1.5 rounded-lg shadow-card bg-white/5 hover:bg-white/10 text-gray-400 text-[12px] transition-colors"
                   >
                     Flip Color
                   </button>
