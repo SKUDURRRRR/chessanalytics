@@ -147,9 +147,9 @@ export default function TermsOfServicePage() {
               Our Service integrates with third-party platforms, including:
             </p>
             <ul className="list-disc pl-6 space-y-2">
-              <li><strong>Lichess and Chess.com</strong> — for importing game data via their public APIs</li>
-              <li><strong>Stripe</strong> — for secure payment processing</li>
-              <li><strong>Supabase</strong> — for authentication and data storage</li>
+              <li><strong>Lichess and Chess.com</strong> - for importing game data via their public APIs</li>
+              <li><strong>Stripe</strong> - for secure payment processing</li>
+              <li><strong>Supabase</strong> - for authentication and data storage</li>
             </ul>
             <p className="mt-4">
               You are responsible for ensuring you have the right to access and import your games from external platforms.
@@ -165,7 +165,7 @@ export default function TermsOfServicePage() {
           <section>
             <h2 className="text-section font-semibold text-white mt-8 mb-4">8. Intellectual Property</h2>
             <p>
-              All content, features, and functionality of the Service—including the design, code, and interface—are the property of chessdata.app and protected by copyright and trademark laws.
+              All content, features, and functionality of the Service-including the design, code, and interface-are the property of chessdata.app and protected by copyright and trademark laws.
             </p>
             <p className="mt-4">
               You may not:

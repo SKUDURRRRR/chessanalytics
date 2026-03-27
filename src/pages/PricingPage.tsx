@@ -481,7 +481,7 @@ export default function PricingPage() {
                             </div>
                           ) : (
                             <div className="text-center py-2 text-gray-500 font-medium text-body">
-                              —
+                              -
                             </div>
                           )
                         ) : (

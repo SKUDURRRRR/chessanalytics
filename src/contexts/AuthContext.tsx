@@ -1,5 +1,5 @@
 // Enhanced Authentication Context with Usage Tracking and Linked Chess Accounts
-// @refresh reset — file exports both a component and a hook, which is incompatible with Fast Refresh
+// @refresh reset - file exports both a component and a hook, which is incompatible with Fast Refresh
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'

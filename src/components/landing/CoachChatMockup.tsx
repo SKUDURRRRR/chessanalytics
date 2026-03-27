@@ -11,7 +11,7 @@ export function CoachChatMockup() {
     },
     {
       role: 'coach' as const,
-      text: 'Bc4 is a solid developing move, but the engine slightly prefers Nc3 here. Nc3 develops a piece while keeping more tension — Bc4 commits the bishop early and can be challenged by ...Na5. Still a perfectly playable choice.',
+      text: 'Bc4 is a solid developing move, but the engine slightly prefers Nc3 here. Nc3 develops a piece while keeping more tension - Bc4 commits the bishop early and can be challenged by ...Na5. Still a perfectly playable choice.',
     },
     {
       role: 'user' as const,
@@ -54,7 +54,7 @@ export function CoachChatMockup() {
             {...getDarkChessBoardTheme('default')}
           />
 
-          {/* Navigation arrows — pinned to board width, centered */}
+          {/* Navigation arrows - pinned to board width, centered */}
           <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, paddingLeft: 16 }}>
             {['<<', '<', '>', '>>'].map(b => (
               <span key={b} style={{ fontSize: 10, color: '#6b7280', background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '4px 10px' }}>{b}</span>

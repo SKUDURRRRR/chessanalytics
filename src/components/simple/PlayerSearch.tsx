@@ -404,7 +404,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
           </button>
         </div>
 
-        {/* Platform toggle — ghost style */}
+        {/* Platform toggle - ghost style */}
         <div className="flex justify-center gap-1">
           <button
             type="button"
@@ -555,7 +555,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
           {importProgress.status === 'completed' && (
             <p className="mt-3 text-[13px] font-medium text-emerald-300/80 text-center">
-              {importProgress.importedGames} games imported successfully — you can now view analytics.
+              {importProgress.importedGames} games imported successfully - you can now view analytics.
             </p>
           )}
 
@@ -586,7 +586,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
         {recentPlayers.length === 0 ? (
           <div>
             <p className="text-small text-gray-500 mb-3">
-              Try it out — click any player to see their analysis instantly
+              Try it out - click any player to see their analysis instantly
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {[

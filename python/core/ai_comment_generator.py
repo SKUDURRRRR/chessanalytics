@@ -405,8 +405,8 @@ class AIChessCommentGenerator:
 - Always focus on helping players understand WHY moves work or fail
 
 **CRITICAL: BE FACTUAL, NOT SPECULATIVE:**
-- You have Stockfish engine analysis — use it to state FACTS, not guesses
-- NEVER say "likely", "probably", "may have", "you might have" — you KNOW what happened
+- You have Stockfish engine analysis - use it to state FACTS, not guesses
+- NEVER say "likely", "probably", "may have", "you might have" - you KNOW what happened
 - State what the move actually does: "This loses a pawn" not "You likely lost material"
 - Use the evaluation numbers and piece interactions provided to make definitive statements
 - If the data shows a specific tactical issue (hanging piece, lost material, missed tactic), name it concretely
@@ -535,25 +535,25 @@ Write clear, educational comments that teach chess concepts."""
 
                 print(f"[AI] Calling Anthropic API (async) with model {self.config.ai_model}")
                 # Get enhanced system prompt with chess teaching methodology and Tal's authentic style
-                base_system_prompt = """You are Mikhail Tal, the Magician from Riga. You teach chess with the energy and passion that made you a World Champion. Your style is direct, engaging, and enthusiastic—you see the beauty in tactics and the power in creative play.
+                base_system_prompt = """You are Mikhail Tal, the Magician from Riga. You teach chess with the energy and passion that made you a World Champion. Your style is direct, engaging, and enthusiastic-you see the beauty in tactics and the power in creative play.
 
 **YOUR AUTHENTIC VOICE:**
-- Be energetic and direct—show genuine excitement about chess
-- Speak with confidence and clarity—you know what you're talking about
+- Be energetic and direct-show genuine excitement about chess
+- Speak with confidence and clarity-you know what you're talking about
 - Be passionate about tactics and creative possibilities
-- Keep it real—no flowery language, just clear, engaging explanations
+- Keep it real-no flowery language, just clear, engaging explanations
 - Show enthusiasm for good moves and tactical opportunities
-- Be encouraging but honest—celebrate brilliance, explain mistakes clearly
+- Be encouraging but honest-celebrate brilliance, explain mistakes clearly
 
 **YOUR TEACHING STYLE:**
 - Explain chess concepts clearly and directly
 - Connect moves to fundamental principles
-- Show why tactics work—the logic behind combinations
+- Show why tactics work-the logic behind combinations
 - Help players see the possibilities in positions
 - Encourage creative thinking and tactical awareness
 - Build understanding through clear, concrete examples
 
-Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly with your commentary. Write with the energy and insight that made you the Magician from Riga."""
+Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly with your commentary. Write with the energy and insight that made you the Magician from Riga."""
 
                 if self.knowledge_retriever:
                     system_prompt = self.knowledge_retriever.get_enhanced_system_prompt(
@@ -1570,11 +1570,11 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
 
         # Determine style intensity based on move quality
         if move_quality in [MoveQuality.BRILLIANT, MoveQuality.BLUNDER]:
-            style_intensity = "highly analytical—explain the tactical and positional reasoning clearly, teach why this matters"
+            style_intensity = "highly analytical-explain the tactical and positional reasoning clearly, teach why this matters"
         elif move_quality in [MoveQuality.MISTAKE, MoveQuality.EXCELLENT]:
-            style_intensity = "strong analytical focus—explain principles and patterns, what works and why"
+            style_intensity = "strong analytical focus-explain principles and patterns, what works and why"
         else:
-            style_intensity = "teaching-focused—explain the chess principles clearly, build understanding"
+            style_intensity = "teaching-focused-explain the chess principles clearly, build understanding"
 
         # Convert centipawn loss to descriptive language
         if centipawn_loss > 100:
@@ -1774,11 +1774,11 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
                 prompt = f"""{move_owner.capitalize()} just started the game with {move_san} (move 1).
 
 **YOUR MISSION (Tal-Style Commentary):**
-Write ONE short, encouraging sentence (maximum 15 words) that captures the excitement of starting a game. Channel Mikhail Tal's direct, energetic spirit. Be brief, enthusiastic, and real—something like "The game begins!" or "Time to play!" Keep it light and encouraging, not technical or flowery.
+Write ONE short, encouraging sentence (maximum 15 words) that captures the excitement of starting a game. Channel Mikhail Tal's direct, energetic spirit. Be brief, enthusiastic, and real-something like "The game begins!" or "Time to play!" Keep it light and encouraging, not technical or flowery.
 
 **CRITICAL RULES:**
 - ONE sentence maximum, 15 words or less
-- Be direct and energetic, like Tal—genuine enthusiasm, not poetry
+- Be direct and energetic, like Tal-genuine enthusiasm, not poetry
 - NO technical explanations, NO long descriptions, NO flowery language
 - {"Just cheer them on for starting the game!" if is_user_move else "Acknowledge the game beginning with enthusiasm!"}
 
@@ -1911,12 +1911,12 @@ TASK: {length_rule} {task_focus}
 Do NOT mention the player's rating.{better_move}
 
 RULES:
-- BREVITY IS CRITICAL — do NOT exceed the word limit above
+- BREVITY IS CRITICAL - do NOT exceed the word limit above
 - Start directly with chess analysis
 - ONLY mention pieces listed in ACTUAL BOARD STATE above
 - Refer to the player as "{color_name}" (never "Player {player_elo}" or "the player")
-- Match severity to classification: "{move_quality.value}" — do NOT exaggerate
-- NEVER hedge with "likely", "probably", "may have" — state facts
+- Match severity to classification: "{move_quality.value}" - do NOT exaggerate
+- NEVER hedge with "likely", "probably", "may have" - state facts
 """
 
         return prompt
@@ -1989,12 +1989,12 @@ TASK: {length_rule} {task_focus}
 Do NOT mention the player's rating.{better_move}
 
 RULES:
-- BREVITY IS CRITICAL — do NOT exceed the word limit above
+- BREVITY IS CRITICAL - do NOT exceed the word limit above
 - Start directly with chess analysis
 - ONLY mention pieces listed in ACTUAL BOARD STATE above
 - Refer to the player as "{color_name}" (never "Player {player_elo}" or "the player")
-- Match severity to classification: "{move_quality.value}" — do NOT exaggerate
-- NEVER hedge with "likely", "probably", "may have" — state facts
+- Match severity to classification: "{move_quality.value}" - do NOT exaggerate
+- NEVER hedge with "likely", "probably", "may have" - state facts
 """
 
         return prompt

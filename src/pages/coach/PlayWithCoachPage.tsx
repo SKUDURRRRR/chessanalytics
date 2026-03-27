@@ -156,7 +156,7 @@ export default function PlayWithCoachPage() {
   const [analyzingMoveIndex, setAnalyzingMoveIndex] = useState<number | null>(null)
   const analyzingMoveRef = useRef<{ moveNumber: number; san: string } | null>(null)
   const [showInitialGreeting, setShowInitialGreeting] = useState(true)
-  // FEN before each move, keyed by half-move index — needed for on-demand analysis of past moves
+  // FEN before each move, keyed by half-move index - needed for on-demand analysis of past moves
   const moveFenHistoryRef = useRef<Map<number, string>>(new Map())
   // Move navigation: null = live position, number = viewing position after Nth half-move
   const [viewIndex, setViewIndex] = useState<number | null>(null)

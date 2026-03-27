@@ -231,7 +231,7 @@ export default function SignUpPage() {
                       <span>Creating account...</span>
                     </div>
                   ) : (
-                    'Start Free — No Credit Card'
+                    'Start Free - No Credit Card'
                   )}
                 </Button>
               </form>

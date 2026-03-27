@@ -162,7 +162,7 @@ export default function HomePage() {
         </h1>
 
         <p className="text-gray-400 text-body leading-relaxed mb-10 max-w-lg mx-auto">
-          AI-powered analysis that tells you why you lose — and exactly how to improve.
+          AI-powered analysis that tells you why you lose - and exactly how to improve.
         </p>
 
         {/* Inline search */}
@@ -219,7 +219,7 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Secondary feature cards — same 3-col grid as primary */}
+          {/* Secondary feature cards - same 3-col grid as primary */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
             {secondaryFeatures.map((f) => (
               <div key={f.title} className="bg-surface-1 shadow-card rounded-lg overflow-hidden" style={{ minHeight: 160 }}>
@@ -277,11 +277,11 @@ export default function HomePage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 max-w-4xl mx-auto">
             <div className="flex items-start gap-2.5">
               <Check size={14} className="text-amber-400/60 mt-0.5 flex-shrink-0" />
-              <span className="text-small text-gray-400 leading-relaxed">Ask questions about any position — get strategic advice and tactical hints</span>
+              <span className="text-small text-gray-400 leading-relaxed">Ask questions about any position - get strategic advice and tactical hints</span>
             </div>
             <div className="flex items-start gap-2.5">
               <Check size={14} className="text-amber-400/60 mt-0.5 flex-shrink-0" />
-              <span className="text-small text-gray-400 leading-relaxed">Written in the spirit of Mikhail Tal — passionate and insightful coaching</span>
+              <span className="text-small text-gray-400 leading-relaxed">Written in the spirit of Mikhail Tal - passionate and insightful coaching</span>
             </div>
             <div className="flex items-start gap-2.5">
               <Check size={14} className="text-amber-400/60 mt-0.5 flex-shrink-0" />
@@ -357,7 +357,7 @@ export default function HomePage() {
             Comprehensive performance tracking
           </h2>
           <p className="text-body text-gray-500 max-w-md mx-auto">
-            Track ELO trends, opening performance, and time control statistics — all in one dashboard.
+            Track ELO trends, opening performance, and time control statistics - all in one dashboard.
           </p>
         </div>
 
@@ -383,11 +383,11 @@ export default function HomePage() {
             </div>
             <div className="flex items-start gap-2.5">
               <Check size={14} className="text-gray-500 mt-0.5 flex-shrink-0" />
-              <span className="text-small text-gray-400 leading-relaxed">Opening performance breakdown — see which openings work for you</span>
+              <span className="text-small text-gray-400 leading-relaxed">Opening performance breakdown - see which openings work for you</span>
             </div>
             <div className="flex items-start gap-2.5">
               <Check size={14} className="text-gray-500 mt-0.5 flex-shrink-0" />
-              <span className="text-small text-gray-400 leading-relaxed">Stats by time control — from bullet to classical</span>
+              <span className="text-small text-gray-400 leading-relaxed">Stats by time control - from bullet to classical</span>
             </div>
           </div>
         </div>
@@ -420,7 +420,7 @@ export default function HomePage() {
             See it in action
           </h2>
           <p className="text-body text-gray-500 mb-8">
-            Click any player to explore their full analysis — no account needed.
+            Click any player to explore their full analysis - no account needed.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto">
             {[

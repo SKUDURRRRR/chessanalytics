@@ -810,7 +810,7 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, userAtt
           {!userAttemptSan ? (
             <div className="p-3 rounded-lg bg-amber-500/5 shadow-card text-center">
               <p className="text-amber-200 text-[13px] font-medium">
-                {m.player === 'white' ? "White" : "Black"} to move — try yours on the board
+                {m.player === 'white' ? "White" : "Black"} to move - try yours on the board
               </p>
             </div>
           ) : (
@@ -838,9 +838,9 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, userAtt
       {/* Post-reveal */}
       {isRevealed && (
         <div className="space-y-3">
-          {/* Moves comparison — compact grid */}
+          {/* Moves comparison - compact grid */}
           <div className="space-y-1.5 text-[12px]">
-            {userAttemptSan && (
+            {userAttemptSan && !attemptMatchesPlayed && (
               <div className="flex items-center gap-2">
                 <span className={`w-1.5 h-1.5 rounded-full ${attemptMatchesBest ? 'bg-emerald-400' : 'bg-gray-400'}`} />
                 <span className="text-gray-500">You:</span>
@@ -852,7 +852,7 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, userAtt
               <span className={`w-1.5 h-1.5 rounded-full ${
                 moment.classification === 'blunder' ? 'bg-rose-400' : 'bg-amber-400'
               }`} />
-              <span className="text-gray-500">Played:</span>
+              <span className="text-gray-500">{attemptMatchesPlayed ? 'You played:' : 'Played:'}</span>
               <span className="text-white font-mono font-semibold">{m.san}</span>
               {m.centipawnLoss !== null && m.centipawnLoss > 0 && (
                 <span className="text-gray-600 text-[10px]">-{Math.round(m.centipawnLoss)}cp</span>
@@ -867,9 +867,9 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, userAtt
             )}
           </div>
 
-          {/* Explanation — truncated */}
+          {/* Explanation */}
           {(m.coachingComment || m.explanation) && (
-            <p className="text-[11px] text-gray-500 leading-relaxed line-clamp-3">
+            <p className="text-[11px] text-gray-500 leading-relaxed">
               {m.coachingComment || m.explanation}
             </p>
           )}

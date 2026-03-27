@@ -605,7 +605,7 @@ class StudyPlanGenerator:
             top_count = missed_themes[0][1]
             goals.append({
                 'type': 'puzzles',
-                'description': f'Practice {_format_theme(top_theme)} puzzles — you missed {top_count} recently',
+                'description': f'Practice {_format_theme(top_theme)} puzzles - you missed {top_count} recently',
                 'target': weekly_target,
                 'theme': top_theme,
             })
@@ -762,7 +762,7 @@ class StudyPlanGenerator:
                 templates.append({
                     'type': 'opening',
                     'label': f'Drill {opening["name"]} ({opening["color"]})',
-                    'description': f'{wr_pct}% win rate in {opening["games"]} games — practice key positions',
+                    'description': f'{wr_pct}% win rate in {opening["games"]} games - practice key positions',
                     'route': '/coach/openings',
                     'target_id': opening['name'],
                     'goal_type': 'openings',
@@ -787,7 +787,7 @@ class StudyPlanGenerator:
         templates.append({
             'type': 'lesson',
             'label': f'{phase_label_map.get(weakest_phase, weakest_phase)} lesson',
-            'description': f'Your {weakest_phase} accuracy is {phase_score:.0f}% — study to improve',
+            'description': f'Your {weakest_phase} accuracy is {phase_score:.0f}% - study to improve',
             'route': '/coach/lessons',
             'target_id': weakest_phase if weakest_phase in ('opening', 'tactical', 'positional') else 'positional',
             'goal_type': 'lessons',
@@ -814,7 +814,7 @@ class StudyPlanGenerator:
             templates.append({
                 'type': 'review',
                 'label': 'Review a recent game with blunders',
-                'description': f'You average {blunder_rate:.1f} blunders/game — find the patterns',
+                'description': f'You average {blunder_rate:.1f} blunders/game - find the patterns',
                 'route': '/coach/progress',
                 'target_id': '',
                 'goal_type': 'review',

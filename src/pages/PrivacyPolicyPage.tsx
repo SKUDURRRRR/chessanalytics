@@ -26,7 +26,7 @@ export default function PrivacyPolicyPage() {
             <ul className="list-disc pl-6 space-y-2">
               <li><strong>Account Information:</strong> Email address, password (hashed), and username</li>
               <li><strong>Profile Information:</strong> Display name and preferences</li>
-              <li><strong>Payment Information:</strong> Processed securely through Stripe — we never store credit card details</li>
+              <li><strong>Payment Information:</strong> Processed securely through Stripe - we never store credit card details</li>
               <li><strong>Communications:</strong> Messages you send to our support team</li>
             </ul>
 
@@ -71,7 +71,7 @@ export default function PrivacyPolicyPage() {
             </p>
             <ul className="list-disc pl-6 space-y-2">
               <li><strong>Encryption:</strong> All data in transit is encrypted using HTTPS/TLS</li>
-              <li><strong>Password Security:</strong> Passwords are hashed using secure algorithms — never stored in plaintext</li>
+              <li><strong>Password Security:</strong> Passwords are hashed using secure algorithms - never stored in plaintext</li>
               <li><strong>Access Controls:</strong> Restricted and monitored database access</li>
               <li><strong>Regular Updates:</strong> We keep our systems and dependencies current</li>
             </ul>

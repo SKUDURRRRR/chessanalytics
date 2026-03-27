@@ -1,4 +1,4 @@
-// @refresh reset — file exports both a component and a hook
+// @refresh reset - file exports both a component and a hook
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
 interface ChessSoundContextType {

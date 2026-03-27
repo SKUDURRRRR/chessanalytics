@@ -84,7 +84,7 @@ export class CoachingService {
       }
       const errorBody = await response.json().catch(() => null)
       const detail = errorBody?.detail || response.statusText
-      throw new Error(`HTTP error! status: ${response.status} — ${detail}`)
+      throw new Error(`HTTP error! status: ${response.status} - ${detail}`)
     }
 
     return await response.json() as T

@@ -77,7 +77,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
   }, [comprehensiveData?.performanceTrends, selectedTimeControl, eloGraphGamesUsed])
 
   // Fetch analytics data for a single platform.
-  // Deep analysis is excluded — it's fetched separately in the background.
+  // Deep analysis is excluded - it's fetched separately in the background.
   // Calls are split into 2 batches to avoid Supabase connection contention
   // (4 simultaneous requests cause 2-3x slower responses due to rate limiting).
   const fetchPlatformData = useCallback(async (uid: string, plat: 'lichess' | 'chess.com') => {
@@ -211,7 +211,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       }
       setDataRefreshKey(prev => prev + 1)
 
-      // Fetch deep analysis in background (5-7s) — don't block page render
+      // Fetch deep analysis in background (5-7s) - don't block page render
       // Deep analysis powers the personality radar which can appear after page loads
       const fetchDeep = async () => {
         try {
@@ -519,7 +519,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                 <ul className="space-y-1 text-xs text-emerald-200">
                   <li>• Fast ELO calculations (single database query)</li>
                   <li>• Complete coverage of all imported games</li>
-                  <li>• No analysis dependency — data available immediately after import</li>
+                  <li>• No analysis dependency - data available immediately after import</li>
                   <li>• Handles players with thousands of games efficiently</li>
                 </ul>
                 {safeData.total_games_with_elo > 0 && (

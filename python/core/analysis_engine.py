@@ -1843,7 +1843,7 @@ class ChessAnalysisEngine:
         """
         Check if a move is a reasonable opening move (for fast opening book path).
 
-        Only returns True for moves that are almost certainly fine — standard
+        Only returns True for moves that are almost certainly fine - standard
         development moves from starting squares, standard pawn pushes, and castling.
         This is intentionally conservative to avoid misclassifying blunders as
         "book moves" (e.g. a knight moving forward into a losing square).
@@ -1852,7 +1852,7 @@ class ChessAnalysisEngine:
         if not piece:
             return False
 
-        # Only apply for first 5 moves (not 8) — positions diverge quickly
+        # Only apply for first 5 moves (not 8) - positions diverge quickly
         if board.fullmove_number > 5:
             return False
 
@@ -1897,7 +1897,7 @@ class ChessAnalysisEngine:
                 return True
             return False
 
-        # Queen and other pieces — never shortcut, always use Stockfish
+        # Queen and other pieces - never shortcut, always use Stockfish
         return False
 
     def _get_opening_book_evaluation(self, board: chess.Board, move: chess.Move) -> Optional[Tuple[float, bool]]:
@@ -1945,7 +1945,7 @@ class ChessAnalysisEngine:
             raise ValueError("Stockfish executable not found")
 
         # OPTIMIZATION: Opening book fast path (speedup for early moves in batch analysis)
-        # SKIP when force_engine=True (single-move coaching) — accuracy over speed
+        # SKIP when force_engine=True (single-move coaching) - accuracy over speed
         if not force_engine and fullmove_number is not None and fullmove_number <= 5:
             opening_eval = self._get_opening_book_evaluation(board, move)
             if opening_eval is not None:
@@ -2113,7 +2113,7 @@ class ChessAnalysisEngine:
                     cached_result = self._position_cache.get(cache_key)
 
                     # Accept a cached eval from a slightly lower depth (within 4 levels)
-                    # A depth-12 eval is still useful when we wanted depth-14 — the
+                    # A depth-12 eval is still useful when we wanted depth-14 - the
                     # move classification thresholds (25/100/200/400cp) are wide enough
                     if cached_result is None and depth > 10:
                         for try_depth in range(depth - 1, max(9, depth - 5), -1):

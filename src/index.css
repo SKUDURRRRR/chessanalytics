@@ -32,7 +32,7 @@
     font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   }
 
-  /* Design system label style — small-caps with wide tracking */
+  /* Design system label style - small-caps with wide tracking */
   .label {
     font-variant: all-small-caps;
     letter-spacing: 0.06em;
@@ -68,7 +68,7 @@
     @apply min-h-[36px] min-w-[36px] px-3 py-1.5 text-body font-medium;
   }
 
-  /* ===== Card — Cool Silver ring shadow ===== */
+  /* ===== Card - Cool Silver ring shadow ===== */
   .card-mobile {
     background: #151618;
     box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);
@@ -191,7 +191,7 @@
     padding-right: env(safe-area-inset-right);
   }
 
-  /* ===== Fluid text (kept for migration — will be removed in Phase 3) ===== */
+  /* ===== Fluid text (kept for migration - will be removed in Phase 3) ===== */
   .text-fluid-xs   { font-size: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem); }
   .text-fluid-sm   { font-size: clamp(0.875rem, 0.8rem + 0.375vw, 1rem); }
   .text-fluid-base { font-size: clamp(1rem, 0.9rem + 0.5vw, 1.125rem); }
@@ -212,7 +212,7 @@
     -webkit-hyphens: none;
   }
 
-  /* ===== Legacy animations (kept for migration — will be removed in Phase 2) ===== */
+  /* ===== Legacy animations (kept for migration - will be removed in Phase 2) ===== */
   @keyframes liquid-shimmer {
     0% { transform: translateX(-150%) skewX(-20deg); opacity: 0; }
     50% { transform: translateX(0%) skewX(-15deg); opacity: 0.5; }

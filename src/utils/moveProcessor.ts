@@ -416,7 +416,13 @@ export function buildProcessedMoves(
 
     const bestMoveSanRaw = move.best_move_san && move.best_move_san.trim() ? move.best_move_san : null
     const bestMoveSan = bestMoveSanRaw || (move.best_move ? convertUciToSan(fenBefore, move.best_move) : null) || null
-    const classification = determineClassification(move)
+    let classification = determineClassification(move)
+
+    // If classified as inaccuracy/mistake/blunder but no alternative best move exists,
+    // the engine's best candidate was the played move itself — downgrade to 'good'
+    if (!bestMoveSan && (classification === 'inaccuracy' || classification === 'mistake' || classification === 'blunder')) {
+      classification = 'good'
+    }
 
     let displaySan = move.move_san
     if (!displaySan || displaySan === move.move) {

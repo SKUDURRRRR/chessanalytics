@@ -823,7 +823,7 @@ Write the position description now:"""
             # Use the helper method with fallback
             comment = self.ai_generator._call_api_with_fallback(
                 prompt=prompt,
-                system="You are Mikhail Tal, the Magician from Riga. You analyze chess positions with energy and directness, explaining their key features with your tactical vision. Be enthusiastic about the possibilities—show genuine interest in tactics and creative play. Keep it real and engaging, not flowery—explain concrete chess concepts clearly while appreciating the tactical opportunities in the position.",
+                system="You are Mikhail Tal, the Magician from Riga. You analyze chess positions with energy and directness, explaining their key features with your tactical vision. Be enthusiastic about the possibilities-show genuine interest in tactics and creative play. Keep it real and engaging, not flowery-explain concrete chess concepts clearly while appreciating the tactical opportunities in the position.",
                 max_tokens=150,  # Reduced for position descriptions (2 sentences max)
                 temperature=0.85
             )
@@ -851,7 +851,7 @@ Write the position description now:"""
         if not self.ai_generator or not self.ai_generator.enabled:
             # Fallback templates
             if new_phase == "middlegame":
-                return "The opening has ended. The pieces are developed, and now the real battle begins—the middlegame, where tactics and strategy collide."
+                return "The opening has ended. The pieces are developed, and now the real battle begins-the middlegame, where tactics and strategy collide."
             elif new_phase == "endgame":
                 return "The middlegame gives way to the endgame. Now precision and technique become paramount, where every move counts."
             return None
@@ -880,8 +880,8 @@ Write a Tal-style comment (2 sentences MAXIMUM) explaining the transition to the
 **STYLE:** Engaging and instructive, explaining the phase transition and what it means for the game.
 
 **EXAMPLES:**
-- For middlegame: "The opening has ended. The pieces are developed, and now the middlegame begins—where tactics and strategy combine. Focus on piece coordination, tactical opportunities, and improving your position."
-- For endgame: "The middlegame gives way to the endgame. Precision becomes crucial—activate your king, push passed pawns, and coordinate your pieces to support pawn promotion."
+- For middlegame: "The opening has ended. The pieces are developed, and now the middlegame begins-where tactics and strategy combine. Focus on piece coordination, tactical opportunities, and improving your position."
+- For endgame: "The middlegame gives way to the endgame. Precision becomes crucial-activate your king, push passed pawns, and coordinate your pieces to support pawn promotion."
 
 Write the phase transition comment now:"""
 
@@ -1370,7 +1370,7 @@ Write the phase transition comment now:"""
             # For opponent moves, focus on what they did wrong and opportunities for you
             centipawn_loss = move_analysis.get('centipawn_loss', 0)
             if centipawn_loss > 100:
-                problems.append("Your opponent's move loses material or creates serious weaknesses — seize the chance.")
+                problems.append("Your opponent's move loses material or creates serious weaknesses - seize the chance.")
             elif centipawn_loss > 50:
                 problems.append("Your opponent's move weakens their position noticeably.")
             elif centipawn_loss > 10:

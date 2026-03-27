@@ -1249,7 +1249,7 @@ async def diagnostic_data_check(user_id: str, platform: str):
                     not isinstance(r, Exception) and (getattr(r, 'count', 0) or 0) > 0
                     for r in results
                 )
-                else "RLS issue suspected — games table has data but analysis tables do not. Check SUPABASE_SERVICE_ROLE_KEY." if (
+                else "RLS issue suspected - games table has data but analysis tables do not. Check SUPABASE_SERVICE_ROLE_KEY." if (
                     not isinstance(results[0], Exception) and (getattr(results[0], 'count', 0) or 0) > 0
                     and not isinstance(results[2], Exception) and (getattr(results[2], 'count', 0) or 0) == 0
                     and not isinstance(results[3], Exception) and (getattr(results[3], 'count', 0) or 0) == 0
@@ -1771,7 +1771,7 @@ async def get_analysis_stats(
                         _set_in_cache(cache_key, result)
                         return result
                     else:
-                        # Games exist but none have accuracy — return count with 0 accuracy
+                        # Games exist but none have accuracy - return count with 0 accuracy
                         result = AnalysisStats(
                             total_games_analyzed=games_count,
                             average_accuracy=0,
@@ -3002,7 +3002,7 @@ async def get_comprehensive_analytics(
             if category not in current_elo_per_time_control:
                 current_elo_per_time_control[category] = elo
 
-        # Performance trends from SQL — categorize raw time controls (e.g. "600+0" → "Rapid")
+        # Performance trends from SQL - categorize raw time controls (e.g. "600+0" → "Rapid")
         performance_trends = {}
         if isinstance(perf_trends_raw, dict):
             raw_per_tc = perf_trends_raw.get('per_time_control', {}) or {}
@@ -4580,10 +4580,10 @@ def _generate_primary_focus(
 
         if tactical_mistakes > positional_mistakes * 1.5 and tactical_mistakes > 5:
             tactical_score = personality_scores.get('tactical', 50.0)
-            return f"Focus targeted training on tactical awareness (currently {tactical_score:.0f}). Your move analysis reveals {tactical_mistakes} tactical mistakes compared to {positional_mistakes} positional ones—practice puzzle solving daily to improve pattern recognition and calculation."
+            return f"Focus targeted training on tactical awareness (currently {tactical_score:.0f}). Your move analysis reveals {tactical_mistakes} tactical mistakes compared to {positional_mistakes} positional ones-practice puzzle solving daily to improve pattern recognition and calculation."
         elif positional_mistakes > tactical_mistakes * 1.5 and positional_mistakes > 5:
             positional_score = personality_scores.get('positional', 50.0)
-            return f"Focus targeted training on positional understanding (currently {positional_score:.0f}). Your move analysis shows {positional_mistakes} positional mistakes compared to {tactical_mistakes} tactical ones—study strategic plans, pawn structures, and long-term piece placement."
+            return f"Focus targeted training on positional understanding (currently {positional_score:.0f}). Your move analysis shows {positional_mistakes} positional mistakes compared to {tactical_mistakes} tactical ones-study strategic plans, pawn structures, and long-term piece placement."
 
         # Use weakest phase if identified with personalized context
         weakest_phase = move_insights.get('weakest_phase')
@@ -4608,7 +4608,7 @@ def _generate_primary_focus(
                 if phase_accuracy > 0:
                     return f"Focus targeted training on {phase_label.lower()} play (currently {phase_errors} significant errors, {error_percentage:.0f}% of your total mistakes, accuracy: {phase_accuracy:.0f}%). Review your best {phase_label.lower()} examples to identify patterns that work."
                 else:
-                    return f"Focus targeted training on {phase_label.lower()} play—your move analysis shows {phase_errors} significant errors in this phase ({error_percentage:.0f}% of total mistakes). Study your strongest {phase_label.lower()} games to identify what you did right."
+                    return f"Focus targeted training on {phase_label.lower()} play-your move analysis shows {phase_errors} significant errors in this phase ({error_percentage:.0f}% of total mistakes). Study your strongest {phase_label.lower()} games to identify what you did right."
 
         # Use common learning points if available
         common_learning = move_insights.get('common_learning_points', [])
@@ -4648,7 +4648,7 @@ def _generate_secondary_focus(
             if phase_errors == 0:
                 return f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples. Your {phase_label.lower()} play shows exceptional consistency with zero significant errors."
             elif phase_errors < 3:
-                return f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples. Your {phase_label.lower()} play stands out with only {phase_errors} significant error{'s' if phase_errors > 1 else ''}—this is your strongest phase."
+                return f"Continue to cultivate {PERSONALITY_LABELS[top_key].lower()} (currently {top_value:.0f}) by reviewing your best examples. Your {phase_label.lower()} play stands out with only {phase_errors} significant error{'s' if phase_errors > 1 else ''}-this is your strongest phase."
 
         # Check for areas with many insights (indicating activity/engagement)
         tactical_count = move_insights.get('tactical_insight_count', 0)
@@ -4657,9 +4657,9 @@ def _generate_secondary_focus(
 
         if total_insights > 10:  # Only if we have substantial insight data
             if tactical_count > positional_count * 1.2 and top_key == 'tactical':
-                return f"Continue to cultivate tactical awareness (currently {top_value:.0f}) by reviewing your best examples. Your games contain {tactical_count} tactical patterns worth studying—analyze positions where you found tactical solutions."
+                return f"Continue to cultivate tactical awareness (currently {top_value:.0f}) by reviewing your best examples. Your games contain {tactical_count} tactical patterns worth studying-analyze positions where you found tactical solutions."
             elif positional_count > tactical_count * 1.2 and top_key == 'positional':
-                return f"Continue to cultivate positional understanding (currently {top_value:.0f}) by reviewing your best examples. Your strategic play shows {positional_count} clear positional patterns—identify what made these positions work."
+                return f"Continue to cultivate positional understanding (currently {top_value:.0f}) by reviewing your best examples. Your strategic play shows {positional_count} clear positional patterns-identify what made these positions work."
 
         # If we have strong phase data, reference it
         if strongest_phase:
@@ -11774,7 +11774,7 @@ PUZZLE CONTEXT:
 You are helping the student solve a chess puzzle. Don't reveal the full solution directly,
 but DO give concrete hints that narrow it down:
 - Name the tactical theme if you can see it: "This is a discovered attack pattern"
-- Point to the key pieces involved: "Your rook and their king are almost aligned — what's in the way?"
+- Point to the key pieces involved: "Your rook and their king are almost aligned - what's in the way?"
 - If they suggest a wrong move, explain specifically why it fails: "After Nxe5, they have Qd4+ forking king and rook"
 - If they're stuck after 2+ attempts, give a much stronger hint: "The key move starts with your bishop on g5"
 """
@@ -11782,7 +11782,7 @@ but DO give concrete hints that narrow it down:
         context_specific = """
 LIVE GAME CONTEXT:
 The student is playing a live game. Give them practical, actionable coaching:
-- When they suggest a move, evaluate it directly: "Nc3 is solid here — it develops toward the center and prepares d4"
+- When they suggest a move, evaluate it directly: "Nc3 is solid here - it develops toward the center and prepares d4"
 - When their idea has problems, say so clearly and suggest alternatives: "e5 looks tempting but after dxe5 Nxe5, their knight dominates. Try Nc3 first to build pressure"
 - Name 1-2 candidate moves with brief reasons when they ask what to play, without insisting one is 'the' answer
 - Focus on the most important feature of the position: an unsafe king, a weak pawn, a strong outpost, etc.
@@ -11817,15 +11817,15 @@ You have the engine's analysis for this specific move: classification, centipawn
 YOUR CORE TEACHING PHILOSOPHY:
 - Give CLEAR OPINIONS on the student's ideas: "That's a strong move because..." or "I'd avoid that here because..."
 - When the student suggests a move, evaluate it honestly with a brief reason (1-2 key points)
-- Suggest concrete alternatives when their idea has problems: "Instead, consider Nc3 — it develops with tempo"
+- Suggest concrete alternatives when their idea has problems: "Instead, consider Nc3 - it develops with tempo"
 - Explain strategy in cause-and-effect terms: "If you play e5, their knight lands on d4 with no way to kick it out"
 - Celebrate good ideas: "Yes! That's exactly the spirit of this position!"
 - You may end with ONE brief guiding question occasionally to deepen their thinking, but not every message and never more than one
 
 YOUR VOICE:
-- Energetic, passionate, direct — you love chess and it shows
+- Energetic, passionate, direct - you love chess and it shows
 - Concise: 2-4 sentences, MAXIMUM 4 sentences. This is a quick chat, not a lecture
-- Jump straight into the chess — no filler openings like "Great question!" or "Interesting idea!" or "Let's think about this..."
+- Jump straight into the chess - no filler openings like "Great question!" or "Interesting idea!" or "Let's think about this..."
 - Use chess terminology naturally but explain concepts for intermediate players
 - Occasionally reference famous games or positions to illustrate points
 
@@ -11836,10 +11836,10 @@ CRITICAL RULES:
 - When the student asks about a specific move, give your opinion on THAT MOVE first, then teach
 - Keep responses SHORT. If you're writing more than 4 sentences, stop and trim
 - Always relate advice to the CURRENT POSITION (the FEN provided)
-- When the student is wrong, be direct but kind: "That loses material because of Bxf7+. Look at your knight instead — where can it go to create a double attack?"
+- When the student is wrong, be direct but kind: "That loses material because of Bxf7+. Look at your knight instead - where can it go to create a double attack?"
 - PERSPECTIVE: The student's color is given in the position context. Only suggest moves for THEIR color. Use correct notation from their perspective (e.g. if student is White and can capture on d5, say "exd5", not "dxe4" which would be Black's move)
-- LEGAL MOVES: A list of legal moves is provided in the position context. ONLY suggest or reference moves from that list. If a move is not in the list, it is illegal — do not suggest it
-- ENGINE GUIDANCE: Stockfish engine evaluations of top moves are provided. Base your recommendations on these evaluations — they are objectively correct. Explain the engine's top choice in human-friendly terms
+- LEGAL MOVES: A list of legal moves is provided in the position context. ONLY suggest or reference moves from that list. If a move is not in the list, it is illegal - do not suggest it
+- ENGINE GUIDANCE: Stockfish engine evaluations of top moves are provided. Base your recommendations on these evaluations - they are objectively correct. Explain the engine's top choice in human-friendly terms
 - NEVER USE ENGINE JARGON: Never say "centipawn", "centipawn loss", "cp", "eval", "engine evaluation", "Stockfish says", or quote numeric evaluations like "+1.2". These are internal data for YOUR understanding only. Instead describe move quality in human terms: "slight inaccuracy", "loses a small edge", "gives away your advantage", "serious mistake", "this throws the game away". The student should feel like they're learning from a grandmaster, not reading a computer printout
 - CONSISTENCY: Never contradict yourself in the same response (e.g. don't say "don't capture" then suggest a capture)
 
@@ -11959,7 +11959,7 @@ def _build_chat_user_prompt(
 {conv_text}
 Student's message: {user_message}
 
-Respond as Coach Tal. Be direct and helpful — give a clear opinion with a brief reason. Only suggest moves for the student's color. Max 4 sentences."""
+Respond as Coach Tal. Be direct and helpful - give a clear opinion with a brief reason. Only suggest moves for the student's color. Max 4 sentences."""
 
 
 @app.post("/api/v1/coach/chat", response_model=CoachChatResponse)

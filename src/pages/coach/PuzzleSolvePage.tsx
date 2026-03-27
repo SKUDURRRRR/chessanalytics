@@ -476,7 +476,7 @@ function BankPuzzleSolver({
             </div>
           </div>
 
-          {/* Right panel: tabbed (Info / Coach Tal) — offset to align with board top */}
+          {/* Right panel: tabbed (Info / Coach Tal) - offset to align with board top */}
           <div
             className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col mt-9"
             style={{ height: boardWidth > 0 ? boardWidth - 34 : undefined }}

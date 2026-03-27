@@ -1065,7 +1065,7 @@ export function UnifiedChessAnalysis({
                                   <MoveClassificationBadge classification={userMove.classification} />
                                 </button>
                               ) : (
-                                <span className="text-gray-600 text-xs">—</span>
+                                <span className="text-gray-600 text-xs">-</span>
                               )}
                             </td>
                             <td className="py-2 px-1">
@@ -1082,7 +1082,7 @@ export function UnifiedChessAnalysis({
                                   <MoveClassificationBadge classification={opponentMove.classification} />
                                 </button>
                               ) : (
-                                <span className="text-gray-600 text-xs">—</span>
+                                <span className="text-gray-600 text-xs">-</span>
                               )}
                             </td>
                           </tr>
@@ -1305,7 +1305,7 @@ export function UnifiedChessAnalysis({
                     }`}>
                       {currentMove ? currentMove.san :
                        isFreeExploration && explorationMoves.length > 0 ? explorationMoves[explorationMoves.length - 1] :
-                       '—'}
+                       '-'}
                     </div>
                     {/* Show evaluation badge for exploration mode */}
                     {isFreeExploration && explorationAnalysis && !explorationAnalysis.isAnalyzing && explorationMoves.length > 0 && (() => {
