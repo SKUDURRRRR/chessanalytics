@@ -26,11 +26,14 @@ export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = messagesContainerRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
   }, [])
 
   useEffect(() => {
@@ -112,7 +115,7 @@ export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
         {messages.length === 0 && !isLoading && (
           <div className="text-center py-8">
             <div className="mb-3 flex justify-center">
@@ -165,7 +168,7 @@ export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
           </div>
         )}
 
-        <div ref={messagesEndRef} />
+        {/* scroll anchor */}
       </div>
 
       {/* Suggestions */}

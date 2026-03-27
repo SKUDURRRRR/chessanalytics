@@ -101,7 +101,7 @@ class AIConfig(BaseSettings):
             if self.ai_provider == AIProvider.GEMINI.value:
                 self.ai_model = "gemini-2.0-flash-exp"
             elif self.ai_provider == AIProvider.ANTHROPIC.value:
-                self.ai_model = "claude-3-haiku-20240307"
+                self.ai_model = "claude-haiku-4-5-20251001"
 
         # Manual override: Check for AI_MODEL (without double prefix)
         direct_model = os.getenv("AI_MODEL")
@@ -1304,14 +1304,13 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections—begin directly 
         # List of models to try (in order of preference)
         # Known working models that should be available to all API keys
         known_working_models = [
-            "claude-3-haiku-20240307",     # Claude 3 Haiku (most reliable, fastest, cheapest)
-            "claude-3-sonnet-20240229",    # Claude 3 Sonnet (Feb 2024 - reliable fallback)
+            "claude-haiku-4-5-20251001",   # Claude 4.5 Haiku (fastest, cheapest)
+            "claude-sonnet-4-6-20250514",  # Claude 4.6 Sonnet (reliable fallback)
         ]
 
         # Models that may not be available to all API keys
         optional_models = [
-            "claude-3-5-sonnet",            # Claude 3.5 Sonnet (latest version - best quality)
-            "claude-3-5-sonnet-20240620",   # Claude 3.5 Sonnet (June 2024 - may not be available to all API keys)
+            "claude-opus-4-6-20250514",    # Claude 4.6 Opus (best quality)
         ]
 
         # Build model list: try configured model first if it's a known working one,

@@ -20,7 +20,6 @@ import { supabase } from '../../lib/supabase'
 import type { ProcessedMove } from '../../utils/moveProcessor'
 import { TalCoachIcon } from '../../components/ui/TalCoachIcon'
 import { ChatPositionContext, MoveAnalysisEntry } from '../../types'
-import { useCoachChat } from '../../contexts/CoachChatContext'
 import { useChessSound } from '../../hooks/useChessSound'
 import { useChessSoundSettings } from '../../contexts/ChessSoundContext'
 import { getMoveSoundSimple } from '../../utils/chessSounds'
@@ -110,7 +109,7 @@ function MoveCell({
       onClick={onNavigate}
       className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left transition-colors duration-150 gap-1 ${
         isActive
-          ? 'bg-sky-500/25 text-white ring-1 ring-sky-400/40'
+          ? 'bg-emerald-500/25 text-white ring-1 ring-emerald-400/40'
           : 'bg-white/5 text-gray-300 hover:bg-white/15 active:scale-95'
       }`}
     >
@@ -124,15 +123,15 @@ function MoveCell({
           </span>
         )}
         {isAnalyzing && (
-          <span className="text-sky-400 text-[10px] animate-pulse">...</span>
+          <span className="text-emerald-400 text-[10px] animate-pulse">...</span>
         )}
         {isUserMove && canRequestFeedback && !isAnalyzing && (
           <button
             onClick={(e) => { e.stopPropagation(); onRequestFeedback() }}
-            className="w-4 h-4 rounded-full bg-sky-500/20 shadow-card flex items-center justify-center hover:bg-sky-500/40 transition-colors"
+            className="w-4 h-4 rounded-full bg-emerald-500/20 shadow-card flex items-center justify-center hover:bg-emerald-500/40 transition-colors"
             title="Ask Coach Tal"
           >
-            <span className="text-[8px] text-sky-300 font-semibold">?</span>
+            <span className="text-[8px] text-emerald-300 font-semibold">?</span>
           </button>
         )}
       </span>
@@ -164,7 +163,6 @@ export default function PlayWithCoachPage() {
   const moveListRef = useRef<HTMLDivElement>(null)
 
   // Coach chat context
-  const { setPositionContext } = useCoachChat()
   const [localPositionContext, setLocalPositionContext] = useState<ChatPositionContext | null>(null)
 
   // Chess sound support
@@ -901,10 +899,8 @@ ${pgn} ${result}`
       positionalInsights: pm?.positionalInsights,
       learningPoints: pm?.learningPoints,
     }
-    setPositionContext(ctx)
     setLocalPositionContext(ctx)
-    return () => setPositionContext(null)
-  }, [gamePosition, moveHistory, playerColor, coachingComments, setPositionContext])
+  }, [gamePosition, moveHistory, playerColor, coachingComments])
 
   // Keyboard navigation for move browsing
   useEffect(() => {
@@ -999,9 +995,9 @@ ${pgn} ${result}`
               ← Coach
             </button>
             <span className="text-gray-600">|</span>
-            <h1 className="text-lg font-semibold text-white">Play with Coach Tal</h1>
+            <h1 className="text-section font-semibold text-white">Play with Coach Tal</h1>
             {error && (
-              <span className="ml-auto text-red-400 text-xs">{error}</span>
+              <span className="ml-auto text-rose-400 text-xs">{error}</span>
             )}
           </div>
 
@@ -1028,7 +1024,7 @@ ${pgn} ${result}`
                       max="20"
                       value={skillLevel}
                       onChange={(e) => setSkillLevel(Number(e.target.value))}
-                      className="w-20 h-1 accent-sky-400 cursor-pointer"
+                      className="w-20 h-1 accent-emerald-400 cursor-pointer"
                     />
                     <span className="text-xs text-white font-medium w-5 text-right">{skillLevel}</span>
                   </div>
@@ -1063,7 +1059,7 @@ ${pgn} ${result}`
                 {isViewingHistory && (
                   <button
                     onClick={() => setViewIndex(null)}
-                    className="ml-auto text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                    className="ml-auto text-xs text-cta hover:text-cta-hover transition-colors"
                   >
                     ← Live
                   </button>

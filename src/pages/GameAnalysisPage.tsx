@@ -30,7 +30,6 @@ import {
 } from '../utils/moveProcessor'
 import type { MatchHistoryGameSummary, Platform, ChatPositionContext } from '../types'
 import LoadingModal from '../components/LoadingModal'
-import { useCoachChat } from '../contexts/CoachChatContext'
 import LimitReachedModal from '../components/LimitReachedModal'
 
 // ProcessedMove, MoveClassification, EvaluationInfo imported from '../utils/moveProcessor'
@@ -139,7 +138,6 @@ export default function GameAnalysisPage() {
   const [isFreeExploration, setIsFreeExploration] = useState(false) // New: track free exploration mode
   const [showLimitModal, setShowLimitModal] = useState(false)
   const [limitType, setLimitType] = useState<'import' | 'analyze'>('analyze')
-  const { setPositionContext } = useCoachChat()
   const [localPositionContext, setLocalPositionContext] = useState<ChatPositionContext | null>(null)
 
   const parseNumericValue = (value: unknown): number | null => {
@@ -893,9 +891,7 @@ export default function GameAnalysisPage() {
 
   const currentMove = currentIndex > 0 ? processedData.moves[currentIndex - 1] : null
 
-  // Publish position context to floating chat widget
-  // In analysis mode, use the pre-move FEN so the coach can discuss the decision
-  // point (what move should have been played), not the resulting position
+  // Build position context for inline coach chat
   useEffect(() => {
     const analysisfen = currentMove?.fenBefore
       || processedData.positions[currentIndex]
@@ -917,10 +913,8 @@ export default function GameAnalysisPage() {
       positionalInsights: currentMove?.positionalInsights,
       learningPoints: currentMove?.learningPoints,
     }
-    setPositionContext(ctx)
     setLocalPositionContext(ctx)
-    return () => setPositionContext(null)
-  }, [currentIndex, processedData, playerColor, currentMove, setPositionContext])
+  }, [currentIndex, processedData, playerColor, currentMove])
 
   const evaluationContainerRef = useRef<HTMLDivElement | null>(null)
 
@@ -1359,10 +1353,10 @@ export default function GameAnalysisPage() {
                 className={`
                   rounded-full border px-4 py-1.5 font-medium transition
                   ${isReanalyzing
-                    ? 'border-purple-400/30 bg-purple-500/10 text-purple-300 cursor-wait'
+                    ? 'border-rose-400/30 bg-rose-500/10 text-rose-300 cursor-wait'
                     : reanalyzeSuccess
                     ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
-                    : 'border-purple-400/30 bg-purple-500/10 text-purple-300 hover:border-purple-400/50 hover:bg-purple-500/20'
+                    : 'border-rose-400/30 bg-rose-500/10 text-rose-300 hover:border-rose-400/50 hover:bg-rose-500/20'
                   }
                   ${!pgn ? 'opacity-50 cursor-not-allowed' : ''}
                 `}
@@ -1428,7 +1422,7 @@ export default function GameAnalysisPage() {
 
         <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr,1fr]">
           <div className="rounded-lg bg-surface-1 p-4 shadow-card">
-            <h1 className="text-2xl font-semibold text-white">Game Overview</h1>
+            <h1 className="text-title font-semibold text-white">Game Overview</h1>
             <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-2 text-body text-gray-300">
               <div className="min-w-0">
                 <span className="font-medium whitespace-nowrap">Result: </span>
@@ -1493,7 +1487,7 @@ export default function GameAnalysisPage() {
                {performanceRating && (
                  <div className="min-w-0 col-span-2">
                    <span className="font-medium whitespace-nowrap">Performance Rating: </span>
-                   <span className="text-yellow-300 font-semibold">
+                   <span className="text-amber-300 font-semibold">
                      {performanceRating.rating}
                    </span>
                  </div>
@@ -1501,7 +1495,7 @@ export default function GameAnalysisPage() {
             </div>
           </div>
           <div className="rounded-lg bg-surface-1 p-4 shadow-card">
-            <h2 className="text-lg font-semibold text-white">Quick Stats</h2>
+            <h2 className="text-section font-semibold text-white">Quick Stats</h2>
             <p className="mt-0.5 text-xs text-gray-400">Your performance highlights from Stockfish analysis.</p>
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
               {summaryCards.map(card => (

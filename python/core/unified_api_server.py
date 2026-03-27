@@ -1618,49 +1618,47 @@ async def get_analysis_stats(
         total_count = 0  # Total count of all analyzed games
 
         if db_client:
-            # First, get the total count from the database
-            # Try move_analyses first (where new analyses are saved)
-            count_response = await asyncio.to_thread(
-                lambda: db_client.table('move_analyses').select('*', count='exact', head=True).eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).execute()
+            # PERFORMANCE: Fetch count and data in parallel, use 'id' for counts (not SELECT *)
+            count_response, response = await asyncio.gather(
+                asyncio.to_thread(
+                    lambda: db_client.table('move_analyses').select('id', count='exact', head=True).eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).execute()
+                ),
+                asyncio.to_thread(
+                    lambda: db_client.table('move_analyses').select('*').eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+                )
             )
             total_count = getattr(count_response, 'count', 0) or 0
 
-            # Fallback to unified_analyses if no data in move_analyses
-            if total_count == 0:
-                count_response = await asyncio.to_thread(
-                    lambda: db_client.table('unified_analyses').select('*', count='exact', head=True).eq(
-                        'user_id', canonical_user_id
-                    ).eq('platform', platform).execute()
-                )
-                total_count = getattr(count_response, 'count', 0) or 0
-
-            if DEBUG:
-                print(f"[DEBUG] Total analyzed games count: {total_count}")
-
-            # Now fetch the sample of 100 analyses for calculating averages
-            # Try move_analyses first (where new analyses are saved)
-            response = await asyncio.to_thread(
-                lambda: db_client.table('move_analyses').select('*').eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
-            )
-
-            # Track that data came from move_analyses if we have data
             if response.data and len(response.data) > 0:
                 data_source = 'move_analyses'
 
             # Fallback to unified_analyses if no data in move_analyses
-            if not response.data or len(response.data) == 0:
-                response = await asyncio.to_thread(
-                    lambda: db_client.table('unified_analyses').select('*').eq(
-                        'user_id', canonical_user_id
-                    ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+            if total_count == 0 or not response.data or len(response.data) == 0:
+                fallback_count, fallback_response = await asyncio.gather(
+                    asyncio.to_thread(
+                        lambda: db_client.table('unified_analyses').select('id', count='exact', head=True).eq(
+                            'user_id', canonical_user_id
+                        ).eq('platform', platform).execute()
+                    ),
+                    asyncio.to_thread(
+                        lambda: db_client.table('unified_analyses').select('*').eq(
+                            'user_id', canonical_user_id
+                        ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+                    )
                 )
-                # Track that data came from unified_analyses
-                if response.data and len(response.data) > 0:
-                    data_source = 'unified_analyses'
+                if total_count == 0:
+                    total_count = getattr(fallback_count, 'count', 0) or 0
+                if not response.data or len(response.data) == 0:
+                    response = fallback_response
+                    if response.data and len(response.data) > 0:
+                        data_source = 'unified_analyses'
+
+            if DEBUG:
+                print(f"[DEBUG] Total analyzed games count: {total_count}")
 
             if os.getenv("DEBUG", "false").lower() == "true":
                 print(f"[DEBUG] Stats query: {len(response.data or [])} records (limited to 100 for performance)")
@@ -1721,9 +1719,11 @@ async def get_game_analyses(
             return []
 
         # Query move_analyses first (where new analyses are saved), then fall back to unified_analyses
+        # PERFORMANCE: Select only fields needed by frontend (skip heavy moves_analysis for list view)
         db_client = supabase_service or supabase
+        select_fields = "game_id,user_id,platform,provider_game_id,analysis_date,analysis_type,accuracy,best_move_percentage,opening_accuracy,middle_game_accuracy,endgame_accuracy,blunders,mistakes,inaccuracies,brilliant_moves,best_moves,good_moves,great_moves,excellent_moves,acceptable_moves,total_moves"
         response = await asyncio.to_thread(
-            lambda: db_client.table("move_analyses").select("*").eq(
+            lambda: db_client.table("move_analyses").select(select_fields).eq(
                 "user_id", canonical_user_id
             ).eq("platform", platform).order("analysis_date", desc=True).range(
                 offset, offset + limit - 1
@@ -1733,7 +1733,7 @@ async def get_game_analyses(
         # Fallback to unified_analyses if no data in move_analyses
         if not response.data or len(response.data) == 0:
             response = await asyncio.to_thread(
-                lambda: db_client.table("unified_analyses").select("*").eq(
+                lambda: db_client.table("unified_analyses").select(select_fields).eq(
                     "user_id", canonical_user_id
                 ).eq("platform", platform).order("analysis_date", desc=True).range(
                     offset, offset + limit - 1
@@ -3517,200 +3517,119 @@ async def get_deep_analysis(
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured for deep analysis")
 
-        # PERFORMANCE: Reduced from 500 to 100 games (5x faster)
-        # Recent games are more relevant for personality analysis
-        # IMPORTANT: Also fetch 'id' field for proper game-analysis matching
-        games_response = await asyncio.to_thread(
-            lambda: db_client.table('games').select(
-                'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
-            ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-                'my_rating', 'null'
-            ).order('played_at', desc=True).limit(100).execute()
+        # PERFORMANCE: Fetch all independent data in parallel
+        # 1. Recent 100 games for personality analysis
+        # 2. Repertoire stats via SQL aggregation (replaces fetching ALL games)
+        # 3. Analyzed games count
+        # 4. User profile
+        # 5. Analysis data (unified_analyses first)
+        parallel_results = await asyncio.gather(
+            # 1. Recent games
+            asyncio.to_thread(
+                lambda: db_client.table('games').select(
+                    'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
+                ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+                    'my_rating', 'null'
+                ).order('played_at', desc=True).limit(100).execute()
+            ),
+            # 2. Repertoire via SQL aggregate
+            asyncio.to_thread(lambda: db_client.rpc('get_player_opening_color_stats', {
+                'p_user_id': canonical_user_id, 'p_platform': platform
+            }).execute()),
+            # 3. Analyzed games count
+            asyncio.to_thread(lambda: db_client.table('game_analyses').select('id', count='exact', head=True)
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .execute()),
+            # 4. Profile
+            asyncio.to_thread(
+                lambda: db_client.table('user_profiles').select('current_rating').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).limit(1).execute()
+            ),
+            # 5. Analyses (try unified_analyses first)
+            asyncio.to_thread(
+                lambda: db_client.table('unified_analyses').select('*').eq(
+                    'user_id', canonical_user_id
+                ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+            ),
+            return_exceptions=True
         )
-        games = games_response.data or []
 
-        # Fetch ALL games for accurate repertoire analysis (win rates, needs_work, etc.)
-        # This ensures repertoire stats match the opening performance stats shown elsewhere
-        all_games_for_repertoire = []
-        page_size = 1000
-        offset = 0
-        while True:
-            try:
-                all_games_response = await asyncio.to_thread(
-                    lambda start=offset, size=page_size: db_client.table('games').select(
-                        'id, provider_game_id, result, opening, opening_family, opening_normalized, time_control, my_rating, played_at, color'
-                    ).eq('user_id', canonical_user_id)
-                    .eq('platform', platform)
-                    .not_.is_('color', 'null')
-                    .order('played_at', desc=True)
-                    .range(start, start + size - 1)
-                    .execute()
-                )
-                batch = all_games_response.data or []
-                if not batch:
-                    break
-                all_games_for_repertoire.extend(batch)
-                if len(batch) < page_size:
-                    break
-                offset += page_size
-            except Exception as e:
-                if DEBUG:
-                    print(f"[WARN] Error fetching all games for repertoire at offset {offset}: {e}")
-                break
+        games_resp, repertoire_resp, analyzed_count_resp, profile_resp, analyses_resp = parallel_results
 
-        if DEBUG:
-            print(f"[DEBUG] Fetched {len(games)} games for personality analysis, {len(all_games_for_repertoire)} games for repertoire analysis")
+        # 1. Games
+        games = games_resp.data or [] if not isinstance(games_resp, Exception) else []
 
-        # Get count of analyzed games (games with analysis records) from database
+        # 2. Repertoire
+        all_games_for_repertoire = games  # fallback
+        if not isinstance(repertoire_resp, Exception) and repertoire_resp.data:
+            repertoire_rows = repertoire_resp.data if isinstance(repertoire_resp.data, list) else []
+            synthetic_games = []
+            for row in repertoire_rows:
+                opening = row.get('opening', 'Unknown')
+                color = row.get('color', 'white')
+                for _ in range(row.get('wins', 0)):
+                    synthetic_games.append({'opening_normalized': opening, 'opening': opening, 'color': color, 'result': 'win', 'my_rating': row.get('averageElo')})
+                for _ in range(row.get('draws', 0)):
+                    synthetic_games.append({'opening_normalized': opening, 'opening': opening, 'color': color, 'result': 'draw', 'my_rating': row.get('averageElo')})
+                for _ in range(row.get('losses', 0)):
+                    synthetic_games.append({'opening_normalized': opening, 'opening': opening, 'color': color, 'result': 'loss', 'my_rating': row.get('averageElo')})
+            if synthetic_games:
+                all_games_for_repertoire = synthetic_games
+
+        # 3. Analyzed count
         analyzed_games_count = 0
-        try:
-            # Count unique game_ids from move_analyses table
-            move_analyses_count_response = await asyncio.to_thread(
-                lambda: db_client.table('move_analyses').select('game_id', count='exact', head=True)
-                    .eq('user_id', canonical_user_id)
-                    .eq('platform', platform)
-                    .execute()
-            )
-            move_analyses_count = getattr(move_analyses_count_response, 'count', 0) or 0
+        if not isinstance(analyzed_count_resp, Exception):
+            analyzed_games_count = getattr(analyzed_count_resp, 'count', 0) or 0
 
-            # Count unique game_ids from game_analyses table
-            game_analyses_count_response = await asyncio.to_thread(
-                lambda: db_client.table('game_analyses').select('game_id', count='exact', head=True)
-                    .eq('user_id', canonical_user_id)
-                    .eq('platform', platform)
-                    .execute()
-            )
-            game_analyses_count = getattr(game_analyses_count_response, 'count', 0) or 0
-
-            # Get unique game_ids from both tables to avoid double-counting
-            # Fetch distinct game_ids from move_analyses
-            move_analyses_games = await asyncio.to_thread(
-                lambda: db_client.table('move_analyses').select('game_id')
-                    .eq('user_id', canonical_user_id)
-                    .eq('platform', platform)
-                    .execute()
-            )
-            analyzed_game_ids = set()
-            if move_analyses_games.data:
-                analyzed_game_ids.update(row.get('game_id') for row in move_analyses_games.data if row.get('game_id'))
-
-            # Fetch distinct game_ids from game_analyses
-            game_analyses_games = await asyncio.to_thread(
-                lambda: db_client.table('game_analyses').select('game_id')
-                    .eq('user_id', canonical_user_id)
-                    .eq('platform', platform)
-                    .execute()
-            )
-            if game_analyses_games.data:
-                analyzed_game_ids.update(row.get('game_id') for row in game_analyses_games.data if row.get('game_id'))
-
-            analyzed_games_count = len(analyzed_game_ids)
-            if DEBUG:
-                print(f"[DEBUG] Analyzed games count: {analyzed_games_count} (from {move_analyses_count} move_analyses + {game_analyses_count} game_analyses records)")
-        except Exception as e:
-            if DEBUG:
-                print(f"[WARN] Could not get analyzed games count: {e}")
-            # Fallback: will be set after analyses are fetched
-            analyzed_games_count = None
-
-        # Fetch user profile - handle Postgrest 204 errors gracefully
+        # 4. Profile
         profile = {}
-        try:
-            profile_response = db_client.table('user_profiles').select('current_rating').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).limit(1).execute()
-            if profile_response.data and len(profile_response.data) > 0:
-                profile = profile_response.data[0] or {}
-            else:
-                profile = {}
-        except Exception as profile_error:
-            # Profile might not exist for new users
-            print(f"Profile not found for user {canonical_user_id}: {profile_error}")
-            profile = {}
+        if not isinstance(profile_resp, Exception) and profile_resp.data and len(profile_resp.data) > 0:
+            profile = profile_resp.data[0] or {}
 
-        # PERFORMANCE: Try unified_analyses first, fallback to move_analyses
-        # unified_analyses combines both tables but may have structure differences
+        # 5. Analyses - check unified_analyses result, fallback if needed
         analyses = []
-
-        try:
-            analyses_response = db_client.table('unified_analyses').select('*').eq(
-                'user_id', canonical_user_id
-            ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
-            analyses = analyses_response.data or []
-            if DEBUG:
-                print(f"[DEBUG] unified_analyses query found {len(analyses)} records")
-
-            # Check if analyses have moves_analysis field
+        if not isinstance(analyses_resp, Exception):
+            analyses = analyses_resp.data or []
             if analyses and not any(a.get('moves_analysis') for a in analyses):
-                if DEBUG:
-                    print(f"[DEBUG] unified_analyses records don't have moves_analysis field, trying move_analyses table")
                 analyses = []
-        except Exception as e:
-            if DEBUG:
-                print(f"[DEBUG] unified_analyses query failed: {e}")
-            analyses = []
 
         # Fallback to move_analyses if unified doesn't work
         if not analyses:
             try:
-                analyses_response = db_client.table('move_analyses').select('*').eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+                analyses_response = await asyncio.to_thread(
+                    lambda: db_client.table('move_analyses').select('*').eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
+                )
                 analyses = analyses_response.data or []
-                if DEBUG:
-                    print(f"[DEBUG] move_analyses query found {len(analyses)} records")
-            except Exception as e:
-                if DEBUG:
-                    print(f"[DEBUG] move_analyses query failed: {e}")
+            except Exception:
                 analyses = []
 
-        # Final fallback to game_analyses (different structure, needs transformation)
+        # Final fallback to game_analyses
         if not analyses:
             try:
-                analyses_response = db_client.table('game_analyses').select('*').eq(
-                    'user_id', canonical_user_id
-                ).eq('platform', platform).order('created_at', desc=True).limit(100).execute()
+                analyses_response = await asyncio.to_thread(
+                    lambda: db_client.table('game_analyses').select('*').eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).order('created_at', desc=True).limit(100).execute()
+                )
                 game_analyses = analyses_response.data or []
-                if DEBUG:
-                    print(f"[DEBUG] game_analyses query found {len(game_analyses)} records")
-
-                # Transform game_analyses format to match expected structure
-                analyses = []
-                for ga in game_analyses:
-                    analyses.append({
-                        'game_id': ga.get('game_id'),
-                        'user_id': ga.get('user_id'),
-                        'platform': ga.get('platform'),
-                        'moves_analysis': ga.get('moves_analysis', []),
-                        'analysis_date': ga.get('created_at'),
-                        'best_move_percentage': ga.get('accuracy'),
-                        'accuracy': ga.get('accuracy')
-                    })
-            except Exception as e:
-                if DEBUG:
-                    print(f"[DEBUG] game_analyses query failed: {e}")
+                analyses = [{
+                    'game_id': ga.get('game_id'),
+                    'user_id': ga.get('user_id'),
+                    'platform': ga.get('platform'),
+                    'moves_analysis': ga.get('moves_analysis', []),
+                    'analysis_date': ga.get('created_at'),
+                    'best_move_percentage': ga.get('accuracy'),
+                    'accuracy': ga.get('accuracy')
+                } for ga in game_analyses]
+            except Exception:
                 analyses = []
 
         if DEBUG:
-            print(f"[DEBUG] Final analyses count: {len(analyses)} for {canonical_user_id}")
-            if analyses and len(analyses) > 0:
-                # Check if first analysis has moves_analysis
-                first_analysis = analyses[0]
-                has_moves = 'moves_analysis' in first_analysis and first_analysis['moves_analysis']
-                print(f"[DEBUG] First analysis has moves_analysis: {has_moves}")
-                if has_moves:
-                    print(f"[DEBUG] Number of moves in first analysis: {len(first_analysis['moves_analysis'])}")
-                else:
-                    print(f"[DEBUG] First analysis keys: {list(first_analysis.keys())}")
-
-        # If analyzed_games_count wasn't set (query failed), calculate from analyses list
-        if analyzed_games_count is None:
-            if analyses:
-                analyzed_games_count = len({analysis.get('game_id') for analysis in analyses if analysis.get('game_id')})
-                if DEBUG:
-                    print(f"[DEBUG] Fallback: calculated analyzed games count from analyses list: {analyzed_games_count}")
-            else:
-                analyzed_games_count = 0
+            print(f"[DEBUG] Deep analysis: {len(games)} games, {len(all_games_for_repertoire)} repertoire records, {analyzed_games_count} analyzed, {len(analyses)} analyses")
 
         if not analyses:
             print(f"[INFO] No analyses found for {canonical_user_id} - returning fallback data")
@@ -11748,6 +11667,7 @@ CRITICAL RULES:
 - PERSPECTIVE: The student's color is given in the position context. Only suggest moves for THEIR color. Use correct notation from their perspective (e.g. if student is White and can capture on d5, say "exd5", not "dxe4" which would be Black's move)
 - LEGAL MOVES: A list of legal moves is provided in the position context. ONLY suggest or reference moves from that list. If a move is not in the list, it is illegal — do not suggest it
 - ENGINE GUIDANCE: Stockfish engine evaluations of top moves are provided. Base your recommendations on these evaluations — they are objectively correct. Explain the engine's top choice in human-friendly terms
+- NEVER USE ENGINE JARGON: Never say "centipawn", "centipawn loss", "cp", "eval", "engine evaluation", "Stockfish says", or quote numeric evaluations like "+1.2". These are internal data for YOUR understanding only. Instead describe move quality in human terms: "slight inaccuracy", "loses a small edge", "gives away your advantage", "serious mistake", "this throws the game away". The student should feel like they're learning from a grandmaster, not reading a computer printout
 - CONSISTENCY: Never contradict yourself in the same response (e.g. don't say "don't capture" then suggest a capture)
 
 RESPONSE FORMAT:
