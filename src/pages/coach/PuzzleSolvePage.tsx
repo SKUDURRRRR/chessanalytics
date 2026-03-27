@@ -10,8 +10,10 @@ import { Chessboard } from 'react-chessboard'
 import { Chess, Square } from 'chess.js'
 import { CoachingService } from '../../services/coachingService'
 import { useAuth } from '../../contexts/AuthContext'
-import { useCoachChat } from '../../contexts/CoachChatContext'
+import { InlineCoachChat } from '../../components/coach/InlineCoachChat'
+import { ModernChessArrows } from '../../components/chess/ModernChessArrows'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
+import type { ModernArrow } from '../../utils/chessArrows'
 import type {
   BankPuzzle,
   PuzzleMoveResult,
@@ -74,7 +76,6 @@ function PuzzleSolveContent() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { setPositionContext } = useCoachChat()
   const state = location.state as LocationState
 
   const isBankMode = state && 'mode' in state && state.mode === 'bank'
@@ -87,7 +88,6 @@ function PuzzleSolveContent() {
         dailyChallengeId={(state as BankPuzzleState).dailyChallengeId}
         authUserId={user?.id || ''}
         navigate={navigate}
-        setPositionContext={setPositionContext}
       />
     )
   }
@@ -98,7 +98,6 @@ function PuzzleSolveContent() {
       state={state as LegacyPuzzleState}
       userId={user?.id || ''}
       navigate={navigate}
-      setPositionContext={setPositionContext}
     />
   )
 }
@@ -113,14 +112,12 @@ function BankPuzzleSolver({
   dailyChallengeId,
   authUserId,
   navigate,
-  setPositionContext,
 }: {
   initialPuzzle?: BankPuzzle
   theme?: string
   dailyChallengeId?: string
   authUserId: string
   navigate: ReturnType<typeof useNavigate>
-  setPositionContext: (ctx: ChatPositionContext | null) => void
 }) {
   const [puzzle, setPuzzle] = useState<BankPuzzle | null>(initialPuzzle || null)
   const [status, setStatus] = useState<PuzzleStatus>(initialPuzzle ? 'setup' : 'loading')
@@ -134,8 +131,34 @@ function BankPuzzleSolver({
   const [correctMoveArrow, setCorrectMoveArrow] = useState<[string, string][] | null>(null)
   const [timerSeconds, setTimerSeconds] = useState(0)
   const [totalMoves, setTotalMoves] = useState(0)
+  const [boardWidth, setBoardWidth] = useState(500)
   const startTimeRef = useRef(Date.now())
   const boardOrientationRef = useRef<'white' | 'black'>('white')
+  const boardContainerRef = useRef<HTMLDivElement>(null)
+
+  // Measure board width
+  useEffect(() => {
+    function update() {
+      if (!boardContainerRef.current) return
+      const w = boardContainerRef.current.clientWidth
+      if (w > 0) setBoardWidth(w)
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  // Build ModernArrow from correct move arrow data
+  const modernArrows = useMemo<ModernArrow[]>(() => {
+    if (!correctMoveArrow) return []
+    return correctMoveArrow.map(([from, to]) => ({
+      from: from as Square,
+      to: to as Square,
+      color: '#ef4444',
+      classification: 'blunder',
+      isBestMove: false,
+    }))
+  }, [correctMoveArrow])
 
   // Timer
   useEffect(() => {
@@ -199,19 +222,21 @@ function BankPuzzleSolver({
     return () => clearTimeout(timer)
   }, [status, puzzle])
 
-  // Publish position context to coach chat
+  // Build position context for inline coach chat
+  const [localPositionContext, setLocalPositionContext] = useState<ChatPositionContext | null>(null)
   useEffect(() => {
-    if (!puzzle || !currentFen) return
-    const ctx: ChatPositionContext = {
+    if (!puzzle || !currentFen) {
+      setLocalPositionContext(null)
+      return
+    }
+    setLocalPositionContext({
       fen: currentFen,
       moveHistory: movesMade,
       contextType: 'puzzle',
       puzzleTheme: puzzle.themes[0],
       puzzleCategory: 'tactical',
-    }
-    setPositionContext(ctx)
-    return () => setPositionContext(null)
-  }, [currentFen, puzzle, movesMade, setPositionContext])
+    })
+  }, [currentFen, puzzle, movesMade])
 
   // Handle user's piece drop
   const onDrop = useCallback(
@@ -362,7 +387,7 @@ function BankPuzzleSolver({
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full mx-auto mb-4" />
+          <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full mx-auto mb-4" />
           <p className="text-gray-500">Loading puzzle...</p>
         </div>
       </div>
@@ -377,7 +402,7 @@ function BankPuzzleSolver({
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-semibold text-white">
+            <h1 className="text-title font-semibold text-white">
               Puzzle
               {puzzle.rating && (
                 <span className="ml-2 text-sm font-normal text-amber-400">
@@ -412,7 +437,7 @@ function BankPuzzleSolver({
                 </p>
               )}
               {status === 'checking' && (
-                <p className="text-cyan-400 text-sm animate-pulse">Checking...</p>
+                <p className="text-emerald-400 text-sm animate-pulse">Checking...</p>
               )}
               {status === 'opponent_moving' && (
                 <p className="text-gray-500 text-sm animate-pulse">Opponent responds...</p>
@@ -421,23 +446,33 @@ function BankPuzzleSolver({
                 <p className="text-emerald-400 font-semibold text-lg">Correct!</p>
               )}
               {status === 'failed' && (
-                <p className="text-red-400 font-semibold text-lg">Incorrect</p>
+                <p className="text-rose-400 font-semibold text-section">Incorrect</p>
               )}
             </div>
 
-            <Chessboard
-              position={currentFen}
-              onPieceDrop={onDrop}
-              boardOrientation={boardOrientationRef.current}
-              {...getDarkChessBoardTheme('default')}
-              arePiecesDraggable={status === 'awaiting_move'}
-              customArrows={correctMoveArrow?.map(([from, to]) => [from as Square, to as Square, 'rgb(239, 68, 68)']) || []}
-              customSquareStyles={
-                hintSquare
-                  ? { [hintSquare]: { backgroundColor: 'rgba(34, 211, 238, 0.4)' } }
-                  : {}
-              }
-            />
+            <div ref={boardContainerRef} className="relative">
+              <Chessboard
+                id="puzzle-board"
+                position={currentFen}
+                onPieceDrop={onDrop}
+                boardOrientation={boardOrientationRef.current}
+                {...getDarkChessBoardTheme('default')}
+                arePiecesDraggable={status === 'awaiting_move'}
+                customSquareStyles={
+                  hintSquare
+                    ? { [hintSquare]: { backgroundColor: 'rgba(34, 211, 238, 0.4)' } }
+                    : {}
+                }
+              />
+              {modernArrows.length > 0 && (
+                <ModernChessArrows
+                  arrows={modernArrows}
+                  boardWidth={boardWidth}
+                  boardOrientation={boardOrientationRef.current}
+                  boardId="puzzle-board"
+                />
+              )}
+            </div>
           </div>
 
           {/* Info Panel */}
@@ -453,7 +488,7 @@ function BankPuzzleSolver({
                       i < moveIndex + (status === 'solved' ? 1 : 0)
                         ? 'bg-emerald-500 text-white'
                         : i === moveIndex && status === 'awaiting_move'
-                          ? 'bg-cyan-500/30 shadow-card text-cyan-300'
+                          ? 'bg-emerald-500/30 shadow-card text-emerald-300'
                           : 'bg-white/10 text-gray-500'
                     }`}
                   >
@@ -488,8 +523,8 @@ function BankPuzzleSolver({
 
             {/* Recommendation reason */}
             {puzzle.recommendation_reason && (
-              <div className="rounded-lg shadow-card bg-purple-500/5 px-4 py-2.5">
-                <p className="text-purple-300 text-xs">
+              <div className="rounded-lg shadow-card bg-white/[0.04] px-4 py-2.5">
+                <p className="text-gray-300 text-xs">
                   <span className="font-medium">Based on your games:</span>{' '}
                   {puzzle.recommendation_reason}
                 </p>
@@ -520,17 +555,17 @@ function BankPuzzleSolver({
                 className={`rounded-lg shadow-card p-5 ${
                   status === 'solved'
                     ? 'bg-emerald-500/10'
-                    : 'bg-red-500/10'
+                    : 'bg-rose-500/10'
                 }`}
               >
                 {/* Rating change */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-gray-400 text-sm">Rating</span>
                   <span
-                    className={`text-lg font-semibold ${
+                    className={`text-section font-semibold ${
                       completionResult.rating_change >= 0
                         ? 'text-emerald-400'
-                        : 'text-red-400'
+                        : 'text-rose-400'
                     }`}
                   >
                     {completionResult.rating_change >= 0 ? '+' : ''}
@@ -543,12 +578,12 @@ function BankPuzzleSolver({
                 </div>
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-gray-400 text-sm">XP Earned</span>
-                  <span className="text-purple-400 font-semibold">+{completionResult.xp_earned}</span>
+                  <span className="text-rose-400 font-semibold">+{completionResult.xp_earned}</span>
                 </div>
                 {completionResult.level_up && (
-                  <div className="bg-purple-500/20 shadow-card rounded-lg p-3 mb-3 text-center">
-                    <p className="text-purple-300 font-semibold">Level Up!</p>
-                    <p className="text-purple-200 text-sm">Level {completionResult.level}</p>
+                  <div className="bg-rose-500/20 shadow-card rounded-lg p-3 mb-3 text-center">
+                    <p className="text-rose-300 font-semibold">Level Up!</p>
+                    <p className="text-rose-200 text-sm">Level {completionResult.level}</p>
                   </div>
                 )}
                 {completionResult.daily_challenge_progress && (
@@ -557,7 +592,7 @@ function BankPuzzleSolver({
                   </div>
                 )}
                 {completionResult.streak > 0 && (
-                  <div className="text-orange-400 text-xs mt-1">
+                  <div className="text-amber-400 text-xs mt-1">
                     &#x1F525; {completionResult.streak} day streak
                   </div>
                 )}
@@ -569,7 +604,7 @@ function BankPuzzleSolver({
               <div className="flex flex-col gap-2">
                 <button
                   onClick={loadNextPuzzle}
-                  className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors"
+                  className="w-full bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2.5 px-4 rounded-md text-body transition-colors shadow-btn-primary"
                 >
                   Next Puzzle
                 </button>
@@ -581,6 +616,14 @@ function BankPuzzleSolver({
                 </button>
               </div>
             )}
+
+            {/* Inline Coach Chat */}
+            <div
+              className="rounded-lg overflow-hidden"
+              style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)', background: '#0c0d0f', minHeight: 280 }}
+            >
+              <InlineCoachChat positionContext={localPositionContext} />
+            </div>
           </div>
         </div>
       </div>
@@ -596,12 +639,10 @@ function LegacyPuzzleSolver({
   state,
   userId,
   navigate,
-  setPositionContext,
 }: {
   state: LegacyPuzzleState | null
   userId: string
   navigate: ReturnType<typeof useNavigate>
-  setPositionContext: (ctx: ChatPositionContext | null) => void
 }) {
   const puzzles = useMemo(() => {
     if (state?.puzzle) return [state.puzzle]
@@ -616,18 +657,20 @@ function LegacyPuzzleSolver({
 
   const currentPuzzle = puzzles[currentIndex]
 
+  const [localPositionContext, setLocalPositionContext] = useState<ChatPositionContext | null>(null)
   useEffect(() => {
-    if (!currentPuzzle) return
-    const ctx: ChatPositionContext = {
+    if (!currentPuzzle) {
+      setLocalPositionContext(null)
+      return
+    }
+    setLocalPositionContext({
       fen: currentPuzzle.fen_position,
       moveHistory: [],
       contextType: 'puzzle',
       puzzleTheme: currentPuzzle.tactical_theme,
       puzzleCategory: currentPuzzle.puzzle_category,
-    }
-    setPositionContext(ctx)
-    return () => setPositionContext(null)
-  }, [currentPuzzle, setPositionContext])
+    })
+  }, [currentPuzzle])
 
   if (!currentPuzzle) {
     return (
@@ -636,7 +679,7 @@ function LegacyPuzzleSolver({
           <p className="text-gray-500 mb-4">No puzzle data available.</p>
           <button
             onClick={() => navigate('/coach/puzzles')}
-            className="px-6 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-lg transition-colors"
+            className="px-6 py-3 bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium rounded-md text-body transition-colors shadow-btn-primary"
           >
             Back to Puzzles
           </button>
@@ -712,7 +755,7 @@ function LegacyPuzzleSolver({
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-3xl font-semibold text-white">
+            <h1 className="text-title font-semibold text-white">
               {state?.category ? `${state.category} Puzzles` : 'Puzzle'}
             </h1>
             {puzzles.length > 1 && (
@@ -745,7 +788,7 @@ function LegacyPuzzleSolver({
 
           <div className="space-y-4">
             <div className="rounded-lg shadow-card bg-surface-1 p-6">
-              <h2 className="text-lg font-semibold text-white mb-3">Puzzle Info</h2>
+              <h2 className="text-section font-semibold text-white mb-3">Puzzle Info</h2>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Difficulty</span>
@@ -773,12 +816,12 @@ function LegacyPuzzleSolver({
                 className={`rounded-lg shadow-card p-6 ${
                   result === 'correct'
                     ? 'bg-emerald-500/10'
-                    : 'bg-red-500/10'
+                    : 'bg-rose-500/10'
                 }`}
               >
                 <h3
-                  className={`text-xl font-semibold mb-2 ${
-                    result === 'correct' ? 'text-emerald-400' : 'text-red-400'
+                  className={`text-title font-semibold mb-2 ${
+                    result === 'correct' ? 'text-emerald-400' : 'text-rose-400'
                   }`}
                 >
                   {result === 'correct' ? 'Correct!' : 'Incorrect'}
@@ -807,13 +850,21 @@ function LegacyPuzzleSolver({
                   )}
                   <button
                     onClick={nextPuzzle}
-                    className="flex-1 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-lg transition-colors"
+                    className="flex-1 px-4 py-2 bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium rounded-md text-body transition-colors shadow-btn-primary"
                   >
                     {currentIndex < puzzles.length - 1 ? 'Next Puzzle' : 'Done'}
                   </button>
                 </div>
               </div>
             )}
+
+            {/* Inline Coach Chat */}
+            <div
+              className="rounded-lg overflow-hidden"
+              style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)', background: '#0c0d0f', minHeight: 280 }}
+            >
+              <InlineCoachChat positionContext={localPositionContext} />
+            </div>
           </div>
         </div>
       </div>
