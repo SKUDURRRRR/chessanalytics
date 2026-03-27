@@ -82,18 +82,18 @@ function CoachDashboardContent({ username }: CoachDashboardContentProps) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FeatureCard
+          {/* <FeatureCard
             to="/coach/openings"
             icon={FolderOpen}
             title="Openings"
             description="Review your opening repertoire. See win rates and get recommendations for improvement."
-          />
-          <FeatureCard
+          /> */}
+          {/* <FeatureCard
             to="/coach/study-plan"
             icon={CalendarDays}
             title="Study Plan"
             description="A personalized training schedule based on your strengths and weaknesses."
-          />
+          /> */}
         </div>
       </div>
     </div>

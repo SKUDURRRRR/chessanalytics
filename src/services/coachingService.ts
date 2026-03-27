@@ -82,7 +82,9 @@ export class CoachingService {
       if (response.status === 403) {
         throw new Error('Coach features require premium subscription')
       }
-      throw new Error(`HTTP error! status: ${response.status}`)
+      const errorBody = await response.json().catch(() => null)
+      const detail = errorBody?.detail || response.statusText
+      throw new Error(`HTTP error! status: ${response.status} — ${detail}`)
     }
 
     return await response.json() as T

@@ -14,6 +14,37 @@ import json
 
 logger = logging.getLogger(__name__)
 
+
+def _format_theme(theme: str) -> str:
+    """Convert a tactical theme identifier to a human-readable label."""
+    THEME_LABELS = {
+        'mateIn1': 'Mate in 1',
+        'mateIn2': 'Mate in 2',
+        'mateIn3': 'Mate in 3',
+        'hangingPiece': 'Hanging piece',
+        'fork': 'Fork',
+        'pin': 'Pin',
+        'skewer': 'Skewer',
+        'discoveredAttack': 'Discovered attack',
+        'doubleCheck': 'Double check',
+        'backRankMate': 'Back rank mate',
+        'deflection': 'Deflection',
+        'attraction': 'Attraction',
+        'sacrifice': 'Sacrifice',
+        'endgame': 'Endgame',
+        'castling': 'Castling',
+        'promotion': 'Promotion',
+        'quietMove': 'Quiet move',
+        'xRayAttack': 'X-ray attack',
+        'interference': 'Interference',
+        'intermezzo': 'Intermezzo',
+        'trappedPiece': 'Trapped piece',
+    }
+    if theme in THEME_LABELS:
+        return THEME_LABELS[theme]
+    # Handle snake_case (e.g. "good_move_sequence" -> "Good move sequence")
+    return theme.replace('_', ' ').capitalize()
+
 # ---------------------------------------------------------------------------
 # Rating-band configurations
 # ---------------------------------------------------------------------------
@@ -111,7 +142,7 @@ class StudyPlanGenerator:
             # 2. Fetch games for opening/result data
             games_result = await asyncio.to_thread(
                 lambda: self.supabase.table('games')
-                .select('game_id,opening_family,color,result,my_rating,played_at')
+                .select('provider_game_id,opening_family,color,result,my_rating,played_at')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
                 .order('played_at', desc=True)
@@ -486,7 +517,7 @@ class StudyPlanGenerator:
             profile['blunder_rate'] = round(total_blunders / len(game_analyses), 2)
 
         # --- Opening analysis ---
-        games_lookup = {g['game_id']: g for g in games_data if g.get('game_id')}
+        games_lookup = {g['provider_game_id']: g for g in games_data if g.get('provider_game_id')}
         opening_stats: Dict[Tuple[str, str], Dict[str, Any]] = defaultdict(
             lambda: {'wins': 0, 'losses': 0, 'draws': 0, 'games': 0, 'accuracies': []}
         )
@@ -574,7 +605,7 @@ class StudyPlanGenerator:
             top_count = missed_themes[0][1]
             goals.append({
                 'type': 'puzzles',
-                'description': f'Practice {top_theme} puzzles — you missed {top_count} recently',
+                'description': f'Practice {_format_theme(top_theme)} puzzles — you missed {top_count} recently',
                 'target': weekly_target,
                 'theme': top_theme,
             })
@@ -582,7 +613,7 @@ class StudyPlanGenerator:
             default_themes = rating_config.get('puzzle_themes', ['fork', 'pin'])
             goals.append({
                 'type': 'puzzles',
-                'description': f'Solve {weekly_target} tactical puzzles ({", ".join(default_themes[:2])})',
+                'description': f'Solve {weekly_target} tactical puzzles ({", ".join(_format_theme(t).lower() for t in default_themes[:2])})',
                 'target': weekly_target,
                 'theme': default_themes[0] if default_themes else 'fork',
             })
@@ -713,13 +744,11 @@ class StudyPlanGenerator:
                 break
 
         for i, theme in enumerate(themes_to_use[:3]):
-            label = f'{theme.replace("mateIn1", "Mate in 1").replace("mateIn2", "Mate in 2").replace("hangingPiece", "Hanging piece")} puzzles ({daily_puzzles})'
-            # Capitalize first letter
-            label = label[0].upper() + label[1:]
+            label = f'{_format_theme(theme)} puzzles ({daily_puzzles})'
             templates.append({
                 'type': 'puzzle',
                 'label': label,
-                'description': f'Solve {daily_puzzles} puzzles focused on {theme} patterns',
+                'description': f'Solve {daily_puzzles} puzzles focused on {_format_theme(theme).lower()} patterns',
                 'route': '/coach/puzzles/solve',
                 'target_id': theme,
                 'goal_type': 'puzzles',
