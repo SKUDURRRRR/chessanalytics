@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { Button } from '../components/ui'
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
@@ -64,15 +65,15 @@ export default function ResetPasswordPage() {
   if (success) {
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full">
-          <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
-            <div className="bg-green-900/50 shadow-card text-green-200 px-6 py-4 rounded-lg">
-              <h3 className="text-lg font-medium mb-2">Password updated!</h3>
-              <p className="text-sm">
+        <div className="max-w-sm w-full">
+          <div className="bg-surface-1 shadow-card rounded-lg p-6">
+            <div className="bg-emerald-500/10 text-emerald-300/80 px-5 py-4 rounded-md" style={{ boxShadow: '0 0 0 1px rgba(52,211,153,0.15)' }}>
+              <h3 className="text-section font-semibold tracking-section mb-2">Password updated!</h3>
+              <p className="text-small text-emerald-300/60">
                 Your password has been successfully reset. Redirecting to login...
               </p>
-              <p className="text-sm mt-3">
-                <Link to="/login" className="font-medium text-green-300 hover:text-green-200 underline">
+              <p className="text-small text-emerald-300/60 mt-3">
+                <Link to="/login" className="font-medium text-cta hover:text-cta-hover transition-colors underline">
                   Go to login now
                 </Link>
               </p>
@@ -86,13 +87,13 @@ export default function ResetPasswordPage() {
   if (!sessionReady) {
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full">
-          <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-sky-200 mx-auto mb-4"></div>
-            <p className="text-gray-400">Verifying reset link...</p>
-            <p className="text-sm text-gray-500 mt-2">
+        <div className="max-w-sm w-full">
+          <div className="bg-surface-1 shadow-card rounded-lg p-6 text-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-700 border-t-gray-300 mx-auto mb-4"></div>
+            <p className="text-gray-400 text-body">Verifying reset link...</p>
+            <p className="text-small text-gray-500 mt-2">
               If this takes too long, your link may have expired.{' '}
-              <Link to="/forgot-password" className="text-sky-300 hover:text-sky-200 underline">
+              <Link to="/forgot-password" className="text-cta hover:text-cta-hover transition-colors underline">
                 Request a new one
               </Link>
             </p>
@@ -104,24 +105,24 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen bg-surface-base flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full">
-        <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
+      <div className="max-w-sm w-full">
+        <div className="bg-surface-1 shadow-card rounded-lg p-6">
           <div className="mb-6 text-center">
-            <h2 className="text-2xl font-semibold text-white">Set new password</h2>
-            <p className="mt-2 text-sm text-gray-400">
+            <h2 className="text-title font-semibold tracking-heading text-[#f0f0f0]">Set new password</h2>
+            <p className="mt-2 text-small text-gray-400">
               Enter your new password below.
             </p>
           </div>
 
           {error && (
-            <div className="mb-4 bg-rose-900/50 shadow-card text-rose-200 px-4 py-3 rounded-lg">
+            <div className="mb-4 bg-rose-500/10 text-rose-300/80 px-4 py-3 rounded-md text-small" style={{ boxShadow: '0 0 0 1px rgba(244,63,94,0.2)' }}>
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-400 mb-2">
+              <label htmlFor="password" className="label text-gray-500 mb-1.5 block">
                 New password
               </label>
               <input
@@ -130,14 +131,14 @@ export default function ResetPasswordPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                className="w-full bg-surface-2 shadow-input rounded-md px-3.5 py-2.5 text-body text-gray-300 placeholder:text-gray-500 focus:shadow-input-focus focus:outline-none transition-shadow"
                 placeholder="••••••••"
                 minLength={6}
               />
             </div>
 
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-400 mb-2">
+              <label htmlFor="confirmPassword" className="label text-gray-500 mb-1.5 block">
                 Confirm new password
               </label>
               <input
@@ -146,27 +147,27 @@ export default function ResetPasswordPage() {
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                className="w-full bg-surface-2 shadow-input rounded-md px-3.5 py-2.5 text-body text-gray-300 placeholder:text-gray-500 focus:shadow-input-focus focus:outline-none transition-shadow"
                 placeholder="••••••••"
                 minLength={6}
               />
             </div>
 
-            <div className="pt-2">
-              <button
+            <div className="pt-1">
+              <Button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg bg-sky-500/20 shadow-card px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full"
               >
                 {loading ? (
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-sky-200"></div>
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-700 border-t-gray-300"></div>
                     <span>Updating...</span>
                   </div>
                 ) : (
                   'Update password'
                 )}
-              </button>
+              </Button>
             </div>
           </form>
         </div>

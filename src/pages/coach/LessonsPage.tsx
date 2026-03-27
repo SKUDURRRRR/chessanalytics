@@ -201,7 +201,7 @@ export default function GameReviewListPage() {
   if (authLoading) {
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
       </div>
     )
   }
@@ -218,13 +218,13 @@ export default function GameReviewListPage() {
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
         <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
-          <h2 className="text-2xl font-semibold text-white mb-4">Connect your chess account</h2>
+          <h2 className="text-title font-semibold text-white mb-4">Connect your chess account</h2>
           <p className="text-gray-400 mb-6">
             Link your Chess.com or Lichess account to review your games with Coach Tal.
           </p>
           <Link
             to="/profile"
-            className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+            className="inline-block bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-6 rounded-md text-body transition-colors shadow-btn-primary"
           >
             Go to Profile to Connect
           </Link>
@@ -238,7 +238,7 @@ export default function GameReviewListPage() {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-semibold text-white mb-1">Game Review</h1>
+          <h1 className="text-title font-semibold text-white mb-1">Game Review</h1>
           <p className="text-gray-500">Review your games with Coach Tal to learn from your mistakes</p>
         </div>
 
@@ -291,8 +291,8 @@ export default function GameReviewListPage() {
         {/* Empty state */}
         {!loading && !error && games.length === 0 && (
           <div className="rounded-lg shadow-card bg-surface-1 p-8 text-center">
-            <div className="text-4xl mb-4">&#9813;</div>
-            <h2 className="text-xl font-semibold text-white mb-2">No games to review</h2>
+            <div className="text-title mb-4">&#9813;</div>
+            <h2 className="text-title font-semibold text-white mb-2">No games to review</h2>
             <p className="text-gray-500 mb-6">
               Analyze some games first, then come back to review your mistakes with Coach Tal.
             </p>
@@ -387,7 +387,7 @@ function GameReviewCard({ game, onClick }: GameReviewCardProps) {
                 </span>
               )}
               {game.mistakes > 0 && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300 font-medium">
+                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 font-medium">
                   {game.mistakes}?
                 </span>
               )}

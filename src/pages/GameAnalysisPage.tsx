@@ -893,12 +893,12 @@ export default function GameAnalysisPage() {
 
   // Build position context for inline coach chat
   useEffect(() => {
-    const analysisfen = currentMove?.fenBefore
+    const analysisfen = currentMove?.fenAfter
       || processedData.positions[currentIndex]
       || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
     const ctx: ChatPositionContext = {
       fen: analysisfen,
-      moveHistory: processedData.moves.slice(0, Math.max(0, currentIndex - 1)).map(m => m.san),
+      moveHistory: processedData.moves.slice(0, currentIndex).map(m => m.san),
       playerColor,
       moveNumber: currentMove?.moveNumber,
       lastMove: currentMove?.san,

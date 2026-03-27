@@ -5,15 +5,15 @@
  * before the mistake is revealed with arrows and coaching explanation.
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, type CSSProperties } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Chessboard } from 'react-chessboard'
-import { Chess } from 'chess.js'
+import { Chess, Square } from 'chess.js'
 import { PremiumGate } from '../../components/coach/PremiumGate'
 import { ModernChessArrows } from '../../components/chess/ModernChessArrows'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
 import { fetchGameAnalysisData } from '../../services/gameAnalysisService'
-import { useCoachChat } from '../../contexts/CoachChatContext'
+import { InlineCoachChat } from '../../components/coach/InlineCoachChat'
 import { useMobileOptimizations } from '../../hooks/useResponsive'
 import { generateModernMoveArrows } from '../../utils/chessArrows'
 import {
@@ -115,6 +115,10 @@ function GameReviewContent() {
   const [boardWidth, setBoardWidth] = useState(500)
   const [isRevealed, setIsRevealed] = useState(false)
 
+  // User attempt state - lets users try their own move before reveal
+  const [userAttemptSan, setUserAttemptSan] = useState<string | null>(null)
+  const [userAttemptFen, setUserAttemptFen] = useState<string | null>(null)
+
   // Data
   const [gameRecord, setGameRecord] = useState<Record<string, unknown> | null>(null)
   const [analysisRecord, setAnalysisRecord] = useState<Record<string, unknown> | null>(null)
@@ -125,7 +129,7 @@ function GameReviewContent() {
 
   // Hooks
   const mobileOpts = useMobileOptimizations()
-  const { setPositionContext } = useCoachChat()
+  const [localPositionContext, setLocalPositionContext] = useState<ChatPositionContext | null>(null)
 
   // ---- Data Loading ----
   useEffect(() => {
@@ -260,6 +264,9 @@ function GameReviewContent() {
   const navigateToMove = useCallback((index: number) => {
     const clamped = Math.max(0, Math.min(index, processedData.moves.length))
     setCurrentBoardIndex(clamped)
+    // Clear attempt fully so board follows normal navigation
+    setUserAttemptSan(null)
+    setUserAttemptFen(null)
   }, [processedData.moves.length])
 
   const goToMoment = useCallback((momentIdx: number) => {
@@ -269,12 +276,16 @@ function GameReviewContent() {
     const moveIdx = keyMoments[momentIdx].moveIndex
     setCurrentBoardIndex(moveIdx)
     setIsRevealed(false)
+    setUserAttemptSan(null)
+    setUserAttemptFen(null)
   }, [keyMoments])
 
   const startReview = useCallback(() => {
     setPhase('reviewing')
     setCurrentMomentIndex(0)
     setIsRevealed(false)
+    setUserAttemptSan(null)
+    setUserAttemptFen(null)
     if (keyMoments.length > 0) {
       setCurrentBoardIndex(keyMoments[0].moveIndex)
     }
@@ -294,6 +305,61 @@ function GameReviewContent() {
     }
   }, [currentMomentIndex, goToMoment])
 
+  // ---- User attempt: let user try a move before reveal ----
+  const handlePieceDrop = useCallback((sourceSquare: string, targetSquare: string): boolean => {
+    if (phase !== 'reviewing' || isRevealed || !currentMoment) return false
+
+    try {
+      const chess = new Chess(currentMoment.move.fenBefore)
+      const piece = chess.get(sourceSquare as Square)
+
+      // Handle pawn promotion
+      const targetRank = targetSquare[1]
+      const isPromotion =
+        piece?.type === 'p' &&
+        ((piece.color === 'w' && targetRank === '8') ||
+          (piece.color === 'b' && targetRank === '1'))
+
+      const move = chess.move({
+        from: sourceSquare,
+        to: targetSquare,
+        ...(isPromotion && { promotion: 'q' }),
+      })
+
+      if (!move) return false
+
+      setUserAttemptSan(move.san)
+      setUserAttemptFen(chess.fen())
+      return true
+    } catch {
+      return false
+    }
+  }, [phase, isRevealed, currentMoment])
+
+  const clearUserAttempt = useCallback(() => {
+    setUserAttemptSan(null)
+    setUserAttemptFen(null)
+  }, [])
+
+  // Show user's attempt position if they made one (pre-reveal only), otherwise the navigated position
+  const displayPosition = (!isRevealed && userAttemptFen) ? userAttemptFen : currentPosition
+
+  // Highlight user attempt squares (only when attempt is active and pre-reveal)
+  const userAttemptSquareStyles = useMemo((): Record<string, CSSProperties> => {
+    if (!userAttemptSan || !userAttemptFen || !currentMoment || isRevealed) return {}
+    try {
+      const chess = new Chess(currentMoment.move.fenBefore)
+      const move = chess.move(userAttemptSan)
+      if (!move) return {}
+      return {
+        [move.from]: { backgroundColor: 'rgba(59, 130, 246, 0.3)' },
+        [move.to]: { backgroundColor: 'rgba(59, 130, 246, 0.3)' },
+      }
+    } catch {
+      return {}
+    }
+  }, [userAttemptSan, userAttemptFen, currentMoment, isRevealed])
+
   // ---- Keyboard navigation ----
   useEffect(() => {
     if (phase !== 'reviewing') return
@@ -303,6 +369,7 @@ function GameReviewContent() {
         e.preventDefault()
         if (!isRevealed) {
           setIsRevealed(true)
+
         } else {
           nextMoment()
         }
@@ -321,7 +388,7 @@ function GameReviewContent() {
   // ---- Coach Chat Position Context ----
   useEffect(() => {
     if (phase !== 'reviewing' || !currentMoment) {
-      setPositionContext(null)
+      setLocalPositionContext(null)
       return
     }
 
@@ -333,26 +400,28 @@ function GameReviewContent() {
       moveHistory: processedData.moves.slice(0, currentMoment.moveIndex).map(mv => mv.san),
       playerColor,
       moveNumber: m.moveNumber,
-      lastMove: m.san,
+      lastMove: isRevealed ? m.san : undefined,
       gamePhase: m.gamePhase?.toLowerCase() as ChatPositionContext['gamePhase'],
       contextType: 'game-review',
-      moveClassification: m.classification,
-      evaluation: m.displayEvaluation,
-      bestMoveSan: m.bestMoveSan ?? undefined,
-      centipawnLoss: m.centipawnLoss ?? undefined,
-      coachingComment: m.coachingComment,
-      tacticalInsights: m.tacticalInsights,
-      positionalInsights: m.positionalInsights,
-      learningPoints: m.learningPoints,
+      moveClassification: isRevealed ? m.classification : undefined,
+      evaluation: isRevealed ? m.displayEvaluation : undefined,
+      bestMoveSan: isRevealed ? (m.bestMoveSan ?? undefined) : undefined,
+      centipawnLoss: isRevealed ? (m.centipawnLoss ?? undefined) : undefined,
+      coachingComment: isRevealed ? m.coachingComment : undefined,
+      tacticalInsights: isRevealed ? m.tacticalInsights : undefined,
+      positionalInsights: isRevealed ? m.positionalInsights : undefined,
+      learningPoints: isRevealed ? m.learningPoints : undefined,
       keyMomentIndex: currentMomentIndex + 1,
       totalKeyMoments: keyMoments.length,
       gameResult: gameMeta.result,
       opponentName: gameMeta.opponent,
+      // Include user's attempted move so coach can discuss their decision
+      userAttemptMove: userAttemptSan ?? undefined,
+      isPreReveal: !isRevealed,
     }
 
-    setPositionContext(ctx)
-    return () => setPositionContext(null)
-  }, [phase, currentMoment, currentMomentIndex, keyMoments.length, processedData.moves, playerColor, currentPosition, gameMeta, setPositionContext])
+    setLocalPositionContext(ctx)
+  }, [phase, currentMoment, currentMomentIndex, keyMoments.length, processedData.moves, playerColor, currentPosition, gameMeta, isRevealed, userAttemptSan])
 
   // ---- Mistake stats for summary ----
   const mistakeStats = useMemo(() => {
@@ -384,8 +453,8 @@ function GameReviewContent() {
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
         <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
-          <div className="text-4xl mb-4">&#9888;</div>
-          <h2 className="text-xl font-semibold text-white mb-2">Unable to Load Game</h2>
+          <div className="text-title mb-4">&#9888;</div>
+          <h2 className="text-title font-semibold text-white mb-2">Unable to Load Game</h2>
           <p className="text-gray-500 mb-6">{loadError}</p>
           <button
             onClick={() => navigate(-1)}
@@ -403,8 +472,8 @@ function GameReviewContent() {
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
         <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
-          <div className="text-4xl mb-4">&#9989;</div>
-          <h2 className="text-xl font-semibold text-white mb-2">Great Game!</h2>
+          <div className="text-title mb-4">&#9989;</div>
+          <h2 className="text-title font-semibold text-white mb-2">Great Game!</h2>
           <p className="text-gray-500 mb-6">
             No significant mistakes found in this game. You played well!
           </p>
@@ -426,7 +495,7 @@ function GameReviewContent() {
     <div className="h-screen bg-surface-base text-white flex flex-col overflow-hidden" ref={layoutRef}>
       {/* Header */}
       <div className="flex-shrink-0 border-b border-white/5 bg-white/[0.02] px-4 py-3">
-        <div className="max-w-6xl mx-auto flex items-center gap-3">
+        <div className="max-w-5xl mx-auto flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
             className="text-gray-500 hover:text-white transition-colors"
@@ -437,7 +506,7 @@ function GameReviewContent() {
             </svg>
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold truncate">
+            <h1 className="text-section font-semibold truncate">
               Game Review
               <span className="text-gray-500 font-normal ml-2 text-sm">
                 vs {gameMeta.opponent}
@@ -452,7 +521,7 @@ function GameReviewContent() {
 
       {/* Main content */}
       <div className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`}>
-        <div className={`max-w-6xl mx-auto p-4 ${
+        <div className={`max-w-5xl mx-auto p-4 ${
           isMobile ? 'flex flex-col gap-4' : 'flex gap-6 items-start h-full'
         }`}>
           {/* Board column */}
@@ -461,11 +530,13 @@ function GameReviewContent() {
               <div className="relative" style={{ width: boardWidth, height: boardWidth }}>
                 <Chessboard
                   id="game-review-board"
-                  position={currentPosition}
+                  position={displayPosition}
                   boardWidth={boardWidth}
                   boardOrientation={playerColor}
-                  arePiecesDraggable={false}
+                  arePiecesDraggable={phase === 'reviewing' && !isRevealed && !userAttemptFen}
+                  onPieceDrop={handlePieceDrop}
                   showBoardNotation={true}
+                  customSquareStyles={userAttemptSquareStyles}
                   {...getDarkChessBoardTheme('default')}
                 />
                 <ModernChessArrows
@@ -519,10 +590,10 @@ function GameReviewContent() {
             )}
           </div>
 
-          {/* Coaching panel */}
+          {/* Coaching panel + inline chat */}
           <div className={`${
-            isMobile ? 'w-full' : 'flex-1 min-w-0 max-w-[360px] max-h-full overflow-y-auto'
-          }`}>
+            isMobile ? 'w-full' : 'flex-1 min-w-0 max-w-[400px] max-h-full overflow-y-auto'
+          } flex flex-col gap-3`}>
             {phase === 'intro' && (
               <IntroPanel
                 meta={gameMeta}
@@ -537,7 +608,9 @@ function GameReviewContent() {
                 momentIndex={currentMomentIndex}
                 totalMoments={keyMoments.length}
                 isRevealed={isRevealed}
-                onReveal={() => setIsRevealed(true)}
+                userAttemptSan={userAttemptSan}
+                onReveal={() => { setIsRevealed(true); setUserAttemptFen(null) }}
+                onClearAttempt={clearUserAttempt}
                 onPrev={prevMoment}
                 onNext={nextMoment}
               />
@@ -550,6 +623,16 @@ function GameReviewContent() {
                 onReviewAgain={startReview}
                 onBack={() => navigate(-1)}
               />
+            )}
+
+            {/* Inline Coach Chat */}
+            {phase === 'reviewing' && (
+              <div
+                className="rounded-lg overflow-hidden"
+                style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)', background: '#0c0d0f', minHeight: 320 }}
+              >
+                <InlineCoachChat positionContext={localPositionContext} />
+              </div>
             )}
           </div>
         </div>
@@ -571,7 +654,7 @@ interface IntroPanelProps {
 function IntroPanel({ meta, stats, onStart }: IntroPanelProps) {
   return (
     <div className="rounded-lg shadow-card bg-surface-1 p-6">
-      <h2 className="text-lg font-semibold mb-4">Game Overview</h2>
+      <h2 className="text-section font-semibold mb-4">Game Overview</h2>
 
       <div className="space-y-3 text-sm">
         <div className="flex justify-between">
@@ -622,7 +705,7 @@ function IntroPanel({ meta, stats, onStart }: IntroPanelProps) {
             </span>
           )}
           {stats.mistakes > 0 && (
-            <span className="px-2 py-1 rounded shadow-card bg-orange-500/10 text-orange-300">
+            <span className="px-2 py-1 rounded shadow-card bg-amber-500/10 text-amber-300">
               {stats.mistakes} mistake{stats.mistakes !== 1 ? 's' : ''}
             </span>
           )}
@@ -636,7 +719,7 @@ function IntroPanel({ meta, stats, onStart }: IntroPanelProps) {
 
       <button
         onClick={onStart}
-        className="mt-6 w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+        className="mt-6 w-full bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-6 rounded-md text-body transition-colors shadow-btn-primary"
       >
         Start Review
       </button>
@@ -649,14 +732,22 @@ interface ReviewingPanelProps {
   momentIndex: number
   totalMoments: number
   isRevealed: boolean
+  userAttemptSan: string | null
   onReveal: () => void
+  onClearAttempt: () => void
   onPrev: () => void
   onNext: () => void
 }
 
-function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onReveal, onPrev, onNext }: ReviewingPanelProps) {
+function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, userAttemptSan, onReveal, onClearAttempt, onPrev, onNext }: ReviewingPanelProps) {
   const m = moment.move
   const isLast = momentIndex === totalMoments - 1
+
+  // Check if user's attempt matches the best move
+  const attemptMatchesBest = userAttemptSan && m.bestMoveSan &&
+    userAttemptSan.replace(/[+#]/g, '') === m.bestMoveSan.replace(/[+#]/g, '')
+  const attemptMatchesPlayed = userAttemptSan &&
+    userAttemptSan.replace(/[+#]/g, '') === m.san.replace(/[+#]/g, '')
 
   return (
     <div className="rounded-lg shadow-card bg-surface-1 p-5 space-y-4">
@@ -688,39 +779,86 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onRevea
       {/* Pre-reveal: "Think First" prompt */}
       {!isRevealed && (
         <div className="space-y-4">
-          <div className="p-4 rounded-lg bg-amber-500/5 shadow-card text-center">
-            <p className="text-amber-200 font-medium mb-1">
-              It&apos;s {m.player === 'white' ? "White's" : "Black's"} move
-            </p>
-            <p className="text-gray-500 text-sm">
-              Look at the position. What would you play here?
-            </p>
-          </div>
+          {!userAttemptSan ? (
+            <div className="p-4 rounded-lg bg-amber-500/5 shadow-card text-center">
+              <p className="text-amber-200 font-medium mb-1">
+                It&apos;s {m.player === 'white' ? "White's" : "Black's"} move
+              </p>
+              <p className="text-gray-500 text-sm">
+                Try your move on the board, or reveal what happened.
+              </p>
+            </div>
+          ) : (
+            <div className="p-4 rounded-lg bg-emerald-500/5 shadow-card">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span className="text-gray-500">Your choice:</span>
+                  <span className="text-emerald-300 font-mono font-semibold">{userAttemptSan}</span>
+                </div>
+                <button
+                  onClick={onClearAttempt}
+                  className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+                >
+                  Try again
+                </button>
+              </div>
+              <p className="text-gray-500 text-xs">
+                Ask Coach Tal about your choice below, then reveal what happened.
+              </p>
+            </div>
+          )}
 
           <button
             onClick={onReveal}
-            className="w-full py-3 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-semibold transition-colors"
+            className="w-full py-2 rounded-md bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium text-body transition-colors shadow-btn-primary"
           >
             Show What Happened
           </button>
 
-          <p className="text-xs text-gray-600 text-center">
-            Press Space or Right Arrow to reveal
-          </p>
+          {!userAttemptSan && (
+            <p className="text-xs text-gray-600 text-center">
+              Drag a piece to try your move, or press Space to reveal
+            </p>
+          )}
         </div>
       )}
 
       {/* Post-reveal: Full analysis */}
       {isRevealed && (
         <div className="space-y-4">
+          {/* User's attempt comparison (if they tried a move) */}
+          {userAttemptSan && (
+            <div className={`p-3 rounded-lg shadow-card text-sm ${
+              attemptMatchesBest
+                ? 'bg-emerald-500/10'
+                : attemptMatchesPlayed
+                  ? 'bg-rose-500/5'
+                  : 'bg-white/[0.04]'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${
+                  attemptMatchesBest ? 'bg-emerald-400' : 'bg-gray-400'
+                }`} />
+                <span className="text-gray-500">Your choice:</span>
+                <span className={`font-mono font-semibold ${
+                  attemptMatchesBest ? 'text-emerald-300' : 'text-gray-300'
+                }`}>{userAttemptSan}</span>
+                {attemptMatchesBest && (
+                  <span className="text-emerald-400 text-xs ml-1">Correct!</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Played vs Best */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm">
               <span className={`w-2 h-2 rounded-full ${
                 moment.classification === 'blunder' ? 'bg-rose-400' :
-                moment.classification === 'mistake' ? 'bg-orange-400' : 'bg-amber-400'
+                moment.classification === 'mistake' ? 'bg-amber-400' : 'bg-amber-400'
               }`} />
-              <span className="text-gray-500">You played:</span>
+              <span className="text-gray-500">Actually played:</span>
               <span className="text-white font-mono font-semibold">{m.san}</span>
             </div>
             {m.bestMoveSan && (
@@ -755,17 +893,12 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onRevea
               )}
               {m.positionalInsights && m.positionalInsights.length > 0 && (
                 <div className="text-xs">
-                  <span className="text-sky-300 font-medium">Positional: </span>
+                  <span className="text-emerald-300 font-medium">Positional: </span>
                   <span className="text-gray-500">{m.positionalInsights.join(', ')}</span>
                 </div>
               )}
             </div>
           )}
-
-          {/* Chat hint */}
-          <p className="text-xs text-gray-500 italic">
-            Ask Coach Tal for deeper analysis using the chat button.
-          </p>
 
           {/* Navigation */}
           <div className="flex gap-3 pt-2">
@@ -780,7 +913,7 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, onRevea
             </button>
             <button
               onClick={onNext}
-              className="flex-1 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors"
+              className="flex-1 py-2 rounded-md bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] text-sm font-medium text-body transition-colors shadow-btn-primary"
             >
               {isLast ? 'View Summary' : 'Next Moment'}
             </button>
@@ -801,7 +934,7 @@ interface SummaryPanelProps {
 function SummaryPanel({ stats, meta, onReviewAgain, onBack }: SummaryPanelProps) {
   return (
     <div className="rounded-lg shadow-card bg-surface-1 p-6 space-y-5">
-      <h2 className="text-lg font-semibold">Review Complete</h2>
+      <h2 className="text-section font-semibold">Review Complete</h2>
 
       <p className="text-sm text-gray-400">
         You reviewed {stats.total} key moment{stats.total !== 1 ? 's' : ''} from your game against{' '}
@@ -811,15 +944,15 @@ function SummaryPanel({ stats, meta, onReviewAgain, onBack }: SummaryPanelProps)
       {/* Stats grid */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg shadow-card bg-rose-500/10 p-3 text-center">
-          <div className="text-2xl font-semibold text-rose-300">{stats.blunders}</div>
+          <div className="text-title font-semibold text-rose-300">{stats.blunders}</div>
           <div className="text-xs text-rose-400 mt-1">Blunders</div>
         </div>
-        <div className="rounded-lg shadow-card bg-orange-500/10 p-3 text-center">
-          <div className="text-2xl font-semibold text-orange-300">{stats.mistakes}</div>
-          <div className="text-xs text-orange-400 mt-1">Mistakes</div>
+        <div className="rounded-lg shadow-card bg-amber-500/10 p-3 text-center">
+          <div className="text-title font-semibold text-amber-300">{stats.mistakes}</div>
+          <div className="text-xs text-amber-400 mt-1">Mistakes</div>
         </div>
         <div className="rounded-lg shadow-card bg-amber-500/10 p-3 text-center">
-          <div className="text-2xl font-semibold text-amber-300">{stats.inaccuracies}</div>
+          <div className="text-title font-semibold text-amber-300">{stats.inaccuracies}</div>
           <div className="text-xs text-amber-400 mt-1">Inaccuracies</div>
         </div>
       </div>

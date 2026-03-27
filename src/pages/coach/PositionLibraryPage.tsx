@@ -103,7 +103,7 @@ function PositionLibraryContent({
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
           <p className="text-sm text-gray-500">Loading position library...</p>
         </div>
       </div>
@@ -114,11 +114,11 @@ function PositionLibraryContent({
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
         <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
-          <h2 className="text-2xl font-semibold text-white mb-4">Error</h2>
+          <h2 className="text-title font-semibold text-white mb-4">Error</h2>
           <p className="text-gray-400 mb-6">{error.message}</p>
           <button
             onClick={() => navigate('/coach')}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+            className="bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-6 rounded-md text-body transition-colors shadow-btn-primary"
           >
             Back to Dashboard
           </button>
@@ -129,7 +129,7 @@ function PositionLibraryContent({
 
   return (
     <div className="min-h-screen bg-surface-base p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
           <div>
@@ -139,7 +139,7 @@ function PositionLibraryContent({
             >
               ← Back to Dashboard
             </button>
-            <h1 className="text-3xl md:text-4xl font-semibold text-white">Position Library</h1>
+            <h1 className="text-title font-semibold text-white">Position Library</h1>
             <p className="text-gray-500 mt-1">{positions.length} saved position{positions.length !== 1 ? 's' : ''}</p>
           </div>
 

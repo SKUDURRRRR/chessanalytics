@@ -30,16 +30,16 @@ const ACTIVITY_ICONS: Record<string, string> = {
 }
 
 const ACTIVITY_COLORS: Record<string, string> = {
-  puzzle: 'border-cyan-500/30 text-cyan-300',
-  lesson: 'border-blue-500/30 text-blue-300',
+  puzzle: 'border-emerald-500/30 text-emerald-300',
+  lesson: 'border-emerald-500/30 text-emerald-300',
   review: 'border-amber-500/30 text-amber-300',
   play: 'border-emerald-500/30 text-emerald-300',
   opening: 'border-violet-500/30 text-violet-300',
 }
 
 const ACTIVITY_BG: Record<string, string> = {
-  puzzle: 'bg-cyan-500/10 hover:bg-cyan-500/20',
-  lesson: 'bg-blue-500/10 hover:bg-blue-500/20',
+  puzzle: 'bg-emerald-500/10 hover:bg-emerald-500/20',
+  lesson: 'bg-emerald-500/10 hover:bg-emerald-500/20',
   review: 'bg-amber-500/10 hover:bg-amber-500/20',
   play: 'bg-emerald-500/10 hover:bg-emerald-500/20',
   opening: 'bg-violet-500/10 hover:bg-violet-500/20',
@@ -153,7 +153,7 @@ function StudyPlanContent({
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
           <p className="text-sm text-gray-500">Loading study plan...</p>
         </div>
       </div>
@@ -179,7 +179,7 @@ function StudyPlanContent({
             >
               &larr; Back to Dashboard
             </button>
-            <h1 className="text-3xl md:text-4xl font-semibold text-white">Study Plan</h1>
+            <h1 className="text-title font-semibold text-white">Study Plan</h1>
             {plan && (
               <p className="text-gray-500 mt-1">
                 Week {plan.week_number} &middot; {plan.week_start}
@@ -190,7 +190,7 @@ function StudyPlanContent({
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className="px-5 py-2.5 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors disabled:opacity-50"
+            className="px-5 py-2.5 text-sm bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium rounded-md text-body transition-colors shadow-btn-primary disabled:opacity-50"
           >
             {generating ? 'Generating...' : plan ? 'New Plan' : 'Generate Plan'}
           </button>
@@ -198,7 +198,7 @@ function StudyPlanContent({
 
         {/* Error banner */}
         {error && (
-          <div className="mb-6 rounded-lg shadow-card bg-red-500/10 p-4 text-red-300 text-sm">
+          <div className="mb-6 rounded-lg shadow-card bg-rose-500/10 p-4 text-rose-300 text-sm">
             {error}
           </div>
         )}
@@ -226,7 +226,7 @@ function StudyPlanContent({
             {/* Goals Section */}
             {plan.goals && plan.goals.length > 0 && (
               <div className="mb-6">
-                <h2 className="text-lg font-semibold text-white mb-3">Weekly Goals</h2>
+                <h2 className="text-section font-semibold text-white mb-3">Weekly Goals</h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {plan.goals.map((goal, i) => {
                     const matchingGoal = goals.find((g) => g.goal_type === goal.type)
@@ -265,7 +265,7 @@ function StudyPlanContent({
             />
 
             {/* Weekly Calendar */}
-            <h2 className="text-lg font-semibold text-white mb-3">Daily Activities</h2>
+            <h2 className="text-section font-semibold text-white mb-3">Daily Activities</h2>
             <div className="grid grid-cols-1 md:grid-cols-7 gap-3 mb-8">
               {DAY_NAMES.map((dayName, dayIdx) => {
                 const activities = (dailyActivities[String(dayIdx)] || []) as DailyActivity[]
@@ -324,7 +324,7 @@ function StudyPlanContent({
 function EmptyState({ generating, onGenerate }: { generating: boolean; onGenerate: () => void }) {
   return (
     <div className="rounded-lg shadow-card bg-surface-1 p-12 text-center">
-      <div className="text-4xl mb-4 opacity-60">{'\u265A'}</div>
+      <div className="text-title mb-4 opacity-60">{'\u265A'}</div>
       <p className="text-gray-400 text-lg mb-2">No active study plan</p>
       <p className="text-gray-500 text-sm mb-6 max-w-md mx-auto">
         Generate a personalized weekly plan based on your game analysis.
@@ -333,7 +333,7 @@ function EmptyState({ generating, onGenerate }: { generating: boolean; onGenerat
       <button
         onClick={onGenerate}
         disabled={generating}
-        className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-8 rounded-lg transition-colors disabled:opacity-50"
+        className="bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-8 rounded-md text-body transition-colors shadow-btn-primary disabled:opacity-50"
       >
         {generating ? 'Analyzing your games...' : 'Generate Study Plan'}
       </button>
@@ -363,7 +363,7 @@ function WeeklySummaryCard({
 
   return (
     <div className="rounded-lg shadow-card bg-surface-1 p-5">
-      <h2 className="text-lg font-semibold text-white mb-3">Weekly Summary</h2>
+      <h2 className="text-section font-semibold text-white mb-3">Weekly Summary</h2>
 
       {/* Last week review */}
       {hasLastWeek && (
@@ -482,7 +482,7 @@ function StatsRow({
 function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="rounded-lg shadow-card bg-white/[0.04] p-3 text-center">
-      <p className={`text-lg font-semibold ${accent ? 'text-emerald-400' : 'text-white'}`}>{value}</p>
+      <p className={`text-section font-semibold ${accent ? 'text-emerald-400' : 'text-white'}`}>{value}</p>
       <p className="text-[10px] text-gray-500 uppercase tracking-wide">{label}</p>
     </div>
   )

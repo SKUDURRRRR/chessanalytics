@@ -155,13 +155,13 @@ export default function HomePage() {
           <span className="text-caption text-gray-400">Now with AI coaching powered by Claude & Gemini</span>
         </div>
 
-        <h1 className="text-[2rem] sm:text-[2.5rem] md:text-[3rem] font-semibold text-[#f0f0f0] tracking-heading leading-[1.1] mb-5">
+        <h1 className="text-title sm:text-[2rem] md:text-[2.5rem] font-semibold text-[#f0f0f0] tracking-heading leading-[1.1] mb-5">
           Understand your chess.{'\n'}
           <br className="hidden sm:block" />
           Not just your rating.
         </h1>
 
-        <p className="text-gray-400 text-body sm:text-sm leading-relaxed mb-10 max-w-lg mx-auto">
+        <p className="text-gray-400 text-body leading-relaxed mb-10 max-w-lg mx-auto">
           AI-powered analysis that tells you why you lose — and exactly how to improve.
         </p>
 
@@ -183,17 +183,17 @@ export default function HomePage() {
         style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
       >
         <div className="text-center">
-          <p className="text-section sm:text-lg font-semibold text-white tracking-heading">12,400+</p>
+          <p className="text-section font-semibold text-white tracking-heading">12,400+</p>
           <p className="text-caption text-gray-400">Games analyzed</p>
         </div>
         <div className="hidden sm:block w-px h-8 bg-white/[0.10]" />
         <div className="text-center">
-          <p className="text-section sm:text-lg font-semibold text-white tracking-heading">2,100+</p>
+          <p className="text-section font-semibold text-white tracking-heading">2,100+</p>
           <p className="text-caption text-gray-400">Players</p>
         </div>
         <div className="hidden sm:block w-px h-8 bg-white/[0.10]" />
         <div className="text-center">
-          <p className="text-section sm:text-lg font-semibold text-white tracking-heading">Chess.com &amp; Lichess</p>
+          <p className="text-section font-semibold text-white tracking-heading">Chess.com &amp; Lichess</p>
           <p className="text-caption text-gray-400">Supported platforms</p>
         </div>
       </div>
@@ -218,7 +218,7 @@ export default function HomePage() {
                   <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-4 bg-white/[0.06]">
                     <span className="text-gray-300 text-sm">{f.icon}</span>
                   </div>
-                  <h3 className="text-sm font-semibold text-[#f0f0f0] mb-2 tracking-section">{f.title}</h3>
+                  <h3 className="text-body font-semibold text-[#f0f0f0] mb-2 tracking-section">{f.title}</h3>
                   <p className="text-small text-gray-500 leading-relaxed">{f.description}</p>
                 </div>
               </div>
@@ -237,7 +237,7 @@ export default function HomePage() {
                   <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-4 bg-white/[0.06]">
                     <span className="text-gray-300 text-sm">{f.icon}</span>
                   </div>
-                  <h3 className="text-sm font-semibold text-[#f0f0f0] mb-2 tracking-section">{f.title}</h3>
+                  <h3 className="text-body font-semibold text-[#f0f0f0] mb-2 tracking-section">{f.title}</h3>
                   <p className="text-small text-gray-500 leading-relaxed">{f.description}</p>
                 </div>
               </div>
@@ -292,7 +292,7 @@ export default function HomePage() {
             <Brain size={14} />
             <span>Your Chess Coach</span>
           </div>
-          <h2 className="text-title sm:text-[1.75rem] font-semibold tracking-heading text-[#f0f0f0] mb-2">
+          <h2 className="text-title font-semibold tracking-heading text-[#f0f0f0] mb-2">
             Learn from every move
           </h2>
           <p className="text-body text-gray-500 max-w-md mx-auto">
@@ -343,7 +343,7 @@ export default function HomePage() {
             <BarChart3 size={14} />
             <span>Know Your Style</span>
           </div>
-          <h2 className="text-title sm:text-[1.75rem] font-semibold tracking-heading text-[#f0f0f0] mb-2">
+          <h2 className="text-title font-semibold tracking-heading text-[#f0f0f0] mb-2">
             Discover your chess personality
           </h2>
           <p className="text-body text-gray-500 max-w-md mx-auto">
@@ -394,7 +394,7 @@ export default function HomePage() {
             <TrendingUp size={14} />
             <span>Track Your Progress</span>
           </div>
-          <h2 className="text-title sm:text-[1.75rem] font-semibold tracking-heading text-[#f0f0f0] mb-2">
+          <h2 className="text-title font-semibold tracking-heading text-[#f0f0f0] mb-2">
             Comprehensive performance tracking
           </h2>
           <p className="text-body text-gray-500 max-w-md mx-auto">
@@ -445,7 +445,7 @@ export default function HomePage() {
               &ldquo;
             </div>
             <div className="text-center pt-3">
-              <p className="text-sm text-gray-300 leading-relaxed italic mb-4">
+              <p className="text-body text-gray-300 leading-relaxed italic mb-4">
                 &ldquo;I went from 1100 to 1350 in two months. The coaching comments on my blunders were more useful than hours of YouTube tutorials.&rdquo;
               </p>
               <p className="text-small text-gray-500">&mdash; Chess.com rapid player</p>
@@ -488,7 +488,7 @@ export default function HomePage() {
         style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
       >
         <div className="max-w-lg mx-auto text-center">
-          <h2 className="text-xl font-semibold text-[#f0f0f0] tracking-heading mb-3">
+          <h2 className="text-title font-semibold text-[#f0f0f0] tracking-heading mb-3">
             Ready to improve?
           </h2>
           <p className="text-body text-gray-500 mb-6">

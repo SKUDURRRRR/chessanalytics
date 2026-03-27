@@ -104,7 +104,7 @@ export default function SignUpPage() {
           {/* Left Column: Value Proposition */}
           <div className="flex flex-col mt-8 lg:mt-12">
             <div className="mb-8">
-              <h1 className="text-title sm:text-[2rem] font-semibold tracking-heading text-[#f0f0f0] mb-4 leading-tight">
+              <h1 className="text-title font-semibold tracking-heading text-[#f0f0f0] mb-4 leading-tight">
                 Start analyzing your chess games
               </h1>
               <p className="text-body text-gray-400 leading-relaxed">

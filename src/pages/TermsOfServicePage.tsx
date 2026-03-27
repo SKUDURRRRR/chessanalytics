@@ -2,15 +2,15 @@ import { Link } from 'react-router-dom'
 
 export default function TermsOfServicePage() {
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
-      <div className="bg-surface-1 rounded-lg shadow-card p-8 md:p-12">
-        <h1 className="text-3xl md:text-4xl font-semibold text-white mb-2">Terms of Service</h1>
+    <div className="max-w-5xl mx-auto px-8 py-10">
+      <div className="bg-surface-1 rounded-lg shadow-card p-6">
+        <h1 className="text-title font-semibold text-white mb-2">Terms of Service</h1>
         <p className="text-gray-500 mb-2">Last updated: November 6, 2025</p>
-        <p className="text-gray-500 mb-8">Website: <a href="https://chessdata.app" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:text-sky-300 underline">https://chessdata.app</a></p>
+        <p className="text-gray-500 mb-8">Website: <a href="https://chessdata.app" target="_blank" rel="noopener noreferrer" className="text-cta hover:text-cta-hover underline">https://chessdata.app</a></p>
 
         <div className="prose prose-invert max-w-none space-y-6 text-gray-400">
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">1. Acceptance of Terms</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">1. Acceptance of Terms</h2>
             <p>
               By accessing or using chessdata.app ("the Service"), you agree to be bound by these Terms of Service ("Terms").
             </p>
@@ -23,7 +23,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">2. Description of Service</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">2. Description of Service</h2>
             <p>
               chessdata.app is a chess analytics platform that helps players improve their performance through advanced analysis and insights.
             </p>
@@ -43,7 +43,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">3. Account Registration</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">3. Account Registration</h2>
             <p>To access certain features of the Service, you must:</p>
             <ul className="list-disc pl-6 space-y-2">
               <li>Create an account using a valid email address</li>
@@ -63,7 +63,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">4. Acceptable Use</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">4. Acceptable Use</h2>
             <p>You agree not to:</p>
             <ul className="list-disc pl-6 space-y-2">
               <li>Use the Service for any unlawful or unauthorized purpose</li>
@@ -82,7 +82,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">5. Usage Limits</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">5. Usage Limits</h2>
             <p>
               Our Service offers different tiers with specific usage limits:
             </p>
@@ -100,7 +100,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">6. Subscriptions and Payments</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">6. Subscriptions and Payments</h2>
             <p>
               Pro subscriptions are billed monthly or annually.
             </p>
@@ -128,7 +128,7 @@ export default function TermsOfServicePage() {
               Refunds may be issued on a case-by-case basis within 14 days of the charge.
             </p>
             <p className="mt-2">
-              Contact <a href="mailto:support@chessdata.app" className="text-sky-400 hover:text-sky-300 underline">support@chessdata.app</a> if you believe you are entitled to a refund.
+              Contact <a href="mailto:support@chessdata.app" className="text-cta hover:text-cta-hover underline">support@chessdata.app</a> if you believe you are entitled to a refund.
             </p>
             <p className="mt-4">
               <strong>Payment Processing:</strong>
@@ -137,12 +137,12 @@ export default function TermsOfServicePage() {
               Payments are securely handled by Stripe.
             </p>
             <p className="mt-2">
-              Your payment details are processed in accordance with <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:text-sky-300 underline">Stripe's Privacy Policy</a>.
+              Your payment details are processed in accordance with <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer" className="text-cta hover:text-cta-hover underline">Stripe's Privacy Policy</a>.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">7. Third-Party Services</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">7. Third-Party Services</h2>
             <p>
               Our Service integrates with third-party platforms, including:
             </p>
@@ -163,7 +163,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">8. Intellectual Property</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">8. Intellectual Property</h2>
             <p>
               All content, features, and functionality of the Service—including the design, code, and interface—are the property of chessdata.app and protected by copyright and trademark laws.
             </p>
@@ -184,9 +184,9 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">9. Data and Privacy</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">9. Data and Privacy</h2>
             <p>
-              Your use of the Service is also governed by our <Link to="/privacy" className="text-sky-400 hover:text-sky-300 underline">Privacy Policy</Link>.
+              Your use of the Service is also governed by our <Link to="/privacy" className="text-cta hover:text-cta-hover underline">Privacy Policy</Link>.
             </p>
             <p className="mt-4">
               By using the Service, you consent to the collection and use of your information as described in that policy.
@@ -197,7 +197,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">10. Service Availability</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">10. Service Availability</h2>
             <p>
               We strive to maintain high uptime and reliability. However, we do not guarantee uninterrupted or error-free access.
             </p>
@@ -216,7 +216,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">11. Disclaimer of Warranties</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">11. Disclaimer of Warranties</h2>
             <p>
               The Service is provided "as is" and "as available", without warranties of any kind, express or implied.
             </p>
@@ -234,7 +234,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">12. Limitation of Liability</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">12. Limitation of Liability</h2>
             <p>
               To the fullest extent permitted by law, chessdata.app and its owners, employees, and affiliates shall not be liable for any:
             </p>
@@ -253,7 +253,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">13. Indemnification</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">13. Indemnification</h2>
             <p>
               You agree to indemnify and hold harmless chessdata.app, its owners, employees, and agents from any claims, damages, losses, or expenses (including legal fees) arising from:
             </p>
@@ -265,7 +265,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">14. Termination</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">14. Termination</h2>
             <p>
               We may suspend or terminate your account and access to the Service immediately, without notice, for any reason, including:
             </p>
@@ -282,12 +282,12 @@ export default function TermsOfServicePage() {
               <li>You remain responsible for any fees incurred before termination</li>
             </ul>
             <p className="mt-4">
-              You may terminate your account at any time by contacting <a href="mailto:support@chessdata.app" className="text-sky-400 hover:text-sky-300 underline">support@chessdata.app</a> or through your account settings.
+              You may terminate your account at any time by contacting <a href="mailto:support@chessdata.app" className="text-cta hover:text-cta-hover underline">support@chessdata.app</a> or through your account settings.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">15. Changes to Terms</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">15. Changes to Terms</h2>
             <p>
               We may modify these Terms at any time.
             </p>
@@ -307,16 +307,16 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">16. Governing Law</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">16. Governing Law</h2>
             <p>
               These Terms shall be governed by and construed in accordance with the laws of Estonia, without regard to its conflict of law provisions.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">17. Dispute Resolution</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">17. Dispute Resolution</h2>
             <p>
-              We aim to resolve disputes amicably. Please contact <a href="mailto:support@chessdata.app" className="text-sky-400 hover:text-sky-300 underline">support@chessdata.app</a> to seek resolution first.
+              We aim to resolve disputes amicably. Please contact <a href="mailto:support@chessdata.app" className="text-cta hover:text-cta-hover underline">support@chessdata.app</a> to seek resolution first.
             </p>
             <p className="mt-4">
               If unresolved, disputes may be brought before a court of competent jurisdiction in Estonia.
@@ -324,24 +324,24 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">18. Severability</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">18. Severability</h2>
             <p>
               If any provision of these Terms is found invalid or unenforceable, it will be limited or removed to the minimum extent necessary, and the remaining provisions will continue in full effect.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">19. Contact Information</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">19. Contact Information</h2>
             <p>
               If you have any questions about these Terms, please contact us at:
             </p>
             <p className="mt-4">
-              📧 <a href="mailto:support@chessdata.app" className="text-sky-400 hover:text-sky-300 underline">support@chessdata.app</a>
+              📧 <a href="mailto:support@chessdata.app" className="text-cta hover:text-cta-hover underline">support@chessdata.app</a>
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold text-white mt-8 mb-4">20. Entire Agreement</h2>
+            <h2 className="text-section font-semibold text-white mt-8 mb-4">20. Entire Agreement</h2>
             <p>
               These Terms constitute the entire agreement between you and chessdata.app regarding your use of the Service and supersede all prior agreements or understandings.
             </p>
@@ -351,7 +351,7 @@ export default function TermsOfServicePage() {
         <div className="mt-12 pt-8 border-t border-white/[0.04]">
           <a
             href="/"
-            className="text-sky-400 hover:text-sky-300 underline"
+            className="text-cta hover:text-cta-hover underline"
           >
             ← Back to Home
           </a>

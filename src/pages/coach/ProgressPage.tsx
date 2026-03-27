@@ -48,7 +48,7 @@ function StatCard({ label, value, subtitle }: { label: string; value: string | n
   return (
     <div className="rounded-lg shadow-card bg-white/[0.04] p-5">
       <p className="text-sm text-gray-500 mb-1">{label}</p>
-      <p className="text-3xl font-semibold text-white">{value}</p>
+      <p className="text-title font-semibold text-white">{value}</p>
       {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
     </div>
   )
@@ -57,7 +57,7 @@ function StatCard({ label, value, subtitle }: { label: string; value: string | n
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg shadow-card bg-surface-1 p-6">
-      <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
+      <h3 className="text-section font-semibold text-white mb-4">{title}</h3>
       <div className="h-64">
         {children}
       </div>
@@ -68,7 +68,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div className="mb-4 mt-10 first:mt-0">
-      <h2 className="text-xl font-semibold text-white">{title}</h2>
+      <h2 className="text-title font-semibold text-white">{title}</h2>
       {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
     </div>
   )
@@ -122,7 +122,7 @@ function ProgressContent({
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
           <p className="text-sm text-gray-500">Loading progress data...</p>
         </div>
       </div>
@@ -133,11 +133,11 @@ function ProgressContent({
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
         <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
-          <h2 className="text-2xl font-semibold text-white mb-4">Error</h2>
+          <h2 className="text-title font-semibold text-white mb-4">Error</h2>
           <p className="text-gray-400 mb-6">{error.message}</p>
           <button
             onClick={() => navigate('/coach')}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+            className="bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-6 rounded-md text-body transition-colors shadow-btn-primary"
           >
             Back to Dashboard
           </button>
@@ -154,7 +154,7 @@ function ProgressContent({
 
   return (
     <div className="min-h-screen bg-surface-base p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
           <div>
@@ -164,7 +164,7 @@ function ProgressContent({
             >
               ← Back to Dashboard
             </button>
-            <h1 className="text-3xl md:text-4xl font-semibold text-white">Your Progress</h1>
+            <h1 className="text-title font-semibold text-white">Your Progress</h1>
             <p className="text-gray-500 mt-1">Track your chess improvement over time</p>
           </div>
 
@@ -188,16 +188,16 @@ function ProgressContent({
 
         {/* Diagnostic Card */}
         {diagnostic?.summary && (
-          <div className="rounded-lg shadow-card bg-cyan-500/[0.04] p-6 mb-8">
+          <div className="rounded-lg shadow-card bg-emerald-500/[0.04] p-6 mb-8">
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-cyan-400 text-sm font-semibold">C</span>
+              <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-emerald-400 text-sm font-semibold">C</span>
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-lg font-semibold text-white">Coach&apos;s Assessment</h3>
+                  <h3 className="text-section font-semibold text-white">Coach&apos;s Assessment</h3>
                   {diagnostic.key_insight && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">
                       {diagnostic.key_insight}
                     </span>
                   )}
@@ -522,14 +522,14 @@ function AdvancedMetricsSection({ advanced }: { advanced: AdvancedProgressMetric
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="rounded-lg shadow-card bg-emerald-500/[0.06] p-4">
                 <p className="text-xs text-emerald-400 mb-1">Best Opening</p>
-                <p className="text-lg font-semibold text-white">{openings!.best_opening.name}</p>
+                <p className="text-section font-semibold text-white">{openings!.best_opening.name}</p>
                 <p className="text-sm text-gray-500">
                   as {openings!.best_opening.color} &middot; {openings!.best_opening.win_rate}% win rate
                 </p>
               </div>
               <div className="rounded-lg shadow-card bg-rose-500/[0.06] p-4">
                 <p className="text-xs text-rose-400 mb-1">Weakest Opening</p>
-                <p className="text-lg font-semibold text-white">{openings!.worst_opening.name}</p>
+                <p className="text-section font-semibold text-white">{openings!.worst_opening.name}</p>
                 <p className="text-sm text-gray-500">
                   as {openings!.worst_opening.color} &middot; {openings!.worst_opening.win_rate}% win rate
                 </p>
@@ -758,7 +758,7 @@ function AdvancedMetricsSection({ advanced }: { advanced: AdvancedProgressMetric
                 </div>
                 <div className="flex items-end gap-4">
                   <div>
-                    <p className="text-2xl font-semibold text-white">{c.your_value}</p>
+                    <p className="text-title font-semibold text-white">{c.your_value}</p>
                     <p className="text-xs text-gray-500">You</p>
                   </div>
                   <div>

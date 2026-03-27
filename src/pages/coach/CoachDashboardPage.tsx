@@ -37,7 +37,7 @@ function CoachDashboardContent({ username }: CoachDashboardContentProps) {
       <div className="max-w-3xl mx-auto px-4 md:px-6 pt-8 pb-12">
         {/* Welcome header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-white tracking-tight">
+          <h1 className="text-title font-semibold text-white tracking-tight">
             Coach Tal
           </h1>
           <p className="text-sm text-gray-400 mt-1">

@@ -378,7 +378,7 @@ export default function ProfilePage() {
       <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-gray-500">
           <div className="flex flex-col items-center gap-4">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-2 border-gray-700 border-t-gray-300"></div>
             <p>Verifying your payment...</p>
           </div>
         </div>
@@ -391,7 +391,7 @@ export default function ProfilePage() {
       <div className="max-w-4xl mx-auto space-y-8">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-extrabold text-white">Profile</h1>
+          <h1 className="text-title font-semibold text-white">Profile</h1>
           <p className="mt-2 text-sm text-gray-500">
             Manage your account settings and view your usage stats
           </p>
@@ -404,7 +404,7 @@ export default function ProfilePage() {
         )}
 
         {notification && (
-          <div className={`flex items-start justify-between rounded-lg shadow-card px-4 py-3 text-sm ${notification.type === 'success' ? 'bg-emerald-500/10 text-emerald-100' : 'bg-sky-500/10 text-sky-100'}`}>
+          <div className={`flex items-start justify-between rounded-lg shadow-card px-4 py-3 text-sm ${notification.type === 'success' ? 'bg-emerald-500/10 text-emerald-100' : 'bg-emerald-500/10 text-emerald-100'}`}>
             <div className="flex items-start gap-3">
               <span className="text-lg leading-none">{notification.type === 'success' ? '✓' : 'ℹ'}</span>
               <span>{notification.message}</span>
@@ -423,7 +423,7 @@ export default function ProfilePage() {
         {showCancelConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d0f]/90 px-4">
             <div className="max-w-md w-full rounded-lg bg-surface-1 p-6 shadow-card">
-              <h3 className="text-lg font-semibold text-white mb-3">Cancel Subscription</h3>
+              <h3 className="text-section font-semibold text-white mb-3">Cancel Subscription</h3>
               <p className="text-gray-400 text-sm mb-6">
                 Are you sure you want to cancel your subscription? You will retain access until the end of your billing period.
               </p>
@@ -448,7 +448,7 @@ export default function ProfilePage() {
 
         {/* Account Information */}
         <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
-          <h2 className="text-xl font-semibold text-white mb-4">Account Information</h2>
+          <h2 className="text-section font-semibold text-white mb-4">Account Information</h2>
 
           <div className="space-y-3">
             <div>
@@ -490,7 +490,7 @@ export default function ProfilePage() {
         {/* Usage Stats */}
         {usageStats ? (
           <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
-            <h2 className="text-xl font-semibold text-white mb-4">Usage Statistics</h2>
+            <h2 className="text-section font-semibold text-white mb-4">Usage Statistics</h2>
 
             <div className="space-y-4">
               <div>
@@ -511,7 +511,7 @@ export default function ProfilePage() {
                     </div>
                     <div className="w-full bg-white/10 rounded-full h-2">
                       <div
-                        className="bg-sky-400 h-2 rounded-full transition-colors"
+                        className="bg-emerald-400 h-2 rounded-full transition-colors"
                         style={{
                           width: `${((usageStats.imports?.used || 0) / (usageStats.imports?.limit || 1)) * 100}%`
                         }}
@@ -562,7 +562,7 @@ export default function ProfilePage() {
               <div className="mt-6">
                 <a
                   href="/pricing"
-                  className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30"
+                  className="block w-full text-center rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5]"
                 >
                   Upgrade to Pro for Unlimited Access
                 </a>
@@ -576,7 +576,7 @@ export default function ProfilePage() {
                     <button
                       onClick={handleSwitchToMonthly}
                       disabled={loading}
-                      className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Resubscribe to Pro Monthly'}
                     </button>
@@ -617,7 +617,7 @@ export default function ProfilePage() {
                     <button
                       onClick={handleSwitchToMonthly}
                       disabled={loading}
-                      className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Switch to Pro Monthly'}
                     </button>
@@ -635,7 +635,7 @@ export default function ProfilePage() {
                     <button
                       onClick={handleSwitchToMonthly}
                       disabled={loading}
-                      className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Switch to Monthly Pro'}
                     </button>
@@ -653,7 +653,7 @@ export default function ProfilePage() {
           </div>
         ) : (
           <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
-            <h2 className="text-xl font-semibold text-white mb-4">Usage Statistics</h2>
+            <h2 className="text-section font-semibold text-white mb-4">Usage Statistics</h2>
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between items-center mb-2">
@@ -665,7 +665,7 @@ export default function ProfilePage() {
               <div className="mt-4">
                 <a
                   href="/pricing"
-                  className="block w-full text-center rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30"
+                  className="block w-full text-center rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5]"
                 >
                   Upgrade to Pro for Unlimited Access
                 </a>
@@ -677,7 +677,7 @@ export default function ProfilePage() {
         {/* Coach Usage (for free users with coach limits) */}
         {usageStats && !usageStats.is_unlimited && usageStats.coach_lessons && (
           <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
-            <h2 className="text-xl font-semibold text-white mb-4">Coach Usage</h2>
+            <h2 className="text-section font-semibold text-white mb-4">Coach Usage</h2>
             <div className="space-y-4">
               {usageStats.coach_lessons && !usageStats.coach_lessons.unlimited && (
                 <div>
@@ -721,7 +721,7 @@ export default function ProfilePage() {
 
         {/* Actions */}
         <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
-          <h2 className="text-xl font-semibold text-white mb-4">Actions</h2>
+          <h2 className="text-section font-semibold text-white mb-4">Actions</h2>
           <div className="space-y-3">
             {hasPasswordAuth && (
               <>
@@ -734,7 +734,7 @@ export default function ProfilePage() {
                       setNewPassword('')
                       setConfirmPassword('')
                     }}
-                    className="w-full rounded-lg shadow-card bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30"
+                    className="w-full rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5]"
                   >
                     Change Password
                   </button>
@@ -758,7 +758,7 @@ export default function ProfilePage() {
                         required
                         value={currentPassword}
                         onChange={(e) => setCurrentPassword(e.target.value)}
-                        className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                        className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:shadow-input-focus"
                         placeholder="Enter your current password"
                       />
                     </div>
@@ -775,7 +775,7 @@ export default function ProfilePage() {
                         required
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                        className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:shadow-input-focus"
                         placeholder="Enter your new password (min. 6 characters)"
                       />
                     </div>
@@ -792,7 +792,7 @@ export default function ProfilePage() {
                         required
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40"
+                        className="w-full rounded-lg shadow-card bg-surface-1/60 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:shadow-input-focus"
                         placeholder="Confirm your new password"
                       />
                     </div>
@@ -815,7 +815,7 @@ export default function ProfilePage() {
                       <button
                         type="submit"
                         disabled={changingPassword}
-                        className="rounded-lg shadow-card bg-sky-500/20 px-6 py-2.5 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="rounded-lg shadow-card bg-[#e4e8ed] px-6 py-2.5 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5] disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {changingPassword ? 'Changing...' : 'Change Password'}
                       </button>
@@ -886,7 +886,7 @@ function ConnectedAccountsSection({
 
   return (
     <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
-      <h2 className="text-xl font-semibold text-white mb-4">Connected Chess Accounts</h2>
+      <h2 className="text-section font-semibold text-white mb-4">Connected Chess Accounts</h2>
       <p className="text-sm text-gray-500 mb-5">
         Link your accounts to get personalized coaching, puzzles, and analytics.
       </p>
@@ -921,7 +921,7 @@ function ConnectedAccountsSection({
                 onKeyDown={(e) => e.key === 'Enter' && handleLink('chess.com')}
                 placeholder="Your Chess.com username"
                 disabled={chessComLoading}
-                className="flex-1 rounded-lg shadow-card bg-surface-2 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40 transition-colors disabled:opacity-50"
+                className="flex-1 rounded-lg shadow-card bg-surface-2 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:shadow-input-focus transition-colors disabled:opacity-50"
               />
               <button
                 onClick={() => handleLink('chess.com')}
@@ -964,7 +964,7 @@ function ConnectedAccountsSection({
                 onKeyDown={(e) => e.key === 'Enter' && handleLink('lichess')}
                 placeholder="Your Lichess username"
                 disabled={lichessLoading}
-                className="flex-1 rounded-lg shadow-card bg-surface-2 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-400/40 transition-colors disabled:opacity-50"
+                className="flex-1 rounded-lg shadow-card bg-surface-2 px-4 py-3 text-gray-300 placeholder:text-gray-500 focus:outline-none focus:shadow-input-focus transition-colors disabled:opacity-50"
               />
               <button
                 onClick={() => handleLink('lichess')}

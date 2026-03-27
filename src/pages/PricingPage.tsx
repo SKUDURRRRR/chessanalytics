@@ -3,6 +3,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
+import { Check, Shield, Zap, Brain, TrendingUp, BarChart3, Sparkles } from 'lucide-react'
+import { Button } from '../components/ui'
 
 interface PaymentTier {
   id: string
@@ -280,55 +282,46 @@ export default function PricingPage() {
 
   return (
     <div className="relative min-h-screen bg-surface-base overflow-hidden">
-      <div className="relative py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
+      <div className="relative px-8 py-10">
+        <div className="max-w-5xl mx-auto">
           {/* Hero Section */}
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 rounded-full shadow-card bg-white/[0.04] px-4 py-1.5 text-xs uppercase tracking-wide text-gray-400 mb-6">
-              <span className="text-sm">♟</span>
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 rounded-full shadow-card bg-white/[0.04] px-4 py-1.5 text-caption uppercase tracking-label text-gray-400 mb-6">
+              <Sparkles size={14} className="text-gray-400" />
               <span>Professional Chess Analysis</span>
             </div>
-            <h1 className="text-4xl md:text-5xl font-semibold text-white mb-6 leading-tight">
+            <h1 className="text-title sm:text-[2rem] font-semibold text-[#f0f0f0] mb-4 tracking-heading leading-tight">
               Transform Your Chess Game
             </h1>
-            <p className="text-xl text-gray-400 max-w-3xl mx-auto mb-8 leading-relaxed">
+            <p className="text-body text-gray-400 max-w-2xl mx-auto mb-8 leading-relaxed">
               Powered by <span className="text-gray-300 font-medium">Stockfish 17.1</span>, the world's strongest chess engine.
-              Understand your mistakes, discover your playing style, and improve faster with insights that help you play better chess.
+              Understand your mistakes, discover your playing style, and improve faster.
             </p>
 
             {/* Trust Indicators */}
-            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-500 mb-8">
+            <div className="flex flex-wrap items-center justify-center gap-6 text-small text-gray-500 mb-8">
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
+                <Shield size={16} className="text-emerald-400/60" />
                 <span>Secure Payment</span>
               </div>
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
+                <Zap size={16} className="text-emerald-400/60" />
                 <span>Real-time Analysis</span>
               </div>
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
+                <Brain size={16} className="text-emerald-400/60" />
                 <span>AI-Powered Insights</span>
               </div>
             </div>
           </div>
 
           {notification && (
-            <div className={`max-w-2xl mx-auto mb-8 flex items-center justify-between rounded-lg shadow-card px-4 py-3 text-sm ${notification.type === 'error' ? 'bg-rose-500/10 text-rose-100' : 'bg-sky-500/10 text-sky-100'}`}>
-              <div className="flex items-center gap-3 flex-1">
-                <span className="text-lg leading-none flex-shrink-0">{notification.type === 'error' ? '⚠' : 'ℹ'}</span>
-                <span className="flex-1">{notification.message}</span>
-              </div>
+            <div className={`max-w-2xl mx-auto mb-8 flex items-center justify-between rounded-md shadow-card px-4 py-3 text-small ${notification.type === 'error' ? 'bg-rose-500/10 text-rose-300/80' : 'bg-emerald-500/10 text-emerald-300/80'}`}>
+              <span className="flex-1">{notification.message}</span>
               <button
                 type="button"
                 onClick={() => setNotification(null)}
-                className="ml-3 text-xs font-medium text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                className="ml-3 text-caption font-medium text-gray-500 hover:text-gray-300 transition-colors flex-shrink-0"
               >
                 OK
               </button>
@@ -336,54 +329,48 @@ export default function PricingPage() {
           )}
 
           {/* Use Case Scenarios */}
-          <div className="max-w-4xl mx-auto mb-16">
+          <div className="mb-10">
             <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-semibold text-white mb-4">
+              <h2 className="text-title font-semibold text-[#f0f0f0] tracking-heading mb-3">
                 Built for Every Chess Player
               </h2>
-              <p className="text-gray-500 text-lg">
+              <p className="text-gray-500 text-body">
                 Whether you're improving your game or coaching others, our analysis helps you understand chess at a deeper level.
               </p>
             </div>
-            <div className="grid md:grid-cols-3 gap-6">
-              <div className="bg-surface-1/50 shadow-card rounded-lg p-6 transition-colors">
-                <div className="w-12 h-12 rounded-lg bg-blue-500/20 shadow-card flex items-center justify-center mb-4">
-                  <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
+            <div className="grid md:grid-cols-3 gap-3">
+              <div className="bg-surface-1 shadow-card rounded-lg p-6">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style={{ background: 'rgba(228,232,237,0.06)' }}>
+                  <TrendingUp size={18} className="text-gray-300" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Improving Player</h3>
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  Identify patterns in your play, discover your weaknesses, and track improvement over time. Move from intuition to understanding.
+                <h3 className="text-body font-semibold text-[#f0f0f0] mb-2">Improving Player</h3>
+                <p className="text-gray-500 text-small leading-relaxed">
+                  Identify patterns in your play, discover your weaknesses, and track improvement over time.
                 </p>
               </div>
-              <div className="bg-surface-1/50 shadow-card rounded-lg p-6 transition-colors">
-                <div className="w-12 h-12 rounded-lg bg-purple-500/20 shadow-card flex items-center justify-center mb-4">
-                  <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                  </svg>
+              <div className="bg-surface-1 shadow-card rounded-lg p-6">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style={{ background: 'rgba(228,232,237,0.06)' }}>
+                  <Brain size={18} className="text-gray-300" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Coaches & Instructors</h3>
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  Analyze your students' games efficiently. Get detailed insights to guide training and identify areas for focused improvement.
+                <h3 className="text-body font-semibold text-[#f0f0f0] mb-2">Coaches &amp; Instructors</h3>
+                <p className="text-gray-500 text-small leading-relaxed">
+                  Analyze your students' games efficiently. Get detailed insights to guide training.
                 </p>
               </div>
-              <div className="bg-surface-1/50 shadow-card rounded-lg p-6 transition-colors">
-                <div className="w-12 h-12 rounded-lg bg-green-500/20 shadow-card flex items-center justify-center mb-4">
-                  <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                  </svg>
+              <div className="bg-surface-1 shadow-card rounded-lg p-6">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style={{ background: 'rgba(228,232,237,0.06)' }}>
+                  <BarChart3 size={18} className="text-gray-300" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Clubs & Teams</h3>
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  Review tournament games, analyze team performance, and prepare for competitions with comprehensive game analysis.
+                <h3 className="text-body font-semibold text-[#f0f0f0] mb-2">Clubs &amp; Teams</h3>
+                <p className="text-gray-500 text-small leading-relaxed">
+                  Review tournament games, analyze team performance, and prepare for competitions.
                 </p>
               </div>
             </div>
           </div>
 
           {/* Pricing Cards */}
-          <div className="grid md:grid-cols-3 gap-10 md:gap-6 lg:gap-8 max-w-6xl mx-auto mb-16">
+          <div className="grid md:grid-cols-3 gap-3 mb-10">
             {tiers.map((tier) => {
               const isPopular = tier.id === 'pro_monthly'
               const featureCategories = categorizeFeatures(tier.features)
@@ -394,75 +381,75 @@ export default function PricingPage() {
               return (
                 <div
                   key={tier.id}
-                  className={`relative flex flex-col rounded-lg transition-colors duration-300 ${
+                  className={`relative flex flex-col rounded-lg transition-colors ${
                     isPopular
-                      ? 'bg-[#151618] scale-105 md:scale-105 [box-shadow:0_0_0_1px_rgba(228,232,237,0.15),0_2px_4px_rgba(0,0,0,0.2)]'
-                      : 'bg-surface-1/50 shadow-card'
+                      ? 'bg-[#151618] shadow-card-highlight'
+                      : 'bg-surface-1 shadow-card'
                   }`}
                 >
                   {isPopular && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-white/[0.08] text-gray-300 text-xs font-medium px-4 py-1.5 rounded-full shadow-card">
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-white/[0.08] text-gray-300 text-caption font-medium px-4 py-1 rounded-full shadow-card">
                       MOST POPULAR
                     </div>
                   )}
 
-                  <div className="p-8 flex flex-col flex-grow">
+                  <div className="p-6 flex flex-col flex-grow">
                     {/* Header */}
-                    <div className="mb-6">
-                      <h2 className="text-2xl font-semibold text-white mb-2">{tier.name}</h2>
-                      <p className="text-gray-500 text-sm leading-relaxed">{tier.description}</p>
+                    <div className="mb-5">
+                      <h2 className="text-section font-semibold text-[#f0f0f0] tracking-section mb-1">{tier.name}</h2>
+                      <p className="text-gray-500 text-small leading-relaxed">{tier.description}</p>
                     </div>
 
                     {/* Price */}
-                    <div className="mb-8 pb-8 border-b border-white/[0.04]">
+                    <div className="mb-6 pb-6" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                       {tier.price_monthly !== null && tier.price_monthly > 0 ? (
                         <div>
                           <div className="flex items-baseline gap-2">
-                            <span className="text-5xl font-semibold text-white">
+                            <span className="text-stat font-semibold text-white tracking-heading">
                               {formatPrice(tier.price_monthly)}
                             </span>
-                            <span className="text-gray-500 text-lg">/month</span>
+                            <span className="text-gray-500 text-body">/month</span>
                           </div>
-                          <p className="text-gray-500 text-sm mt-2">
-                            Billed monthly • Cancel anytime
+                          <p className="text-gray-500 text-small mt-2">
+                            Billed monthly · Cancel anytime
                           </p>
                         </div>
                       ) : tier.price_yearly !== null && tier.price_yearly > 0 ? (
                         <div>
                           <div className="flex items-baseline gap-2">
-                            <span className="text-5xl font-semibold text-white">
+                            <span className="text-stat font-semibold text-white tracking-heading">
                               {formatPrice(tier.price_yearly)}
                             </span>
-                            <span className="text-gray-500 text-lg">/year</span>
+                            <span className="text-gray-500 text-body">/year</span>
                           </div>
                           {monthlyEquivalent && (
-                            <p className="text-green-400 font-semibold text-sm mt-1">
+                            <p className="text-emerald-400/80 font-medium text-small mt-1">
                               ${monthlyEquivalent}/month
                             </p>
                           )}
                           {tier.price_monthly !== null && (
-                            <p className="text-green-400 text-sm mt-2">
-                              Save ${((tier.price_monthly * 12) - tier.price_yearly).toFixed(2)}/year • 25% off
+                            <p className="text-emerald-400/80 text-small mt-2">
+                              Save ${((tier.price_monthly * 12) - tier.price_yearly).toFixed(2)}/year · 25% off
                             </p>
                           )}
                         </div>
                       ) : (
                         <div>
-                          <span className="text-5xl font-semibold text-white">Free</span>
-                          <p className="text-gray-500 text-sm mt-2">Forever free plan</p>
+                          <span className="text-stat font-semibold text-white tracking-heading">Free</span>
+                          <p className="text-gray-500 text-small mt-2">Forever free plan</p>
                         </div>
                       )}
                     </div>
 
                     {/* Features */}
-                    <div className="flex-grow mb-8">
+                    <div className="flex-grow mb-6">
                       {Object.entries(featureCategories).map(([category, features], categoryIndex) => {
                         if (features.length === 0) return null
 
                         return (
                           <div key={category} className={categoryIndex > 0 ? 'mt-2' : ''}>
                             {category !== 'other' && (
-                              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                              <h3 className="label text-gray-500 mb-2">
                                 {category === 'analysis' && 'Analysis'}
                                 {category === 'insights' && 'Insights'}
                                 {category === 'personalization' && 'Personalization'}
@@ -470,23 +457,12 @@ export default function PricingPage() {
                             )}
                             <ul className="space-y-1.5">
                               {features.map((feature, index) => (
-                                <li key={index} className="flex items-start gap-3">
-                                  <svg
-                                    className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
-                                      isPopular ? 'text-blue-400' : 'text-green-400'
-                                    }`}
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2.5}
-                                      d="M5 13l4 4L19 7"
-                                    />
-                                  </svg>
-                                  <span className="text-gray-400 text-sm leading-relaxed">{feature.replace(/\s+/g, ' ').trim()}</span>
+                                <li key={index} className="flex items-start gap-2.5">
+                                  <Check
+                                    size={16}
+                                    className="flex-shrink-0 mt-0.5 text-emerald-400/60"
+                                  />
+                                  <span className="text-gray-400 text-small leading-relaxed">{feature.replace(/\s+/g, ' ').trim()}</span>
                                 </li>
                               ))}
                             </ul>
@@ -500,18 +476,18 @@ export default function PricingPage() {
                       {tier.id === 'free' ? (
                         user ? (
                           currentTier === 'free' ? (
-                            <div className="text-center py-3 px-4 rounded-lg bg-surface-2/50 shadow-card text-gray-400 font-medium">
-                              ✓ Current Plan
+                            <div className="text-center py-2 px-4 rounded-md bg-surface-2 shadow-card text-gray-400 font-medium text-body">
+                              Current Plan
                             </div>
                           ) : (
-                            <div className="text-center py-3 text-gray-500 font-medium">
+                            <div className="text-center py-2 text-gray-500 font-medium text-body">
                               —
                             </div>
                           )
                         ) : (
                           <a
                             href="/signup"
-                            className="block w-full text-center px-6 py-3.5 bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] rounded-md font-medium text-[13px] transition-colors [box-shadow:0_1px_2px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.3)]"
+                            className="block w-full text-center px-6 py-2 bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] rounded-md font-medium text-body transition-colors shadow-btn-primary"
                           >
                             Start Free
                           </a>
@@ -519,7 +495,7 @@ export default function PricingPage() {
                       ) : tier.id === 'enterprise' ? (
                         <a
                           href="mailto:support@chessdata.app"
-                          className="block w-full text-center px-6 py-3.5 text-gray-400 border border-white/[0.06] hover:text-gray-300 hover:border-white/[0.1] rounded-md font-medium text-[13px] transition-colors"
+                          className="block w-full text-center px-5 py-2 text-gray-400 rounded-md font-medium text-body transition-colors" style={{ border: '1px solid rgba(255,255,255,0.06)' }}
                         >
                           Contact Sales
                         </a>
@@ -528,14 +504,11 @@ export default function PricingPage() {
                           <button
                             onClick={() => handleUpgrade(tier.id)}
                             disabled={upgrading === tier.id}
-                            className="w-full px-6 py-3.5 rounded-md font-medium text-[13px] transition-colors bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] disabled:opacity-50 disabled:cursor-not-allowed [box-shadow:0_1px_2px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.3)]"
+                            className="w-full px-6 py-2 rounded-md font-medium text-body transition-colors bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] disabled:opacity-50 disabled:cursor-not-allowed shadow-btn-primary"
                           >
                             {upgrading === tier.id ? (
                               <span className="flex items-center justify-center gap-2">
-                                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                </svg>
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-700 border-t-gray-300"></div>
                                 Processing...
                               </span>
                             ) : (
@@ -543,14 +516,14 @@ export default function PricingPage() {
                             )}
                           </button>
                         ) : (
-                          <div className="text-center py-3 px-4 rounded-lg bg-emerald-500/10 shadow-card text-emerald-400 font-medium">
-                            ✓ Current Plan
+                          <div className="text-center py-2 px-4 rounded-md bg-emerald-500/10 shadow-card text-emerald-400/80 font-medium text-body">
+                            Current Plan
                           </div>
                         )
                       ) : (
                         <a
                           href="/signup"
-                          className="block w-full text-center px-6 py-3.5 rounded-md font-medium text-[13px] transition-colors bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] [box-shadow:0_1px_2px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.3)]"
+                          className="block w-full text-center px-6 py-2 rounded-md font-medium text-body transition-colors bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] shadow-btn-primary"
                         >
                           Become Pro
                         </a>
@@ -563,49 +536,43 @@ export default function PricingPage() {
           </div>
 
           {/* Value Metrics Section */}
-          <div className="max-w-4xl mx-auto mb-16">
-            <div className="bg-surface-1/50 shadow-card rounded-lg p-8 md:p-12">
-              <h2 className="text-2xl md:text-3xl font-semibold text-white mb-8 text-center">
+          <div className="mb-10">
+            <div className="bg-surface-1 shadow-card rounded-lg p-6">
+              <h2 className="text-title font-semibold text-[#f0f0f0] tracking-heading mb-8 text-center">
                 What You Get
               </h2>
-              <div className="grid md:grid-cols-3 gap-8">
-                <div className="text-center">
-                  <div className="text-2xl md:text-3xl font-semibold text-blue-400 mb-2">Tal Commentary</div>
-                  <p className="text-gray-400 text-sm">
-                    Not just generic AI comments — Mikhail Tal inspired thoughtful explanations of every move. Learn the principles, patterns, and story behind each decision.
+              <div className="grid md:grid-cols-3 gap-3">
+                <div className="text-center p-5 bg-surface-2 rounded-lg">
+                  <div className="text-section font-semibold text-[#f0f0f0] tracking-section mb-2">Tal Commentary</div>
+                  <p className="text-gray-500 text-small leading-relaxed">
+                    Mikhail Tal inspired thoughtful explanations of every move. Learn the principles and story behind each decision.
                   </p>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl md:text-3xl font-semibold text-purple-400 mb-2">6-Dimensional</div>
-                  <p className="text-gray-400 text-sm">
+                <div className="text-center p-5 bg-surface-2 rounded-lg">
+                  <div className="text-section font-semibold text-[#f0f0f0] tracking-section mb-2">6-Dimensional</div>
+                  <p className="text-gray-500 text-small leading-relaxed">
                     Your chess personality mapped across 6 metrics. Understand your playing style like never before.
                   </p>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl md:text-3xl font-semibold text-green-400 mb-2">Track Progress</div>
-                  <p className="text-gray-400 text-sm">
-                    ELO trends, phase-specific accuracy, and performance analytics. Watch your improvement over time.
+                <div className="text-center p-5 bg-surface-2 rounded-lg">
+                  <div className="text-section font-semibold text-[#f0f0f0] tracking-section mb-2">Track Progress</div>
+                  <p className="text-gray-500 text-small leading-relaxed">
+                    ELO trends, phase-specific accuracy, and performance analytics over time.
                   </p>
                 </div>
               </div>
-              <div className="mt-8 pt-8 border-t border-white/[0.04]">
-                <div className="flex flex-col md:flex-row items-center justify-center gap-6 text-sm text-gray-400">
+              <div className="mt-6 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                <div className="flex flex-col md:flex-row items-center justify-center gap-6 text-small text-gray-400">
                   <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                    <Check size={16} className="text-emerald-400/60" />
                     <span>No credit card required for free plan</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                    <Check size={16} className="text-emerald-400/60" />
                     <span>Cancel anytime, no questions asked</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                    <Check size={16} className="text-emerald-400/60" />
                     <span>14-day money-back guarantee</span>
                   </div>
                 </div>
@@ -614,63 +581,53 @@ export default function PricingPage() {
           </div>
 
           {/* Value Proposition Section */}
-          <div className="max-w-4xl mx-auto mb-16">
-            <div className="bg-surface-1/80 shadow-card rounded-lg p-8 md:p-12">
-              <h2 className="text-2xl md:text-3xl font-semibold text-white mb-12 text-center">
+          <div className="mb-10">
+            <div className="bg-surface-1 shadow-card rounded-lg p-6">
+              <h2 className="text-title font-semibold text-[#f0f0f0] tracking-heading mb-8 text-center">
                 Why chessdata.app?
               </h2>
-              <div className="grid md:grid-cols-2 gap-8">
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-blue-500/20 shadow-card flex items-center justify-center">
-                    <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                    </svg>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(228,232,237,0.06)' }}>
+                    <Zap size={18} className="text-gray-300" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-2">Stockfish 17.1 Engine</h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      Get the same analysis quality used by professional players. Understand why moves work or fail with precise evaluations.
+                    <h3 className="text-body font-semibold text-[#f0f0f0] mb-1">Stockfish 17.1 Engine</h3>
+                    <p className="text-gray-500 text-small leading-relaxed">
+                      Professional-grade analysis. Understand why moves work or fail with precise evaluations.
                     </p>
                   </div>
                 </div>
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-purple-500/20 shadow-card flex items-center justify-center">
-                    <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(228,232,237,0.06)' }}>
+                    <Brain size={18} className="text-gray-300" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-2">Personalized Openings</h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      Build your perfect opening repertoire. Get recommendations tailored to your playing style, not generic theory that doesn't fit how you play.
+                    <h3 className="text-body font-semibold text-[#f0f0f0] mb-1">Personalized Openings</h3>
+                    <p className="text-gray-500 text-small leading-relaxed">
+                      Recommendations tailored to your playing style, not generic theory.
                     </p>
                   </div>
                 </div>
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-green-500/20 shadow-card flex items-center justify-center">
-                    <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(228,232,237,0.06)' }}>
+                    <BarChart3 size={18} className="text-gray-300" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-2">Personality Insights</h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      Discover your natural playing style and get opening recommendations that match how you actually play, not generic advice.
+                    <h3 className="text-body font-semibold text-[#f0f0f0] mb-1">Personality Insights</h3>
+                    <p className="text-gray-500 text-small leading-relaxed">
+                      Discover your natural playing style and get matched opening recommendations.
                     </p>
                   </div>
                 </div>
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-amber-500/20 shadow-card flex items-center justify-center">
-                    <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(228,232,237,0.06)' }}>
+                    <TrendingUp size={18} className="text-gray-300" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-2">Real-time Analysis</h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      Get instant feedback on your games. Review mistakes immediately after playing to improve faster.
+                    <h3 className="text-body font-semibold text-[#f0f0f0] mb-1">Real-time Analysis</h3>
+                    <p className="text-gray-500 text-small leading-relaxed">
+                      Instant feedback on your games. Review mistakes immediately after playing.
                     </p>
                   </div>
                 </div>
@@ -679,54 +636,54 @@ export default function PricingPage() {
           </div>
 
           {/* FAQ Section */}
-          <div className="max-w-4xl mx-auto mb-16">
+          <div className="mb-10">
             <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-semibold text-white mb-4">
+              <h2 className="text-title font-semibold text-[#f0f0f0] tracking-heading mb-3">
                 Frequently Asked Questions
               </h2>
-              <p className="text-gray-500 text-lg">
+              <p className="text-gray-500 text-body">
                 Everything you need to know about our chess analysis platform.
               </p>
             </div>
-            <div className="space-y-4">
-              <div className="bg-surface-1/50 shadow-card rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-white mb-2">
+            <div className="space-y-3">
+              <div className="bg-surface-1 shadow-card rounded-lg p-5">
+                <h3 className="text-body font-semibold text-[#f0f0f0] mb-2">
                   How accurate is the analysis?
                 </h3>
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  Our analysis is powered by Stockfish 17.1, the world's strongest chess engine. It evaluates positions with professional-grade accuracy, providing move classifications (brilliant, best, excellent, mistake, blunder) that align with industry standards used by Chess.com and Lichess.
+                <p className="text-gray-400 text-small leading-relaxed">
+                  Our analysis is powered by Stockfish 17.1, the world's strongest chess engine. It evaluates positions with professional-grade accuracy, providing move classifications (brilliant, best, excellent, mistake, blunder) that align with industry standards.
                 </p>
               </div>
-              <div className="bg-surface-1/50 shadow-card rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-white mb-2">
+              <div className="bg-surface-1 shadow-card rounded-lg p-5">
+                <h3 className="text-body font-semibold text-[#f0f0f0] mb-2">
                   Can I analyze games from both Lichess and Chess.com?
                 </h3>
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  Yes! You can import and analyze games from both platforms. Simply search for your username on either platform, and we'll fetch your games automatically. You can analyze games from multiple accounts in one place.
+                <p className="text-gray-400 text-small leading-relaxed">
+                  Yes! Import and analyze games from both platforms. Search for your username and we'll fetch your games automatically.
                 </p>
               </div>
-              <div className="bg-surface-1/50 shadow-card rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-white mb-2">
+              <div className="bg-surface-1 shadow-card rounded-lg p-5">
+                <h3 className="text-body font-semibold text-[#f0f0f0] mb-2">
                   How does personality analysis work?
                 </h3>
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  Our system analyzes your playing style across 6 traits: Aggressive, Patient, Tactical, Positional, Materialistic, and Risk-taking. Based on your patterns, we provide opening recommendations that match your natural playing style, helping you play more effectively.
+                <p className="text-gray-400 text-small leading-relaxed">
+                  We analyze your playing style across 6 traits: Aggressive, Patient, Tactical, Positional, Materialistic, and Risk-taking. Based on your patterns, we provide matched opening recommendations.
                 </p>
               </div>
-              <div className="bg-surface-1/50 shadow-card rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-white mb-2">
+              <div className="bg-surface-1 shadow-card rounded-lg p-5">
+                <h3 className="text-body font-semibold text-[#f0f0f0] mb-2">
                   Can I cancel my subscription anytime?
                 </h3>
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  Absolutely. You can cancel your subscription at any time with no questions asked. You'll continue to have access until the end of your billing period. We also offer a 14-day money-back guarantee if you're not satisfied.
+                <p className="text-gray-400 text-small leading-relaxed">
+                  Absolutely. Cancel at any time with no questions asked. You'll keep access until the end of your billing period. We also offer a 14-day money-back guarantee.
                 </p>
               </div>
-              <div className="bg-surface-1/50 shadow-card rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-white mb-2">
+              <div className="bg-surface-1 shadow-card rounded-lg p-5">
+                <h3 className="text-body font-semibold text-[#f0f0f0] mb-2">
                   Is my payment information secure?
                 </h3>
-                <p className="text-gray-400 text-sm leading-relaxed">
-                  Yes. We use Stripe for all payment processing, which is PCI DSS compliant and used by millions of companies worldwide. We never store your credit card information on our servers.
+                <p className="text-gray-400 text-small leading-relaxed">
+                  Yes. We use Stripe for payment processing, which is PCI DSS compliant. We never store your credit card information on our servers.
                 </p>
               </div>
             </div>
@@ -734,23 +691,21 @@ export default function PricingPage() {
 
           {/* Footer */}
           <div className="text-center space-y-6">
-            <div className="bg-surface-1/50 shadow-card rounded-lg p-6 max-w-2xl mx-auto">
-              <div className="flex items-center justify-center gap-3 mb-3">
-                <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-                <h3 className="text-lg font-semibold text-white">14-Day Money-Back Guarantee</h3>
+            <div className="bg-surface-1 shadow-card rounded-lg p-5 max-w-2xl mx-auto">
+              <div className="flex items-center justify-center gap-2.5 mb-2">
+                <Shield size={18} className="text-emerald-400/60" />
+                <h3 className="text-body font-semibold text-[#f0f0f0]">14-Day Money-Back Guarantee</h3>
               </div>
-              <p className="text-gray-400 text-sm">
+              <p className="text-gray-500 text-small">
                 Not satisfied? We'll refund your payment, no questions asked.
               </p>
             </div>
-            <div className="space-y-3">
-              <p className="text-gray-500 text-sm">
-                All plans include secure payment processing via Stripe. Cancel anytime, no questions asked.
+            <div className="space-y-2">
+              <p className="text-gray-500 text-small">
+                All plans include secure payment processing via Stripe. Cancel anytime.
               </p>
-              <p className="text-gray-500 text-sm">
-                Questions? <a href="https://discord.gg/S3ymXCeCqK" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 transition-colors font-medium">Contact our support team</a>
+              <p className="text-gray-500 text-small">
+                Questions? <a href="https://discord.gg/S3ymXCeCqK" target="_blank" rel="noopener noreferrer" className="text-cta hover:text-cta-hover transition-colors font-medium">Contact our support team</a>
               </p>
             </div>
           </div>

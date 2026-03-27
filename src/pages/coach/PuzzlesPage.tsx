@@ -7,6 +7,7 @@ import { usePuzzles, useDailyChallenge, usePuzzleStats, useRecommendationProfile
 import { useAuth } from '../../contexts/AuthContext'
 import { useCoachUser } from '../../hooks/useCoachUser'
 import { CoachPageGuard } from '../../components/coach/CoachPageGuard'
+import { Star, Target, Zap, Flame, CheckCircle2 } from 'lucide-react'
 import type { BankPuzzle, PuzzleStats, RecommendationProfile } from '../../types'
 
 export default function PuzzlesPage() {
@@ -72,7 +73,7 @@ function PuzzlesPageContent({
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
           <p className="text-sm text-gray-500">Loading puzzle trainer...</p>
         </div>
       </div>
@@ -84,12 +85,12 @@ function PuzzlesPageContent({
 
   return (
     <div className="min-h-screen bg-surface-base p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         {/* Header with Stats */}
         <div className="mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-4xl font-semibold text-white mb-1">Puzzle Trainer</h1>
+              <h1 className="text-title font-semibold text-white mb-1">Puzzle Trainer</h1>
               <p className="text-gray-500">Solve tactical puzzles to sharpen your skills</p>
             </div>
             {stats && <StatsHeader stats={stats} />}
@@ -146,7 +147,7 @@ function PuzzlesPageContent({
         {/* Personalized Puzzles from Games */}
         {hasLinkedAccount && !puzzlesLoading && puzzleSet && puzzleSet.total > 0 && (
           <div className="mb-8">
-            <h2 className="text-2xl font-semibold text-white mb-4">From Your Games</h2>
+            <h2 className="text-title font-semibold text-white mb-4">From Your Games</h2>
             <p className="text-gray-500 text-sm mb-4">
               Puzzles generated from your actual game mistakes
             </p>
@@ -158,13 +159,13 @@ function PuzzlesPageContent({
                     key={category}
                     className="rounded-lg shadow-card bg-surface-1 p-5 hover:bg-white/[0.04] transition-colors"
                   >
-                    <h3 className="text-lg font-semibold text-white mb-1 capitalize">{category}</h3>
+                    <h3 className="text-section font-semibold text-white mb-1 capitalize">{category}</h3>
                     <p className="text-gray-500 text-sm mb-3">{puzzles.length} puzzles</p>
                     <button
                       onClick={() =>
                         navigate('/coach/puzzles/solve', { state: { puzzles, category } })
                       }
-                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
+                      className="w-full bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-4 rounded-md text-body transition-colors shadow-btn-primary"
                     >
                       Practice
                     </button>
@@ -178,13 +179,13 @@ function PuzzlesPageContent({
         {/* Connect account prompt if no linked account */}
         {!hasLinkedAccount && (
           <div className="rounded-lg shadow-card bg-surface-1 p-8 text-center">
-            <h2 className="text-2xl font-semibold text-white mb-4">Connect your chess account</h2>
+            <h2 className="text-title font-semibold text-white mb-4">Connect your chess account</h2>
             <p className="text-gray-400 mb-6">
               Link your Chess.com or Lichess account to get personalized puzzles from your game mistakes.
             </p>
             <Link
               to="/profile"
-              className="inline-block bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              className="inline-block bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-6 rounded-md text-body transition-colors shadow-btn-primary"
             >
               Go to Profile to Connect
             </Link>
@@ -206,34 +207,34 @@ function StatsHeader({ stats }: { stats: PuzzleStats }) {
       {/* Rating Badge */}
       <div className="flex items-center gap-2 bg-amber-500/10 shadow-card rounded-lg px-4 py-2">
         <span className="text-amber-400 text-sm font-medium">Rating</span>
-        <span className="text-2xl font-semibold text-amber-300">{stats.rating}</span>
+        <span className="text-title font-semibold text-amber-300">{stats.rating}</span>
       </div>
 
       {/* Level & XP */}
-      <div className="flex items-center gap-2 bg-purple-500/10 shadow-card rounded-lg px-4 py-2">
-        <span className="text-purple-400 text-sm font-medium">Lvl {stats.level}</span>
-        <div className="w-20 h-2 bg-purple-900/50 rounded-full overflow-hidden">
+      <div className="flex items-center gap-2 bg-rose-500/10 shadow-card rounded-lg px-4 py-2">
+        <span className="text-rose-400 text-sm font-medium">Lvl {stats.level}</span>
+        <div className="w-20 h-2 bg-rose-900/50 rounded-full overflow-hidden">
           <div
-            className="h-full bg-purple-400 rounded-full transition-colors"
+            className="h-full bg-rose-400 rounded-full transition-colors"
             style={{ width: `${xpProgress}%` }}
           />
         </div>
-        <span className="text-purple-300 text-xs">{stats.xp} XP</span>
+        <span className="text-rose-300 text-xs">{stats.xp} XP</span>
       </div>
 
       {/* Streak */}
       {stats.current_streak > 0 && (
-        <div className="flex items-center gap-1 bg-orange-500/10 shadow-card rounded-lg px-4 py-2">
-          <span className="text-orange-400 text-lg">&#x1F525;</span>
-          <span className="text-orange-300 font-semibold">{stats.current_streak}</span>
-          <span className="text-orange-400 text-sm">day streak</span>
+        <div className="flex items-center gap-1 bg-amber-500/10 shadow-card rounded-lg px-4 py-2">
+          <Flame size={16} className="text-amber-400" />
+          <span className="text-amber-300 font-semibold">{stats.current_streak}</span>
+          <span className="text-amber-400 text-sm">day streak</span>
         </div>
       )}
 
       {/* Solve Rate */}
-      <div className="flex items-center gap-2 bg-cyan-500/10 shadow-card rounded-lg px-4 py-2">
-        <span className="text-cyan-400 text-sm font-medium">Solved</span>
-        <span className="text-cyan-300 font-semibold">{stats.solve_rate}%</span>
+      <div className="flex items-center gap-2 bg-emerald-500/10 shadow-card rounded-lg px-4 py-2">
+        <span className="text-emerald-400 text-sm font-medium">Solved</span>
+        <span className="text-emerald-300 font-semibold">{stats.solve_rate}%</span>
       </div>
     </div>
   )
@@ -262,13 +263,13 @@ function DailyChallengeCard({
     <div
       className={`rounded-lg shadow-card p-6 ${
         allCompleted
-          ? 'bg-emerald-500/10'
-          : 'bg-cyan-500/10'
+          ? 'bg-surface-1 shadow-card-highlight'
+          : 'bg-surface-1'
       }`}
     >
       <div className="flex items-center gap-2 mb-4">
-        <span className="text-2xl">{allCompleted ? '\u2705' : '\u2B50'}</span>
-        <h2 className="text-xl font-semibold text-white">Daily Challenge</h2>
+        {allCompleted ? <CheckCircle2 size={20} className="text-emerald-400" /> : <Star size={20} className="text-amber-400" />}
+        <h2 className="text-title font-semibold text-white">Daily Challenge</h2>
         <span className="ml-auto text-xs text-gray-500 bg-white/10 px-2 py-1 rounded-lg">
           FREE
         </span>
@@ -283,7 +284,7 @@ function DailyChallengeCard({
               i < completedCount
                 ? 'bg-emerald-500 text-white'
                 : i === completedCount
-                  ? 'bg-cyan-500/30 border-2 border-cyan-400 text-cyan-300'
+                  ? 'bg-emerald-500/30 border-2 border-emerald-400 text-emerald-300'
                   : 'bg-white/10 text-gray-500'
             }`}
           >
@@ -310,7 +311,7 @@ function DailyChallengeCard({
           </p>
           <button
             onClick={() => onStartPuzzle(nextPuzzle)}
-            className="bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors"
+            className="bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-6 rounded-md text-body transition-colors shadow-btn-primary"
           >
             {completedCount > 0 ? 'Continue Challenge' : 'Start Challenge'}
           </button>
@@ -337,10 +338,10 @@ function SmartPlayCard({
 
   if (hasRecommendations && profile) {
     return (
-      <div className="rounded-lg shadow-card bg-purple-500/10 p-6">
+      <div className="rounded-lg shadow-card bg-white/[0.06] p-6">
         <div className="flex items-center gap-2 mb-4">
-          <span className="text-2xl">&#x1F3AF;</span>
-          <h2 className="text-xl font-semibold text-white">Recommended for You</h2>
+          <Target size={20} className="text-gray-300" />
+          <h2 className="text-title font-semibold text-white">Recommended for You</h2>
         </div>
         <p className="text-gray-400 text-sm mb-4">
           Based on {profile.games_analyzed} analyzed games
@@ -349,7 +350,7 @@ function SmartPlayCard({
         {/* Start recommended button - backend auto-selects theme */}
         <button
           onClick={() => onStart()}
-          className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors mb-4"
+          className="w-full bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-6 rounded-md text-body transition-colors shadow-btn-primary mb-4"
         >
           Start Recommended Puzzle
         </button>
@@ -369,7 +370,7 @@ function SmartPlayCard({
                   <div>
                     <span className="text-white text-sm font-medium">{w.title}</span>
                     {w.severity === 'critical' && (
-                      <span className="ml-2 text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full">
+                      <span className="ml-2 text-[10px] bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded-full">
                         Focus area
                       </span>
                     )}
@@ -403,10 +404,10 @@ function SmartPlayCard({
 
   // Fallback: standard Quick Play (no game data or still loading)
   return (
-    <div className="rounded-lg shadow-card bg-purple-500/10 p-6">
+    <div className="rounded-lg shadow-card bg-white/[0.06] p-6">
       <div className="flex items-center gap-2 mb-4">
-        <span className="text-2xl">&#x26A1;</span>
-        <h2 className="text-xl font-semibold text-white">Quick Play</h2>
+        <Zap size={20} className="text-gray-300" />
+        <h2 className="text-title font-semibold text-white">Quick Play</h2>
       </div>
       <p className="text-gray-400 text-sm mb-4">
         {profileLoading
@@ -417,7 +418,7 @@ function SmartPlayCard({
 
       <button
         onClick={() => onStart()}
-        className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors mb-4"
+        className="w-full bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2 px-6 rounded-md text-body transition-colors shadow-btn-primary mb-4"
       >
         Start Rated Puzzle
       </button>
@@ -454,8 +455,8 @@ function RatingTrend({ history }: { history: Array<{ date: string; rating: numbe
   return (
     <div className="rounded-lg shadow-card bg-surface-1 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">Rating Trend</h2>
-        <span className={`text-sm font-semibold ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+        <h2 className="text-section font-semibold text-white">Rating Trend</h2>
+        <span className={`text-sm font-semibold ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
           {isUp ? '+' : ''}{diff} pts
         </span>
       </div>
@@ -466,7 +467,7 @@ function RatingTrend({ history }: { history: Array<{ date: string; rating: numbe
             <div
               key={i}
               className={`flex-1 rounded-t transition-colors ${
-                isUp ? 'bg-emerald-500/60' : 'bg-red-500/60'
+                isUp ? 'bg-emerald-500/60' : 'bg-rose-500/60'
               }`}
               style={{ height: `${Math.max(4, height)}%` }}
               title={`${history[i].date}: ${r}`}
@@ -501,12 +502,12 @@ function ThemePerformance({
 
   return (
     <div className="rounded-lg shadow-card bg-surface-1 p-6">
-      <h2 className="text-lg font-semibold text-white mb-4">Theme Performance</h2>
+      <h2 className="text-section font-semibold text-white mb-4">Theme Performance</h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {themes.map(([theme, data]) => {
           const rate = Math.round((data.correct / data.attempted) * 100)
           const color =
-            rate >= 75 ? 'emerald' : rate >= 50 ? 'amber' : 'red'
+            rate >= 75 ? 'emerald' : rate >= 50 ? 'amber' : 'rose'
           const isRecommended = recommendedSet.has(theme)
           return (
             <div
@@ -522,19 +523,19 @@ function ThemePerformance({
                   {THEME_LABELS[theme] || theme}
                 </p>
                 {isRecommended && (
-                  <span className="text-[9px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                  <span className="text-[9px] bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded-full whitespace-nowrap">
                     Train
                   </span>
                 )}
               </div>
               <div className="flex items-baseline gap-1">
                 <span
-                  className={`text-xl font-semibold ${
+                  className={`text-title font-semibold ${
                     color === 'emerald'
                       ? 'text-emerald-400'
                       : color === 'amber'
                         ? 'text-amber-400'
-                        : 'text-red-400'
+                        : 'text-rose-400'
                   }`}
                 >
                   {rate}%
