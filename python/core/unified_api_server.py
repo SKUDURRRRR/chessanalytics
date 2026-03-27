@@ -249,7 +249,7 @@ def _get_study_plan_generator():
     global _study_plan_generator
     if _study_plan_generator is None:
         from .study_plan_generator import StudyPlanGenerator
-        _study_plan_generator = _get_study_plan_generator()
+        _study_plan_generator = StudyPlanGenerator(supabase_service)
     return _study_plan_generator
 
 def _get_opening_repertoire_analyzer():
@@ -257,7 +257,7 @@ def _get_opening_repertoire_analyzer():
     global _opening_repertoire_analyzer
     if _opening_repertoire_analyzer is None:
         from .opening_repertoire import OpeningRepertoireAnalyzer
-        _opening_repertoire_analyzer = _get_opening_repertoire_analyzer()
+        _opening_repertoire_analyzer = OpeningRepertoireAnalyzer(supabase_service)
     return _opening_repertoire_analyzer
 
 def _get_progress_analyzer():
@@ -2855,26 +2855,66 @@ async def get_comprehensive_analytics(
 
         # ELO data from SQL
         highest_elo = elo_summary.get('highestElo')
-        time_control_with_highest_elo = elo_summary.get('timeControlWithHighestElo')
+        time_control_with_highest_elo = _get_time_control_category(elo_summary.get('timeControlWithHighestElo') or '')
         current_elo = elo_summary.get('currentElo')
-        current_elo_per_time_control = elo_summary.get('currentEloPerTimeControl') or {}
+        # Categorize raw time controls in currentEloPerTimeControl (e.g. "600+0" → "Rapid")
+        raw_elo_per_tc = elo_summary.get('currentEloPerTimeControl') or {}
+        current_elo_per_time_control: Dict[str, int] = {}
+        for raw_tc, elo in raw_elo_per_tc.items():
+            category = _get_time_control_category(raw_tc)
+            # Keep the most recent ELO per category (first one wins since SQL orders by played_at DESC)
+            if category not in current_elo_per_time_control:
+                current_elo_per_time_control[category] = elo
 
-        # Performance trends from SQL
+        # Performance trends from SQL — categorize raw time controls (e.g. "600+0" → "Rapid")
         performance_trends = {}
         if isinstance(perf_trends_raw, dict):
-            per_tc = perf_trends_raw.get('per_time_control', {}) or {}
-            most_played_tc = perf_trends_raw.get('most_played_time_control', 'Unknown')
+            raw_per_tc = perf_trends_raw.get('per_time_control', {}) or {}
 
-            # Build the same structure as _calculate_performance_trends
-            most_played_stats = per_tc.get(most_played_tc, {})
+            # Merge raw time controls into categories using _get_time_control_category
+            categorized_per_tc: Dict[str, Dict[str, Any]] = {}
+            for raw_tc, stats in raw_per_tc.items():
+                category = _get_time_control_category(raw_tc)
+                if category in categorized_per_tc:
+                    # Merge: weighted average of ELO, sum of sample sizes, combined win rate
+                    existing = categorized_per_tc[category]
+                    total_sample = existing['sampleSize'] + stats.get('sampleSize', 0)
+                    if total_sample > 0:
+                        existing['recentWinRate'] = round(
+                            (existing['recentWinRate'] * existing['sampleSize'] + stats.get('recentWinRate', 0) * stats.get('sampleSize', 0)) / total_sample, 1
+                        )
+                        existing_elo = existing.get('recentAverageElo', 0) or 0
+                        new_elo = stats.get('recentAverageElo', 0) or 0
+                        if existing_elo and new_elo:
+                            existing['recentAverageElo'] = round(
+                                (existing_elo * existing['sampleSize'] + new_elo * stats.get('sampleSize', 0)) / total_sample
+                            )
+                        elif new_elo:
+                            existing['recentAverageElo'] = new_elo
+                    existing['sampleSize'] = total_sample
+                    # Keep the more extreme trend
+                    if stats.get('eloTrend') in ('improving', 'declining') and existing.get('eloTrend') == 'stable':
+                        existing['eloTrend'] = stats['eloTrend']
+                else:
+                    categorized_per_tc[category] = {
+                        'recentWinRate': stats.get('recentWinRate', 0),
+                        'recentAverageElo': stats.get('recentAverageElo', 0),
+                        'eloTrend': stats.get('eloTrend', 'stable'),
+                        'sampleSize': stats.get('sampleSize', 0)
+                    }
+
+            # Find most played category
+            most_played_category = max(categorized_per_tc.keys(), key=lambda k: categorized_per_tc[k]['sampleSize'], default='Unknown')
+            most_played_stats = categorized_per_tc.get(most_played_category, {})
+
             performance_trends = {
                 'recentWinRate': most_played_stats.get('recentWinRate', 0),
                 'recentAverageElo': most_played_stats.get('recentAverageElo', 0),
                 'eloTrend': most_played_stats.get('eloTrend', 'stable'),
-                'timeControlUsed': most_played_tc,
+                'timeControlUsed': most_played_category,
                 'sampleSize': most_played_stats.get('sampleSize', 0),
                 'totalGamesConsidered': total_games_count,
-                'perTimeControl': per_tc
+                'perTimeControl': categorized_per_tc
             }
 
         # ── Phase 2: Fetch recent games for analysis-dependent stats ──────
@@ -8138,8 +8178,8 @@ def _is_valid_uuid(uuid_string: str) -> bool:
 def _canonical_user_id(user_id: str, platform: str) -> str:
     """Canonicalize user ID for database operations.
 
-    Chess.com usernames are case-insensitive and should be stored/queried in lowercase.
-    Lichess usernames are case-sensitive and should be left unchanged.
+    Both Chess.com and Lichess usernames are case-insensitive and should be
+    stored/queried in lowercase to avoid duplicate profiles for the same player.
     """
     if not user_id or not platform:
         raise ValueError("user_id and platform cannot be empty")
@@ -8147,10 +8187,7 @@ def _canonical_user_id(user_id: str, platform: str) -> str:
     if not _validate_platform(platform):
         raise ValueError(f"Invalid platform: {platform}. Must be one of {VALID_PLATFORMS}")
 
-    if platform == "chess.com":
-        return user_id.strip().lower()
-    else:  # lichess
-        return user_id.strip()
+    return user_id.strip().lower()
 
 def _validate_single_game_analysis_request(request: UnifiedAnalysisRequest) -> Tuple[bool, str]:
     """Validate single game analysis request parameters."""

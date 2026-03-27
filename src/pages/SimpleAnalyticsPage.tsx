@@ -838,8 +838,8 @@ export default function SimpleAnalyticsPage() {
                   /* Static platform badge for single-account users */
                   <div className={`inline-flex items-center gap-2 rounded-full border px-4 py-1 text-xs uppercase tracking-wide font-semibold ${
                     platform === 'lichess'
-                      ? 'border-yellow-500/30 bg-yellow-600/20 text-yellow-100'
-                      : 'border-green-500/30 bg-green-600/20 text-green-100'
+                      ? 'border-amber-500/30 bg-amber-600/20 text-amber-100'
+                      : 'border-emerald-500/30 bg-emerald-600/20 text-emerald-100'
                   }`}>
                     {platform === 'lichess' ? 'Lichess' : 'Chess.com'}
                   </div>
@@ -860,7 +860,7 @@ export default function SimpleAnalyticsPage() {
                         <button
                           onClick={handleCreateLink}
                           disabled={linkLoading || !linkInputValue.trim()}
-                          className="rounded-full shadow-card bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50"
+                          className="rounded-full shadow-card bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
                         >
                           {linkLoading ? '...' : 'Link'}
                         </button>
@@ -882,7 +882,7 @@ export default function SimpleAnalyticsPage() {
                     {linkError && <p className="text-xs text-rose-400 mt-1">{linkError}</p>}
                   </div>
                 )}
-                <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
+                <h1 className="mt-2 text-title font-semibold text-white sm:text-title">
                   {viewMode === 'combined'
                     ? `${userId} + ${getSecondaryUser() || ''}`
                     : userId}
@@ -947,7 +947,7 @@ export default function SimpleAnalyticsPage() {
                 <div className="flex items-center gap-3 text-xs text-gray-500">
                   {lastRefresh && <span>Updated · {lastRefresh.toLocaleTimeString()}</span>}
                 </div>
-                {importStatus && <div className="text-xs text-sky-300">{importStatus}</div>}
+                {importStatus && <div className="text-xs text-emerald-300">{importStatus}</div>}
               </div>
             </div>
           </section>

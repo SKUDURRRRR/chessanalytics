@@ -76,34 +76,26 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     }
   }, [comprehensiveData?.performanceTrends, selectedTimeControl, eloGraphGamesUsed])
 
-  // Fetch analytics data for a single platform in two phases:
-  // Phase 1 (fast): comprehensive analytics (SQL aggregation) + player stats → renders page
-  // Phase 2 (slow): analysis stats, game analyses, deep analysis → fills in details
-  // Fetch all analytics data for a single platform.
-  // getComprehensiveAnalytics uses SQL aggregation (fast).
-  // All calls run in parallel — total time = slowest single call.
-  const fetchPlatformData = useCallback(async (uid: string, plat: 'lichess' | 'chess.com', forceRefresh: boolean) => {
+  // Fetch analytics data for a single platform.
+  // Deep analysis is excluded — it's fetched separately in the background.
+  // Calls are split into 2 batches to avoid Supabase connection contention
+  // (4 simultaneous requests cause 2-3x slower responses due to rate limiting).
+  const fetchPlatformData = useCallback(async (uid: string, plat: 'lichess' | 'chess.com') => {
     const start = performance.now()
-    const timed = async <T,>(name: string, fn: Promise<T>): Promise<T> => {
-      const t0 = performance.now()
-      const result = await fn
-      if (import.meta.env.DEV) {
-        console.log(`[PERF] ${name}: ${Math.round(performance.now() - t0)}ms`)
-      }
-      return result
-    }
-    const results = await Promise.all([
-      timed('getAnalysisStats', UnifiedAnalysisService.getAnalysisStats(uid, plat, 'stockfish')),
-      timed('getPlayerStats', UnifiedAnalysisService.getPlayerStats(uid, plat)),
-      timed('getGameAnalyses', UnifiedAnalysisService.getGameAnalyses(uid, plat, 'stockfish', 20, 0)),
-      timed('getComprehensiveAnalytics', UnifiedAnalysisService.getComprehensiveAnalytics(uid, plat, 10000)),
-      timed('fetchDeepAnalysis', UnifiedAnalysisService.fetchDeepAnalysis(uid, plat, forceRefresh)),
+    // Batch 1: Fast calls (SQL aggregation + lightweight queries)
+    const [comprehensiveAnalytics, playerStats] = await Promise.all([
+      UnifiedAnalysisService.getComprehensiveAnalytics(uid, plat, 10000),
+      UnifiedAnalysisService.getPlayerStats(uid, plat),
+    ])
+    // Batch 2: Heavier calls (analysis data)
+    const [analysisResult, gamesData] = await Promise.all([
+      UnifiedAnalysisService.getAnalysisStats(uid, plat, 'stockfish'),
+      UnifiedAnalysisService.getGameAnalyses(uid, plat, 'stockfish', 20, 0),
     ])
     if (import.meta.env.DEV) {
       console.log(`[PERF] fetchPlatformData total: ${Math.round(performance.now() - start)}ms`)
     }
-    const [analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis] = results
-    return { analysisResult, playerStats, gamesData, comprehensiveAnalytics, deepAnalysis }
+    return { analysisResult, playerStats, gamesData, comprehensiveAnalytics }
   }, [])
 
   const loadData = useCallback(async (forceRefresh = false) => {
@@ -126,12 +118,12 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       const plat = (platform as 'lichess' | 'chess.com') || 'lichess'
 
-      let analysisResult, playerStats, gamesData: ReturnType<typeof UnifiedAnalysisService.getGameAnalyses> extends Promise<infer T> ? T : never, comprehensiveAnalytics: Record<string, unknown>, deepAnalysis
+      let analysisResult, playerStats, gamesData: ReturnType<typeof UnifiedAnalysisService.getGameAnalyses> extends Promise<infer T> ? T : never, comprehensiveAnalytics: Record<string, unknown>
 
       if (viewMode === 'combined' && secondaryUserId && secondaryPlatform) {
         const [primary, secondary] = await Promise.all([
-          fetchPlatformData(userId, plat, forceRefresh),
-          fetchPlatformData(secondaryUserId, secondaryPlatform, forceRefresh)
+          fetchPlatformData(userId, plat),
+          fetchPlatformData(secondaryUserId, secondaryPlatform)
         ])
 
         analysisResult = primary.analysisResult && secondary.analysisResult
@@ -142,21 +134,19 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         comprehensiveAnalytics = (primary.comprehensiveAnalytics && secondary.comprehensiveAnalytics)
           ? mergeComprehensiveAnalytics(primary.comprehensiveAnalytics as ComprehensiveAnalytics, secondary.comprehensiveAnalytics as ComprehensiveAnalytics) as unknown as Record<string, unknown>
           : (primary.comprehensiveAnalytics || secondary.comprehensiveAnalytics) as Record<string, unknown>
-        deepAnalysis = (primary.deepAnalysis && secondary.deepAnalysis)
-          ? mergeDeepAnalysis(primary.deepAnalysis, secondary.deepAnalysis)
-          : primary.deepAnalysis || secondary.deepAnalysis
       } else {
-        const result = await fetchPlatformData(userId, plat, forceRefresh)
+        const result = await fetchPlatformData(userId, plat)
         analysisResult = result.analysisResult
         playerStats = result.playerStats
         gamesData = result.gamesData
         comprehensiveAnalytics = result.comprehensiveAnalytics as Record<string, unknown>
-        deepAnalysis = result.deepAnalysis
       }
 
       // Calculate realistic accuracy from raw game data using player rating
+      // Fall back to backend accuracy if no game data available for local calculation
       const playerRating = playerStats.currentRating || analysisResult?.current_rating || analysisResult?.highest_rating
-      const realisticAccuracy = calculateAverageAccuracy(gamesData || [], playerRating)
+      const localAccuracy = calculateAverageAccuracy(gamesData || [], playerRating)
+      const realisticAccuracy = Math.round((localAccuracy > 0 ? localAccuracy : (analysisResult?.average_accuracy || 0)) * 10) / 10
 
       const enhancedData = analysisResult ? {
         ...analysisResult,
@@ -166,7 +156,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         validation_issues: playerStats.validationIssues
       } : {
         total_games_analyzed: comprehensiveAnalytics?.total_games || comprehensiveAnalytics?.totalGames || 0,
-        average_accuracy: realisticAccuracy,
+        average_accuracy: realisticAccuracy || 0,
         current_rating: playerStats.currentRating,
         most_played_time_control: playerStats.mostPlayedTimeControl,
         validation_issues: playerStats.validationIssues,
@@ -216,8 +206,30 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           return prev ?? (preferred || null)
         })
       }
-      setDeepAnalysisData(deepAnalysis)
       setDataRefreshKey(prev => prev + 1)
+
+      // Fetch deep analysis in background (5-7s) — don't block page render
+      // Deep analysis powers the personality radar which can appear after page loads
+      const fetchDeep = async () => {
+        try {
+          let deepAnalysis: DeepAnalysisData
+          if (viewMode === 'combined' && secondaryUserId && secondaryPlatform) {
+            const [primary, secondary] = await Promise.all([
+              UnifiedAnalysisService.fetchDeepAnalysis(userId, plat, forceRefresh),
+              UnifiedAnalysisService.fetchDeepAnalysis(secondaryUserId, secondaryPlatform, forceRefresh)
+            ])
+            deepAnalysis = (primary && secondary)
+              ? mergeDeepAnalysis(primary, secondary)
+              : primary || secondary
+          } else {
+            deepAnalysis = await UnifiedAnalysisService.fetchDeepAnalysis(userId, plat, forceRefresh)
+          }
+          setDeepAnalysisData(deepAnalysis)
+        } catch (err) {
+          console.warn('Deep analysis failed (non-fatal):', err)
+        }
+      }
+      fetchDeep()
     } catch (err) {
       console.error('Failed to load analytics:', err)
       setError(err instanceof Error ? err.message : 'Failed to load analytics')
