@@ -9,7 +9,9 @@ import { useState, useEffect, useMemo, useRef, useCallback, type CSSProperties }
 import { useParams, useNavigate } from 'react-router-dom'
 import { Chessboard } from 'react-chessboard'
 import { Chess, Square } from 'chess.js'
-import { PremiumGate } from '../../components/coach/PremiumGate'
+import { useAuth } from '../../contexts/AuthContext'
+import { config } from '../../lib/config'
+import { supabase } from '../../lib/supabase'
 import { ModernChessArrows } from '../../components/chess/ModernChessArrows'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
 import { fetchGameAnalysisData } from '../../services/gameAnalysisService'
@@ -955,13 +957,89 @@ function SummaryPanel({ stats, meta, onReviewAgain, onBack }: SummaryPanelProps)
 }
 
 // ============================================================================
-// Export with PremiumGate wrapper
+// Export with game review access gate
 // ============================================================================
 
 export default function GameReviewPage() {
-  return (
-    <PremiumGate>
-      <GameReviewContent />
-    </PremiumGate>
+  const { user, usageStats, loading, refreshUsageStats } = useAuth()
+  const navigate = useNavigate()
+  const [usageRecorded, setUsageRecorded] = useState(false)
+
+  // Derive access flags
+  const accountTier = usageStats?.account_tier?.toLowerCase() || ''
+  const subscriptionStatus = usageStats?.subscription_status?.toLowerCase() || ''
+  const isPremiumTier = accountTier && (
+    accountTier.includes('pro') ||
+    accountTier.includes('enterprise') ||
+    ['pro', 'pro_monthly', 'pro_yearly', 'enterprise'].includes(accountTier)
   )
+  const isPremium = isPremiumTier && (subscriptionStatus === 'active' || subscriptionStatus === 'trialing')
+  const gameReviews = usageStats?.coach_game_reviews
+  // Allow access if: premium, unlimited, has remaining credits, or data not yet available (migration pending)
+  const hasCredits = isPremium || !gameReviews || gameReviews.unlimited || (gameReviews.remaining != null && gameReviews.remaining > 0)
+
+  // Record usage for free users (once per mount)
+  useEffect(() => {
+    if (isPremium || usageRecorded || loading || !user || !hasCredits) return
+    setUsageRecorded(true)
+    const apiUrl = config.getApi().baseUrl
+    supabase.auth.getSession().then(({ data: { session } }: { data: { session: { access_token: string } | null } }) => {
+      if (!session?.access_token) return
+      fetch(`${apiUrl}/api/v1/coach/game-review/use`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+        .then((res) => {
+          if (res.ok) refreshUsageStats()
+        })
+        .catch(() => {
+          // Non-blocking: don't prevent the review from loading
+        })
+    })
+  }, [isPremium, usageRecorded, loading, user, hasCredits, refreshUsageStats])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    navigate('/login')
+    return null
+  }
+
+  if (!hasCredits) {
+    return (
+      <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
+        <div className="max-w-md w-full rounded-lg shadow-card bg-surface-1 p-8 text-center">
+          <h2 className="text-2xl font-semibold text-white mb-4">Game Review</h2>
+          <p className="text-gray-400 mb-6">
+            {gameReviews && gameReviews.used > 0
+              ? "You've used your free game review. Upgrade to premium for unlimited reviews."
+              : 'Game reviews are available with a premium subscription.'}
+          </p>
+          <button
+            onClick={() => navigate('/pricing')}
+            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+          >
+            Upgrade to Premium
+          </button>
+          <button
+            onClick={() => navigate(-1)}
+            className="mt-4 w-full text-gray-500 hover:text-gray-400 transition-colors"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return <GameReviewContent />
 }

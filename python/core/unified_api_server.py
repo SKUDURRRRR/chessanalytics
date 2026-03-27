@@ -10777,6 +10777,81 @@ async def _check_premium_access(user_id: str, platform: Optional[str] = None) ->
         return False
 
 
+@app.post("/api/v1/coach/game-review/use")
+async def record_game_review_usage(
+    auth_user_id: Optional[str] = Depends(get_coach_user_id)
+):
+    """
+    Record that a free user has used one of their game review credits.
+    Increments the lifetime game_reviews_used counter on authenticated_users.
+    Premium users are unlimited so this is a no-op for them.
+    """
+    if not auth_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        # Get current user data
+        user_result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users')
+            .select('account_tier, subscription_status, game_reviews_used')
+            .eq('id', auth_user_id)
+            .execute()
+        )
+
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user = user_result.data[0]
+        account_tier = user.get('account_tier', 'free')
+        subscription_status = user.get('subscription_status', 'expired')
+
+        # Premium users don't need to track - they have unlimited
+        premium_tiers = ['pro', 'pro_monthly', 'pro_yearly', 'enterprise']
+        if account_tier in premium_tiers and subscription_status in ['active', 'trialing']:
+            return {"success": True, "unlimited": True}
+
+        # Get tier limit
+        tier_result = await asyncio.to_thread(
+            lambda: supabase_service.table('payment_tiers')
+            .select('coach_game_reviews_limit')
+            .eq('id', account_tier)
+            .execute()
+        )
+
+        limit = tier_result.data[0].get('coach_game_reviews_limit') if tier_result.data else 1
+        current_used = user.get('game_reviews_used', 0)
+
+        if limit is not None and current_used >= limit:
+            raise HTTPException(
+                status_code=403,
+                detail="Game review limit reached. Upgrade to premium for unlimited reviews."
+            )
+
+        # Increment counter
+        await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users')
+            .update({'game_reviews_used': current_used + 1})
+            .eq('id', auth_user_id)
+            .execute()
+        )
+
+        return {
+            "success": True,
+            "used": current_used + 1,
+            "limit": limit,
+            "remaining": max(0, limit - current_used - 1) if limit is not None else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recording game review usage: {e}")
+        raise HTTPException(status_code=500, detail="Failed to record game review usage")
+
+
 @app.get("/api/v1/coach/dashboard/{user_id}/{platform}")
 async def get_coach_dashboard(
     user_id: str,

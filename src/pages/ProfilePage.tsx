@@ -715,6 +715,24 @@ export default function ProfilePage() {
                   </div>
                 </div>
               )}
+              {usageStats.coach_game_reviews && !usageStats.coach_game_reviews.unlimited && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-gray-400">Game Reviews (total)</span>
+                    <span className="text-white">
+                      {usageStats.coach_game_reviews.used || 0} / {usageStats.coach_game_reviews.limit || 0}
+                    </span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-2">
+                    <div
+                      className="bg-sky-400 h-2 rounded-full transition-colors"
+                      style={{
+                        width: `${((usageStats.coach_game_reviews.used || 0) / (usageStats.coach_game_reviews.limit || 1)) * 100}%`
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

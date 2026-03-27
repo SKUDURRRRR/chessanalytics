@@ -144,14 +144,32 @@ ALTER TABLE game_analyses
 -- STEP 5: Prevent future non-lowercase user_ids
 -- Both Chess.com and Lichess usernames are case-insensitive.
 -- ============================================================================
-ALTER TABLE user_profiles   ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
-ALTER TABLE games            ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
-ALTER TABLE games_pgn        ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
-ALTER TABLE game_features    ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
-ALTER TABLE game_analyses    ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
-ALTER TABLE move_analyses    ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
-ALTER TABLE analysis_jobs    ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
-ALTER TABLE import_sessions  ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
-ALTER TABLE parity_logs      ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+DO $$ BEGIN
+  ALTER TABLE user_profiles   ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE games            ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE games_pgn        ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE game_features    ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE game_analyses    ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE move_analyses    ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE analysis_jobs    ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE import_sessions  ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE parity_logs      ADD CONSTRAINT chk_user_id_lowercase CHECK (user_id = LOWER(user_id));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 COMMIT;

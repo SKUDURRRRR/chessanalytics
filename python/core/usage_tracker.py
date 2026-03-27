@@ -190,7 +190,7 @@ class UsageTracker:
             # Get user's account tier and linked accounts
             user_result = await asyncio.to_thread(
                 lambda: self.supabase.table('authenticated_users').select(
-                    'account_tier, subscription_status, subscription_end_date, chess_com_username, lichess_username, primary_platform, onboarding_completed'
+                    'account_tier, subscription_status, subscription_end_date, chess_com_username, lichess_username, primary_platform, onboarding_completed, game_reviews_used'
                 ).eq('id', user_id).execute()
             )
 
@@ -207,6 +207,7 @@ class UsageTracker:
             chess_com_username = user.get('chess_com_username')
             lichess_username = user.get('lichess_username')
             primary_platform = user.get('primary_platform')
+            game_reviews_used = user.get('game_reviews_used', 0)
             onboarding_completed = user.get('onboarding_completed', False)
 
             # Debug logging for subscription end date
@@ -215,7 +216,7 @@ class UsageTracker:
             # Get tier limits
             tier_result = await asyncio.to_thread(
                 lambda: self.supabase.table('payment_tiers').select(
-                    'import_limit, analysis_limit, name, coach_lessons_limit, coach_puzzles_daily_limit'
+                    'import_limit, analysis_limit, name, coach_lessons_limit, coach_puzzles_daily_limit, coach_game_reviews_limit'
                 ).eq('id', account_tier).execute()
             )
 
@@ -225,7 +226,7 @@ class UsageTracker:
                 if account_tier and account_tier.startswith('pro'):
                     fallback_result = await asyncio.to_thread(
                         lambda: self.supabase.table('payment_tiers').select(
-                            'import_limit, analysis_limit, name, coach_lessons_limit, coach_puzzles_daily_limit'
+                            'import_limit, analysis_limit, name, coach_lessons_limit, coach_puzzles_daily_limit, coach_game_reviews_limit'
                         ).eq('id', 'pro_monthly').execute()
                     )
                     if fallback_result.data:
@@ -235,7 +236,7 @@ class UsageTracker:
                 if not fallback_tier:
                     fallback_result = await asyncio.to_thread(
                         lambda: self.supabase.table('payment_tiers').select(
-                            'import_limit, analysis_limit, name, coach_lessons_limit, coach_puzzles_daily_limit'
+                            'import_limit, analysis_limit, name, coach_lessons_limit, coach_puzzles_daily_limit, coach_game_reviews_limit'
                         ).eq('id', 'free').execute()
                     )
                     fallback_tier = fallback_result.data[0] if fallback_result.data else None
@@ -259,6 +260,7 @@ class UsageTracker:
             tier_name = tier['name']
             coach_lessons_limit = tier.get('coach_lessons_limit')
             coach_puzzles_daily_limit = tier.get('coach_puzzles_daily_limit')
+            coach_game_reviews_limit = tier.get('coach_game_reviews_limit')
 
             # Debug logging
             logger.info(f"[USAGE_STATS] User {user_id}: tier={account_tier}, name={tier_name}, import_limit={import_limit}, analysis_limit={analysis_limit}")
@@ -305,6 +307,7 @@ class UsageTracker:
             # Calculate coach remaining
             coach_lessons_remaining = None if coach_lessons_limit is None else max(0, coach_lessons_limit - coach_lessons_used)
             coach_puzzles_remaining = None if coach_puzzles_daily_limit is None else max(0, coach_puzzles_daily_limit - coach_puzzles_used)
+            coach_game_reviews_remaining = None if coach_game_reviews_limit is None else max(0, coach_game_reviews_limit - game_reviews_used)
 
             result = {
                 'account_tier': account_tier,
@@ -335,6 +338,12 @@ class UsageTracker:
                     'limit': coach_puzzles_daily_limit,
                     'remaining': coach_puzzles_remaining,
                     'unlimited': coach_puzzles_daily_limit is None
+                },
+                'coach_game_reviews': {
+                    'used': game_reviews_used,
+                    'limit': coach_game_reviews_limit,
+                    'remaining': coach_game_reviews_remaining,
+                    'unlimited': coach_game_reviews_limit is None
                 },
                 'chess_com_username': chess_com_username,
                 'lichess_username': lichess_username,
