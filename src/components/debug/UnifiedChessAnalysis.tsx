@@ -737,7 +737,7 @@ export function UnifiedChessAnalysis({
 
           {/* Mobile: Chess Board */}
           <div className="flex-shrink-0">
-            <div ref={mobileBoardContainerRef} className="relative" style={{ width: `${mobileBoardSize}px`, height: `${mobileBoardSize}px` }}>
+            <div ref={mobileBoardContainerRef} className="relative" style={{ width: `${mobileBoardSize + 2}px`, height: `${mobileBoardSize + 2}px`, padding: 1 }}>
               <Chessboard
                 id="unified-analysis-board-mobile"
                 position={currentPosition}
@@ -1118,7 +1118,7 @@ export function UnifiedChessAnalysis({
 
         {/* Center: Chess Board */}
         <div className="flex-shrink-0 flex flex-col items-center">
-          <div ref={desktopBoardContainerRef} className="relative" style={{ width: `${boardWidth}px`, height: `${boardWidth}px` }}>
+          <div ref={desktopBoardContainerRef} className="relative" style={{ width: `${boardWidth + 2}px`, height: `${boardWidth + 2}px`, padding: 1 }}>
             <Chessboard
               id="unified-analysis-board"
               position={currentPosition}

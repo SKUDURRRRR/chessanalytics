@@ -1034,7 +1034,7 @@ ${pgn} ${result}`
 
               {/* Chess Board */}
               <div className="flex justify-center pb-3">
-                <div style={{ width: `${boardWidth}px` }}>
+                <div style={{ width: `${boardWidth + 2}px`, padding: 1 }}>
                   <Chessboard
                     id="play-with-coach-board"
                     position={displayPosition}

@@ -224,12 +224,13 @@ function GameReviewContent() {
         const cap = mobileOpts.boardSize === 'small' ? 320 : 400
         setBoardWidth(Math.min(containerWidth - 32, cap))
       } else {
-        // Board + nav bar + card padding must fit in container height
-        // nav bar ~40px, card padding ~24px, container padding ~32px
-        const heightBudget = containerHeight - 40 - 24 - 32
-        // Leave room for right panel (~380px) + gap(24px) + padding(32px)
-        const widthBudget = containerWidth - 380 - 24 - 32
-        setBoardWidth(Math.max(280, Math.min(heightBudget, widthBudget, 540)))
+        // containerHeight = the flex-1 content area (already excludes page header + site nav)
+        // Subtract: container p-4 (32), nav bar (40), mt-6 gap (24), board border (2), safety (8)
+        const heightBudget = containerHeight - 32 - 40 - 24 - 2 - 8
+        // containerWidth = full content width
+        // Subtract: right panel (360), gap (24), container p-4 (32), board border (2)
+        const widthBudget = containerWidth - 360 - 24 - 32 - 2
+        setBoardWidth(Math.max(280, Math.min(heightBudget, widthBudget, 520)))
       }
     }
 
@@ -525,13 +526,13 @@ function GameReviewContent() {
 
       {/* Main content */}
       <div ref={contentRef} className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`}>
-        <div className={`max-w-5xl mx-auto p-4 ${
-          isMobile ? 'flex flex-col gap-4' : 'flex gap-6 items-start h-full'
+        <div className={`max-w-5xl mx-auto p-4 h-full ${
+          isMobile ? 'flex flex-col gap-4' : 'flex gap-6'
         }`}>
           {/* Board column */}
           <div className={`flex-shrink-0 ${isMobile ? 'w-full flex flex-col items-center' : 'flex flex-col'}`}>
-            <div className="rounded-lg shadow-card bg-surface-1 p-3">
-              <div className="relative" style={{ width: boardWidth, height: boardWidth }}>
+            <div>
+              <div className="relative" style={{ width: boardWidth + 2, height: boardWidth + 2, padding: 1 }}>
                 <Chessboard
                   id="game-review-board"
                   position={displayPosition}
@@ -554,7 +555,7 @@ function GameReviewContent() {
 
             {/* Move navigation below board (only during reviewing) */}
             {phase === 'reviewing' && (
-              <div className="flex items-center justify-center gap-1.5 mt-2 py-1.5 px-3 rounded-lg bg-white/[0.03] shadow-card" style={{ width: boardWidth + 24 }}>
+              <div className="flex items-center justify-center gap-1.5 mt-6 py-1.5 px-3 rounded-lg bg-white/[0.03] shadow-card self-center" style={{ width: boardWidth * 0.6 }}>
                 <button
                   onClick={() => navigateToMove(0)}
                   disabled={currentBoardIndex === 0}
@@ -596,8 +597,8 @@ function GameReviewContent() {
 
           {/* Right panel: tabbed (Review / Coach Tal) */}
           <div className={`${
-            isMobile ? 'w-full' : 'flex-1 min-w-0 max-w-[400px]'
-          } flex flex-col`} style={{ height: isMobile ? undefined : '100%' }}>
+            isMobile ? 'w-full' : 'flex-1 min-w-0 max-w-[360px] min-h-0'
+          } flex flex-col`}>
             {phase === 'intro' && (
               <IntroPanel
                 meta={gameMeta}
@@ -616,7 +617,7 @@ function GameReviewContent() {
             )}
 
             {phase === 'reviewing' && currentMoment && (
-              <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col" style={{ height: isMobile ? undefined : '100%' }}>
+              <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col flex-1 min-h-0">
                 {/* Tab header */}
                 <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                   <button
@@ -641,7 +642,7 @@ function GameReviewContent() {
 
                 {/* Tab content */}
                 {rightPanelTab === 'coach' ? (
-                  <div className="flex-1 min-h-0" style={{ minHeight: isMobile ? 360 : undefined }}>
+                  <div className="flex-1 min-h-0">
                     <InlineCoachChat positionContext={localPositionContext} />
                   </div>
                 ) : (

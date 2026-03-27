@@ -11,7 +11,6 @@ import { CoachingService } from '../../services/coachingService'
 import { useCoachUser } from '../../hooks/useCoachUser'
 import { CoachPageGuard } from '../../components/coach/CoachPageGuard'
 import { OpeningCard } from '../../components/coach/OpeningCard'
-import { DrillMode } from '../../components/coach/DrillMode'
 
 export default function OpeningsPage() {
   const { platformUsername, authenticatedUserId, linkedAccounts, isLoading } = useCoachUser()
@@ -31,14 +30,6 @@ export default function OpeningsPage() {
   )
 }
 
-interface DrillPosition {
-  fen: string
-  move_number: number
-  your_move: string
-  classification: string
-  description: string
-}
-
 function OpeningsContent({
   authUserId,
   linkedAccounts,
@@ -55,8 +46,6 @@ function OpeningsContent({
   const [expandedDetail, setExpandedDetail] = useState<OpeningDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(false)
-  const [drillPositions, setDrillPositions] = useState<DrillPosition[] | null>(null)
-  const [drillOpening, setDrillOpening] = useState<OpeningRepertoire | null>(null)
 
   const fetchRepertoire = useCallback(async (refresh = false) => {
     try {
@@ -120,32 +109,6 @@ function OpeningsContent({
     }
   }
 
-  const startDrill = async (opening: OpeningRepertoire) => {
-    const account = linkedAccounts.find((a) => a.platform === opening.platform)
-    if (!account) return
-
-    try {
-      const positions = await CoachingService.getDrillPositions(
-        account.username, account.platform, opening.opening_family, opening.color, authUserId
-      )
-      setDrillPositions(positions)
-      setDrillOpening(opening)
-    } catch {
-      alert('Failed to load drill positions')
-    }
-  }
-
-  const handleDrillComplete = async (correct: number, total: number) => {
-    if (!drillOpening?.id) return
-    const delta = correct > total / 2 ? 10 : -10
-    try {
-      await CoachingService.completeDrill(drillOpening.id, delta, authUserId)
-      fetchRepertoire()
-    } catch {
-      // Silently fail
-    }
-  }
-
   const whiteOpenings = useMemo(() => repertoire.filter((o) => o.color === 'white'), [repertoire])
   const blackOpenings = useMemo(() => repertoire.filter((o) => o.color === 'black'), [repertoire])
   const hasBothPlatforms = linkedAccounts.length > 1
@@ -173,25 +136,6 @@ function OpeningsContent({
           >
             Back to Dashboard
           </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Drill mode
-  if (drillPositions && drillOpening) {
-    return (
-      <div className="min-h-screen bg-surface-base p-4 md:p-8">
-        <div className="max-w-4xl mx-auto">
-          <DrillMode
-            positions={drillPositions}
-            openingName={drillOpening.opening_family}
-            onComplete={handleDrillComplete}
-            onClose={() => {
-              setDrillPositions(null)
-              setDrillOpening(null)
-            }}
-          />
         </div>
       </div>
     )
@@ -266,7 +210,6 @@ function OpeningsContent({
                             loading={detailLoading}
                             error={detailError}
                             opening={opening}
-                            onStartDrill={() => startDrill(opening)}
                           />
                         )}
                       </div>
@@ -304,7 +247,6 @@ function OpeningsContent({
                             loading={detailLoading}
                             error={detailError}
                             opening={opening}
-                            onStartDrill={() => startDrill(opening)}
                           />
                         )}
                       </div>
@@ -325,13 +267,11 @@ function ExpandedDetail({
   loading,
   error,
   opening,
-  onStartDrill,
 }: {
   detail: OpeningDetail | null
   loading: boolean
   error: boolean
   opening: OpeningRepertoire
-  onStartDrill: () => void
 }) {
   if (loading) {
     return (
@@ -359,20 +299,9 @@ function ExpandedDetail({
 
   return (
     <div className="mt-2 rounded-lg shadow-card bg-white/[0.03] p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">
-          {totalGames ?? opening.games_played} total games with {opening.opening_family}
-        </p>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onStartDrill()
-          }}
-          className="text-sm font-medium bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 shadow-card py-1.5 px-4 rounded-lg transition-colors"
-        >
-          Start Drill
-        </button>
-      </div>
+      <p className="text-sm text-gray-500">
+        {totalGames ?? opening.games_played} total games with {opening.opening_family}
+      </p>
 
       {/* Deviations */}
       {detail.deviations && detail.deviations.length > 0 && (
