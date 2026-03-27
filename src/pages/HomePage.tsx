@@ -1,6 +1,6 @@
 // Home Page - Engaging entry point for chess improvement
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { PlayerSearch } from '../components/simple/PlayerSearch'
 import { useAuth } from '../contexts/AuthContext'
 import { EloMockup } from '../components/landing/EloMockup'
@@ -145,8 +145,8 @@ export default function HomePage() {
 
   return (
     <div className="relative min-h-screen bg-surface-base text-gray-300">
-      {/* ===== Hero ===== */}
-      <div className="px-6 pt-20 pb-16 sm:pt-28 sm:pb-20 text-center max-w-2xl mx-auto">
+      {/* ===== Hero + Search ===== */}
+      <div ref={searchRef} className="px-6 pt-20 pb-16 sm:pt-28 sm:pb-20 text-center max-w-2xl mx-auto">
         {/* Badge */}
         <div
           className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-6 bg-surface-1 shadow-card"
@@ -165,15 +165,9 @@ export default function HomePage() {
           AI-powered analysis that tells you why you lose — and exactly how to improve.
         </p>
 
-        <div className="flex justify-center gap-3">
-          <Button variant="primary" onClick={scrollToSearch} className="px-7 py-2.5 text-sm">
-            Analyze Free
-          </Button>
-          <a href="/simple-analytics?user=hikaru&platform=chess.com">
-            <Button variant="secondary" className="px-5 py-2.5 text-sm border border-white/[0.15] hover:border-white/[0.25]">
-              See Demo
-            </Button>
-          </a>
+        {/* Inline search */}
+        <div className="max-w-xl mx-auto">
+          <PlayerSearch onPlayerSelect={handlePlayerSelect} />
         </div>
       </div>
 
@@ -243,41 +237,6 @@ export default function HomePage() {
               </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* ===== Search section ===== */}
-      <div
-        ref={searchRef}
-        className="px-6 py-16 sm:py-20"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
-      >
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-8">
-            <div className="label text-gray-500 mb-3">Try It Now</div>
-            <h2 className="text-title font-semibold text-[#f0f0f0] tracking-heading mb-2">Search any player</h2>
-            <p className="text-body text-gray-500">Enter a Chess.com or Lichess username to get started.</p>
-          </div>
-          <div className="bg-surface-1 shadow-card rounded-lg p-6 sm:p-8">
-            <div
-              className="h-px -mx-6 sm:-mx-8 mb-6"
-              style={{ background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.06), transparent)' }}
-            />
-            <PlayerSearch onPlayerSelect={handlePlayerSelect} />
-          </div>
-          {!user && (
-            <div className="mt-6 text-center">
-              <p className="text-small text-gray-500 mb-3">
-                Want to save your analysis and track progress over time?
-              </p>
-              <Link to="/signup">
-                <Button variant="secondary" size="sm">
-                  Create Free Account
-                </Button>
-              </Link>
-              <p className="mt-2 text-caption text-gray-600">No credit card required</p>
-            </div>
-          )}
         </div>
       </div>
 

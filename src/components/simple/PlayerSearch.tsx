@@ -1,5 +1,6 @@
 // Player Search Component - Search for players and open their profiles
 import React, { useState, useEffect } from 'react'
+import { Search } from 'lucide-react'
 import { ProfileService } from '../../services/profileService'
 import { AutoImportService, ImportProgress } from '../../services/autoImportService'
 import { getRecentPlayers, addRecentPlayer, clearRecentPlayers, RecentPlayer } from '../../utils/recentPlayers'
@@ -7,24 +8,6 @@ import { retryWithBackoff } from '../../lib/errorHandling'
 import { useAuth } from '../../contexts/AuthContext'
 import { AnonymousUsageTracker } from '../../services/anonymousUsageTracker'
 import LimitReachedModal from '../LimitReachedModal'
-
-// Add custom pulse animation style
-const customPulseStyle = `
-  @keyframes customPulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.70;
-    }
-  }
-  .animate-custom-pulse {
-    animation: customPulse 3s ease-in-out infinite;
-  }
-  input::placeholder {
-    color: #B0B8C4 !important;
-  }
-`
 
 interface PlayerSearchProps {
   onPlayerSelect: (userId: string, platform: 'lichess' | 'chess.com') => void
@@ -331,29 +314,17 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
     await performImport()
   }
 
-  const getPlatformIcon = (platform: 'lichess' | 'chess.com') => {
-    return platform === 'chess.com' ? '♞' : '♟'
-  }
-
-  const getPlatformColor = (platform: 'lichess' | 'chess.com') => {
-    return platform === 'chess.com' ? 'text-green-600' : 'text-blue-600'
-  }
 
   return (
     <>
-      <style>{customPulseStyle}</style>
-
       {/* Notification */}
       {notification && (
-        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 flex items-center justify-between rounded-xl border px-4 py-3 text-sm shadow-card ${notification.type === 'error' ? 'border-rose-400/30 bg-rose-500/10 text-rose-100' : 'border-sky-400/30 bg-sky-500/10 text-sky-100'}`}>
-          <div className="flex items-center gap-3 flex-1">
-            <span className="text-lg leading-none flex-shrink-0">{notification.type === 'error' ? '⚠' : 'ℹ'}</span>
-            <span className="flex-1">{notification.message}</span>
-          </div>
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 flex items-center justify-between rounded-lg px-4 py-3 text-[13px] shadow-card ${notification.type === 'error' ? 'bg-rose-500/10 text-rose-100' : 'bg-sky-500/10 text-sky-100'}`} style={{ boxShadow: `0 0 0 1px ${notification.type === 'error' ? 'rgba(251,113,133,0.2)' : 'rgba(56,189,248,0.2)'}, 0 4px 12px rgba(0,0,0,0.3)` }}>
+          <span className="flex-1">{notification.message}</span>
           <button
             type="button"
             onClick={() => setNotification(null)}
-            className="ml-3 text-xs font-medium text-gray-400 hover:text-white transition-colors flex-shrink-0"
+            className="ml-3 text-[11px] font-medium text-gray-400 hover:text-white transition-colors flex-shrink-0"
           >
             OK
           </button>
@@ -362,16 +333,17 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       {/* Clear Confirmation Modal */}
       {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d0f]/90 px-4">
-          <div className="max-w-md w-full rounded-lg bg-surface-1 p-6 shadow-card">
-            <h3 className="text-lg font-semibold text-white mb-3">Clear Recent Players</h3>
-            <p className="text-gray-400 text-sm mb-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d0f]/50 px-4">
+          <div className="max-w-sm w-full rounded-lg bg-surface-1 p-6 shadow-card">
+            <h3 className="text-section font-semibold text-white mb-3">Clear Recent Players</h3>
+            <p className="text-gray-400 text-[13px] mb-6">
               Are you sure you want to clear all recent players?
             </p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowClearConfirm(false)}
-                className="rounded-lg shadow-card bg-white/[0.03] px-6 py-2.5 text-sm font-semibold text-gray-300 transition-colors hover:bg-white/[0.04]"
+                className="rounded-md px-5 py-2 text-[13px] font-medium text-gray-400 transition-colors hover:text-gray-300"
+                style={{ border: '1px solid rgba(255,255,255,0.06)' }}
               >
                 Cancel
               </button>
@@ -382,7 +354,7 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                   setShowRecentPlayers(false)
                   setShowClearConfirm(false)
                 }}
-                className="rounded-lg shadow-card bg-rose-500/15 px-6 py-2.5 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/25"
+                className="rounded-md bg-rose-500/10 px-5 py-2 text-[13px] font-medium text-rose-300 transition-colors hover:bg-rose-500/15"
               >
                 Clear
               </button>
@@ -392,85 +364,69 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       )}
 
       <div className="relative text-gray-300">
-      <form onSubmit={handleSearch} className="space-y-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <div className="flex-1">
+      <form onSubmit={handleSearch}>
+        {/* Input + Search button row */}
+        <div className="flex gap-2 mb-4">
+          <div className="flex-1 relative">
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border px-4 py-3 text-white focus:outline-none focus:ring-2 transition-colors"
-              style={{
-                backgroundColor: '#2D3748',
-                borderColor: 'rgba(176, 184, 196, 0.1)',
-                color: '#FFFFFF',
-              }}
+              className="w-full rounded-md bg-surface-2 pl-10 pr-4 py-3 text-[13px] text-gray-300 placeholder:text-gray-500 focus:outline-none transition-colors"
+              style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)' }}
+              onFocus={(e) => { e.target.style.boxShadow = '0 0 0 1px rgba(228,232,237,0.12)' }}
+              onBlur={(e) => { e.target.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.04)' }}
               placeholder="Enter player username..."
-              onFocus={(e) => {
-                e.target.style.borderColor = 'rgba(176, 184, 196, 0.2)';
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = 'rgba(176, 184, 196, 0.1)';
-              }}
               required
             />
           </div>
-          <div className="flex w-full gap-2 md:w-auto">
-            <button
-              type="button"
-              onClick={() => setSelectedPlatform('lichess')}
-              className={`flex-1 md:w-32 rounded-full px-6 py-3 text-sm font-semibold transition-colors ${
-                selectedPlatform === 'lichess'
-                  ? 'shadow-card bg-yellow-600/20 text-yellow-100'
-                  : 'shadow-card bg-surface-2/40 text-gray-400 hover:bg-surface-2/60'
-              }`}
-              title="Lichess"
-            >
-              Lichess
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedPlatform('chess.com')}
-              className={`flex-1 md:w-32 rounded-full px-6 py-3 text-sm font-semibold transition-colors ${
-                selectedPlatform === 'chess.com'
-                  ? 'shadow-card bg-green-600/20 text-green-100'
-                  : 'shadow-card bg-surface-2/40 text-gray-400 hover:bg-surface-2/60'
-              }`}
-              title="Chess.com"
-            >
-              Chess.com
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-3 md:flex-row md:justify-center">
           <button
             type="submit"
             disabled={isSearching || isAutoImporting || !searchQuery.trim()}
-            className="w-full md:w-44 rounded-full shadow-card bg-surface-3/50 px-6 py-3 text-sm font-semibold text-gray-300 transition-colors hover:bg-surface-3/70 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-shrink-0 rounded-md px-6 py-3 text-[13px] font-medium tracking-[-0.01em] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+            style={{
+              background: '#e4e8ed',
+              color: '#111',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3)',
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.background = '#f0f2f5' }}
+            onMouseOut={(e) => { e.currentTarget.style.background = '#e4e8ed' }}
           >
             {isSearching || isAutoImporting ? (
-              <div className="flex items-center justify-center space-x-2">
-                <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-gray-300"></div>
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-700 border-t-gray-300"></div>
                 <span>{isAutoImporting ? 'Importing...' : 'Searching...'}</span>
               </div>
             ) : (
-              'Search Player'
+              'Search'
             )}
           </button>
+        </div>
 
+        {/* Platform toggle — ghost style */}
+        <div className="flex justify-center gap-1">
           <button
             type="button"
-            onClick={() => {
-              setSearchQuery('')
-              setSearchResults([])
-              setShowResults(false)
-              setImportProgress(null)
-              setShowImportPrompt(false)
-            }}
-            className="w-full md:w-44 rounded-full shadow-card bg-surface-2/40 px-6 py-3 text-sm font-semibold text-gray-400 transition-colors hover:bg-surface-2/60"
+            onClick={() => setSelectedPlatform('lichess')}
+            className={`rounded-md px-4 py-1.5 text-[13px] font-medium transition-colors ${
+              selectedPlatform === 'lichess'
+                ? 'bg-white/[0.06] text-[#f0f0f0]'
+                : 'text-gray-500 hover:text-gray-400 hover:bg-white/[0.03]'
+            }`}
           >
-            Clear
+            Lichess
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedPlatform('chess.com')}
+            className={`rounded-md px-4 py-1.5 text-[13px] font-medium transition-colors ${
+              selectedPlatform === 'chess.com'
+                ? 'bg-white/[0.06] text-[#f0f0f0]'
+                : 'text-gray-500 hover:text-gray-400 hover:bg-white/[0.03]'
+            }`}
+          >
+            Chess.com
           </button>
         </div>
       </form>
@@ -478,31 +434,36 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       {/* Search Results */}
       {showResults && (
         <div className="mt-6">
-          <h3 className="mb-3 text-lg font-semibold text-white">
+          <h3 className="mb-3 text-section font-semibold text-white">
             Search Results ({searchResults.length})
           </h3>
 
           {searchResults.length === 0 ? (
             <div className="py-8 text-center text-gray-500">
               {isAutoImporting ? (
-                <div className="space-y-4">
-                  <div className="text-4xl text-gray-600">♘</div>
-                  <p className="text-lg font-medium text-gray-300">Importing games for "{searchQuery}"...</p>
-                  <p className="text-sm">This may take a few moments</p>
+                <div className="space-y-3">
+                  <div className="text-[28px] text-gray-600">&#9816;</div>
+                  <p className="text-[13px] font-medium text-gray-300">Importing games for &ldquo;{searchQuery}&rdquo;...</p>
+                  <p className="text-small text-gray-500">This may take a few moments</p>
                 </div>
               ) : showImportPrompt ? (
-                <div className="space-y-4">
-                  <p className="text-lg font-medium text-gray-300 mb-2">
-                    Player "{searchQuery}" is not in our database yet.
+                <div className="space-y-3">
+                  <p className="text-[13px] font-medium text-gray-300">
+                    Player &ldquo;{searchQuery}&rdquo; is not in our database yet.
                   </p>
-                  <p className="text-sm text-gray-500 mb-4">
+                  <p className="text-small text-gray-500">
                     Please import games
                   </p>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:justify-center sm:gap-6">
+                  <div className="flex justify-center gap-3">
                     <button
                       onClick={handleManualImport}
                       disabled={isAutoImporting}
-                      className="w-full md:w-44 rounded-full shadow-card bg-surface-3/50 px-6 py-2 text-sm font-semibold text-gray-300 transition-colors hover:bg-surface-3/70 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-md px-5 py-2 text-[13px] font-medium tracking-[-0.01em] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                      style={{
+                        background: '#e4e8ed',
+                        color: '#111',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3)',
+                      }}
                     >
                       Import 100 Games
                     </button>
@@ -513,40 +474,39 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                         setSearchResults([])
                         setShowResults(false)
                       }}
-                      className="w-full md:w-44 rounded-full shadow-card bg-surface-2/40 px-6 py-2 text-sm font-semibold text-gray-400 transition-colors hover:bg-surface-2/60"
+                      className="rounded-md px-5 py-2 text-[13px] font-medium text-gray-400 transition-colors hover:text-gray-300"
+                      style={{ border: '1px solid rgba(255,255,255,0.06)' }}
                     >
                       Cancel
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <p>No players found matching "{searchQuery}"</p>
-                  <p className="text-sm">Try a different search term</p>
+                <div className="space-y-1">
+                  <p className="text-[13px] text-gray-400">No players found matching &ldquo;{searchQuery}&rdquo;</p>
+                  <p className="text-small text-gray-500">Try a different search term</p>
                 </div>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {searchResults.map(player => (
                 <div
                   key={`${player.user_id}-${player.platform}`}
                   onClick={() => handlePlayerSelect(player.user_id, player.platform, player.display_name, player.current_rating)}
-                  className="cursor-pointer rounded-lg shadow-card bg-surface-2/30 p-4 text-gray-300 transition-colors hover:border-white/[0.04] hover:bg-surface-2/50"
+                  className="cursor-pointer rounded-md p-3 text-gray-300 transition-colors hover:bg-white/[0.03]"
+                  style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)' }}
                 >
-                  <div className="flex items-center space-x-3">
-                    <div className={`text-2xl ${getPlatformColor(player.platform)}`}>
-                      {getPlatformIcon(player.platform)}
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-md bg-surface-3 flex items-center justify-center text-[13px] text-gray-400 flex-shrink-0">
+                      {(player.display_name || player.user_id).charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="truncate font-semibold text-white">
+                      <div className="truncate text-[13px] font-medium text-[#f0f0f0]">
                         {player.display_name || player.user_id}
                       </div>
-                      <div className="truncate text-sm text-gray-400">
-                        {player.user_id} - {player.platform}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {player.total_games} games - {player.current_rating} rating
+                      <div className="truncate text-caption text-gray-500">
+                        {player.platform} &middot; {player.current_rating || 'Unrated'} &middot; {player.total_games} games
                       </div>
                     </div>
                   </div>
@@ -559,76 +519,64 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       {/* Import Progress */}
       {importProgress && (
-        <div className="mt-6 rounded-lg shadow-card bg-surface-2/30 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-lg font-semibold text-white">
+        <div className="mt-6 rounded-lg bg-surface-1 p-5" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2)' }}>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-[13px] font-semibold text-[#f0f0f0]">
               {importProgress.status === 'starting' && 'Starting Import...'}
               {importProgress.status === 'importing' && 'Importing Games...'}
-              {importProgress.status === 'completed' && 'Import Complete!'}
+              {importProgress.status === 'completed' && 'Import Complete'}
               {importProgress.status === 'error' && 'Import Failed'}
             </h4>
-            <div className="text-sm text-gray-400">
-              {importProgress.importedGames} games imported
-            </div>
+            <span className="text-caption text-gray-500">
+              {importProgress.importedGames} games
+            </span>
           </div>
 
           <div className="mb-2">
-            <div className="h-2 w-full rounded-full bg-white/10">
+            <div className="h-1 w-full rounded-full bg-white/[0.04]">
               <div
-                className={`h-2 rounded-full transition-colors duration-300 ${
+                className={`h-1 rounded-full transition-colors duration-300 ${
                   importProgress.status === 'error'
-                    ? 'bg-rose-500'
+                    ? 'bg-rose-400/50'
                     : importProgress.status === 'completed'
-                      ? 'bg-emerald-400'
-                      : 'bg-sky-400'
+                      ? 'bg-emerald-400/50'
+                      : 'bg-gray-400/40'
                 }`}
                 style={{ width: `${importProgress.progress}%` }}
-              ></div>
+              />
             </div>
           </div>
 
-          <p
-            className={`text-sm ${
-              importProgress.status === 'error'
-                ? 'text-rose-200'
-                : importProgress.status === 'completed'
-                  ? 'text-emerald-200'
-                  : 'text-gray-400'
-            }`}
-          >
+          <p className={`text-small ${
+            importProgress.status === 'error' ? 'text-rose-300/80' : importProgress.status === 'completed' ? 'text-emerald-300/80' : 'text-gray-500'
+          }`}>
             {importProgress.message}
           </p>
 
           {importProgress.status === 'completed' && (
-            <div className="mt-3 text-center">
-              <div className="mb-2 text-2xl text-emerald-200">✓</div>
-              <p className="font-medium text-emerald-200">
-                {importProgress.importedGames} games imported successfully! You can now view
-                analytics.
-              </p>
-            </div>
+            <p className="mt-3 text-[13px] font-medium text-emerald-300/80 text-center">
+              {importProgress.importedGames} games imported successfully — you can now view analytics.
+            </p>
           )}
 
           {importProgress.status === 'error' && (
-            <div className="mt-3 text-center">
-              <div className="mb-2 text-2xl text-rose-200">!</div>
-              <p className="font-medium text-rose-200">
-                Import failed. Please try again or check if the username is correct.
-              </p>
-            </div>
+            <p className="mt-3 text-[13px] font-medium text-rose-300/80 text-center">
+              Import failed. Please try again or check the username.
+            </p>
           )}
         </div>
       )}
 
       {/* Quick Access to Recent Players */}
-      <div className="mt-6 border-t border-white/10 pt-6">
+      <div className="mt-6 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }}>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold text-white">Quick Access</h3>
+          <span className="text-caption font-medium text-gray-500" style={{ letterSpacing: '0.06em', fontVariant: 'all-small-caps' }}>
+            Quick Access
+          </span>
           {recentPlayers.length > 0 && (
             <button
               onClick={() => setShowClearConfirm(true)}
-              className="text-xs hover:opacity-80 transition-opacity"
-              style={{ color: '#B0B8C4' }}
+              className="text-caption font-medium text-gray-500 hover:text-gray-400 transition-colors"
             >
               Clear All
             </button>
@@ -637,29 +585,30 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
         {recentPlayers.length === 0 ? (
           <div>
-            <p className="text-sm text-gray-500 mb-3">
+            <p className="text-small text-gray-500 mb-3">
               Try it out — click any player to see their analysis instantly
             </p>
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {[
                 { userId: 'hikaru', platform: 'chess.com' as const, displayName: 'Hikaru Nakamura', rating: 3228 },
                 { userId: 'DrNykterstein', platform: 'lichess' as const, displayName: 'Magnus Carlsen', rating: 2830 },
-                { userId: 'DanielNarodworthy', platform: 'chess.com' as const, displayName: 'Daniel Naroditsky', rating: 3004 },
+                { userId: 'DanielNaroditsky', platform: 'chess.com' as const, displayName: 'Daniel Naroditsky', rating: 3004 },
               ].map(player => (
                 <div
                   key={`${player.userId}-${player.platform}`}
                   onClick={() => handlePlayerSelect(player.userId, player.platform, player.displayName, player.rating)}
-                  className="cursor-pointer rounded-lg shadow-card bg-surface-2/30 p-3 transition-colors hover:border-white/[0.04] hover:bg-surface-2/50"
+                  className="cursor-pointer rounded-md p-3 transition-colors hover:bg-white/[0.03]"
+                  style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)' }}
                 >
-                  <div className="flex items-center space-x-3">
-                    <div className={`text-xl ${getPlatformColor(player.platform)}`}>
-                      {getPlatformIcon(player.platform)}
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-md bg-surface-3 flex items-center justify-center text-caption text-gray-400 flex-shrink-0">
+                      {player.displayName.charAt(0)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="truncate font-medium text-white text-sm">
+                      <div className="truncate text-[13px] font-medium text-[#f0f0f0]">
                         {player.displayName}
                       </div>
-                      <div className="truncate text-xs text-gray-500">
+                      <div className="truncate text-caption text-gray-500">
                         {player.platform} &middot; {player.rating}
                       </div>
                     </div>
@@ -673,31 +622,31 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
             <div className="text-center mb-3">
               <button
                 onClick={() => setShowRecentPlayers(!showRecentPlayers)}
-                className="font-medium hover:opacity-80 text-sm transition-opacity"
-                style={{ color: '#4299E1' }}
+                className="text-[13px] font-medium text-gray-400 hover:text-gray-300 transition-colors"
               >
                 {showRecentPlayers ? 'Hide' : 'Show'} Recent Players ({recentPlayers.length})
               </button>
             </div>
 
             {showRecentPlayers && (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {recentPlayers.map(player => (
                   <div
                     key={`${player.userId}-${player.platform}`}
                     onClick={() => handlePlayerSelect(player.userId, player.platform, player.displayName, player.rating)}
-                    className="cursor-pointer rounded-lg shadow-card bg-surface-2/30 p-3 transition-colors hover:border-white/[0.04] hover:bg-surface-2/50"
+                    className="cursor-pointer rounded-md p-3 transition-colors hover:bg-white/[0.03]"
+                    style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)' }}
                   >
-                    <div className="flex items-center space-x-3">
-                      <div className={`text-xl ${getPlatformColor(player.platform)}`}>
-                        {getPlatformIcon(player.platform)}
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-md bg-surface-3 flex items-center justify-center text-caption text-gray-400 flex-shrink-0">
+                        {(player.displayName || player.userId).charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="truncate font-medium text-white text-sm">
+                        <div className="truncate text-[13px] font-medium text-[#f0f0f0]">
                           {player.displayName || player.userId}
                         </div>
-                        <div className="truncate text-xs text-gray-500">
-                          {player.platform}{player.rating ? ` • ${player.rating}` : ''}
+                        <div className="truncate text-caption text-gray-500">
+                          {player.platform}{player.rating ? ` \u00b7 ${player.rating}` : ''}
                         </div>
                       </div>
                     </div>
