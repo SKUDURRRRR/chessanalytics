@@ -12084,7 +12084,7 @@ async def get_study_plan(
         raise
     except Exception as e:
         logger.error(f"Error getting study plan: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to get study plan")
+        raise HTTPException(status_code=500, detail=f"Failed to get study plan: {e}")
 
 
 @app.post("/api/v1/coach/study-plan/{user_id}/{platform}")
@@ -12112,7 +12112,7 @@ async def create_study_plan(
         raise
     except Exception as e:
         logger.error(f"Error creating study plan: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create study plan")
+        raise HTTPException(status_code=500, detail=f"Failed to create study plan: {e}")
 
 
 @app.post("/api/v1/coach/study-plan/{plan_id}/activity")

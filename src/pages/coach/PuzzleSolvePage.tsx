@@ -425,7 +425,7 @@ function BankPuzzleSolver({
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
           {/* Board */}
-          <div className="rounded-lg shadow-card bg-surface-1 p-4">
+          <div>
             {/* Status message */}
             <div className="mb-3 text-center">
               {status === 'setup' && (
@@ -451,7 +451,7 @@ function BankPuzzleSolver({
               )}
             </div>
 
-            <div ref={boardContainerRef} className="relative">
+            <div ref={boardContainerRef} className="relative" style={{ padding: 1 }}>
               <Chessboard
                 id="puzzle-board"
                 position={currentFen}
@@ -477,7 +477,7 @@ function BankPuzzleSolver({
           </div>
 
           {/* Right panel: tabbed (Info / Coach Tal) */}
-          <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col">
+          <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col h-full">
             {/* Tab header */}
             <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <button
@@ -501,7 +501,7 @@ function BankPuzzleSolver({
             </div>
 
             {rightPanelTab === 'coach' ? (
-              <div className="flex-1 min-h-0" style={{ minHeight: 360 }}>
+              <div className="flex-1 min-h-0">
                 <InlineCoachChat positionContext={localPositionContext} />
               </div>
             ) : (
@@ -796,7 +796,7 @@ function LegacyPuzzleSolver({
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          <div className="rounded-lg shadow-card bg-surface-1 p-4">
+          <div className="p-1">
             <p className="text-gray-400 mb-3 text-center font-medium">
               {game.turn() === 'w' ? 'White' : 'Black'} to move - find the best move!
             </p>
@@ -810,7 +810,7 @@ function LegacyPuzzleSolver({
           </div>
 
           {/* Right panel: tabbed (Info / Coach Tal) */}
-          <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col">
+          <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col h-full">
             {/* Tab header */}
             <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <button
@@ -834,7 +834,7 @@ function LegacyPuzzleSolver({
             </div>
 
             {rightPanelTab === 'coach' ? (
-              <div className="flex-1 min-h-0" style={{ minHeight: 360 }}>
+              <div className="flex-1 min-h-0">
                 <InlineCoachChat positionContext={localPositionContext} />
               </div>
             ) : (
