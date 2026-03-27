@@ -99,10 +99,10 @@ class StudyPlanGenerator:
                 lambda: self.supabase.table('game_analyses')
                 .select('tactical_score,positional_score,opening_accuracy,'
                         'middle_game_accuracy,endgame_accuracy,blunders,mistakes,'
-                        'tactical_patterns,created_at,played_at,game_id')
+                        'tactical_patterns,created_at,analysis_date,game_id')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
-                .order('analyzed_at', desc=True)
+                .order('analysis_date', desc=True)
                 .limit(100)
                 .execute()
             )
@@ -111,7 +111,7 @@ class StudyPlanGenerator:
             # 2. Fetch games for opening/result data
             games_result = await asyncio.to_thread(
                 lambda: self.supabase.table('games')
-                .select('game_id,opening_family,color,result,rating,played_at')
+                .select('game_id,opening_family,color,result,my_rating,played_at')
                 .eq('user_id', canonical_user_id)
                 .eq('platform', platform)
                 .order('played_at', desc=True)
@@ -535,7 +535,7 @@ class StudyPlanGenerator:
         profile['weakest_openings'] = weakest_openings[:3]
 
         # --- Average rating ---
-        ratings = [g.get('rating') for g in games_data if g.get('rating')]
+        ratings = [g.get('my_rating') for g in games_data if g.get('my_rating')]
         if ratings:
             try:
                 profile['avg_rating'] = round(sum(float(r) for r in ratings) / len(ratings))

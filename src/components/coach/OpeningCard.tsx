@@ -4,6 +4,7 @@
  */
 
 import { OpeningRepertoire } from '../../types'
+import { getOpeningColor } from '../../utils/openingColorClassification'
 
 interface OpeningCardProps {
   opening: OpeningRepertoire
@@ -12,9 +13,20 @@ interface OpeningCardProps {
   showPlatform?: boolean
 }
 
+function getDisplayName(opening: OpeningRepertoire): string {
+  const name = opening.opening_family
+  const openingColor = getOpeningColor(name)
+  // Show "vs" when the opening belongs to the opponent's color
+  if (openingColor !== 'neutral' && openingColor !== opening.color) {
+    return `vs ${name}`
+  }
+  return name
+}
+
 export function OpeningCard({ opening, onClick, isExpanded, showPlatform }: OpeningCardProps) {
   const winRate = opening.win_rate ?? 0
   const winColor = winRate > 55 ? 'emerald' : winRate < 45 ? 'rose' : 'gray'
+  const displayName = getDisplayName(opening)
 
   const isDue = opening.spaced_repetition_due
     ? new Date(opening.spaced_repetition_due) <= new Date()
@@ -31,7 +43,7 @@ export function OpeningCard({ opening, onClick, isExpanded, showPlatform }: Open
     >
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-semibold text-white truncate">{opening.opening_family}</h4>
+          <h4 className="text-sm font-semibold text-white truncate">{displayName}</h4>
           <div className="flex items-center gap-2">
             <p className="text-xs text-gray-500">{opening.games_played} games</p>
             {showPlatform && opening.platform && (

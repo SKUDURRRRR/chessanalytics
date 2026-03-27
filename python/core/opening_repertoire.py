@@ -6,6 +6,7 @@ for the Coach feature's Opening Repertoire Trainer.
 
 import asyncio
 import logging
+import math
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any
 from collections import defaultdict
@@ -127,8 +128,12 @@ class OpeningRepertoireAnalyzer:
                 win_rate = (stats['wins'] / stats['games_played'] * 100) if stats['games_played'] > 0 else 0
                 avg_accuracy = (sum(stats['accuracies']) / len(stats['accuracies'])) if stats['accuracies'] else None
 
-                # Confidence: based on games played and win rate
-                confidence = min(100, stats['games_played'] * 5 + (win_rate - 50) * 0.5)
+                # Confidence: logarithmic scaling so it doesn't instantly max out
+                # ~20 games → 43, ~50 games → 56, ~100 games → 66, ~500 games → 90
+                games_component = min(70, 10 * math.log2(stats['games_played'] + 1))
+                win_rate_component = max(0, (win_rate - 40) * 0.5)  # 0-30 range
+                accuracy_component = ((avg_accuracy - 50) * 0.2) if avg_accuracy and avg_accuracy > 50 else 0
+                confidence = min(100, games_component + win_rate_component + accuracy_component)
                 confidence = max(0, confidence)
 
                 entry = {
@@ -353,10 +358,94 @@ class OpeningRepertoireAnalyzer:
                 if len(drill_positions) >= 8:
                     break
 
+            # Fallback: generate drill positions from PGN key moments
+            if not drill_positions:
+                drill_positions = await self._generate_pgn_drill_positions(
+                    canonical_user_id, platform, matching_ids[:20], color
+                )
+
             return drill_positions
 
         except Exception as e:
             logger.error(f"[REPERTOIRE] Error getting drill positions: {e}", exc_info=True)
+            return []
+
+    async def _generate_pgn_drill_positions(
+        self,
+        canonical_user_id: str,
+        platform: str,
+        provider_ids: List[str],
+        color: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate drill positions from PGN data by replaying moves.
+        Picks key decision points in the opening (user's moves at moves 3-12).
+        """
+        try:
+            import chess
+
+            if not provider_ids:
+                return []
+
+            pgn_result = await asyncio.to_thread(
+                lambda: self.supabase.table('games_pgn')
+                .select('provider_game_id, pgn')
+                .eq('user_id', canonical_user_id)
+                .eq('platform', platform)
+                .in_('provider_game_id', provider_ids)
+                .limit(10)
+                .execute()
+            )
+
+            if not pgn_result.data:
+                return []
+
+            # Collect positions from multiple games at key decision points
+            drill_positions = []
+            seen_fens = set()
+
+            for row in pgn_result.data:
+                moves = self._extract_opening_moves(row.get('pgn', ''), max_moves=12)
+                if len(moves) < 6:
+                    continue
+
+                # Replay moves to get FEN at each position
+                board = chess.Board()
+                for i, move_san in enumerate(moves):
+                    try:
+                        move = board.parse_san(move_san)
+                    except (chess.InvalidMoveError, chess.AmbiguousMoveError):
+                        break
+
+                    move_number = (i // 2) + 1
+                    is_user_move = (
+                        (color == 'white' and i % 2 == 0) or
+                        (color == 'black' and i % 2 == 1)
+                    )
+
+                    # Pick user's moves from move 3 onwards as drill points
+                    if is_user_move and move_number >= 3:
+                        fen = board.fen()
+                        fen_key = fen.split(' ')[0]  # Position only, ignore move counters
+                        if fen_key not in seen_fens:
+                            seen_fens.add(fen_key)
+                            drill_positions.append({
+                                'fen': fen,
+                                'move_number': move_number,
+                                'your_move': move_san,
+                                'classification': 'recall',
+                                'description': f"Move {move_number}: What did you play here?",
+                            })
+
+                    board.push(move)
+
+                if len(drill_positions) >= 8:
+                    break
+
+            return drill_positions[:8]
+
+        except Exception as e:
+            logger.error(f"[REPERTOIRE] Error generating PGN drill positions: {e}", exc_info=True)
             return []
 
     async def update_spaced_repetition(

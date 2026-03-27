@@ -114,6 +114,7 @@ function GameReviewContent() {
   const [currentBoardIndex, setCurrentBoardIndex] = useState(0)
   const [boardWidth, setBoardWidth] = useState(500)
   const [isRevealed, setIsRevealed] = useState(false)
+  const [rightPanelTab, setRightPanelTab] = useState<'review' | 'coach'>('review')
 
   // User attempt state - lets users try their own move before reveal
   const [userAttemptSan, setUserAttemptSan] = useState<string | null>(null)
@@ -126,6 +127,7 @@ function GameReviewContent() {
 
   // Refs
   const layoutRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   // Hooks
   const mobileOpts = useMobileOptimizations()
@@ -214,27 +216,29 @@ function GameReviewContent() {
   // ---- Board sizing (viewport-fit) ----
   useEffect(() => {
     const update = () => {
-      const el = layoutRef.current
-      const containerWidth = el?.clientWidth ?? window.innerWidth
-      const viewportHeight = window.innerHeight
-      const padding = 32
+      const content = contentRef.current
+      const containerWidth = content?.clientWidth ?? window.innerWidth
+      const containerHeight = content?.clientHeight ?? window.innerHeight
 
       if (mobileOpts.boardSize === 'small' || mobileOpts.boardSize === 'medium') {
         const cap = mobileOpts.boardSize === 'small' ? 320 : 400
-        setBoardWidth(Math.min(containerWidth - padding, cap))
+        setBoardWidth(Math.min(containerWidth - 32, cap))
       } else {
-        // Desktop: constrain by viewport height and available width
-        // Account for header (~56px), nav below board (~52px), container padding (~48px)
-        const heightBudget = viewportHeight - 56 - 52 - 48
-        // Leave room for 360px panel + 24px gap + padding
-        const widthBudget = containerWidth - 360 - 24 - padding
-        setBoardWidth(Math.max(300, Math.min(heightBudget, widthBudget, 560)))
+        // Board + nav bar + card padding must fit in container height
+        // nav bar ~40px, card padding ~24px, container padding ~32px
+        const heightBudget = containerHeight - 40 - 24 - 32
+        // Leave room for right panel (~380px) + gap(24px) + padding(32px)
+        const widthBudget = containerWidth - 380 - 24 - 32
+        setBoardWidth(Math.max(280, Math.min(heightBudget, widthBudget, 540)))
       }
     }
 
     update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
+    const el = contentRef.current
+    if (!el) return
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [mobileOpts.boardSize])
 
   // ---- Current moment ----
@@ -492,9 +496,9 @@ function GameReviewContent() {
   const isMobile = mobileOpts.boardSize === 'small' || mobileOpts.boardSize === 'medium'
 
   return (
-    <div className="h-screen bg-surface-base text-white flex flex-col overflow-hidden" ref={layoutRef}>
+    <div className="bg-surface-base text-white flex flex-col overflow-hidden" style={{ height: 'calc(100dvh - 56px)' }} ref={layoutRef}>
       {/* Header */}
-      <div className="flex-shrink-0 border-b border-white/5 bg-white/[0.02] px-4 py-3">
+      <div className="flex-shrink-0 border-b border-white/5 bg-white/[0.02] px-4 py-2">
         <div className="max-w-5xl mx-auto flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
@@ -520,13 +524,13 @@ function GameReviewContent() {
       </div>
 
       {/* Main content */}
-      <div className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+      <div ref={contentRef} className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         <div className={`max-w-5xl mx-auto p-4 ${
           isMobile ? 'flex flex-col gap-4' : 'flex gap-6 items-start h-full'
         }`}>
           {/* Board column */}
-          <div className={`flex-shrink-0 ${isMobile ? 'w-full flex flex-col items-center' : ''}`}>
-            <div className="rounded-lg shadow-card bg-surface-1 p-4">
+          <div className={`flex-shrink-0 ${isMobile ? 'w-full flex flex-col items-center' : 'flex flex-col'}`}>
+            <div className="rounded-lg shadow-card bg-surface-1 p-3">
               <div className="relative" style={{ width: boardWidth, height: boardWidth }}>
                 <Chessboard
                   id="game-review-board"
@@ -550,7 +554,7 @@ function GameReviewContent() {
 
             {/* Move navigation below board (only during reviewing) */}
             {phase === 'reviewing' && (
-              <div className="flex items-center justify-center gap-1.5 mt-3 py-2 px-3 rounded-lg bg-white/[0.03] shadow-card" style={{ width: boardWidth + 32 }}>
+              <div className="flex items-center justify-center gap-1.5 mt-2 py-1.5 px-3 rounded-lg bg-white/[0.03] shadow-card" style={{ width: boardWidth + 24 }}>
                 <button
                   onClick={() => navigateToMove(0)}
                   disabled={currentBoardIndex === 0}
@@ -590,29 +594,15 @@ function GameReviewContent() {
             )}
           </div>
 
-          {/* Coaching panel + inline chat */}
+          {/* Right panel: tabbed (Review / Coach Tal) */}
           <div className={`${
-            isMobile ? 'w-full' : 'flex-1 min-w-0 max-w-[400px] max-h-full overflow-y-auto'
-          } flex flex-col gap-3`}>
+            isMobile ? 'w-full' : 'flex-1 min-w-0 max-w-[400px]'
+          } flex flex-col`} style={{ height: isMobile ? undefined : '100%' }}>
             {phase === 'intro' && (
               <IntroPanel
                 meta={gameMeta}
                 stats={mistakeStats}
                 onStart={startReview}
-              />
-            )}
-
-            {phase === 'reviewing' && currentMoment && (
-              <ReviewingPanel
-                moment={currentMoment}
-                momentIndex={currentMomentIndex}
-                totalMoments={keyMoments.length}
-                isRevealed={isRevealed}
-                userAttemptSan={userAttemptSan}
-                onReveal={() => { setIsRevealed(true); setUserAttemptFen(null) }}
-                onClearAttempt={clearUserAttempt}
-                onPrev={prevMoment}
-                onNext={nextMoment}
               />
             )}
 
@@ -625,13 +615,50 @@ function GameReviewContent() {
               />
             )}
 
-            {/* Inline Coach Chat */}
-            {phase === 'reviewing' && (
-              <div
-                className="rounded-lg overflow-hidden"
-                style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)', background: '#0c0d0f', minHeight: 320 }}
-              >
-                <InlineCoachChat positionContext={localPositionContext} />
+            {phase === 'reviewing' && currentMoment && (
+              <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col" style={{ height: isMobile ? undefined : '100%' }}>
+                {/* Tab header */}
+                <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <button
+                    onClick={() => setRightPanelTab('review')}
+                    className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                      rightPanelTab === 'review' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                    style={rightPanelTab === 'review' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
+                  >
+                    Review
+                  </button>
+                  <button
+                    onClick={() => setRightPanelTab('coach')}
+                    className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                      rightPanelTab === 'coach' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                    style={rightPanelTab === 'coach' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
+                  >
+                    Coach Tal
+                  </button>
+                </div>
+
+                {/* Tab content */}
+                {rightPanelTab === 'coach' ? (
+                  <div className="flex-1 min-h-0" style={{ minHeight: isMobile ? 360 : undefined }}>
+                    <InlineCoachChat positionContext={localPositionContext} />
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto">
+                    <ReviewingPanel
+                      moment={currentMoment}
+                      momentIndex={currentMomentIndex}
+                      totalMoments={keyMoments.length}
+                      isRevealed={isRevealed}
+                      userAttemptSan={userAttemptSan}
+                      onReveal={() => { setIsRevealed(true); setUserAttemptFen(null) }}
+                      onClearAttempt={clearUserAttempt}
+                      onPrev={prevMoment}
+                      onNext={nextMoment}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -750,172 +777,117 @@ function ReviewingPanel({ moment, momentIndex, totalMoments, isRevealed, userAtt
     userAttemptSan.replace(/[+#]/g, '') === m.san.replace(/[+#]/g, '')
 
   return (
-    <div className="rounded-lg shadow-card bg-surface-1 p-5 space-y-4">
-      {/* Progress dots */}
-      <div className="flex items-center justify-between text-xs text-gray-500">
-        <span>Moment {momentIndex + 1} of {totalMoments}</span>
-        <div className="flex gap-1">
-          {Array.from({ length: totalMoments }, (_, i) => (
-            <div
-              key={i}
-              className={`w-2 h-2 rounded-full transition-colors ${
-                i === momentIndex ? 'bg-emerald-400' : i < momentIndex ? 'bg-emerald-400/30' : 'bg-surface-3'
-              }`}
-            />
-          ))}
+    <div className="px-4 py-3 space-y-3">
+      {/* Header: moment counter + dots + move number + badge */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-white text-[13px] font-medium">Move {m.moveNumber}</span>
+          {isRevealed && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${classificationBadgeStyles[moment.classification]}`}>
+              {classificationLabel[moment.classification]} {classificationIcon(moment.classification)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gray-600">{momentIndex + 1}/{totalMoments}</span>
+          <div className="flex gap-1">
+            {Array.from({ length: totalMoments }, (_, i) => (
+              <div
+                key={i}
+                className={`w-1.5 h-1.5 rounded-full ${
+                  i === momentIndex ? 'bg-emerald-400' : i < momentIndex ? 'bg-emerald-400/30' : 'bg-surface-3'
+                }`}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Move header */}
-      <div className="flex items-center gap-2">
-        <span className="text-white font-medium">Move {m.moveNumber}</span>
-        {isRevealed && (
-          <span className={`text-xs px-2 py-0.5 rounded ${classificationBadgeStyles[moment.classification]}`}>
-            {classificationLabel[moment.classification]} {classificationIcon(moment.classification)}
-          </span>
-        )}
-      </div>
-
-      {/* Pre-reveal: "Think First" prompt */}
+      {/* Pre-reveal */}
       {!isRevealed && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {!userAttemptSan ? (
-            <div className="p-4 rounded-lg bg-amber-500/5 shadow-card text-center">
-              <p className="text-amber-200 font-medium mb-1">
-                It&apos;s {m.player === 'white' ? "White's" : "Black's"} move
-              </p>
-              <p className="text-gray-500 text-sm">
-                Try your move on the board, or reveal what happened.
+            <div className="p-3 rounded-lg bg-amber-500/5 shadow-card text-center">
+              <p className="text-amber-200 text-[13px] font-medium">
+                {m.player === 'white' ? "White" : "Black"} to move — try yours on the board
               </p>
             </div>
           ) : (
-            <div className="p-4 rounded-lg bg-emerald-500/5 shadow-card">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span className="text-gray-500">Your choice:</span>
-                  <span className="text-emerald-300 font-mono font-semibold">{userAttemptSan}</span>
-                </div>
-                <button
-                  onClick={onClearAttempt}
-                  className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
-                >
-                  Try again
-                </button>
+            <div className="p-3 rounded-lg bg-emerald-500/5 shadow-card flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[13px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="text-gray-500">Your choice:</span>
+                <span className="text-emerald-300 font-mono font-semibold">{userAttemptSan}</span>
               </div>
-              <p className="text-gray-500 text-xs">
-                Ask Coach Tal about your choice below, then reveal what happened.
-              </p>
+              <button onClick={onClearAttempt} className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
+                Undo
+              </button>
             </div>
           )}
 
           <button
             onClick={onReveal}
-            className="w-full py-2 rounded-md bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium text-body transition-colors shadow-btn-primary"
+            className="w-full py-2 rounded-md bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium text-[13px] transition-colors shadow-btn-primary"
           >
-            Show What Happened
+            Reveal
           </button>
-
-          {!userAttemptSan && (
-            <p className="text-xs text-gray-600 text-center">
-              Drag a piece to try your move, or press Space to reveal
-            </p>
-          )}
         </div>
       )}
 
-      {/* Post-reveal: Full analysis */}
+      {/* Post-reveal */}
       {isRevealed && (
-        <div className="space-y-4">
-          {/* User's attempt comparison (if they tried a move) */}
-          {userAttemptSan && (
-            <div className={`p-3 rounded-lg shadow-card text-sm ${
-              attemptMatchesBest
-                ? 'bg-emerald-500/10'
-                : attemptMatchesPlayed
-                  ? 'bg-rose-500/5'
-                  : 'bg-white/[0.04]'
-            }`}>
+        <div className="space-y-3">
+          {/* Moves comparison — compact grid */}
+          <div className="space-y-1.5 text-[12px]">
+            {userAttemptSan && (
               <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${
-                  attemptMatchesBest ? 'bg-emerald-400' : 'bg-gray-400'
-                }`} />
-                <span className="text-gray-500">Your choice:</span>
-                <span className={`font-mono font-semibold ${
-                  attemptMatchesBest ? 'text-emerald-300' : 'text-gray-300'
-                }`}>{userAttemptSan}</span>
-                {attemptMatchesBest && (
-                  <span className="text-emerald-400 text-xs ml-1">Correct!</span>
-                )}
+                <span className={`w-1.5 h-1.5 rounded-full ${attemptMatchesBest ? 'bg-emerald-400' : 'bg-gray-400'}`} />
+                <span className="text-gray-500">You:</span>
+                <span className={`font-mono font-semibold ${attemptMatchesBest ? 'text-emerald-300' : 'text-gray-300'}`}>{userAttemptSan}</span>
+                {attemptMatchesBest && <span className="text-emerald-400 text-[10px]">Correct!</span>}
               </div>
-            </div>
-          )}
-
-          {/* Played vs Best */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <span className={`w-2 h-2 rounded-full ${
-                moment.classification === 'blunder' ? 'bg-rose-400' :
-                moment.classification === 'mistake' ? 'bg-amber-400' : 'bg-amber-400'
+            )}
+            <div className="flex items-center gap-2">
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                moment.classification === 'blunder' ? 'bg-rose-400' : 'bg-amber-400'
               }`} />
-              <span className="text-gray-500">Actually played:</span>
+              <span className="text-gray-500">Played:</span>
               <span className="text-white font-mono font-semibold">{m.san}</span>
+              {m.centipawnLoss !== null && m.centipawnLoss > 0 && (
+                <span className="text-gray-600 text-[10px]">-{Math.round(m.centipawnLoss)}cp</span>
+              )}
             </div>
             {m.bestMoveSan && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-gray-500">Better was:</span>
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="text-gray-500">Best:</span>
                 <span className="text-emerald-300 font-mono font-semibold">{m.bestMoveSan}</span>
               </div>
             )}
           </div>
 
-          {/* Centipawn loss */}
-          {m.centipawnLoss !== null && m.centipawnLoss > 0 && (
-            <span className="text-xs text-gray-500 block">
-              Cost: ~{Math.round(m.centipawnLoss)} centipawns
-            </span>
-          )}
-
-          {/* Coaching explanation */}
-          <div className="p-3 rounded-lg bg-white/[0.03] shadow-card text-sm text-gray-400 leading-relaxed">
-            {m.coachingComment || m.explanation}
-          </div>
-
-          {/* Insights */}
-          {((m.tacticalInsights && m.tacticalInsights.length > 0) || (m.positionalInsights && m.positionalInsights.length > 0)) && (
-            <div className="space-y-2">
-              {m.tacticalInsights && m.tacticalInsights.length > 0 && (
-                <div className="text-xs">
-                  <span className="text-amber-300 font-medium">Tactical: </span>
-                  <span className="text-gray-500">{m.tacticalInsights.join(', ')}</span>
-                </div>
-              )}
-              {m.positionalInsights && m.positionalInsights.length > 0 && (
-                <div className="text-xs">
-                  <span className="text-emerald-300 font-medium">Positional: </span>
-                  <span className="text-gray-500">{m.positionalInsights.join(', ')}</span>
-                </div>
-              )}
-            </div>
+          {/* Explanation — truncated */}
+          {(m.coachingComment || m.explanation) && (
+            <p className="text-[11px] text-gray-500 leading-relaxed line-clamp-3">
+              {m.coachingComment || m.explanation}
+            </p>
           )}
 
           {/* Navigation */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-2 pt-1">
             <button
               onClick={onPrev}
               disabled={momentIndex === 0}
-              className="flex-1 py-2.5 rounded-lg shadow-card text-sm font-medium transition-colors
-                disabled:opacity-30 disabled:cursor-not-allowed
-                hover:bg-white/5 text-gray-400"
+              className="flex-1 py-2 rounded-lg shadow-card text-[12px] font-medium transition-colors
+                disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/5 text-gray-400"
             >
               Previous
             </button>
             <button
               onClick={onNext}
-              className="flex-1 py-2 rounded-md bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] text-sm font-medium text-body transition-colors shadow-btn-primary"
+              className="flex-1 py-2 rounded-md bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] text-[12px] font-medium transition-colors shadow-btn-primary"
             >
-              {isLast ? 'View Summary' : 'Next Moment'}
+              {isLast ? 'Summary' : 'Next'}
             </button>
           </div>
         </div>

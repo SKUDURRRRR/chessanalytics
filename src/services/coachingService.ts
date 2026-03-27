@@ -228,6 +228,8 @@ export class CoachingService {
             total_key_moments: positionContext.totalKeyMoments,
             game_result: positionContext.gameResult,
             opponent_name: positionContext.opponentName,
+            user_attempt_move: positionContext.userAttemptMove,
+            is_pre_reveal: positionContext.isPreReveal,
           },
           conversation_history: conversationHistory,
         },

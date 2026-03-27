@@ -224,6 +224,7 @@ function BankPuzzleSolver({
 
   // Build position context for inline coach chat
   const [localPositionContext, setLocalPositionContext] = useState<ChatPositionContext | null>(null)
+  const [rightPanelTab, setRightPanelTab] = useState<'info' | 'coach'>('info')
   useEffect(() => {
     if (!puzzle || !currentFen) {
       setLocalPositionContext(null)
@@ -475,155 +476,176 @@ function BankPuzzleSolver({
             </div>
           </div>
 
-          {/* Info Panel */}
-          <div className="space-y-4">
-            {/* Progress */}
-            <div className="rounded-lg shadow-card bg-surface-1 p-5">
-              <h3 className="text-sm font-medium text-gray-500 mb-3">Progress</h3>
-              <div className="flex items-center gap-2 mb-3">
-                {Array.from({ length: totalMoves }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
-                      i < moveIndex + (status === 'solved' ? 1 : 0)
-                        ? 'bg-emerald-500 text-white'
-                        : i === moveIndex && status === 'awaiting_move'
-                          ? 'bg-emerald-500/30 shadow-card text-emerald-300'
-                          : 'bg-white/10 text-gray-500'
-                    }`}
-                  >
-                    {i < moveIndex + (status === 'solved' ? 1 : 0) ? '\u2713' : i + 1}
-                  </div>
-                ))}
-                <span className="text-gray-500 text-xs ml-1">
-                  Move {Math.min(moveIndex + 1, totalMoves)} of {totalMoves}
-                </span>
-              </div>
-
-              {/* Puzzle info */}
-              <div className="space-y-1.5 text-sm">
-                {puzzle.themes.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {puzzle.themes.slice(0, 4).map((t) => (
-                      <span
-                        key={t}
-                        className="bg-white/10 text-gray-400 px-2 py-0.5 rounded text-xs capitalize"
-                      >
-                        {t.replace(/([A-Z])/g, ' $1').trim()}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="flex justify-between text-gray-500">
-                  <span>Your rating</span>
-                  <span className="text-white">{puzzle.user_rating}</span>
-                </div>
-              </div>
+          {/* Right panel: tabbed (Info / Coach Tal) */}
+          <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col">
+            {/* Tab header */}
+            <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <button
+                onClick={() => setRightPanelTab('info')}
+                className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                  rightPanelTab === 'info' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                }`}
+                style={rightPanelTab === 'info' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
+              >
+                Puzzle
+              </button>
+              <button
+                onClick={() => setRightPanelTab('coach')}
+                className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                  rightPanelTab === 'coach' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                }`}
+                style={rightPanelTab === 'coach' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
+              >
+                Coach Tal
+              </button>
             </div>
 
-            {/* Recommendation reason */}
-            {puzzle.recommendation_reason && (
-              <div className="rounded-lg shadow-card bg-white/[0.04] px-4 py-2.5">
-                <p className="text-gray-300 text-xs">
-                  <span className="font-medium">Based on your games:</span>{' '}
-                  {puzzle.recommendation_reason}
-                </p>
+            {rightPanelTab === 'coach' ? (
+              <div className="flex-1 min-h-0" style={{ minHeight: 360 }}>
+                <InlineCoachChat positionContext={localPositionContext} />
               </div>
-            )}
-
-            {/* Hint button */}
-            {status === 'awaiting_move' && !hintUsed && (
-              <button
-                onClick={showHint}
-                className="w-full rounded-lg shadow-card bg-amber-500/10 p-3 text-amber-300 text-sm font-medium hover:bg-amber-500/20 transition-colors"
-              >
-                Show Hint (-50% XP)
-              </button>
-            )}
-
-            {hintUsed && status === 'awaiting_move' && (
-              <div className="rounded-lg shadow-card bg-amber-500/10 p-3">
-                <p className="text-amber-300 text-sm">
-                  Look for a {puzzle.themes[0]?.replace(/([A-Z])/g, ' $1').trim().toLowerCase() || 'tactical'} pattern.
-                </p>
-              </div>
-            )}
-
-            {/* Completion Result */}
-            {isSolvedOrFailed && completionResult && (
-              <div
-                className={`rounded-lg shadow-card p-5 ${
-                  status === 'solved'
-                    ? 'bg-emerald-500/10'
-                    : 'bg-rose-500/10'
-                }`}
-              >
-                {/* Rating change */}
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-gray-400 text-sm">Rating</span>
-                  <span
-                    className={`text-section font-semibold ${
-                      completionResult.rating_change >= 0
-                        ? 'text-emerald-400'
-                        : 'text-rose-400'
-                    }`}
-                  >
-                    {completionResult.rating_change >= 0 ? '+' : ''}
-                    {completionResult.rating_change}
+            ) : (
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Progress */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 mb-3">Progress</h3>
+                <div className="flex items-center gap-2 mb-3">
+                  {Array.from({ length: totalMoves }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
+                        i < moveIndex + (status === 'solved' ? 1 : 0)
+                          ? 'bg-emerald-500 text-white'
+                          : i === moveIndex && status === 'awaiting_move'
+                            ? 'bg-emerald-500/30 shadow-card text-emerald-300'
+                            : 'bg-white/10 text-gray-500'
+                      }`}
+                    >
+                      {i < moveIndex + (status === 'solved' ? 1 : 0) ? '\u2713' : i + 1}
+                    </div>
+                  ))}
+                  <span className="text-gray-500 text-xs ml-1">
+                    Move {Math.min(moveIndex + 1, totalMoves)} of {totalMoves}
                   </span>
                 </div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-gray-400 text-sm">New Rating</span>
-                  <span className="text-white font-semibold">{completionResult.new_rating}</span>
-                </div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-gray-400 text-sm">XP Earned</span>
-                  <span className="text-rose-400 font-semibold">+{completionResult.xp_earned}</span>
-                </div>
-                {completionResult.level_up && (
-                  <div className="bg-rose-500/20 shadow-card rounded-lg p-3 mb-3 text-center">
-                    <p className="text-rose-300 font-semibold">Level Up!</p>
-                    <p className="text-rose-200 text-sm">Level {completionResult.level}</p>
-                  </div>
-                )}
-                {completionResult.daily_challenge_progress && (
-                  <div className="text-gray-500 text-xs">
-                    Daily: {completionResult.daily_challenge_progress}
-                  </div>
-                )}
-                {completionResult.streak > 0 && (
-                  <div className="text-amber-400 text-xs mt-1">
-                    &#x1F525; {completionResult.streak} day streak
-                  </div>
-                )}
-              </div>
-            )}
 
-            {/* Actions */}
-            {isSolvedOrFailed && (
-              <div className="flex flex-col gap-2">
-                <button
-                  onClick={loadNextPuzzle}
-                  className="w-full bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2.5 px-4 rounded-md text-body transition-colors shadow-btn-primary"
-                >
-                  Next Puzzle
-                </button>
-                <button
-                  onClick={() => navigate('/coach/puzzles')}
-                  className="w-full shadow-card bg-white/5 hover:bg-white/10 text-white py-2.5 px-4 rounded-lg transition-colors text-sm"
-                >
-                  Back to Puzzles
-                </button>
+                {/* Puzzle info */}
+                <div className="space-y-1.5 text-sm">
+                  {puzzle.themes.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {puzzle.themes.slice(0, 4).map((t) => (
+                        <span
+                          key={t}
+                          className="bg-white/10 text-gray-400 px-2 py-0.5 rounded text-xs capitalize"
+                        >
+                          {t.replace(/([A-Z])/g, ' $1').trim()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex justify-between text-gray-500">
+                    <span>Your rating</span>
+                    <span className="text-white">{puzzle.user_rating}</span>
+                  </div>
+                </div>
               </div>
-            )}
 
-            {/* Inline Coach Chat */}
-            <div
-              className="rounded-lg overflow-hidden"
-              style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)', background: '#0c0d0f', minHeight: 280 }}
-            >
-              <InlineCoachChat positionContext={localPositionContext} />
+              {/* Recommendation reason */}
+              {puzzle.recommendation_reason && (
+                <div className="rounded-lg shadow-card bg-white/[0.04] px-4 py-2.5">
+                  <p className="text-gray-300 text-xs">
+                    <span className="font-medium">Based on your games:</span>{' '}
+                    {puzzle.recommendation_reason}
+                  </p>
+                </div>
+              )}
+
+              {/* Hint button */}
+              {status === 'awaiting_move' && !hintUsed && (
+                <button
+                  onClick={showHint}
+                  className="w-full rounded-lg shadow-card bg-amber-500/10 p-3 text-amber-300 text-sm font-medium hover:bg-amber-500/20 transition-colors"
+                >
+                  Show Hint (-50% XP)
+                </button>
+              )}
+
+              {hintUsed && status === 'awaiting_move' && (
+                <div className="rounded-lg shadow-card bg-amber-500/10 p-3">
+                  <p className="text-amber-300 text-sm">
+                    Look for a {puzzle.themes[0]?.replace(/([A-Z])/g, ' $1').trim().toLowerCase() || 'tactical'} pattern.
+                  </p>
+                </div>
+              )}
+
+              {/* Completion Result */}
+              {isSolvedOrFailed && completionResult && (
+                <div
+                  className={`rounded-lg shadow-card p-5 ${
+                    status === 'solved'
+                      ? 'bg-emerald-500/10'
+                      : 'bg-rose-500/10'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-gray-400 text-sm">Rating</span>
+                    <span
+                      className={`text-section font-semibold ${
+                        completionResult.rating_change >= 0
+                          ? 'text-emerald-400'
+                          : 'text-rose-400'
+                      }`}
+                    >
+                      {completionResult.rating_change >= 0 ? '+' : ''}
+                      {completionResult.rating_change}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-gray-400 text-sm">New Rating</span>
+                    <span className="text-white font-semibold">{completionResult.new_rating}</span>
+                  </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-gray-400 text-sm">XP Earned</span>
+                    <span className="text-rose-400 font-semibold">+{completionResult.xp_earned}</span>
+                  </div>
+                  {completionResult.level_up && (
+                    <div className="bg-rose-500/20 shadow-card rounded-lg p-3 mb-3 text-center">
+                      <p className="text-rose-300 font-semibold">Level Up!</p>
+                      <p className="text-rose-200 text-sm">Level {completionResult.level}</p>
+                    </div>
+                  )}
+                  {completionResult.daily_challenge_progress && (
+                    <div className="text-gray-500 text-xs">
+                      Daily: {completionResult.daily_challenge_progress}
+                    </div>
+                  )}
+                  {completionResult.streak > 0 && (
+                    <div className="text-amber-400 text-xs mt-1">
+                      &#x1F525; {completionResult.streak} day streak
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Actions */}
+              {isSolvedOrFailed && (
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={loadNextPuzzle}
+                    className="w-full bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium py-2.5 px-4 rounded-md text-body transition-colors shadow-btn-primary"
+                  >
+                    Next Puzzle
+                  </button>
+                  <button
+                    onClick={() => navigate('/coach/puzzles')}
+                    className="w-full shadow-card bg-white/5 hover:bg-white/10 text-white py-2.5 px-4 rounded-lg transition-colors text-sm"
+                  >
+                    Back to Puzzles
+                  </button>
+                </div>
+              )}
             </div>
+            )}
           </div>
         </div>
       </div>
@@ -653,6 +675,7 @@ function LegacyPuzzleSolver({
   const [currentIndex, setCurrentIndex] = useState(0)
   const [result, setResult] = useState<'correct' | 'incorrect' | null>(null)
   const [userMove, setUserMove] = useState<string | null>(null)
+  const [rightPanelTab, setRightPanelTab] = useState<'info' | 'coach'>('info')
   const startTime = useMemo(() => Date.now(), [currentIndex])
 
   const currentPuzzle = puzzles[currentIndex]
@@ -786,85 +809,108 @@ function LegacyPuzzleSolver({
             />
           </div>
 
-          <div className="space-y-4">
-            <div className="rounded-lg shadow-card bg-surface-1 p-6">
-              <h2 className="text-section font-semibold text-white mb-3">Puzzle Info</h2>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Difficulty</span>
-                  <span className="text-white">{currentPuzzle.difficulty_rating}</span>
-                </div>
-                {currentPuzzle.tactical_theme && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Theme</span>
-                    <span className="text-white capitalize">
-                      {currentPuzzle.tactical_theme.replace('_', ' ')}
-                    </span>
-                  </div>
-                )}
-                {currentPuzzle.puzzle_category && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Category</span>
-                    <span className="text-white capitalize">{currentPuzzle.puzzle_category}</span>
-                  </div>
-                )}
-              </div>
+          {/* Right panel: tabbed (Info / Coach Tal) */}
+          <div className="rounded-lg shadow-card bg-surface-1 overflow-hidden flex flex-col">
+            {/* Tab header */}
+            <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <button
+                onClick={() => setRightPanelTab('info')}
+                className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                  rightPanelTab === 'info' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                }`}
+                style={rightPanelTab === 'info' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
+              >
+                Puzzle
+              </button>
+              <button
+                onClick={() => setRightPanelTab('coach')}
+                className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                  rightPanelTab === 'coach' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                }`}
+                style={rightPanelTab === 'coach' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
+              >
+                Coach Tal
+              </button>
             </div>
 
-            {result && (
-              <div
-                className={`rounded-lg shadow-card p-6 ${
-                  result === 'correct'
-                    ? 'bg-emerald-500/10'
-                    : 'bg-rose-500/10'
-                }`}
-              >
-                <h3
-                  className={`text-title font-semibold mb-2 ${
-                    result === 'correct' ? 'text-emerald-400' : 'text-rose-400'
+            {rightPanelTab === 'coach' ? (
+              <div className="flex-1 min-h-0" style={{ minHeight: 360 }}>
+                <InlineCoachChat positionContext={localPositionContext} />
+              </div>
+            ) : (
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div>
+                <h2 className="text-section font-semibold text-white mb-3">Puzzle Info</h2>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Difficulty</span>
+                    <span className="text-white">{currentPuzzle.difficulty_rating}</span>
+                  </div>
+                  {currentPuzzle.tactical_theme && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Theme</span>
+                      <span className="text-white capitalize">
+                        {currentPuzzle.tactical_theme.replace('_', ' ')}
+                      </span>
+                    </div>
+                  )}
+                  {currentPuzzle.puzzle_category && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Category</span>
+                      <span className="text-white capitalize">{currentPuzzle.puzzle_category}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {result && (
+                <div
+                  className={`rounded-lg shadow-card p-6 ${
+                    result === 'correct'
+                      ? 'bg-emerald-500/10'
+                      : 'bg-rose-500/10'
                   }`}
                 >
-                  {result === 'correct' ? 'Correct!' : 'Incorrect'}
-                </h3>
-                {userMove && (
-                  <p className="text-gray-400 text-sm mb-2">
-                    You played: <span className="font-mono font-semibold">{userMove}</span>
-                  </p>
-                )}
-                {result === 'incorrect' && (
-                  <p className="text-gray-400 text-sm mb-2">
-                    Best move:{' '}
-                    <span className="font-mono font-semibold">{currentPuzzle.correct_move}</span>
-                  </p>
-                )}
-                <p className="text-gray-500 text-sm mt-3">{currentPuzzle.explanation}</p>
-
-                <div className="flex gap-2 mt-4">
-                  {result === 'incorrect' && (
-                    <button
-                      onClick={retryPuzzle}
-                      className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg transition-colors"
-                    >
-                      Retry
-                    </button>
-                  )}
-                  <button
-                    onClick={nextPuzzle}
-                    className="flex-1 px-4 py-2 bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium rounded-md text-body transition-colors shadow-btn-primary"
+                  <h3
+                    className={`text-title font-semibold mb-2 ${
+                      result === 'correct' ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
                   >
-                    {currentIndex < puzzles.length - 1 ? 'Next Puzzle' : 'Done'}
-                  </button>
-                </div>
-              </div>
-            )}
+                    {result === 'correct' ? 'Correct!' : 'Incorrect'}
+                  </h3>
+                  {userMove && (
+                    <p className="text-gray-400 text-sm mb-2">
+                      You played: <span className="font-mono font-semibold">{userMove}</span>
+                    </p>
+                  )}
+                  {result === 'incorrect' && (
+                    <p className="text-gray-400 text-sm mb-2">
+                      Best move:{' '}
+                      <span className="font-mono font-semibold">{currentPuzzle.correct_move}</span>
+                    </p>
+                  )}
+                  <p className="text-gray-500 text-sm mt-3">{currentPuzzle.explanation}</p>
 
-            {/* Inline Coach Chat */}
-            <div
-              className="rounded-lg overflow-hidden"
-              style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)', background: '#0c0d0f', minHeight: 280 }}
-            >
-              <InlineCoachChat positionContext={localPositionContext} />
+                  <div className="flex gap-2 mt-4">
+                    {result === 'incorrect' && (
+                      <button
+                        onClick={retryPuzzle}
+                        className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg transition-colors"
+                      >
+                        Retry
+                      </button>
+                    )}
+                    <button
+                      onClick={nextPuzzle}
+                      className="flex-1 px-4 py-2 bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium rounded-md text-body transition-colors shadow-btn-primary"
+                    >
+                      {currentIndex < puzzles.length - 1 ? 'Next Puzzle' : 'Done'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+            )}
           </div>
         </div>
       </div>

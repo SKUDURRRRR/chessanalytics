@@ -164,6 +164,7 @@ export default function PlayWithCoachPage() {
 
   // Coach chat context
   const [localPositionContext, setLocalPositionContext] = useState<ChatPositionContext | null>(null)
+  const [rightPanelTab, setRightPanelTab] = useState<'moves' | 'coach'>('moves')
 
   // Chess sound support
   const { soundEnabled, volume } = useChessSoundSettings()
@@ -1103,18 +1104,39 @@ ${pgn} ${result}`
               </div>
             </div>
 
-            {/* RIGHT: Chat + Moves */}
-            <div className="flex-1 min-w-0 lg:max-w-[400px] w-full flex flex-col">
-              {/* Inline Coach Chat */}
-              <div
-                className="rounded-lg overflow-hidden"
-                style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)', background: '#0c0d0f', minHeight: 420 }}
-              >
-                <InlineCoachChat positionContext={localPositionContext} />
+            {/* RIGHT: Tabbed (Moves / Coach Tal) */}
+            <div className="flex-1 min-w-0 lg:max-w-[400px] w-full flex flex-col rounded-lg shadow-card bg-surface-1 overflow-hidden" style={{ maxHeight: '100%' }}>
+              {/* Tab header */}
+              <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <button
+                  onClick={() => setRightPanelTab('moves')}
+                  className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                    rightPanelTab === 'moves' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                  style={rightPanelTab === 'moves' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
+                >
+                  Moves
+                </button>
+                <button
+                  onClick={() => setRightPanelTab('coach')}
+                  className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                    rightPanelTab === 'coach' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                  style={rightPanelTab === 'coach' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
+                >
+                  Coach Tal
+                </button>
               </div>
 
+              {/* Tab content */}
+              {rightPanelTab === 'coach' ? (
+                <div className="flex-1 min-h-0" style={{ minHeight: 420 }}>
+                  <InlineCoachChat positionContext={localPositionContext} />
+                </div>
+              ) : (
+              <div className="flex-1 overflow-y-auto flex flex-col">
               {/* Compact Move List */}
-              <div className="mt-3 rounded-lg shadow-card bg-surface-1 px-3 py-2">
+              <div className="px-3 py-2">
                 {moveHistory.length === 0 ? (
                   <p className="text-gray-600 text-[10px] py-2 text-center">Make your first move to begin</p>
                 ) : (
@@ -1200,6 +1222,8 @@ ${pgn} ${result}`
                   </button>
                 </div>
               </div>
+              </div>
+              )}
             </div>
           </div>
         </div>

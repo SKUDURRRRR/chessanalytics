@@ -174,7 +174,7 @@ Follows chess.com naming: brilliant, best, great, excellent, good, acceptable, i
 - Never forget RLS policies when adding new tables
 - Never skip Pydantic validation on new backend endpoints
 - `console.log` calls are stripped in production builds (vite plugin)
-- Chess.com usernames are case-insensitive (lowercase); Lichess usernames are case-sensitive
+- Chess.com and Lichess usernames are both case-insensitive — always store/query in lowercase
 
 ## Key API Endpoints
 

@@ -4,9 +4,7 @@ import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ChessSoundProvider } from './contexts/ChessSoundContext'
-import { CoachChatProvider } from './contexts/CoachChatContext'
 import { ToastProvider } from './contexts/ToastContext'
-const CoachChatPanel = lazy(() => import('./components/coach/CoachChatPanel').then(m => ({ default: m.CoachChatPanel })))
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
 import { Navigation } from './components/Navigation'
 import { Footer } from './components/Footer'
@@ -103,7 +101,6 @@ function App() {
       <ToastProvider>
       <AuthProvider>
         <ChessSoundProvider>
-          <CoachChatProvider>
           <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <div className="min-h-screen bg-surface-base flex flex-col">
               <Navigation />
@@ -141,11 +138,9 @@ function App() {
               <Footer />
             </div>
             <AccountSetupModal />
-            <CoachChatPanel />
             <Analytics />
             <SpeedInsights />
           </Router>
-          </CoachChatProvider>
         </ChessSoundProvider>
       </AuthProvider>
       </ToastProvider>

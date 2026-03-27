@@ -955,6 +955,9 @@ export interface ChatPositionContext {
   totalKeyMoments?: number
   gameResult?: string
   opponentName?: string
+  // User attempt fields (game review: user tries a move before reveal)
+  userAttemptMove?: string
+  isPreReveal?: boolean
 }
 
 /** Summary of a game available for review */

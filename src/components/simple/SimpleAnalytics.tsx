@@ -148,7 +148,10 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       const localAccuracy = calculateAverageAccuracy(gamesData || [], playerRating)
       const realisticAccuracy = Math.round((localAccuracy > 0 ? localAccuracy : (analysisResult?.average_accuracy || 0)) * 10) / 10
 
-      const enhancedData = analysisResult ? {
+      // Treat analysisResult as missing if total_games_analyzed is 0 (backend returns
+      // all-zeros AnalysisStats object when no Stockfish data exists, which is truthy)
+      const hasRealAnalysis = analysisResult && analysisResult.total_games_analyzed > 0
+      const enhancedData = hasRealAnalysis ? {
         ...analysisResult,
         average_accuracy: realisticAccuracy,
         current_rating: playerStats.currentRating,

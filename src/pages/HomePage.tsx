@@ -107,9 +107,9 @@ const secondaryFeatures = [
     description: 'Think First mode challenges you to find the best move before revealing the engine\'s answer.',
   },
   {
-    icon: '\u265F', // chess pawn
-    title: 'Play with Coach',
-    description: 'Play live games against an AI coach who gives real-time feedback and strategic advice on every move.',
+    icon: '\uD83D\uDCAC', // speech bubble
+    title: 'Talk with Coach',
+    description: 'Chat with an AI coach who answers your chess questions, explains concepts, and gives personalized advice.',
   },
 ]
 
