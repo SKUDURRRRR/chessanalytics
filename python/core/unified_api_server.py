@@ -1207,6 +1207,60 @@ async def root():
         }
     }
 
+@app.get("/api/v1/diagnostic/{user_id}/{platform}")
+async def diagnostic_data_check(user_id: str, platform: str):
+    """Diagnostic endpoint: check data existence across all tables for a user.
+    Helps debug cases where data exists in one table but not another.
+    """
+    try:
+        canonical_user_id = _canonical_user_id(user_id, platform)
+        db_client = supabase_service or supabase
+        is_service_role = db_client is supabase_service and supabase_service is not supabase
+
+        if not db_client:
+            return {"error": "No database connection", "using_service_role": is_service_role}
+
+        # Query all relevant tables in parallel
+        results = await asyncio.gather(
+            asyncio.to_thread(lambda: db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()),
+            asyncio.to_thread(lambda: db_client.table('games').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_('accuracy', 'null').execute()),
+            asyncio.to_thread(lambda: db_client.table('move_analyses').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()),
+            asyncio.to_thread(lambda: db_client.table('game_analyses').select('id', count='exact', head=True).eq('user_id', canonical_user_id).eq('platform', platform).execute()),
+            return_exceptions=True
+        )
+
+        def safe_count(r, label: str):
+            if isinstance(r, Exception):
+                return {"count": 0, "error": str(r)}
+            return {"count": getattr(r, 'count', 0) or 0}
+
+        return {
+            "user_id": canonical_user_id,
+            "platform": platform,
+            "using_service_role": is_service_role,
+            "tables": {
+                "games": safe_count(results[0], "games"),
+                "games_with_accuracy": safe_count(results[1], "games_with_accuracy"),
+                "move_analyses": safe_count(results[2], "move_analyses"),
+                "game_analyses": safe_count(results[3], "game_analyses"),
+            },
+            "diagnosis": (
+                "All tables have data" if all(
+                    not isinstance(r, Exception) and (getattr(r, 'count', 0) or 0) > 0
+                    for r in results
+                )
+                else "RLS issue suspected — games table has data but analysis tables do not. Check SUPABASE_SERVICE_ROLE_KEY." if (
+                    not isinstance(results[0], Exception) and (getattr(results[0], 'count', 0) or 0) > 0
+                    and not isinstance(results[2], Exception) and (getattr(results[2], 'count', 0) or 0) == 0
+                    and not isinstance(results[3], Exception) and (getattr(results[3], 'count', 0) or 0) == 0
+                )
+                else "No data found in any table for this user/platform"
+            )
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint with AI status."""
@@ -1614,8 +1668,12 @@ async def get_analysis_stats(
         # Stats are representative with 100 analyses and this is 5-10x faster!
         # However, we still need the TOTAL count for accurate "Total Games Analyzed" display
         db_client = supabase_service or supabase
+        is_service_role = db_client is supabase_service and supabase_service is not supabase
         data_source = None  # Track which table the data came from
         total_count = 0  # Total count of all analyzed games
+
+        # Diagnostic: log which client is being used (helps debug RLS issues)
+        print(f"[stats] Querying for user={canonical_user_id}, platform={platform}, using_service_role={is_service_role}")
 
         if db_client:
             # PERFORMANCE: Fetch count and data in parallel, use 'id' for counts (not SELECT *)
@@ -1632,11 +1690,12 @@ async def get_analysis_stats(
                 )
             )
             total_count = getattr(count_response, 'count', 0) or 0
+            print(f"[stats] move_analyses: count={total_count}, rows={len(response.data or [])}")
 
             if response.data and len(response.data) > 0:
                 data_source = 'move_analyses'
 
-            # Fallback to unified_analyses if no data in move_analyses
+            # Fallback to unified_analyses (view on game_analyses) if no data in move_analyses
             if total_count == 0 or not response.data or len(response.data) == 0:
                 fallback_count, fallback_response = await asyncio.gather(
                     asyncio.to_thread(
@@ -1650,12 +1709,90 @@ async def get_analysis_stats(
                         ).eq('platform', platform).order('analysis_date', desc=True).limit(100).execute()
                     )
                 )
+                ua_count = getattr(fallback_count, 'count', 0) or 0
+                print(f"[stats] unified_analyses (game_analyses view): count={ua_count}, rows={len(fallback_response.data or [])}")
                 if total_count == 0:
-                    total_count = getattr(fallback_count, 'count', 0) or 0
+                    total_count = ua_count
                 if not response.data or len(response.data) == 0:
                     response = fallback_response
                     if response.data and len(response.data) > 0:
                         data_source = 'unified_analyses'
+
+            # Fallback to games table if both analysis tables are empty
+            # The games table stores imported games with optional accuracy from the chess platform
+            if total_count == 0 or not response.data or len(response.data) == 0:
+                games_count_resp = await asyncio.to_thread(
+                    lambda: db_client.table('games').select('id', count='exact', head=True).eq(
+                        'user_id', canonical_user_id
+                    ).eq('platform', platform).execute()
+                )
+                games_count = getattr(games_count_resp, 'count', 0) or 0
+                print(f"[stats] games table: count={games_count}")
+
+                if games_count > 0:
+                    # Fetch accuracy data from games table to compute basic stats
+                    games_response = await asyncio.to_thread(
+                        lambda: db_client.table('games').select(
+                            'accuracy,result,my_rating,time_control'
+                        ).eq('user_id', canonical_user_id).eq(
+                            'platform', platform
+                        ).not_.is_('accuracy', 'null').order(
+                            'played_at', desc=True
+                        ).limit(100).execute()
+                    )
+                    games_with_accuracy = games_response.data or []
+                    print(f"[stats] games with accuracy: {len(games_with_accuracy)}")
+
+                    if games_with_accuracy:
+                        # Compute basic stats from games table accuracy values
+                        accuracies = [g['accuracy'] for g in games_with_accuracy if g.get('accuracy') is not None]
+                        avg_accuracy = round(sum(accuracies) / len(accuracies), 1) if accuracies else 0
+                        highest_rating = max((g.get('my_rating') or 0 for g in games_with_accuracy), default=0)
+
+                        result = AnalysisStats(
+                            total_games_analyzed=games_count,
+                            average_accuracy=avg_accuracy,
+                            total_blunders=0,
+                            total_mistakes=0,
+                            total_inaccuracies=0,
+                            total_brilliant_moves=0,
+                            total_material_sacrifices=0,
+                            average_opening_accuracy=0,
+                            average_middle_game_accuracy=0,
+                            average_endgame_accuracy=0,
+                            average_aggressiveness_index=0,
+                            blunders_per_game=0,
+                            mistakes_per_game=0,
+                            inaccuracies_per_game=0,
+                            brilliant_moves_per_game=0,
+                            material_sacrifices_per_game=0
+                        )
+                        print(f"[stats] Using games table fallback: {games_count} games, avg_accuracy={avg_accuracy}")
+                        _set_in_cache(cache_key, result)
+                        return result
+                    else:
+                        # Games exist but none have accuracy — return count with 0 accuracy
+                        result = AnalysisStats(
+                            total_games_analyzed=games_count,
+                            average_accuracy=0,
+                            total_blunders=0,
+                            total_mistakes=0,
+                            total_inaccuracies=0,
+                            total_brilliant_moves=0,
+                            total_material_sacrifices=0,
+                            average_opening_accuracy=0,
+                            average_middle_game_accuracy=0,
+                            average_endgame_accuracy=0,
+                            average_aggressiveness_index=0,
+                            blunders_per_game=0,
+                            mistakes_per_game=0,
+                            inaccuracies_per_game=0,
+                            brilliant_moves_per_game=0,
+                            material_sacrifices_per_game=0
+                        )
+                        print(f"[stats] Using games table fallback (no accuracy data): {games_count} games")
+                        _set_in_cache(cache_key, result)
+                        return result
 
             if DEBUG:
                 print(f"[DEBUG] Total analyzed games count: {total_count}")
@@ -1667,9 +1804,8 @@ async def get_analysis_stats(
             response = type('MockResponse', (), {'data': []})()
 
         if not response.data or len(response.data) == 0:
-            # Return mock data for development when no real data is available
-            print(f"[stats] No data found for user {canonical_user_id} on {platform}, returning mock stats for development")
-            return _get_mock_stats()
+            print(f"[stats] No data found in any table for user {canonical_user_id} on {platform}")
+            return _get_empty_stats()
 
         if DEBUG:
             print(f"[DEBUG] Calculating stats for {len(response.data)} analyses from {data_source} (total count: {total_count})")
