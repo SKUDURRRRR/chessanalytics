@@ -82,7 +82,7 @@ class AIConfig(BaseSettings):
     gemini_api_key: Optional[str] = None
     ai_enabled: bool = True
     ai_model: str = "gemini-2.0-flash-exp"  # Default model (provider-specific)
-    max_tokens: int = 200  # Increased: more room for educational content
+    max_tokens: int = 120  # Keep comments concise (1-3 short sentences)
     temperature: float = 0.75  # Slightly reduced from 0.85 to reduce variability
     api_timeout: float = 30.0  # API call timeout in seconds
     rate_limit_delay: float = 2.0  # Delay between AI API calls in seconds
@@ -403,6 +403,13 @@ class AIChessCommentGenerator:
 - For mistakes: Clearly identify what went wrong and suggest improvements
 - For brilliant moves: Show enthusiasm and explain the tactical vision
 - Always focus on helping players understand WHY moves work or fail
+
+**CRITICAL: BE FACTUAL, NOT SPECULATIVE:**
+- You have Stockfish engine analysis — use it to state FACTS, not guesses
+- NEVER say "likely", "probably", "may have", "you might have" — you KNOW what happened
+- State what the move actually does: "This loses a pawn" not "You likely lost material"
+- Use the evaluation numbers and piece interactions provided to make definitive statements
+- If the data shows a specific tactical issue (hanging piece, lost material, missed tactic), name it concretely
 
 Write clear, educational comments that teach chess concepts."""
 
@@ -1847,16 +1854,26 @@ Write the comment now:"""
         """Build simplified prompt for opponent moves - analyze what opponent did."""
         color_name = player_color.capitalize()  # "White" or "Black"
 
-        # Task description based on move quality
+        # Task description and length constraint based on move quality
         if move_quality == MoveQuality.BRILLIANT:
             task_focus = "Explain why this brilliant move is strong."
-        elif move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY]:
+            length_rule = "Write exactly 2-3 SHORT sentences (max 40 words total)."
+        elif move_quality == MoveQuality.BLUNDER:
             task_focus = "Explain what went wrong and suggest a better move."
+            length_rule = "Write exactly 2-3 SHORT sentences (max 40 words total)."
+        elif move_quality in [MoveQuality.MISTAKE, MoveQuality.INACCURACY]:
+            task_focus = "Explain what went wrong and suggest a better move."
+            length_rule = "Write exactly 2 SHORT sentences (max 30 words total)."
         else:
-            task_focus = "Explain the purpose and ideas behind this move."
+            task_focus = "Explain the purpose behind this move."
+            length_rule = "Write exactly 1-2 SHORT sentences (max 25 words total)."
 
         # Build condensed context (only essential information)
         context_parts = []
+
+        # Include FEN so the AI can see the actual position
+        if fen_after:
+            context_parts.append(f"**POSITION (FEN after move):** {fen_after}")
 
         # CRITICAL: Include condensed board state to prevent hallucinations
         if board_state_context:
@@ -1866,30 +1883,40 @@ Write the comment now:"""
             context_parts.append(capture_info)
         if hanging_pieces_context:
             context_parts.append(hanging_pieces_context)
+        if stockfish_context:
+            context_parts.append(stockfish_context)
         if tactical_context:
             context_parts.append(tactical_context)
         if positional_context:
             context_parts.append(positional_context)
+        if opening_context:
+            context_parts.append(opening_context)
+        if previous_move_context:
+            context_parts.append(previous_move_context)
         if chess_knowledge:
             context_parts.append(f"**CHESS CONCEPTS:** {chess_knowledge}")
 
         context = "\n".join(context_parts) if context_parts else ""
 
+        # Evaluation context for calibrating severity
+        eval_line = f"\nThis move {eval_verb} {eval_description}. {eval_explanation}" if eval_verb else ""
+
         # Better move suggestion
         better_move = f"\nSuggest {best_move_san} as better alternative." if best_move_san and move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else ""
 
-        prompt = f"""CONTEXT: {color_name} (rated {player_elo}) just played {move_san} in the {game_phase} (move {move_number}).
+        prompt = f"""CONTEXT: {color_name} (rated {player_elo}) just played {move_san} in the {game_phase} (move {move_number}). Move classified as: {move_quality.value}.{eval_line}
 {context}
 
-TASK: Write 2-3 educational sentences explaining {color_name}'s move. {task_focus}
-Focus on chess principles - do NOT mention the player's rating or "Player {player_elo}".{better_move}
+TASK: {length_rule} {task_focus}
+Do NOT mention the player's rating.{better_move}
 
 RULES:
+- BREVITY IS CRITICAL — do NOT exceed the word limit above
 - Start directly with chess analysis
 - ONLY mention pieces listed in ACTUAL BOARD STATE above
 - Refer to the player as "{color_name}" (never "Player {player_elo}" or "the player")
-- Use past tense: "{color_name} played" not "{color_name} is attempting"
-- Be specific and educational
+- Match severity to classification: "{move_quality.value}" — do NOT exaggerate
+- NEVER hedge with "likely", "probably", "may have" — state facts
 """
 
         return prompt
@@ -1905,16 +1932,26 @@ RULES:
         """Build simplified prompt for user moves - explain the principle and idea behind the move."""
         color_name = player_color.capitalize()  # "White" or "Black"
 
-        # Task description based on move quality
+        # Task description and length constraint based on move quality
         if move_quality == MoveQuality.BRILLIANT:
-            task_focus = "Celebrate this brilliant move! Explain the tactical vision and principles demonstrated."
-        elif move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY]:
-            task_focus = "Explain what went wrong tactically/positionally and what should be played instead."
+            task_focus = "Explain the tactical vision behind this brilliant move."
+            length_rule = "Write exactly 2-3 SHORT sentences (max 40 words total)."
+        elif move_quality == MoveQuality.BLUNDER:
+            task_focus = "Explain what went wrong and what should be played instead."
+            length_rule = "Write exactly 2-3 SHORT sentences (max 40 words total)."
+        elif move_quality in [MoveQuality.MISTAKE, MoveQuality.INACCURACY]:
+            task_focus = "Explain what went wrong and what should be played instead."
+            length_rule = "Write exactly 2 SHORT sentences (max 30 words total)."
         else:
-            task_focus = "Explain the chess principles behind this move and how it improves the position."
+            task_focus = "Explain the chess principle behind this move."
+            length_rule = "Write exactly 1-2 SHORT sentences (max 25 words total)."
 
         # Build condensed context (only essential information)
         context_parts = []
+
+        # Include FEN so the AI can see the actual position
+        if fen_after:
+            context_parts.append(f"**POSITION (FEN after move):** {fen_after}")
 
         # CRITICAL: Include condensed board state to prevent hallucinations
         if board_state_context:
@@ -1924,30 +1961,40 @@ RULES:
             context_parts.append(capture_info)
         if hanging_pieces_context:
             context_parts.append(hanging_pieces_context)
+        if stockfish_context:
+            context_parts.append(stockfish_context)
         if tactical_context:
             context_parts.append(tactical_context)
         if positional_context:
             context_parts.append(positional_context)
+        if opening_context:
+            context_parts.append(opening_context)
+        if previous_move_context:
+            context_parts.append(previous_move_context)
         if chess_knowledge:
             context_parts.append(f"**CHESS CONCEPTS:** {chess_knowledge}")
 
         context = "\n".join(context_parts) if context_parts else ""
 
+        # Evaluation context for calibrating severity
+        eval_line = f"\nThis move {eval_verb} {eval_description}. {eval_explanation}" if eval_verb else ""
+
         # Better move suggestion
         better_move = f"\nSuggest {best_move_san} as better alternative." if best_move_san and move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY] else ""
 
-        prompt = f"""CONTEXT: {color_name} (rated {player_elo}) just played {move_san} in the {game_phase} (move {move_number}).
+        prompt = f"""CONTEXT: {color_name} (rated {player_elo}) just played {move_san} in the {game_phase} (move {move_number}). Move classified as: {move_quality.value}.{eval_line}
 {context}
 
-TASK: Write 2-3 educational sentences explaining {color_name}'s move. {task_focus}
-Focus on chess principles - do NOT mention the player's rating or "Player {player_elo}".{better_move}
+TASK: {length_rule} {task_focus}
+Do NOT mention the player's rating.{better_move}
 
 RULES:
+- BREVITY IS CRITICAL — do NOT exceed the word limit above
 - Start directly with chess analysis
 - ONLY mention pieces listed in ACTUAL BOARD STATE above
 - Refer to the player as "{color_name}" (never "Player {player_elo}" or "the player")
-- Use past tense: "{color_name} played" not "{color_name} is attempting"
-- Be specific and educational
+- Match severity to classification: "{move_quality.value}" — do NOT exaggerate
+- NEVER hedge with "likely", "probably", "may have" — state facts
 """
 
         return prompt
