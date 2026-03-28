@@ -167,7 +167,16 @@ export default function GameReviewListPage() {
             opponent: (game?.opponent_name as string)?.trim() || 'Unknown',
             result: parseResult(game?.result as string, game?.color as string),
             playerColor,
-            opening: (game?.opening as string) || (game?.opening_normalized as string) || (game?.opening_family as string) || 'Unknown Opening',
+            opening: (() => {
+              const o = (game?.opening as string) || ''
+              const normalized = (game?.opening_normalized as string) || ''
+              const family = (game?.opening_family as string) || ''
+              // Skip "Unknown" literal — prefer opening_normalized which has ECO-resolved names
+              if (o && o.toLowerCase() !== 'unknown') return o
+              if (normalized && normalized.toLowerCase() !== 'unknown') return normalized
+              if (family && family.toLowerCase() !== 'unknown') return family
+              return 'Unknown Opening'
+            })(),
             timeControl: getTimeControlCategory((game?.time_control as string) || ''),
             playedAt: (game?.played_at as string) || analysis.analysis_date || '',
             accuracy: analysis.accuracy,
