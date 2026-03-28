@@ -1428,9 +1428,11 @@ class ProgressAnalyzer:
         if total_games_processed > 0:
             total_missed = sum(missed_tactics_per_game)
             per_game = round(total_missed / total_games_processed, 2)
-            most_common = max(
+            most_common_raw = max(
                 missed_pattern_counts, key=missed_pattern_counts.get
             ) if missed_pattern_counts else None
+            # Format internal key to human-readable label (e.g. "good_move_sequence" → "Good Move Sequence")
+            most_common = most_common_raw.replace('_', ' ').title() if most_common_raw else None
 
             missed_trend = []
             for wk in sorted(weekly_missed.keys()):
