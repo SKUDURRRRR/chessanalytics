@@ -583,7 +583,7 @@ export default function ProfilePage() {
                     <button
                       onClick={handleUpgradeToYearly}
                       disabled={loading}
-                      className="block w-full text-center rounded-lg shadow-card bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Upgrade to Yearly Pro (Save 25%)'}
                     </button>
@@ -594,14 +594,14 @@ export default function ProfilePage() {
                     <button
                       onClick={handleUpgradeToYearly}
                       disabled={loading}
-                      className="block w-full text-center rounded-lg shadow-card bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Upgrade to Yearly Pro (Save 25%)'}
                     </button>
                     <button
                       onClick={() => setShowCancelConfirm(true)}
                       disabled={cancellingSubscription}
-                      className="block w-full text-center rounded-lg shadow-card bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-white/[0.06] px-6 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-white/[0.10] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {cancellingSubscription ? 'Cancelling...' : 'Cancel Subscription'}
                     </button>
@@ -624,7 +624,7 @@ export default function ProfilePage() {
                     <button
                       onClick={handleUpgradeToYearly}
                       disabled={loading}
-                      className="block w-full text-center rounded-lg shadow-card bg-emerald-500/20 px-6 py-3 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loading ? 'Loading...' : 'Resubscribe to Pro Yearly'}
                     </button>
@@ -642,7 +642,7 @@ export default function ProfilePage() {
                     <button
                       onClick={() => setShowCancelConfirm(true)}
                       disabled={cancellingSubscription}
-                      className="block w-full text-center rounded-lg shadow-card bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="block w-full text-center rounded-lg shadow-card bg-white/[0.06] px-6 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-white/[0.10] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {cancellingSubscription ? 'Cancelling...' : 'Cancel Subscription'}
                     </button>
@@ -844,7 +844,7 @@ export default function ProfilePage() {
             )}
             <button
               onClick={handleSignOut}
-              className="w-full rounded-lg shadow-card bg-rose-500/20 px-6 py-3 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30"
+              className="w-full rounded-lg shadow-card bg-white/[0.06] px-6 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-white/[0.10]"
             >
               Sign Out
             </button>

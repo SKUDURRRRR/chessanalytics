@@ -516,7 +516,7 @@ export default function PricingPage() {
                             )}
                           </button>
                         ) : (
-                          <div className="text-center py-2 px-4 rounded-md bg-emerald-500/10 shadow-card text-emerald-400/80 font-medium text-body">
+                          <div className="text-center py-2 px-4 rounded-md bg-white/[0.06] shadow-card text-gray-300 font-medium text-body">
                             Current Plan
                           </div>
                         )

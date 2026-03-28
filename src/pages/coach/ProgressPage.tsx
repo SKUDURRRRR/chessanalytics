@@ -93,13 +93,14 @@ const chartTooltipStyle = {
 }
 
 export default function ProgressPage() {
-  const { platform, platformUsername, authenticatedUserId, isLoading } = useCoachUser()
+  const { platform, platformUsername, authenticatedUserId, isLoading, profileLoaded } = useCoachUser()
 
   return (
     <CoachPageGuard
       isLoading={isLoading}
       authenticatedUserId={authenticatedUserId}
       platformUsername={platformUsername}
+      profileLoaded={profileLoaded}
       connectMessage="Link your Chess.com or Lichess account to track your progress."
     >
       <ProgressContent platformUsername={platformUsername!} platform={platform} />
@@ -176,7 +177,7 @@ function ProgressContent({
                 onClick={() => setPeriodDays(opt.value)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   periodDays === opt.value
-                    ? 'bg-emerald-500 text-white'
+                    ? 'bg-[#e4e8ed] text-[#111]'
                     : 'bg-white/[0.05] text-gray-500 hover:bg-white/[0.08] hover:text-gray-400'
                 }`}
               >

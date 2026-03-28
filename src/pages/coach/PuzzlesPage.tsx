@@ -12,10 +12,10 @@ import type { BankPuzzle, PuzzleStats, RecommendationProfile } from '../../types
 
 export default function PuzzlesPage() {
   const { usageStats } = useAuth()
-  const { platform, platformUsername, authenticatedUserId, isLoading } = useCoachUser()
+  const { platform, platformUsername, authenticatedUserId, isLoading, profileLoaded } = useCoachUser()
 
   return (
-    <CoachPageGuard isLoading={isLoading} authenticatedUserId={authenticatedUserId} platformUsername={platformUsername} requiresLinkedAccount={false}>
+    <CoachPageGuard isLoading={isLoading} authenticatedUserId={authenticatedUserId} platformUsername={platformUsername} profileLoaded={profileLoaded} requiresLinkedAccount={false}>
       <PuzzlesPageContent
         userId={platformUsername}
         platform={platform}

@@ -5,6 +5,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { ChatMessage, ChatPositionContext, CoachChatResponse } from '../../types'
 import { CoachingService } from '../../services/coachingService'
 import { useAuth } from '../../contexts/AuthContext'
@@ -171,8 +172,24 @@ export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
         {/* scroll anchor */}
       </div>
 
+      {/* Login prompt for unauthenticated users */}
+      {!user && (
+        <div
+          className="px-4 py-3 text-center"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
+        >
+          <p className="text-[10px] text-gray-500 mb-1.5">Log in to chat with Coach Tal</p>
+          <Link
+            to="/login"
+            className="inline-block text-[10px] text-[#e4e8ed] hover:text-[#f0f2f5] transition-colors"
+          >
+            Log in &rarr;
+          </Link>
+        </div>
+      )}
+
       {/* Suggestions */}
-      {messages.length === 0 && !isLoading && (
+      {user && messages.length === 0 && !isLoading && (
         <div
           className="px-4 py-2 flex flex-wrap gap-1.5"
           style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
@@ -211,7 +228,7 @@ export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about this position..."
+            placeholder={!user ? 'Log in to chat with Coach Tal' : 'Ask about this position...'}
             maxLength={500}
             disabled={isLoading || !user || !positionContext}
             className="flex-1 bg-transparent text-[11px] text-white placeholder-gray-600 focus:outline-none disabled:opacity-50"

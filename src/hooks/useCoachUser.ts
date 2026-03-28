@@ -34,5 +34,5 @@ export function useCoachUser() {
     return accounts
   }, [user?.chessComUsername, user?.lichessUsername])
 
-  return { platform, platformUsername, authenticatedUserId, hasLinkedAccount, linkedAccounts, isLoading }
+  return { platform, platformUsername, authenticatedUserId, hasLinkedAccount, linkedAccounts, isLoading, profileLoaded }
 }

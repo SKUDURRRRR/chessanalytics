@@ -23,6 +23,7 @@ interface ReviewableGame {
   result: 'win' | 'loss' | 'draw'
   playerColor: 'white' | 'black'
   opening: string
+  timeControl: string
   playedAt: string
   accuracy: number
   blunders: number
@@ -107,7 +108,7 @@ export default function GameReviewListPage() {
 
         const { data: gameRecords } = await supabase
           .from('games')
-          .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family')
+          .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family, time_control')
           .eq('user_id', canonical)
           .eq('platform', platform)
           .in('provider_game_id', gameIds)
@@ -128,7 +129,7 @@ export default function GameReviewListPage() {
         if (unmatchedIds.length > 0) {
           const { data: fallbackRecords } = await supabase
             .from('games')
-            .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family')
+            .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family, time_control')
             .eq('user_id', canonical)
             .eq('platform', platform)
             .in('id', unmatchedIds)
@@ -157,6 +158,7 @@ export default function GameReviewListPage() {
             result: parseResult(game?.result as string, game?.color as string),
             playerColor,
             opening: (game?.opening as string) || (game?.opening_family as string) || 'Unknown Opening',
+            timeControl: (game?.time_control as string) || 'Unknown',
             playedAt: (game?.played_at as string) || analysis.analysis_date || '',
             accuracy: analysis.accuracy,
             blunders: analysis.blunders,
@@ -360,7 +362,7 @@ function GameReviewCard({ game, onClick }: GameReviewCardProps) {
             <span className="text-xs text-gray-500 capitalize">({game.playerColor})</span>
           </div>
           <div className="text-xs text-gray-500 mt-0.5 truncate">
-            {game.opening} {dateStr && `\u00B7 ${dateStr}`}
+            {game.opening} {game.timeControl !== 'Unknown' && `\u00B7 ${game.timeControl}`} {dateStr && `\u00B7 ${dateStr}`}
           </div>
         </div>
 

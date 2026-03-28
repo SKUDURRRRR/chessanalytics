@@ -14,13 +14,14 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getDarkChessBoardTheme } from '../../utils/chessBoardTheme'
 
 export default function PositionLibraryPage() {
-  const { platform, platformUsername, authenticatedUserId, isLoading } = useCoachUser()
+  const { platform, platformUsername, authenticatedUserId, isLoading, profileLoaded } = useCoachUser()
 
   return (
     <CoachPageGuard
       isLoading={isLoading}
       authenticatedUserId={authenticatedUserId}
       platformUsername={platformUsername}
+      profileLoaded={profileLoaded}
       connectMessage="Link your Chess.com or Lichess account to use the position library."
     >
       <PositionLibraryContent

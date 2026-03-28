@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { EloMockup } from '../components/landing/EloMockup'
 import { PersonalityMockup } from '../components/landing/PersonalityMockup'
 import { CoachChatMockup } from '../components/landing/CoachChatMockup'
-import { Check, TrendingUp, Brain, BarChart3 } from 'lucide-react'
+import { Check, TrendingUp, Brain, BarChart3, MessageCircle } from 'lucide-react'
 import { Button } from '../components/ui'
 
 interface ScreenshotMockupProps {
@@ -107,7 +107,7 @@ const secondaryFeatures = [
     description: 'Think First mode challenges you to find the best move before revealing the engine\'s answer.',
   },
   {
-    icon: '\uD83D\uDCAC', // speech bubble
+    icon: null,
     title: 'Talk with Coach',
     description: 'Chat with an AI coach who answers your chess questions, explains concepts, and gives personalized advice.',
   },
@@ -229,7 +229,11 @@ export default function HomePage() {
                 />
                 <div className="p-6">
                   <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-4 bg-white/[0.06]">
-                    <span className="text-gray-300 text-sm">{f.icon}</span>
+                    {f.icon ? (
+                      <span className="text-gray-300 text-sm">{f.icon}</span>
+                    ) : (
+                      <MessageCircle className="w-4 h-4 text-gray-300" />
+                    )}
                   </div>
                   <h3 className="text-body font-semibold text-[#f0f0f0] mb-2 tracking-section">{f.title}</h3>
                   <p className="text-small text-gray-500 leading-relaxed">{f.description}</p>

@@ -2365,8 +2365,8 @@ def _compute_personal_records(existing_records: Dict[str, Any], game: Dict[str, 
     result = game.get('result')
     accuracy = analysis.get('accuracy') if analysis else game.get('accuracy')
 
-    # Only process games with valid move counts (> 0)
-    if total_moves > 0:
+    # Only process games with valid move counts (> 5 to exclude resigned/aborted games)
+    if total_moves > 5:
         if result == 'win':
             # Fastest win: only update if we have a valid move count and it's better than existing
             if records.get('fastest_win') is None or total_moves < records['fastest_win']['moves']:

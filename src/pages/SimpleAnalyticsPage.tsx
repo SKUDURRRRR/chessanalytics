@@ -84,6 +84,7 @@ export default function SimpleAnalyticsPage() {
   const forceRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [hasGames, setHasGames] = useState(false)
   const [gameCount, setGameCount] = useState(0)
+  const [userNotFound, setUserNotFound] = useState(false)
   const [largeImportProgress, setLargeImportProgress] = useState<LargeImportProgress | null>(null)
   const [showDateRangePicker, setShowDateRangePicker] = useState(false)
   const [dateRange, setDateRange] = useState<DateRange>({})
@@ -341,6 +342,8 @@ export default function SimpleAnalyticsPage() {
     const checkGamesExist = async () => {
       if (!userId || !platform) return
 
+      setUserNotFound(false)
+
       try {
         const canonicalUserId = canonicalizeUserId(userId, platform)
         console.log('[checkGamesExist] Original userId:', JSON.stringify(userId))
@@ -355,6 +358,19 @@ export default function SimpleAnalyticsPage() {
 
         setGameCount(gameCount)
         setHasGames(gameCount > 0)
+
+        // If no games found locally, validate user exists on the platform
+        if (gameCount === 0) {
+          try {
+            const validation = await AutoImportService.validateUserOnPlatform(canonicalUserId, platform)
+            if (!validation.exists) {
+              setUserNotFound(true)
+            }
+          } catch {
+            // Validation failed (e.g. network error) - don't block the page
+            console.warn('[checkGamesExist] Could not validate user on platform')
+          }
+        }
       } catch (error) {
         console.error('Error checking games:', error)
       }
@@ -778,6 +794,29 @@ export default function SimpleAnalyticsPage() {
   if (isLoading && showSlowLoadingPopup) {
     return (
       <div className="min-h-screen bg-surface-base" />
+    )
+  }
+
+  if (userNotFound) {
+    return (
+      <div className="min-h-screen bg-surface-base text-gray-300">
+        <div className="container-responsive space-responsive py-8 content-fade">
+          <div className="max-w-md mx-auto text-center mt-20">
+            <div className="rounded-lg bg-surface-1 shadow-card p-8">
+              <h2 className="text-xl font-semibold text-white mb-3">Player not found</h2>
+              <p className="text-gray-400 mb-6">
+                The username &ldquo;{userId}&rdquo; was not found on {platform === 'chess.com' ? 'Chess.com' : 'Lichess'}. Please check the spelling and try again.
+              </p>
+              <button
+                onClick={() => navigate('/')}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] font-medium px-6 py-2.5 transition-colors"
+              >
+                Back to Search
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     )
   }
 

@@ -1097,7 +1097,7 @@ export function UnifiedChessAnalysis({
         </div>
 
         {/* Desktop Layout: Side by Side */}
-        <div className="hidden lg:flex gap-8 items-start">
+        <div className="hidden lg:flex gap-8 items-stretch">
         {/* Left: Evaluation Bar */}
         <div className="flex-shrink-0 flex flex-col">
           {/* Spacer to match Game Phase Indicator height */}

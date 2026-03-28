@@ -18,10 +18,10 @@ import {
 } from 'lucide-react'
 
 export default function CoachDashboardPage() {
-  const { authenticatedUserId, platformUsername, isLoading } = useCoachUser()
+  const { authenticatedUserId, platformUsername, isLoading, profileLoaded } = useCoachUser()
 
   return (
-    <CoachPageGuard isLoading={isLoading} authenticatedUserId={authenticatedUserId} platformUsername={platformUsername}>
+    <CoachPageGuard isLoading={isLoading} authenticatedUserId={authenticatedUserId} platformUsername={platformUsername} profileLoaded={profileLoaded}>
       <CoachDashboardContent username={platformUsername} />
     </CoachPageGuard>
   )
