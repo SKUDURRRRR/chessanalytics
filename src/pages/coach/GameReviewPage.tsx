@@ -209,7 +209,18 @@ function GameReviewContent() {
       (pgn ? extractOpponentFromPGN(pgn, playerColor) : '') ||
       'Opponent'
     const result = gameRecord ? extractResultFromRecord(gameRecord) : 'draw'
-    const opening = (gameRecord?.opening as string) || (analysisRecord?.opening as string) || 'Unknown Opening'
+    const opening = (() => {
+      const candidates = [
+        gameRecord?.opening as string,
+        gameRecord?.opening_normalized as string,
+        gameRecord?.opening_family as string,
+        analysisRecord?.opening as string,
+      ]
+      for (const c of candidates) {
+        if (c && c.toLowerCase() !== 'unknown') return c
+      }
+      return 'Unknown Opening'
+    })()
     const playedAt = (gameRecord?.played_at as string) || ''
     const accuracy = typeof analysisRecord?.accuracy === 'number' ? (analysisRecord.accuracy as number) : null
 
