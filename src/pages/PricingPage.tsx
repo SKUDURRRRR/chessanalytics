@@ -30,6 +30,8 @@ const FALLBACK_TIERS: PaymentTier[] = [
     features: [
       '5 game analyses per day',
       '100 game imports per day',
+      '1 coach lesson per week',
+      '3 coach puzzles per day',
       'New Games Auto Import',
       'Advanced chess analytics',
       'Deep analysis with Stockfish',

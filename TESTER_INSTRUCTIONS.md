@@ -27,7 +27,7 @@ ChessData is a chess analytics platform that analyzes games from Chess.com and L
 | Pro Monthly   | $5.45/month     | Unlimited     | Unlimited    |
 | Pro Yearly    | $49.05/year     | Unlimited     | Unlimited    |
 
-Free tier includes: analytics, Stockfish analysis, opening analysis, personality insights, position exploration, Tal-inspired comments, playstyle analysis, learning suggestions, and 1 lifetime game review in Coach tab.
+Free tier includes: analytics, Stockfish analysis, opening analysis, personality insights, position exploration, Tal-inspired comments, playstyle analysis, learning suggestions, 1 coach lesson per week, 3 coach puzzles per day, and 1 lifetime game review in Coach tab.
 
 Pro adds: unlimited everything.
 

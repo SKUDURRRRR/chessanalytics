@@ -172,9 +172,21 @@ function GameReviewContent() {
 
   // ---- Derive player color ----
   const playerColor: 'white' | 'black' = useMemo(() => {
+    // Try DB color field first
     const c = String(gameRecord?.color || '').toLowerCase()
-    return c === 'black' ? 'black' : 'white'
-  }, [gameRecord])
+    if (c === 'black' || c === 'white') return c
+
+    // Fallback: infer from PGN headers if color field is null
+    if (pgn && userId) {
+      const userLower = userId.toLowerCase()
+      const whiteMatch = pgn.match(/\[White\s+"([^"]+)"\]/)
+      const blackMatch = pgn.match(/\[Black\s+"([^"]+)"\]/)
+      if (blackMatch && blackMatch[1].toLowerCase() === userLower) return 'black'
+      if (whiteMatch && whiteMatch[1].toLowerCase() === userLower) return 'white'
+    }
+
+    return 'white'
+  }, [gameRecord, pgn, userId])
 
   // ---- Process moves ----
   const processedData = useMemo(() => {

@@ -109,7 +109,7 @@ export default function GameReviewListPage() {
 
         const { data: gameRecords } = await supabase
           .from('games')
-          .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family, time_control')
+          .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family, opening_normalized, time_control')
           .eq('user_id', canonical)
           .eq('platform', platform)
           .in('provider_game_id', gameIds)
@@ -130,7 +130,7 @@ export default function GameReviewListPage() {
         if (unmatchedIds.length > 0) {
           const { data: fallbackRecords } = await supabase
             .from('games')
-            .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family, time_control')
+            .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family, opening_normalized, time_control')
             .eq('user_id', canonical)
             .eq('platform', platform)
             .in('id', unmatchedIds)
@@ -158,7 +158,7 @@ export default function GameReviewListPage() {
             opponent: (game?.opponent_name as string)?.trim() || 'Unknown',
             result: parseResult(game?.result as string, game?.color as string),
             playerColor,
-            opening: (game?.opening as string) || (game?.opening_family as string) || 'Unknown Opening',
+            opening: (game?.opening as string) || (game?.opening_normalized as string) || (game?.opening_family as string) || 'Unknown Opening',
             timeControl: getTimeControlCategory((game?.time_control as string) || ''),
             playedAt: (game?.played_at as string) || analysis.analysis_date || '',
             accuracy: analysis.accuracy,

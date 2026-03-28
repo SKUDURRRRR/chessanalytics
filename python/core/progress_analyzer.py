@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, date
 from collections import defaultdict
 import asyncio
 
+from .opening_utils import get_opening_name_from_eco_code
+
 logger = logging.getLogger(__name__)
 
 # Maps weakness categories (from get_user_weaknesses) → puzzle bank themes
@@ -1046,7 +1048,8 @@ class ProgressAnalyzer:
                 except (ValueError, TypeError):
                     pass
 
-            opening = game.get('opening_family') or 'Unknown'
+            raw_opening = game.get('opening_family') or 'Unknown'
+            opening = get_opening_name_from_eco_code(raw_opening)
             color = game.get('color') or 'white'
             result = game.get('result', '')
 

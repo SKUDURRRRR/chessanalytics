@@ -518,7 +518,16 @@ export default function GameAnalysisPage() {
   }, [loading, error])
 
   const resolvedPlayerColor = (gameRecord?.color ?? locationState.game?.color ?? '').toString().toLowerCase()
-  const playerColor: 'white' | 'black' = resolvedPlayerColor === 'black' ? 'black' : 'white'
+  const playerColor: 'white' | 'black' = (() => {
+    if (resolvedPlayerColor === 'black' || resolvedPlayerColor === 'white') return resolvedPlayerColor
+    // Fallback: infer from PGN headers if color field is null
+    if (pgn && decodedUserId) {
+      const userLower = decodedUserId.toLowerCase()
+      const blackMatch = pgn.match(/\[Black\s+"([^"]+)"\]/)
+      if (blackMatch && blackMatch[1].toLowerCase() === userLower) return 'black'
+    }
+    return 'white'
+  })()
 
   // Helper function to extract opponent name from PGN if not available in database
   const extractOpponentNameFromPGN = (pgn: string, playerColor: 'white' | 'black'): string | null => {
