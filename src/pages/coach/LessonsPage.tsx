@@ -9,6 +9,7 @@ import UnifiedAnalysisService from '../../services/unifiedAnalysisService'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCoachUser } from '../../hooks/useCoachUser'
+import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import type { GameAnalysisSummary, Platform } from '../../types'
 
 // ============================================================================
@@ -158,7 +159,7 @@ export default function GameReviewListPage() {
             result: parseResult(game?.result as string, game?.color as string),
             playerColor,
             opening: (game?.opening as string) || (game?.opening_family as string) || 'Unknown Opening',
-            timeControl: (game?.time_control as string) || 'Unknown',
+            timeControl: getTimeControlCategory((game?.time_control as string) || ''),
             playedAt: (game?.played_at as string) || analysis.analysis_date || '',
             accuracy: analysis.accuracy,
             blunders: analysis.blunders,
@@ -257,7 +258,7 @@ export default function GameReviewListPage() {
                 onClick={() => setSortBy(opt.id)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   sortBy === opt.id
-                    ? 'bg-emerald-500/20 text-emerald-300 shadow-card'
+                    ? 'bg-[#e4e8ed] text-[#111] shadow-card'
                     : 'bg-white/[0.04] text-gray-500 shadow-card hover:bg-white/[0.06]'
                 }`}
               >

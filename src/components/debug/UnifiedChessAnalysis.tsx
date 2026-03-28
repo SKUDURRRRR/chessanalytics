@@ -1097,7 +1097,7 @@ export function UnifiedChessAnalysis({
         </div>
 
         {/* Desktop Layout: Side by Side */}
-        <div className="hidden lg:flex gap-8 items-stretch">
+        <div className="hidden lg:flex gap-8 items-start">
         {/* Left: Evaluation Bar */}
         <div className="flex-shrink-0 flex flex-col">
           {/* Spacer to match Game Phase Indicator height */}
@@ -1250,8 +1250,12 @@ export function UnifiedChessAnalysis({
         </div>
 
         {/* Right: Move Analysis + Coach Chat (tabbed) */}
-        <div className="flex-1 min-w-0">
-          <div className="rounded-lg bg-surface-1 shadow-card h-full overflow-hidden">
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* Spacer to align with board (matches Game Phase Indicator spacer) */}
+          {currentMove && (
+            <div className="h-[40px] mb-4"></div>
+          )}
+          <div className="rounded-lg bg-surface-1 shadow-card overflow-hidden" style={{ height: `${boardWidth + 2}px` }}>
             {/* Tab Header */}
             <div className="flex" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <button

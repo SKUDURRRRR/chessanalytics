@@ -465,7 +465,7 @@ function GameReviewContent() {
           <p className="text-gray-500 mb-6">{loadError}</p>
           <button
             onClick={() => navigate(-1)}
-            className="text-emerald-400 hover:text-emerald-300 transition-colors"
+            className="text-gray-400 hover:text-white transition-colors"
           >
             Go Back
           </button>
@@ -486,7 +486,7 @@ function GameReviewContent() {
           </p>
           <button
             onClick={() => navigate(-1)}
-            className="text-emerald-400 hover:text-emerald-300 transition-colors"
+            className="text-gray-400 hover:text-white transition-colors"
           >
             Go Back
           </button>
@@ -529,7 +529,7 @@ function GameReviewContent() {
       {/* Main content */}
       <div ref={contentRef} className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         <div className={`max-w-5xl mx-auto p-4 h-full ${
-          isMobile ? 'flex flex-col gap-4' : 'flex gap-6 items-stretch'
+          isMobile ? 'flex flex-col gap-4' : 'flex gap-6 items-start'
         }`}>
           {/* Board column */}
           <div className={`flex-shrink-0 ${isMobile ? 'w-full flex flex-col items-center' : 'flex flex-col'}`}>
@@ -600,7 +600,7 @@ function GameReviewContent() {
           {/* Right panel: tabbed (Review / Coach Tal) */}
           <div className={`${
             isMobile ? 'w-full' : 'flex-1 min-w-0 max-w-[360px]'
-          } flex flex-col`} style={isMobile ? undefined : { height: boardWidth + 2 }}>
+          } flex flex-col`} style={isMobile ? undefined : { minHeight: boardWidth + 2, maxHeight: boardWidth + 2 }}>
             {phase === 'intro' && (
               <IntroPanel
                 meta={gameMeta}

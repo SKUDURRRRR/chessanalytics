@@ -1303,20 +1303,20 @@ export default function GameAnalysisPage() {
                   {
                     id: 'review-with-coach',
                     label: 'Review with Coach',
-                    icon: '♛',
+                    icon: '\u2022',
                     onClick: () => navigate(`/coach/review/${platform}/${encodeURIComponent(decodedUserId)}/${encodeURIComponent(decodedGameId)}`)
                   },
                   {
                     id: 'reanalyze',
                     label: isReanalyzing ? 'Re-analyzing...' : reanalyzeSuccess ? 'Updated!' : 'Re-analyze',
-                    icon: isReanalyzing ? '⏳' : reanalyzeSuccess ? '✅' : '🔄',
+                    icon: isReanalyzing ? '\u21BB' : reanalyzeSuccess ? '\u2713' : '\u21BB',
                     onClick: handleReanalyze,
                     disabled: isReanalyzing || !pgn
                   },
                   ...(pgn ? [{
                     id: 'download',
                     label: 'Download PGN',
-                    icon: '📥',
+                    icon: '\u2193',
                     onClick: () => {
                       const blob = new Blob([pgn], { type: 'application/x-chess-pgn' })
                       const url = URL.createObjectURL(blob)
@@ -1337,11 +1337,10 @@ export default function GameAnalysisPage() {
               {/* Review with Coach Button */}
               <button
                 onClick={() => navigate(`/coach/review/${platform}/${encodeURIComponent(decodedUserId)}/${encodeURIComponent(decodedGameId)}`)}
-                className="rounded-full shadow-card bg-emerald-500/10 px-4 py-1.5 font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
+                className="rounded-full shadow-card bg-[#e4e8ed] px-4 py-1.5 font-medium text-[#111] transition-colors hover:bg-[#f0f2f5]"
                 title="Review this game with Coach Tal"
               >
                 <span className="flex items-center gap-2">
-                  <span>&#9819;</span>
                   Review with Coach
                 </span>
               </button>
@@ -1351,12 +1350,12 @@ export default function GameAnalysisPage() {
                 onClick={handleReanalyze}
                 disabled={isReanalyzing || !pgn}
                 className={`
-                  rounded-full border px-4 py-1.5 font-medium transition
+                  rounded-full shadow-card px-4 py-1.5 font-medium transition-colors
                   ${isReanalyzing
-                    ? 'border-rose-400/30 bg-rose-500/10 text-rose-300 cursor-wait'
+                    ? 'bg-white/[0.06] text-gray-400 cursor-wait'
                     : reanalyzeSuccess
-                    ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
-                    : 'border-rose-400/30 bg-rose-500/10 text-rose-300 hover:border-rose-400/50 hover:bg-rose-500/20'
+                    ? 'bg-white/[0.06] text-gray-300'
+                    : 'bg-white/[0.06] text-gray-300 hover:bg-white/[0.10]'
                   }
                   ${!pgn ? 'opacity-50 cursor-not-allowed' : ''}
                 `}

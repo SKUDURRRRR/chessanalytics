@@ -404,7 +404,7 @@ export default function ProfilePage() {
         )}
 
         {notification && (
-          <div className={`flex items-start justify-between rounded-lg shadow-card px-4 py-3 text-sm ${notification.type === 'success' ? 'bg-emerald-500/10 text-emerald-100' : 'bg-emerald-500/10 text-emerald-100'}`}>
+          <div className={`flex items-start justify-between rounded-lg shadow-card px-4 py-3 text-sm ${notification.type === 'success' ? 'bg-white/[0.06] text-gray-200' : 'bg-white/[0.06] text-gray-200'}`}>
             <div className="flex items-start gap-3">
               <span className="text-lg leading-none">{notification.type === 'success' ? '✓' : 'ℹ'}</span>
               <span>{notification.message}</span>
@@ -914,12 +914,12 @@ function ConnectedAccountsSection({
         <div>
           <label className="block text-sm font-medium text-gray-400 mb-2">Chess.com</label>
           {user.chessComUsername ? (
-            <div className="flex items-center justify-between rounded-lg shadow-card bg-emerald-500/10 px-4 py-3">
+            <div className="flex items-center justify-between rounded-lg shadow-card bg-white/[0.06] px-4 py-3">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                <span className="text-emerald-200 font-medium">{user.chessComUsername}</span>
+                <CheckCircle2 className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                <span className="text-gray-200 font-medium">{user.chessComUsername}</span>
                 {user.primaryPlatform === 'chess.com' && (
-                  <span className="text-xs text-emerald-400/60 shadow-card rounded-full px-2 py-0.5">Primary</span>
+                  <span className="text-xs text-gray-400/60 shadow-card rounded-full px-2 py-0.5">Primary</span>
                 )}
               </div>
               <button
@@ -944,7 +944,7 @@ function ConnectedAccountsSection({
               <button
                 onClick={() => handleLink('chess.com')}
                 disabled={chessComLoading || !chessComInput.trim()}
-                className="rounded-lg shadow-card bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="rounded-lg shadow-card bg-[#e4e8ed] px-5 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {chessComLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect'}
               </button>
@@ -957,12 +957,12 @@ function ConnectedAccountsSection({
         <div>
           <label className="block text-sm font-medium text-gray-400 mb-2">Lichess</label>
           {user.lichessUsername ? (
-            <div className="flex items-center justify-between rounded-lg shadow-card bg-emerald-500/10 px-4 py-3">
+            <div className="flex items-center justify-between rounded-lg shadow-card bg-white/[0.06] px-4 py-3">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                <span className="text-emerald-200 font-medium">{user.lichessUsername}</span>
+                <CheckCircle2 className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                <span className="text-gray-200 font-medium">{user.lichessUsername}</span>
                 {user.primaryPlatform === 'lichess' && (
-                  <span className="text-xs text-emerald-400/60 shadow-card rounded-full px-2 py-0.5">Primary</span>
+                  <span className="text-xs text-gray-400/60 shadow-card rounded-full px-2 py-0.5">Primary</span>
                 )}
               </div>
               <button
@@ -987,7 +987,7 @@ function ConnectedAccountsSection({
               <button
                 onClick={() => handleLink('lichess')}
                 disabled={lichessLoading || !lichessInput.trim()}
-                className="rounded-lg shadow-card bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="rounded-lg shadow-card bg-[#e4e8ed] px-5 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {lichessLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect'}
               </button>
