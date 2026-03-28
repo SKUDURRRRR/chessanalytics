@@ -107,40 +107,49 @@ export default function GameReviewListPage() {
         const gameIds = withMistakes.map((a: GameAnalysisSummary) => a.game_id)
         const canonical = canonicalizeUserId(platformUsername, platform)
 
-        const { data: gameRecords } = await supabase
-          .from('games')
-          .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family, opening_normalized, time_control')
-          .eq('user_id', canonical)
-          .eq('platform', platform)
-          .in('provider_game_id', gameIds)
+        // Build list of user IDs to try (username and auth UUID may differ)
+        const userIdCandidates = [canonical]
+        if (user?.id && user.id !== canonical) userIdCandidates.push(user.id)
 
-        if (cancelled) return
-
-        // Also try matching by id (some games use UUID ids)
+        const selectFields = 'id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family, opening_normalized, time_control'
         let gameMap = new Map<string, Record<string, unknown>>()
-        if (gameRecords) {
-          for (const g of gameRecords) {
-            if (g.provider_game_id) gameMap.set(g.provider_game_id, g)
-            gameMap.set(g.id, g)
-          }
-        }
 
-        // If we didn't match many, try by id field
-        const unmatchedIds = gameIds.filter((id: string) => !gameMap.has(id))
-        if (unmatchedIds.length > 0) {
-          const { data: fallbackRecords } = await supabase
+        // Try each user ID candidate until we find game records
+        for (const uid of userIdCandidates) {
+          const { data: gameRecords } = await supabase
             .from('games')
-            .select('id, provider_game_id, played_at, result, color, opponent_name, opening, opening_family, opening_normalized, time_control')
-            .eq('user_id', canonical)
+            .select(selectFields)
+            .eq('user_id', uid)
             .eq('platform', platform)
-            .in('id', unmatchedIds)
+            .in('provider_game_id', gameIds)
 
-          if (fallbackRecords) {
-            for (const g of fallbackRecords) {
-              gameMap.set(g.id, g)
+          if (gameRecords) {
+            for (const g of gameRecords) {
               if (g.provider_game_id) gameMap.set(g.provider_game_id, g)
+              gameMap.set(g.id, g)
             }
           }
+
+          // Also try matching by id field
+          const unmatchedIds = gameIds.filter((id: string) => !gameMap.has(id))
+          if (unmatchedIds.length > 0) {
+            const { data: fallbackRecords } = await supabase
+              .from('games')
+              .select(selectFields)
+              .eq('user_id', uid)
+              .eq('platform', platform)
+              .in('id', unmatchedIds)
+
+            if (fallbackRecords) {
+              for (const g of fallbackRecords) {
+                gameMap.set(g.id, g)
+                if (g.provider_game_id) gameMap.set(g.provider_game_id, g)
+              }
+            }
+          }
+
+          // If we found enough records, stop trying other user IDs
+          if (gameMap.size > 0) break
         }
 
         if (cancelled) return
