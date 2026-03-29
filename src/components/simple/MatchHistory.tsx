@@ -10,7 +10,8 @@ import { config } from '../../lib/config'
 import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { useAuth } from '../../contexts/AuthContext'
 import { AnonymousUsageTracker } from '../../services/anonymousUsageTracker'
-import AnonymousLimitModal from '../AnonymousLimitModal'
+import LimitReachedModal from '../LimitReachedModal'
+import { supabase } from '../../lib/supabase'
 
 // Canonicalize user ID to match backend logic
 function canonicalizeUserId(userId: string, platform: string): string {
@@ -36,9 +37,10 @@ interface Game {
   rating: number | null
   opponent_rating: number | null
   accuracy?: number | null
+  platform?: 'lichess' | 'chess.com'
 }
 
-const mapGameRow = (raw: any): Game => {
+const mapGameRow = (raw: any, overridePlatform?: 'lichess' | 'chess.com'): Game => {
   const result: Game['result'] = raw.result === 'loss' || raw.result === 'draw' ? raw.result : 'win'
   const color: Game['color'] = raw.color === 'black' ? 'black' : 'white'
 
@@ -56,10 +58,11 @@ const mapGameRow = (raw: any): Game => {
     rating: typeof raw.my_rating === 'number' ? raw.my_rating : (typeof raw.rating === 'number' ? raw.rating : null),
     opponent_rating: typeof raw.opponent_rating === 'number' ? raw.opponent_rating : null,
     accuracy: typeof raw.accuracy === 'number' ? raw.accuracy : null,
+    platform: overridePlatform ?? raw.platform,
   }
 }
 
-export function MatchHistory({ userId, platform, openingFilter, opponentFilter, onClearFilter, onGameSelect, onAnalyzedGamesChange }: MatchHistoryProps) {
+export function MatchHistory({ userId, platform, openingFilter, opponentFilter, onClearFilter, onGameSelect, onAnalyzedGamesChange, viewMode = 'single', secondaryUserId, secondaryPlatform }: MatchHistoryProps) {
   const [games, setGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -72,8 +75,9 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
   const [gameAnalyses, setGameAnalyses] = useState<Map<string, number>>(new Map())
 
   // Auth and anonymous user tracking
-  const { user } = useAuth()
-  const [anonymousLimitModalOpen, setAnonymousLimitModalOpen] = useState(false)
+  const { user, refreshUsageStats } = useAuth()
+  const [showLimitModal, setShowLimitModal] = useState(false)
+  const [limitType, setLimitType] = useState<'import' | 'analyze'>('analyze')
 
   const gamesPerPage = 20
   const escapeFilterValue = (value: string) => {
@@ -231,7 +235,8 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
     if (!user) {
       if (!AnonymousUsageTracker.canAnalyze()) {
         console.log('[MatchHistory] Anonymous user reached analysis limit')
-        setAnonymousLimitModalOpen(true)
+        setLimitType('analyze')
+        setShowLimitModal(true)
         return
       }
     }
@@ -245,9 +250,22 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
     markGameAsPending(gameIdentifier)
     try {
       const { baseUrl } = config.getApi()
+
+      // Get auth token if user is logged in
+      const headers: HeadersInit = { 'Content-Type': 'application/json' }
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      } catch (authError) {
+        // Log but don't fail - allow request to proceed without auth (for anonymous users)
+        console.log('[MatchHistory] No auth session found, proceeding without Authorization header')
+      }
+
       const response = await fetch(`${baseUrl}/api/v1/analyze?use_parallel=false`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           user_id: userId,
           platform,
@@ -260,6 +278,14 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       if (!response.ok) {
         const text = await response.text()
         let errorMessage = `Analysis request failed: ${response.status}`
+
+        // Check if it's a 429 error (rate limit / usage limit)
+        if (response.status === 429) {
+          setLimitType('analyze')
+          setShowLimitModal(true)
+          clearGamePending(gameIdentifier)
+          return
+        }
 
         // Try to extract error message from response
         try {
@@ -292,29 +318,28 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         // Increment anonymous usage after successful start
         if (!user) {
           AnonymousUsageTracker.incrementAnalyses()
+        } else {
+          // Refresh usage stats for authenticated users after successful analysis
+          refreshUsageStats()
         }
 
         // Refresh analysis data after a short delay to get the accuracy
         setTimeout(async () => {
           try {
-            const analyses = await UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish')
-            const accuracyMap = new Map<string, number>()
+            // Use the optimized check endpoint instead of fetching all analyses
+            const analyzedMap = await UnifiedAnalysisService.checkGamesAnalyzed(userId, platform, [gameIdentifier], 'stockfish')
 
-            analyses.forEach(analysis => {
-              const id = analysis?.game_id
-              if (typeof id === 'string' && typeof analysis?.accuracy === 'number') {
-                accuracyMap.set(id, analysis.accuracy)
+            analyzedMap.forEach((gameData, gameId) => {
+              if (typeof gameData.accuracy === 'number') {
+                setGameAnalyses(prev => {
+                  const next = new Map(prev)
+                  next.set(gameId, gameData.accuracy)
+                  if (gameData.provider_game_id) {
+                    next.set(gameData.provider_game_id, gameData.accuracy)
+                  }
+                  return next
+                })
               }
-              const providerId = analysis?.provider_game_id
-              if (typeof providerId === 'string' && typeof analysis?.accuracy === 'number') {
-                accuracyMap.set(providerId, analysis.accuracy)
-              }
-            })
-
-            setGameAnalyses(prev => {
-              const next = new Map(prev)
-              accuracyMap.forEach((accuracy, id) => next.set(id, accuracy))
-              return next
             })
           } catch (refreshError) {
             // Extract just the error message to avoid circular references
@@ -376,16 +401,35 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         filters.opponent = opponentFilter
       }
 
-      const data = await UnifiedAnalysisService.getMatchHistory(
-        canonicalUserId,
-        platform,
-        currentPage,
-        gamesPerPage,
-        filters
-      )
+      let allData: Game[] = []
 
-      if (data) {
-        const mappedData = data.map(mapGameRow)
+      if (viewMode === 'combined' && secondaryUserId && secondaryPlatform) {
+        // Combined view: fetch from both platforms in parallel
+        const secondaryCanonical = canonicalizeUserId(secondaryUserId, secondaryPlatform)
+        const [primaryData, secondaryData] = await Promise.all([
+          UnifiedAnalysisService.getMatchHistory(canonicalUserId, platform, currentPage, gamesPerPage, filters),
+          UnifiedAnalysisService.getMatchHistory(secondaryCanonical, secondaryPlatform, currentPage, gamesPerPage, filters)
+        ])
+        const primaryMapped = (primaryData || []).map(raw => mapGameRow(raw, platform))
+        const secondaryMapped = (secondaryData || []).map(raw => mapGameRow(raw, secondaryPlatform))
+        // Merge and sort by date descending
+        allData = [...primaryMapped, ...secondaryMapped]
+          .sort((a, b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime())
+          .slice(0, gamesPerPage)
+      } else {
+        const data = await UnifiedAnalysisService.getMatchHistory(
+          canonicalUserId,
+          platform,
+          currentPage,
+          gamesPerPage,
+          filters
+        )
+        allData = (data || []).map(raw => mapGameRow(raw, platform))
+      }
+
+      // Check if we got data or if it's empty due to connection error
+      if (allData.length > 0) {
+        const mappedData = allData
         const isReset = reset || page === 1
         if (isReset) {
           setGames(mappedData)
@@ -393,53 +437,108 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           setGames(prev => [...prev, ...mappedData])
         }
 
-        setHasMore(data.length === gamesPerPage)
+        setHasMore(mappedData.length === gamesPerPage)
 
-        if (isReset) {
-          const providerIds = mappedData
-            .map(game => game.provider_game_id || game.id)
-            .filter((id): id is string => Boolean(id))
+        // Check analyzed status for newly loaded games (both initial load and pagination)
+        const providerIds = mappedData
+          .map(game => game.provider_game_id || game.id)
+          .filter((id): id is string => Boolean(id))
 
-          if (providerIds.length > 0) {
-            try {
-              const analyses = await UnifiedAnalysisService.getGameAnalyses(userId, platform, 'stockfish')
+        if (providerIds.length > 0) {
+          try {
+            // Use the new optimized endpoint that only fetches game IDs and accuracy
+            // This is much faster than fetching all 100+ analysis records
+            const analyzedMap = await UnifiedAnalysisService.checkGamesAnalyzed(userId, platform, providerIds, 'stockfish')
+
+            if (isReset) {
+              // On initial load, replace the analyzed games set
               const analyzedIds = new Set<string>()
               const accuracyMap = new Map<string, number>()
 
-              analyses.forEach(analysis => {
-                const id = analysis?.game_id
-                if (typeof id === 'string') {
-                  analyzedIds.add(id)
-                  if (typeof analysis?.accuracy === 'number') {
-                    accuracyMap.set(id, analysis.accuracy)
-                  }
+              // Extract analyzed IDs and accuracy from the result map
+              analyzedMap.forEach((gameData, gameId) => {
+                analyzedIds.add(gameId)
+                if (typeof gameData.accuracy === 'number') {
+                  accuracyMap.set(gameId, gameData.accuracy)
                 }
-
-                const providerId = analysis?.provider_game_id
-                if (typeof providerId === 'string') {
-                  analyzedIds.add(providerId)
-                  if (typeof analysis?.accuracy === 'number') {
-                    accuracyMap.set(providerId, analysis.accuracy)
+                // Also add by provider_game_id if it exists
+                if (gameData.provider_game_id) {
+                  analyzedIds.add(gameData.provider_game_id)
+                  if (typeof gameData.accuracy === 'number') {
+                    accuracyMap.set(gameData.provider_game_id, gameData.accuracy)
                   }
                 }
               })
 
               setAnalyzedGameIds(analyzedIds)
               setGameAnalyses(accuracyMap)
-            } catch (analysisError) {
-              const errorMsg = analysisError instanceof Error ? analysisError.message : String(analysisError)
-              console.error('Error fetching analysis states:', errorMsg)
+            } else {
+              // On pagination, merge with existing analyzed games
+              setAnalyzedGameIds(prev => {
+                const next = new Set(prev)
+                analyzedMap.forEach((gameData, gameId) => {
+                  next.add(gameId)
+                  if (gameData.provider_game_id) {
+                    next.add(gameData.provider_game_id)
+                  }
+                })
+                return next
+              })
+              setGameAnalyses(prev => {
+                const next = new Map(prev)
+                analyzedMap.forEach((gameData, gameId) => {
+                  if (typeof gameData.accuracy === 'number') {
+                    next.set(gameId, gameData.accuracy)
+                    if (gameData.provider_game_id) {
+                      next.set(gameData.provider_game_id, gameData.accuracy)
+                    }
+                  }
+                })
+                return next
+              })
             }
-          } else {
-            setAnalyzedGameIds(new Set())
-            setGameAnalyses(new Map())
+          } catch (analysisError) {
+            const errorMsg = analysisError instanceof Error ? analysisError.message : String(analysisError)
+            console.error('Error fetching analysis states:', errorMsg)
           }
+        } else if (isReset) {
+          // Only reset on initial load if no games
+          setAnalyzedGameIds(new Set())
+          setGameAnalyses(new Map())
+        }
+      } else if (allData.length === 0 && reset) {
+        // Empty result - could be no games or connection error
+        // Check if backend is available by testing the health endpoint
+        try {
+          const healthCheck = await fetch(`${config.getApi().baseUrl}/health`, {
+            method: 'GET',
+            signal: AbortSignal.timeout(2000) // 2 second timeout
+          })
+          if (!healthCheck.ok) {
+            // Backend is not responding
+            setError('Backend server is not running. Please start the backend server to view match history.')
+          } else {
+            // Backend is up but no games found
+            setGames([])
+            setHasMore(false)
+          }
+        } catch {
+          // Connection failed - backend is down
+          setError('Backend server is not running. Please start the backend server to view match history.')
         }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err)
       console.error('Error loading games:', errorMessage)
-      setError('Failed to load match history')
+
+      // Provide more specific error messages
+      if (errorMessage.includes('Cannot connect to backend server') ||
+          errorMessage.includes('ERR_CONNECTION_REFUSED') ||
+          errorMessage.includes('Failed to fetch')) {
+        setError('Backend server is not running. Please start the backend server to view match history.')
+      } else {
+        setError('Failed to load match history. Please try again later.')
+      }
     } finally {
       setLoading(false)
     }
@@ -459,7 +558,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       case 'draw':
         return 'text-yellow-600'
       default:
-        return 'text-slate-300'
+        return 'text-gray-400'
     }
   }
 
@@ -497,10 +596,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
   if (loading && games.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-6 text-slate-200">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <div className="flex items-center justify-center gap-3 text-sm">
           <span className="inline-flex h-6 w-6 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-          <span className="text-slate-200">Loading match history…</span>
+          <span className="text-gray-300">Loading match history…</span>
         </div>
       </div>
     )
@@ -508,7 +607,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-sm text-rose-100">
+      <div className="rounded-lg bg-rose-500/10 p-6 text-sm text-rose-100 shadow-card">
         <div className="flex items-center gap-2">
           <span className="text-lg">!</span>
           <span>{error}</span>
@@ -519,22 +618,22 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
 
   if (games.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-8 text-center text-slate-200">
-        <div className="text-4xl text-slate-500">♘</div>
+      <div className="rounded-lg bg-surface-1 p-8 text-center text-gray-300 shadow-card">
+        <div className="text-4xl text-gray-500">♘</div>
         <h3 className="mt-4 text-lg font-semibold text-white">No Games Found</h3>
-        <p className="mt-2 text-sm text-slate-400">We couldn’t locate any games for this filter yet.</p>
+        <p className="mt-2 text-sm text-gray-500">We couldn’t locate any games for this filter yet.</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4 text-slate-200">
-      <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6 shadow-xl shadow-black/50">
+    <div className="space-y-4 text-gray-300">
+      <div className="rounded-lg bg-surface-1 p-6 shadow-card">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-xl font-semibold text-white">Match History</h2>
+            <h2 className="text-xl font-semibold text-white">Games Analysis</h2>
             {openingFilter && (
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-200">
+              <div className="inline-flex items-center gap-2 rounded-md bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-200">
                 <span>
                   Filtered by {openingFilter.normalized}
                   {openingFilter.color && ` (as ${openingFilter.color === 'white' ? 'White' : 'Black'})`}
@@ -551,18 +650,18 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           </div>
         </div>
 
-        <div className="py-4 text-xs uppercase tracking-wider text-slate-400">{games.length} games loaded</div>
+        <div className="py-4 text-xs uppercase tracking-wider text-gray-500">{games.length} games loaded</div>
 
         {analysisNotification && (
-          <div className={`mb-4 flex items-start justify-between rounded-2xl border px-3 py-3 text-sm ${analysisNotification.type === 'success' ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100' : 'border-rose-400/40 bg-rose-500/10 text-rose-100'}`}>
-            <div className="flex items-start gap-2">
-              <span className="text-lg leading-none">{analysisNotification.type === 'success' ? '✓' : '!'}</span>
-              <span>{analysisNotification.message}</span>
+          <div className={`mb-4 flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${analysisNotification.type === 'success' ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-100' : 'border-rose-400/30 bg-rose-500/10 text-rose-100'}`}>
+            <div className="flex items-center gap-3 flex-1">
+              <span className="text-lg leading-none flex-shrink-0">{analysisNotification.type === 'success' ? '✓' : '!'}</span>
+              <span className="flex-1">{analysisNotification.message}</span>
             </div>
             <button
               type="button"
               onClick={() => setAnalysisNotification(null)}
-              className="ml-3 text-xs font-medium text-slate-400 hover:text-slate-200"
+              className="ml-3 text-xs font-medium text-gray-400 hover:text-white transition-colors flex-shrink-0"
             >
               Close
             </button>
@@ -594,7 +693,16 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                       <span className={`text-sm font-semibold ${getResultColor(game.result)}`}>
                         {game.result.toUpperCase()}
                       </span>
-                      <span className="text-xs text-slate-400 capitalize">{game.color}</span>
+                      <span className="text-xs text-gray-500 capitalize">{game.color}</span>
+                      {viewMode === 'combined' && game.platform && (
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                          game.platform === 'lichess'
+                            ? 'bg-yellow-500/20 text-yellow-300'
+                            : 'bg-green-500/20 text-green-300'
+                        }`}>
+                          {game.platform === 'lichess' ? 'Li' : 'CC'}
+                        </span>
+                      )}
                       {queued && !analyzed && (
                         <span className="inline-flex items-center rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
                           In queue
@@ -602,36 +710,36 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                       )}
                     </div>
                     <div className="text-sm font-medium text-white truncate">{game.opponent}</div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-gray-500">
                       {formatDate(game.played_at)} • {formatTime(game.played_at)}
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-medium text-white">{game.rating ?? '--'}</div>
-                    <div className="text-xs text-slate-400">vs {game.opponent_rating ?? '--'}</div>
+                    <div className="text-xs text-gray-500">vs {game.opponent_rating ?? '--'}</div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-slate-400">Time Control:</span>
-                    <div className="font-medium text-slate-200">{getTimeControlCategory(game.time_control)}</div>
+                    <span className="text-gray-500">Time Control:</span>
+                    <div className="font-medium text-gray-300">{getTimeControlCategory(game.time_control)}</div>
                   </div>
                   <div>
-                    <span className="text-slate-400">Moves:</span>
-                    <div className="font-medium text-slate-200">{game.moves}</div>
+                    <span className="text-gray-500">Moves:</span>
+                    <div className="font-medium text-gray-300">{game.moves}</div>
                   </div>
                   <div>
-                    <span className="text-slate-400">Opening:</span>
+                    <span className="text-gray-500">Opening:</span>
                     <div
-                      className="font-medium text-slate-200 truncate"
+                      className="font-medium text-gray-300 truncate"
                       title={getOpeningExplanation(game.opening_family, game.color, game)}
                     >
                       {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                     </div>
                   </div>
                   <div>
-                    <span className="text-slate-400">Accuracy:</span>
+                    <span className="text-gray-500">Accuracy:</span>
                     <div className="font-medium">
                       {accuracy !== null ? (
                         <span className={
@@ -643,7 +751,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                           {accuracy.toFixed(1)}%
                         </span>
                       ) : (
-                        <span className="text-slate-500">?%</span>
+                        <span className="text-gray-500">?%</span>
                       )}
                     </div>
                   </div>
@@ -666,10 +774,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                         disabled={pending || analyzed}
                         className={`btn-touch-sm rounded-full text-xs font-medium transition ${
                           analyzed
-                            ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
+                            ? 'cursor-default bg-emerald-500/10 text-emerald-200 shadow-card'
                             : pending
-                              ? 'cursor-wait border border-white/10 bg-white/5 text-slate-400'
-                              : 'border border-sky-400/40 bg-sky-500/10 text-sky-200 hover:border-sky-300/60 hover:bg-sky-500/20'
+                              ? 'cursor-wait bg-white/5 text-gray-500 shadow-card'
+                              : 'bg-sky-500/10 text-sky-200 shadow-card hover:bg-sky-500/15'
                         }`}
                       >
                         {pending ? (
@@ -693,7 +801,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full table-auto">
             <thead>
-              <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-gray-500">
                 <th className="py-3 px-2 text-left">Date</th>
                 <th className="py-3 px-2 text-left">Result</th>
                 <th className="py-3 px-2 text-left">Color</th>
@@ -736,11 +844,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                     role={isClickable ? 'button' : undefined}
                     title={isClickable ? (analyzed ? 'View analysis' : 'Click to analyze this game') : undefined}
                   >
-                    <td className="py-3 px-2 text-sm text-slate-300">
+                    <td className="py-3 px-2 text-sm text-gray-400">
                       <div className="flex items-center gap-2">
                         <div>
                           <div>{formatDate(game.played_at)}</div>
-                          <div className="text-xs text-slate-500">{formatTime(game.played_at)}</div>
+                          <div className="text-xs text-gray-500">{formatTime(game.played_at)}</div>
                         </div>
                         {queued && !analyzed && (
                           <span className="inline-flex items-center rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
@@ -751,15 +859,24 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                     </td>
                     <td className="py-3 px-2">
                       <div className="flex items-center gap-2">
+                        {viewMode === 'combined' && game.platform && (
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                            game.platform === 'lichess'
+                              ? 'bg-yellow-500/20 text-yellow-300'
+                              : 'bg-green-500/20 text-green-300'
+                          }`}>
+                            {game.platform === 'lichess' ? 'Li' : 'CC'}
+                          </span>
+                        )}
                         <span className={`font-medium ${getResultColor(game.result)}`}>
                           {game.result.toUpperCase()}
                         </span>
                       </div>
                     </td>
-                    <td className="py-3 px-2 text-sm text-slate-300 capitalize">{game.color}</td>
-                    <td className="py-3 px-2 text-sm text-slate-100">{game.opponent}</td>
-                    <td className="py-3 px-2 text-sm text-slate-300">{getTimeControlCategory(game.time_control)}</td>
-                    <td className="py-3 px-2 text-sm text-slate-300">
+                    <td className="py-3 px-2 text-sm text-gray-400 capitalize">{game.color}</td>
+                    <td className="py-3 px-2 text-sm text-gray-300">{game.opponent}</td>
+                    <td className="py-3 px-2 text-sm text-gray-400">{getTimeControlCategory(game.time_control)}</td>
+                    <td className="py-3 px-2 text-sm text-gray-400">
                       <div
                         className="max-w-32 truncate"
                         title={getOpeningExplanation(game.opening_family, game.color, game)}
@@ -767,8 +884,8 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                         {getPlayerPerspectiveOpeningShort(game.opening_family, game.color, game)}
                       </div>
                     </td>
-                    <td className="py-3 px-2 text-sm text-slate-300">{game.moves}</td>
-                    <td className="py-3 px-2 text-sm text-slate-300">
+                    <td className="py-3 px-2 text-sm text-gray-400">{game.moves}</td>
+                    <td className="py-3 px-2 text-sm text-gray-400">
                       {(() => {
                         const accuracy = getGameAccuracy(game)
                         if (accuracy !== null) {
@@ -783,10 +900,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                             </span>
                           )
                         }
-                        return <span className="text-slate-500">?%</span>
+                        return <span className="text-gray-500">?%</span>
                       })()}
                     </td>
-                    <td className="py-3 px-2 text-sm text-slate-300" onClick={e => e.stopPropagation()}>
+                    <td className="py-3 px-2 text-sm text-gray-400" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-between gap-2">
                         <div
                           onClick={e => {
@@ -799,7 +916,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                             {game.rating ?? '--'}
                           </div>
                           <div
-                            className="text-xs text-slate-500"
+                            className="text-xs text-gray-500"
                             title={game.opponent_rating ? `Opponent rating: ${game.opponent_rating}` : 'Opponent rating not available'}
                           >
                             vs {game.opponent_rating ?? '--'}
@@ -811,10 +928,10 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
                           disabled={pending || analyzed}
                           className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium transition ${
                             analyzed
-                              ? 'cursor-default border border-emerald-400/40 bg-emerald-500/10 text-emerald-200'
+                              ? 'cursor-default bg-emerald-500/10 text-emerald-200 shadow-card'
                               : pending
-                                ? 'cursor-wait border border-white/10 bg-white/5 text-slate-400'
-                                : 'border border-sky-400/40 bg-sky-500/10 text-sky-200 hover:border-sky-300/60 hover:bg-sky-500/20'
+                                ? 'cursor-wait bg-white/5 text-gray-500 shadow-card'
+                                : 'bg-sky-500/10 text-sky-200 shadow-card hover:bg-sky-500/15'
                           }`}
                         >
                           {pending ? (
@@ -837,7 +954,7 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
             <button
               onClick={loadMore}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 transition hover:border-white/30 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-md bg-surface-2 px-4 py-2 text-sm font-medium text-gray-300 shadow-card transition-colors hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? 'Loading...' : 'Load More Games'}
             </button>
@@ -845,11 +962,11 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
         )}
       </div>
 
-      {/* Anonymous User Limit Modal */}
-      <AnonymousLimitModal
-        isOpen={anonymousLimitModalOpen}
-        onClose={() => setAnonymousLimitModalOpen(false)}
-        limitType="analyze"
+      {/* Limit Reached Modal */}
+      <LimitReachedModal
+        isOpen={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        limitType={limitType}
       />
     </div>
   )

@@ -52,7 +52,7 @@ export function ShowFollowUpButton({
     <div className="mt-2">
       <button
         onClick={handleClick}
-        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 text-sm text-white transition-all duration-200"
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 shadow-card text-sm text-white transition-colors duration-200"
       >
         <svg
           className={`w-4 h-4 transition-transform duration-200 ${isShowing ? 'rotate-180' : ''}`}
@@ -66,8 +66,8 @@ export function ShowFollowUpButton({
       </button>
 
       {isShowing && sequence.length > 0 && (
-        <div className="mt-3 p-3 rounded-lg bg-slate-800/50 border border-white/10">
-          <div className="text-xs text-slate-400 mb-2">
+        <div className="mt-3 p-3 rounded-lg bg-surface-2/50 shadow-card">
+          <div className="text-xs text-gray-500 mb-2">
             {classification === 'brilliant'
               ? 'Best continuation:'
               : classification === 'blunder' || classification === 'mistake'
@@ -81,7 +81,7 @@ export function ShowFollowUpButton({
                 className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/5 text-sm text-white"
               >
                 {idx > 0 && idx % 2 === 0 && (
-                  <span className="text-slate-500 mr-1">{Math.floor(idx / 2) + 1}.</span>
+                  <span className="text-gray-500 mr-1">{Math.floor(idx / 2) + 1}.</span>
                 )}
                 {move}
               </div>
@@ -183,7 +183,7 @@ export function ShowFollowUpWithArrows({
     <div className="mt-2">
       <button
         onClick={handleClick}
-        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 text-sm text-white transition-all duration-200"
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 shadow-card text-sm text-white transition-colors duration-200"
       >
         <svg
           className={`w-4 h-4 transition-transform duration-200 ${isShowing ? 'rotate-180' : ''}`}
@@ -197,8 +197,8 @@ export function ShowFollowUpWithArrows({
       </button>
 
       {isShowing && sequence.length > 0 && (
-        <div className="mt-3 p-3 rounded-lg bg-slate-800/50 border border-white/10">
-          <div className="text-xs text-slate-400 mb-2">
+        <div className="mt-3 p-3 rounded-lg bg-surface-2/50 shadow-card">
+          <div className="text-xs text-gray-500 mb-2">
             {classification === 'brilliant'
               ? 'Best continuation:'
               : classification === 'blunder' || classification === 'mistake'
@@ -216,7 +216,7 @@ export function ShowFollowUpWithArrows({
                   className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white/5 text-sm text-white"
                 >
                   {isWhiteMove && (
-                    <span className="text-slate-500 mr-1">{moveNumber}.</span>
+                    <span className="text-gray-500 mr-1">{moveNumber}.</span>
                   )}
                   {move}
                 </div>

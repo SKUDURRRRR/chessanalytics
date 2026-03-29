@@ -89,8 +89,7 @@ export function safeValidateInput<T>(
 
 // Normalize user identifiers consistently across services
 export function normalizeUserId(userId: string, platform: 'lichess' | 'chess.com'): string {
-  const trimmed = userId.trim()
-  return platform === 'chess.com' ? trimmed.toLowerCase() : trimmed
+  return userId.trim().toLowerCase()
 }
 
 // ============================================================================

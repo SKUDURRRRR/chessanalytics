@@ -17,6 +17,7 @@ import { config } from '../lib/config'
 import { withCache, generateCacheKey, apiCache } from '../utils/apiCache'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
+import { supabase } from '../lib/supabase'
 
 const UNIFIED_API_URL = config.getApi().baseUrl
 logger.log('🔧 UNIFIED_API_URL configured as:', UNIFIED_API_URL)
@@ -43,7 +44,7 @@ function validatePlatform(platform: string): platform is 'lichess' | 'chess.com'
   return platform === 'lichess' || platform === 'chess.com'
 }
 
-function validatePersonalityScores(scores: any): PersonalityScores | null {
+function validatePersonalityScores(scores: Record<string, unknown>): PersonalityScores | null {
   if (!scores || typeof scores !== 'object') {
     return null
   }
@@ -54,7 +55,7 @@ function validatePersonalityScores(scores: any): PersonalityScores | null {
   for (const trait of requiredTraits) {
     const value = scores[trait]
     if (typeof value === 'number' && !isNaN(value) && value >= 0 && value <= 100) {
-      (validatedScores as any)[trait] = value
+      validatedScores[trait] = value
     } else {
       return null // Invalid data
     }
@@ -63,7 +64,7 @@ function validatePersonalityScores(scores: any): PersonalityScores | null {
   return validatedScores as PersonalityScores
 }
 
-function validateDeepAnalysisData(data: any): DeepAnalysisData | null {
+function validateDeepAnalysisData(data: Record<string, unknown>): DeepAnalysisData | null {
   if (!data || typeof data !== 'object') {
     return null
   }
@@ -77,41 +78,103 @@ function validateDeepAnalysisData(data: any): DeepAnalysisData | null {
   }
 
   // Validate personality scores
-  const personalityScores = validatePersonalityScores(data.personality_scores)
+  const personalityScores = validatePersonalityScores(data.personality_scores as Record<string, unknown>)
   if (!personalityScores) {
     return null
   }
 
+  // Cast nested objects for safe property access after validation
+  const phaseAccuracies = data.phase_accuracies as Record<string, number> | undefined
+  const recommendations = data.recommendations as Record<string, string> | undefined
+
   // Return validated data with defaults for missing fields
   return {
-    total_games: Math.max(0, data.total_games || 0),
-    average_accuracy: Math.max(0, Math.min(100, data.average_accuracy || 0)),
-    current_rating: Math.max(0, data.current_rating || 0),
+    total_games: Math.max(0, Number(data.total_games) || 0),
+    average_accuracy: Math.max(0, Math.min(100, Number(data.average_accuracy) || 0)),
+    current_rating: Math.max(0, Number(data.current_rating) || 0),
     personality_scores: personalityScores,
-    player_level: data.player_level || 'intermediate',
-    player_style: data.player_style || {
-      category: 'balanced',
+    player_level: (data.player_level as DeepAnalysisData['player_level']) || 'intermediate',
+    player_style: (data.player_style as DeepAnalysisData['player_style']) || {
+      category: 'balanced' as const,
       description: 'Analysis in progress...',
       confidence: 0,
     },
     primary_strengths: Array.isArray(data.primary_strengths) ? data.primary_strengths : ['Analysis in progress...'],
     improvement_areas: Array.isArray(data.improvement_areas) ? data.improvement_areas : ['Analysis in progress...'],
-    playing_style: data.playing_style || 'Data unavailable',
+    playing_style: (data.playing_style as string) || 'Data unavailable',
     phase_accuracies: {
-      opening: Math.max(0, Math.min(100, data.phase_accuracies?.opening || 0)),
-      middle: Math.max(0, Math.min(100, data.phase_accuracies?.middle || 0)),
-      endgame: Math.max(0, Math.min(100, data.phase_accuracies?.endgame || 0)),
+      opening: Math.max(0, Math.min(100, phaseAccuracies?.opening || 0)),
+      middle: Math.max(0, Math.min(100, phaseAccuracies?.middle || 0)),
+      endgame: Math.max(0, Math.min(100, phaseAccuracies?.endgame || 0)),
     },
-    enhanced_opening_analysis: data.enhanced_opening_analysis || undefined,
+    enhanced_opening_analysis: data.enhanced_opening_analysis as DeepAnalysisData['enhanced_opening_analysis'],
     recommendations: {
-      primary: data.recommendations?.primary || 'Complete a Stockfish analysis to unlock deep recommendations.',
-      secondary: data.recommendations?.secondary || 'Play a fresh set of games to refresh recent patterns.',
-      leverage: data.recommendations?.leverage || 'Review your most accurate games once analysis is ready.',
+      primary: recommendations?.primary || 'Complete a Stockfish analysis to unlock deep recommendations.',
+      secondary: recommendations?.secondary || 'Play a fresh set of games to refresh recent patterns.',
+      leverage: recommendations?.leverage || 'Review your most accurate games once analysis is ready.',
     },
-    famous_players: data.famous_players || null,
-    ai_style_analysis: data.ai_style_analysis || null,
-    personality_insights: data.personality_insights || null,
+    famous_players: (data.famous_players as DeepAnalysisData['famous_players']) || undefined,
+    ai_style_analysis: parseAiStyleAnalysis(data.ai_style_analysis) || undefined,
+    personality_insights: (data.personality_insights as DeepAnalysisData['personality_insights']) || undefined,
   }
+}
+
+/**
+ * Parse ai_style_analysis if it's a string, otherwise return as-is.
+ * Handles cases where the backend might return it as a JSON string.
+ */
+function parseAiStyleAnalysis(aiStyleAnalysis: unknown): DeepAnalysisData['ai_style_analysis'] | null {
+  if (!aiStyleAnalysis) {
+    return null
+  }
+
+  // If it's already an object with the expected structure, return it
+  if (typeof aiStyleAnalysis === 'object' && aiStyleAnalysis !== null && !Array.isArray(aiStyleAnalysis)) {
+    const obj = aiStyleAnalysis as Record<string, unknown>
+    // Validate it has the expected fields
+    if (
+      typeof obj.style_summary === 'string' &&
+      typeof obj.characteristics === 'string' &&
+      typeof obj.strengths === 'string' &&
+      typeof obj.playing_patterns === 'string' &&
+      typeof obj.improvement_focus === 'string'
+    ) {
+      return obj as unknown as DeepAnalysisData['ai_style_analysis']
+    }
+  }
+
+  // If it's a string, try to parse it as JSON
+  if (typeof aiStyleAnalysis === 'string') {
+    try {
+      // Remove any markdown code blocks if present
+      let jsonString = aiStyleAnalysis.trim()
+      if (jsonString.startsWith('```')) {
+        const lines = jsonString.split('\n')
+        jsonString = lines.slice(1, -1).join('\n').trim()
+      }
+
+      // Try to find and parse JSON object
+      if (jsonString.startsWith('{')) {
+        const parsed = JSON.parse(jsonString)
+        // Validate parsed object has required fields
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          typeof parsed.style_summary === 'string' &&
+          typeof parsed.characteristics === 'string' &&
+          typeof parsed.strengths === 'string' &&
+          typeof parsed.playing_patterns === 'string' &&
+          typeof parsed.improvement_focus === 'string'
+        ) {
+          return parsed as DeepAnalysisData['ai_style_analysis']
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse ai_style_analysis as JSON:', e)
+    }
+  }
+
+  return null
 }
 
 export interface UnifiedAnalysisRequest {
@@ -124,14 +187,16 @@ export interface UnifiedAnalysisRequest {
   pgn?: string
   fen?: string
   move?: string
+  game_id?: string
+  provider_game_id?: string
 }
 
 export interface UnifiedAnalysisResponse {
   success: boolean
   message: string
   analysis_id?: string
-  data?: any
-  progress?: any
+  data?: Record<string, unknown>
+  progress?: AnalysisProgress
 }
 
 export interface AnalysisProgress {
@@ -162,6 +227,8 @@ export class UnifiedAnalysisService {
         ...(request.pgn && { pgn: request.pgn }),
         ...(request.fen && { fen: request.fen }),
         ...(request.move && { move: request.move }),
+        ...(request.game_id && { game_id: request.game_id }),
+        ...(request.provider_game_id && { provider_game_id: request.provider_game_id }),
       }
 
       logger.log('🌐 API Request:', {
@@ -175,16 +242,35 @@ export class UnifiedAnalysisService {
         limit: requestBody.limit
       })
 
+      // Get auth token if user is logged in
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+          logger.log('🌐 Added Authorization header for authenticated user')
+        }
+      } catch (error) {
+        // Log but don't fail - allow request to proceed without auth (for anonymous users)
+        logger.log('🌐 No auth session found, proceeding without Authorization header')
+      }
+
+      // Use longer timeout for deep analysis (can take 3-5 minutes for complex games)
+      const timeout = requestBody.analysis_type === 'deep'
+        ? TIMEOUT_CONFIG.DEEP_ANALYSIS
+        : TIMEOUT_CONFIG.LONG
+
       const response = await fetchWithTimeout(
         `${UNIFIED_API_URL}/api/v1/analyze?use_parallel=${useParallel}`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
           body: JSON.stringify(requestBody),
         },
-        TIMEOUT_CONFIG.LONG // Use long timeout for analysis operations
+        timeout
       )
 
       logger.log('🌐 API Response status:', response.status)
@@ -200,7 +286,17 @@ export class UnifiedAnalysisService {
       return data
     } catch (error) {
       logger.error('Error in unified analysis:', error)
-      throw new Error('Failed to perform analysis')
+
+      // Preserve the original error message for better debugging
+      if (error instanceof Error) {
+        // If it's already a detailed error (like from fetchWithTimeout), throw it as-is
+        if (error.message.includes('Network error') || error.message.includes('Request timeout')) {
+          throw error;
+        }
+        throw new Error(`Failed to perform analysis: ${error.message}`)
+      }
+
+      throw new Error('Failed to perform analysis: Unknown error')
     }
   }
 
@@ -388,11 +484,11 @@ export class UnifiedAnalysisService {
     analysisType: 'stockfish' | 'deep' = 'stockfish',
     limit: number = 100,
     offset: number = 0
-  ): Promise<any[]> {
+  ): Promise<GameAnalysisSummary[]> {
     const cacheKey = generateCacheKey('analyses', userId, platform, { analysisType, limit, offset })
 
     // Validator: ensure we have a valid array (empty array is valid)
-    const analysesValidator = (data: any[]) => {
+    const analysesValidator = (data: GameAnalysisSummary[]) => {
       return Array.isArray(data)
     }
 
@@ -443,6 +539,156 @@ export class UnifiedAnalysisService {
       console.error('Error fetching game analyses count:', error)
       return 0
     }
+  }
+
+  /**
+   * Efficiently check which games from a list are already analyzed.
+   * This is optimized for Match History to quickly check analyze button states.
+   * Only fetches game_id, provider_game_id, and accuracy - not full analysis data.
+   */
+  static async checkGamesAnalyzed(
+    userId: string,
+    platform: Platform,
+    gameIds: string[],
+    analysisType: 'stockfish' | 'deep' = 'stockfish'
+  ): Promise<Map<string, { game_id: string; provider_game_id: string | null; accuracy: number | null }>> {
+    if (!gameIds || gameIds.length === 0) {
+      return new Map()
+    }
+
+    try {
+      const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}/check?analysis_type=${analysisType}`
+      console.log(`Checking analyzed games from: ${url}`)
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gameIds),
+      })
+
+      if (!response.ok) {
+        console.error(`HTTP error! status: ${response.status} for user ${userId}`)
+        return new Map()
+      }
+
+      const data = await response.json()
+      const analyzedGames = data.analyzed_games || []
+
+      // Create a map for fast lookups by both game_id and provider_game_id
+      const resultMap = new Map<string, { game_id: string; provider_game_id: string | null; accuracy: number | null }>()
+
+      analyzedGames.forEach((game: { game_id: string; provider_game_id: string | null; accuracy: number | null }) => {
+        const gameData = {
+          game_id: game.game_id,
+          provider_game_id: game.provider_game_id,
+          accuracy: game.accuracy
+        }
+
+        if (game.game_id) {
+          resultMap.set(game.game_id, gameData)
+        }
+        if (game.provider_game_id) {
+          resultMap.set(game.provider_game_id, gameData)
+        }
+      })
+
+      console.log(`Found ${analyzedGames.length} analyzed games out of ${gameIds.length} requested`)
+      return resultMap
+    } catch (error) {
+      console.error('Error checking analyzed games:', error)
+      return new Map()
+    }
+  }
+
+  /**
+   * Poll for AI comments status on a specific game.
+   * Returns the ai_comments_status: 'pending', 'generating', or 'completed'
+   */
+  static async getAICommentsStatus(
+    userId: string,
+    platform: Platform,
+    gameId: string
+  ): Promise<'pending' | 'generating' | 'completed' | null> {
+    try {
+      const sanitizedUserId = encodeURIComponent(userId.trim())
+      const sanitizedPlatform = encodeURIComponent(platform.toLowerCase())
+      const sanitizedGameId = encodeURIComponent(gameId.trim())
+      // Use the same endpoint as fetchGameAnalysisData
+      const url = `${UNIFIED_API_URL}/api/v1/game/${sanitizedUserId}/${sanitizedPlatform}/${sanitizedGameId}`
+
+      const response = await fetch(url)
+      if (!response.ok) {
+        return null
+      }
+
+      const data = await response.json()
+      return data.ai_comments_status || 'pending'
+    } catch (error) {
+      console.error('Error fetching AI comments status:', error)
+      return null
+    }
+  }
+
+  /**
+   * Poll for AI comments to be ready, with automatic retries.
+   * Shows toast notification when comments are ready.
+   *
+   * @param gameId - The game ID to poll for
+   * @param maxAttempts - Maximum number of polling attempts (default: 12 = ~60 seconds)
+   * @param pollInterval - Polling interval in milliseconds (default: 5000 = 5 seconds)
+   * @param onComplete - Callback when comments are ready
+   * @param onError - Callback on error
+   */
+  static async pollForAIComments(
+    userId: string,
+    platform: Platform,
+    gameId: string,
+    maxAttempts: number = 12,
+    pollInterval: number = 5000,
+    onComplete?: () => void,
+    onError?: (error: Error) => void
+  ): Promise<void> {
+    let attempts = 0
+
+    const poll = async (): Promise<void> => {
+      attempts++
+
+      try {
+        const status = await this.getAICommentsStatus(userId, platform, gameId)
+
+        if (status === 'completed') {
+          // Comments are ready!
+          if (onComplete) {
+            onComplete()
+          }
+          // Show toast notification
+          const win = window as unknown as { toast?: { success: (msg: string) => void } }
+          if (typeof window !== 'undefined' && win.toast) {
+            win.toast.success('AI insights ready!')
+          } else {
+            console.log('✅ AI insights ready!')
+          }
+          return
+        }
+
+        if (attempts >= maxAttempts) {
+          // Max attempts reached, stop polling
+          console.log(`⏱️ AI comments polling stopped after ${attempts} attempts`)
+          return
+        }
+
+        // Continue polling
+        setTimeout(poll, pollInterval)
+      } catch (error) {
+        console.error('Error polling for AI comments:', error)
+        if (onError) {
+          onError(error as Error)
+        }
+      }
+    }
+
+    // Start polling
+    poll()
   }
 
   /**
@@ -704,8 +950,9 @@ export class UnifiedAnalysisService {
     limit: number = 500
   ): Promise<{
     total_games: number
-    games: any[]
+    games: Record<string, unknown>[]
     sample_size: number
+    [key: string]: unknown
   }> {
     if (!validateUserId(userId) || !validatePlatform(platform)) {
       console.error('Invalid userId or platform for getComprehensiveAnalytics')
@@ -716,36 +963,54 @@ export class UnifiedAnalysisService {
       }
     }
 
-    try {
-      const response = await fetch(
-        `${UNIFIED_API_URL}/api/v1/comprehensive-analytics/${userId}/${platform}?limit=${limit}`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      )
+    // Include version in cache key to force refresh after backend fix for full game stats
+    // Bumped to v8 to force production refresh - production was showing incorrect data (likely cached with different limit)
+    const cacheKey = generateCacheKey('comprehensive', userId, platform, { limit, v: '8' })
 
-      if (!response.ok) {
-        console.error(`Failed to fetch comprehensive analytics: ${response.status}`)
+    // Validator: ensure we have valid comprehensive analytics data
+    const comprehensiveValidator = (data: { total_games: number; games: Record<string, unknown>[]; sample_size: number; [key: string]: unknown }) => {
+      return data !== null &&
+        typeof data.total_games === 'number' &&
+        Array.isArray(data.games) &&
+        data.games.length > 0
+    }
+
+    return withCache(cacheKey, async () => {
+      try {
+        const url = `${UNIFIED_API_URL}/api/v1/comprehensive-analytics/${userId}/${platform}?limit=${limit}`
+        if (import.meta.env.DEV) {
+          logger.log(`[getComprehensiveAnalytics] Fetching with limit=${limit} from ${url}`)
+        }
+        const response = await fetch(
+          url,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
+        )
+
+        if (!response.ok) {
+          console.error(`Failed to fetch comprehensive analytics: ${response.status}`)
+          return {
+            total_games: 0,
+            games: [],
+            sample_size: 0
+          }
+        }
+
+        const data = await response.json()
+        return data
+      } catch (error) {
+        console.error('Error fetching comprehensive analytics:', error)
         return {
           total_games: 0,
           games: [],
           sample_size: 0
         }
       }
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Error fetching comprehensive analytics:', error)
-      return {
-        total_games: 0,
-        games: [],
-        sample_size: 0
-      }
-    }
+    }, 30 * 60 * 1000, comprehensiveValidator) // 30 minute cache for comprehensive analytics
   }
 
   /**
@@ -754,8 +1019,8 @@ export class UnifiedAnalysisService {
   static async getEloHistory(
     userId: string,
     platform: Platform,
-    limit: number = 500
-  ): Promise<any[]> {
+    limit: number = 10000
+  ): Promise<Record<string, unknown>[]> {
     if (!validateUserId(userId) || !validatePlatform(platform)) {
       console.error('Invalid userId or platform for getEloHistory')
       return []
@@ -854,7 +1119,7 @@ export class UnifiedAnalysisService {
       opponent?: string
       color?: 'white' | 'black'
     }
-  ): Promise<any[]> {
+  ): Promise<Record<string, unknown>[]> {
     if (!validateUserId(userId) || !validatePlatform(platform)) {
       console.error('Invalid userId or platform for getMatchHistory')
       return []
@@ -919,7 +1184,7 @@ export class UnifiedAnalysisService {
    * Get API information and available features.
    * New functionality for API discovery
    */
-  static async getApiInfo(): Promise<any> {
+  static async getApiInfo(): Promise<Record<string, unknown> | null> {
     try {
       const response = await fetch(`${UNIFIED_API_URL}/`)
       return await response.json()
@@ -932,44 +1197,6 @@ export class UnifiedAnalysisService {
   // ============================================================================
   // CONVENIENCE METHODS FOR BACKWARD COMPATIBILITY
   // ============================================================================
-
-  /**
-   * Backward compatibility method for existing code.
-   * @deprecated Use startBatchAnalysis instead
-   */
-  static async startAnalysis(
-    userId: string,
-    platform: Platform,
-    limit: number = 10
-  ): Promise<AnalysisResponse> {
-    console.warn('startAnalysis is deprecated. Use startBatchAnalysis instead.')
-    return this.startBatchAnalysis(userId, platform, 'stockfish', limit)
-  }
-
-  /**
-   * Backward compatibility method for existing code.
-   * @deprecated Use getAnalysisResults instead
-   */
-  static async getResults(
-    userId: string,
-    platform: Platform,
-    limit: number = 10
-  ): Promise<GameAnalysisSummary[]> {
-    console.warn('getResults is deprecated. Use getAnalysisResults instead.')
-    return this.getAnalysisResults(userId, platform, limit)
-  }
-
-  /**
-   * Backward compatibility method for existing code.
-   * @deprecated Use getAnalysisStats instead
-   */
-  static async getStats(
-    userId: string,
-    platform: Platform
-  ): Promise<AnalysisStats | null> {
-    console.warn('getStats is deprecated. Use getAnalysisStats instead.')
-    return this.getAnalysisStats(userId, platform)
-  }
 
   // ============================================================================
   // UNIFIED CONVENIENCE METHODS

@@ -21,7 +21,7 @@ export function useChessSound(options: ChessSoundOptions = {}) {
   const audioRef = useRef<Map<ChessSoundType, HTMLAudioElement>>(new Map())
   const isReadyRef = useRef(false)
 
-  // Load all sound files on mount
+  // Create Audio elements once on mount
   useEffect(() => {
     const sounds: ChessSoundType[] = ['move', 'capture', 'castle', 'check']
 
@@ -36,7 +36,6 @@ export function useChessSound(options: ChessSoundOptions = {}) {
 
     isReadyRef.current = true
 
-    // Cleanup
     return () => {
       audioRef.current.forEach(audio => {
         audio.pause()
@@ -44,6 +43,14 @@ export function useChessSound(options: ChessSoundOptions = {}) {
       })
       audioRef.current.clear()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Update volume on existing Audio elements without recreating them
+  useEffect(() => {
+    audioRef.current.forEach(audio => {
+      audio.volume = volume
+    })
   }, [volume])
 
   const playSound = useCallback((soundType: ChessSoundType) => {

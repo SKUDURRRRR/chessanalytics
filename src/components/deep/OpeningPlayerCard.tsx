@@ -95,21 +95,21 @@ export function OpeningPlayerCard({
   const feedback = getPersonalizedFeedback()
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+    <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
       <div className="flex items-center mb-4">
         <div className="mr-3 h-3 w-3 animate-pulse rounded-full bg-sky-300" />
         <h3 className="text-lg font-semibold text-white">Opening Performance</h3>
       </div>
 
-      <p className="mb-4 text-sm text-slate-200">
+      <p className="mb-4 text-sm text-gray-300">
         {feedback.assessment}
       </p>
 
       <div className="space-y-4">
         {/* Score Section */}
-        <div className={`${bgColor} rounded-2xl border border-white/10 p-4`}> 
+        <div className={`${bgColor} rounded-lg shadow-card p-4`}>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs uppercase tracking-wide text-slate-200">Opening Accuracy</span>
+            <span className="text-xs uppercase tracking-wide text-gray-300">Opening Accuracy</span>
             <span className="text-2xl font-semibold text-white">{Math.round(score)}%</span>
           </div>
           <div className="flex items-center justify-between text-sm">
@@ -117,8 +117,8 @@ export function OpeningPlayerCard({
               {level} - {score >= 70 ? 'Above average' : score >= 60 ? 'Average' : 'Below average'}
             </span>
             <div className="h-2 w-20 overflow-hidden rounded-full bg-black/40">
-              <div 
-                className={`h-full transition-all duration-500 ${score >= 70 ? 'bg-emerald-400' : score >= 60 ? 'bg-amber-300' : 'bg-rose-400'}`}
+              <div
+                className={`h-full transition-colors duration-500 ${score >= 70 ? 'bg-emerald-400' : score >= 60 ? 'bg-amber-300' : 'bg-rose-400'}`}
                 style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
               ></div>
             </div>
@@ -127,35 +127,35 @@ export function OpeningPlayerCard({
 
         {/* Improvement Focus */}
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">Improvement Focus</p>
-          <p className="text-sm text-slate-200">{feedback.focus}</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">Improvement Focus</p>
+          <p className="text-sm text-gray-300">{feedback.focus}</p>
         </div>
 
         {/* What this means */}
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">What this means</p>
-          <p className="text-sm text-slate-200">{feedback.meaning}</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">What this means</p>
+          <p className="text-sm text-gray-300">{feedback.meaning}</p>
         </div>
 
         {/* Opening Statistics */}
         {insights.totalOpeningGames > 0 && (
           <div>
-            <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">Your Opening Performance</p>
+            <p className="mb-2 text-xs uppercase tracking-wide text-gray-500">Your Opening Performance</p>
             <div className="space-y-2">
               {insights.bestOpening && (
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-200">Best: {insights.bestOpening.opening}</span>
+                  <span className="text-gray-300">Best: {insights.bestOpening.opening}</span>
                   <span className="font-semibold text-emerald-300">{insights.bestOpening.winRate.toFixed(0)}% ({insights.bestOpening.games} games)</span>
                 </div>
               )}
               {insights.worstOpening && insights.worstOpening.games >= 3 && (
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-200">Needs work: {insights.worstOpening.opening}</span>
+                  <span className="text-gray-300">Needs work: {insights.worstOpening.opening}</span>
                   <span className="font-semibold text-rose-300">{insights.worstOpening.winRate.toFixed(0)}% ({insights.worstOpening.games} games)</span>
                 </div>
               )}
               <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-200">Overall opening win rate</span>
+                <span className="text-gray-300">Overall opening win rate</span>
                 <span className="font-semibold text-sky-300">{insights.averageWinRate.toFixed(0)}%</span>
               </div>
             </div>
@@ -165,8 +165,8 @@ export function OpeningPlayerCard({
         {/* Personalized Recommendations */}
         {insights.recommendations.length > 0 && (
           <div>
-            <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">Personalized Recommendations</p>
-            <ul className="space-y-1 text-sm text-slate-200">
+            <p className="mb-2 text-xs uppercase tracking-wide text-gray-500">Personalized Recommendations</p>
+            <ul className="space-y-1 text-sm text-gray-300">
               {insights.recommendations.map((rec, index) => (
                 <li key={index} className="flex items-start">
                   <span className="mr-2 text-sky-300">•</span>
@@ -179,22 +179,22 @@ export function OpeningPlayerCard({
 
         {/* Key Areas */}
         <div>
-          <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">Key Areas to Focus On</p>
+          <p className="mb-2 text-xs uppercase tracking-wide text-gray-500">Key Areas to Focus On</p>
           <div className="grid grid-cols-1 gap-2">
-            <div className="flex items-center text-sm text-slate-200">
+            <div className="flex items-center text-sm text-gray-300">
               <span className="mr-2 h-2 w-2 rounded-full bg-sky-300"></span>
               Opening theory and principles
             </div>
-            <div className="flex items-center text-sm text-slate-200">
+            <div className="flex items-center text-sm text-gray-300">
               <span className="mr-2 h-2 w-2 rounded-full bg-sky-300"></span>
               Development patterns and piece coordination
             </div>
-            <div className="flex items-center text-sm text-slate-200">
+            <div className="flex items-center text-sm text-gray-300">
               <span className="mr-2 h-2 w-2 rounded-full bg-sky-300"></span>
               Center control and pawn structure
             </div>
             {score < 70 && (
-              <div className="flex items-center text-sm text-slate-200">
+              <div className="flex items-center text-sm text-gray-300">
                 <span className="mr-2 h-2 w-2 rounded-full bg-amber-300"></span>
                 Avoiding early tactical mistakes
               </div>

@@ -5,3 +5,4 @@ dockerfilePath = "python/Dockerfile"
 [deploy]
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+sleepApplication = true

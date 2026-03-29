@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChessData — Premium Warm Neutral Refinements</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .label-tag { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .cheap-tag { background: #7f1d1d; color: #fca5a5; }
+  .premium-tag { background: #064e3b; color: #6ee7b7; }
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+  @media (max-width: 900px) { .compare-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body class="bg-[#0a0a0a] text-gray-200 min-h-screen">
+
+<div class="max-w-6xl mx-auto px-6 py-12">
+  <div class="text-center mb-20">
+    <h1 class="text-3xl font-bold text-white mb-3">Upgrading Warm Neutral to Premium</h1>
+    <p class="text-gray-500 max-w-xl mx-auto">Same neutral palette, but every detail refined. Here's what separates "cheap" from "expensive" in dark UI design.</p>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- WHAT MAKES IT FEEL CHEAP vs PREMIUM -->
+  <!-- ============================================ -->
+  <section class="mb-20">
+    <h2 class="text-xl font-semibold text-white mb-8">The 7 things that separate cheap from premium</h2>
+
+    <div class="space-y-6">
+      <!-- 1. Buttons -->
+      <div class="rounded-xl bg-[#141414] border border-white/[0.06] p-6">
+        <h3 class="text-sm font-semibold text-white mb-1">1. Buttons — padding ratio, weight, radius</h3>
+        <p class="text-xs text-gray-500 mb-5">Cheap buttons are too tall, too bold, too rounded. Premium buttons have generous horizontal padding, medium weight, and subtle radius.</p>
+        <div class="compare-grid">
+          <div>
+            <span class="label-tag cheap-tag">Feels cheap</span>
+            <div class="mt-3 flex gap-3 items-center">
+              <button class="px-4 py-2.5 rounded-lg bg-white text-black text-sm font-bold">Analyze Games</button>
+              <button class="px-4 py-2.5 rounded-lg bg-white/[0.06] text-gray-300 text-sm font-medium border border-white/[0.06]">View History</button>
+            </div>
+            <p class="text-[10px] text-gray-600 mt-2">Equal padding, bold weight, generic radius, flat white</p>
+          </div>
+          <div>
+            <span class="label-tag premium-tag">Feels premium</span>
+            <div class="mt-3 flex gap-3 items-center">
+              <button class="px-6 py-2 rounded-md bg-white text-black text-[13px] font-medium tracking-[-0.01em]" style="box-shadow: 0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);">Analyze Games</button>
+              <button class="px-6 py-2 rounded-md text-gray-400 text-[13px] font-medium tracking-[-0.01em] border border-white/[0.1] hover:text-white hover:border-white/[0.2] transition-colors">View History</button>
+            </div>
+            <p class="text-[10px] text-gray-600 mt-2">Wide horizontal padding, medium weight, tight radius, subtle inner highlight shadow</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Typography -->
+      <div class="rounded-xl bg-[#141414] border border-white/[0.06] p-6">
+        <h3 class="text-sm font-semibold text-white mb-1">2. Typography — tracking, weight contrast, hierarchy</h3>
+        <p class="text-xs text-gray-500 mb-5">Premium UIs use tighter letter-spacing on headings, looser on labels, and much more contrast between heading and body weight.</p>
+        <div class="compare-grid">
+          <div>
+            <span class="label-tag cheap-tag">Feels cheap</span>
+            <div class="mt-3 space-y-1">
+              <p class="text-xs text-gray-500">ACCURACY</p>
+              <p class="text-2xl font-bold text-white">72.4%</p>
+              <p class="text-xs text-gray-500">Last 20 games</p>
+            </div>
+          </div>
+          <div>
+            <span class="label-tag premium-tag">Feels premium</span>
+            <div class="mt-3 space-y-1">
+              <p class="text-[11px] text-gray-500 tracking-[0.08em] font-medium" style="font-variant: all-small-caps;">Accuracy</p>
+              <p class="text-3xl font-semibold text-white tracking-[-0.03em]">72.4%</p>
+              <p class="text-[11px] text-gray-600">Last 20 games</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Borders & dividers -->
+      <div class="rounded-xl bg-[#141414] border border-white/[0.06] p-6">
+        <h3 class="text-sm font-semibold text-white mb-1">3. Borders — opacity and placement</h3>
+        <p class="text-xs text-gray-500 mb-5">Cheap borders are too visible. Premium uses barely-there borders and relies on background elevation for separation.</p>
+        <div class="compare-grid">
+          <div>
+            <span class="label-tag cheap-tag">Feels cheap</span>
+            <div class="mt-3 rounded-lg bg-[#171717] border border-white/[0.08] p-4">
+              <div class="flex justify-between py-2 border-b border-white/[0.08]">
+                <span class="text-xs text-gray-400">vs opponent123</span><span class="text-xs text-emerald-400">W</span>
+              </div>
+              <div class="flex justify-between py-2 border-b border-white/[0.08]">
+                <span class="text-xs text-gray-400">vs grandmaster99</span><span class="text-xs text-rose-400">L</span>
+              </div>
+              <div class="flex justify-between py-2">
+                <span class="text-xs text-gray-400">vs chessfan42</span><span class="text-xs text-gray-500">D</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <span class="label-tag premium-tag">Feels premium</span>
+            <div class="mt-3 rounded-lg bg-[#161616] p-4">
+              <div class="flex justify-between py-2.5">
+                <span class="text-[13px] text-gray-300">vs opponent123</span><span class="text-[13px] text-emerald-400 font-medium">W</span>
+              </div>
+              <div class="h-px bg-white/[0.04]"></div>
+              <div class="flex justify-between py-2.5">
+                <span class="text-[13px] text-gray-300">vs grandmaster99</span><span class="text-[13px] text-rose-400 font-medium">L</span>
+              </div>
+              <div class="h-px bg-white/[0.04]"></div>
+              <div class="flex justify-between py-2.5">
+                <span class="text-[13px] text-gray-300">vs chessfan42</span><span class="text-[13px] text-gray-500 font-medium">D</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Cards -->
+      <div class="rounded-xl bg-[#141414] border border-white/[0.06] p-6">
+        <h3 class="text-sm font-semibold text-white mb-1">4. Cards — surface color, inner spacing, top accent</h3>
+        <p class="text-xs text-gray-500 mb-5">Premium cards use more internal padding, tighter content, and sometimes a subtle top-border accent instead of full border.</p>
+        <div class="compare-grid">
+          <div>
+            <span class="label-tag cheap-tag">Feels cheap</span>
+            <div class="mt-3 rounded-lg bg-[#171717] border border-white/[0.06] p-4">
+              <p class="text-xs text-gray-500 mb-1">Rating</p>
+              <p class="text-2xl font-bold text-white">1,247</p>
+              <p class="text-xs text-emerald-400 mt-1">+23 this week</p>
+            </div>
+          </div>
+          <div>
+            <span class="label-tag premium-tag">Feels premium</span>
+            <div class="mt-3 rounded-lg overflow-hidden" style="background: #161616; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);">
+              <div class="h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent"></div>
+              <div class="p-5">
+                <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Rating</p>
+                <p class="text-3xl font-semibold text-white tracking-[-0.03em]">1,247</p>
+                <p class="text-[11px] text-emerald-400/80 mt-2 font-medium">+23 this week</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. Color temperature -->
+      <div class="rounded-xl bg-[#141414] border border-white/[0.06] p-6">
+        <h3 class="text-sm font-semibold text-white mb-1">5. Surface warmth — pure gray vs warm-tinted</h3>
+        <p class="text-xs text-gray-500 mb-5">Pure #111 feels cheap/flat. A very slight warm or cool tint adds depth. Premium dark UIs are never true neutral gray.</p>
+        <div class="flex gap-4">
+          <div class="flex-1">
+            <span class="label-tag cheap-tag">Pure gray — flat</span>
+            <div class="mt-3 flex gap-2">
+              <div class="flex flex-col items-center gap-1"><div class="w-16 h-12 rounded bg-[#0f0f0f]"></div><span class="text-[9px] text-gray-600">#0f0f0f</span></div>
+              <div class="flex flex-col items-center gap-1"><div class="w-16 h-12 rounded bg-[#171717]"></div><span class="text-[9px] text-gray-600">#171717</span></div>
+              <div class="flex flex-col items-center gap-1"><div class="w-16 h-12 rounded bg-[#1f1f1f]"></div><span class="text-[9px] text-gray-600">#1f1f1f</span></div>
+            </div>
+          </div>
+          <div class="flex-1">
+            <span class="label-tag premium-tag">Warm tint — rich</span>
+            <div class="mt-3 flex gap-2">
+              <div class="flex flex-col items-center gap-1"><div class="w-16 h-12 rounded bg-[#0f0f0e]"></div><span class="text-[9px] text-gray-600">#0f0f0e</span></div>
+              <div class="flex flex-col items-center gap-1"><div class="w-16 h-12 rounded bg-[#181816]"></div><span class="text-[9px] text-gray-600">#181816</span></div>
+              <div class="flex flex-col items-center gap-1"><div class="w-16 h-12 rounded bg-[#212120]"></div><span class="text-[9px] text-gray-600">#212120</span></div>
+            </div>
+          </div>
+          <div class="flex-1">
+            <span class="label-tag premium-tag">Cool tint — sleek</span>
+            <div class="mt-3 flex gap-2">
+              <div class="flex flex-col items-center gap-1"><div class="w-16 h-12 rounded bg-[#0e0f11]"></div><span class="text-[9px] text-gray-600">#0e0f11</span></div>
+              <div class="flex flex-col items-center gap-1"><div class="w-16 h-12 rounded bg-[#161719]"></div><span class="text-[9px] text-gray-600">#161719</span></div>
+              <div class="flex flex-col items-center gap-1"><div class="w-16 h-12 rounded bg-[#1f2023]"></div><span class="text-[9px] text-gray-600">#1f2023</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. Accent refinement -->
+      <div class="rounded-xl bg-[#141414] border border-white/[0.06] p-6">
+        <h3 class="text-sm font-semibold text-white mb-1">6. CTA accent — pure white vs warm/tinted white</h3>
+        <p class="text-xs text-gray-500 mb-5">Pure white CTAs feel like Bootstrap. A warm off-white or very subtle tint reads as intentional and designed.</p>
+        <div class="flex gap-4 flex-wrap">
+          <div class="flex flex-col items-center gap-2">
+            <button class="px-6 py-2 rounded-md bg-white text-black text-[13px] font-medium">Pure white</button>
+            <span class="text-[9px] text-gray-600">#ffffff — generic</span>
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <button class="px-6 py-2 rounded-md text-[#1a1a18] text-[13px] font-medium" style="background: #f5f0e8; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">Warm cream</button>
+            <span class="text-[9px] text-gray-600">#f5f0e8 — luxury</span>
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <button class="px-6 py-2 rounded-md text-black text-[13px] font-medium" style="background: #e8ecf0; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">Cool silver</button>
+            <span class="text-[9px] text-gray-600">#e8ecf0 — sleek</span>
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <button class="px-6 py-2 rounded-md text-black text-[13px] font-medium" style="background: #f0ece4; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">Bone</button>
+            <span class="text-[9px] text-gray-600">#f0ece4 — editorial</span>
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <button class="px-6 py-2 rounded-md text-black text-[13px] font-medium" style="background: #ede9fe; box-shadow: 0 1px 2px rgba(0,0,0,0.3);">Lavender</button>
+            <span class="text-[9px] text-gray-600">#ede9fe — soft premium</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. Micro-interactions -->
+      <div class="rounded-xl bg-[#141414] border border-white/[0.06] p-6">
+        <h3 class="text-sm font-semibold text-white mb-1">7. Hover & focus states — subtle vs obvious</h3>
+        <p class="text-xs text-gray-500 mb-5">Premium hover states are barely perceptible background shifts. Cheap ones jump or change color dramatically.</p>
+        <div class="compare-grid">
+          <div>
+            <span class="label-tag cheap-tag">Feels cheap</span>
+            <div class="mt-3 space-y-1">
+              <div class="px-4 py-2.5 rounded-lg text-sm text-gray-400 hover:bg-white/[0.15] hover:text-white transition-all cursor-pointer">Hover me — jumps too much</div>
+              <div class="px-4 py-2.5 rounded-lg text-sm text-gray-400 hover:bg-white/[0.15] hover:text-white transition-all cursor-pointer">Another item</div>
+            </div>
+          </div>
+          <div>
+            <span class="label-tag premium-tag">Feels premium</span>
+            <div class="mt-3 space-y-0.5">
+              <div class="px-4 py-2.5 rounded-md text-[13px] text-gray-400 hover:bg-white/[0.04] hover:text-gray-200 transition-colors cursor-pointer">Hover me — barely shifts</div>
+              <div class="px-4 py-2.5 rounded-md text-[13px] text-gray-400 hover:bg-white/[0.04] hover:text-gray-200 transition-colors cursor-pointer">Another item</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- VARIANT 1: WARM CREAM -->
+  <!-- ============================================ -->
+  <section class="mb-20 border-t border-white/[0.04] pt-16">
+    <h2 class="text-xl font-semibold text-white mb-1">Variant F1 — Warm Cream Premium</h2>
+    <p class="text-gray-500 text-sm mb-6">Warm-tinted surfaces + cream CTA. Feels like a luxury product. Think Aesop, Apple.</p>
+
+    <div class="rounded-2xl overflow-hidden" style="background: #0e0e0d; box-shadow: 0 0 0 1px rgba(255,255,255,0.04);">
+      <!-- Nav -->
+      <div class="px-6 py-3.5 flex items-center justify-between" style="background: #171716; border-bottom: 1px solid rgba(255,255,255,0.04);">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-semibold" style="background: #f5f0e8; color: #1a1a18;">C</div>
+          <span class="text-white font-semibold text-sm tracking-[-0.01em]">ChessData</span>
+        </div>
+        <div class="flex gap-0.5">
+          <span class="px-3.5 py-1.5 rounded-md bg-white/[0.06] text-white text-[13px] font-medium">Analysis</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Deep</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Coach</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-gray-500 text-[13px]">player1</span>
+          <div class="w-7 h-7 rounded-full bg-[#242422] flex items-center justify-center text-[11px] text-gray-400">M</div>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="max-w-5xl mx-auto px-8 py-10">
+        <div class="mb-10">
+          <h1 class="text-2xl font-semibold text-white tracking-[-0.03em] mb-1">Your Coach</h1>
+          <p class="text-[13px] text-gray-500">Personalized training based on your recent games</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-4 gap-3 mb-10">
+          <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Rating</p>
+              <p class="text-2xl font-semibold text-white tracking-[-0.03em]">1,247</p>
+              <p class="text-[11px] text-emerald-400/80 mt-2 font-medium">+23 this week</p>
+            </div>
+          </div>
+          <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Accuracy</p>
+              <p class="text-2xl font-semibold text-white tracking-[-0.03em]">72.4%</p>
+              <p class="text-[11px] text-gray-600 mt-2">Last 20 games</p>
+            </div>
+          </div>
+          <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Streak</p>
+              <p class="text-2xl font-semibold text-white tracking-[-0.03em]">5 days</p>
+              <p class="text-[11px] text-gray-600 mt-2">Personal best</p>
+            </div>
+          </div>
+          <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Puzzles</p>
+              <p class="text-2xl font-semibold text-white tracking-[-0.03em]">84</p>
+              <p class="text-[11px] text-gray-600 mt-2">Completed</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main content -->
+        <div class="grid grid-cols-3 gap-3">
+          <div class="col-span-2 rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-6">
+              <div class="flex items-center justify-between mb-5">
+                <h2 class="text-[15px] font-semibold text-white tracking-[-0.01em]">Today's Lesson</h2>
+                <span class="text-[11px] tracking-[0.06em] font-medium text-gray-500" style="font-variant: all-small-caps;">Endgames</span>
+              </div>
+              <div class="rounded-md p-4 mb-5" style="background: #1d1d1b;">
+                <p class="text-[13px] text-gray-200 font-medium mb-2">Rook Endgame Fundamentals</p>
+                <p class="text-[12px] text-gray-500 leading-[1.6]">You've struggled with rook endgames in 3 of your last 5 losses. This lesson covers the Lucena and Philidor positions — the two patterns that would have saved those games.</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <button class="px-6 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em]" style="background: #f5f0e8; color: #1a1a18; box-shadow: 0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);">Start Lesson</button>
+                <button class="px-5 py-2 rounded-md text-gray-500 text-[13px] font-medium border border-white/[0.06] hover:text-gray-300 hover:border-white/[0.1] transition-colors">Skip</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+              <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+              <div class="p-5">
+                <h3 class="text-[13px] font-semibold text-white mb-4 tracking-[-0.01em]">Weaknesses</h3>
+                <div class="space-y-3.5">
+                  <div>
+                    <div class="flex justify-between text-[11px] mb-1.5">
+                      <span class="text-gray-400">Endgames</span>
+                      <span class="text-rose-400/80 font-medium">38%</span>
+                    </div>
+                    <div class="h-1 rounded-full bg-white/[0.04]">
+                      <div class="h-1 rounded-full bg-rose-400/50 w-[38%]"></div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-[11px] mb-1.5">
+                      <span class="text-gray-400">Tactics</span>
+                      <span class="text-amber-400/80 font-medium">52%</span>
+                    </div>
+                    <div class="h-1 rounded-full bg-white/[0.04]">
+                      <div class="h-1 rounded-full bg-amber-400/50 w-[52%]"></div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-[11px] mb-1.5">
+                      <span class="text-gray-400">Openings</span>
+                      <span class="text-emerald-400/80 font-medium">78%</span>
+                    </div>
+                    <div class="h-1 rounded-full bg-white/[0.04]">
+                      <div class="h-1 rounded-full bg-emerald-400/50 w-[78%]"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+              <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+              <div class="p-5">
+                <h3 class="text-[13px] font-semibold text-white mb-4 tracking-[-0.01em]">Recent Games</h3>
+                <div class="space-y-0">
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-[13px] text-gray-300">vs opponent123</span>
+                    <span class="text-[13px] text-emerald-400/80 font-medium">W</span>
+                  </div>
+                  <div class="h-px bg-white/[0.03]"></div>
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-[13px] text-gray-300">vs grandmaster99</span>
+                    <span class="text-[13px] text-rose-400/80 font-medium">L</span>
+                  </div>
+                  <div class="h-px bg-white/[0.03]"></div>
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-[13px] text-gray-300">vs chessfan42</span>
+                    <span class="text-[13px] text-gray-500 font-medium">D</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- VARIANT 2: COOL SILVER -->
+  <!-- ============================================ -->
+  <section class="mb-20 border-t border-white/[0.04] pt-16">
+    <h2 class="text-xl font-semibold text-white mb-1">Variant F2 — Cool Silver Premium</h2>
+    <p class="text-gray-500 text-sm mb-6">Cool-tinted surfaces + silver CTA. More technical, analytical. Think Stripe, Raycast.</p>
+
+    <div class="rounded-2xl overflow-hidden" style="background: #0c0d0f; box-shadow: 0 0 0 1px rgba(255,255,255,0.04);">
+      <div class="px-6 py-3.5 flex items-center justify-between" style="background: #151618; border-bottom: 1px solid rgba(255,255,255,0.04);">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-semibold" style="background: #e4e8ed; color: #111;">C</div>
+          <span class="text-white font-semibold text-sm tracking-[-0.01em]">ChessData</span>
+        </div>
+        <div class="flex gap-0.5">
+          <span class="px-3.5 py-1.5 rounded-md bg-white/[0.06] text-white text-[13px] font-medium">Analysis</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Deep</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Coach</span>
+        </div>
+        <div class="w-7 h-7 rounded-full bg-[#222328] flex items-center justify-center text-[11px] text-gray-400">M</div>
+      </div>
+
+      <div class="max-w-5xl mx-auto px-8 py-10">
+        <div class="mb-10">
+          <h1 class="text-2xl font-semibold text-white tracking-[-0.03em] mb-1">Your Coach</h1>
+          <p class="text-[13px] text-gray-500">Personalized training based on your recent games</p>
+        </div>
+
+        <div class="grid grid-cols-4 gap-3 mb-10">
+          <div class="rounded-lg overflow-hidden" style="background: #151618; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Rating</p>
+              <p class="text-2xl font-semibold text-white tracking-[-0.03em]">1,247</p>
+              <p class="text-[11px] text-emerald-400/80 mt-2 font-medium">+23 this week</p>
+            </div>
+          </div>
+          <div class="rounded-lg overflow-hidden" style="background: #151618; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Accuracy</p>
+              <p class="text-2xl font-semibold text-white tracking-[-0.03em]">72.4%</p>
+              <p class="text-[11px] text-gray-600 mt-2">Last 20 games</p>
+            </div>
+          </div>
+          <div class="rounded-lg overflow-hidden" style="background: #151618; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Streak</p>
+              <p class="text-2xl font-semibold text-white tracking-[-0.03em]">5 days</p>
+              <p class="text-[11px] text-gray-600 mt-2">Personal best</p>
+            </div>
+          </div>
+          <div class="rounded-lg overflow-hidden" style="background: #151618; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Puzzles</p>
+              <p class="text-2xl font-semibold text-white tracking-[-0.03em]">84</p>
+              <p class="text-[11px] text-gray-600 mt-2">Completed</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div class="col-span-2 rounded-lg overflow-hidden" style="background: #151618; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-6">
+              <div class="flex items-center justify-between mb-5">
+                <h2 class="text-[15px] font-semibold text-white tracking-[-0.01em]">Today's Lesson</h2>
+                <span class="text-[11px] tracking-[0.06em] font-medium text-gray-500" style="font-variant: all-small-caps;">Endgames</span>
+              </div>
+              <div class="rounded-md p-4 mb-5" style="background: #1c1d20;">
+                <p class="text-[13px] text-gray-200 font-medium mb-2">Rook Endgame Fundamentals</p>
+                <p class="text-[12px] text-gray-500 leading-[1.6]">You've struggled with rook endgames in 3 of your last 5 losses. This lesson covers the Lucena and Philidor positions — the two patterns that would have saved those games.</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <button class="px-6 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em]" style="background: #e4e8ed; color: #111; box-shadow: 0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3);">Start Lesson</button>
+                <button class="px-5 py-2 rounded-md text-gray-500 text-[13px] font-medium border border-white/[0.06] hover:text-gray-300 transition-colors">Skip</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-lg overflow-hidden" style="background: #151618; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <h3 class="text-[13px] font-semibold text-white mb-4 tracking-[-0.01em]">Weaknesses</h3>
+              <div class="space-y-3.5">
+                <div>
+                  <div class="flex justify-between text-[11px] mb-1.5">
+                    <span class="text-gray-400">Endgames</span>
+                    <span class="text-rose-400/80 font-medium">38%</span>
+                  </div>
+                  <div class="h-1 rounded-full bg-white/[0.04]">
+                    <div class="h-1 rounded-full bg-rose-400/50 w-[38%]"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-[11px] mb-1.5">
+                    <span class="text-gray-400">Tactics</span>
+                    <span class="text-amber-400/80 font-medium">52%</span>
+                  </div>
+                  <div class="h-1 rounded-full bg-white/[0.04]">
+                    <div class="h-1 rounded-full bg-amber-400/50 w-[52%]"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-[11px] mb-1.5">
+                    <span class="text-gray-400">Openings</span>
+                    <span class="text-emerald-400/80 font-medium">78%</span>
+                  </div>
+                  <div class="h-1 rounded-full bg-white/[0.04]">
+                    <div class="h-1 rounded-full bg-emerald-400/50 w-[78%]"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- VARIANT 3: BONE + SERIF ACCENT -->
+  <!-- ============================================ -->
+  <section class="mb-20 border-t border-white/[0.04] pt-16">
+    <h2 class="text-xl font-semibold text-white mb-1">Variant F3 — Editorial Bone</h2>
+    <p class="text-gray-500 text-sm mb-6">Serif accent for headings + bone-white CTA + warm surfaces. Most distinctive and premium. Think high-end magazine meets data tool.</p>
+
+    <div class="rounded-2xl overflow-hidden" style="background: #0e0e0d; box-shadow: 0 0 0 1px rgba(255,255,255,0.04);">
+      <div class="px-6 py-3.5 flex items-center justify-between" style="background: #171716; border-bottom: 1px solid rgba(255,255,255,0.04);">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md flex items-center justify-center font-semibold" style="background: #f0ece4; color: #1a1a18; font-family: 'Instrument Serif', serif; font-size: 15px;">C</div>
+          <span class="text-white font-semibold text-sm tracking-[-0.01em]">ChessData</span>
+        </div>
+        <div class="flex gap-0.5">
+          <span class="px-3.5 py-1.5 rounded-md bg-white/[0.06] text-white text-[13px] font-medium">Analysis</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Deep</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Coach</span>
+        </div>
+        <div class="w-7 h-7 rounded-full bg-[#242422] flex items-center justify-center text-[11px] text-gray-400">M</div>
+      </div>
+
+      <div class="max-w-5xl mx-auto px-8 py-10">
+        <div class="mb-10">
+          <h1 class="text-3xl text-white tracking-[-0.02em] mb-1" style="font-family: 'Instrument Serif', serif; font-weight: 400;">Your Coach</h1>
+          <p class="text-[13px] text-gray-500">Personalized training based on your recent games</p>
+        </div>
+
+        <div class="grid grid-cols-4 gap-3 mb-10">
+          <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Rating</p>
+              <p class="text-3xl text-white tracking-[-0.02em]" style="font-family: 'Instrument Serif', serif;">1,247</p>
+              <p class="text-[11px] text-emerald-400/80 mt-2 font-medium">+23 this week</p>
+            </div>
+          </div>
+          <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Accuracy</p>
+              <p class="text-3xl text-white tracking-[-0.02em]" style="font-family: 'Instrument Serif', serif;">72.4%</p>
+              <p class="text-[11px] text-gray-600 mt-2">Last 20 games</p>
+            </div>
+          </div>
+          <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Streak</p>
+              <p class="text-3xl text-white tracking-[-0.02em]" style="font-family: 'Instrument Serif', serif;">5 days</p>
+              <p class="text-[11px] text-gray-600 mt-2">Personal best</p>
+            </div>
+          </div>
+          <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <p class="text-[11px] text-gray-500 tracking-[0.06em] font-medium mb-1.5" style="font-variant: all-small-caps;">Puzzles</p>
+              <p class="text-3xl text-white tracking-[-0.02em]" style="font-family: 'Instrument Serif', serif;">84</p>
+              <p class="text-[11px] text-gray-600 mt-2">Completed</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div class="col-span-2 rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-6">
+              <div class="flex items-center justify-between mb-5">
+                <h2 class="text-xl text-white tracking-[-0.01em]" style="font-family: 'Instrument Serif', serif;">Today's Lesson</h2>
+                <span class="text-[11px] tracking-[0.06em] font-medium text-gray-500" style="font-variant: all-small-caps;">Endgames</span>
+              </div>
+              <div class="rounded-md p-4 mb-5" style="background: #1d1d1b;">
+                <p class="text-[13px] text-gray-200 font-medium mb-2">Rook Endgame Fundamentals</p>
+                <p class="text-[12px] text-gray-500 leading-[1.6]">You've struggled with rook endgames in 3 of your last 5 losses. This lesson covers the Lucena and Philidor positions — the two patterns that would have saved those games.</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <button class="px-6 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em]" style="background: #f0ece4; color: #1a1a18; box-shadow: 0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2);">Start Lesson</button>
+                <button class="px-5 py-2 rounded-md text-gray-500 text-[13px] font-medium border border-white/[0.06] hover:text-gray-300 transition-colors">Skip</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-lg overflow-hidden" style="background: #161615; box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.15);">
+            <div class="h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent"></div>
+            <div class="p-5">
+              <h3 class="text-base text-white mb-4 tracking-[-0.01em]" style="font-family: 'Instrument Serif', serif;">Weaknesses</h3>
+              <div class="space-y-3.5">
+                <div>
+                  <div class="flex justify-between text-[11px] mb-1.5">
+                    <span class="text-gray-400">Endgames</span>
+                    <span class="text-rose-400/80 font-medium">38%</span>
+                  </div>
+                  <div class="h-1 rounded-full bg-white/[0.04]">
+                    <div class="h-1 rounded-full bg-rose-400/50 w-[38%]"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-[11px] mb-1.5">
+                    <span class="text-gray-400">Tactics</span>
+                    <span class="text-amber-400/80 font-medium">52%</span>
+                  </div>
+                  <div class="h-1 rounded-full bg-white/[0.04]">
+                    <div class="h-1 rounded-full bg-amber-400/50 w-[52%]"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-[11px] mb-1.5">
+                    <span class="text-gray-400">Openings</span>
+                    <span class="text-emerald-400/80 font-medium">78%</span>
+                  </div>
+                  <div class="h-1 rounded-full bg-white/[0.04]">
+                    <div class="h-1 rounded-full bg-emerald-400/50 w-[78%]"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Summary -->
+  <section class="border-t border-white/[0.04] pt-16 mb-16">
+    <h2 class="text-xl font-semibold text-white mb-6">What changed vs. the "cheap" version</h2>
+    <div class="grid grid-cols-2 gap-6">
+      <div class="space-y-4 text-[13px]">
+        <div>
+          <p class="text-white font-medium mb-1">Buttons</p>
+          <p class="text-gray-500">Wider horizontal padding (px-6), shorter height (py-2), tighter radius (rounded-md), inner highlight shadow, tinted CTA color instead of pure white</p>
+        </div>
+        <div>
+          <p class="text-white font-medium mb-1">Typography</p>
+          <p class="text-gray-500">Negative letter-spacing on large numbers/headings, small-caps labels with wide tracking, 13px body text (not 12 or 14), font-semibold not font-bold</p>
+        </div>
+        <div>
+          <p class="text-white font-medium mb-1">Cards</p>
+          <p class="text-gray-500">Ring shadow (0 0 0 1px) instead of border, subtle top-edge highlight gradient, more internal padding, warm/cool-tinted background</p>
+        </div>
+      </div>
+      <div class="space-y-4 text-[13px]">
+        <div>
+          <p class="text-white font-medium mb-1">Surfaces</p>
+          <p class="text-gray-500">Never pure gray — either warm (#161615) or cool (#151618) tint. 3 levels max. Dividers at 3-4% opacity, not 6-8%</p>
+        </div>
+        <div>
+          <p class="text-white font-medium mb-1">Hover states</p>
+          <p class="text-gray-500">bg-white/[0.04] max — barely perceptible. transition-colors only (not transition-all). Text shifts from gray-500 to gray-300, never to white</p>
+        </div>
+        <div>
+          <p class="text-white font-medium mb-1">Spacing</p>
+          <p class="text-gray-500">More generous top-level padding (py-10, px-8). Tighter internal gaps (gap-3 not gap-4). Asymmetric padding where appropriate</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="text-center py-8 text-xs text-gray-600">
+    Pick F1 (Warm Cream), F2 (Cool Silver), or F3 (Editorial Bone) — or mix elements.
+  </footer>
+</div>
+
+</body>
+</html>

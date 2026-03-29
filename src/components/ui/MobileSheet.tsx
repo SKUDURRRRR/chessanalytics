@@ -17,7 +17,7 @@ export function MobileSheet({ isOpen, onClose, title, children, className = '' }
     if (isOpen) {
       // Prevent body scroll when sheet is open
       document.body.style.overflow = 'hidden'
-      
+
       // Focus management
       const focusableElements = sheetRef.current?.querySelectorAll(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -52,7 +52,7 @@ export function MobileSheet({ isOpen, onClose, title, children, className = '' }
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm lg:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[#0c0d0f]/90 lg:items-center"
       onClick={(e) => {
         if (e.target === overlayRef.current) {
           onClose()
@@ -61,7 +61,7 @@ export function MobileSheet({ isOpen, onClose, title, children, className = '' }
     >
       <div
         ref={sheetRef}
-        className={`w-full max-w-lg bg-slate-900 border-t border-white/10 lg:border lg:rounded-2xl lg:max-h-[90vh] lg:overflow-hidden animate-slide-up lg:animate-scale-in ${className}`}
+        className={`w-full max-w-lg bg-surface-1 border-t border-white/10 lg:border-t-0 lg:shadow-card lg:rounded-lg lg:max-h-[90vh] lg:overflow-hidden animate-slide-up lg:animate-scale-in ${className}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? 'sheet-title' : undefined}
@@ -74,7 +74,7 @@ export function MobileSheet({ isOpen, onClose, title, children, className = '' }
             </h2>
             <button
               onClick={onClose}
-              className="btn-touch-sm rounded-full border border-white/10 bg-white/10 text-slate-300 hover:text-white hover:bg-white/20 transition-colors"
+              className="btn-touch-sm rounded-full shadow-card bg-white/10 text-gray-400 hover:text-white hover:bg-white/20 transition-colors"
               aria-label="Close"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -7,25 +7,25 @@ import { ModernChessArrows } from '../chess/ModernChessArrows'
 
 const MoveClassificationBadge = ({ classification }: { classification: string }) => {
   const classificationColors = {
-    brilliant: 'border border-purple-400/40 bg-purple-500/20 text-purple-200',
-    best: 'border border-emerald-400/40 bg-emerald-500/20 text-emerald-200',
-    great: 'border border-teal-400/40 bg-teal-500/20 text-teal-200',
-    excellent: 'border border-cyan-400/40 bg-cyan-500/20 text-cyan-200',
-    good: 'border border-sky-400/40 bg-sky-500/20 text-sky-200',
-    acceptable: 'border border-slate-400/40 bg-slate-500/20 text-slate-200',
-    inaccuracy: 'border border-amber-400/40 bg-amber-500/20 text-amber-200',
-    mistake: 'border border-orange-400/40 bg-orange-500/20 text-orange-200',
-    blunder: 'border border-rose-400/40 bg-rose-500/20 text-rose-200',
-    uncategorized: 'border border-slate-400/30 bg-slate-500/10 text-slate-200'
+    brilliant: 'shadow-card bg-purple-500/20 text-purple-200',
+    best: 'shadow-card bg-emerald-500/20 text-emerald-200',
+    excellent: 'shadow-card bg-cyan-500/20 text-cyan-200',  // Merged great+excellent
+    great: 'shadow-card bg-cyan-500/20 text-cyan-200',  // Alias for excellent
+    good: 'shadow-card bg-sky-500/20 text-sky-200',  // Merged good+acceptable
+    acceptable: 'shadow-card bg-sky-500/20 text-sky-200',  // Alias for good
+    inaccuracy: 'shadow-card bg-amber-500/20 text-amber-200',
+    mistake: 'shadow-card bg-orange-500/20 text-orange-200',
+    blunder: 'shadow-card bg-rose-500/20 text-rose-200',
+    uncategorized: 'shadow-card bg-white/[0.04] text-gray-300'
   }
 
   const classificationLabels = {
     brilliant: 'Brilliant',  // Spectacular tactical move with sacrifice or forced mate
     best: 'Best',            // Chess.com: The chess engine's top choice
-    great: 'Great',          // Very strong move, nearly optimal
-    excellent: 'Excellent',  // Chess.com: Almost as good as the best move
-    good: 'Good',            // Chess.com: A decent move, but not the best
-    acceptable: 'Book',      // Chess.com: A conventional opening move
+    excellent: 'Excellent',  // Merged: Nearly optimal (5-25cp loss)
+    great: 'Excellent',      // Alias: Maps to excellent
+    good: 'Good',            // Merged: Solid play (25-100cp loss)
+    acceptable: 'Good',      // Alias: Maps to good
     inaccuracy: 'Inaccuracy', // Chess.com: A weak move
     mistake: 'Mistake',      // Chess.com: A bad move that immediately worsens your position
     blunder: 'Blunder',      // Chess.com: A very bad move that loses material or the game
@@ -130,7 +130,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
   }
 
   const getEvaluationColor = (evaluation: { type: 'cp' | 'mate'; value: number } | null) => {
-    if (!evaluation) return 'text-slate-400'
+    if (!evaluation) return 'text-gray-500'
 
     if (evaluation.type === 'mate') {
       return evaluation.value > 0 ? 'text-green-400' : 'text-red-400'
@@ -139,13 +139,13 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
     const score = evaluation.value
     if (score > 200) return 'text-green-400'
     if (score > 50) return 'text-green-300'
-    if (score > -50) return 'text-slate-300'
+    if (score > -50) return 'text-gray-400'
     if (score > -200) return 'text-red-300'
     return 'text-red-400'
   }
 
   const getEvaluationBarData = (evaluation: { type: 'cp' | 'mate'; value: number } | null) => {
-    if (!evaluation) return { percentage: 50, color: 'bg-slate-500', text: '0.0' }
+    if (!evaluation) return { percentage: 50, color: 'bg-gray-500', text: '0.0' }
 
     if (evaluation.type === 'mate') {
       const isWhiteWinning = evaluation.value > 0
@@ -161,10 +161,10 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
     const clampedScore = Math.max(-maxScore, Math.min(maxScore, score))
     const percentage = 50 + (clampedScore / maxScore) * 50
 
-    let color = 'bg-slate-500'
+    let color = 'bg-gray-500'
     if (score > 200) color = 'bg-green-500'
     else if (score > 50) color = 'bg-green-400'
-    else if (score > -50) color = 'bg-slate-500'
+    else if (score > -50) color = 'bg-gray-500'
     else if (score > -200) color = 'bg-red-400'
     else color = 'bg-red-500'
 
@@ -311,7 +311,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
   return (
     <div className={`space-y-2 w-full max-w-[400px] ${className}`}>
       {/* Board with custom coordinate styling */}
-      <div className="relative bg-slate-800/20 rounded-lg p-4 pb-6">
+      <div className="relative bg-surface-2/20 rounded-lg p-4 pb-6">
         <style>{`
           #critical-moment-${move.index} .react-chessboard-notation {
             font-size: 5px !important;
@@ -365,18 +365,18 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
       </div>
 
       {/* Move Info Header */}
-      <div className="text-center bg-slate-800/30 rounded-lg p-2">
-        <div className="text-base font-bold text-white">
+      <div className="text-center bg-surface-2/30 rounded-lg p-2">
+        <div className="text-sm font-semibold text-white">
           Move {move.moveNumber} • {move.player === 'white' ? 'White' : 'Black'}
         </div>
         <div className="flex items-center justify-center gap-2 mt-0.5">
-          <div className="text-sm font-bold text-emerald-300">
+          <div className="text-sm font-semibold text-emerald-300">
             {move.san}
           </div>
           <MoveClassificationBadge classification={move.classification} />
         </div>
         {move.bestMoveSan && (
-          <div className="text-xs text-slate-400 mt-0.5">
+          <div className="text-xs text-gray-500 mt-0.5">
             Best: <span className="text-emerald-300 font-semibold">{move.bestMoveSan}</span>
           </div>
         )}
@@ -387,7 +387,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
         <button
           onClick={() => navigateToMove('first')}
           disabled={!canGoBack}
-          className="rounded p-1 text-[10px] bg-slate-600/20 text-slate-300 transition hover:bg-slate-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded p-1 text-[10px] bg-surface-3/30 text-gray-400 transition hover:bg-surface-3/50 disabled:opacity-30 disabled:cursor-not-allowed"
           title="First move"
         >
           ⏮
@@ -395,7 +395,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
         <button
           onClick={() => navigateToMove('prev')}
           disabled={!canGoBack}
-          className="rounded p-1 text-[10px] bg-slate-600/20 text-slate-300 transition hover:bg-slate-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded p-1 text-[10px] bg-surface-3/30 text-gray-400 transition hover:bg-surface-3/50 disabled:opacity-30 disabled:cursor-not-allowed"
           title="Previous move"
         >
           ◀
@@ -405,7 +405,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
           className={`rounded p-1 text-[10px] transition ${
             isAtCriticalMove
               ? 'bg-amber-500/30 text-amber-200'
-              : 'bg-amber-600/20 text-slate-300 hover:bg-amber-600/40'
+              : 'bg-amber-600/20 text-gray-400 hover:bg-amber-600/40'
           }`}
           title="Go to critical moment"
         >
@@ -414,7 +414,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
         <button
           onClick={() => navigateToMove('next')}
           disabled={!canGoForward}
-          className="rounded p-1 text-[10px] bg-slate-600/20 text-slate-300 transition hover:bg-slate-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded p-1 text-[10px] bg-surface-3/30 text-gray-400 transition hover:bg-surface-3/50 disabled:opacity-30 disabled:cursor-not-allowed"
           title="Next move"
         >
           ▶
@@ -422,7 +422,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
         <button
           onClick={() => navigateToMove('last')}
           disabled={!canGoForward}
-          className="rounded p-1 text-[10px] bg-slate-600/20 text-slate-300 transition hover:bg-slate-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded p-1 text-[10px] bg-surface-3/30 text-gray-400 transition hover:bg-surface-3/50 disabled:opacity-30 disabled:cursor-not-allowed"
           title="Last move"
         >
           ⏭
@@ -436,7 +436,7 @@ export function CriticalMomentBoard({ move, allMoves, playerColor, className = '
           className={`w-full rounded py-1 text-[10px] font-medium transition ${
             showBestMove
               ? 'bg-emerald-500/20 text-emerald-200'
-              : 'bg-slate-600/20 text-slate-300 hover:bg-slate-600/40'
+              : 'bg-surface-3/30 text-gray-400 hover:bg-surface-3/50'
           }`}
         >
           {showBestMove ? '✓ Best' : 'Show Best'}

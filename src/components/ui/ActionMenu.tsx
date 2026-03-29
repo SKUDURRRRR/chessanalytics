@@ -72,10 +72,10 @@ export function ActionMenu({ trigger, actions, title = 'Actions', className = ''
       {isOpen && (
         <div
           ref={menuRef}
-          className="absolute right-0 top-full z-50 mt-2 w-48 rounded-lg border border-white/10 bg-slate-800 py-2 shadow-xl shadow-black/50"
+          className="absolute right-0 top-full z-50 mt-2 w-48 rounded-lg bg-surface-2 py-2 shadow-card"
         >
           {title && (
-            <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+            <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
               {title}
             </div>
           )}
@@ -86,12 +86,12 @@ export function ActionMenu({ trigger, actions, title = 'Actions', className = ''
               disabled={action.disabled}
               className={`w-full px-3 py-2 text-left text-sm transition ${
                 action.disabled
-                  ? 'cursor-not-allowed text-slate-500'
-                  : 'text-slate-200 hover:bg-white/10'
+                  ? 'cursor-not-allowed text-gray-500'
+                  : 'text-gray-300 hover:bg-white/10'
               }`}
             >
               <div className="flex items-center gap-2">
-                {action.icon && <span className="text-base">{action.icon}</span>}
+                {action.icon && <span className="text-sm">{action.icon}</span>}
                 <span>{action.label}</span>
               </div>
             </button>

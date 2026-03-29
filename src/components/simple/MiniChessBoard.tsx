@@ -39,14 +39,14 @@ export function MiniChessBoard({ gameId, result, opening, totalMoves, className 
   return (
     <div className={`relative ${className}`}>
       {/* Mini Chess Board Placeholder */}
-      <div className={`flex h-16 w-16 items-center justify-center rounded-xl border-2 ${getResultColor(result)} shadow-lg shadow-black/30`}>
+      <div className={`flex h-16 w-16 items-center justify-center rounded-xl border-2 ${getResultColor(result)} shadow-card`}>
         <div className="text-center font-semibold">
           <div className="text-lg">{getResultIcon(result)}</div>
           <div className="text-[10px] uppercase tracking-wide">{getResultText(result)}</div>
         </div>
       </div>
-      
-      
+
+
     </div>
   )
 }
