@@ -829,9 +829,6 @@ export default function SimpleAnalyticsPage() {
             <div className="flex items-center justify-between pb-4">
               {/* Left: Avatar + Name + Meta */}
               <div className="flex items-center gap-3.5">
-                <div className="w-[42px] h-[42px] rounded-[10px] bg-surface-2 shadow-card flex items-center justify-center text-[18px] font-medium text-[#7a8290] shrink-0">
-                  {(viewMode === 'combined' ? userId : userId).charAt(0).toUpperCase()}
-                </div>
                 <div>
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-[18px] font-medium tracking-tight text-[#e4e8ed]">
