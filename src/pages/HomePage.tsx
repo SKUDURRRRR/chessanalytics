@@ -151,7 +151,7 @@ export default function HomePage() {
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='0' y='0' width='30' height='30' fill='rgba(255,255,255,0.018)'/%3E%3Crect x='30' y='30' width='30' height='30' fill='rgba(255,255,255,0.018)'/%3E%3C/svg%3E")`,
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='0' y='0' width='30' height='30' fill='rgba(255,255,255,0.07)'/%3E%3Crect x='30' y='30' width='30' height='30' fill='rgba(255,255,255,0.07)'/%3E%3C/svg%3E")`,
             maskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 0%, transparent 100%)',
             WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 0%, transparent 100%)',
           }}
@@ -165,7 +165,7 @@ export default function HomePage() {
             transform: 'translate(-50%, -50%)',
             width: 600,
             height: 400,
-            background: 'radial-gradient(ellipse at center, rgba(180,195,215,0.04) 0%, rgba(180,195,215,0.02) 40%, transparent 70%)',
+            background: 'radial-gradient(ellipse at center, rgba(180,195,215,0.06) 0%, rgba(180,195,215,0.03) 40%, transparent 70%)',
           }}
         />
       <div ref={searchRef} className="relative px-6 pt-20 pb-16 sm:pt-28 sm:pb-20 text-center max-w-2xl mx-auto">
