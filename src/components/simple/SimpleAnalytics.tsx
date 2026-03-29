@@ -1050,23 +1050,134 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           {/* Game Style (LongTermPlanner) */}
           <LongTermPlanner data={deepAnalysisData} userId={userId} />
 
-          {/* Personality Radar + Enhanced Opening Analysis */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-[10px]">
+          {/* Personality Radar + Player Match */}
+          <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-[10px]">
             {deepAnalysisData.personality_scores && (
               <div className={`${cardClass} p-[18px_20px]`}>
                 <PersonalityRadar scores={deepAnalysisData.personality_scores} />
               </div>
             )}
             <div className={`${cardClass} p-[18px_20px]`}>
-              <EnhancedOpeningPlayerCard
-                score={deepAnalysisData.phase_accuracies?.opening || 0}
-                phaseAccuracy={deepAnalysisData.phase_accuracies?.opening || 0}
-                openingStats={comprehensiveData?.openingStats || []}
-                totalGames={deepAnalysisData.total_games || 0}
-                enhancedAnalysis={deepAnalysisData.enhanced_opening_analysis}
-                personalityScores={deepAnalysisData.personality_scores}
-              />
+              <div className="text-[12px] font-medium uppercase tracking-[0.07em] text-[#5a6270] mb-3.5">Player with Similar Style</div>
+              {deepAnalysisData.famous_players?.primary ? (
+                <>
+                  <div className="flex items-center justify-between mb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-[#4a5260] shrink-0" />
+                      <span className="text-[15px] font-medium text-[#c8cdd4]">{deepAnalysisData.famous_players.primary.name}</span>
+                    </div>
+                    {deepAnalysisData.famous_players.primary.similarity_score && (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded bg-emerald-400/[0.08] text-emerald-400">
+                        {deepAnalysisData.famous_players.primary.similarity_score.toFixed(0)}% match
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-[#4a5260] mb-0.5">{deepAnalysisData.famous_players.primary.description}</div>
+                  <div className="text-[11px] uppercase tracking-[0.07em] text-[#3a4250] mb-3">Era: {deepAnalysisData.famous_players.primary.era}</div>
+                  {/* Data-driven insights */}
+                  {deepAnalysisData.famous_players.primary.trait_similarities && deepAnalysisData.personality_scores && (() => {
+                    const ts = deepAnalysisData.famous_players!.primary!.trait_similarities!
+                    const ps = deepAnalysisData.personality_scores!
+                    const name = deepAnalysisData.famous_players!.primary!.name
+                    const traits = (['tactical', 'positional', 'aggressive', 'patient', 'novelty', 'staleness'] as const)
+                      .map(t => ({
+                        trait: t,
+                        yours: Math.round(ps[t] ?? 0),
+                        theirs: Math.round(ts[t]),
+                        match: Math.round(Math.max(0, 100 - Math.abs((ps[t] ?? 0) - ts[t]) * 2))
+                      }))
+                      .filter(t => t.theirs != null)
+                    const closest = [...traits].sort((a, b) => b.match - a.match)[0]
+                    const furthest = [...traits].sort((a, b) => a.match - b.match)[0]
+                    const strongestShared = [...traits].filter(t => t.yours >= 70 && t.theirs >= 70).sort((a, b) => b.yours - a.yours)[0]
+                    const insights: string[] = []
+                    if (closest) {
+                      insights.push(`Your ${closest.trait} (${closest.yours}) closely mirrors ${name}'s ${closest.theirs} — ${closest.match}% match`)
+                    }
+                    if (strongestShared && strongestShared.trait !== closest?.trait) {
+                      insights.push(`You both share strong ${strongestShared.trait} play (yours: ${strongestShared.yours}, ${name}: ${strongestShared.theirs})`)
+                    }
+                    if (furthest && furthest.match < 70) {
+                      insights.push(`Biggest gap in ${furthest.trait}: yours ${furthest.yours} vs ${name}'s ${furthest.theirs} (${furthest.match}% match)`)
+                    }
+                    return insights.length > 0 ? (
+                      <ul className="flex flex-col gap-1.5 mb-3">
+                        {insights.map((line, i) => (
+                          <li key={i} className="text-xs text-[#4a5260] flex gap-2 leading-relaxed">
+                            <span className="text-[#2a3040] shrink-0">-</span>
+                            <span>{line}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null
+                  })()}
+                  {/* Trait Similarity Breakdown */}
+                  {deepAnalysisData.famous_players.primary.trait_similarities && deepAnalysisData.personality_scores && (
+                    <div className="mt-4 mb-3">
+                      <div className="text-[11px] uppercase tracking-[0.07em] text-[#3a4250] mb-2.5">Trait Comparison</div>
+                      <div className="flex flex-col gap-2">
+                        {(['tactical', 'positional', 'aggressive', 'patient', 'novelty', 'staleness'] as const).map((trait) => {
+                          const playerScore = Math.round(deepAnalysisData.personality_scores?.[trait] ?? 0)
+                          const famousScore = Math.round(deepAnalysisData.famous_players!.primary!.trait_similarities![trait])
+                          if (famousScore == null) return null
+                          const diff = Math.abs(playerScore - famousScore)
+                          const matchPct = Math.round(Math.max(0, 100 - diff * 2))
+                          return (
+                            <div key={trait} className="flex items-center gap-3">
+                              <div className="text-[11px] text-[#4a5260] w-[70px] capitalize shrink-0">{trait}</div>
+                              <div className="flex-1 flex items-center gap-2">
+                                <div className="flex-1 h-[3px] rounded-full bg-white/[0.04] overflow-hidden relative">
+                                  <div
+                                    className="absolute top-0 left-0 h-full rounded-full bg-emerald-400/30"
+                                    style={{ width: `${playerScore}%` }}
+                                  />
+                                  <div
+                                    className="absolute top-0 h-full w-[2px] bg-[#5a6270]"
+                                    style={{ left: `${famousScore}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="text-[11px] text-[#4a5260] w-[52px] text-right shrink-0">
+                                <span className="text-[#8a9299]">{playerScore}</span>
+                                <span className="text-[#2a3040] mx-0.5">/</span>
+                                <span>{famousScore}</span>
+                              </div>
+                              <span className={`text-[10px] font-medium w-[36px] text-right shrink-0 ${
+                                matchPct >= 90 ? 'text-emerald-400' : matchPct >= 70 ? 'text-amber-400' : 'text-[#4a5260]'
+                              }`}>{matchPct}%</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {deepAnalysisData.famous_players.primary.strengths && deepAnalysisData.famous_players.primary.strengths.length > 0 && (
+                    <div className="flex gap-1.5 flex-wrap mt-3">
+                      {deepAnalysisData.famous_players.primary.strengths.map((s, i) => (
+                        <span key={i} className="px-2.5 py-[3px] rounded-full bg-white/[0.04] shadow-card text-[11px] text-[#5a6270]">{s}</span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-xs text-[#3a4250] py-4">Famous player comparison will appear once deep analysis is complete.</div>
+              )}
             </div>
+          </div>
+
+          {/* Section Break: Opening Analysis */}
+          <SectionBreak label="Opening Analysis" />
+
+          {/* Enhanced Opening Analysis - Full Width */}
+          <div className={`${cardClass} p-[18px_20px]`}>
+            <EnhancedOpeningPlayerCard
+              score={deepAnalysisData.phase_accuracies?.opening || 0}
+              phaseAccuracy={deepAnalysisData.phase_accuracies?.opening || 0}
+              openingStats={comprehensiveData?.openingStats || []}
+              totalGames={deepAnalysisData.total_games || 0}
+              enhancedAnalysis={deepAnalysisData.enhanced_opening_analysis}
+              personalityScores={deepAnalysisData.personality_scores}
+            />
           </div>
         </>
       )}
