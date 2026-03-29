@@ -146,7 +146,29 @@ export default function HomePage() {
   return (
     <div className="relative min-h-screen bg-surface-base text-gray-300">
       {/* ===== Hero + Search ===== */}
-      <div ref={searchRef} className="px-6 pt-20 pb-16 sm:pt-28 sm:pb-20 text-center max-w-2xl mx-auto">
+      <div className="relative">
+        {/* Chessboard background */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='0' y='0' width='30' height='30' fill='rgba(255,255,255,0.018)'/%3E%3Crect x='30' y='30' width='30' height='30' fill='rgba(255,255,255,0.018)'/%3E%3C/svg%3E")`,
+            maskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 0%, transparent 100%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 0%, transparent 100%)',
+          }}
+        />
+        {/* Radial glow */}
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            top: '30%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 600,
+            height: 400,
+            background: 'radial-gradient(ellipse at center, rgba(180,195,215,0.04) 0%, rgba(180,195,215,0.02) 40%, transparent 70%)',
+          }}
+        />
+      <div ref={searchRef} className="relative px-6 pt-20 pb-16 sm:pt-28 sm:pb-20 text-center max-w-2xl mx-auto">
         {/* Badge */}
         <div
           className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-6 bg-surface-1 shadow-card"
@@ -160,7 +182,7 @@ export default function HomePage() {
         </h1>
 
         <p className="text-gray-400 text-body leading-relaxed mb-10 max-w-lg mx-auto">
-          AI-powered analysis that tells you why you lose - and exactly how to improve.
+          AI-powered analysis that tells you why you lose &mdash; and exactly how to improve.
         </p>
 
         {/* Inline search */}
@@ -171,30 +193,31 @@ export default function HomePage() {
 
       {/* ===== Social proof bar ===== */}
       <div
-        className="px-6 py-5 flex flex-wrap items-center justify-center gap-x-12 gap-y-4"
+        className="px-6 py-8 flex flex-wrap items-center justify-center gap-x-16 gap-y-4"
         style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
       >
         <div className="text-center">
-          <p className="text-section font-semibold text-white tracking-heading">12,400+</p>
-          <p className="text-caption text-gray-400">Games analyzed</p>
+          <p className="text-title font-semibold text-white tracking-heading">12,400+</p>
+          <p className="text-caption text-gray-500 uppercase tracking-label mt-1">Games Analyzed</p>
         </div>
         <div className="hidden sm:block w-px h-8 bg-white/[0.10]" />
         <div className="text-center">
-          <p className="text-section font-semibold text-white tracking-heading">2,100+</p>
-          <p className="text-caption text-gray-400">Players</p>
+          <p className="text-title font-semibold text-white tracking-heading">2,100+</p>
+          <p className="text-caption text-gray-500 uppercase tracking-label mt-1">Players</p>
         </div>
         <div className="hidden sm:block w-px h-8 bg-white/[0.10]" />
         <div className="text-center">
-          <p className="text-section font-semibold text-white tracking-heading">Chess.com &amp; Lichess</p>
-          <p className="text-caption text-gray-400">Supported platforms</p>
+          <p className="text-title font-semibold text-white tracking-heading">Chess.com &amp; Lichess</p>
+          <p className="text-caption text-gray-500 uppercase tracking-label mt-1">Supported Platforms</p>
         </div>
+      </div>
       </div>
 
       {/* ===== Features section ===== */}
       <div className="px-6 py-16 sm:py-20" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
-            <div className="label text-gray-500 mb-3">Features</div>
+            <div className="label text-gray-500 mb-3">FEATURES</div>
             <h2 className="text-title font-semibold text-[#f0f0f0] tracking-heading">Everything you need to improve</h2>
           </div>
 
