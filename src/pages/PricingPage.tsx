@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabase'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
 import { Check, Shield, Zap, Brain, TrendingUp, BarChart3, Sparkles } from 'lucide-react'
-import { Button } from '../components/ui'
 
 interface PaymentTier {
   id: string
@@ -30,17 +29,9 @@ const FALLBACK_TIERS: PaymentTier[] = [
     features: [
       '5 game analyses per day',
       '100 game imports per day',
+      'Basic analytics',
       '1 coach lesson per week',
       '3 coach puzzles per day',
-      'New Games Auto Import',
-      'Advanced chess analytics',
-      'Deep analysis with Stockfish',
-      'Opening repertoire analysis',
-      'Personality insights',
-      'Position exploration',
-      'Tal inspired comments',
-      'Playstyle analysis',
-      'Learning suggestions',
     ],
   },
   {
@@ -80,12 +71,7 @@ const FALLBACK_TIERS: PaymentTier[] = [
       'Advanced chess analytics',
       'Deep analysis with Stockfish',
       'Opening repertoire analysis',
-      'Personality insights',
-      'Position exploration',
-      'Tal inspired comments',
-      'Playstyle analysis',
-      'Learning suggestions',
-      '25% savings vs monthly',
+      'All Pro Monthly features',
     ],
   },
 ]
@@ -146,11 +132,11 @@ export default function PricingPage() {
     if (tierId === currentTier) {
       return 'Current Plan'
     }
-    if (currentTier === 'pro_monthly' && tierId === 'pro_yearly') {
+    if (tierId === 'pro_yearly') {
       return 'Upgrade to Yearly'
     }
-    if (currentTier === 'pro_yearly' && tierId === 'pro_monthly') {
-      return 'Switch to Monthly'
+    if (tierId === 'pro_monthly') {
+      return 'Upgrade to Pro Monthly'
     }
     return 'Become Pro'
   }
@@ -272,7 +258,7 @@ export default function PricingPage() {
       // Only deep analysis and Stockfish go to analysis category
       if (lower.includes('stockfish') || lower.includes('deep analysis')) {
         categories.analysis.push(feature)
-      } else if (lower.includes('personality') || lower.includes('opening') || lower.includes('repertoire') || lower.includes('unlimited') || lower.includes('import') || lower.includes('limit') || lower.includes('analytics') || lower.includes('analyses') || lower.includes('tracking') || lower.includes('position exploration') || lower.includes('tal inspired') || lower.includes('playstyle') || lower.includes('learning suggestions')) {
+      } else if (lower.includes('personality') || lower.includes('opening') || lower.includes('repertoire') || lower.includes('unlimited') || lower.includes('import') || lower.includes('limit') || lower.includes('analytics') || lower.includes('analyses') || lower.includes('tracking') || lower.includes('position exploration') || lower.includes('tal inspired') || lower.includes('playstyle') || lower.includes('learning suggestions') || lower.includes('all pro') || lower.includes('coach') || lower.includes('basic')) {
         categories.insights.push(feature)
       } else {
         categories.other.push(feature)
@@ -296,25 +282,8 @@ export default function PricingPage() {
               Transform Your Chess Game
             </h1>
             <p className="text-body text-gray-400 max-w-2xl mx-auto mb-8 leading-relaxed">
-              Powered by <span className="text-gray-300 font-medium">Stockfish 17.1</span>, the world's strongest chess engine.
-              Understand your mistakes, discover your playing style, and improve faster.
+              Powered by Stockfish 17.1 — understand your mistakes, discover your playing style, and improve faster.
             </p>
-
-            {/* Trust Indicators */}
-            <div className="flex flex-wrap items-center justify-center gap-6 text-small text-gray-500 mb-8">
-              <div className="flex items-center gap-2">
-                <Shield size={16} className="text-emerald-400/60" />
-                <span>Secure Payment</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Zap size={16} className="text-emerald-400/60" />
-                <span>Real-time Analysis</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Brain size={16} className="text-emerald-400/60" />
-                <span>AI-Powered Insights</span>
-              </div>
-            </div>
           </div>
 
           {notification && (
@@ -332,14 +301,6 @@ export default function PricingPage() {
 
           {/* Use Case Scenarios */}
           <div className="mb-10">
-            <div className="text-center mb-8">
-              <h2 className="text-title font-semibold text-[#f0f0f0] tracking-heading mb-3">
-                Built for Every Chess Player
-              </h2>
-              <p className="text-gray-500 text-body">
-                Whether you're improving your game or coaching others, our analysis helps you understand chess at a deeper level.
-              </p>
-            </div>
             <div className="grid md:grid-cols-3 gap-3">
               <div className="bg-surface-1 shadow-card rounded-lg p-6">
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style={{ background: 'rgba(228,232,237,0.06)' }}>
@@ -372,34 +333,31 @@ export default function PricingPage() {
           </div>
 
           {/* Pricing Cards */}
-          <div className="grid md:grid-cols-3 gap-3 mb-10">
+          <div className="grid md:[grid-template-columns:1fr_1.15fr_1fr] gap-3 mb-10">
             {tiers.map((tier) => {
               const isPopular = tier.id === 'pro_monthly'
               const featureCategories = categorizeFeatures(tier.features)
-              const monthlyEquivalent = tier.price_yearly && tier.price_monthly
-                ? (tier.price_yearly / 12).toFixed(2)
-                : null
-
               return (
                 <div
                   key={tier.id}
                   className={`relative flex flex-col rounded-lg transition-colors ${
                     isPopular
-                      ? 'bg-[#151618] shadow-card-highlight'
+                      ? 'bg-[#181a1e]'
                       : 'bg-surface-1 shadow-card'
                   }`}
+                  style={isPopular ? { boxShadow: '0 0 0 1px rgba(228,232,237,0.18), 0 0 40px rgba(180,195,215,0.04)' } : undefined}
                 >
                   {isPopular && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-white/[0.08] text-gray-300 text-caption font-medium px-4 py-1 rounded-full shadow-card">
-                      MOST POPULAR
+                    <div className="absolute -top-px left-1/2 -translate-x-1/2 bg-[#e4e8ed] text-[#0c0d0f] text-[10px] font-semibold uppercase tracking-wider px-3.5 py-1 rounded-b-lg">
+                      Most Popular
                     </div>
                   )}
 
-                  <div className="p-6 flex flex-col flex-grow">
+                  <div className={`p-6 flex flex-col flex-grow ${isPopular ? 'pt-10' : ''}`}>
                     {/* Header */}
                     <div className="mb-5">
-                      <h2 className="text-section font-semibold text-[#f0f0f0] tracking-section mb-1">{tier.name}</h2>
-                      <p className="text-gray-500 text-small leading-relaxed">{tier.description}</p>
+                      <h2 className="text-[13px] font-medium text-[#8a9299] mb-1">{tier.name}</h2>
+                      <p className="text-[11px] text-[#3a4250] leading-relaxed">{tier.description}</p>
                     </div>
 
                     {/* Price */}
@@ -424,16 +382,9 @@ export default function PricingPage() {
                             </span>
                             <span className="text-gray-500 text-body">/year</span>
                           </div>
-                          {monthlyEquivalent && (
-                            <p className="text-emerald-400/80 font-medium text-small mt-1">
-                              ${monthlyEquivalent}/month
-                            </p>
-                          )}
-                          {tier.price_monthly !== null && (
-                            <p className="text-emerald-400/80 text-small mt-2">
-                              Save ${((tier.price_monthly * 12) - tier.price_yearly).toFixed(2)}/year · 25% off
-                            </p>
-                          )}
+                          <div className="mt-2 inline-block bg-emerald-500/15 text-emerald-400 text-small font-medium px-3 py-1 rounded">
+                            Save 25% vs monthly
+                          </div>
                         </div>
                       ) : (
                         <div>
@@ -461,10 +412,10 @@ export default function PricingPage() {
                               {features.map((feature, index) => (
                                 <li key={index} className="flex items-start gap-2.5">
                                   <Check
-                                    size={16}
-                                    className="flex-shrink-0 mt-0.5 text-emerald-400/60"
+                                    size={14}
+                                    className={`flex-shrink-0 mt-0.5 ${isPopular ? 'text-[#c8cdd4]' : 'text-[#c8cdd4]/50'}`}
                                   />
-                                  <span className="text-gray-400 text-small leading-relaxed">{feature.replace(/\s+/g, ' ').trim()}</span>
+                                  <span className={`text-small leading-relaxed ${isPopular ? 'text-[#8a9299]' : 'text-[#5a6270]'}`}>{feature.replace(/\s+/g, ' ').trim()}</span>
                                 </li>
                               ))}
                             </ul>
@@ -506,7 +457,11 @@ export default function PricingPage() {
                           <button
                             onClick={() => handleUpgrade(tier.id)}
                             disabled={upgrading === tier.id}
-                            className="w-full px-6 py-2 rounded-md font-medium text-body transition-colors bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] disabled:opacity-50 disabled:cursor-not-allowed shadow-btn-primary"
+                            className={`w-full px-6 py-2 rounded-md font-medium text-body transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                              tier.id === 'pro_yearly'
+                                ? 'bg-transparent text-[#7a8290] shadow-card'
+                                : 'bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] shadow-btn-primary'
+                            }`}
                           >
                             {upgrading === tier.id ? (
                               <span className="flex items-center justify-center gap-2">
@@ -525,7 +480,11 @@ export default function PricingPage() {
                       ) : (
                         <a
                           href="/signup"
-                          className="block w-full text-center px-6 py-2 rounded-md font-medium text-body transition-colors bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] shadow-btn-primary"
+                          className={`block w-full text-center px-6 py-2 rounded-md font-medium text-body transition-colors ${
+                            tier.id === 'pro_yearly'
+                              ? 'bg-transparent text-[#7a8290] shadow-card'
+                              : 'bg-[#e4e8ed] hover:bg-[#f0f2f5] text-[#111] shadow-btn-primary'
+                          }`}
                         >
                           Become Pro
                         </a>
