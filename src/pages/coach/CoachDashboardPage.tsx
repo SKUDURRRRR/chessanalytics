@@ -146,7 +146,7 @@ function CoachDashboardContent({ username }: CoachDashboardContentProps) {
             footerContent={
               puzzleStats && puzzleStats.puzzles_attempted > 0
                 ? <span className="text-gray-400">Solved <span className="font-medium text-emerald-400/80">{puzzleStats.puzzles_correct}</span> of {puzzleStats.puzzles_attempted} puzzles</span>
-                : undefined
+                : <span className="text-gray-400">No puzzles attempted yet</span>
             }
           />
           <TrainingCard
