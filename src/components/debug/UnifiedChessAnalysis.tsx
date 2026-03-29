@@ -451,6 +451,7 @@ export function UnifiedChessAnalysis({
   const [isMoveListOpen, setIsMoveListOpen] = useState(false)
   const [showMoveAnalysis, setShowMoveAnalysis] = useState(true)
   const [rightPanelTab, setRightPanelTab] = useState<'analysis' | 'coach'>('analysis')
+  const [mobileTab, setMobileTab] = useState<'analysis' | 'coach'>('analysis')
   // State to track user-drawn arrows (right-click drag) - these will be rendered via ModernChessArrows
   const [userDrawnArrows, setUserDrawnArrows] = useState<ModernArrow[]>([])
   const desktopBoardContainerRef = useRef<HTMLDivElement>(null)
@@ -833,42 +834,73 @@ export function UnifiedChessAnalysis({
             </div>
           </div>
 
-          {/* Mobile: Current Move Analysis */}
+          {/* Mobile: Tabbed Analysis / Coach */}
           {currentMove && showMoveAnalysis && (
-            <div className="mt-4 rounded-lg bg-surface-1 p-4 shadow-card">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-white">
-                    {currentMove.san}
-                  </h3>
-                  <span className="text-xs text-gray-500">
-                    Move {currentMove.moveNumber} • {currentMove.isUserMove ? 'You' : 'Opponent'}
-                  </span>
-                </div>
+            <div className="mt-4 rounded-lg bg-surface-1 shadow-card overflow-hidden">
+              {/* Tab header */}
+              <div className="flex" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                 <button
-                  onClick={() => setShowMoveAnalysis(false)}
-                  className="text-gray-500 hover:text-white transition-colors p-1"
-                  aria-label="Hide analysis"
+                  onClick={() => setMobileTab('analysis')}
+                  className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                    mobileTab === 'analysis' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                  style={mobileTab === 'analysis' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  Analysis
+                </button>
+                <button
+                  onClick={() => setMobileTab('coach')}
+                  className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
+                    mobileTab === 'coach' ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                  style={mobileTab === 'coach' ? { background: 'rgba(255,255,255,0.04)' } : undefined}
+                >
+                  Coach Tal
                 </button>
               </div>
-              <EnhancedMoveCoaching move={currentMove} className="text-xs" />
 
-              {/* Mobile Follow-Up Explorer */}
-              {currentMove && onExploringChange && onResetExploration && onUndoExplorationMove && (
-                <div className="mt-3">
-                  <FollowUpExplorer
-                    currentMove={currentMove}
-                    isExploring={isExploringFollowUp}
-                    explorationMoves={explorationMoves}
-                    onExploringChange={onExploringChange}
-                    onResetExploration={onResetExploration}
-                    onUndoExplorationMove={onUndoExplorationMove}
-                    onAddExplorationMove={onAddExplorationMove}
-                  />
+              {/* Tab content */}
+              {mobileTab === 'coach' && positionContext ? (
+                <div style={{ minHeight: 300 }}>
+                  <InlineCoachChat positionContext={positionContext} />
+                </div>
+              ) : (
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-white">
+                        {currentMove.san}
+                      </h3>
+                      <span className="text-xs text-gray-500">
+                        Move {currentMove.moveNumber} • {currentMove.isUserMove ? 'You' : 'Opponent'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setShowMoveAnalysis(false)}
+                      className="text-gray-500 hover:text-white transition-colors p-1"
+                      aria-label="Hide analysis"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <EnhancedMoveCoaching move={currentMove} className="text-xs" />
+
+                  {/* Mobile Follow-Up Explorer */}
+                  {currentMove && onExploringChange && onResetExploration && onUndoExplorationMove && (
+                    <div className="mt-3">
+                      <FollowUpExplorer
+                        currentMove={currentMove}
+                        isExploring={isExploringFollowUp}
+                        explorationMoves={explorationMoves}
+                        onExploringChange={onExploringChange}
+                        onResetExploration={onResetExploration}
+                        onUndoExplorationMove={onUndoExplorationMove}
+                        onAddExplorationMove={onAddExplorationMove}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
