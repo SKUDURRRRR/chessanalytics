@@ -43,14 +43,14 @@ const TAL_QUOTES = [
   'If you wait for luck to turn up, life becomes very boring.',
   "When I'm asked which move I prefer, I say the unexpected one.",
   'A knight on the rim may be grim, but a knight in the attack is a heart attack.',
-  'Every pawn is a potential queen — never forget that.',
+  'Every pawn is a potential queen.',
   'The initiative is worth more than material. Always.',
   'Complications are not to be feared, they are to be created.',
   "Your opponent's time is just as important a target as their king.",
   'A well-timed sacrifice reveals the truth of the position.',
   'Precision wins endgames, but courage wins chess games.',
-  'The player who takes risks will make mistakes — the player who doesn\'t will make none, and win nothing.',
-  'Attack first, calculate later — your intuition knows more than you think.',
+  'Risk-takers make mistakes, but win everything.',
+  'Attack first, calculate later.',
   'In chess, as in life, the most dangerous opponent is the one who has nothing to lose.',
 ]
 
