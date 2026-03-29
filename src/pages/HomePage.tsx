@@ -156,9 +156,7 @@ export default function HomePage() {
         </div>
 
         <h1 className="text-title sm:text-[2rem] md:text-[2.5rem] font-semibold text-[#f0f0f0] tracking-heading leading-[1.1] mb-5">
-          Understand your chess.{'\n'}
-          <br className="hidden sm:block" />
-          Not just your rating.
+          Understand your chess.
         </h1>
 
         <p className="text-gray-400 text-body leading-relaxed mb-10 max-w-lg mx-auto">
