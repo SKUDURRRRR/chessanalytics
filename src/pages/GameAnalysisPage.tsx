@@ -1159,11 +1159,7 @@ export default function GameAnalysisPage() {
     return (
       <>
         <div className="min-h-screen bg-surface-base" />
-        <LoadingModal
-          isOpen={true}
-          message="Loading analysis..."
-          subtitle="Please wait"
-        />
+        <LoadingModal isOpen={true} branded />
       </>
     )
   }

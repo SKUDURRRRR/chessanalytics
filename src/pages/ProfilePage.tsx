@@ -601,7 +601,7 @@ export default function ProfilePage() {
                     <button
                       onClick={() => setShowCancelConfirm(true)}
                       disabled={cancellingSubscription}
-                      className="block w-full text-center rounded-lg shadow-card bg-white/[0.06] px-6 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-white/[0.10] disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-[13px] text-gray-500 transition-colors hover:text-rose-300 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {cancellingSubscription ? 'Cancelling...' : 'Cancel Subscription'}
                     </button>
@@ -642,7 +642,7 @@ export default function ProfilePage() {
                     <button
                       onClick={() => setShowCancelConfirm(true)}
                       disabled={cancellingSubscription}
-                      className="block w-full text-center rounded-lg shadow-card bg-white/[0.06] px-6 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-white/[0.10] disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-[13px] text-gray-500 transition-colors hover:text-rose-300 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {cancellingSubscription ? 'Cancelling...' : 'Cancel Subscription'}
                     </button>
@@ -752,7 +752,7 @@ export default function ProfilePage() {
                       setNewPassword('')
                       setConfirmPassword('')
                     }}
-                    className="w-full rounded-lg shadow-card bg-[#e4e8ed] px-6 py-3 text-sm font-semibold text-[#111] transition-colors hover:bg-[#f0f2f5]"
+                    className="w-full rounded-lg bg-white/[0.06] px-6 py-3 text-sm font-medium text-gray-400 transition-colors hover:bg-white/[0.10]"
                   >
                     Change Password
                   </button>
@@ -844,7 +844,7 @@ export default function ProfilePage() {
             )}
             <button
               onClick={handleSignOut}
-              className="w-full rounded-lg shadow-card bg-white/[0.06] px-6 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-white/[0.10]"
+              className="text-[13px] text-gray-500 transition-colors hover:text-rose-300"
             >
               Sign Out
             </button>
