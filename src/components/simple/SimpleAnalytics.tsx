@@ -3,24 +3,13 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { UnifiedAnalysisService, AnalysisStats, DeepAnalysisData } from '../../services/unifiedAnalysisService'
 import type { ComprehensiveAnalytics } from '../../types'
-import {
-  getComprehensiveGameAnalytics,
-  calculateAnalyticsFromGames,
-  type PerformanceTrendSummary,
-  type GameAnalytics
-} from '../../utils/comprehensiveGameAnalytics'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { calculateAverageAccuracy } from '../../utils/accuracyCalculator'
 import { normalizeOpeningName } from '../../utils/openingUtils'
-import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
 import { getOpeningColor } from '../../utils/openingColorClassification'
-import { getPlayerPerspectiveOpeningShort } from '../../utils/playerPerspectiveOpening'
-import { CHESS_ANALYSIS_COLORS } from '../../utils/chessColors'
 import { PersonalityRadar } from '../deep/PersonalityRadar'
 import { LongTermPlanner } from '../deep/LongTermPlanner'
-import { OpeningPlayerCard } from '../deep/OpeningPlayerCard'
 import { EnhancedOpeningPlayerCard } from '../deep/EnhancedOpeningPlayerCard'
-import { ScoreCards } from '../deep/ScoreCards'
 import { EloTrendGraph } from './EloTrendGraph'
 import { EnhancedOpponentAnalysis } from './EnhancedOpponentAnalysis'
 import { TimeSpentSummary } from './TimeSpentAnalysis'
@@ -497,237 +486,142 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
     }
   }
 
-  const cardClass = 'rounded-lg bg-surface-1 p-6 shadow-card'
-  const subtleCardClass = 'rounded-lg bg-surface-2 p-6 shadow-card'
-  const pillBadgeClass = 'inline-flex items-center gap-2 rounded-md bg-white/[0.06] px-3 py-1 text-xs font-medium uppercase tracking-wide text-gray-300'
+  const cardClass = 'rounded-lg bg-surface-1 shadow-card'
+  const subtleCardClass = 'rounded-lg bg-white/[0.02] p-3'
+
+  // Helper: section break divider
+  const SectionBreak = ({ label }: { label: string }) => (
+    <div className="flex items-center gap-3 mt-7 mb-[18px]">
+      <div className="flex-1 h-px bg-white/[0.04]" />
+      <span className="text-[11px] uppercase tracking-[0.1em] text-[#2a3040] whitespace-nowrap">{label}</span>
+      <div className="flex-1 h-px bg-white/[0.04]" />
+    </div>
+  )
 
   return (
-    <div className="space-y-6 text-gray-300" data-testid="analytics-container">
-      {/* ELO Optimization Status */}
-      {safeData.elo_optimization_active && (
-        <div className="rounded-lg bg-emerald-500/10 p-5 shadow-card">
-          <div className="flex items-start space-x-3">
-            <div className="text-xl text-emerald-200">*</div>
-            <div>
-              <h3 className="mb-2 text-lg font-semibold text-white">ELO Optimization Active</h3>
-              <p className="mb-3 text-sm text-emerald-100">
-                Your ELO statistics are calculated using the optimized approach for maximum performance.
-                This ensures accurate results even with thousands of games!
-              </p>
-              <div className="rounded-lg bg-emerald-500/10 p-4">
-                <p className="mb-2 text-sm font-medium text-emerald-100">Optimization Benefits:</p>
-                <ul className="space-y-1 text-xs text-emerald-200">
-                  <li>• Fast ELO calculations (single database query)</li>
-                  <li>• Complete coverage of all imported games</li>
-                  <li>• No analysis dependency - data available immediately after import</li>
-                  <li>• Handles players with thousands of games efficiently</li>
-                </ul>
-                {safeData.total_games_with_elo > 0 && (
-                  <p className="mt-3 text-xs text-emerald-100">
-                    <span className="font-semibold">Total games processed:</span> {safeData.total_games_with_elo}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Mock Data Warning */}
+    <div className="space-y-[10px] text-gray-300" data-testid="analytics-container">
+      {/* Warnings - kept minimal */}
       {isMockData && (
-        <div className="rounded-lg bg-amber-500/10 p-5 shadow-card">
-          <div className="flex items-start space-x-3">
-            <div className="text-xl text-amber-200">!</div>
-            <div>
-              <h3 className="mb-2 text-lg font-semibold text-white">Demo Data Shown</h3>
-              <p className="mb-3 text-sm text-amber-100">
-                You're seeing sample analytics data because no analysis has been performed on your games yet.
-              </p>
-              <div className="rounded-lg bg-amber-500/15 p-4">
-                <p className="mb-2 text-sm font-medium text-amber-100">To see your real analytics:</p>
-                <p className="text-xs text-amber-100/90">
-                  Games need to be analyzed to show real analytics data. Analysis can be triggered from individual games in the match history.
-                </p>
-              </div>
-            </div>
-          </div>
+        <div className={`${cardClass} p-4`}>
+          <p className="text-xs text-amber-400/80">Demo data shown — no analysis has been performed yet.</p>
         </div>
       )}
 
-      {/* ELO Data Validation Warning */}
       {safeData.validation_issues && safeData.validation_issues.length > 0 && (
-        <div className="rounded-lg bg-orange-500/10 p-5 shadow-card">
-          <div className="flex items-start space-x-3">
-            <div className="text-xl text-orange-200">!</div>
-            <div>
-              <h3 className="mb-2 text-lg font-semibold text-white">ELO Data Quality Issues Detected</h3>
-              <p className="mb-3 text-sm text-orange-100">
-                Some of your game data may have incorrect ELO ratings. This could affect the accuracy of your highest ELO calculation.
-              </p>
-              <div className="rounded-lg bg-orange-500/15 p-4">
-                <p className="mb-2 text-sm font-medium text-orange-100">Issues found:</p>
-                <ul className="list-disc space-y-1 text-xs text-orange-100/90">
-                  {safeData.validation_issues.slice(0, 3).map((issue: string, index: number) => (
-                    <li key={index}>{issue}</li>
-                  ))}
-                  {safeData.validation_issues.length > 3 && (
-                    <li>... and {safeData.validation_issues.length - 3} more issues</li>
-                  )}
-                </ul>
-                <p className="mt-2 text-xs text-orange-100">
-                  <span className="font-semibold">Note:</span> The highest ELO shown may not be accurate. Consider re-importing your games to fix these issues.
-                </p>
-              </div>
-            </div>
-          </div>
+        <div className={`${cardClass} p-4`}>
+          <p className="text-xs text-orange-400/80">ELO data quality issues detected — some ratings may be inaccurate.</p>
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid-responsive">
-        <div className={cardClass}>
-          <h3 className="text-xs uppercase tracking-wide text-gray-400">Total Games Analyzed</h3>
-          <div className="mt-3 text-2xl font-semibold text-white">{safeData.total_games_analyzed}</div>
+      {/* Stat Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-[10px]">
+        <div className={`${cardClass} px-[18px] py-4`}>
+          <div className="text-[11px] uppercase tracking-[0.07em] text-[#3a4250] mb-1.5">Games Analyzed</div>
+          <div className="text-[26px] font-medium tracking-tight text-[#e4e8ed] leading-none">{safeData.total_games_analyzed}</div>
+          <div className="text-[11px] text-[#3a4250] mt-1">of {safeComprehensive?.totalGames?.toLocaleString() || '—'} total</div>
         </div>
-
-        <div className={cardClass}>
-          <h3 className="text-xs uppercase tracking-wide text-gray-400">Average Accuracy</h3>
-          <div className="mt-3 text-2xl font-semibold text-emerald-300">{safeData.average_accuracy}%</div>
+        <div className={`${cardClass} px-[18px] py-4`}>
+          <div className="text-[11px] uppercase tracking-[0.07em] text-[#3a4250] mb-1.5">Avg Accuracy</div>
+          <div className="text-[26px] font-medium tracking-tight text-[#e4e8ed] leading-none">{safeData.average_accuracy}%</div>
+          <div className="text-[11px] text-[#3a4250] mt-1">across analyzed games</div>
         </div>
-
-        <div className={cardClass}>
-          <h3 className="text-xs uppercase tracking-wide text-gray-400">Highest Rating</h3>
-          <div className="mt-3 text-2xl font-semibold text-sky-300">{safeComprehensive?.highestElo || 'N/A'}</div>
+        <div className={`${cardClass} px-[18px] py-4`}>
+          <div className="text-[11px] uppercase tracking-[0.07em] text-[#3a4250] mb-1.5">Peak Rating</div>
+          <div className="text-[26px] font-medium tracking-tight text-[#e4e8ed] leading-none">{safeComprehensive?.highestElo?.toLocaleString() || 'N/A'}</div>
+          <div className="text-[11px] text-[#3a4250] mt-1">{safeComprehensive?.timeControlWithHighestElo ? getTimeControlCategory(safeComprehensive.timeControlWithHighestElo) : ''} all-time high</div>
         </div>
-
-        <div className={cardClass}>
-          <h3 className="text-xs uppercase tracking-wide text-gray-400">Time Control</h3>
-          <div className="mt-3 text-2xl font-semibold text-amber-300">
-            {safeComprehensive?.timeControlWithHighestElo ? getTimeControlCategory(safeComprehensive.timeControlWithHighestElo) : safeData.most_played_time_control ? getTimeControlCategory(safeData.most_played_time_control) : 'Unknown'}
+        <div className={`${cardClass} px-[18px] py-4`}>
+          <div className="text-[11px] uppercase tracking-[0.07em] text-[#3a4250] mb-1.5">Time Control</div>
+          <div className="text-[26px] font-medium tracking-tight text-[#e4e8ed] leading-none">
+            {safeComprehensive?.timeControlWithHighestElo ? getTimeControlCategory(safeComprehensive.timeControlWithHighestElo) : safeData.most_played_time_control ? getTimeControlCategory(safeData.most_played_time_control) : '—'}
           </div>
+          <div className="text-[11px] text-[#3a4250] mt-1">highest rated</div>
         </div>
       </div>
 
       {/* Backend Analysis Status */}
       {!data && safeComprehensive && safeComprehensive.totalGames > 0 && (
-        <div className="rounded-lg bg-sky-500/10 p-5 shadow-card">
-          <div className="flex items-start space-x-3">
-            <div className="text-xl text-sky-200">…</div>
-            <div>
-              <h3 className="mb-2 text-lg font-semibold text-white">Analysis in Progress</h3>
-              <p className="text-sm text-sky-100">
-                Your comprehensive game statistics are available below. Detailed move analysis is currently being processed by the backend.
-              </p>
-            </div>
-          </div>
+        <div className={`${cardClass} p-4`}>
+          <p className="text-xs text-sky-400/80">Analysis in progress — comprehensive stats available below.</p>
         </div>
       )}
 
       {/* Comprehensive Analytics Section */}
       {safeComprehensive && safeComprehensive.totalGames > 0 && (
-        <div className="space-y-4">
-          {/* Basic Statistics */}
-          <div className={cardClass}>
-            <h3 className="mb-4 text-lg font-semibold text-white">Basic Statistics</h3>
-            <div className="grid-responsive text-sm">
-              <div>
-                <span className="text-xs uppercase tracking-wide text-gray-500">Total Games</span>
-                <div className="text-xl font-semibold text-sky-300">{safeComprehensive.totalGames}</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-gray-500">Win Rate</span>
-                <div className="text-xl font-semibold text-emerald-300">{formatPercent(safeComprehensive.winRate, 1)}%</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-gray-500">Draw Rate</span>
-                <div className="text-xl font-semibold text-amber-300">{formatPercent(safeComprehensive.drawRate, 1)}%</div>
-              </div>
-              <div>
-                <span className="text-xs uppercase tracking-wide text-gray-500">Loss Rate</span>
-                <div className="text-xl font-semibold text-rose-300">{formatPercent(safeComprehensive.lossRate, 1)}%</div>
-              </div>
-            </div>
-          </div>
+        <div className="space-y-[10px]">
+          {/* Results + Color - 2 column grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-[10px]">
 
-          {/* Color Performance */}
-          <div className={cardClass}>
-            <h3 className="mb-4 text-lg font-semibold text-white">Color Performance</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div className={subtleCardClass}>
-                <h4 className="mb-2 text-sm font-semibold text-white">White</h4>
-                <div className="space-y-2 text-sm text-gray-300">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Games:</span>
-                    <span className="font-semibold text-white">{safeColorStats.white.games}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Win Rate:</span>
-                    <span className="font-semibold text-emerald-300">{formatPercent(safeColorStats.white.winRate, 1)}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Avg ELO:</span>
-                    <span className="font-semibold text-white">{formatPercent(safeColorStats.white.averageElo, 0)}</span>
-                  </div>
-                </div>
+            {/* Overall Results (WDL) */}
+            <div className={`${cardClass} p-[18px_20px]`}>
+              <div className="flex items-center justify-between text-[12px] font-medium uppercase tracking-[0.07em] text-[#5a6270] mb-3.5">
+                <span>Overall Results</span>
+                <span className="text-[11px] font-normal normal-case tracking-normal text-[#3a4250]">{safeComprehensive.totalGames.toLocaleString()} games</span>
               </div>
-              <div className={subtleCardClass}>
-                <h4 className="mb-2 text-sm font-semibold text-white">Black</h4>
-                <div className="space-y-2 text-sm text-gray-300">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Games:</span>
-                    <span className="font-semibold text-white">{safeColorStats.black.games}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Win Rate:</span>
-                    <span className="font-semibold text-emerald-300">{formatPercent(safeColorStats.black.winRate, 1)}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Avg ELO:</span>
-                    <span className="font-semibold text-white">{formatPercent(safeColorStats.black.averageElo, 0)}</span>
-                  </div>
+              {/* WDL bar */}
+              <div className="flex gap-0.5 h-1 rounded-sm overflow-hidden mb-3.5">
+                <div className="bg-green-500 rounded-sm" style={{ width: `${safeComprehensive.winRate}%` }} />
+                <div className="bg-[#4a5260] rounded-sm" style={{ width: `${safeComprehensive.drawRate}%` }} />
+                <div className="bg-red-500 rounded-sm" style={{ width: `${safeComprehensive.lossRate}%` }} />
+              </div>
+              <div className="flex">
+                <div className="flex-1">
+                  <div className="text-[11px] text-[#3a4250] mb-0.5">Win</div>
+                  <div className="text-[22px] font-medium tracking-tight leading-none text-emerald-400">{formatPercent(safeComprehensive.winRate, 1)}%</div>
+                  <div className="text-[11px] text-[#3a4250] mt-0.5">{Math.round(safeComprehensive.totalGames * safeComprehensive.winRate / 100).toLocaleString()} games</div>
+                </div>
+                <div className="flex-1">
+                  <div className="text-[11px] text-[#3a4250] mb-0.5">Draw</div>
+                  <div className="text-[22px] font-medium tracking-tight leading-none text-[#5a6270]">{formatPercent(safeComprehensive.drawRate, 1)}%</div>
+                  <div className="text-[11px] text-[#3a4250] mt-0.5">{Math.round(safeComprehensive.totalGames * safeComprehensive.drawRate / 100).toLocaleString()} games</div>
+                </div>
+                <div className="flex-1">
+                  <div className="text-[11px] text-[#3a4250] mb-0.5">Loss</div>
+                  <div className="text-[22px] font-medium tracking-tight leading-none text-red-400">{formatPercent(safeComprehensive.lossRate, 1)}%</div>
+                  <div className="text-[11px] text-[#3a4250] mt-0.5">{Math.round(safeComprehensive.totalGames * safeComprehensive.lossRate / 100).toLocaleString()} games</div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Top Time Controls */}
-          <div className={`${cardClass} hidden`}>
-            <h3 className="mb-4 text-lg font-semibold text-white">Time Control Performance</h3>
-            <div className="space-y-3">
-              {safeTimeControlStats.slice(0, 3).map((stat: any, index: number) => (
-                <div key={index} className={subtleCardClass}>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="font-medium text-white">{stat.timeControl}</span>
-                    <span className="text-xs uppercase tracking-wide text-gray-500">{stat.games} games</span>
+            {/* Color Performance */}
+            <div className={`${cardClass} p-[18px_20px]`}>
+              <div className="text-[12px] font-medium uppercase tracking-[0.07em] text-[#5a6270] mb-3.5">Color Performance</div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white/[0.02] rounded-[7px] p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-[#5a6270] mb-2.5">
+                    <span className="w-2 h-2 rounded-full bg-[#c8cdd4] shrink-0" />White
                   </div>
-                  <div className="grid grid-cols-2 gap-4 text-sm text-gray-300">
-                    <div>
-                      <span className="text-gray-500">Win Rate:</span>
-                      <span className="ml-2 font-semibold text-emerald-300">{formatPercent(stat.winRate, 1)}%</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Avg ELO:</span>
-                      <span className="ml-2 font-semibold text-white">{formatPercent(stat.averageElo, 0)}</span>
-                    </div>
-                  </div>
+                  <div className="flex justify-between items-center mb-1"><span className="text-xs text-[#4a5260]">Games</span><span className="text-[13px] font-medium text-[#c8cdd4]">{safeColorStats.white.games.toLocaleString()}</span></div>
+                  <div className="flex justify-between items-center mb-1"><span className="text-xs text-[#4a5260]">Win rate</span><span className="text-[13px] font-medium text-emerald-400">{formatPercent(safeColorStats.white.winRate, 1)}%</span></div>
+                  <div className="flex justify-between items-center"><span className="text-xs text-[#4a5260]">Avg ELO</span><span className="text-[13px] font-medium text-[#c8cdd4]">{formatPercent(safeColorStats.white.averageElo, 0)}</span></div>
                 </div>
-              ))}
+                <div className="bg-white/[0.02] rounded-[7px] p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-[#5a6270] mb-2.5">
+                    <span className="w-2 h-2 rounded-full border-[1.5px] border-[#4a5260] shrink-0" />Black
+                  </div>
+                  <div className="flex justify-between items-center mb-1"><span className="text-xs text-[#4a5260]">Games</span><span className="text-[13px] font-medium text-[#c8cdd4]">{safeColorStats.black.games.toLocaleString()}</span></div>
+                  <div className="flex justify-between items-center mb-1"><span className="text-xs text-[#4a5260]">Win rate</span><span className="text-[13px] font-medium text-emerald-400">{formatPercent(safeColorStats.black.winRate, 1)}%</span></div>
+                  <div className="flex justify-between items-center"><span className="text-xs text-[#4a5260]">Avg ELO</span><span className="text-[13px] font-medium text-[#c8cdd4]">{formatPercent(safeColorStats.black.averageElo, 0)}</span></div>
+                </div>
+              </div>
             </div>
+
           </div>
 
           {/* Opening Performance - Winning vs Losing */}
-          <div className={cardClass}>
-            <h3 className="mb-4 text-lg font-semibold text-white">Opening Performance</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className={`${cardClass} p-[18px_20px]`}>
+            <div className="text-[12px] font-medium uppercase tracking-[0.07em] text-[#5a6270] mb-3.5">Opening Performance</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-[10px]">
               {/* Winning Openings */}
               <div>
-                <h4 className="mb-3 text-sm font-semibold text-emerald-200">Winning Openings</h4>
-                <div className="space-y-3">
-                  {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
-                    safeOpeningStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
+                <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[#3a4250] mb-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />Winning Openings
+                </div>
+                {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate >= 50).length > 0 ? (
+                  safeOpeningStats.filter((stat: any) => stat.winRate >= 50).slice(0, 3).map((stat: any, index: number) => (
                     <div
                       key={index}
-                      className="cursor-pointer rounded-lg bg-emerald-500/10 p-4 shadow-card transition-colors hover:bg-emerald-500/15"
+                      className="flex items-center justify-between py-[9px] border-b border-white/[0.04] last:border-b-0 last:pb-0 cursor-pointer hover:bg-white/[0.02] -mx-1 px-1 rounded transition-colors"
                       onClick={() =>
                         onOpeningClick?.(
                           buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, {
@@ -736,288 +630,241 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
                           })
                         )
                       }
-                      title="Click to view games with this opening"
                     >
-                      <div className="mb-2 flex items-start justify-between">
-                        <span className="text-sm font-medium leading-tight text-white">
-                          {normalizeOpeningName(stat.opening)}
-                        </span>
-                        <span className="text-xs uppercase tracking-wide text-emerald-100/80">{stat.games} games</span>
+                      <div>
+                        <div className="text-[13px] text-[#8a9299]">{normalizeOpeningName(stat.opening)}</div>
+                        <div className="text-[11px] text-[#3a4250]">Avg ELO {formatPercent(stat.averageElo, 0)}</div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm text-emerald-100">
-                        <div>
-                          <span className="text-emerald-100/70">Win Rate:</span>
-                          <span className="ml-2 font-semibold">{formatPercent(stat.winRate, 1)}%</span>
-                        </div>
-                        <div>
-                          <span className="text-emerald-100/70">Avg ELO:</span>
-                          <span className="ml-2 font-semibold">{formatPercent(stat.averageElo, 0)}</span>
-                        </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-xs font-medium px-2 py-0.5 rounded bg-emerald-400/[0.08] text-emerald-400">{formatPercent(stat.winRate, 1)}%</span>
+                        <div className="text-[11px] text-[#3a4250] mt-0.5">{stat.games} games</div>
                       </div>
                     </div>
                   ))
-                  ) : (
-                    <div className="rounded-lg bg-surface-2 p-6 text-center shadow-card">
-                      <p className="text-sm text-gray-400">No winning openings yet</p>
-                      <p className="mt-2 text-xs text-gray-500">Play more games to build opening statistics</p>
-                    </div>
-                  )}
-                </div>
+                ) : (
+                  <p className="text-xs text-[#3a4250] py-4">No winning openings yet</p>
+                )}
               </div>
-
               {/* Losing Openings */}
               <div>
-                <h4 className="mb-3 text-sm font-semibold text-amber-200">Losing Openings</h4>
-                <div className="space-y-3">
-                  {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate < 50).length > 0 ? (
-                    safeOpeningStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => b.games - a.games).slice(0, 3).map((stat: any, index: number) => (
-                      <div
-                        key={index}
-                        className="cursor-pointer rounded-lg bg-amber-500/10 p-4 shadow-card transition-colors hover:bg-amber-500/15"
-                        onClick={() =>
-                          onOpeningClick?.(
-                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, {
-                              openingFamily: stat.openingFamily,
-                              opening: stat.opening,
-                            })
-                          )
-                        }
-                        title="Click to view games with this opening"
-                      >
-                        <div className="mb-2 flex items-start justify-between">
-                          <span className="text-sm font-medium leading-tight text-white">
-                            {normalizeOpeningName(stat.opening)}
-                          </span>
-                          <span className="text-xs uppercase tracking-wide text-amber-100/80">{stat.games} games</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm text-amber-100">
-                          <div>
-                            <span className="text-amber-100/70">Win Rate:</span>
-                            <span className="ml-2 font-semibold">{formatPercent(stat.winRate, 1)}%</span>
-                          </div>
-                          <div>
-                            <span className="text-amber-100/70">Avg ELO:</span>
-                            <span className="ml-2 font-semibold">{formatPercent(stat.averageElo, 0)}</span>
-                          </div>
-                        </div>
+                <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[#3a4250] mb-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />Losing Openings
+                </div>
+                {safeOpeningStats && safeOpeningStats.filter((stat: any) => stat.winRate < 50).length > 0 ? (
+                  safeOpeningStats.filter((stat: any) => stat.winRate < 50).sort((a: any, b: any) => b.games - a.games).slice(0, 3).map((stat: any, index: number) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between py-[9px] border-b border-white/[0.04] last:border-b-0 last:pb-0 cursor-pointer hover:bg-white/[0.02] -mx-1 px-1 rounded transition-colors"
+                      onClick={() =>
+                        onOpeningClick?.(
+                          buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, {
+                            openingFamily: stat.openingFamily,
+                            opening: stat.opening,
+                          })
+                        )
+                      }
+                    >
+                      <div>
+                        <div className="text-[13px] text-[#8a9299]">{normalizeOpeningName(stat.opening)}</div>
+                        <div className="text-[11px] text-[#3a4250]">Avg ELO {formatPercent(stat.averageElo, 0)}</div>
                       </div>
-                    ))
-                  ) : (
-                    <div className="rounded-lg bg-surface-2 p-6 text-center shadow-card">
-                      <p className="text-sm text-gray-400">No losing openings yet</p>
-                      <p className="mt-2 text-xs text-gray-500">Great! All your openings have 50%+ win rate</p>
+                      <div className="text-right shrink-0">
+                        <span className="text-xs font-medium px-2 py-0.5 rounded bg-red-400/[0.08] text-red-400">{formatPercent(stat.winRate, 1)}%</span>
+                        <div className="text-[11px] text-[#3a4250] mt-0.5">{stat.games} games</div>
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Opening Color Performance */}
-          <div className={cardClass}>
-            <h3 className="mb-4 text-lg font-semibold text-white">Opening Performance by Color</h3>
-
-            {safeOpeningColorStats &&
-             (safeOpeningColorStats.white.length > 0 || safeOpeningColorStats.black.length > 0) ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Best White Openings */}
-                <div>
-                  <h4 className="mb-3 text-sm font-semibold text-emerald-200">Most Played White Openings</h4>
-                  <div className="space-y-3">
-                    {safeOpeningColorStats.white.slice(0, 3).map((stat: any, index: number) => (
-                      <div
-                        key={index}
-                        className="cursor-pointer rounded-lg bg-emerald-500/10 p-4 shadow-card transition-colors hover:bg-emerald-500/15"
-                        onClick={() =>
-                          onOpeningClick?.(
-                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, undefined, 'white')
-                          )
-                        }
-                        title="Click to view games with this opening"
-                      >
-                        <div className="mb-2 flex items-start justify-between">
-                          <span className="text-sm font-medium leading-tight text-white">
-                            {stat.opening}
-                          </span>
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
-                            stat.winRate >= 50 ? 'bg-sky-500/20 text-sky-300' :
-                            'bg-rose-500/20 text-rose-300'
-                          }`}>
-                            {formatPercent(stat.winRate, 1)}%
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-emerald-100">
-                          <span>{stat.games} games</span>
-                          <span className="font-semibold">
-                            {stat.wins}W-{stat.losses}L-{stat.draws}D
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                    {safeOpeningColorStats.white.length === 0 && (
-                      <div className="py-4 text-center text-xs text-gray-500">
-                        No white opening data available
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Best Black Openings */}
-                <div>
-                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Most Played Black Openings</h4>
-                  <div className="space-y-3">
-                    {safeOpeningColorStats.black.slice(0, 3).map((stat: any, index: number) => (
-                      <div
-                        key={index}
-                        className="cursor-pointer rounded-lg bg-sky-500/10 p-4 shadow-card transition-colors hover:bg-sky-500/15"
-                        onClick={() =>
-                          onOpeningClick?.(
-                            buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, undefined, 'black')
-                          )
-                        }
-                        title="Click to view games with this opening"
-                      >
-                        <div className="mb-2 flex items-start justify-between">
-                          <span className="text-sm font-medium leading-tight text-white">
-                            {stat.opening}
-                          </span>
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            stat.winRate >= 60 ? 'bg-emerald-500/20 text-emerald-300' :
-                            stat.winRate >= 50 ? 'bg-sky-500/20 text-sky-300' :
-                            'bg-rose-500/20 text-rose-300'
-                          }`}>
-                            {formatPercent(stat.winRate, 1)}%
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-sky-100">
-                          <span>{stat.games} games</span>
-                          <span className="font-semibold">
-                            {stat.wins}W-{stat.losses}L-{stat.draws}D
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                    {safeOpeningColorStats.black.length === 0 && (
-                      <div className="py-4 text-center text-xs text-gray-500">
-                        No black opening data available
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="py-8 text-center text-gray-500">
-                <div className="mb-2 text-4xl text-gray-600">--</div>
-                <p>No opening data available</p>
-                <p className="text-xs">Games need opening names to show color performance</p>
-              </div>
-            )}
-          </div>
-
-          {/* Recent Performance */}
-          <div className={cardClass}>
-            <h3 className="mb-4 text-lg font-semibold text-white">Recent Performance</h3>
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div className="space-y-4 lg:col-span-1">
-                <div className={subtleCardClass}>
-                  <div>
-                    <span className="text-xs uppercase tracking-wide text-gray-500">Recent Win Rate</span>
-                    <div className="text-lg font-semibold text-emerald-300">{activePerformance ? formatPercent(activePerformance.recentWinRate, 1) : '--'}%</div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {activePerformance
-                        ? `${activePerformance.sampleSize} games • ${activePerformance.timeControlUsed}`
-                        : 'No data'}
-                    </div>
-                  </div>
-                </div>
-                <div className={subtleCardClass}>
-                  <span className="text-xs uppercase tracking-wide text-gray-500">Current Rating</span>
-                  <div className="text-lg font-semibold text-sky-300">
-                    {selectedTimeControl && comprehensiveData?.currentEloPerTimeControl?.[selectedTimeControl]
-                      ? safeComprehensive.currentEloPerTimeControl[selectedTimeControl]
-                      : (comprehensiveData?.currentElo || '--')}
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    {activePerformance
-                      ? `Avg: ${formatPercent(activePerformance.recentAverageElo, 0)} • ${activePerformance.sampleSize} games`
-                      : 'No data'}
-                  </div>
-                </div>
-                <div className={subtleCardClass}>
-                  <span className="text-xs uppercase tracking-wide text-gray-500">Most Played Opening</span>
-                  {mostPlayedOpening ? (
-                    <>
-                      <div className="text-sm font-semibold text-purple-300 mt-2 break-words leading-tight">
-                        {normalizeOpeningName(mostPlayedOpening.opening)}
-                      </div>
-                      <div className="mt-1 text-xs text-gray-500">
-                        {mostPlayedOpening.games} games • {selectedTimeControl || 'All'}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-sm font-semibold text-gray-500 mt-2">
-                      No data
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="lg:col-span-2 min-w-0">
-                {viewMode === 'combined' && secondaryUserId && secondaryPlatform ? (
-                  <div className="space-y-4">
-                    <div>
-                      <div className="text-xs font-semibold text-green-300 uppercase tracking-wide mb-1">
-                        {platform === 'chess.com' ? 'Chess.com' : 'Lichess'}
-                      </div>
-                      <EloTrendGraph
-                        userId={userId}
-                        platform={platform as 'lichess' | 'chess.com'}
-                        className="w-full"
-                        selectedTimeControl={selectedTimeControl}
-                        onTimeControlChange={setSelectedTimeControl}
-                        onGamesUsedChange={setEloGraphGamesUsed}
-                        key={`primary-${dataRefreshKey}`}
-                      />
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-yellow-300 uppercase tracking-wide mb-1">
-                        {secondaryPlatform === 'chess.com' ? 'Chess.com' : 'Lichess'}
-                      </div>
-                      <EloTrendGraph
-                        userId={secondaryUserId}
-                        platform={secondaryPlatform}
-                        className="w-full"
-                        selectedTimeControl={selectedTimeControl}
-                        onTimeControlChange={setSelectedTimeControl}
-                        key={`secondary-${dataRefreshKey}`}
-                      />
-                    </div>
-                  </div>
+                  ))
                 ) : (
-                  <EloTrendGraph
-                    userId={userId}
-                    platform={platform as 'lichess' | 'chess.com'}
-                    className="w-full"
-                    selectedTimeControl={selectedTimeControl}
-                    onTimeControlChange={setSelectedTimeControl}
-                    onGamesUsedChange={setEloGraphGamesUsed}
-                    key={dataRefreshKey}
-                  />
+                  <p className="text-xs text-[#3a4250] py-4">All openings above 50% win rate</p>
                 )}
               </div>
             </div>
+          </div>
 
-            {/* Time Spent Summary - Full Width */}
-            {comprehensiveData?.games && userId && platform && (
-              <div className="mt-6">
-                <TimeSpentSummary
-                  userId={userId}
-                  platform={platform as 'lichess' | 'chess.com'}
-                  fallbackGames={comprehensiveData.games}
-                />
+          {/* Opening Performance by Color */}
+          <div className={`${cardClass} p-[18px_20px]`}>
+            <div className="text-[12px] font-medium uppercase tracking-[0.07em] text-[#5a6270] mb-3.5">Opening Performance by Color</div>
+            {safeOpeningColorStats &&
+             (safeOpeningColorStats.white.length > 0 || safeOpeningColorStats.black.length > 0) ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-[10px]">
+                {/* White */}
+                <div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[#3a4250] mb-2.5">
+                    <span className="w-2 h-2 rounded-full bg-[#c8cdd4] shrink-0" />Most Played as White
+                  </div>
+                  {safeOpeningColorStats.white.slice(0, 3).map((stat: any, index: number) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between py-[9px] border-b border-white/[0.04] last:border-b-0 last:pb-0 cursor-pointer hover:bg-white/[0.02] -mx-1 px-1 rounded transition-colors"
+                      onClick={() =>
+                        onOpeningClick?.(
+                          buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, undefined, 'white')
+                        )
+                      }
+                    >
+                      <div>
+                        <div className="text-[13px] text-[#8a9299]">{stat.opening}</div>
+                        <div className="text-[11px] text-[#3a4250]">{stat.games} games &middot; {stat.wins}W-{stat.losses}L-{stat.draws}D</div>
+                      </div>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${
+                        stat.winRate >= 60 ? 'bg-emerald-400/[0.08] text-emerald-400' :
+                        stat.winRate >= 50 ? 'bg-amber-400/[0.08] text-amber-400' :
+                        'bg-red-400/[0.08] text-red-400'
+                      }`}>{formatPercent(stat.winRate, 1)}%</span>
+                    </div>
+                  ))}
+                  {safeOpeningColorStats.white.length === 0 && (
+                    <p className="text-xs text-[#3a4250] py-4">No white opening data</p>
+                  )}
+                </div>
+                {/* Black */}
+                <div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[#3a4250] mb-2.5">
+                    <span className="w-2 h-2 rounded-full border-[1.5px] border-[#4a5260] shrink-0" />Most Played as Black
+                  </div>
+                  {safeOpeningColorStats.black.slice(0, 3).map((stat: any, index: number) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between py-[9px] border-b border-white/[0.04] last:border-b-0 last:pb-0 cursor-pointer hover:bg-white/[0.02] -mx-1 px-1 rounded transition-colors"
+                      onClick={() =>
+                        onOpeningClick?.(
+                          buildOpeningFilter(normalizeOpeningName(stat.opening), stat.identifiers, undefined, 'black')
+                        )
+                      }
+                    >
+                      <div>
+                        <div className="text-[13px] text-[#8a9299]">{stat.opening}</div>
+                        <div className="text-[11px] text-[#3a4250]">{stat.games} games &middot; {stat.wins}W-{stat.losses}L-{stat.draws}D</div>
+                      </div>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded shrink-0 ${
+                        stat.winRate >= 60 ? 'bg-emerald-400/[0.08] text-emerald-400' :
+                        stat.winRate >= 50 ? 'bg-amber-400/[0.08] text-amber-400' :
+                        'bg-red-400/[0.08] text-red-400'
+                      }`}>{formatPercent(stat.winRate, 1)}%</span>
+                    </div>
+                  ))}
+                  {safeOpeningColorStats.black.length === 0 && (
+                    <p className="text-xs text-[#3a4250] py-4">No black opening data</p>
+                  )}
+                </div>
               </div>
+            ) : (
+              <p className="text-xs text-[#3a4250] py-4">No opening data available</p>
             )}
           </div>
+
+          {/* Section Break: Recent Performance */}
+          <SectionBreak label="Recent Performance" />
+
+          {/* Recent Performance - 1fr 2fr grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-[10px]">
+            {/* Left stats column */}
+            <div className="flex flex-col gap-2">
+              <div className="bg-white/[0.02] rounded-[7px] p-3">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-[#3a4250] mb-1">Recent Win Rate</div>
+                <div className="text-[20px] font-medium tracking-tight text-emerald-400 leading-none">
+                  {activePerformance ? formatPercent(activePerformance.recentWinRate, 1) : '--'}%
+                  <span className="text-xs font-normal text-[#4a5260] ml-1">{activePerformance?.timeControlUsed || ''}</span>
+                </div>
+                <div className="text-[11px] text-[#3a4250] mt-0.5">{activePerformance?.sampleSize || 0} games</div>
+              </div>
+              <div className="bg-white/[0.02] rounded-[7px] p-3">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-[#3a4250] mb-1">Current Rating</div>
+                <div className="text-[20px] font-medium tracking-tight text-[#e4e8ed] leading-none">
+                  {selectedTimeControl && comprehensiveData?.currentEloPerTimeControl?.[selectedTimeControl]
+                    ? safeComprehensive.currentEloPerTimeControl[selectedTimeControl]?.toLocaleString()
+                    : (comprehensiveData?.currentElo?.toLocaleString() || '--')}
+                  <span className="text-xs font-normal text-[#4a5260] ml-1">{activePerformance?.timeControlUsed || ''}</span>
+                </div>
+                <div className="text-[11px] text-[#3a4250] mt-0.5">
+                  {activePerformance ? `Avg ${formatPercent(activePerformance.recentAverageElo, 0)} · last ${activePerformance.sampleSize} games` : ''}
+                </div>
+              </div>
+              <div className="bg-white/[0.02] rounded-[7px] p-3">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-[#3a4250] mb-1">Most Played Opening</div>
+                {mostPlayedOpening ? (
+                  <>
+                    <div className="text-[15px] font-medium text-[#8a9299] underline decoration-white/10 underline-offset-2 break-words leading-tight">
+                      {normalizeOpeningName(mostPlayedOpening.opening)}
+                    </div>
+                    <div className="text-[11px] text-[#3a4250] mt-0.5">{mostPlayedOpening.games} games · {selectedTimeControl || 'all'}</div>
+                  </>
+                ) : (
+                  <div className="text-[13px] text-[#3a4250]">No data</div>
+                )}
+              </div>
+              <div className="bg-white/[0.02] rounded-[7px] p-3">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-[#3a4250] mb-1">Rating Trend</div>
+                <div className="text-[20px] font-medium tracking-tight leading-none">
+                  {(() => {
+                    const trend = activePerformance?.eloTrend || 'stable'
+                    const label = trend.charAt(0).toUpperCase() + trend.slice(1)
+                    const color = trend === 'improving' ? 'text-emerald-400' : trend === 'declining' ? 'text-red-400' : 'text-[#e4e8ed]'
+                    return <span className={color}>{label}</span>
+                  })()}
+                </div>
+                <div className="text-[11px] text-[#3a4250] mt-0.5">
+                  {activePerformance ? `${activePerformance.sampleSize} games · ${activePerformance.timeControlUsed || 'all'}` : ''}
+                </div>
+              </div>
+            </div>
+
+            {/* ELO Trend Chart */}
+            <div className={`${cardClass} p-[18px_20px]`}>
+              {viewMode === 'combined' && secondaryUserId && secondaryPlatform ? (
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs font-medium text-emerald-400 uppercase tracking-wide mb-1">
+                      {platform === 'chess.com' ? 'Chess.com' : 'Lichess'}
+                    </div>
+                    <EloTrendGraph
+                      userId={userId}
+                      platform={platform as 'lichess' | 'chess.com'}
+                      className="w-full"
+                      selectedTimeControl={selectedTimeControl}
+                      onTimeControlChange={setSelectedTimeControl}
+                      onGamesUsedChange={setEloGraphGamesUsed}
+                      key={`primary-${dataRefreshKey}`}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-amber-400 uppercase tracking-wide mb-1">
+                      {secondaryPlatform === 'chess.com' ? 'Chess.com' : 'Lichess'}
+                    </div>
+                    <EloTrendGraph
+                      userId={secondaryUserId}
+                      platform={secondaryPlatform}
+                      className="w-full"
+                      selectedTimeControl={selectedTimeControl}
+                      onTimeControlChange={setSelectedTimeControl}
+                      key={`secondary-${dataRefreshKey}`}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <EloTrendGraph
+                  userId={userId}
+                  platform={platform as 'lichess' | 'chess.com'}
+                  className="w-full"
+                  selectedTimeControl={selectedTimeControl}
+                  onTimeControlChange={setSelectedTimeControl}
+                  onGamesUsedChange={setEloGraphGamesUsed}
+                  key={dataRefreshKey}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Time Spent - Standalone Card */}
+          {comprehensiveData?.games && userId && platform && (
+            <div className={`${cardClass} p-[18px_20px]`}>
+              <TimeSpentSummary
+                userId={userId}
+                platform={platform as 'lichess' | 'chess.com'}
+                fallbackGames={comprehensiveData.games}
+              />
+            </div>
+          )}
 
           {/* Enhanced Opponent Analysis */}
           {comprehensiveData?.opponentStats && (
@@ -1029,187 +876,165 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
             />
           )}
 
-          {/* NEW: Enhanced Game Length Insights & Performance Highlights - Combined Block */}
-          {(safeComprehensive?.gameLengthStats || safeComprehensive?.quickVictoryBreakdown || safeComprehensive?.marathonPerformance || safeComprehensive?.recentTrend || safeComprehensive?.personalRecords || safeComprehensive?.patienceRating != null || safeComprehensive?.comebackPotential || safeComprehensive?.resignationTiming) && (
-            <div className={cardClass}>
-              <h3 className="mb-4 text-lg font-semibold text-white">Enhanced Game Length Insights</h3>
+          {/* Enhanced Game Length Insights */}
+          {(safeComprehensive?.gameLengthStats || safeComprehensive?.marathonPerformance || safeComprehensive?.recentTrend || safeComprehensive?.personalRecords || safeComprehensive?.resignationTiming) && (
+            <div className={`${cardClass} p-[18px_20px]`}>
+              <div className="text-[12px] font-medium uppercase tracking-[0.07em] text-[#5a6270] mb-3.5">Enhanced Game Length Insights</div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Marathon Performance */}
-                {safeComprehensive?.marathonPerformance && safeComprehensive.marathonPerformance.count > 0 && (
-                  <div className="lg:col-span-2">
-                    <h4 className="mb-3 text-sm font-semibold text-amber-200">Marathon Performance (80+ moves)</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-2">
-                      <div className={subtleCardClass}>
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-h-[60px] sm:min-h-0">
-                          <span className="text-sm sm:text-xs text-gray-500">Games</span>
-                          <span className="text-2xl sm:text-lg font-semibold text-sky-300">{safeComprehensive.marathonPerformance.count}</span>
+              {/* Marathon Performance */}
+              {safeComprehensive?.marathonPerformance && safeComprehensive.marathonPerformance.count > 0 && (
+                <>
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-[#5a6270] mb-2.5">
+                    <span className="text-[10px] px-[7px] py-px rounded-[3px] bg-white/[0.05] text-[#4a5260] tracking-[0.04em]">Marathon</span>
+                    Games 80+ moves
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    <div className="bg-white/[0.02] rounded-[7px] p-2.5">
+                      <div className="text-[11px] text-[#3a4250] mb-0.5">Games</div>
+                      <div className="text-[17px] font-medium tracking-tight text-[#c8cdd4]">{safeComprehensive.marathonPerformance.count}</div>
+                    </div>
+                    {safeComprehensive.marathonPerformance.average_accuracy != null && (
+                      <div className="bg-white/[0.02] rounded-[7px] p-2.5">
+                        <div className="text-[11px] text-[#3a4250] mb-0.5">Avg Accuracy</div>
+                        <div className="text-[17px] font-medium tracking-tight text-emerald-400">
+                          {formatPercent(safeComprehensive.marathonPerformance.average_accuracy, 1)}%
+                          {safeComprehensive.marathonPerformance.analyzed_count && safeComprehensive.marathonPerformance.analyzed_count < safeComprehensive.marathonPerformance.count && (
+                            <span className="text-[11px] font-normal text-[#4a5260]"> ({safeComprehensive.marathonPerformance.analyzed_count} analyzed)</span>
+                          )}
                         </div>
                       </div>
-                      {safeComprehensive.marathonPerformance.average_accuracy !== null && safeComprehensive.marathonPerformance.average_accuracy !== undefined && (
-                        <div className={subtleCardClass}>
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-h-[60px] sm:min-h-0">
-                            <span className="text-sm sm:text-xs text-gray-500">Avg Accuracy</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-2xl sm:text-lg font-semibold text-emerald-300">{formatPercent(safeComprehensive.marathonPerformance.average_accuracy, 1)}%</span>
-                              {safeComprehensive.marathonPerformance.analyzed_count && safeComprehensive.marathonPerformance.analyzed_count < safeComprehensive.marathonPerformance.count && (
-                                <span className="text-xs text-gray-500">({safeComprehensive.marathonPerformance.analyzed_count} analyzed)</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      {safeComprehensive.marathonPerformance.average_blunders !== null && safeComprehensive.marathonPerformance.average_blunders !== undefined && (
-                        <div className={subtleCardClass}>
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 min-h-[60px] sm:min-h-0">
-                            <span className="text-sm sm:text-xs text-gray-500">Avg Blunders</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-2xl sm:text-lg font-semibold text-rose-300">{formatPercent(safeComprehensive.marathonPerformance.average_blunders, 1)}</span>
-                              {safeComprehensive.marathonPerformance.analyzed_count && safeComprehensive.marathonPerformance.analyzed_count < safeComprehensive.marathonPerformance.count && (
-                                <span className="text-xs text-gray-500">({safeComprehensive.marathonPerformance.analyzed_count} analyzed)</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Recent Trend - Full Width */}
-              {safeComprehensive?.recentTrend && safeComprehensive.recentTrend.recent_average_moves && (
-                <div className="mt-6 pt-6 border-t border-white/10">
-                  <h4 className="mb-3 text-sm font-semibold text-sky-200">Recent Trend</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <span className="block text-xs text-gray-500 mb-1">Last 100 Games</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">{formatPercent(safeComprehensive.recentTrend.recent_average_moves, 1)} <span className="text-sm">moves</span></div>
-                    </div>
-                    <div>
-                      <span className="block text-xs text-gray-500 mb-1">Baseline</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-gray-400">{formatPercent(safeComprehensive.recentTrend.baseline_average_moves, 1)} <span className="text-sm">moves</span></div>
-                    </div>
-                    <div>
-                      <span className="block text-xs text-gray-500 mb-1">Change</span>
-                      <div className={`text-2xl sm:text-xl font-semibold ${safeComprehensive.recentTrend.difference > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
-                        {safeComprehensive.recentTrend.difference > 0 ? '+' : ''}{formatPercent(safeComprehensive.recentTrend.difference, 1)}
-                      </div>
-                    </div>
-                  </div>
-                  {safeComprehensive.recentTrend.difference !== 0 && (
-                    <p className="mt-3 text-sm sm:text-xs text-gray-500">
-                      {safeComprehensive.recentTrend.difference > 0
-                        ? `Your recent games are ${Math.abs(safeComprehensive.recentTrend.difference).toFixed(1)} moves longer than usual`
-                        : `Your recent games are ${Math.abs(safeComprehensive.recentTrend.difference).toFixed(1)} moves shorter than usual`
-                      }
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Performance Highlights Section */}
-              {(safeComprehensive?.personalRecords || safeComprehensive?.comebackPotential) && (
-                <div className="mt-6 pt-6 border-t border-white/10">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Personal Records */}
-                    {safeComprehensive?.personalRecords && (
-                      <div className="lg:col-span-2">
-                        <h5 className="mb-3 text-sm font-semibold text-emerald-200">Personal Records</h5>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-2">
-                          {comprehensiveData.personal_records.fastest_win && comprehensiveData.personal_records.fastest_win.moves > 0 && (
-                            <div
-                              className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
-                              onClick={() => {
-                                const gameId = safeComprehensive.personalRecords.fastest_win.game_id
-                                if (gameId) {
-                                  navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}`)
-                                }
-                              }}
-                            >
-                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                                <span className="text-sm sm:text-xs text-gray-500">Fastest Win</span>
-                                <span className="text-2xl sm:text-lg font-semibold text-emerald-300">{safeComprehensive.personalRecords.fastest_win.moves} <span className="text-sm">moves</span></span>
-                              </div>
-                            </div>
-                          )}
-                          {safeComprehensive.personalRecords.highest_accuracy_win && (
-                            <div
-                              className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
-                              onClick={() => {
-                                const gameId = safeComprehensive.personalRecords.highest_accuracy_win.game_id
-                                if (gameId) {
-                                  navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}`)
-                                }
-                              }}
-                            >
-                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                                <span className="text-sm sm:text-xs text-gray-500">Most Accurate Win</span>
-                                <span className="text-2xl sm:text-lg font-semibold text-sky-300">{formatPercent(safeComprehensive.personalRecords.highest_accuracy_win.accuracy, 1)}%</span>
-                              </div>
-                            </div>
-                          )}
-                          {comprehensiveData.personal_records.longest_game && comprehensiveData.personal_records.longest_game.moves > 0 && (
-                            <div
-                              className={`${subtleCardClass} cursor-pointer hover:bg-white/15 transition-colors`}
-                              onClick={() => {
-                                const gameId = safeComprehensive.personalRecords.longest_game.game_id
-                                if (gameId) {
-                                  navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}`)
-                                }
-                              }}
-                            >
-                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                                <span className="text-sm sm:text-xs text-gray-500">Longest Game</span>
-                                <span className="text-2xl sm:text-lg font-semibold text-purple-300">{safeComprehensive.personalRecords.longest_game.moves} <span className="text-sm">moves</span></span>
-                              </div>
-                            </div>
+                    )}
+                    {safeComprehensive.marathonPerformance.average_blunders != null && (
+                      <div className="bg-white/[0.02] rounded-[7px] p-2.5">
+                        <div className="text-[11px] text-[#3a4250] mb-0.5">Avg Blunders</div>
+                        <div className="text-[17px] font-medium tracking-tight text-red-400">
+                          {formatPercent(safeComprehensive.marathonPerformance.average_blunders, 1)}
+                          {safeComprehensive.marathonPerformance.analyzed_count && safeComprehensive.marathonPerformance.analyzed_count < safeComprehensive.marathonPerformance.count && (
+                            <span className="text-[11px] font-normal text-[#4a5260]"> ({safeComprehensive.marathonPerformance.analyzed_count} analyzed)</span>
                           )}
                         </div>
                       </div>
                     )}
                   </div>
-                </div>
+                </>
               )}
 
-              {/* Resignation Timing - Full Width */}
-              {comprehensiveData?.resignation_timing && comprehensiveData.resignation_timing.my_average_resignation_move != null && (
-                <div className="mt-6 pt-6 border-t border-white/10">
-                  <h4 className="mb-3 text-sm font-semibold text-rose-200">Resignation Timing</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Recent Trend */}
+              {safeComprehensive?.recentTrend && safeComprehensive.recentTrend.recent_average_moves && (
+                <>
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-[#5a6270] mb-2.5">
+                    <span className="text-[10px] px-[7px] py-px rounded-[3px] bg-white/[0.05] text-[#4a5260] tracking-[0.04em]">Recent Trend</span>
+                    Game length
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
                     <div>
-                      <span className="block text-xs text-gray-500 mb-1">Last 50 Games</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-sky-300">
-                        {comprehensiveData.resignation_timing.recent_average_resignation_move != null
-                          ? `${formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move, 1)} moves`
-                          : 'N/A'}
+                      <div className="text-[11px] text-[#3a4250] mb-0.5">Last 100 games</div>
+                      <div className="text-[15px] font-medium text-[#c8cdd4]">{formatPercent(safeComprehensive.recentTrend.recent_average_moves, 1)} <span className="text-[11px] font-normal text-[#4a5260]">moves</span></div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-[#3a4250] mb-0.5">Baseline</div>
+                      <div className="text-[15px] font-medium text-[#c8cdd4]">{formatPercent(safeComprehensive.recentTrend.baseline_average_moves, 1)} <span className="text-[11px] font-normal text-[#4a5260]">moves</span></div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-[#3a4250] mb-0.5">Change</div>
+                      <div className={`text-[15px] font-medium ${safeComprehensive.recentTrend.difference < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {safeComprehensive.recentTrend.difference > 0 ? '+' : safeComprehensive.recentTrend.difference < 0 ? '\u2212' : ''}{Math.abs(safeComprehensive.recentTrend.difference).toFixed(1)} <span className="text-[11px] font-normal text-[#4a5260]">moves</span>
                       </div>
-                      {comprehensiveData.resignation_timing.insight && (
-                        <div className="text-sm text-gray-500 mt-2 flex items-center gap-1">
-                          <span>{safeComprehensive.resignationTiming.insight}</span>
+                      {safeComprehensive.recentTrend.difference !== 0 && (
+                        <div className="text-[11px] text-[#3a4250] italic mt-0.5">
+                          Games are {Math.abs(safeComprehensive.recentTrend.difference).toFixed(1)} moves {safeComprehensive.recentTrend.difference > 0 ? 'longer' : 'shorter'} than usual
                         </div>
                       )}
                     </div>
+                  </div>
+                </>
+              )}
+
+              {/* Personal Records */}
+              {safeComprehensive?.personalRecords && (
+                <>
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-[#5a6270] mb-2.5">
+                    <span className="text-[10px] px-[7px] py-px rounded-[3px] bg-white/[0.05] text-[#4a5260] tracking-[0.04em]">Personal Records</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    {comprehensiveData.personal_records?.fastest_win && comprehensiveData.personal_records.fastest_win.moves > 0 && (
+                      <div
+                        className="bg-white/[0.02] rounded-[7px] p-2.5 text-center cursor-pointer hover:bg-white/[0.04] transition-colors"
+                        onClick={() => {
+                          const gameId = safeComprehensive.personalRecords.fastest_win.game_id
+                          if (gameId) navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}`)
+                        }}
+                      >
+                        <div className="text-[11px] text-[#3a4250] mb-1">Fastest Win</div>
+                        <div className="text-[18px] font-medium tracking-tight text-[#c8cdd4]">{safeComprehensive.personalRecords.fastest_win.moves} <span className="text-[11px] font-normal text-[#4a5260]">moves</span></div>
+                      </div>
+                    )}
+                    {safeComprehensive.personalRecords.highest_accuracy_win && (
+                      <div
+                        className="bg-white/[0.02] rounded-[7px] p-2.5 text-center cursor-pointer hover:bg-white/[0.04] transition-colors"
+                        onClick={() => {
+                          const gameId = safeComprehensive.personalRecords.highest_accuracy_win.game_id
+                          if (gameId) navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}`)
+                        }}
+                      >
+                        <div className="text-[11px] text-[#3a4250] mb-1">Most Accurate Win</div>
+                        <div className="text-[18px] font-medium tracking-tight text-emerald-400">{formatPercent(safeComprehensive.personalRecords.highest_accuracy_win.accuracy, 1)}%</div>
+                      </div>
+                    )}
+                    {comprehensiveData.personal_records?.longest_game && comprehensiveData.personal_records.longest_game.moves > 0 && (
+                      <div
+                        className="bg-white/[0.02] rounded-[7px] p-2.5 text-center cursor-pointer hover:bg-white/[0.04] transition-colors"
+                        onClick={() => {
+                          const gameId = safeComprehensive.personalRecords.longest_game.game_id
+                          if (gameId) navigate(`/analysis/${platform}/${encodeURIComponent(userId)}/${gameId}`)
+                        }}
+                      >
+                        <div className="text-[11px] text-[#3a4250] mb-1">Longest Game</div>
+                        <div className="text-[18px] font-medium tracking-tight text-[#c8cdd4]">{safeComprehensive.personalRecords.longest_game.moves} <span className="text-[11px] font-normal text-[#4a5260]">moves</span></div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Resignation Timing */}
+              {comprehensiveData?.resignation_timing && comprehensiveData.resignation_timing.my_average_resignation_move != null && (
+                <>
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-[#5a6270] mb-2.5">
+                    <span className="text-[10px] px-[7px] py-px rounded-[3px] bg-white/[0.05] text-[#4a5260] tracking-[0.04em]">Resignation Timing</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
                     <div>
-                      <span className="block text-xs text-gray-500 mb-1">Baseline</span>
-                      <div className="text-2xl sm:text-xl font-semibold text-gray-400">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} <span className="text-sm">moves</span></div>
-                    </div>
-                    <div>
-                      <span className="block text-xs text-gray-500 mb-1">Change</span>
-                      <div className={`text-2xl sm:text-xl font-semibold ${
-                        comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change > 0
-                          ? 'text-amber-300'
-                          : comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change < 0
-                            ? 'text-emerald-300'
-                            : 'text-gray-400'
-                      }`}>
-                        {comprehensiveData.resignation_timing.change != null
-                          ? `${comprehensiveData.resignation_timing.change > 0 ? '+' : ''}${comprehensiveData.resignation_timing.change}`
+                      <div className="text-[11px] text-[#3a4250] mb-0.5">Last 50 games</div>
+                      <div className="text-[15px] font-medium text-[#c8cdd4]">
+                        {comprehensiveData.resignation_timing.recent_average_resignation_move != null
+                          ? <>{formatPercent(comprehensiveData.resignation_timing.recent_average_resignation_move, 1)} <span className="text-[11px] font-normal text-[#4a5260]">moves</span></>
                           : 'N/A'}
                       </div>
                     </div>
+                    <div>
+                      <div className="text-[11px] text-[#3a4250] mb-0.5">Baseline</div>
+                      <div className="text-[15px] font-medium text-[#c8cdd4]">{formatPercent(comprehensiveData.resignation_timing.my_average_resignation_move, 1)} <span className="text-[11px] font-normal text-[#4a5260]">moves</span></div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-[#3a4250] mb-0.5">Change</div>
+                      <div className={`text-[15px] font-medium ${
+                        comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change < 0
+                          ? 'text-red-400'
+                          : comprehensiveData.resignation_timing.change != null && comprehensiveData.resignation_timing.change > 0
+                            ? 'text-emerald-400'
+                            : 'text-[#c8cdd4]'
+                      }`}>
+                        {comprehensiveData.resignation_timing.change != null
+                          ? <>{comprehensiveData.resignation_timing.change > 0 ? '+' : comprehensiveData.resignation_timing.change < 0 ? '\u2212' : ''}{Math.abs(comprehensiveData.resignation_timing.change).toFixed(1)} <span className="text-[11px] font-normal text-[#4a5260]">moves</span></>
+                          : 'N/A'}
+                      </div>
+                      {comprehensiveData.resignation_timing.insight && (
+                        <div className="text-[11px] text-[#3a4250] italic mt-0.5">{safeComprehensive.resignationTiming?.insight}</div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           )}
@@ -1218,22 +1043,21 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
       {/* Deep Analysis Section */}
       {deepAnalysisData && (
-        <div className="space-y-6">
+        <>
+          {/* Section Break: Style & Personality */}
+          <SectionBreak label="Style & Personality" />
 
-          {/* Long-term Planner */}
+          {/* Game Style (LongTermPlanner) */}
           <LongTermPlanner data={deepAnalysisData} userId={userId} />
 
-          {/* Main Analysis Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Personality Radar */}
+          {/* Personality Radar + Enhanced Opening Analysis */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-[10px]">
             {deepAnalysisData.personality_scores && (
-              <div className={cardClass}>
+              <div className={`${cardClass} p-[18px_20px]`}>
                 <PersonalityRadar scores={deepAnalysisData.personality_scores} />
               </div>
             )}
-
-            {/* Enhanced Opening Player Card */}
-            <div className={cardClass}>
+            <div className={`${cardClass} p-[18px_20px]`}>
               <EnhancedOpeningPlayerCard
                 score={deepAnalysisData.phase_accuracies?.opening || 0}
                 phaseAccuracy={deepAnalysisData.phase_accuracies?.opening || 0}
@@ -1244,53 +1068,50 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
               />
             </div>
           </div>
-
-        </div>
+        </>
       )}
 
-      {/* Analysis Stats */}
-      <div className={cardClass}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">Analysis Statistics</h2>
+      {/* Section Break: Analysis Statistics */}
+      <SectionBreak label="Analysis Statistics" />
+
+      {/* Analysis Stats - Compact 2-col grid */}
+      <div className={`${cardClass} p-[18px_20px]`}>
+        <div className="flex items-center justify-between text-[12px] font-medium uppercase tracking-[0.07em] text-[#5a6270] mb-3.5">
+          <span>Breakdown by Game Phase</span>
           <button
             onClick={() => loadData(true)}
             disabled={refreshing}
-            className="rounded-md bg-surface-2 px-4 py-2 text-sm font-medium text-gray-300 shadow-card transition-colors hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-transparent shadow-card rounded-[7px] text-[11px] font-normal normal-case tracking-normal text-[#5a6270] cursor-pointer hover:text-[#8a9299] transition-colors disabled:opacity-50"
           >
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <div className={subtleCardClass}>
-            <div className="flex justify-between text-sm text-gray-300">
-              <span className="text-gray-500">Opening Accuracy</span>
-              <span className="font-semibold">{safeData.average_opening_accuracy ? Number(safeData.average_opening_accuracy).toFixed(1) : 'N/A'}%</span>
-            </div>
-            <div className="mt-2 flex justify-between text-sm text-gray-300">
-              <span className="text-gray-500">Middle Game Accuracy</span>
-              <span className="font-semibold">{safeData.average_middle_game_accuracy ? Number(safeData.average_middle_game_accuracy).toFixed(1) : 'N/A'}%</span>
-            </div>
-            <div className="mt-2 flex justify-between text-sm text-gray-300">
-              <span className="text-gray-500">Endgame Accuracy</span>
-              <span className="font-semibold">{safeData.average_endgame_accuracy ? Number(safeData.average_endgame_accuracy).toFixed(1) : 'N/A'}%</span>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+          <div className="flex items-center justify-between px-3 py-[9px] bg-white/[0.02] rounded-[7px]">
+            <span className="text-xs text-[#4a5260]">Opening Accuracy</span>
+            <span className="text-[13px] font-medium text-emerald-400">{safeData.average_opening_accuracy ? Number(safeData.average_opening_accuracy).toFixed(1) : 'N/A'}%</span>
           </div>
-          <div className={subtleCardClass}>
-            <div className="flex justify-between text-sm text-gray-300">
-              <span className="text-gray-500">Blunders per Game</span>
-              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.blunders}`}>{Number(safeData.blunders_per_game).toFixed(2)}</span>
-            </div>
-            <div className="mt-2 flex justify-between text-sm text-gray-300">
-              <span className="text-gray-500">Inaccuracies per Game</span>
-              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.inaccuracies}`}>{Number(safeData.inaccuracies_per_game).toFixed(2)}</span>
-            </div>
-            <div className="mt-2 flex justify-between text-sm text-gray-300">
-              <span className="text-gray-500">Brilliant Moves per Game</span>
-              <span className={`font-semibold ${CHESS_ANALYSIS_COLORS.brilliants}`}>{Number(safeData.brilliant_moves_per_game).toFixed(2)}</span>
-            </div>
+          <div className="flex items-center justify-between px-3 py-[9px] bg-white/[0.02] rounded-[7px]">
+            <span className="text-xs text-[#4a5260]">Blunders per Game</span>
+            <span className="text-[13px] font-medium text-red-400">{Number(safeData.blunders_per_game).toFixed(2)}</span>
           </div>
-
+          <div className="flex items-center justify-between px-3 py-[9px] bg-white/[0.02] rounded-[7px]">
+            <span className="text-xs text-[#4a5260]">Middlegame Accuracy</span>
+            <span className="text-[13px] font-medium text-emerald-400">{safeData.average_middle_game_accuracy ? Number(safeData.average_middle_game_accuracy).toFixed(1) : 'N/A'}%</span>
+          </div>
+          <div className="flex items-center justify-between px-3 py-[9px] bg-white/[0.02] rounded-[7px]">
+            <span className="text-xs text-[#4a5260]">Inaccuracies per Game</span>
+            <span className="text-[13px] font-medium text-red-400">{Number(safeData.inaccuracies_per_game).toFixed(2)}</span>
+          </div>
+          <div className="flex items-center justify-between px-3 py-[9px] bg-white/[0.02] rounded-[7px]">
+            <span className="text-xs text-[#4a5260]">Endgame Accuracy</span>
+            <span className="text-[13px] font-medium text-emerald-400">{safeData.average_endgame_accuracy ? Number(safeData.average_endgame_accuracy).toFixed(1) : 'N/A'}%</span>
+          </div>
+          <div className="flex items-center justify-between px-3 py-[9px] bg-white/[0.02] rounded-[7px]">
+            <span className="text-xs text-[#4a5260]">Brilliant Moves per Game</span>
+            <span className="text-[13px] font-medium text-[#c8cdd4]">{Number(safeData.brilliant_moves_per_game).toFixed(2)}</span>
+          </div>
         </div>
       </div>
     </div>

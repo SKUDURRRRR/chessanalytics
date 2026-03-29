@@ -822,140 +822,105 @@ export default function SimpleAnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-surface-base text-gray-300">
-      <div className="container-responsive space-responsive py-8 content-fade">
+      <div className="max-w-[1040px] mx-auto px-6 py-7 pb-24 content-fade space-y-0">
+        {/* Player Header */}
         {userId && (
-          <section className="relative overflow-hidden rounded-lg bg-surface-1 shadow-card px-6 py-4 sm:px-8 sm:py-5">
-            <div className="relative flex flex-col gap-4">
-              <div className="flex items-center justify-end">
-                <button
-                  onClick={() => navigate('/')}
-                  className="inline-flex items-center gap-2 rounded-md bg-surface-2 shadow-input px-4 py-2 text-caption font-medium uppercase tracking-label text-gray-400 transition-colors hover:text-gray-300 hover:shadow-card-hover"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 19L3 12m0 0l7-7m-7 7h18" />
-                  </svg>
-                  Back to search
-                </button>
-              </div>
-
-              <div className="text-center">
-                {hasBothAccounts ? (
-                  /* Platform switcher for users with both accounts linked */
-                  <div className="inline-flex items-center rounded-md bg-surface-2 shadow-input p-1 text-caption font-medium">
-                    <button
-                      onClick={() => handlePlatformSwitch('chess.com')}
-                      className={`rounded-md px-3.5 py-1.5 transition-colors ${
-                        viewMode === 'single' && platform === 'chess.com'
-                          ? 'bg-cta text-[#111] shadow-btn-primary'
-                          : 'text-gray-500 hover:text-gray-300'
-                      }`}
-                    >
-                      Chess.com
-                    </button>
-                    <button
-                      onClick={() => handlePlatformSwitch('lichess')}
-                      className={`rounded-md px-3.5 py-1.5 transition-colors ${
-                        viewMode === 'single' && platform === 'lichess'
-                          ? 'bg-cta text-[#111] shadow-btn-primary'
-                          : 'text-gray-500 hover:text-gray-300'
-                      }`}
-                    >
-                      Lichess
-                    </button>
-                    <button
-                      onClick={() => handlePlatformSwitch('combined')}
-                      className={`rounded-md px-3.5 py-1.5 transition-colors ${
-                        viewMode === 'combined'
-                          ? 'bg-cta text-[#111] shadow-btn-primary'
-                          : 'text-gray-500 hover:text-gray-300'
-                      }`}
-                    >
-                      Combined
-                    </button>
-                  </div>
-                ) : (
-                  /* Static platform badge for single-account users */
-                  <div className={`inline-flex items-center gap-2 rounded-full border px-4 py-1 text-xs uppercase tracking-wide font-semibold ${
-                    platform === 'lichess'
-                      ? 'border-amber-500/30 bg-amber-600/20 text-amber-100'
-                      : 'border-emerald-500/30 bg-emerald-600/20 text-emerald-100'
-                  }`}>
-                    {platform === 'lichess' ? 'Lichess' : 'Chess.com'}
-                  </div>
-                )}
-                {/* Link other platform prompt */}
-                {!hasBothAccounts && !isOwnProfile && (
-                  <div className="mt-2">
-                    {showLinkInput ? (
-                      <div className="flex items-center gap-2 justify-center">
-                        <input
-                          type="text"
-                          value={linkInputValue}
-                          onChange={e => { setLinkInputValue(e.target.value); setLinkError('') }}
-                          onKeyDown={e => e.key === 'Enter' && handleCreateLink()}
-                          placeholder={`${platform === 'chess.com' ? 'Lichess' : 'Chess.com'} username`}
-                          className="rounded-md bg-surface-2 shadow-input px-3 py-1 text-caption text-gray-300 placeholder-gray-600 focus:outline-none focus:shadow-input-focus w-40"
-                        />
+          <div className="pb-0">
+            <div className="flex items-center justify-between pb-4">
+              {/* Left: Avatar + Name + Meta */}
+              <div className="flex items-center gap-3.5">
+                <div className="w-[42px] h-[42px] rounded-[10px] bg-surface-2 shadow-card flex items-center justify-center text-[18px] font-medium text-[#7a8290] shrink-0">
+                  {(viewMode === 'combined' ? userId : userId).charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[18px] font-medium tracking-tight text-[#e4e8ed]">
+                      {viewMode === 'combined' ? `${userId} + ${getSecondaryUser() || ''}` : userId}
+                    </span>
+                    {hasBothAccounts ? (
+                      <div className="inline-flex items-center rounded-md bg-surface-2 shadow-input p-0.5 text-[10px] font-medium">
                         <button
-                          onClick={handleCreateLink}
-                          disabled={linkLoading || !linkInputValue.trim()}
-                          className="rounded-full shadow-card bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
-                        >
-                          {linkLoading ? '...' : 'Link'}
-                        </button>
+                          onClick={() => handlePlatformSwitch('chess.com')}
+                          className={`rounded px-2 py-0.5 transition-colors ${
+                            viewMode === 'single' && platform === 'chess.com'
+                              ? 'bg-cta text-[#111]' : 'text-[#4a5260] hover:text-[#8a9299]'
+                          }`}
+                        >chess.com</button>
                         <button
-                          onClick={() => { setShowLinkInput(false); setLinkError(''); setLinkInputValue('') }}
-                          className="text-xs text-gray-500 hover:text-gray-400"
-                        >
-                          Cancel
-                        </button>
+                          onClick={() => handlePlatformSwitch('lichess')}
+                          className={`rounded px-2 py-0.5 transition-colors ${
+                            viewMode === 'single' && platform === 'lichess'
+                              ? 'bg-cta text-[#111]' : 'text-[#4a5260] hover:text-[#8a9299]'
+                          }`}
+                        >lichess</button>
+                        <button
+                          onClick={() => handlePlatformSwitch('combined')}
+                          className={`rounded px-2 py-0.5 transition-colors ${
+                            viewMode === 'combined'
+                              ? 'bg-cta text-[#111]' : 'text-[#4a5260] hover:text-[#8a9299]'
+                          }`}
+                        >combined</button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => setShowLinkInput(true)}
-                        className="text-xs text-gray-500 hover:text-gray-400 transition"
-                      >
-                        Know their {platform === 'chess.com' ? 'Lichess' : 'Chess.com'} username? Link it
-                      </button>
+                      <span className="px-2 py-px rounded bg-white/[0.05] shadow-card text-[10px] font-medium uppercase tracking-[0.07em] text-[#4a5260]">
+                        {platform === 'lichess' ? 'lichess' : 'chess.com'}
+                      </span>
                     )}
-                    {linkError && <p className="text-xs text-rose-400 mt-1">{linkError}</p>}
                   </div>
-                )}
-                <h1 className="mt-2 text-title font-semibold text-white sm:text-title">
-                  {viewMode === 'combined'
-                    ? `${userId} + ${getSecondaryUser() || ''}`
-                    : userId}
-                </h1>
-                <p className="mt-1.5 text-sm text-gray-400">
-                  {viewMode === 'combined'
-                    ? 'Combined analytics from both Chess.com and Lichess.'
-                    : 'Import games, trigger fresh Stockfish evaluations, and explore openings without leaving this dashboard.'}
-                </p>
+                  <div className="text-xs text-[#3a4250]">
+                    {gameCount > 0 ? `${gameCount.toLocaleString()} games` : ''}
+                    {analyzedGameIds.size > 0 && <> &middot; {analyzedGameIds.size} analyzed</>}
+                    {lastRefresh && <> &middot; updated {lastRefresh.toLocaleTimeString()}</>}
+                  </div>
+                  {/* Link prompt */}
+                  {!hasBothAccounts && !isOwnProfile && (
+                    <div className="mt-1">
+                      {showLinkInput ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={linkInputValue}
+                            onChange={e => { setLinkInputValue(e.target.value); setLinkError('') }}
+                            onKeyDown={e => e.key === 'Enter' && handleCreateLink()}
+                            placeholder={`${platform === 'chess.com' ? 'Lichess' : 'Chess.com'} username`}
+                            className="rounded-md bg-surface-2 shadow-input px-2 py-0.5 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:shadow-input-focus w-32"
+                          />
+                          <button onClick={handleCreateLink} disabled={linkLoading || !linkInputValue.trim()} className="text-[11px] text-emerald-400 hover:text-emerald-300 disabled:opacity-50">{linkLoading ? '...' : 'Link'}</button>
+                          <button onClick={() => { setShowLinkInput(false); setLinkError(''); setLinkInputValue('') }} className="text-[11px] text-[#3a4250] hover:text-[#5a6270]">Cancel</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setShowLinkInput(true)} className="text-[11px] text-[#3a4250] hover:text-[#5a6270] transition-colors">
+                          Link {platform === 'chess.com' ? 'Lichess' : 'Chess.com'} account
+                        </button>
+                      )}
+                      {linkError && <p className="text-[11px] text-rose-400 mt-0.5">{linkError}</p>}
+                    </div>
+                  )}
+                </div>
               </div>
-
-              <div className="flex flex-col items-center gap-3 text-sm">
-                {viewMode === 'combined' ? (
-                  <p className="text-xs text-gray-500">Switch to a single platform to import games</p>
-                ) : (
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  {!hasGames ? (
+              {/* Right: Actions */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => navigate('/')}
+                  className="inline-flex items-center gap-1.5 px-3 py-[7px] bg-transparent shadow-card rounded-[7px] text-xs text-[#5a6270] cursor-pointer hover:text-[#8a9299] transition-colors"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+                  Back to search
+                </button>
+                {viewMode !== 'combined' && (
+                  !hasGames ? (
                     <button
                       onClick={importGames}
                       disabled={importing}
-                      className="inline-flex items-center gap-2 rounded-full shadow-card bg-emerald-500/10 px-4 py-2 font-medium text-emerald-200 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-[7px] bg-[#e4e8ed] rounded-[7px] text-xs font-medium text-[#0c0d0f] cursor-pointer disabled:opacity-60"
                     >
-                      {importing ? 'Importing…' : 'Import Games (100)'}
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                      {importing ? 'Importing...' : 'Import Games'}
                     </button>
                   ) : (
                     <button
                       onClick={() => {
-                        // If user has 5000+ games, show date picker for targeted import
-                        // Otherwise, directly import up to 5000 games
-                        if (gameCount >= 5000) {
-                          setShowDateRangePicker(true)
-                        } else {
-                          startLargeImport()
-                        }
+                        if (gameCount >= 5000) { setShowDateRangePicker(true) } else { startLargeImport() }
                       }}
                       disabled={
                         largeImportProgress?.status === 'importing' ||
@@ -963,168 +928,66 @@ export default function SimpleAnalyticsPage() {
                         (usageStats?.account_tier === 'free' || usageStats?.account_tier === undefined)
                       }
                       title={
-                        !user
-                          ? 'Sign in to import more games'
+                        !user ? 'Sign in to import more games'
                           : usageStats?.account_tier === 'free' || usageStats?.account_tier === undefined
-                          ? 'Upgrade to Pro to import more games'
-                          : undefined
+                          ? 'Upgrade to Pro to import more games' : undefined
                       }
-                      className="inline-flex items-center gap-2 rounded-full shadow-card bg-purple-500/10 px-4 py-2 font-medium text-purple-200 transition-colors hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-[7px] bg-[#e4e8ed] rounded-[7px] text-xs font-medium text-[#0c0d0f] cursor-pointer disabled:opacity-60"
                     >
-                      {largeImportProgress?.status === 'importing' ? (
-                        <>
-                          <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-purple-200" />
-                          Importing More Games...
-                        </>
-                      ) : (
-                        'Import More Games'
-                      )}
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                      {largeImportProgress?.status === 'importing' ? 'Importing...' : 'Import More Games'}
                     </button>
-                  )}
-                </div>
-                )}
-                <div className="flex items-center gap-3 text-xs text-gray-500">
-                  {lastRefresh && <span>Updated · {lastRefresh.toLocaleTimeString()}</span>}
-                </div>
-                {importStatus && <div className="text-xs text-emerald-300">{importStatus}</div>}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Auto-Sync Progress Bar */}
-        {autoSyncing && (
-          <div className="rounded-lg shadow-card bg-emerald-500/10 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-lg font-semibold text-emerald-200">
-                {autoSyncProgress.status === 'complete' ? 'Auto-Sync Complete' :
-                 autoSyncProgress.status === 'error' ? 'Auto-Sync Error' : 'Auto-Sync Progress'}
-              </h4>
-              <div className="flex items-center gap-2">
-                {autoSyncProgress.status === 'importing' && (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-transparent" />
-                )}
-                {autoSyncProgress.status === 'complete' && autoSyncProgress.importedGames > 0 && (
-                  <div className="text-sm text-emerald-300">
-                    {autoSyncProgress.importedGames} games imported
-                  </div>
+                  )
                 )}
               </div>
             </div>
-
-            {autoSyncProgress.status === 'importing' && (
-              <div className="mb-2">
-                <div className="h-2 w-full rounded-full bg-emerald-900/30">
-                  <div className="h-2 rounded-full bg-emerald-400 transition-colors duration-300 animate-pulse" />
-                </div>
-              </div>
-            )}
-
-            <p className="text-sm text-emerald-200">{autoSyncProgress.message}</p>
+            {importStatus && <div className="text-[11px] text-emerald-400 mb-2">{importStatus}</div>}
           </div>
         )}
 
-        {/* Large Import Progress Display */}
+        {/* Auto-Sync Progress */}
+        {autoSyncing && (
+          <div className="rounded-lg bg-surface-1 shadow-card p-4 mt-[10px]">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-emerald-400">{autoSyncProgress.message}</p>
+              {autoSyncProgress.status === 'importing' && (
+                <div className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-emerald-400 border-t-transparent" />
+              )}
+              {autoSyncProgress.status === 'complete' && autoSyncProgress.importedGames > 0 && (
+                <span className="text-[11px] text-[#3a4250]">{autoSyncProgress.importedGames} imported</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Large Import Progress */}
         {largeImportProgress && largeImportProgress.status !== 'idle' && (
-          <div className={`rounded-lg border p-4 ${
-            largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
-              ? 'border-amber-400/40 bg-amber-500/10'
-              : largeImportProgress.status === 'error'
-              ? 'border-rose-400/40 bg-rose-500/10'
-              : 'border-purple-400/40 bg-purple-500/10'
-          }`}>
-            <div className="flex items-center justify-between mb-2">
-              <h4 className={`text-lg font-semibold ${
-                largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
-                  ? 'text-amber-200'
-                  : largeImportProgress.status === 'error'
-                  ? 'text-rose-200'
-                  : 'text-purple-200'
-              }`}>
-                {largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
-                  ? 'Import Complete'
-                  : largeImportProgress.status === 'error'
-                  ? 'Import Error'
-                  : 'Import Progress'}
-              </h4>
+          <div className="rounded-lg bg-surface-1 shadow-card p-4 mt-[10px]">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className={`text-xs ${
+                largeImportProgress.status === 'error' ? 'text-red-400' : 'text-[#8a9299]'
+              }`}>{largeImportProgress.message}</p>
               <div className="flex items-center gap-2">
                 {largeImportProgress.status === 'importing' && (
                   <>
-                    <div className="text-sm text-purple-300">
-                      {largeImportProgress.importedGames} / {largeImportProgress.totalToImport} games
-                    </div>
-                    <button
-                      onClick={cancelLargeImport}
-                      className="text-sm text-rose-300 hover:text-rose-200 transition"
-                    >
-                      Cancel
-                    </button>
+                    <span className="text-[11px] text-[#3a4250]">{largeImportProgress.importedGames} / {largeImportProgress.totalToImport}</span>
+                    <button onClick={cancelLargeImport} className="text-[11px] text-red-400 hover:text-red-300 transition-colors">Cancel</button>
                   </>
                 )}
                 {(largeImportProgress.status === 'completed' || largeImportProgress.status === 'error') && (
-                  <button
-                    onClick={dismissImportProgress}
-                    className="text-sm text-gray-400 hover:text-white transition"
-                  >
-                    ✕
-                  </button>
+                  <button onClick={dismissImportProgress} className="text-[11px] text-[#3a4250] hover:text-[#5a6270] transition-colors">Dismiss</button>
                 )}
               </div>
             </div>
-
             {largeImportProgress.status === 'importing' && (
-              <div className="mb-2">
-                <div className="h-2 w-full rounded-full bg-purple-900/30">
-                  <div
-                    className="h-2 rounded-full bg-purple-400 transition-colors duration-300"
-                    style={{ width: `${largeImportProgress.progress}%` }}
-                  />
-                </div>
+              <div className="h-1 w-full rounded-sm bg-white/[0.04] overflow-hidden">
+                <div className="h-1 rounded-sm bg-[#c8cdd4] transition-all duration-300" style={{ width: `${largeImportProgress.progress}%` }} />
               </div>
             )}
-
-            <p className={`text-sm ${
-              largeImportProgress.status === 'completed' && largeImportProgress.importedGames === 0
-                ? 'text-amber-200'
-                : largeImportProgress.status === 'error'
-                ? 'text-rose-200'
-                : 'text-purple-200'
-            }`}>{largeImportProgress.message}</p>
           </div>
         )}
 
-        <div className="mx-auto flex max-w-2xl items-center justify-between rounded-lg bg-surface-1 p-1 shadow-card">
-          <button
-            onClick={() => handleTabChange('analytics')}
-            className={`flex-1 rounded-md px-4 py-2 text-[13px] font-medium transition-colors ${
-              activeTab === 'analytics'
-                ? 'bg-cta text-[#111] shadow-btn-primary'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            Analytics
-          </button>
-          <button
-            onClick={() => handleTabChange('matchHistory')}
-            className={`flex-1 rounded-md px-4 py-2 text-[13px] font-medium transition-colors ${
-              activeTab === 'matchHistory'
-                ? 'bg-cta text-[#111] shadow-btn-primary'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            Games Analysis
-          </button>
-          <button
-            onClick={() => handleTabChange('coach')}
-            className={`flex-1 rounded-md px-4 py-2 text-[13px] font-medium transition-colors ${
-              activeTab === 'coach'
-                ? 'bg-cta text-[#111] shadow-btn-primary'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            Coach
-          </button>
-        </div>
+        {/* Tabs removed — navigation happens via top nav bar */}
 
         {activeTab === 'analytics' && (
           <SimpleAnalytics
@@ -1181,12 +1044,10 @@ export default function SimpleAnalyticsPage() {
         {activeTab === 'coach' && (
           <ErrorBoundary>
             <div className="rounded-lg bg-surface-1 shadow-card p-8 text-center">
-              <div className="text-4xl text-gray-600 mb-4">&#9812;</div>
-              <h3 className="text-section font-semibold tracking-section text-[#f0f0f0] mb-2">Coach</h3>
-              <p className="text-small text-gray-500 mb-4">Redirecting to Coach dashboard...</p>
+              <p className="text-xs text-[#3a4250] mb-4">Redirecting to Coach dashboard...</p>
               <button
                 onClick={() => navigate(`/coach?userId=${encodeURIComponent(userId)}&platform=${platform}`)}
-                className="bg-cta hover:bg-cta-hover text-[#111] font-medium py-2 px-5 rounded-md shadow-btn-primary transition-colors"
+                className="inline-flex items-center gap-1.5 px-3.5 py-[7px] bg-[#e4e8ed] rounded-[7px] text-xs font-medium text-[#0c0d0f] cursor-pointer"
               >
                 Go to Coach
               </button>
@@ -1195,8 +1056,8 @@ export default function SimpleAnalyticsPage() {
         )}
 
         {importError && (
-          <div className="rounded-lg shadow-card bg-amber-500/10 p-4 text-sm text-amber-200">
-            <span className="font-semibold">Import warning:</span> {importError}
+          <div className="rounded-lg bg-surface-1 shadow-card p-4 mt-[10px]">
+            <p className="text-xs text-amber-400/80">{importError}</p>
           </div>
         )}
       </div>

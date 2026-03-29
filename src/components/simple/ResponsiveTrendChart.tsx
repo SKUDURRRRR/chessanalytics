@@ -117,7 +117,7 @@ export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel,
           setChartHeight(calculatedHeight)
         }
       } else {
-        setChartHeight(256)
+        setChartHeight(160)
       }
     }
 

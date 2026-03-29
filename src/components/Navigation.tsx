@@ -73,7 +73,14 @@ export function Navigation() {
 
   const isActive = (path: string) => {
     if (path === '/simple-analytics') {
-      return location.pathname === '/simple-analytics' || location.pathname.startsWith('/profile/')
+      const isAnalyticsPage = location.pathname === '/simple-analytics' || location.pathname.startsWith('/profile/')
+      const tabParam = new URLSearchParams(location.search).get('tab')
+      return isAnalyticsPage && tabParam !== 'matchHistory'
+    }
+    if (path === '/simple-analytics-games') {
+      const isAnalyticsPage = location.pathname === '/simple-analytics'
+      const tabParam = new URLSearchParams(location.search).get('tab')
+      return isAnalyticsPage && tabParam === 'matchHistory'
     }
     if (path === '/coach') {
       return location.pathname.startsWith('/coach')
@@ -150,13 +157,22 @@ export function Navigation() {
                           Home
                         </Link>
                         {hasLinkedAccount && linkedUsername && linkedPlatform ? (
-                          <Link
-                            to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}`}
-                            className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
-                            onClick={() => setIsDropdownOpen(false)}
-                          >
-                            My Analytics
-                          </Link>
+                          <>
+                            <Link
+                              to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}`}
+                              className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                              onClick={() => setIsDropdownOpen(false)}
+                            >
+                              Analytics
+                            </Link>
+                            <Link
+                              to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}&tab=matchHistory`}
+                              className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                              onClick={() => setIsDropdownOpen(false)}
+                            >
+                              Games Analysis
+                            </Link>
+                          </>
                         ) : (
                           <Link
                             to="/profile"
@@ -166,13 +182,6 @@ export function Navigation() {
                             Connect Account
                           </Link>
                         )}
-                        <Link
-                          to="/pricing"
-                          className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
-                          onClick={() => setIsDropdownOpen(false)}
-                        >
-                          Pricing
-                        </Link>
                         <Link
                           to="/coach"
                           className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
@@ -186,6 +195,13 @@ export function Navigation() {
                           onClick={() => setIsDropdownOpen(false)}
                         >
                           Profile
+                        </Link>
+                        <Link
+                          to="/pricing"
+                          className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Pricing
                         </Link>
                         <div className="divider my-1" />
                         <button
@@ -208,12 +224,20 @@ export function Navigation() {
                     Home
                   </Link>
                   {hasLinkedAccount && linkedUsername && linkedPlatform ? (
-                    <Link
-                      to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}`}
-                      className={navLinkClass('/simple-analytics')}
-                    >
-                      Analytics
-                    </Link>
+                    <>
+                      <Link
+                        to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}`}
+                        className={navLinkClass('/simple-analytics')}
+                      >
+                        Analytics
+                      </Link>
+                      <Link
+                        to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}&tab=matchHistory`}
+                        className={navLinkClass('/simple-analytics-games')}
+                      >
+                        Games Analysis
+                      </Link>
+                    </>
                   ) : (
                     <Link
                       to="/profile"
@@ -222,14 +246,14 @@ export function Navigation() {
                       Connect
                     </Link>
                   )}
-                  <Link to="/pricing" className={navLinkClass('/pricing')}>
-                    Pricing
-                  </Link>
                   <Link to="/coach" className={navLinkClass('/coach')}>
                     Coach
                   </Link>
                   <Link to="/profile" className={navLinkClass('/profile')}>
                     Profile
+                  </Link>
+                  <Link to="/pricing" className={navLinkClass('/pricing')}>
+                    Pricing
                   </Link>
                   <button
                     onClick={handleSignOut}
@@ -264,13 +288,22 @@ export function Navigation() {
                           Home
                         </Link>
                         {lastVisitedPlayer && (
-                          <Link
-                            to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
-                            className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
-                            onClick={() => setIsDropdownOpen(false)}
-                          >
-                            Recent Player
-                          </Link>
+                          <>
+                            <Link
+                              to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                              className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                              onClick={() => setIsDropdownOpen(false)}
+                            >
+                              Analytics
+                            </Link>
+                            <Link
+                              to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}&tab=matchHistory`}
+                              className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                              onClick={() => setIsDropdownOpen(false)}
+                            >
+                              Games Analysis
+                            </Link>
+                          </>
                         )}
                         <Link
                           to="/pricing"
@@ -305,12 +338,20 @@ export function Navigation() {
                     Home
                   </Link>
                   {lastVisitedPlayer && (
-                    <Link
-                      to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
-                      className={navLinkClass('/simple-analytics')}
-                    >
-                      Recent Player
-                    </Link>
+                    <>
+                      <Link
+                        to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                        className={navLinkClass('/simple-analytics')}
+                      >
+                        Analytics
+                      </Link>
+                      <Link
+                        to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}&tab=matchHistory`}
+                        className={navLinkClass('/simple-analytics-games')}
+                      >
+                        Games Analysis
+                      </Link>
+                    </>
                   )}
                   <Link to="/pricing" className={navLinkClass('/pricing')}>
                     Pricing
