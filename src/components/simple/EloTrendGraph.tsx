@@ -11,7 +11,7 @@ interface EloTrendGraphProps {
   selectedTimeControl: string | null
   onTimeControlChange?: (timeControl: string) => void
   onGamesUsedChange?: (gamesUsed: number) => void
-  gameLimit?: number  // Default: 50
+  gameLimit?: number  // Default: 0 (all games)
 }
 
 interface EloDataPoint {
@@ -68,7 +68,7 @@ export function EloTrendGraph({
         const games = await UnifiedAnalysisService.getEloHistory(
           canonicalUserId,
           platform,
-          500 // Fetch 500 recent games for ELO trend analysis
+          10000 // Fetch all games for ELO trend analysis
         )
 
         if (!games || games.length === 0) {
@@ -243,10 +243,10 @@ export function EloTrendGraph({
               paddingRight: '24px'
             }}
           >
-            <option value={25} className="bg-surface-2 text-gray-300">Last 25</option>
             <option value={50} className="bg-surface-2 text-gray-300">Last 50</option>
             <option value={100} className="bg-surface-2 text-gray-300">Last 100</option>
             <option value={200} className="bg-surface-2 text-gray-300">Last 200</option>
+            <option value={500} className="bg-surface-2 text-gray-300">Last 500</option>
             <option value={0} className="bg-surface-2 text-gray-300">All Games</option>
           </select>
         </div>

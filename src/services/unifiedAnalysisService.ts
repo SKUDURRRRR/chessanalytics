@@ -1019,7 +1019,7 @@ export class UnifiedAnalysisService {
   static async getEloHistory(
     userId: string,
     platform: Platform,
-    limit: number = 500
+    limit: number = 10000
   ): Promise<Record<string, unknown>[]> {
     if (!validateUserId(userId) || !validatePlatform(platform)) {
       console.error('Invalid userId or platform for getEloHistory')

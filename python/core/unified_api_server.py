@@ -3303,7 +3303,7 @@ async def get_comprehensive_analytics(
 async def get_elo_history(
     user_id: str,
     platform: str,
-    limit: int = Query(500, ge=1, le=2000, description="Number of recent games to return"),
+    limit: int = Query(10000, ge=1, le=10000, description="Number of recent games to return"),
     # Optional authentication
     _: Optional[bool] = get_optional_auth()
 ):
@@ -3318,23 +3318,34 @@ async def get_elo_history(
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured")
 
-        # Fetch recent games with ELO data
-        response = await asyncio.to_thread(
-            lambda: db_client.table('games').select(
-                'time_control, my_rating, played_at, provider_game_id'
-            ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
-                'my_rating', 'null'
-            ).not_.is_('time_control', 'null').order(
-                'played_at', desc=True
-            ).limit(limit).execute()
-        )
+        # Fetch games with ELO data, paginating to bypass Supabase 1000-row default
+        all_games = []
+        page_size = 1000
+        offset = 0
+        while len(all_games) < limit:
+            fetch_size = min(page_size, limit - len(all_games))
+            response = await asyncio.to_thread(
+                lambda o=offset, fs=fetch_size: db_client.table('games').select(
+                    'time_control, my_rating, played_at, provider_game_id'
+                ).eq('user_id', canonical_user_id).eq('platform', platform).not_.is_(
+                    'my_rating', 'null'
+                ).not_.is_('time_control', 'null').order(
+                    'played_at', desc=True
+                ).range(o, o + fs - 1).execute()
+            )
+            if not response.data:
+                break
+            all_games.extend(response.data)
+            if len(response.data) < fetch_size:
+                break
+            offset += fetch_size
 
-        if not response.data:
+        if not all_games:
             return []
 
         # Rename provider_game_id to id for frontend compatibility
         result = []
-        for game in response.data:
+        for game in all_games:
             result.append({
                 'time_control': game['time_control'],
                 'my_rating': game['my_rating'],
