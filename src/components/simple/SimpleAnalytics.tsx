@@ -1,5 +1,5 @@
 // Simple Analytics Component - One component, everything you need
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, useReducer } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { UnifiedAnalysisService, AnalysisStats, DeepAnalysisData } from '../../services/unifiedAnalysisService'
 import type { ComprehensiveAnalytics } from '../../types'
@@ -29,17 +29,66 @@ interface SimpleAnalyticsProps {
   secondaryPlatform?: 'lichess' | 'chess.com'
 }
 
+interface AnalyticsDataState {
+  data: AnalysisStats | null
+  comprehensiveData: ComprehensiveAnalytics | null
+  deepAnalysisData: DeepAnalysisData | null
+  loading: boolean
+  refreshing: boolean
+  error: string | null
+}
+
+type AnalyticsAction =
+  | { type: 'FETCH_START'; isRefresh: boolean }
+  | { type: 'FETCH_SUCCESS'; data: AnalysisStats; comprehensiveData: ComprehensiveAnalytics }
+  | { type: 'DEEP_ANALYSIS_SUCCESS'; deepAnalysisData: DeepAnalysisData }
+  | { type: 'FETCH_ERROR'; error: string }
+  | { type: 'FETCH_DONE' }
+  | { type: 'RESET' }
+
+const initialAnalyticsState: AnalyticsDataState = {
+  data: null,
+  comprehensiveData: null,
+  deepAnalysisData: null,
+  loading: true,
+  refreshing: false,
+  error: null,
+}
+
+function analyticsReducer(state: AnalyticsDataState, action: AnalyticsAction): AnalyticsDataState {
+  switch (action.type) {
+    case 'FETCH_START':
+      return {
+        ...state,
+        error: null,
+        loading: !action.isRefresh,
+        refreshing: action.isRefresh,
+      }
+    case 'FETCH_SUCCESS':
+      return {
+        ...state,
+        data: action.data,
+        comprehensiveData: action.comprehensiveData,
+      }
+    case 'DEEP_ANALYSIS_SUCCESS':
+      return { ...state, deepAnalysisData: action.deepAnalysisData }
+    case 'FETCH_ERROR':
+      return { ...state, error: action.error }
+    case 'FETCH_DONE':
+      return { ...state, loading: false, refreshing: false }
+    case 'RESET':
+      return { ...initialAnalyticsState, loading: false }
+    default:
+      return state
+  }
+}
+
 export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningClick, onOpponentClick, forceRefresh = false, viewMode = 'single', secondaryUserId, secondaryPlatform }: SimpleAnalyticsProps) {
   const navigate = useNavigate()
-  const [data, setData] = useState<AnalysisStats | null>(null)
-  const [comprehensiveData, setComprehensiveData] = useState<ComprehensiveAnalytics | null>(null)
-  const [deepAnalysisData, setDeepAnalysisData] = useState<DeepAnalysisData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
+  const [state, dispatch] = useReducer(analyticsReducer, initialAnalyticsState)
+  const { data, comprehensiveData, deepAnalysisData, loading, error, refreshing } = state
   const [selectedTimeControl, setSelectedTimeControl] = useState<string | null>(null)
   const [eloGraphGamesUsed, setEloGraphGamesUsed] = useState<number>(0)
-  const [mostPlayedOpening, setMostPlayedOpening] = useState<{ opening: string; games: number } | null>(null)
   const [dataRefreshKey, setDataRefreshKey] = useState<number>(0)
   const isLoadingRef = useRef(false)
   const activePerformance = useMemo(() => {
@@ -98,12 +147,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
 
     try {
       isLoadingRef.current = true
-      if (forceRefresh) {
-        setRefreshing(true)
-      } else {
-        setLoading(true)
-      }
-      setError(null)
+      dispatch({ type: 'FETCH_START', isRefresh: forceRefresh })
 
       const plat = (platform as 'lichess' | 'chess.com') || 'lichess'
 
@@ -167,21 +211,24 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
         total_games_with_elo: comprehensiveAnalytics?.total_games || comprehensiveAnalytics?.totalGames || 0
       }
 
-      setData(enhancedData)
-      setComprehensiveData({
-        ...comprehensiveAnalytics,
-        highestElo: comprehensiveAnalytics?.highestElo,
-        timeControlWithHighestElo: comprehensiveAnalytics?.timeControlWithHighestElo,
-        totalGames: comprehensiveAnalytics?.totalGames || comprehensiveAnalytics?.total_games || 0,
-        openingColorStats: comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats || { white: [], black: [] },
-        game_length_distribution: comprehensiveAnalytics?.game_length_distribution,
-        quick_victory_breakdown: comprehensiveAnalytics?.quick_victory_breakdown,
-        marathon_performance: comprehensiveAnalytics?.marathon_performance,
-        recent_trend: comprehensiveAnalytics?.recent_trend,
-        personal_records: comprehensiveAnalytics?.personal_records,
-        patience_rating: comprehensiveAnalytics?.patience_rating,
-        comeback_potential: comprehensiveAnalytics?.comeback_potential,
-        resignation_timing: comprehensiveAnalytics?.resignation_timing
+      dispatch({
+        type: 'FETCH_SUCCESS',
+        data: enhancedData,
+        comprehensiveData: {
+          ...comprehensiveAnalytics,
+          highestElo: comprehensiveAnalytics?.highestElo,
+          timeControlWithHighestElo: comprehensiveAnalytics?.timeControlWithHighestElo,
+          totalGames: comprehensiveAnalytics?.totalGames || comprehensiveAnalytics?.total_games || 0,
+          openingColorStats: comprehensiveAnalytics?.openingColorStats || comprehensiveAnalytics?.opening_color_stats || { white: [], black: [] },
+          game_length_distribution: comprehensiveAnalytics?.game_length_distribution,
+          quick_victory_breakdown: comprehensiveAnalytics?.quick_victory_breakdown,
+          marathon_performance: comprehensiveAnalytics?.marathon_performance,
+          recent_trend: comprehensiveAnalytics?.recent_trend,
+          personal_records: comprehensiveAnalytics?.personal_records,
+          patience_rating: comprehensiveAnalytics?.patience_rating,
+          comeback_potential: comprehensiveAnalytics?.comeback_potential,
+          resignation_timing: comprehensiveAnalytics?.resignation_timing
+        } as ComprehensiveAnalytics,
       })
 
       if (comprehensiveAnalytics?.performanceTrends) {
@@ -216,7 +263,7 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
           } else {
             deepAnalysis = await UnifiedAnalysisService.fetchDeepAnalysis(userId, plat, forceRefresh)
           }
-          setDeepAnalysisData(deepAnalysis)
+          dispatch({ type: 'DEEP_ANALYSIS_SUCCESS', deepAnalysisData: deepAnalysis })
         } catch (err) {
           console.warn('Deep analysis failed (non-fatal):', err)
         }
@@ -224,52 +271,26 @@ export function SimpleAnalytics({ userId, platform, fromDate, toDate, onOpeningC
       fetchDeep()
     } catch (err) {
       console.error('Failed to load analytics:', err)
-      setError(err instanceof Error ? err.message : 'Failed to load analytics')
+      dispatch({ type: 'FETCH_ERROR', error: err instanceof Error ? err.message : 'Failed to load analytics' })
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      dispatch({ type: 'FETCH_DONE' })
       isLoadingRef.current = false
     }
   }, [userId, platform, fromDate, toDate, viewMode, secondaryUserId, secondaryPlatform, fetchPlatformData])
 
   useEffect(() => {
     if (!userId) {
-      setData(null)
-      setError(null)
-      setLoading(false)
+      dispatch({ type: 'RESET' })
       return
     }
     loadData()
   }, [userId, platform, fromDate, toDate, viewMode, secondaryUserId, secondaryPlatform, loadData])
 
-  // Load most played opening when time control changes
-  // Calculate most played opening from comprehensive data (no separate query needed)
-  useEffect(() => {
-    const loadMostPlayedOpening = async () => {
-      if (!comprehensiveData || !selectedTimeControl) {
-        setMostPlayedOpening(null)
-        return
-      }
-
-      try {
-        // Get the most played opening for this time control from openingStats
-        // Since we already have all opening data, just use the top one
-        if (comprehensiveData.openingStats && comprehensiveData.openingStats.length > 0) {
-          const mostPlayed = comprehensiveData.openingStats[0] // Already sorted by games played
-          setMostPlayedOpening({
-            opening: mostPlayed.opening,
-            games: mostPlayed.games
-          })
-        } else {
-          setMostPlayedOpening(null)
-        }
-      } catch (error) {
-        console.error('Error calculating most played opening:', error)
-        setMostPlayedOpening(null)
-      }
-    }
-
-    loadMostPlayedOpening()
+  // Derive most played opening from comprehensive data (no separate query needed)
+  const mostPlayedOpening = useMemo(() => {
+    if (!comprehensiveData?.openingStats?.length || !selectedTimeControl) return null
+    const mostPlayed = comprehensiveData.openingStats[0]
+    return { opening: mostPlayed.opening, games: mostPlayed.games }
   }, [comprehensiveData, selectedTimeControl])
 
   if (loading) {

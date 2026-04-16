@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+
+const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
 
 interface BottomSheetProps {
   isOpen: boolean
@@ -28,18 +30,50 @@ export function BottomSheet({ isOpen, onClose, title, children, className = '' }
     }
   }, [isOpen])
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose()
-      }
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape' && isOpen) {
+      onClose()
+      return
     }
 
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape)
-      return () => document.removeEventListener('keydown', handleEscape)
+    // Focus trap
+    if (e.key === 'Tab' && sheetRef.current) {
+      const focusableElements = sheetRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      if (focusableElements.length === 0) return
+
+      const first = focusableElements[0]
+      const last = focusableElements[focusableElements.length - 1]
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
   }, [isOpen, onClose])
+
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement
+      document.addEventListener('keydown', handleKeyDown)
+
+      requestAnimationFrame(() => {
+        if (sheetRef.current) {
+          const first = sheetRef.current.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+          first?.focus()
+        }
+      })
+
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown)
+        previousFocusRef.current?.focus()
+      }
+    }
+  }, [isOpen, handleKeyDown])
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setIsDragging(true)
