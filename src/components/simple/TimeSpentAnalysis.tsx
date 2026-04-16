@@ -3,7 +3,7 @@
  * Displays comprehensive statistics about time spent playing chess
  */
 
-import { memo, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import type { Game } from '../../types'
 import {
   calculateTimeSpent,
@@ -17,7 +17,7 @@ interface TimeSpentAnalysisProps {
   className?: string
 }
 
-export const TimeSpentAnalysis = memo(function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisProps) {
+export function TimeSpentAnalysis({ games, className = '' }: TimeSpentAnalysisProps) {
   const timeStats = calculateTimeSpent(games)
   const timeTrend = getTimeSpentTrend(games)
 
@@ -209,7 +209,7 @@ export const TimeSpentAnalysis = memo(function TimeSpentAnalysis({ games, classN
       </div>
     </div>
   )
-})
+}
 
 /**
  * Compact version for dashboard

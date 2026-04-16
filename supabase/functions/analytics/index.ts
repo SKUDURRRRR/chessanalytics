@@ -109,24 +109,6 @@ Deno.serve(async req => {
       })
     }
 
-    // Verify the authenticated user is requesting their own data
-    // Allow if userId matches auth user ID or is a chess username linked to their account
-    const authUserId = authData.user.id
-    if (userId !== authUserId) {
-      // Check if userId is a linked chess username for this auth user
-      const { data: linkedAccount } = await supabase
-        .from('user_profiles')
-        .select('user_id')
-        .eq('user_id', userId)
-        .limit(1)
-        .single()
-
-      // If no linked account found, still allow (public game data) but log it
-      if (!linkedAccount) {
-        console.warn(`User ${authUserId} requesting data for userId ${userId}`)
-      }
-    }
-
     // Build simple query
     let query = supabase.from('games').select('*').eq('user_id', userId)
 

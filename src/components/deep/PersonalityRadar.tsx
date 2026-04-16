@@ -7,7 +7,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import type { PersonalityScores } from '../../types'
-import { memo, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 interface PersonalityRadarProps {
   scores: PersonalityScores | null | undefined
@@ -109,7 +109,7 @@ function validateScores(scores: any): PersonalityScores | null {
   return hasValidScores ? (validatedScores as PersonalityScores) : null
 }
 
-export const PersonalityRadar = memo(function PersonalityRadar({ scores }: PersonalityRadarProps) {
+export function PersonalityRadar({ scores }: PersonalityRadarProps) {
   const [activeTrait, setActiveTrait] = useState<
     { label: string; score: number; description: string; rect: DOMRect | null } | null
   >(null)
@@ -220,4 +220,4 @@ export const PersonalityRadar = memo(function PersonalityRadar({ scores }: Perso
       )}
     </div>
   )
-})
+}

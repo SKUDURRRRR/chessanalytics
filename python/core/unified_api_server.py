@@ -8,7 +8,6 @@ Replaces multiple redundant endpoints with a clean, unified interface.
 # Load environment variables from .env.local in python/ directory
 from dotenv import load_dotenv
 import os
-import threading
 
 load_dotenv('.env.local')  # Load .env.local from python/ directory
 load_dotenv()  # Also try .env as fallback
@@ -137,8 +136,6 @@ DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 # Authentication setup - Fail fast if JWT configuration is missing
 # Use auto_error=False to make authentication optional (won't raise 403 if token is missing)
 security = HTTPBearer(auto_error=False)
-# Strict auth scheme for endpoints that must require authentication (payments, account management, etc.)
-security_required = HTTPBearer(auto_error=True)
 
 # Critical security configuration - no defaults allowed
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -233,49 +230,41 @@ def _get_sync_engine_pool():
     return None
 
 _ai_generator = None
+
+def _get_ai_generator():
+    """Get or create a singleton AIChessCommentGenerator instance."""
+    global _ai_generator
+    if _ai_generator is None:
+        from .ai_comment_generator import AIChessCommentGenerator
+        _ai_generator = AIChessCommentGenerator()
+    return _ai_generator
+
 _study_plan_generator = None
 _opening_repertoire_analyzer = None
 _progress_analyzer = None
-_singleton_lock = threading.Lock()
-
-def _get_ai_generator():
-    """Get or create a singleton AIChessCommentGenerator instance (thread-safe)."""
-    global _ai_generator
-    if _ai_generator is None:
-        with _singleton_lock:
-            if _ai_generator is None:
-                from .ai_comment_generator import AIChessCommentGenerator
-                _ai_generator = AIChessCommentGenerator()
-    return _ai_generator
 
 def _get_study_plan_generator():
-    """Get or create a singleton StudyPlanGenerator instance (thread-safe)."""
+    """Get or create a singleton StudyPlanGenerator instance."""
     global _study_plan_generator
     if _study_plan_generator is None:
-        with _singleton_lock:
-            if _study_plan_generator is None:
-                from .study_plan_generator import StudyPlanGenerator
-                _study_plan_generator = StudyPlanGenerator(supabase_service)
+        from .study_plan_generator import StudyPlanGenerator
+        _study_plan_generator = StudyPlanGenerator(supabase_service)
     return _study_plan_generator
 
 def _get_opening_repertoire_analyzer():
-    """Get or create a singleton OpeningRepertoireAnalyzer instance (thread-safe)."""
+    """Get or create a singleton OpeningRepertoireAnalyzer instance."""
     global _opening_repertoire_analyzer
     if _opening_repertoire_analyzer is None:
-        with _singleton_lock:
-            if _opening_repertoire_analyzer is None:
-                from .opening_repertoire import OpeningRepertoireAnalyzer
-                _opening_repertoire_analyzer = OpeningRepertoireAnalyzer(supabase_service)
+        from .opening_repertoire import OpeningRepertoireAnalyzer
+        _opening_repertoire_analyzer = OpeningRepertoireAnalyzer(supabase_service)
     return _opening_repertoire_analyzer
 
 def _get_progress_analyzer():
-    """Get or create a singleton ProgressAnalyzer instance (thread-safe)."""
+    """Get or create a singleton ProgressAnalyzer instance."""
     global _progress_analyzer
     if _progress_analyzer is None:
-        with _singleton_lock:
-            if _progress_analyzer is None:
-                from .progress_analyzer import ProgressAnalyzer
-                _progress_analyzer = ProgressAnalyzer(supabase_service)
+        from .progress_analyzer import ProgressAnalyzer
+        _progress_analyzer = ProgressAnalyzer(supabase_service)
     return _progress_analyzer
 
 # Initialize Supabase clients with fallback for missing config
@@ -387,15 +376,6 @@ async def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depe
             detail="Authentication failed. Invalid or malformed token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-async def verify_token_required(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security_required)]) -> dict:
-    """
-    Verify JWT token with mandatory authentication.
-    Uses security_required scheme which returns 403 automatically if no token is provided.
-    Delegates actual token validation to verify_token.
-    """
-    return await verify_token(credentials)
-
 
 async def verify_user_access(user_id: str, token_data: Annotated[dict, Depends(verify_token)]) -> bool:
     """Verify the authenticated user has access to the requested user_id."""
@@ -749,10 +729,6 @@ ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 # Tier-based usage quotas (hourly/daily) are handled separately via usage_tracker for authenticated users
 ANALYSIS_RATE_LIMIT = int(os.getenv("ANALYSIS_RATE_LIMIT", "5"))  # requests per minute
 IMPORT_RATE_LIMIT = int(os.getenv("IMPORT_RATE_LIMIT", "3"))      # requests per minute
-AI_RATE_LIMIT = int(os.getenv("AI_RATE_LIMIT", "10"))             # requests per minute
-PROFILE_RATE_LIMIT = int(os.getenv("PROFILE_RATE_LIMIT", "20"))   # requests per minute
-AUTH_RATE_LIMIT = int(os.getenv("AUTH_RATE_LIMIT", "15"))          # requests per minute
-COACH_RATE_LIMIT = int(os.getenv("COACH_RATE_LIMIT", "15"))       # requests per minute
 
 # Track timestamps of requests by user for rate limiting
 # Use TTLDict with 5-minute TTL for automatic cleanup
@@ -8244,9 +8220,6 @@ async def get_or_create_profile(request: dict):
         if platform not in ["lichess", "chess.com"]:
             raise HTTPException(status_code=400, detail="Platform must be 'lichess' or 'chess.com'")
 
-        # Rate limit profile operations
-        _enforce_rate_limit(f"profile:{user_id}:{platform}", PROFILE_RATE_LIMIT)
-
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
 
@@ -9942,9 +9915,6 @@ async def check_usage(
     if not auth_user_id or auth_user_id != request.user_id:
         raise HTTPException(status_code=403, detail="Cannot check usage for other users")
 
-    # Rate limit auth operations
-    _enforce_rate_limit(f"auth:{auth_user_id}", AUTH_RATE_LIMIT)
-
     try:
         stats = await usage_tracker.get_usage_stats(request.user_id)
         return stats
@@ -10018,9 +9988,6 @@ async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
             status_code=401,
             content={"success": False, "message": "Invalid token"}
         )
-
-    # Rate limit profile reads
-    _enforce_rate_limit(f"auth:{user_id}", AUTH_RATE_LIMIT)
 
     try:
         # Get user profile
@@ -10114,9 +10081,6 @@ async def link_chess_account(
     user_id = token_data.get('sub')
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
-
-    # Rate limit account linking operations
-    _enforce_rate_limit(f"auth:{user_id}", AUTH_RATE_LIMIT)
 
     username = request.username.strip()
     platform = request.platform
@@ -10499,7 +10463,7 @@ async def complete_onboarding(
 @app.post("/api/v1/payments/create-checkout")
 async def create_checkout_session(
     request: CreateCheckoutRequest,
-    token_data: Annotated[dict, Depends(verify_token_required)]
+    token_data: Annotated[dict, Depends(verify_token)]
 ):
     """
     Create a Stripe checkout session for subscription or credit purchase.
@@ -10589,7 +10553,7 @@ async def stripe_webhook(request: Request):
         )
 
 @app.get("/api/v1/payments/subscription")
-async def get_subscription(token_data: Annotated[dict, Depends(verify_token_required)]):
+async def get_subscription(token_data: Annotated[dict, Depends(verify_token)]):
     """
     Get user's current subscription status.
     Requires authentication to prevent unauthorized access to subscription info.
@@ -10625,7 +10589,7 @@ async def get_subscription(token_data: Annotated[dict, Depends(verify_token_requ
 @app.post("/api/v1/payments/verify-session")
 async def verify_stripe_session(
     request: VerifySessionRequest,
-    token_data: Annotated[dict, Depends(verify_token_required)]
+    token_data: Annotated[dict, Depends(verify_token)]
 ):
     """
     Verify a Stripe checkout session and update user subscription if needed.
@@ -10670,7 +10634,7 @@ async def verify_stripe_session(
         )
 
 @app.post("/api/v1/payments/cancel")
-async def cancel_subscription(token_data: Annotated[dict, Depends(verify_token_required)]):
+async def cancel_subscription(token_data: Annotated[dict, Depends(verify_token)]):
     """
     Cancel user's subscription (at end of billing period).
     Requires authentication to prevent unauthorized cancellations.
@@ -11630,9 +11594,6 @@ async def get_engine_move(
             status_code=401,
             detail="Authentication required. Please log in to access coach features."
         )
-
-    # Rate limit coach play-move operations
-    _enforce_rate_limit(f"coach:{auth_user_id}", COACH_RATE_LIMIT)
 
     if not await _check_premium_access(auth_user_id):
         raise HTTPException(

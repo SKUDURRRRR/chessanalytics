@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -89,7 +89,7 @@ const buildChartData = (data: TrendChartProps['data']): ChartEntry[] => {
   return chartData
 }
 
-export const ResponsiveTrendChart = memo(function ResponsiveTrendChart({ className = '', selectedTimeControlLabel, trendDirection, data }: TrendChartProps) {
+export function ResponsiveTrendChart({ className = '', selectedTimeControlLabel, trendDirection, data }: TrendChartProps) {
   const [isMobile, setIsMobile] = useState(false)
   const [chartHeight, setChartHeight] = useState(256)
 
@@ -307,4 +307,4 @@ export const ResponsiveTrendChart = memo(function ResponsiveTrendChart({ classNa
       </div>
     </div>
   )
-})
+}

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { logger } from '../utils/logger'
@@ -80,7 +79,6 @@ const FALLBACK_TIERS: PaymentTier[] = [
 
 export default function PricingPage() {
   const { user, usageStats } = useAuth()
-  const navigate = useNavigate()
   const [tiers, setTiers] = useState<PaymentTier[]>([])
   const [loading, setLoading] = useState(true)
   const [upgrading, setUpgrading] = useState<string | null>(null)
@@ -169,7 +167,7 @@ export default function PricingPage() {
 
     if (!user) {
       logger.log('Unauthenticated user attempting upgrade, redirecting to signup')
-      navigate('/signup')
+      window.location.href = '/signup'
       return
     }
 
@@ -183,7 +181,7 @@ export default function PricingPage() {
         logger.warn('No session found when attempting upgrade')
         setNotification({ message: 'Please log in to upgrade', type: 'error' })
         setTimeout(() => {
-          navigate('/login')
+          window.location.href = '/login'
         }, 2000)
         return
       }

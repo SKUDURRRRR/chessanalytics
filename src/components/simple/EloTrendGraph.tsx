@@ -26,7 +26,7 @@ interface TimeControlOption {
   count: number
 }
 
-export const EloTrendGraph = memo(function EloTrendGraph({
+export function EloTrendGraph({
   userId,
   platform,
   className = '',
@@ -259,4 +259,4 @@ export const EloTrendGraph = memo(function EloTrendGraph({
       />
     </div>
   )
-})
+}
