@@ -650,7 +650,12 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
           </div>
         </div>
 
-        <div className="py-4 text-xs uppercase tracking-wider text-gray-500">{games.length} games loaded</div>
+        <div className="py-4 text-xs uppercase tracking-wider text-gray-500">
+          {games.length} games loaded
+          {analyzedGameIds.size > 0 && analyzedGameIds.size < games.length && (
+            <span className="normal-case"> &middot; {analyzedGameIds.size} analyzed &middot; click any game with ?% to analyze it</span>
+          )}
+        </div>
 
         {analysisNotification && (
           <div className={`mb-4 flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${analysisNotification.type === 'success' ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-100' : 'border-rose-400/30 bg-rose-500/10 text-rose-100'}`}>

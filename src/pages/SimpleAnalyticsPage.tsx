@@ -470,7 +470,10 @@ export default function SimpleAnalyticsPage() {
         }
 
         if (result.importedGames > 0) {
-          setImportStatus(`Import complete! ${result.message}. Refreshing analytics...`)
+          const tierNote = (!usageStats?.account_tier || usageStats.account_tier === 'free')
+            ? ' Free tier: 5 analyses/day — click any game to analyze it.'
+            : ''
+          setImportStatus(`Import complete! ${result.message}. Refreshing analytics...${tierNote}`)
           // Clear cache to force fresh data load after import
           clearUserCache(userId, platform)
           handleRefresh()
@@ -1089,6 +1092,12 @@ export default function SimpleAnalyticsPage() {
               <p className="text-caption text-gray-600">
                 Leave dates empty to import all available games (up to 5,000). You can import more by selecting different date ranges after.
               </p>
+
+              {(!usageStats?.account_tier || usageStats.account_tier === 'free') && (
+                <p className="text-caption text-amber-400/70">
+                  Free tier: 5 game analyses per day. Imported games will appear in your history but show ?% accuracy until analyzed. Upgrade to Pro for unlimited analysis.
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3 mt-6">

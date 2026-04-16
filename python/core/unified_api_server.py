@@ -92,6 +92,7 @@ from .lesson_generator import LessonGenerator
 from .puzzle_generator import PuzzleGenerator
 from .puzzle_rating import PuzzleRatingEngine
 from .progress_analyzer import ProgressAnalyzer, get_weakness_puzzle_themes
+from .player_context import PlayerContext, build_player_context
 from .player_profiles import FAMOUS_PLAYERS
 from .opening_style_profiles import OPENING_STYLES
 
@@ -10956,8 +10957,18 @@ async def get_coach_dashboard(
             logger.info(f"[COACH_DASHBOARD] Generated {len(all_lessons)} lessons")
         daily_lesson = all_lessons[0] if all_lessons else None
 
-        # Get weaknesses and strengths
-        weaknesses = await progress_analyzer.get_user_weaknesses(canonical_user_id, platform, game_analyses)
+        # Build unified PlayerContext for coaching personalization
+        player_context = await build_player_context(
+            user_id=coach_user_id or canonical_user_id,
+            canonical_user_id=canonical_user_id,
+            platform=platform,
+            game_analyses=game_analyses,
+            progress_analyzer=progress_analyzer,
+            supabase_client=supabase_service,
+        )
+
+        # Use PlayerContext for weaknesses/strengths instead of re-computing
+        weaknesses = player_context.top_weaknesses
         strengths = await progress_analyzer.get_user_strengths(canonical_user_id, platform, game_analyses)
 
         # Get recent activity (lesson completions, puzzle attempts)
@@ -11015,6 +11026,7 @@ async def get_coach_dashboard(
             'top_weaknesses': weaknesses,
             'top_strengths': strengths,
             'recent_activity': recent_activity,
+            'player_context': player_context.to_dict(),
         }
 
     except HTTPException:
@@ -11851,7 +11863,10 @@ def _get_stockfish_top_moves(fen: str, num_moves: int = 3, depth: int = 14, time
         return []
 
 
-def _build_chat_system_prompt(context: ChatPositionContext) -> str:
+def _build_chat_system_prompt(
+    context: ChatPositionContext,
+    player_summary: Optional[str] = None,
+) -> str:
     """Build system prompt for direct chess coaching chat."""
     context_specific = ""
     if context.context_type == "puzzle":
@@ -11917,7 +11932,11 @@ YOUR VOICE:
 
 {context_specific}
 
-CRITICAL RULES:
+{f"""STUDENT PROFILE (use this to personalize your coaching):
+{player_summary}
+- Tailor your explanations to their skill level and playing style
+- If they have a known weakness, gently guide them when it appears in the position
+""" if player_summary else ""}CRITICAL RULES:
 - NEVER respond with only questions and no concrete advice. Every response MUST contain at least one clear, actionable insight about the position
 - When the student asks about a specific move, give your opinion on THAT MOVE first, then teach
 - Keep responses SHORT. If you're writing more than 4 sentences, stop and trim
@@ -12090,9 +12109,46 @@ async def coach_chat(
         _get_stockfish_top_moves, request.position_context.fen
     )
 
+    # 4b. Build player context for personalized coaching
+    player_coaching_summary = None
+    try:
+        profile_result = await asyncio.to_thread(
+            lambda: supabase_service.table('user_profiles')
+            .select('user_id, platform')
+            .eq('auth_user_id', auth_user_id)
+            .limit(1)
+            .execute()
+        )
+        if profile_result.data:
+            profile = profile_result.data[0]
+            analyses_result = await asyncio.to_thread(
+                lambda: supabase_service.table('game_analyses')
+                .select('tactical_score, positional_score, aggressive_score, patient_score, novelty_score, staleness_score, opening_accuracy, middle_game_accuracy, endgame_accuracy, blunders, mistakes, my_rating')
+                .eq('user_id', profile['user_id'])
+                .eq('platform', profile['platform'])
+                .order('created_at', desc=True)
+                .limit(50)
+                .execute()
+            )
+            if analyses_result.data and len(analyses_result.data) >= 3:
+                progress_analyzer = _get_progress_analyzer()
+                player_ctx = await build_player_context(
+                    user_id=auth_user_id,
+                    canonical_user_id=profile['user_id'],
+                    platform=profile['platform'],
+                    game_analyses=analyses_result.data,
+                    progress_analyzer=progress_analyzer,
+                )
+                player_coaching_summary = player_ctx.get_coaching_summary()
+    except Exception as e:
+        logger.warning(f"[COACH CHAT] Could not build player context: {e}")
+
     # 5. Build prompts and call AI
     try:
-        system_prompt = _build_chat_system_prompt(request.position_context)
+        system_prompt = _build_chat_system_prompt(
+            request.position_context,
+            player_summary=player_coaching_summary,
+        )
         user_prompt = _build_chat_user_prompt(
             request.message,
             request.position_context,
@@ -12740,7 +12796,11 @@ async def delete_saved_position(
 
 
 async def _get_or_create_puzzle_rating(user_id: str) -> dict:
-    """Get or create user_puzzle_rating record. Returns dict with all fields."""
+    """Get or create user_puzzle_rating record. Returns dict with all fields.
+
+    For new users, initializes puzzle rating from their actual chess rating
+    rather than a fixed 1200 default.
+    """
     result = await asyncio.to_thread(
         lambda: supabase_service.table('user_puzzle_rating')
         .select('*')
@@ -12750,14 +12810,47 @@ async def _get_or_create_puzzle_rating(user_id: str) -> dict:
     if result.data:
         return result.data[0]
 
-    # Create default record
+    # Derive initial puzzle rating from player's actual chess rating
+    initial_rating = PuzzleRatingEngine.INITIAL_RATING  # 1200 fallback
+    try:
+        # Look up linked chess account to get actual rating
+        profile_result = await asyncio.to_thread(
+            lambda: supabase_service.table('user_profiles')
+            .select('user_id, platform')
+            .eq('auth_user_id', user_id)
+            .limit(1)
+            .execute()
+        )
+        if profile_result.data:
+            profile = profile_result.data[0]
+            games_result = await asyncio.to_thread(
+                lambda: supabase_service.table('games')
+                .select('my_rating')
+                .eq('user_id', profile['user_id'])
+                .eq('platform', profile['platform'])
+                .not_.is_('my_rating', 'null')
+                .order('played_at', desc=True)
+                .limit(10)
+                .execute()
+            )
+            if games_result.data:
+                ratings = [g['my_rating'] for g in games_result.data if g.get('my_rating')]
+                if ratings:
+                    avg_rating = round(sum(ratings) / len(ratings))
+                    # Puzzle rating slightly below game rating (puzzles are harder)
+                    initial_rating = max(800, min(2800, avg_rating - 100))
+                    logger.info(f"[PUZZLE] Initialized puzzle rating from chess rating {avg_rating} -> {initial_rating}")
+    except Exception as e:
+        logger.warning(f"[PUZZLE] Could not derive initial rating from games: {e}")
+
+    # Create record with derived (or default) rating
     new_record = {
         'user_id': user_id,
-        'rating': PuzzleRatingEngine.INITIAL_RATING,
+        'rating': initial_rating,
         'rating_deviation': PuzzleRatingEngine.INITIAL_RD,
         'puzzles_attempted': 0,
         'puzzles_correct': 0,
-        'highest_rating': PuzzleRatingEngine.INITIAL_RATING,
+        'highest_rating': initial_rating,
         'current_xp': 0,
         'current_level': 1,
     }
