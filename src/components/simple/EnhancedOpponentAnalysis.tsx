@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { memo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MiniChessBoard } from './MiniChessBoard'
 
@@ -67,7 +67,7 @@ interface EnhancedOpponentAnalysisProps {
   platform: 'lichess' | 'chess.com'
 }
 
-export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStats, platform }: EnhancedOpponentAnalysisProps) {
+export const EnhancedOpponentAnalysis = memo(function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStats, platform }: EnhancedOpponentAnalysisProps) {
   const navigate = useNavigate()
 
   const handleGameClick = (gameId: string) => {
@@ -369,4 +369,4 @@ export function EnhancedOpponentAnalysis({ userId, onOpponentClick, opponentStat
 
     </div>
   )
-}
+})

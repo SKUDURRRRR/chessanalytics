@@ -4,6 +4,10 @@ AI Comment Service - Parallel Batch Processing
 This module handles async generation of AI comments in parallel batches
 to restore AI coaching comments without blocking analysis speed.
 """
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 import asyncio
 import os
@@ -94,26 +98,26 @@ async def generate_comments_parallel(
         config = CommentGenerationConfig.from_env()
 
     if not config.enabled:
-        print("[AI_COMMENTS] ❌ AI comments disabled via config, skipping generation")
-        print(f"[AI_COMMENTS] Config enabled: {config.enabled}")
-        print(f"[AI_COMMENTS] AI_COMMENTS_ENABLED env var: {os.getenv('AI_COMMENTS_ENABLED', 'not set')}")
+        logger.info("❌ AI comments disabled via config, skipping generation")
+        logger.info(f"Config enabled: {config.enabled}")
+        logger.info(f"AI_COMMENTS_ENABLED env var: {os.getenv('AI_COMMENTS_ENABLED', 'not set')}")
         return game_analysis
 
-    print(f"[AI_COMMENTS] ✅ AI comments enabled, initializing generator...")
+    logger.info(f"✅ AI comments enabled, initializing generator...")
     # Initialize coaching generator (includes AI comment generator)
     generator = ChessCoachingGenerator()
 
     if not generator.ai_generator:
-        print("[AI_COMMENTS] ❌ AI generator not initialized (None)")
+        logger.info("❌ AI generator not initialized (None)")
         return game_analysis
 
     if not generator.ai_generator.enabled:
-        print("[AI_COMMENTS] ❌ AI generator disabled")
-        print(f"[AI_COMMENTS] AI enabled: {generator.ai_generator.enabled if generator.ai_generator else 'N/A'}")
-        print(f"[AI_COMMENTS] AI client exists: {generator.ai_generator.client is not None if generator.ai_generator else 'N/A'}")
+        logger.info("❌ AI generator disabled")
+        logger.info(f"AI enabled: {generator.ai_generator.enabled if generator.ai_generator else 'N/A'}")
+        logger.info(f"AI client exists: {generator.ai_generator.client is not None if generator.ai_generator else 'N/A'}")
         return game_analysis
 
-    print(f"[AI_COMMENTS] ✅ AI generator ready: enabled={generator.ai_generator.enabled}, model={generator.ai_generator.config.ai_model if generator.ai_generator else 'N/A'}")
+    logger.info(f"✅ AI generator ready: enabled={generator.ai_generator.enabled}, model={generator.ai_generator.config.ai_model if generator.ai_generator else 'N/A'}")
 
     # Filter moves that need AI comments
     moves_to_comment = []
@@ -122,10 +126,10 @@ async def generate_comments_parallel(
             moves_to_comment.append(move)
 
     if not moves_to_comment:
-        print(f"[AI_COMMENTS] No moves require AI comments (selective mode: {config.selective})")
+        logger.info(f"No moves require AI comments (selective mode: {config.selective})")
         return game_analysis
 
-    print(f"[AI_COMMENTS] Generating AI comments for {len(moves_to_comment)} moves (out of {len(game_analysis.moves_analysis)} total)")
+    logger.info(f"Generating AI comments for {len(moves_to_comment)} moves (out of {len(game_analysis.moves_analysis)} total)")
 
     # Process in parallel batches
     total_batches = (len(moves_to_comment) + config.batch_size - 1) // config.batch_size
@@ -134,7 +138,7 @@ async def generate_comments_parallel(
         batch = moves_to_comment[batch_idx:batch_idx + config.batch_size]
         batch_num = (batch_idx // config.batch_size) + 1
 
-        print(f"[AI_COMMENTS] Processing batch {batch_num}/{total_batches} ({len(batch)} moves)")
+        logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} moves)")
 
         # Generate comments in parallel for this batch
         tasks = []
@@ -148,7 +152,7 @@ async def generate_comments_parallel(
         # Process results and update moves
         for move, result in zip(batch, results):
             if isinstance(result, Exception):
-                print(f"[AI_COMMENTS] Error generating comment for move {move.move_san}: {result}")
+                logger.info(f"Error generating comment for move {move.move_san}: {result}")
                 # Keep empty comment fields on error
             else:
                 # Result is already applied to move object (passed by reference)
@@ -158,7 +162,7 @@ async def generate_comments_parallel(
         if batch_idx + config.batch_size < len(moves_to_comment):
             await asyncio.sleep(config.rate_limit_delay)
 
-    print(f"[AI_COMMENTS] ✅ Completed generating AI comments for {len(moves_to_comment)} moves")
+    logger.info(f"✅ Completed generating AI comments for {len(moves_to_comment)} moves")
     return game_analysis
 
 
@@ -201,7 +205,7 @@ async def _generate_single_comment(
                 # Try to convert from UCI string
                 current_move = chess.Move.from_uci(str(move.move))
         except Exception as e:
-            print(f"[AI_COMMENTS] Error converting move to chess.Move: {e}, move={move.move}")
+            logger.info(f"Error converting move to chess.Move: {e}, move={move.move}")
             raise
 
         # Prepare move analysis dict for coaching generator
@@ -268,7 +272,7 @@ async def _generate_single_comment(
             is_first_move = move.is_user_move and move.fullmove_number == 1 and (move.ply_index is None or move.ply_index in [1, 2])
             if is_first_move and move.coaching_comment:
                 # Keep the instant greeting, don't overwrite with AI
-                print(f"[AI_COMMENTS] Keeping instant greeting for first move, skipping AI replacement")
+                logger.info(f"Keeping instant greeting for first move, skipping AI replacement")
             else:
                 move.coaching_comment = coaching_result.main_comment
             move.what_went_right = coaching_result.what_went_right or ""
@@ -284,10 +288,10 @@ async def _generate_single_comment(
             move.game_phase = coaching_result.game_phase.value if hasattr(coaching_result.game_phase, 'value') else str(coaching_result.game_phase)
         else:
             # AI generation failed, keep default values
-            print(f"[AI_COMMENTS] No comment generated for move {move.move_san}")
+            logger.info(f"No comment generated for move {move.move_san}")
 
     except Exception as e:
-        print(f"[AI_COMMENTS] Error generating comment for move {move.move_san}: {e}")
+        logger.info(f"Error generating comment for move {move.move_san}: {e}")
         import traceback
         traceback.print_exc()
         # Keep default empty values on error

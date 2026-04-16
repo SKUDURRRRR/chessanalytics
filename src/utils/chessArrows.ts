@@ -3,6 +3,7 @@
  */
 
 import { Chess, Square } from 'chess.js'
+import { logger } from './logger'
 
 export type Arrow = [Square, Square, string?]
 
@@ -62,7 +63,7 @@ export const ARROW_COLORS: Record<MoveClassification, string> = {
  */
 export function sanToUci(san: string, chess: Chess): { from: Square; to: Square } | null {
   if (!san || !san.trim()) {
-    console.warn('[sanToUci] Empty or invalid SAN:', san)
+    logger.warn('[sanToUci] Empty or invalid SAN:', san)
     return null
   }
 
@@ -72,14 +73,14 @@ export function sanToUci(san: string, chess: Chess): { from: Square; to: Square 
 
     // Log the position we're trying to make the move from (debug only)
     if (process.env.NODE_ENV === 'development') {
-      console.debug('[sanToUci] Converting move:', san, 'from position:', chess.fen().split(' ')[0])
+      logger.debug('[sanToUci] Converting move:', san, 'from position:', chess.fen().split(' ')[0])
     }
 
     // Try to make the move on the cloned instance
     const move = testChess.move(san)
     if (move) {
       if (process.env.NODE_ENV === 'development') {
-        console.debug('[sanToUci] Successfully converted:', san, '→', `${move.from}${move.to}`)
+        logger.debug('[sanToUci] Successfully converted:', san, '→', `${move.from}${move.to}`)
       }
       return {
         from: move.from as Square,
@@ -89,12 +90,12 @@ export function sanToUci(san: string, chess: Chess): { from: Square; to: Square 
 
     // If move is null, try fallback: parse all legal moves and find matching SAN
     // This helps with ambiguous notation or edge cases
-    console.warn('[sanToUci] Move returned null, trying fallback for:', san)
+    logger.warn('[sanToUci] Move returned null, trying fallback for:', san)
     const legalMoves = testChess.moves({ verbose: true })
     const matchingMove = legalMoves.find(m => m.san === san || m.san === san.replace(/^([NBRQK])/, '$1'))
 
     if (matchingMove) {
-      console.log('[sanToUci] Fallback successful:', san, '→', `${matchingMove.from}${matchingMove.to}`)
+      logger.log('[sanToUci] Fallback successful:', san, '→', `${matchingMove.from}${matchingMove.to}`)
       return {
         from: matchingMove.from as Square,
         to: matchingMove.to as Square
@@ -110,7 +111,7 @@ export function sanToUci(san: string, chess: Chess): { from: Square; to: Square 
     }
 
     // Always log errors (not just in development) to help diagnose brilliant move arrow issues
-    console.warn('[sanToUci] Failed to convert SAN to UCI:', errorDetails)
+    logger.warn('[sanToUci] Failed to convert SAN to UCI:', errorDetails)
 
     // Try one more fallback: check if the position is valid and try to find the move manually
     try {
@@ -129,7 +130,7 @@ export function sanToUci(san: string, chess: Chess): { from: Square; to: Square 
 
         if (movesToDest.length === 1) {
           // Only one move to this square, must be it
-          console.log('[sanToUci] Fallback by destination successful:', san, '→', `${movesToDest[0].from}${movesToDest[0].to}`)
+          logger.log('[sanToUci] Fallback by destination successful:', san, '→', `${movesToDest[0].from}${movesToDest[0].to}`)
           return {
             from: movesToDest[0].from as Square,
             to: movesToDest[0].to as Square
@@ -148,7 +149,7 @@ export function sanToUci(san: string, chess: Chess): { from: Square; to: Square 
             })
 
             if (matchingPiece) {
-              console.log('[sanToUci] Fallback by piece type successful:', san, '→', `${matchingPiece.from}${matchingPiece.to}`)
+              logger.log('[sanToUci] Fallback by piece type successful:', san, '→', `${matchingPiece.from}${matchingPiece.to}`)
               return {
                 from: matchingPiece.from as Square,
                 to: matchingPiece.to as Square
@@ -158,7 +159,7 @@ export function sanToUci(san: string, chess: Chess): { from: Square; to: Square 
         }
       }
     } catch (fallbackError) {
-      console.warn('[sanToUci] Fallback also failed:', fallbackError)
+      logger.warn('[sanToUci] Fallback also failed:', fallbackError)
     }
   }
 
@@ -260,7 +261,7 @@ export function generateModernMoveArrows(
 
     // For brilliant moves, this is particularly concerning - log additional debug info
     if (isBrilliant) {
-      console.error('[generateModernMoveArrows] ❌ BRILLIANT MOVE ARROW MISSING!', {
+      logger.error('[generateModernMoveArrows] ❌ BRILLIANT MOVE ARROW MISSING!', {
         san: moveAnalysis.san,
         position: chess.fen(),
         legalMoves: chess.moves({ verbose: true }).slice(0, 5) // First 5 for debugging

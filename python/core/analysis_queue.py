@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 #!/usr/bin/env python3
 """
 Analysis Queue System for Chess Analytics
@@ -77,10 +81,10 @@ class AnalysisQueue:
                 # Try to get the current event loop
                 loop = asyncio.get_event_loop()
                 self._queue_processor_task = loop.create_task(self._process_queue())
-                print("Queue processor started successfully")
+                logger.info("Queue processor started successfully")
             except RuntimeError:
                 # No event loop running, start one
-                print("No event loop running, queue processor will start when server starts")
+                logger.info("No event loop running, queue processor will start when server starts")
                 self._queue_processor_task = None
 
     async def _process_queue(self):
@@ -99,17 +103,17 @@ class AnalysisQueue:
 
                 # Skip cancelled jobs
                 if job.status == AnalysisStatus.CANCELLED:
-                    print(f"[QUEUE] Skipping cancelled job {job.job_id}")
+                    logger.info(f"Skipping cancelled job {job.job_id}")
                     continue
 
                 # Start the job in the background (non-blocking)
                 # This allows the queue processor to continue processing other jobs
                 task = asyncio.create_task(self._start_job_wrapper(job))
                 self.running_tasks[job.job_id] = task  # Keep reference to prevent GC
-                print(f"[QUEUE] Started job {job.job_id} in background, continuing queue processing...")
+                logger.info(f"Started job {job.job_id} in background, continuing queue processing...")
 
             except Exception as e:
-                print(f"Error in queue processor: {e}")
+                logger.info(f"Error in queue processor: {e}")
                 import traceback
                 traceback.print_exc()
                 await asyncio.sleep(1)
@@ -119,14 +123,14 @@ class AnalysisQueue:
         try:
             await self._start_job(job)
         except Exception as e:
-            print(f"[QUEUE] Error in job {job.job_id}: {e}")
+            logger.info(f"Error in job {job.job_id}: {e}")
             import traceback
             traceback.print_exc()
         finally:
             # Clean up task reference
             if job.job_id in self.running_tasks:
                 del self.running_tasks[job.job_id]
-                print(f"[QUEUE] Cleaned up task reference for job {job.job_id}")
+                logger.info(f"Cleaned up task reference for job {job.job_id}")
 
     async def _start_job(self, job: AnalysisJob):
         """Start a single analysis job."""
@@ -138,7 +142,7 @@ class AnalysisQueue:
 
             # Update in-memory progress to starting
             try:
-                print(f"[QUEUE] Job {job.job_id} starting for user {job.user_id} on {job.platform}")
+                logger.info(f"Job {job.job_id} starting for user {job.user_id} on {job.platform}")
                 from .unified_api_server import analysis_progress, _canonical_user_id
                 # Use the same canonicalization logic as the realtime endpoint
                 canonical_user_id = _canonical_user_id(job.user_id, job.platform)
@@ -152,9 +156,9 @@ class AnalysisQueue:
                     "current_phase": "starting",
                     "estimated_time_remaining": None
                 }
-                print(f"[QUEUE] Initialized progress for key '{progress_key}'")
+                logger.info(f"Initialized progress for key '{progress_key}'")
             except Exception as e:
-                print(f"Warning: Could not update in-memory progress on start: {e}")
+                logger.warning(f"Warning: Could not update in-memory progress on start: {e}")
 
         try:
             # Run the analysis in a thread pool to avoid blocking
@@ -185,13 +189,13 @@ class AnalysisQueue:
                         analyzed_count = job.analyzed_games if job.analyzed_games > 0 else (job.total_games if job.total_games > 0 else job.limit)
                         if analyzed_count > 0:
                             await usage_tracker.increment_usage(job.auth_user_id, 'analyze', count=analyzed_count)
-                            print(f"[QUEUE] Incremented usage for user {job.auth_user_id} by {analyzed_count} analyses")
+                            logger.info(f"Incremented usage for user {job.auth_user_id} by {analyzed_count} analyses")
                         else:
-                            print(f"[QUEUE] Warning: No games analyzed (analyzed_games={job.analyzed_games}, total_games={job.total_games}), skipping usage increment")
+                            logger.warning(f"Warning: No games analyzed (analyzed_games={job.analyzed_games}, total_games={job.total_games}), skipping usage increment")
                     else:
-                        print(f"[QUEUE] Warning: usage_tracker not available, skipping usage increment")
+                        logger.warning(f"Warning: usage_tracker not available, skipping usage increment")
                 except Exception as e:
-                    print(f"[QUEUE] Warning: Could not increment usage on completion: {e}")
+                    logger.warning(f"Warning: Could not increment usage on completion: {e}")
                     import traceback
                     traceback.print_exc()
 
@@ -211,9 +215,9 @@ class AnalysisQueue:
                     "estimated_time_remaining": None
                 }
                 analysis_progress[progress_key] = progress_snapshot
-                print(f"[QUEUE] Job {job.job_id} complete. Stored progress for key '{progress_key}': {progress_snapshot}")
+                logger.info(f"Job {job.job_id} complete. Stored progress for key '{progress_key}': {progress_snapshot}")
             except Exception as e:
-                print(f"Warning: Could not update in-memory progress on completion: {e}")
+                logger.warning(f"Warning: Could not update in-memory progress on completion: {e}")
 
         except Exception as e:
             # Mark job as failed
@@ -224,7 +228,7 @@ class AnalysisQueue:
                 job.current_phase = "failed"
                 if job.job_id in self.running_jobs:
                     del self.running_jobs[job.job_id]
-            print(f"Analysis job {job.job_id} failed: {e}")
+            logger.error(f"Analysis job {job.job_id} failed: {e}")
 
     def _run_analysis_job(self, job: AnalysisJob) -> Dict[str, Any]:
         """
@@ -280,9 +284,9 @@ class AnalysisQueue:
                                 "estimated_time_remaining": None
                             }
                             analysis_progress[progress_key] = progress_data
-                            print(f"[QUEUE] ✅ Progress update for job {job.job_id} -> key '{progress_key}': analyzed={completed}/{total}, phase={phase}, percentage={percentage}%")
+                            logger.info(f"✅ Progress update for job {job.job_id} -> key '{progress_key}': analyzed={completed}/{total}, phase={phase}, percentage={percentage}%")
                         except Exception as e:
-                            print(f"[QUEUE] ❌ ERROR: Could not update in-memory progress: {e}")
+                            logger.error(f"❌ ERROR: Could not update in-memory progress: {e}")
                             import traceback
                             traceback.print_exc()
 
@@ -306,7 +310,7 @@ class AnalysisQueue:
             return result
 
         except Exception as e:
-            print(f"Error in analysis job {job.job_id}: {e}")
+            logger.info(f"Error in analysis job {job.job_id}: {e}")
             raise
 
     async def submit_job(
@@ -332,8 +336,8 @@ class AnalysisQueue:
                 if (existing_job.user_id == user_id and
                     existing_job.platform == platform and
                     existing_job.status in [AnalysisStatus.PENDING, AnalysisStatus.RUNNING]):
-                    print(f"[QUEUE] Job already exists for {user_id} on {platform} (job_id: {existing_job.job_id}, status: {existing_job.status.value})")
-                    print(f"[QUEUE] Returning existing job_id instead of creating duplicate")
+                    logger.info(f"Job already exists for {user_id} on {platform} (job_id: {existing_job.job_id}, status: {existing_job.status.value})")
+                    logger.info(f"Returning existing job_id instead of creating duplicate")
                     return existing_job.job_id
 
         job_id = str(uuid.uuid4())
@@ -354,7 +358,7 @@ class AnalysisQueue:
         # Add to queue
         await self.queue.put(job)
 
-        print(f"[QUEUE] Analysis job {job_id} submitted for {user_id} on {platform}")
+        logger.info(f"Analysis job {job_id} submitted for {user_id} on {platform}")
         return job_id
 
     def get_job_status(self, job_id: str) -> Optional[AnalysisJob]:

@@ -11,7 +11,7 @@ import { getOpeningNameFromECOCode } from './openingUtils'
 import { getPlayerPerspectiveOpeningShort } from './playerPerspectiveOpening'
 
 // Debug logging flag - set to true for development debugging
-const DEBUG = true // Temporarily enabled to debug Caro-Kann issue
+const DEBUG = import.meta.env.VITE_DEBUG === 'true'
 
 export interface GameAnalytics {
   // Basic Statistics

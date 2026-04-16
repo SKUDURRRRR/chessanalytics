@@ -333,9 +333,9 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
 
       {/* Clear Confirmation Modal */}
       {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d0f]/50 px-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d0f]/50 px-4" role="dialog" aria-modal="true" aria-labelledby="clear-confirm-title">
           <div className="max-w-sm w-full rounded-lg bg-surface-1 p-6 shadow-card">
-            <h3 className="text-section font-semibold text-white mb-3">Clear Recent Players</h3>
+            <h3 id="clear-confirm-title" className="text-section font-semibold text-white mb-3">Clear Recent Players</h3>
             <p className="text-gray-400 text-[13px] mb-6">
               Are you sure you want to clear all recent players?
             </p>
@@ -378,11 +378,13 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
               onFocus={(e) => { e.target.style.boxShadow = '0 0 0 1px rgba(228,232,237,0.12)' }}
               onBlur={(e) => { e.target.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.04)' }}
               placeholder="Enter player username..."
+              aria-label="Player username"
               required
             />
           </div>
           <button
             type="submit"
+            aria-label="Search player"
             disabled={isSearching || isAutoImporting || !searchQuery.trim()}
             className="flex-shrink-0 rounded-md px-6 py-3 text-[13px] font-medium tracking-[-0.01em] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
             style={{

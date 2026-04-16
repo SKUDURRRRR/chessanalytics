@@ -15,12 +15,13 @@ import LimitReachedModal from '../components/LimitReachedModal'
 import { config } from '../lib/config'
 // Debug components removed from production
 import { OpeningFilter, OpeningIdentifierSets, ViewMode } from '../types'
+import { logger } from '../utils/logger'
 
 const serializeOpeningIdentifiers = (identifiers: OpeningIdentifierSets): string => {
   try {
     return encodeURIComponent(JSON.stringify(identifiers))
   } catch (err) {
-    console.error('Failed to serialize opening identifiers', err)
+    logger.error('Failed to serialize opening identifiers', err)
     return ''
   }
 }
@@ -47,7 +48,7 @@ const parseOpeningIdentifiers = (serialized: string | null): OpeningIdentifierSe
       openings,
     }
   } catch (err) {
-    console.error('Failed to parse opening identifiers', err)
+    logger.error('Failed to parse opening identifiers', err)
     return { openingFamilies: [], openings: [] }
   }
 }
@@ -287,7 +288,7 @@ export default function SimpleAnalyticsPage() {
           timestamp: Date.now()
         }))
       } catch (error) {
-        console.error('Failed to save last visited player:', error)
+        logger.error('Failed to save last visited player:', error)
       }
     }
   }, [userId, platform])
@@ -346,15 +347,15 @@ export default function SimpleAnalyticsPage() {
 
       try {
         const canonicalUserId = canonicalizeUserId(userId, platform)
-        console.log('[checkGamesExist] Original userId:', JSON.stringify(userId))
-        console.log('[checkGamesExist] Canonical userId:', JSON.stringify(canonicalUserId))
-        console.log('[checkGamesExist] Platform:', platform)
+        logger.log('[checkGamesExist] Original userId:', JSON.stringify(userId))
+        logger.log('[checkGamesExist] Canonical userId:', JSON.stringify(canonicalUserId))
+        logger.log('[checkGamesExist] Platform:', platform)
 
         // Use backend API to get total games count (instead of direct Supabase query)
         const eloStats = await UnifiedAnalysisService.getEloStats(canonicalUserId, platform as 'lichess' | 'chess.com')
         const gameCount = eloStats.total_games || 0
 
-        console.log('[checkGamesExist] Game count found:', gameCount)
+        logger.log('[checkGamesExist] Game count found:', gameCount)
 
         setGameCount(gameCount)
         setHasGames(gameCount > 0)
@@ -368,11 +369,11 @@ export default function SimpleAnalyticsPage() {
             }
           } catch {
             // Validation failed (e.g. network error) - don't block the page
-            console.warn('[checkGamesExist] Could not validate user on platform')
+            logger.warn('[checkGamesExist] Could not validate user on platform')
           }
         }
       } catch (error) {
-        console.error('Error checking games:', error)
+        logger.error('Error checking games:', error)
       }
     }
 
@@ -440,7 +441,7 @@ export default function SimpleAnalyticsPage() {
     if (!user) {
       // Check daily import limit for anonymous users (50 per day)
       if (!AnonymousUsageTracker.canImport()) {
-        console.log('[SimpleAnalytics] Anonymous user reached daily import limit (50 per day)')
+        logger.log('[SimpleAnalytics] Anonymous user reached daily import limit (50 per day)')
         setLimitType('import')
         setShowLimitModal(true)
         return
@@ -487,7 +488,7 @@ export default function SimpleAnalyticsPage() {
         setImportError(message)
       }
     } catch (error) {
-      console.error('Error importing games:', error)
+      logger.error('Error importing games:', error)
       const message = error instanceof Error ? error.message : 'Unknown error'
 
       // Check if it's a 429 error (rate limit / usage limit)
@@ -517,7 +518,7 @@ export default function SimpleAnalyticsPage() {
     if (!user) {
       // Check daily import limit for anonymous users (50 per day)
       if (!AnonymousUsageTracker.canImport()) {
-        console.log('[SimpleAnalytics] Anonymous user reached daily import limit (50 per day)')
+        logger.log('[SimpleAnalytics] Anonymous user reached daily import limit (50 per day)')
         setLimitType('import')
         setShowLimitModal(true)
         return
@@ -588,7 +589,7 @@ export default function SimpleAnalyticsPage() {
       }
 
       importStuckTimeoutRef.current = setTimeout(() => {
-        console.error('Import appears stuck - no progress in 5 minutes')
+        logger.error('Import appears stuck - no progress in 5 minutes')
         setLargeImportProgress(prev => prev ? {
           ...prev,
           status: 'error',
@@ -643,7 +644,7 @@ export default function SimpleAnalyticsPage() {
           setHasGames(true) // Update hasGames state
         }
       } catch (error) {
-        console.error('Polling error:', error)
+        logger.error('Polling error:', error)
       }
     }, 2000)
   }
@@ -653,7 +654,7 @@ export default function SimpleAnalyticsPage() {
       await AutoImportService.cancelImport(userId, platform)
       setLargeImportProgress(prev => prev ? { ...prev, message: 'Cancelling...' } : null)
     } catch (error) {
-      console.error('Cancel error:', error)
+      logger.error('Cancel error:', error)
     }
   }
 
@@ -673,14 +674,14 @@ export default function SimpleAnalyticsPage() {
 
     // Check if auto-sync is already running to prevent duplicate simultaneous runs
     if (autoSyncing) {
-      console.log('Auto-sync already in progress, skipping')
+      logger.log('Auto-sync already in progress, skipping')
       return
     }
 
     // Check anonymous user limits (if not authenticated)
     if (!user) {
       if (!AnonymousUsageTracker.canImport()) {
-        console.log('[Auto-sync] Anonymous user reached import limit, skipping auto-sync')
+        logger.log('[Auto-sync] Anonymous user reached import limit, skipping auto-sync')
         return
       }
     }
@@ -692,13 +693,13 @@ export default function SimpleAnalyticsPage() {
       const timeSinceLastSync = Date.now() - parseInt(lastSyncTime)
       const TEN_MINUTES = 10 * 60 * 1000
       if (timeSinceLastSync < TEN_MINUTES) {
-        console.log(`Auto-sync skipped - last sync was ${Math.round(timeSinceLastSync / 1000)}s ago`)
+        logger.log(`Auto-sync skipped - last sync was ${Math.round(timeSinceLastSync / 1000)}s ago`)
         return
       }
     }
 
     try {
-      console.log('Starting auto-sync for:', { userId, platform })
+      logger.log('Starting auto-sync for:', { userId, platform })
       setAutoSyncing(true)
       setAutoSyncProgress({
         status: 'checking',
@@ -710,7 +711,7 @@ export default function SimpleAnalyticsPage() {
       const profileExists = await ProfileService.checkUserExists(userId, platform)
 
       if (!profileExists) {
-        console.log('No profile found, skipping auto-sync')
+        logger.log('No profile found, skipping auto-sync')
         setAutoSyncing(false)
         setAutoSyncProgress({ status: 'idle', message: '', importedGames: 0 })
         return
@@ -735,7 +736,7 @@ export default function SimpleAnalyticsPage() {
       // Check if we actually imported NEW games (not just updated existing ones)
       // Use newGamesCount explicitly - if it's 0, we want 0 (not importedGames as fallback)
       const actualNewGames = result.newGamesCount ?? 0
-      console.log('[Auto-sync] Import result:', { importedGames: result.importedGames, newGamesCount: result.newGamesCount, actualNewGames })
+      logger.log('[Auto-sync] Import result:', { importedGames: result.importedGames, newGamesCount: result.newGamesCount, actualNewGames })
 
       // Update last sync timestamp
       localStorage.setItem(lastSyncKey, Date.now().toString())
@@ -763,12 +764,12 @@ export default function SimpleAnalyticsPage() {
         }, 4000)
       } else {
         // No new games - silently dismiss without showing notification
-        console.log('[Auto-sync] No new games found, dismissing silently')
+        logger.log('[Auto-sync] No new games found, dismissing silently')
         setAutoSyncing(false)
         setAutoSyncProgress({ status: 'idle', message: '', importedGames: 0 })
       }
     } catch (error) {
-      console.error('Auto-sync error:', error)
+      logger.error('Auto-sync error:', error)
       setAutoSyncProgress({
         status: 'error',
         message: 'Auto-sync failed',
@@ -1029,7 +1030,7 @@ export default function SimpleAnalyticsPage() {
                   })
                 } else {
                   // If not analyzed, trigger analysis directly without navigation
-                  console.log('Game not analyzed, triggering analysis directly:', gameId)
+                  logger.log('Game not analyzed, triggering analysis directly:', gameId)
                   // The MatchHistory component will handle the analysis request
                   // We don't need to do anything here as the analyze button will be shown
                 }

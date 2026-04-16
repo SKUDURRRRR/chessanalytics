@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { normalizeUserId } from '../lib/security'
 import { quickCache, getUserExistsCacheKey } from '../utils/quickCache'
 import { logger } from '../utils/logger'
+import config from '../lib/config'
 import { sanitizeHttpError } from '../utils/errorSanitizer'
 
 export interface UserProfile {
@@ -40,7 +41,7 @@ export class ProfileService {
   ): Promise<UserProfile> {
     try {
       // Use backend API which has service role access
-      const API_BASE_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
+      const API_BASE_URL = config.getApi().baseUrl
 
       const response = await fetch(`${API_BASE_URL}/api/v1/profiles`, {
         method: 'POST',
@@ -62,7 +63,7 @@ export class ProfileService {
       const profile = await response.json()
       return profile
     } catch (error) {
-      console.error('Error getting/creating profile:', error)
+      logger.error('Error getting/creating profile:', error)
       throw error
     }
   }
@@ -119,7 +120,7 @@ export class ProfileService {
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
     } catch (error) {
-      console.error('Error updating last accessed:', error)
+      logger.error('Error updating last accessed:', error)
     }
   }
 
@@ -150,7 +151,7 @@ export class ProfileService {
         .eq('user_id', canonicalUserId)
         .eq('platform', platform)
     } catch (error) {
-      console.error('Error updating profile with analytics:', error)
+      logger.error('Error updating profile with analytics:', error)
     }
   }
 
@@ -165,14 +166,14 @@ export class ProfileService {
         .limit(10)
 
       if (error) {
-        console.error('Error fetching recent users:', error)
+        logger.error('Error fetching recent users:', error)
         return []
       }
 
-      console.log('Recent users fetched successfully:', data)
+      logger.log('Recent users fetched successfully:', data)
       return data || []
     } catch (error) {
-      console.error('Error fetching recent users:', error)
+      logger.error('Error fetching recent users:', error)
       return []
     }
   }
@@ -180,7 +181,7 @@ export class ProfileService {
   // Get all profiles for a specific platform
   static async getProfilesByPlatform(platform: 'lichess' | 'chess.com'): Promise<UserProfile[]> {
     try {
-      console.log(`Fetching profiles for platform: ${platform}`)
+      logger.log(`Fetching profiles for platform: ${platform}`)
       const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
@@ -188,14 +189,14 @@ export class ProfileService {
         .order('last_accessed', { ascending: false })
 
       if (error) {
-        console.error('Error fetching profiles by platform:', error)
+        logger.error('Error fetching profiles by platform:', error)
         return []
       }
 
-      console.log(`Profiles fetched successfully for ${platform}:`, data)
+      logger.log(`Profiles fetched successfully for ${platform}:`, data)
       return data || []
     } catch (error) {
-      console.error('Error fetching profiles by platform:', error)
+      logger.error('Error fetching profiles by platform:', error)
       return []
     }
   }

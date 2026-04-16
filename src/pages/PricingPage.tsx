@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { logger } from '../utils/logger'
+import config from '../lib/config'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
 import { Check, Shield, Zap, Brain, TrendingUp, BarChart3, Sparkles } from 'lucide-react'
 
@@ -78,6 +80,7 @@ const FALLBACK_TIERS: PaymentTier[] = [
 
 export default function PricingPage() {
   const { user, usageStats } = useAuth()
+  const navigate = useNavigate()
   const [tiers, setTiers] = useState<PaymentTier[]>([])
   const [loading, setLoading] = useState(true)
   const [upgrading, setUpgrading] = useState<string | null>(null)
@@ -91,7 +94,7 @@ export default function PricingPage() {
 
   const fetchTiers = async () => {
     try {
-      const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
+      const API_URL = config.getApi().baseUrl
 
       const response = await fetchWithTimeout(
         `${API_URL}/api/v1/payment-tiers`,
@@ -99,23 +102,23 @@ export default function PricingPage() {
         TIMEOUT_CONFIG.DEFAULT
       )
 
-      console.log('📡 Response status:', response.status)
-      console.log('📡 Response ok:', response.ok)
+      logger.log('📡 Response status:', response.status)
+      logger.log('📡 Response ok:', response.ok)
 
       if (response.ok) {
         const data = await response.json()
-        console.log('📦 Data received:', data)
-        console.log('📦 Tiers count:', data.tiers?.length || 0)
+        logger.log('📦 Data received:', data)
+        logger.log('📦 Tiers count:', data.tiers?.length || 0)
         setTiers(data.tiers || [])
         logger.log('Pricing tiers fetched successfully')
       } else {
         const errorText = await response.text()
-        console.error('❌ API Error Response:', errorText)
+        logger.error('❌ API Error Response:', errorText)
         logger.warn('Failed to fetch pricing tiers:', response.status)
         setTiers(FALLBACK_TIERS)
       }
     } catch (error) {
-      console.error('❌ Fetch error:', error)
+      logger.error('❌ Fetch error:', error)
       logger.error('Error fetching tiers, using fallback:', error)
       setTiers(FALLBACK_TIERS)
     } finally {
@@ -166,13 +169,13 @@ export default function PricingPage() {
 
     if (!user) {
       logger.log('Unauthenticated user attempting upgrade, redirecting to signup')
-      window.location.href = '/signup'
+      navigate('/signup')
       return
     }
 
     setUpgrading(tierId)
     try {
-      const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
+      const API_URL = config.getApi().baseUrl
 
       // Get the auth token from Supabase
       const { data: { session } } = await supabase.auth.getSession()
@@ -180,7 +183,7 @@ export default function PricingPage() {
         logger.warn('No session found when attempting upgrade')
         setNotification({ message: 'Please log in to upgrade', type: 'error' })
         setTimeout(() => {
-          window.location.href = '/login'
+          navigate('/login')
         }, 2000)
         return
       }

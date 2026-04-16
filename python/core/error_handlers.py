@@ -11,7 +11,7 @@ import traceback
 from datetime import datetime
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+# logging configured via setup_logging()
 logger = logging.getLogger(__name__)
 
 class ChessAnalyticsError(Exception):
@@ -74,12 +74,12 @@ def create_error_response(
 ) -> JSONResponse:
     """
     Create a standardized error response.
-    
+
     Args:
         error: The exception that occurred
         request: The FastAPI request object
         include_traceback: Whether to include traceback in response (dev only)
-    
+
     Returns:
         JSONResponse with error details
     """
@@ -96,7 +96,7 @@ def create_error_response(
         status_code = 500
         error_code = "INTERNAL_ERROR"
         message = "An unexpected error occurred"
-    
+
     # Build error response
     error_response = {
         "error": {
@@ -106,14 +106,14 @@ def create_error_response(
             "request_id": getattr(getattr(request, "state", None), "request_id", "unknown") if request else "unknown"
         }
     }
-    
+
     # Add traceback in development
     if include_traceback and status_code >= 500:
         error_response["error"]["traceback"] = traceback.format_exc()
-    
+
     # Log the error
     logger.error(f"API Error: {error_code} - {message}", exc_info=True)
-    
+
     return JSONResponse(
         status_code=status_code,
         content=error_response
@@ -122,7 +122,7 @@ def create_error_response(
 def handle_database_error(operation: str, error: Exception) -> DatabaseError:
     """Handle database errors with proper context."""
     error_message = str(error)
-    
+
     # Check for common database error patterns
     if "connection" in error_message.lower():
         error_message = "Database connection failed"
@@ -132,13 +132,13 @@ def handle_database_error(operation: str, error: Exception) -> DatabaseError:
         error_message = "Database constraint violation"
     elif "timeout" in error_message.lower():
         error_message = "Database operation timed out"
-    
+
     return DatabaseError(error_message, operation)
 
 def handle_analysis_error(analysis_type: str, error: Exception) -> AnalysisError:
     """Handle analysis errors with proper context."""
     error_message = str(error)
-    
+
     # Check for common analysis error patterns
     if "stockfish" in error_message.lower():
         error_message = "Stockfish engine error"
@@ -146,25 +146,25 @@ def handle_analysis_error(analysis_type: str, error: Exception) -> AnalysisError
         error_message = "Analysis timed out"
     elif "memory" in error_message.lower():
         error_message = "Insufficient memory for analysis"
-    
+
     return AnalysisError(error_message, analysis_type)
 
 def validate_game_data(game_data: Dict[str, Any]) -> None:
     """Validate game data structure."""
     required_fields = ["user_id", "platform", "game_id"]
-    
+
     for field in required_fields:
         if field not in game_data:
             raise ValidationError(f"Missing required field: {field}", field)
-    
+
     # Validate platform
     if game_data["platform"] not in ["lichess", "chess.com"]:
         raise ValidationError("Platform must be 'lichess' or 'chess.com'", "platform")
-    
+
     # Validate user_id
     if not game_data["user_id"] or not isinstance(game_data["user_id"], str):
         raise ValidationError("User ID must be a non-empty string", "user_id")
-    
+
     # Validate game_id
     if not game_data["game_id"] or not isinstance(game_data["game_id"], str):
         raise ValidationError("Game ID must be a non-empty string", "game_id")
@@ -173,16 +173,16 @@ def validate_analysis_request(request_data: Dict[str, Any]) -> None:
     """Validate analysis request data."""
     if "games" not in request_data:
         raise ValidationError("Missing 'games' field", "games")
-    
+
     if not isinstance(request_data["games"], list):
         raise ValidationError("'games' must be a list", "games")
-    
+
     if len(request_data["games"]) == 0:
         raise ValidationError("Games list cannot be empty", "games")
-    
+
     if len(request_data["games"]) > 100:  # Reasonable limit
         raise ValidationError("Too many games in request (max 100)", "games")
-    
+
     # Validate each game
     for i, game in enumerate(request_data["games"]):
         try:

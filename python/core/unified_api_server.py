@@ -25,10 +25,10 @@ else:
 # Check if stripe library is available
 try:
     import stripe as stripe_lib
-    print(f"[OK] Stripe library imported successfully (version: {stripe_lib.VERSION if hasattr(stripe_lib, 'VERSION') else 'unknown'})")
+    logger.info(f"Stripe library imported successfully (version: {stripe_lib.VERSION if hasattr(stripe_lib, 'VERSION') else 'unknown'})")
 except ImportError as e:
-    print(f"[ERROR] Stripe library import failed: {e}")
-    print("   Run: pip install stripe>=7.0.0")
+    logger.error(f"Stripe library import failed: {e}")
+    logger.info("   Run: pip install stripe>=7.0.0")
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Depends
@@ -50,10 +50,9 @@ from supabase import create_client, Client
 from jose import jwt as jose_jwt
 import logging
 
-# Suppress harmless asyncio connection cleanup errors on Windows
-# These occur when sockets are closed during cleanup and are not actual errors
-asyncio_logger = logging.getLogger('asyncio')
-asyncio_logger.setLevel(logging.WARNING)  # Suppress ERROR level, but keep CRITICAL visible
+# Configure structured logging early (before any logger usage)
+from .logging_config import setup_logging
+setup_logging()
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -109,13 +108,13 @@ print_performance_config(performance_config)
 
 # Initialize secure CORS configuration
 cors_origins = config.api.cors_origins or ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"]
-print(f"CORS Origins configured: {cors_origins}")
+logger.info(f"CORS Origins configured: {cors_origins}")
 
 # Allow Vercel preview deployments and production domain via regex pattern (CORS_ORIGIN_REGEX env var)
 # Default pattern matches *.vercel.app and *chessdata.app (production domain)
 cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX", r"https://(.*\.vercel\.app|(www\.)?chessdata\.app)")
 if cors_origin_regex:
-    print(f"CORS Origin Regex: {cors_origin_regex}")
+    logger.info(f"CORS Origin Regex: {cors_origin_regex}")
 
 # Use production CORS config if we have custom origins, otherwise use default
 if config.api.cors_origins:
@@ -126,10 +125,10 @@ if config.api.cors_origins:
         allow_credentials=True,
         max_age=3600
     )
-    print(f"Using production CORS configuration")
+    logger.info(f"Using production CORS configuration")
 else:
     cors_config = get_default_cors_config()
-    print(f"Using default localhost CORS configuration")
+    logger.info(f"Using default localhost CORS configuration")
 
 # Debug mode configuration
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -137,6 +136,8 @@ DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 # Authentication setup - Fail fast if JWT configuration is missing
 # Use auto_error=False to make authentication optional (won't raise 403 if token is missing)
 security = HTTPBearer(auto_error=False)
+# Strict auth scheme for endpoints that must require authentication (payments, account management, etc.)
+security_required = HTTPBearer(auto_error=True)
 
 # Critical security configuration - no defaults allowed
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -152,9 +153,9 @@ JWT_ISSUER = os.getenv("JWT_ISSUER")  # Expected 'iss' claim value
 JWT_AUDIENCE = os.getenv("JWT_AUDIENCE")  # Expected 'aud' claim value
 
 if JWT_ISSUER:
-    print(f"JWT validation configured with issuer: {JWT_ISSUER}")
+    logger.info(f"JWT validation configured with issuer: {JWT_ISSUER}")
 if JWT_AUDIENCE:
-    print(f"JWT validation configured with audience: {JWT_AUDIENCE}")
+    logger.info(f"JWT validation configured with audience: {JWT_AUDIENCE}")
 
 # Bounded in-memory cache for analytics with TTL (replaces unbounded dict)
 CACHE_TTL_SECONDS = 1800  # 30 minutes cache TTL (was 5 minutes)
@@ -166,7 +167,7 @@ def _get_from_cache(cache_key: str) -> Optional[Dict[str, Any]]:
     result = _analytics_cache.get(cache_key)
     if result is not None:
         if DEBUG:
-            print(f"[CACHE] Hit for key: {cache_key}")
+            logger.debug(f"Hit for key: {cache_key}")
         return result
     return None
 
@@ -174,13 +175,13 @@ def _set_in_cache(cache_key: str, data: Dict[str, Any]) -> None:
     """Store data in cache with current timestamp."""
     _analytics_cache.set(cache_key, data)
     if DEBUG:
-        print(f"[CACHE] Set for key: {cache_key}")
+        logger.debug(f"Set for key: {cache_key}")
 
 def _delete_from_cache(cache_key: str) -> None:
     """Delete a specific cache entry."""
     if _analytics_cache.delete(cache_key):
         if DEBUG:
-            print(f"[CACHE] Deleted key: {cache_key}")
+            logger.debug(f"Deleted key: {cache_key}")
 
 def _invalidate_cache(user_id: str, platform: str) -> None:
     """Invalidate all cache entries for a specific user/platform.
@@ -201,7 +202,7 @@ def _invalidate_cache(user_id: str, platform: str) -> None:
             if key in _analytics_cache._cache:
                 del _analytics_cache._cache[key]
     if DEBUG and keys_to_delete:
-        print(f"[CACHE] Invalidated {len(keys_to_delete)} entries for {user_id}:{platform}")
+        logger.debug(f"Invalidated {len(keys_to_delete)} entries for {user_id}:{platform}")
 
 # Module-level singleton helpers to avoid per-request object creation
 _stockfish_path = None
@@ -275,14 +276,14 @@ if config.database.url and config.database.anon_key:
     # Use service role key for move_analyses operations if available
     if config.database.service_role_key:
         supabase_service: Client = create_client(str(config.database.url), config.database.service_role_key)
-        print("Using service role key for move_analyses operations")
+        logger.info("Using service role key for move_analyses operations")
     else:
         supabase_service: Client = supabase
-        print("Service role key not found, using anon key for move_analyses operations")
+        logger.info("Service role key not found, using anon key for move_analyses operations")
 
     # Initialize reliable persistence system with cache invalidation callback
     persistence = ReliableAnalysisPersistence(supabase, supabase_service, on_save_callback=_invalidate_cache)
-    print("Reliable analysis persistence system initialized with cache invalidation")
+    logger.info("Reliable analysis persistence system initialized with cache invalidation")
 
     # Initialize usage tracker and payment services
     from .usage_tracker import UsageTracker
@@ -290,9 +291,9 @@ if config.database.url and config.database.anon_key:
 
     usage_tracker = UsageTracker(supabase_service)
     stripe_service = StripeService(supabase_service)
-    print("Usage tracking and payment services initialized")
+    logger.info("Usage tracking and payment services initialized")
 else:
-    print("[warn]  Database configuration not found. Using mock clients for development.")
+    logger.warning("Database configuration not found. Using mock clients for development.")
     # Create mock clients for development
     supabase = None
     supabase_service = None
@@ -371,12 +372,21 @@ async def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depe
     except Exception as e:
         # Catch-all for unexpected errors
         if DEBUG:
-            print(f"[AUTH ERROR] Unexpected error during token verification: {str(e)}")
+            logger.error(f"Unexpected error during token verification: {str(e)}")
         raise HTTPException(
             status_code=401,
             detail="Authentication failed. Invalid or malformed token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+async def verify_token_required(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security_required)]) -> dict:
+    """
+    Verify JWT token with mandatory authentication.
+    Uses security_required scheme which returns 403 automatically if no token is provided.
+    Delegates actual token validation to verify_token.
+    """
+    return await verify_token(credentials)
+
 
 async def verify_user_access(user_id: str, token_data: Annotated[dict, Depends(verify_token)]) -> bool:
     """Verify the authenticated user has access to the requested user_id."""
@@ -499,14 +509,14 @@ async def lifespan(app: FastAPI):
     global _engine_pool_instance, _memory_monitor_instance, _cache_cleanup_task
 
     # --- STARTUP ---
-    print("=" * 80)
-    print("[START] Starting Chess Analytics API Server with Memory Optimizations")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("Starting Chess Analytics API Server with Memory Optimizations")
+    logger.info("=" * 80)
 
     # Initialize Stockfish engine pool (cost-optimized for scale-to-zero)
     stockfish_path = config.stockfish.path
     if stockfish_path:
-        print(f"[STARTUP] Initializing Stockfish engine pool...")
+        logger.info(f"Initializing Stockfish engine pool...")
         _engine_pool_instance = get_engine_pool(
             stockfish_path=stockfish_path,
             max_size=2,  # Reduced from 4 to 2 for cost optimization (sufficient for 15-25 users)
@@ -519,19 +529,19 @@ async def lifespan(app: FastAPI):
             }
         )
         await _engine_pool_instance.start_cleanup_task()
-        print(f"[STARTUP] [OK] Engine pool initialized: {_engine_pool_instance}")
+        logger.info(f"[OK] Engine pool initialized: {_engine_pool_instance}")
     else:
-        print("[STARTUP] [WARNING] Stockfish path not configured - engine pool disabled")
+        logger.warning("[WARNING] Stockfish path not configured - engine pool disabled")
 
     # Initialize memory monitor
-    print("[STARTUP] Initializing memory monitor...")
+    logger.info("Initializing memory monitor...")
     _memory_monitor_instance = get_memory_monitor(
         interval=60.0,
         warning_threshold=0.70,
         critical_threshold=0.85
     )
     await _memory_monitor_instance.start()
-    print(f"[STARTUP] [OK] Memory monitor started")
+    logger.info(f"[OK] Memory monitor started")
 
     # Initialize analysis engine early to trigger AI comment generator initialization
     logger.info("[STARTUP] Pre-initializing analysis engine (this will initialize AI comment generator)...")
@@ -568,7 +578,7 @@ async def lifespan(app: FastAPI):
         logger.info("[STARTUP]    AI features will use template-based fallback")
 
     # Clear analysis stats cache on startup to prevent stale data
-    print("[STARTUP] Clearing analysis stats cache to ensure fresh calculations...")
+    logger.info("Clearing analysis stats cache to ensure fresh calculations...")
     cleared_count = 0
     with _analytics_cache._lock:
         for key in list(_analytics_cache._cache.keys()):
@@ -577,23 +587,23 @@ async def lifespan(app: FastAPI):
                     del _analytics_cache._cache[key]
                     cleared_count += 1
     if cleared_count > 0:
-        print(f"[STARTUP] Cleared {cleared_count} cached analysis stats entries")
+        logger.info(f"Cleared {cleared_count} cached analysis stats entries")
 
     # Start cache cleanup background task
     async def cache_cleanup_loop():
-        print("[STARTUP] Starting cache cleanup task (interval: 5 minutes)")
+        logger.info("Starting cache cleanup task (interval: 5 minutes)")
         while True:
             try:
                 await asyncio.sleep(300)
                 results = cleanup_all_caches()
                 total_cleaned = sum(results.values())
                 if total_cleaned > 0:
-                    print(f"[CACHE_CLEANUP] Cleaned {total_cleaned} expired entries: {results}")
+                    logger.debug(f"Cleaned {total_cleaned} expired entries: {results}")
             except asyncio.CancelledError:
-                print("[CACHE_CLEANUP] Cleanup task cancelled")
+                logger.debug("Cleanup task cancelled")
                 break
             except Exception as e:
-                print(f"[CACHE_CLEANUP] Error in cleanup: {e}")
+                logger.debug(f"Error in cleanup: {e}")
 
     _cache_cleanup_task = asyncio.create_task(cache_cleanup_loop())
 
@@ -603,9 +613,9 @@ async def lifespan(app: FastAPI):
         queue = get_analysis_queue()
         if queue._queue_processor_task is None or queue._queue_processor_task.done():
             queue._queue_processor_task = asyncio.create_task(queue._process_queue())
-            print("[STARTUP] Analysis queue processor started")
+            logger.info("Analysis queue processor started")
     except ImportError:
-        print("[STARTUP] Analysis queue not available")
+        logger.info("Analysis queue not available")
 
     # Verify Stripe configuration
     stripe_key = os.getenv('STRIPE_SECRET_KEY')
@@ -614,58 +624,58 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("STRIPE_SECRET_KEY not found in environment")
 
-    print("=" * 80)
-    print("[OK] Server startup complete!")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("Server startup complete!")
+    logger.info("=" * 80)
 
     yield  # Application runs here
 
     # --- SHUTDOWN ---
-    print("\n" + "=" * 80)
-    print("Shutting down Chess Analytics API Server")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("Shutting down Chess Analytics API Server")
+    logger.info("=" * 80)
 
     # Stop cache cleanup task
     if _cache_cleanup_task:
-        print("[SHUTDOWN] Stopping cache cleanup task...")
+        logger.info("Stopping cache cleanup task...")
         _cache_cleanup_task.cancel()
         try:
             await _cache_cleanup_task
         except asyncio.CancelledError:
             pass
-        print("[SHUTDOWN] Cache cleanup task stopped")
+        logger.info("Cache cleanup task stopped")
 
     # Stop memory monitor
     if _memory_monitor_instance:
-        print("[SHUTDOWN] Stopping memory monitor...")
+        logger.info("Stopping memory monitor...")
         await stop_memory_monitor()
-        print("[SHUTDOWN] Memory monitor stopped")
+        logger.info("Memory monitor stopped")
 
     # Close engine pool
     if _engine_pool_instance:
-        print("[SHUTDOWN] Closing engine pool...")
+        logger.info("Closing engine pool...")
         await close_global_engine_pool()
-        print("[SHUTDOWN] Engine pool closed")
+        logger.info("Engine pool closed")
 
     # Close HTTP client
     global _shared_http_client
     if _shared_http_client:
-        print("[SHUTDOWN] Closing HTTP client...")
+        logger.info("Closing HTTP client...")
         await _shared_http_client.close()
-        print("[SHUTDOWN] HTTP client closed")
+        logger.info("HTTP client closed")
 
     # Clear all caches
-    print("[SHUTDOWN] Clearing all caches...")
+    logger.info("Clearing all caches...")
     cache_results = {}
     cache_results['user_rate_limits'] = user_rate_limits.clear()
     cache_results['import_progress'] = large_import_progress.clear()
     cache_results['import_cancel_flags'] = large_import_cancel_flags.clear()
     total_cleared = sum(cache_results.values())
-    print(f"[SHUTDOWN] Cleared {total_cleared} cache entries: {cache_results}")
+    logger.info(f"Cleared {total_cleared} cache entries: {cache_results}")
 
-    print("=" * 80)
-    print("Shutdown complete")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("Shutdown complete")
+    logger.info("=" * 80)
 
 # FastAPI app
 app = FastAPI(
@@ -730,6 +740,10 @@ ANALYSIS_TEST_LIMIT = int(os.getenv("ANALYSIS_TEST_LIMIT", "5"))
 # Tier-based usage quotas (hourly/daily) are handled separately via usage_tracker for authenticated users
 ANALYSIS_RATE_LIMIT = int(os.getenv("ANALYSIS_RATE_LIMIT", "5"))  # requests per minute
 IMPORT_RATE_LIMIT = int(os.getenv("IMPORT_RATE_LIMIT", "3"))      # requests per minute
+AI_RATE_LIMIT = int(os.getenv("AI_RATE_LIMIT", "10"))             # requests per minute
+PROFILE_RATE_LIMIT = int(os.getenv("PROFILE_RATE_LIMIT", "20"))   # requests per minute
+AUTH_RATE_LIMIT = int(os.getenv("AUTH_RATE_LIMIT", "15"))          # requests per minute
+COACH_RATE_LIMIT = int(os.getenv("COACH_RATE_LIMIT", "15"))       # requests per minute
 
 # Track timestamps of requests by user for rate limiting
 # Use TTLDict with 5-minute TTL for automatic cleanup
@@ -795,7 +809,7 @@ def clear_import_cancelled(key: str) -> None:
 MAX_CONCURRENT_IMPORTS = int(os.getenv("MAX_CONCURRENT_IMPORTS", "2"))
 import_semaphore = asyncio.Semaphore(MAX_CONCURRENT_IMPORTS)
 import_queue = asyncio.Queue()  # Queue for waiting imports
-print(f"Import concurrency limit: {MAX_CONCURRENT_IMPORTS} concurrent imports")
+logger.info(f"Import concurrency limit: {MAX_CONCURRENT_IMPORTS} concurrent imports")
 
 # Import optimization settings
 IMPORT_BATCH_SIZE = int(os.getenv("IMPORT_BATCH_SIZE", "50"))  # Reduced from 100 to save memory
@@ -1413,7 +1427,7 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
                             except Exception:
                                 break
                     except Exception as e:
-                        print(f"Error extracting best move: {e}")
+                        logger.info(f"Error extracting best move: {e}")
 
                 analysis_time_ms = int((time.time() - start_time) * 1000)
 
@@ -1426,7 +1440,7 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
                 }
 
         except Exception as e:
-            print(f"Error in synchronous analysis: {e}")
+            logger.info(f"Error in synchronous analysis: {e}")
             traceback.print_exc()
             raise
 
@@ -1443,7 +1457,7 @@ async def analyze_position_quick(request: QuickPositionAnalysisRequest):
     except chess.InvalidMoveError as e:
         raise HTTPException(status_code=400, detail=f"Invalid FEN: {str(e)}")
     except Exception as e:
-        print(f"Error in quick position analysis: {e}")
+        logger.info(f"Error in quick position analysis: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
 
@@ -1521,7 +1535,7 @@ async def unified_analyze(
         original_type = request.analysis_type
         normalized_type = _normalize_analysis_type(request.analysis_type)
         if normalized_type != original_type:
-            print(f"[info] Requested analysis_type '{original_type}' mapped to '{normalized_type}' for MVP configuration.")
+            logger.info(f"Requested analysis_type '{original_type}' mapped to '{normalized_type}' for MVP configuration.")
         request.analysis_type = normalized_type
 
         # Validate user_id and platform
@@ -1603,11 +1617,11 @@ async def get_analysis_results(
         canonical_user_id = _canonical_user_id(user_id, platform)
         # Debug logging (only when DEBUG=true)
         if os.getenv("DEBUG", "false").lower() == "true":
-            print(f"[DEBUG] get_analysis_results called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
-            print(f"[DEBUG] canonical_user_id={canonical_user_id}")
+            logger.debug(f"get_analysis_results called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
+            logger.debug(f"canonical_user_id={canonical_user_id}")
 
         if not supabase and not supabase_service:
-            print("[warn]  Database not available. Returning empty results.")
+            logger.warning("Database not available. Returning empty results.")
             return []
 
         # Query move_analyses table directly for Stockfish analysis
@@ -1624,8 +1638,8 @@ async def get_analysis_results(
 
         if not response.data or len(response.data) == 0:
             # Return mock data for development when no real data is available
-            print(f"[results] No data found for user {canonical_user_id} on {platform}, returning mock analysis results for development")
-            print(f"[results] Query was: move_analyses where user_id={canonical_user_id} AND platform={platform}")
+            logger.info(f"No data found for user {canonical_user_id} on {platform}, returning mock analysis results for development")
+            logger.info(f"Query was: move_analyses where user_id={canonical_user_id} AND platform={platform}")
             return _get_mock_analysis_results()
 
         results = []
@@ -1634,7 +1648,7 @@ async def get_analysis_results(
 
         return results
     except Exception as e:
-        print(f"Error fetching analysis results: {e}")
+        logger.info(f"Error fetching analysis results: {e}")
         return []
 
 @app.get("/api/v1/stats/{user_id}/{platform}", response_model=AnalysisStats)
@@ -1657,11 +1671,11 @@ async def get_analysis_stats(
             return cached_data
 
         if DEBUG:
-            print(f"[DEBUG] get_analysis_stats called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
-            print(f"[DEBUG] canonical_user_id={canonical_user_id}")
+            logger.debug(f"get_analysis_stats called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
+            logger.debug(f"canonical_user_id={canonical_user_id}")
 
         if not supabase and not supabase_service:
-            print("[warn]  Database not available. Returning empty stats.")
+            logger.warning("Database not available. Returning empty stats.")
             return _get_empty_stats()
 
         # PERFORMANCE FIX: Limit to recent 100 analyses instead of ALL for calculating averages
@@ -1673,7 +1687,7 @@ async def get_analysis_stats(
         total_count = 0  # Total count of all analyzed games
 
         # Diagnostic: log which client is being used (helps debug RLS issues)
-        print(f"[stats] Querying for user={canonical_user_id}, platform={platform}, using_service_role={is_service_role}")
+        logger.info(f"Querying for user={canonical_user_id}, platform={platform}, using_service_role={is_service_role}")
 
         if db_client:
             # PERFORMANCE: Fetch count and data in parallel, use 'id' for counts (not SELECT *)
@@ -1690,7 +1704,7 @@ async def get_analysis_stats(
                 )
             )
             total_count = getattr(count_response, 'count', 0) or 0
-            print(f"[stats] move_analyses: count={total_count}, rows={len(response.data or [])}")
+            logger.info(f"move_analyses: count={total_count}, rows={len(response.data or [])}")
 
             if response.data and len(response.data) > 0:
                 data_source = 'move_analyses'
@@ -1710,7 +1724,7 @@ async def get_analysis_stats(
                     )
                 )
                 ua_count = getattr(fallback_count, 'count', 0) or 0
-                print(f"[stats] unified_analyses (game_analyses view): count={ua_count}, rows={len(fallback_response.data or [])}")
+                logger.info(f"unified_analyses (game_analyses view): count={ua_count}, rows={len(fallback_response.data or [])}")
                 if total_count == 0:
                     total_count = ua_count
                 if not response.data or len(response.data) == 0:
@@ -1727,7 +1741,7 @@ async def get_analysis_stats(
                     ).eq('platform', platform).execute()
                 )
                 games_count = getattr(games_count_resp, 'count', 0) or 0
-                print(f"[stats] games table: count={games_count}")
+                logger.info(f"games table: count={games_count}")
 
                 if games_count > 0:
                     # Fetch accuracy data from games table to compute basic stats
@@ -1741,7 +1755,7 @@ async def get_analysis_stats(
                         ).limit(100).execute()
                     )
                     games_with_accuracy = games_response.data or []
-                    print(f"[stats] games with accuracy: {len(games_with_accuracy)}")
+                    logger.info(f"games with accuracy: {len(games_with_accuracy)}")
 
                     if games_with_accuracy:
                         # Compute basic stats from games table accuracy values
@@ -1767,7 +1781,7 @@ async def get_analysis_stats(
                             brilliant_moves_per_game=0,
                             material_sacrifices_per_game=0
                         )
-                        print(f"[stats] Using games table fallback: {games_count} games, avg_accuracy={avg_accuracy}")
+                        logger.info(f"Using games table fallback: {games_count} games, avg_accuracy={avg_accuracy}")
                         _set_in_cache(cache_key, result)
                         return result
                     else:
@@ -1790,25 +1804,25 @@ async def get_analysis_stats(
                             brilliant_moves_per_game=0,
                             material_sacrifices_per_game=0
                         )
-                        print(f"[stats] Using games table fallback (no accuracy data): {games_count} games")
+                        logger.info(f"Using games table fallback (no accuracy data): {games_count} games")
                         _set_in_cache(cache_key, result)
                         return result
 
             if DEBUG:
-                print(f"[DEBUG] Total analyzed games count: {total_count}")
+                logger.debug(f"Total analyzed games count: {total_count}")
 
             if os.getenv("DEBUG", "false").lower() == "true":
-                print(f"[DEBUG] Stats query: {len(response.data or [])} records (limited to 100 for performance)")
-                print(f"[DEBUG] Data source: {data_source}")
+                logger.debug(f"Stats query: {len(response.data or [])} records (limited to 100 for performance)")
+                logger.debug(f"Data source: {data_source}")
         else:
             response = type('MockResponse', (), {'data': []})()
 
         if not response.data or len(response.data) == 0:
-            print(f"[stats] No data found in any table for user {canonical_user_id} on {platform}")
+            logger.info(f"No data found in any table for user {canonical_user_id} on {platform}")
             return _get_empty_stats()
 
         if DEBUG:
-            print(f"[DEBUG] Calculating stats for {len(response.data)} analyses from {data_source} (total count: {total_count})")
+            logger.debug(f"Calculating stats for {len(response.data)} analyses from {data_source} (total count: {total_count})")
 
         # Use the appropriate calculation function based on data source
         # move_analyses has moves_analysis array that needs to be processed
@@ -1821,7 +1835,7 @@ async def get_analysis_stats(
         _set_in_cache(cache_key, result)
         return result
     except Exception as e:
-        print(f"Error fetching analysis stats: {e}")
+        logger.info(f"Error fetching analysis stats: {e}")
         return _get_empty_stats()
 
 @app.get("/api/v1/analyses/{user_id}/{platform}")
@@ -1847,11 +1861,11 @@ async def get_game_analyses(
                 return cached_data
 
         if DEBUG:
-            print(f"[DEBUG] get_game_analyses called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}, limit={limit}, offset={offset}")
-        print(f"[DEBUG] canonical_user_id={canonical_user_id}")
+            logger.debug(f"get_game_analyses called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}, limit={limit}, offset={offset}")
+        logger.debug(f"canonical_user_id={canonical_user_id}")
 
         if not supabase and not supabase_service:
-            print("[ERROR] No database connection available")
+            logger.error("No database connection available")
             return []
 
         # Query move_analyses first (where new analyses are saved), then fall back to unified_analyses
@@ -1877,13 +1891,13 @@ async def get_game_analyses(
             )
 
         if os.getenv("DEBUG", "false").lower() == "true":
-            print(f"[DEBUG] Query response: {len(response.data) if response.data else 0} records found")
+            logger.debug(f"Query response: {len(response.data) if response.data else 0} records found")
             if response.data:
-                print(f"[DEBUG] First record keys: {list(response.data[0].keys()) if response.data[0] else 'No keys'}")
-                print(f"[DEBUG] Sample record: {str(response.data[0])[:200]}..." if response.data[0] else "No sample")
+                logger.debug(f"First record keys: {list(response.data[0].keys()) if response.data[0] else 'No keys'}")
+                logger.debug(f"Sample record: {str(response.data[0])[:200]}..." if response.data[0] else "No sample")
 
         if not response.data or len(response.data) == 0:
-            print(f"[analyses] No data found for user {canonical_user_id} on {platform}")
+            logger.info(f"No data found for user {canonical_user_id} on {platform}")
             return []
 
         # Clean and serialize the data to avoid circular reference issues
@@ -1913,12 +1927,12 @@ async def get_game_analyses(
                         clean_record[key] = str(value)
                 except Exception as e:
                     if DEBUG:
-                        print(f"[DEBUG] Error serializing field {key}: {e}")
+                        logger.debug(f"Error serializing field {key}: {e}")
                     clean_record[key] = None
             cleaned_data.append(clean_record)
 
         if DEBUG:
-            print(f"[DEBUG] Cleaned {len(cleaned_data)} records for serialization")
+            logger.debug(f"Cleaned {len(cleaned_data)} records for serialization")
 
         # Cache the result if offset=0
         if offset == 0:
@@ -1927,7 +1941,7 @@ async def get_game_analyses(
         return cleaned_data
 
     except Exception as e:
-        print(f"Error fetching game analyses: {e}")
+        logger.info(f"Error fetching game analyses: {e}")
         return []
 
 @app.get("/api/v1/analyses/{user_id}/{platform}/count")
@@ -1940,13 +1954,13 @@ async def get_game_analyses_count(
 ):
     """Get the total count of game analyses for a user."""
     try:
-        print(f"[DEBUG] get_game_analyses_count called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
+        logger.debug(f"get_game_analyses_count called with user_id={user_id}, platform={platform}, analysis_type={analysis_type}")
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
-        print(f"[DEBUG] canonical_user_id={canonical_user_id}")
+        logger.debug(f"canonical_user_id={canonical_user_id}")
 
         if not supabase and not supabase_service:
-            print("[ERROR] No database connection available")
+            logger.error("No database connection available")
             return {"count": 0}
 
         # Get count from move_analyses (primary storage), fall back to unified_analyses
@@ -1968,11 +1982,11 @@ async def get_game_analyses_count(
             )
             total_count = response.count if hasattr(response, 'count') and response.count is not None else 0
 
-        print(f"[DEBUG] Total analyses count: {total_count}")
+        logger.debug(f"Total analyses count: {total_count}")
 
         return {"count": total_count}
     except Exception as e:
-        print(f"Error fetching game analyses count: {e}")
+        logger.info(f"Error fetching game analyses count: {e}")
         return {"count": 0}
 
 @app.post("/api/v1/analyses/{user_id}/{platform}/check")
@@ -1997,7 +2011,7 @@ async def check_games_analyzed(
         canonical_user_id = _canonical_user_id(user_id, platform)
 
         if not supabase and not supabase_service:
-            print("[ERROR] No database connection available")
+            logger.error("No database connection available")
             return {"analyzed_games": []}
 
         # Query only the fields we need: game_id, provider_game_id, and accuracy
@@ -2005,8 +2019,8 @@ async def check_games_analyzed(
         # Check move_analyses first (where new analyses are saved), then fall back to unified_analyses
         db_client = supabase_service or supabase
 
-        print(f"[CHECK ANALYZED] Checking {len(game_ids)} games for user={canonical_user_id}, platform={platform}")
-        print(f"[CHECK ANALYZED] Game IDs to check: {game_ids[:5]}...")  # Show first 5
+        logger.info(f"Checking {len(game_ids)} games for user={canonical_user_id}, platform={platform}")
+        logger.debug(f"Game IDs to check: {game_ids[:5]}...")
 
         # Try move_analyses first (game_id in move_analyses IS the provider_game_id)
         response = await asyncio.to_thread(
@@ -2018,13 +2032,13 @@ async def check_games_analyzed(
             .execute()
         )
 
-        print(f"[CHECK ANALYZED] move_analyses query returned {len(response.data) if response.data else 0} results")
+        logger.info(f"move_analyses query returned {len(response.data) if response.data else 0} results")
         if response.data:
-            print(f"[CHECK ANALYZED] Found in move_analyses: {[r.get('game_id') for r in response.data[:5]]}")
+            logger.info(f"Found in move_analyses: {[r.get('game_id') for r in response.data[:5]]}")
 
         # If no results, try unified_analyses
         if not response.data or len(response.data) == 0:
-            print(f"[CHECK ANALYZED] No results in move_analyses, trying unified_analyses...")
+            logger.info(f"No results in move_analyses, trying unified_analyses...")
             response = await asyncio.to_thread(
                 lambda: db_client.table("unified_analyses")
                 .select("game_id,provider_game_id,accuracy")
@@ -2033,7 +2047,7 @@ async def check_games_analyzed(
                 .in_("game_id", game_ids)
                 .execute()
             )
-            print(f"[CHECK ANALYZED] unified_analyses query returned {len(response.data) if response.data else 0} results")
+            logger.info(f"unified_analyses query returned {len(response.data) if response.data else 0} results")
         else:
             # For move_analyses, game_id IS the provider_game_id
             # Add provider_game_id field for consistency with unified_analyses format
@@ -2050,11 +2064,11 @@ async def check_games_analyzed(
                     "accuracy": record.get("accuracy")
                 })
 
-        print(f"[check_games_analyzed] Found {len(analyzed_games)} analyzed games out of {len(game_ids)} requested")
+        logger.info(f"Found {len(analyzed_games)} analyzed games out of {len(game_ids)} requested")
         return {"analyzed_games": analyzed_games}
 
     except Exception as e:
-        print(f"Error checking analyzed games: {e}")
+        logger.info(f"Error checking analyzed games: {e}")
         return {"analyzed_games": []}
 @app.get("/api/v1/progress/{user_id}/{platform}", response_model=AnalysisProgress)
 async def get_analysis_progress(
@@ -2086,7 +2100,7 @@ async def get_analysis_progress(
         )
 
     except Exception as e:
-        print(f"Error fetching analysis progress: {e}")
+        logger.info(f"Error fetching analysis progress: {e}")
         return AnalysisProgress(
             analyzed_games=0,
             total_games=10,
@@ -2126,13 +2140,13 @@ async def get_realtime_analysis_progress(
         # Use canonical user ID for consistency
         platform_key = platform.strip().lower()
         progress_key = f"{canonical_user_id}_{platform_key}"
-        print(f"[PROGRESS REQUEST] user_id={user_id}, platform={platform}")
-        print(f"[PROGRESS REQUEST] canonical_user_id={canonical_user_id}, platform_key={platform_key}")
-        print(f"[PROGRESS REQUEST] Looking for progress_key: {progress_key}")
-        print(f"[PROGRESS REQUEST] Available progress keys: {list(analysis_progress.keys())}")
+        logger.info(f"user_id={user_id}, platform={platform}")
+        logger.info(f"canonical_user_id={canonical_user_id}, platform_key={platform_key}")
+        logger.info(f"Looking for progress_key: {progress_key}")
+        logger.info(f"Available progress keys: {list(analysis_progress.keys())}")
         if analysis_progress:
             for key, value in analysis_progress.items():
-                print(f"[PROGRESS REQUEST]   Key '{key}': {value}")
+                logger.info(f"Key '{key}': {value}")
 
         # Try multiple key formats to find progress
         progress_data = None
@@ -2143,20 +2157,20 @@ async def get_realtime_analysis_progress(
             f"{user_id}_{platform_key}",
         ]
 
-        print(f"[PROGRESS REQUEST] Trying keys: {possible_keys}")
+        logger.info(f"Trying keys: {possible_keys}")
         for candidate_suffix in possible_keys:
             for key, value in analysis_progress.items():
                 if key.endswith(candidate_suffix):
                     stored_key = key
                     progress_data = value
-                    print(f"[PROGRESS REQUEST] Found progress with key: {key}")
-                    print(f"[PROGRESS REQUEST] Progress data: {progress_data}")
+                    logger.info(f"Found progress with key: {key}")
+                    logger.info(f"Progress data: {progress_data}")
                     break
             if progress_data:
                 break
 
         if progress_data:
-            print(f"Realtime progress for {user_id}: {progress_data}")
+            logger.info(f"Realtime progress for {user_id}: {progress_data}")
             return AnalysisProgress(
                 analyzed_games=progress_data.get("analyzed_games", 0),
                 total_games=progress_data.get("total_games", 0),
@@ -2166,7 +2180,7 @@ async def get_realtime_analysis_progress(
                 estimated_time_remaining=progress_data.get("estimated_time_remaining")
             )
         else:
-            print(f"No in-memory progress found for any of the possible keys: {possible_keys}")
+            logger.info(f"No in-memory progress found for any of the possible keys: {possible_keys}")
             # If no in-memory progress is found, it means analysis hasn't started yet or has completed
             # Return is_complete=True to prevent frontend from getting stuck in loading loop
             # The frontend will check for actual data availability separately
@@ -2180,7 +2194,7 @@ async def get_realtime_analysis_progress(
             )
 
     except Exception as e:
-        print(f"Error getting real-time progress: {e}")
+        logger.info(f"Error getting real-time progress: {e}")
         return AnalysisProgress(
             analyzed_games=0,
             total_games=0,
@@ -2258,7 +2272,7 @@ async def get_elo_stats(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching ELO stats: {e}")
+        logger.info(f"Error fetching ELO stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def _safe_divide(numerator: float, denominator: float) -> float:
@@ -2625,10 +2639,10 @@ async def _fetch_game_analyses_batched(
                 if i + batch_size < len(provider_ids):
                     await asyncio.sleep(0.01)
             except Exception as e:
-                print(f"[WARN] Error fetching game_analyses batch {i//batch_size + 1}: {e}")
+                logger.warning(f"Error fetching game_analyses batch {i//batch_size + 1}: {e}")
                 # Continue with other batches even if one fails
     except Exception as e:
-        print(f"[WARN] Error in _fetch_game_analyses_batched: {e}")
+        logger.warning(f"Error in _fetch_game_analyses_batched: {e}")
 
     return analyses_map
 
@@ -2663,10 +2677,10 @@ async def _fetch_move_analyses_batched(
                 if i + batch_size < len(provider_ids):
                     await asyncio.sleep(0.01)
             except Exception as e:
-                print(f"[WARN] Error fetching move_analyses batch {i//batch_size + 1}: {e}")
+                logger.warning(f"Error fetching move_analyses batch {i//batch_size + 1}: {e}")
                 # Continue with other batches even if one fails
     except Exception as e:
-        print(f"[WARN] Error in _fetch_move_analyses_batched: {e}")
+        logger.warning(f"Error in _fetch_move_analyses_batched: {e}")
 
     return move_analyses_map
 
@@ -2701,10 +2715,10 @@ async def _fetch_pgn_data_batched(
                 if i + batch_size < len(provider_ids):
                     await asyncio.sleep(0.01)
             except Exception as e:
-                print(f"[WARN] Error fetching games_pgn batch {i//batch_size + 1}: {e}")
+                logger.warning(f"Error fetching games_pgn batch {i//batch_size + 1}: {e}")
                 # Continue with other batches even if one fails
     except Exception as e:
-        print(f"[WARN] Error in _fetch_pgn_data_batched: {e}")
+        logger.warning(f"Error in _fetch_pgn_data_batched: {e}")
 
     return pgn_map
 
@@ -2720,7 +2734,7 @@ async def _fetch_opening_color_stats_games(
     cached_data = _get_from_cache(cache_key)
     if cached_data is not None:
         if DEBUG:
-            print(f"[CACHE] Hit for opening color stats games")
+            logger.debug(f"Hit for opening color stats games")
         return cached_data
 
     games_for_color_stats = []
@@ -2728,7 +2742,7 @@ async def _fetch_opening_color_stats_games(
     opening_offset = 0
 
     if DEBUG:
-        print(f"[DEBUG] Fetching ALL games for opening color stats")
+        logger.debug(f"Fetching ALL games for opening color stats")
 
     while True:
         try:
@@ -2752,11 +2766,11 @@ async def _fetch_opening_color_stats_games(
 
             opening_offset += opening_batch_size
         except Exception as e:
-            print(f"[WARN] Error fetching opening color stats batch at offset {opening_offset}: {e}")
+            logger.warning(f"Error fetching opening color stats batch at offset {opening_offset}: {e}")
             break
 
     if DEBUG:
-        print(f"[DEBUG] Fetched {len(games_for_color_stats)} total games for opening color stats")
+        logger.debug(f"Fetched {len(games_for_color_stats)} total games for opening color stats")
 
     # Cache the result
     _set_in_cache(cache_key, games_for_color_stats)
@@ -2773,7 +2787,7 @@ async def _fetch_remaining_games(
 ):
     """Background task to fetch remaining games."""
     try:
-        print(f"[BACKGROUND] Starting background fetch for {canonical_user_id}: {start_count} -> {total_limit} games")
+        logger.info(f"Starting background fetch for {canonical_user_id}: {start_count} -> {total_limit} games")
 
         remaining_games = []
         page_size = 1000
@@ -2806,13 +2820,13 @@ async def _fetch_remaining_games(
                     break
 
             except Exception as e:
-                print(f"[BACKGROUND] Error fetching games: {e}")
+                logger.info(f"Error fetching games: {e}")
                 break
 
-        print(f"[BACKGROUND] Completed: Fetched {len(remaining_games)} additional games for {canonical_user_id}")
+        logger.info(f"Completed: Fetched {len(remaining_games)} additional games for {canonical_user_id}")
 
     except Exception as e:
-        print(f"[BACKGROUND] Error fetching remaining games for {canonical_user_id}: {e}")
+        logger.info(f"Error fetching remaining games for {canonical_user_id}: {e}")
         traceback.print_exc()
 
 
@@ -2835,10 +2849,10 @@ async def get_comprehensive_analytics(
     import time as _time
     try:
         _t0 = _time.time()
-        print(f"[PERF] get_comprehensive_analytics START: user_id={user_id}, platform={platform}, limit={limit}")
+        logger.info(f"get_comprehensive_analytics START: user_id={user_id}, platform={platform}, limit={limit}")
         canonical_user_id = _canonical_user_id(user_id, platform)
         if DEBUG:
-            print(f"[DEBUG] canonical_user_id={canonical_user_id}")
+            logger.debug(f"canonical_user_id={canonical_user_id}")
 
         # Check cache first (v3: SQL aggregation version)
         cache_key = f"comprehensive_analytics_v3:{canonical_user_id}:{platform}"
@@ -2848,7 +2862,7 @@ async def get_comprehensive_analytics(
 
         db_client = supabase_service or supabase
         if not db_client:
-            print("[ERROR] Database not configured")
+            logger.error("Database not configured")
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # ── Phase 1: SQL aggregate queries (no row fetching) ──────────────
@@ -2877,7 +2891,7 @@ async def get_comprehensive_analytics(
                 return_exceptions=True
             )
         except Exception as e:
-            print(f"[ERROR] SQL aggregate queries failed: {e}")
+            logger.error(f"SQL aggregate queries failed: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Error fetching analytics: {str(e)}")
 
@@ -2886,14 +2900,14 @@ async def get_comprehensive_analytics(
 
         def _extract_rpc_data(resp, name: str, default=None):
             if isinstance(resp, Exception):
-                print(f"[WARN] RPC {name} failed: {resp}")
+                logger.error(f"RPC {name} failed: {resp}")
                 traceback.print_exc()
                 return default
             if DEBUG:
-                print(f"[DEBUG] RPC {name} response type={type(resp.data).__name__}, data={str(resp.data)[:200]}")
+                logger.debug(f"RPC {name} response type={type(resp.data).__name__}, data={str(resp.data)[:200]}")
             return resp.data if resp.data is not None else default
 
-        print(f"[PERF] Phase 1 (SQL aggregates) took {round((_time.time() - _t0) * 1000)}ms")
+        logger.info(f"Phase 1 (SQL aggregates) took {round((_time.time() - _t0) * 1000)}ms")
         agg_stats = _extract_rpc_data(agg_stats_resp, 'get_player_aggregate_stats', {})
         opening_stats_raw = _extract_rpc_data(opening_stats_resp, 'get_player_opening_stats', [])
         distribution_raw = _extract_rpc_data(dist_resp, 'get_player_game_length_distribution', {})
@@ -2948,7 +2962,7 @@ async def get_comprehensive_analytics(
         }
 
         if DEBUG:
-            print(f"[DEBUG] SQL aggregate stats: {wins}W/{draws}D/{losses}L, white={white_games_count}, black={black_games_count}")
+            logger.debug(f"SQL aggregate stats: {wins}W/{draws}D/{losses}L, white={white_games_count}, black={black_games_count}")
 
         # Opening stats from SQL
         opening_stats = opening_stats_raw if isinstance(opening_stats_raw, list) else []
@@ -3073,10 +3087,10 @@ async def get_comprehensive_analytics(
             )
             games = games_response.data or []
         except Exception as e:
-            print(f"[WARN] Error fetching recent games for analysis stats: {e}")
+            logger.warning(f"Error fetching recent games for analysis stats: {e}")
 
         if DEBUG:
-            print(f"[DEBUG] Fetched {len(games)} recent games for analysis-dependent stats")
+            logger.debug(f"Fetched {len(games)} recent games for analysis-dependent stats")
 
         # Fetch analysis data for these games in parallel
         provider_ids = [g['provider_game_id'] for g in games if g.get('provider_game_id')]
@@ -3098,22 +3112,22 @@ async def get_comprehensive_analytics(
                 if not isinstance(analysis_results[0], Exception):
                     analyses_map = analysis_results[0]
                 else:
-                    print(f"[WARN] Error fetching analyses: {analysis_results[0]}")
+                    logger.warning(f"Error fetching analyses: {analysis_results[0]}")
 
                 if not isinstance(analysis_results[1], Exception):
                     move_analyses_map = analysis_results[1]
                 else:
-                    print(f"[WARN] Error fetching move analyses: {analysis_results[1]}")
+                    logger.warning(f"Error fetching move analyses: {analysis_results[1]}")
 
                 if not isinstance(analysis_results[2], Exception):
                     pgn_map = analysis_results[2]
                 else:
-                    print(f"[WARN] Error fetching PGN data: {analysis_results[2]}")
+                    logger.warning(f"Error fetching PGN data: {analysis_results[2]}")
 
             except Exception as e:
-                print(f"[WARN] Analysis data fetching failed: {e}")
+                logger.error(f"Analysis data fetching failed: {e}")
 
-        print(f"[PERF] Phase 2 (recent games + analysis) took {round((_time.time() - _t1) * 1000)}ms")
+        logger.info(f"Phase 2 (recent games + analysis) took {round((_time.time() - _t1) * 1000)}ms")
         # ── Phase 3: Compute analysis-dependent stats from recent games ───
         quick_victory_breakdown = Counter()
         marathon_games = []
@@ -3248,8 +3262,8 @@ async def get_comprehensive_analytics(
             'insight': insight
         }
 
-        print(f"[PERF] Phase 3 (compute stats) took {round((_time.time() - _t1) * 1000)}ms")
-        print(f"[PERF] get_comprehensive_analytics TOTAL: {round((_time.time() - _t0) * 1000)}ms")
+        logger.info(f"Phase 3 (compute stats) took {round((_time.time() - _t1) * 1000)}ms")
+        logger.info(f"get_comprehensive_analytics TOTAL: {round((_time.time() - _t0) * 1000)}ms")
         # ── Build final result ────────────────────────────────────────────
         result = {
             'total_games': total_games_count,
@@ -3295,7 +3309,7 @@ async def get_comprehensive_analytics(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[ERROR] Error in get_comprehensive_analytics: {type(e).__name__}: {e}")
+        logger.error(f"Error in get_comprehensive_analytics: {type(e).__name__}: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching comprehensive analytics: {str(e)}")
 
@@ -3358,7 +3372,7 @@ async def get_elo_history(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching ELO history: {e}")
+        logger.info(f"Error fetching ELO history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/player-stats/{user_id}/{platform}")
@@ -3424,7 +3438,7 @@ async def get_player_stats(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching player stats: {e}")
+        logger.info(f"Error fetching player stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/match-history/{user_id}/{platform}")
@@ -3490,7 +3504,7 @@ async def get_match_history(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching match history: {e}")
+        logger.info(f"Error fetching match history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/game/{user_id}/{platform}/{game_id}")
@@ -3560,7 +3574,7 @@ async def get_single_game(
                 pgn_data = pgn_response.data[0].get('pgn') if isinstance(pgn_response.data[0], dict) else None
         except Exception as pgn_error:
             # Log but don't fail - PGN might not exist yet for unanalyzed games
-            print(f"PGN not found for game {game_identifier}: {pgn_error}")
+            logger.info(f"PGN not found for game {game_identifier}: {pgn_error}")
             pgn_data = None
 
         # Fetch analysis - use limit(1) instead of maybe_single() to avoid 204 errors
@@ -3594,7 +3608,7 @@ async def get_single_game(
                     analysis_data = analysis_response.data[0]
         except Exception as analysis_error:
             # Log but don't fail - analysis might not exist yet for unanalyzed games
-            print(f"Analysis not found for game {game_identifier}: {analysis_error}")
+            logger.info(f"Analysis not found for game {game_identifier}: {analysis_error}")
             analysis_data = None
 
         # Extract ai_comments_status from analysis_data if available
@@ -3613,9 +3627,9 @@ async def get_single_game(
         raise
     except Exception as e:
         error_details = traceback.format_exc()
-        print(f"Error fetching single game for user_id={user_id}, platform={platform}, game_id={game_id}")
-        print(f"Error: {e}")
-        print(f"Traceback: {error_details}")
+        logger.info(f"Error fetching single game for user_id={user_id}, platform={platform}, game_id={game_id}")
+        logger.error(f"Error: {e}")
+        logger.info(f"Traceback: {error_details}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/v1/clear-cache/{user_id}/{platform}", response_model=ClearCacheResponse)
@@ -3629,7 +3643,7 @@ async def clear_user_cache(
     # Validate platform first
     if not _validate_platform(platform):
         if DEBUG:
-            print(f"[ERROR] Invalid platform: {platform}")
+            logger.error(f"Invalid platform: {platform}")
         return JSONResponse(
             status_code=400,
             content={"success": False, "message": f"Invalid platform: {platform}. Must be one of {VALID_PLATFORMS}"}
@@ -3640,12 +3654,12 @@ async def clear_user_cache(
         canonical_user_id = _canonical_user_id(user_id, platform)
     except ValueError as e:
         if DEBUG:
-            print(f"[ERROR] Invalid user_id or platform: {e}")
+            logger.error(f"Invalid user_id or platform: {e}")
         return JSONResponse(status_code=400, content={"success": False, "message": str(e)})
 
     try:
         if DEBUG:
-            print(f"[INFO] Clearing cache for user_id={canonical_user_id}, platform={platform}")
+            logger.info(f"Clearing cache for user_id={canonical_user_id}, platform={platform}")
 
         # Sweep all keys matching this user/platform (handles analysis_type/limit variants)
         # Match exact segments to avoid clearing other users' cache (e.g., "alice" vs "malice")
@@ -3661,7 +3675,7 @@ async def clear_user_cache(
         for key in keys_to_delete:
             _delete_from_cache(key)
             if DEBUG:
-                print(f"[INFO] Cleared cache key: {key}")
+                logger.info(f"Cleared cache key: {key}")
         return ClearCacheResponse(
             success=True,
             message=f"Cache cleared for user {user_id} on {platform}",
@@ -3669,7 +3683,7 @@ async def clear_user_cache(
         )
     except Exception as e:
         if DEBUG:
-            print(f"[ERROR] Failed to clear cache: {e}")
+            logger.error(f"Failed to clear cache: {e}")
         return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
 @app.get("/api/v1/deep-analysis/{user_id}/{platform}", response_model=DeepAnalysisData)
@@ -3683,10 +3697,10 @@ async def get_deep_analysis(
     """Get deep analysis with personality insights."""
     try:
         if DEBUG:
-            print(f"[INFO] Deep analysis request for user_id={user_id}, platform={platform}, force_refresh={force_refresh}")
+            logger.info(f"Deep analysis request for user_id={user_id}, platform={platform}, force_refresh={force_refresh}")
         canonical_user_id = _canonical_user_id(user_id, platform)
         if DEBUG:
-            print(f"[INFO] Canonical user_id={canonical_user_id}")
+            logger.info(f"Canonical user_id={canonical_user_id}")
 
         # Check cache first (unless force_refresh is True)
         cache_key = f"deep_analysis:{canonical_user_id}:{platform}"
@@ -3694,11 +3708,11 @@ async def get_deep_analysis(
             cached_data = _get_from_cache(cache_key)
             if cached_data is not None:
                 if DEBUG:
-                    print(f"[INFO] Returning cached deep analysis data")
+                    logger.info(f"Returning cached deep analysis data")
                 return cached_data
         else:
             if DEBUG:
-                print(f"[INFO] Force refresh requested, bypassing cache")
+                logger.info(f"Force refresh requested, bypassing cache")
 
         db_client = supabase_service or supabase
         if not db_client:
@@ -3816,13 +3830,13 @@ async def get_deep_analysis(
                 analyses = []
 
         if DEBUG:
-            print(f"[DEBUG] Deep analysis: {len(games)} games, {len(all_games_for_repertoire)} repertoire records, {analyzed_games_count} analyzed, {len(analyses)} analyses")
+            logger.debug(f"Deep analysis: {len(games)} games, {len(all_games_for_repertoire)} repertoire records, {analyzed_games_count} analyzed, {len(analyses)} analyses")
 
         if not analyses:
-            print(f"[INFO] No analyses found for {canonical_user_id} - returning fallback data")
+            logger.info(f"No analyses found for {canonical_user_id} - returning fallback data")
             result = _build_fallback_deep_analysis(canonical_user_id, games, profile, analyzed_games_count)
         else:
-            print(f"[INFO] Building deep analysis from {len(analyses)} analysis records")
+            logger.info(f"Building deep analysis from {len(analyses)} analysis records")
             result = _build_deep_analysis_response(canonical_user_id, games, analyses, profile, all_games_for_repertoire, analyzed_games_count)
 
         # Cache the result before returning (15 minute TTL via CACHE_TTL_SECONDS)
@@ -3832,7 +3846,7 @@ async def get_deep_analysis(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching deep analysis: {e}")
+        logger.info(f"Error fetching deep analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/job-status/{job_id}")
@@ -3865,7 +3879,7 @@ async def get_job_status(job_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error fetching job status: {e}")
+        logger.info(f"Error fetching job status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 @app.get("/api/v1/queue-stats")
 async def get_queue_stats():
@@ -3876,7 +3890,7 @@ async def get_queue_stats():
         stats = queue.get_queue_stats()
         return stats
     except Exception as e:
-        print(f"Error fetching queue stats: {e}")
+        logger.info(f"Error fetching queue stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/v1/job/{job_id}")
@@ -3894,7 +3908,7 @@ async def cancel_job(job_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error cancelling job: {e}")
+        logger.info(f"Error cancelling job: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4199,7 +4213,7 @@ def _compute_personality_scores(
     from .personality_scoring import PersonalityScorer, PersonalityScores
 
     if not analyses:
-        print("[INFO] No analyses provided to _compute_personality_scores - returning neutral scores")
+        logger.info("No analyses provided to _compute_personality_scores - returning neutral scores")
         return PersonalityScores.neutral().to_dict()
 
     scorer = PersonalityScorer()
@@ -4258,10 +4272,10 @@ def _compute_personality_scores(
             weight = float(len(moves))
         weights.append(weight)
 
-    print(f"[INFO] Personality scoring: {len(analyses)} analyses provided, {analyses_with_moves} had moves_analysis, {len(score_lists)} contributed to scores")
+    logger.info(f"Personality scoring: {len(analyses)} analyses provided, {analyses_with_moves} had moves_analysis, {len(score_lists)} contributed to scores")
 
     if not score_lists:
-        print("[INFO] No valid move data found in analyses - returning neutral scores")
+        logger.info("No valid move data found in analyses - returning neutral scores")
         return PersonalityScores.neutral().to_dict()
 
     # Aggregate scores
@@ -5322,8 +5336,8 @@ def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[s
             game_map[provider_id] = game
 
     if DEBUG:
-        print(f"[Mistake Extraction] Processing {len(analyses)} analyses with {len(games)} games")
-        print(f"[Mistake Extraction] Built game_map with {len(game_map)} total entries")
+        logger.info(f"Processing {len(analyses)} analyses with {len(games)} games")
+        logger.info(f"Built game_map with {len(game_map)} total entries")
 
     for analysis in analyses:
         moves = analysis.get('moves_analysis') or []
@@ -5331,14 +5345,14 @@ def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[s
 
         if not game_id:
             if DEBUG:
-                print(f"[Mistake Extraction] Analysis has no game_id, skipping")
+                logger.info(f"Analysis has no game_id, skipping")
             continue
 
         # Get game context for opening name
         game = game_map.get(game_id, {})
         if not game:
             if DEBUG:
-                print(f"[Mistake Extraction] No game found for game_id={game_id}, skipping")
+                logger.info(f"No game found for game_id={game_id}, skipping")
             continue
 
         # Prefer normalized name, then original opening, then ECO code as fallback
@@ -5357,7 +5371,7 @@ def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[s
         # Skip only if we have absolutely no opening information
         if not opening_name or opening_name in ['Unknown', 'Unknown Opening', '']:
             if DEBUG:
-                print(f"[Mistake Extraction] No opening info for game_id={game_id}, skipping")
+                logger.info(f"No opening info for game_id={game_id}, skipping")
             continue
 
         # Filter opening moves (first 20 ply) - check both 'ply' and 'opening_ply'
@@ -5365,11 +5379,11 @@ def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[s
 
         if not opening_moves:
             if DEBUG:
-                print(f"[Mistake Extraction] No user opening moves found for game_id={game_id}")
+                logger.info(f"No user opening moves found for game_id={game_id}")
             continue
 
         if DEBUG:
-            print(f"[Mistake Extraction] Game {game_id}: Found {len(opening_moves)} user opening moves in {display_name}")
+            logger.info(f"Game {game_id}: Found {len(opening_moves)} user opening moves in {display_name}")
 
         for move in opening_moves:
             cpl = move.get('centipawn_loss', 0)
@@ -5416,12 +5430,12 @@ def _extract_opening_mistakes(analyses: List[Dict[str, Any]], games: List[Dict[s
                 game_id=game_id  # Include game_id for linking to specific games
             ))
             if DEBUG:
-                print(f"[Mistake Extraction] Added {classification}: {mistake_desc} ({notation}), CPL={cpl}, game_id={game_id}")
+                logger.info(f"Added {classification}: {mistake_desc} ({notation}), CPL={cpl}, game_id={game_id}")
 
     # Return top 10 most severe mistakes
     mistakes.sort(key=lambda x: x.centipawn_loss, reverse=True)
     if DEBUG:
-        print(f"[Mistake Extraction] Found {len(mistakes)} total mistakes, returning top 10")
+        logger.info(f"Found {len(mistakes)} total mistakes, returning top 10")
     return mistakes[:10]
 
 
@@ -5822,7 +5836,7 @@ def _generate_improvement_trend(games: List[Dict[str, Any]], analyses: List[Dict
                     game_opening_acc = _calculate_opening_accuracy_chesscom(opening_moves)
                     weekly_data[week_key]['opening_accuracies'].append(game_opening_acc)
         except Exception as e:
-            print(f"Error processing game for trend: {e}")
+            logger.info(f"Error processing game for trend: {e}")
             continue
 
     # Convert to trend points
@@ -5990,20 +6004,20 @@ def _build_deep_analysis_response(
     if analyses and games:
         try:
             if DEBUG:
-                print(f"Generating enhanced opening analysis for {len(games)} games, {len(analyses)} analyses")
+                logger.info(f"Generating enhanced opening analysis for {len(games)} games, {len(analyses)} analyses")
             enhanced_opening_analysis = _generate_enhanced_opening_analysis(games, analyses, personality_scores, all_games_for_repertoire)
             if DEBUG:
-                print(f"Enhanced opening analysis generated successfully")
+                logger.info(f"Enhanced opening analysis generated successfully")
             if DEBUG and enhanced_opening_analysis:
-                print(f"  - Win rate: {enhanced_opening_analysis.opening_win_rate}%")
-                print(f"  - Mistakes: {len(enhanced_opening_analysis.specific_mistakes)}")
-                print(f"  - Recommendations: {len(enhanced_opening_analysis.style_recommendations)}")
-                print(f"  - Insights: {len(enhanced_opening_analysis.actionable_insights)}")
-                print(f"  - Trend points: {len(enhanced_opening_analysis.improvement_trend)}")
+                logger.info(f"  - Win rate: {enhanced_opening_analysis.opening_win_rate}%")
+                logger.info(f"  - Mistakes: {len(enhanced_opening_analysis.specific_mistakes)}")
+                logger.info(f"  - Recommendations: {len(enhanced_opening_analysis.style_recommendations)}")
+                logger.info(f"  - Insights: {len(enhanced_opening_analysis.actionable_insights)}")
+                logger.info(f"  - Trend points: {len(enhanced_opening_analysis.improvement_trend)}")
         except Exception as e:
             if DEBUG:
-                print(f"Error generating enhanced opening analysis: {e}")
-                print(traceback.format_exc())
+                logger.info(f"Error generating enhanced opening analysis: {e}")
+                logger.info(traceback.format_exc())
             # Continue without enhanced analysis if it fails
 
     return DeepAnalysisData(
@@ -6088,8 +6102,8 @@ async def _fetch_chesscom_games(
         to_date: Optional ISO date string for filtering games before this date
         oldest_game_month: Optional tuple of (year, month) to continue from previous batch
     """
-    print(f"[chess.com] Fetching games for user: {user_id}, limit: {limit}")
-    print(f"[chess.com] Date range: from_date={from_date}, to_date={to_date}, oldest_game_month={oldest_game_month}")
+    logger.info(f"[chess.com] Fetching games for user: {user_id}, limit: {limit}")
+    logger.info(f"[chess.com] Date range: from_date={from_date}, to_date={to_date}, oldest_game_month={oldest_game_month}")
 
     try:
         from datetime import datetime, timedelta
@@ -6111,27 +6125,27 @@ async def _fetch_chesscom_games(
                     dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
                     from_year, from_month = dt.year, dt.month
                 except Exception as e:
-                    print(f"Error parsing from_date: {e}")
+                    logger.info(f"Error parsing from_date: {e}")
 
             if to_date:
                 try:
                     dt = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
                     to_year, to_month = dt.year, dt.month
                 except Exception as e:
-                    print(f"Error parsing to_date: {e}")
+                    logger.info(f"Error parsing to_date: {e}")
 
             # Determine starting point for pagination
             if oldest_game_month:
                 # Continue from PREVIOUS month (current month was already processed)
                 current_year, current_month = oldest_game_month
-                print(f"[chess.com] Pagination: Continuing from {current_year}/{current_month:02d}, moving to previous month")
+                logger.info(f"[chess.com] Pagination: Continuing from {current_year}/{current_month:02d}, moving to previous month")
                 # Move to previous month
                 if current_month == 1:
                     current_month = 12
                     current_year -= 1
                 else:
                     current_month -= 1
-                print(f"[chess.com] Will start fetching from {current_year}/{current_month:02d}")
+                logger.info(f"[chess.com] Will start fetching from {current_year}/{current_month:02d}")
             elif to_year and to_month:
                 current_year, current_month = to_year, to_month
             else:
@@ -6148,10 +6162,10 @@ async def _fetch_chesscom_games(
                 start_date = datetime.now() - timedelta(days=365 * 2)
                 start_year = start_date.year
                 start_month = start_date.month
-                print(f"[chess.com] No date range specified, will fetch games back to {start_year}/{start_month:02d}")
+                logger.info(f"[chess.com] No date range specified, will fetch games back to {start_year}/{start_month:02d}")
 
             # Fetch in REVERSE chronological order (newest first)
-            print(f"[chess.com] Starting fetch loop from {current_year}/{current_month:02d} to {start_year}/{start_month:02d}")
+            logger.info(f"[chess.com] Starting fetch loop from {current_year}/{current_month:02d} to {start_year}/{start_month:02d}")
             month_count = 0
             consecutive_failures = 0
             max_consecutive_failures = 6  # Stop after 6 months with no games
@@ -6159,20 +6173,20 @@ async def _fetch_chesscom_games(
             while (current_year > start_year or (current_year == start_year and current_month >= start_month)) and len(games) < limit:
                 # Check if we should stop due to consecutive failures
                 if consecutive_failures >= max_consecutive_failures:
-                    print(f"[chess.com] Stopping: {consecutive_failures} consecutive months with no games")
+                    logger.info(f"[chess.com] Stopping: {consecutive_failures} consecutive months with no games")
                     break
 
                 month_count += 1
                 url = f"https://api.chess.com/pub/player/{user_id}/games/{current_year}/{current_month:02d}"
-                print(f"[chess.com] Fetching month {month_count}: {current_year}/{current_month:02d} from {url}")
+                logger.info(f"[chess.com] Fetching month {month_count}: {current_year}/{current_month:02d} from {url}")
 
                 try:
                     async with session.get(url, headers=headers) as response:
-                        print(f"[chess.com] Response status: {response.status}")
+                        logger.info(f"[chess.com] Response status: {response.status}")
                         if response.status == 200:
                             data = await response.json()
                             month_games = data.get('games', [])
-                            print(f"[chess.com] Month {current_year}/{current_month:02d}: Found {len(month_games)} games")
+                            logger.info(f"[chess.com] Month {current_year}/{current_month:02d}: Found {len(month_games)} games")
 
                             if len(month_games) > 0:
                                 consecutive_failures = 0  # Reset counter on success
@@ -6192,19 +6206,19 @@ async def _fetch_chesscom_games(
                                     if len(games) >= limit:
                                         break
 
-                            print(f"[chess.com] Parsed {parsed_count} games, total so far: {len(games)}")
+                            logger.info(f"[chess.com] Parsed {parsed_count} games, total so far: {len(games)}")
                         elif response.status == 404:
-                            print(f"[chess.com] Month {current_year}/{current_month:02d}: No games found (404)")
+                            logger.info(f"[chess.com] Month {current_year}/{current_month:02d}: No games found (404)")
                             consecutive_failures += 1
                         elif response.status == 410:
                             # 410 Gone - old archives no longer available, should stop
-                            print(f"[chess.com] Month {current_year}/{current_month:02d}: Archive no longer available (410)")
+                            logger.info(f"[chess.com] Month {current_year}/{current_month:02d}: Archive no longer available (410)")
                             consecutive_failures += 1
                         else:
-                            print(f"[chess.com] Month {current_year}/{current_month:02d}: Unexpected status {response.status}")
+                            logger.info(f"[chess.com] Month {current_year}/{current_month:02d}: Unexpected status {response.status}")
                             consecutive_failures += 1
                 except Exception as month_error:
-                    print(f"[chess.com] Error fetching month {current_year}/{current_month:02d}: {month_error}")
+                    logger.info(f"[chess.com] Error fetching month {current_year}/{current_month:02d}: {month_error}")
                     consecutive_failures += 1
 
                 # Move to previous month
@@ -6214,16 +6228,16 @@ async def _fetch_chesscom_games(
                 else:
                     current_month -= 1
 
-            print(f"[chess.com] Fetch complete. Total games fetched: {len(games)}, months checked: {month_count}")
+            logger.info(f"[chess.com] Fetch complete. Total games fetched: {len(games)}, months checked: {month_count}")
             return games[:limit]
 
         except Exception as inner_e:
-            print(f"[chess.com] ERROR in fetch loop: {inner_e}")
+            logger.info(f"[chess.com] ERROR in fetch loop: {inner_e}")
             traceback.print_exc()
             return []
 
     except Exception as e:
-        print(f"[chess.com] ERROR in _fetch_chesscom_games: {e}")
+        logger.info(f"[chess.com] ERROR in _fetch_chesscom_games: {e}")
         traceback.print_exc()
         return []
 
@@ -6237,7 +6251,7 @@ async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Option
         until_timestamp: Unix timestamp in milliseconds - fetch games until (before) this time
         since_timestamp: Unix timestamp in milliseconds - fetch games since (after) this time
     """
-    print(f"[lichess] Fetching games for user: {user_id}, limit: {limit}, until: {until_timestamp}, since: {since_timestamp}")
+    logger.info(f"Fetching games for user: {user_id}, limit: {limit}, until: {until_timestamp}, since: {since_timestamp}")
     try:
         import json
 
@@ -6259,18 +6273,18 @@ async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Option
         if since_timestamp:
             params['since'] = since_timestamp
 
-        print(f"[lichess] Request URL: {url}")
-        print(f"[lichess] Request params: {params}")
+        logger.info(f"Request URL: {url}")
+        logger.info(f"Request params: {params}")
 
         async with session.get(url, params=params, headers={'Accept': 'application/x-ndjson'}) as response:
             if response.status != 200:
-                print(f"[lichess] API error: {response.status}")
+                logger.error(f"API error: {response.status}")
                 response_text = await response.text()
-                print(f"[lichess] Error response: {response_text[:500]}")
+                logger.info(f"Error response: {response_text[:500]}")
                 return []
 
-            print(f"[lichess] Response status: {response.status}")
-            print(f"[lichess] Response content-type: {response.headers.get('content-type')}")
+            logger.info(f"Response status: {response.status}")
+            logger.info(f"Response content-type: {response.headers.get('content-type')}")
 
             games = []
             # Lichess returns NDJSON (newline-delimited JSON)
@@ -6278,16 +6292,16 @@ async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Option
             text = await response.text()
 
             if not text.strip():
-                print(f"[lichess] WARNING: Empty response from Lichess API")
+                logger.warning(f"WARNING: Empty response from Lichess API")
                 return []
 
             # Check if response starts with PGN or JSON
             first_line = text.split('\n')[0].strip() if text else ""
-            print(f"[lichess] First line of response (first 100 chars): {first_line[:100]}")
+            logger.info(f"First line of response (first 100 chars): {first_line[:100]}")
 
             # Split by newlines and parse each line as JSON
             lines = text.strip().split('\n')
-            print(f"[lichess] Total lines in response: {len(lines)}")
+            logger.info(f"Total lines in response: {len(lines)}")
 
             for line_num, line in enumerate(lines, 1):
                 line = line.strip()
@@ -6297,7 +6311,7 @@ async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Option
                 # Skip if this looks like PGN format (starts with '[')
                 if line.startswith('['):
                     if line_num <= 3:  # Only log first few
-                        print(f"[lichess] WARNING: Line {line_num} looks like PGN, not JSON: {line[:50]}")
+                        logger.warning(f"WARNING: Line {line_num} looks like PGN, not JSON: {line[:50]}")
                     continue
 
                 try:
@@ -6308,28 +6322,28 @@ async def _fetch_lichess_games(user_id: str, limit: int, until_timestamp: Option
                     if line_num == 1:
                         game_id = game_data.get('id', 'unknown')
                         has_pgn = 'pgn' in game_data
-                        print(f"[lichess] First game parsed successfully: id={game_id}, has_pgn={has_pgn}")
+                        logger.info(f"First game parsed successfully: id={game_id}, has_pgn={has_pgn}")
 
                 except json.JSONDecodeError as e:
                     if line_num <= 5:  # Only log first few errors
-                        print(f"[lichess] JSON parse error on line {line_num}: {e}")
-                        print(f"[lichess] Problematic line (first 100 chars): {line[:100]}")
+                        logger.info(f"JSON parse error on line {line_num}: {e}")
+                        logger.info(f"Problematic line (first 100 chars): {line[:100]}")
                     continue
                 except Exception as e:
                     if line_num <= 5:
-                        print(f"[lichess] Unexpected error on line {line_num}: {e}")
+                        logger.info(f"Unexpected error on line {line_num}: {e}")
                     continue
 
-            print(f"[lichess] Successfully fetched and parsed {len(games)} games")
+            logger.info(f"Successfully fetched and parsed {len(games)} games")
 
             if len(games) == 0 and len(lines) > 0:
-                print(f"[lichess] ERROR: Fetched {len(lines)} lines but parsed 0 games!")
-                print(f"[lichess] This suggests the response format is not NDJSON as expected")
+                logger.error(f"ERROR: Fetched {len(lines)} lines but parsed 0 games!")
+                logger.info(f"This suggests the response format is not NDJSON as expected")
 
             return games
 
     except Exception as e:
-        print(f"[lichess] ERROR in _fetch_lichess_games: {e}")
+        logger.info(f"ERROR in _fetch_lichess_games: {e}")
         traceback.print_exc()
         return []
 
@@ -6347,10 +6361,10 @@ async def _fetch_chesscom_stats(user_id: str) -> Optional[Dict[str, Any]]:
                 if response.status == 200:
                     return await response.json()
                 else:
-                    print(f"Chess.com stats API error: {response.status}")
+                    logger.error(f"Chess.com stats API error: {response.status}")
                     return None
     except Exception as e:
-        print(f"Error fetching Chess.com stats: {e}")
+        logger.info(f"Error fetching Chess.com stats: {e}")
         return None
 
 
@@ -6378,12 +6392,12 @@ async def _fetch_games_from_platform(
         oldest_game_month: For chess.com pagination - tuple of (year, month)
         since_timestamp: For lichess - fetch games since (after) this timestamp
     """
-    print(f"[_fetch_games_from_platform] Called for {user_id} on {platform}, limit: {limit}")
+    logger.info(f"Called for {user_id} on {platform}, limit: {limit}")
     if platform == 'chess.com':
         # Fetch chess.com games (already parsed by _fetch_chesscom_games)
-        print(f"[_fetch_games_from_platform] Calling _fetch_chesscom_games...")
+        logger.info(f"Calling _fetch_chesscom_games...")
         games = await _fetch_chesscom_games(user_id, limit, from_date, to_date, oldest_game_month)
-        print(f"[_fetch_games_from_platform] _fetch_chesscom_games returned {len(games) if games else 0} games")
+        logger.info(f"_fetch_chesscom_games returned {len(games) if games else 0} games")
         return games
 
     elif platform == 'lichess':
@@ -6396,13 +6410,13 @@ async def _fetch_games_from_platform(
             try:
                 until_ts = int(until_timestamp) if isinstance(until_timestamp, str) else until_timestamp
             except (ValueError, TypeError):
-                print(f"[lichess] Invalid until_timestamp: {until_timestamp}")
+                logger.info(f"Invalid until_timestamp: {until_timestamp}")
 
         if since_timestamp:
             try:
                 since_ts = int(since_timestamp) if isinstance(since_timestamp, str) else since_timestamp
             except (ValueError, TypeError):
-                print(f"[lichess] Invalid since_timestamp: {since_timestamp}")
+                logger.info(f"Invalid since_timestamp: {since_timestamp}")
 
         raw_games = await _fetch_lichess_games(user_id, limit, until_ts, since_ts)
         # Parse into standardized format
@@ -6430,7 +6444,7 @@ async def _fetch_games_from_platform(
                     opponent_rating = players.get('white', {}).get('rating')
                     opponent_name = players.get('white', {}).get('user', {}).get('name', 'Unknown')
                 else:
-                    print(f"[lichess] Could not determine player color for game {game_id}")
+                    logger.warning(f"Could not determine player color for game {game_id}")
                     continue
 
                 # Parse result
@@ -6478,13 +6492,13 @@ async def _fetch_games_from_platform(
                 parsed_games.append(parsed_game)
 
             except Exception as e:
-                print(f"[lichess] Error parsing game: {e}")
+                logger.info(f"Error parsing game: {e}")
                 continue
 
         return parsed_games
 
     else:
-        print(f"Unknown platform: {platform}")
+        logger.info(f"Unknown platform: {platform}")
         return []
 
 
@@ -6500,10 +6514,10 @@ async def _fetch_single_lichess_game(game_id: str) -> Optional[str]:
                 pgn_text = await response.text()
                 return pgn_text
             else:
-                print(f"Lichess API error fetching game {game_id}: {response.status}")
+                logger.info(f"Lichess API error fetching game {game_id}: {response.status}")
                 return None
     except Exception as e:
-        print(f"Error fetching Lichess game {game_id}: {e}")
+        logger.info(f"Error fetching Lichess game {game_id}: {e}")
         return None
 async def _fetch_single_chesscom_game(user_id: str, game_id: str) -> Optional[str]:
     """Fetch a single game PGN from Chess.com by searching recent games"""
@@ -6545,11 +6559,11 @@ async def _fetch_single_chesscom_game(user_id: str, game_id: str) -> Optional[st
                                     return pgn
 
             # If not found in recent months, return None
-            print(f"Chess.com game {game_id} not found in recent archives for user {user_id}")
+            logger.info(f"Chess.com game {game_id} not found in recent archives for user {user_id}")
             return None
 
     except Exception as e:
-        print(f"Error fetching Chess.com game {game_id}: {e}")
+        logger.info(f"Error fetching Chess.com game {game_id}: {e}")
         return None
 
 
@@ -6599,7 +6613,7 @@ def _count_moves_in_pgn(pgn: str) -> int:
 
         return 0
     except Exception as e:
-        print(f"Error counting moves in PGN: {e}")
+        logger.info(f"Error counting moves in PGN: {e}")
         return 0
 
 
@@ -6633,7 +6647,7 @@ def _extract_opponent_name_from_pgn(pgn: str, user_color: str) -> str:
 
         return 'Unknown'
     except Exception as e:
-        print(f"Error extracting opponent name from PGN: {e}")
+        logger.info(f"Error extracting opponent name from PGN: {e}")
         return 'Unknown'
 
 
@@ -6719,7 +6733,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
 
         # Convert result to standard format (win/loss/draw)
         if os.getenv("DEBUG", "false").lower() == "true":
-            print(f"[DEBUG] Chess.com result for {user_id}: '{result}' (type: {type(result)})")
+            logger.debug(f"Chess.com result for {user_id}: '{result}' (type: {type(result)})")
         if result == 'win':
             result = 'win'
         elif result == 'lose':
@@ -6741,7 +6755,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
         elif result == 'abandoned':
             result = 'draw'  # Abandoned games are typically draws
         else:
-            print(f"[WARNING] Unknown chess.com result: '{result}', defaulting to draw")
+            logger.warning(f"Unknown chess.com result: '{result}', defaulting to draw")
             result = 'draw'
 
         # Extract opening info from PGN headers
@@ -6806,7 +6820,7 @@ def _parse_chesscom_game(game_data: Dict[str, Any], user_id: str) -> Optional[Di
         }
 
     except Exception as e:
-        print(f"Error parsing chess.com game: {e}")
+        logger.info(f"Error parsing chess.com game: {e}")
         return None
 
 # ============================================================================
@@ -6937,9 +6951,9 @@ async def _update_highest_rating_profile(
             await asyncio.to_thread(
                 lambda: db_client.table('user_profiles').upsert(profile_data, on_conflict='user_id,platform').execute()
             )
-            print(f"Updated profile for {user_id} with highest rating: {highest_rating}")
+            logger.info(f"Updated profile for {user_id} with highest rating: {highest_rating}")
         except Exception as e:
-            print(f"Error updating profile with highest rating: {e}")
+            logger.info(f"Error updating profile with highest rating: {e}")
 
 
 @app.post("/api/v1/import-games-smart", response_model=BulkGameImportResponse)
@@ -6961,15 +6975,15 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
         if not db_client:
             raise HTTPException(status_code=503, detail="Database not configured for smart import")
 
-        print(f"Smart import for {user_id}: starting...")
+        logger.info(f"Smart import for {user_id}: starting...")
 
         # Fetch the most recent games from the platform first to check against
-        print(f"[Smart import] ===== FETCHING GAMES FROM {platform.upper()} =====")
+        logger.info(f"===== FETCHING GAMES FROM {platform.upper()} =====")
         games_data = await _fetch_games_from_platform(user_id, platform, 100)
-        print(f"[Smart import] Fetched {len(games_data) if games_data else 0} games from platform API")
+        logger.info(f"Fetched {len(games_data) if games_data else 0} games from platform API")
 
         if not games_data:
-            print(f"[Smart import] No games returned from platform")
+            logger.info(f"No games returned from platform")
             message = (
                 "No games were returned from the platform. Please verify the username "
                 "has recent games or try again later."
@@ -7005,7 +7019,7 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
                         if game.get('provider_game_id'):
                             existing_game_ids.add(game.get('provider_game_id'))
 
-        print(f"[Smart import] Checked {len(fetched_game_ids)} fetched games, found {len(existing_game_ids)} already in database")
+        logger.info(f"Checked {len(fetched_game_ids)} fetched games, found {len(existing_game_ids)} already in database")
 
         # DEBUG: Write to file for diagnosis (only when DEBUG=true)
         if os.getenv("DEBUG", "false").lower() == "true":
@@ -7017,12 +7031,12 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
                 else:
                     f.write(f"[Smart import] WARNING: No existing games found in database!\n")
 
-        print(f"[Smart import] Existing game IDs count: {len(existing_game_ids)}")
-        print(f"[Smart import] Queried for user_id='{canonical_user_id}', platform='{platform}'")
+        logger.info(f"Existing game IDs count: {len(existing_game_ids)}")
+        logger.info(f"Queried for user_id='{canonical_user_id}', platform='{platform}'")
         if existing_game_ids:
-            print(f"[Smart import] Sample existing game IDs (first 3): {list(existing_game_ids)[:3]}")
+            logger.info(f"Sample existing game IDs (first 3): {list(existing_game_ids)[:3]}")
         else:
-            print(f"[Smart import] No existing games found in database (first time import)")
+            logger.info(f"No existing games found in database (first time import)")
 
         # Add detailed logging about fetched games
         if games_data:
@@ -7031,18 +7045,18 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
             for g in games_data[:3]:
                 date = g.get('played_at', 'No date')
                 sample_dates.append(date)
-            print(f"[Smart import] Sample fetched game IDs (first 3): {sample_ids}")
-            print(f"[Smart import] Sample fetched game DATES (first 3): {sample_dates}")
-            print(f"[Smart import] Most recent game date: {games_data[0].get('played_at', 'No date') if games_data else 'N/A'}")
-            print(f"[Smart import] Oldest game date in batch: {games_data[-1].get('played_at', 'No date') if games_data else 'N/A'}")
+            logger.info(f"Sample fetched game IDs (first 3): {sample_ids}")
+            logger.info(f"Sample fetched game DATES (first 3): {sample_dates}")
+            logger.info(f"Most recent game date: {games_data[0].get('played_at', 'No date') if games_data else 'N/A'}")
+            logger.info(f"Oldest game date in batch: {games_data[-1].get('played_at', 'No date') if games_data else 'N/A'}")
 
         # Filter to get only new games (games not in our database)
         new_games = []
-        print(f"[Smart import] ===== DUPLICATE CHECK =====")
-        print(f"[Smart import] Database has {len(existing_game_ids)} game IDs")
+        logger.info(f"===== DUPLICATE CHECK =====")
+        logger.info(f"Database has {len(existing_game_ids)} game IDs")
         if existing_game_ids:
             sample_existing = list(existing_game_ids)[:5]
-            print(f"[Smart import] Sample database IDs (first 5): {sample_existing}")
+            logger.info(f"Sample database IDs (first 5): {sample_existing}")
 
         for idx, game in enumerate(games_data):
             game_id = game.get('id') or game.get('provider_game_id')
@@ -7050,30 +7064,30 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
 
             if idx < 5:  # Log first 5 games with MORE detail
                 in_db = game_id in existing_game_ids if game_id else False
-                print(f"[Smart import] Game {idx+1}: ID={game_id}, Date={game_date}, In DB={in_db}")
+                logger.info(f"Game {idx+1}: ID={game_id}, Date={game_date}, In DB={in_db}")
 
             if game_id and game_id not in existing_game_ids:
                 new_games.append(game)
                 if idx < 10:  # Log first 10 new games
-                    print(f"[Smart import] ✓ NEW GAME FOUND: {game_id} ({game_date})")
+                    logger.info(f"✓ NEW GAME FOUND: {game_id} ({game_date})")
             elif game_id and idx < 10:  # Log first 10 skipped games
-                print(f"[Smart import] ✗ SKIPPING existing game: {game_id} ({game_date})")
+                logger.info(f"✗ SKIPPING existing game: {game_id} ({game_date})")
 
-        print(f"[Smart import] Duplicate check complete: fetched {len(games_data)} games, found {len(new_games)} new games, {len(games_data) - len(new_games)} already exist")
+        logger.info(f"Duplicate check complete: fetched {len(games_data)} games, found {len(new_games)} new games, {len(games_data) - len(new_games)} already exist")
 
         # Cap new games for anonymous users to their remaining limit
         if anonymous_limit_remaining is not None and len(new_games) > anonymous_limit_remaining:
             original_count = len(new_games)
             new_games = new_games[:anonymous_limit_remaining]
             logger.info(f"Capping smart import for anonymous user: found={original_count}, remaining={anonymous_limit_remaining}, importing={len(new_games)}")
-            print(f"[Smart import] CAPPED: {original_count} new games → {len(new_games)} (anonymous limit: {anonymous_limit_remaining})")
+            logger.info(f"CAPPED: {original_count} new games → {len(new_games)} (anonymous limit: {anonymous_limit_remaining})")
 
         # If no new games found, return early
         if len(new_games) == 0:
             message = "No new games found. You already have all recent games imported."
-            print(f"[Smart import] ===== RETURNING EARLY - 0 NEW GAMES =====")
-            print(f"[Smart import] {message}")
-            print(f"[Smart import] Returning: imported_games=0, new_games_count=0")
+            logger.info(f"===== RETURNING EARLY - 0 NEW GAMES =====")
+            logger.info(f"{message}")
+            logger.info(f"Returning: imported_games=0, new_games_count=0")
             return BulkGameImportResponse(
                 success=True,
                 imported_games=0,
@@ -7100,16 +7114,16 @@ async def import_games_smart(request: Dict[str, Any], http_request: Request, cre
         if hasattr(result, 'imported_games'):
             if result.imported_games > 0:
                 result.message = f"Imported {result.imported_games} new games"
-                print(f"[Smart import] Success: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
+                logger.info(f"Success: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
                 await _track_import_usage(auth_user_id, http_request, result.imported_games)
             else:
                 result.message = "No new games found. You already have all recent games imported."
-                print(f"[Smart import] No new games: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
+                logger.info(f"No new games: imported_games={result.imported_games}, new_games_count={result.new_games_count}")
 
         return result
 
     except Exception as e:
-        print(f"Error in smart import: {e}")
+        logger.info(f"Error in smart import: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/import-games", response_model=BulkGameImportResponse)
@@ -7153,7 +7167,7 @@ async def import_games_simple(request: Dict[str, Any], http_request: Request, cr
         return result
 
     except Exception as e:
-        print(f"Error in import-games endpoint: {e}")
+        logger.info(f"Error in import-games endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 @app.post("/api/v1/import/games", response_model=BulkGameImportResponse)
 async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = get_optional_auth()):
@@ -7183,17 +7197,17 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
         # Validate critical fields before import
         if not game.provider_game_id:
             skipped_no_id += 1
-            print(f'[import_games] Skipping game with missing provider_game_id for user={payload.user_id}, platform={payload.platform}')
+            logger.info(f'Skipping game with missing provider_game_id for user={payload.user_id}, platform={payload.platform}')
             continue
         if not game.time_control:
             skipped_no_time_control += 1
-            print(f'[import_games] Skipping game {game.provider_game_id} due to missing time_control')
+            logger.info(f'Skipping game {game.provider_game_id} due to missing time_control')
             continue
         # DIAGNOSTIC: Log result values to debug NULL issue
         if game.result is None or game.result == '':
-            print(f'[import_games] WARNING: Game {game.provider_game_id} has NULL/empty result: {repr(game.result)}')
+            logger.warning(f'WARNING: Game {game.provider_game_id} has NULL/empty result: {repr(game.result)}')
         elif game.result not in ['win', 'loss', 'draw']:
-            print(f'[import_games] WARNING: Game {game.provider_game_id} has invalid result: {repr(game.result)}')
+            logger.warning(f'WARNING: Game {game.provider_game_id} has invalid result: {repr(game.result)}')
 
         played_at = _normalize_played_at(game.played_at)
         # Normalize opening name to family for efficient filtering and grouping
@@ -7230,15 +7244,15 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
         })
 
     if skipped_no_id or skipped_no_time_control:
-        print(
-            f'[import_games] Validation summary: skipped_no_id={skipped_no_id}, '
+        logger.info(
+            f'Validation summary: skipped_no_id={skipped_no_id}, '
             f'skipped_no_time_control={skipped_no_time_control}, '
             f'processed_games={len(games_rows)}'
         )
 
     if not games_rows:
         errors.append('No valid games to import after validation checks')
-        print('[import_games] No games_rows generated after validation; aborting import')
+        logger.info('No games_rows generated after validation; aborting import')
         return BulkGameImportResponse(
             success=False,
             imported_games=0,
@@ -7253,8 +7267,8 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
 
     try:
         if games_rows:
-            print(f'[import_games] Upserting {len(games_rows)} game rows')
-            print(f'[import_games] Sample game row: user_id={games_rows[0]["user_id"]}, platform={games_rows[0]["platform"]}, provider_game_id={games_rows[0]["provider_game_id"]}, result={games_rows[0]["result"]}')
+            logger.info(f'Upserting {len(games_rows)} game rows')
+            logger.info(f'Sample game row: user_id={games_rows[0]["user_id"]}, platform={games_rows[0]["platform"]}, provider_game_id={games_rows[0]["provider_game_id"]}, result={games_rows[0]["result"]}')
 
             games_response = await asyncio.to_thread(
                 lambda: supabase_service.table('games').upsert(
@@ -7263,13 +7277,13 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
                 ).execute()
             )
 
-            print('[import_games] games upsert response: count=', getattr(games_response, 'count', None))
-            print(f'[import_games] games upsert response data length: {len(games_response.data) if games_response.data else 0}')
+            logger.info('[import_games] games upsert response: count=', getattr(games_response, 'count', None))
+            logger.info(f'games upsert response data length: {len(games_response.data) if games_response.data else 0}')
 
             # Verify the insert actually worked
             if games_response.data is None or len(games_response.data) == 0:
                 error_msg = "games upsert returned no data - insert may have been blocked by RLS or constraints"
-                print(f'[import_games] ERROR: {error_msg}')
+                logger.error(f'ERROR: {error_msg}')
                 errors.append(error_msg)
                 return BulkGameImportResponse(
                     success=False,
@@ -7281,7 +7295,7 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
 
             # Double-check: Query the database to verify games were actually inserted
             # This is necessary because upsert can return success even if RLS blocks the insert
-            print(f'[import_games] Verifying games were actually inserted...')
+            logger.info(f'Verifying games were actually inserted...')
             verification_query = await asyncio.to_thread(
                 lambda: supabase_service.table('games').select('provider_game_id').eq(
                     'user_id', canonical_user_id
@@ -7290,9 +7304,9 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
 
             if not verification_query.data or len(verification_query.data) == 0:
                 error_msg = "games upsert reported success but games not found in database - likely RLS blocking insert"
-                print(f'[import_games] ERROR: {error_msg}')
-                print(f'[import_games] Checked for games: {[g["provider_game_id"] for g in games_rows[:3]]}')
-                print(f'[import_games] With user_id={canonical_user_id}, platform={payload.platform}')
+                logger.error(f'ERROR: {error_msg}')
+                logger.info(f'Checked for games: {[g["provider_game_id"] for g in games_rows[:3]]}')
+                logger.info(f'With user_id={canonical_user_id}, platform={payload.platform}')
                 errors.append(error_msg)
                 return BulkGameImportResponse(
                     success=False,
@@ -7303,11 +7317,11 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
                 )
 
             games_insert_succeeded = True
-            print(f'[import_games] games upsert succeeded and verified: {len(games_response.data)} rows affected, {len(verification_query.data)} verified in DB')
+            logger.info(f'games upsert succeeded and verified: {len(games_response.data)} rows affected, {len(verification_query.data)} verified in DB')
     except Exception as exc:
         error_msg = f"games upsert failed: {exc}"
-        print(f'[import_games] ERROR: {error_msg}')
-        print(f'[import_games] Traceback: {traceback.format_exc()}')
+        logger.error(f'ERROR: {error_msg}')
+        logger.info(f'Traceback: {traceback.format_exc()}')
         errors.append(error_msg)
         # CRITICAL: Return immediately - don't attempt PGN insert if games failed
         return BulkGameImportResponse(
@@ -7322,20 +7336,20 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
     if games_insert_succeeded:
         try:
             if pgn_rows:
-                print(f'[import_games] Upserting {len(pgn_rows)} PGN rows')
-                print(f'[import_games] Sample PGN row (without pgn text): user_id={pgn_rows[0]["user_id"]}, platform={pgn_rows[0]["platform"]}, provider_game_id={pgn_rows[0]["provider_game_id"]}')
+                logger.info(f'Upserting {len(pgn_rows)} PGN rows')
+                logger.info(f'Sample PGN row (without pgn text): user_id={pgn_rows[0]["user_id"]}, platform={pgn_rows[0]["platform"]}, provider_game_id={pgn_rows[0]["provider_game_id"]}')
                 pgn_response = await asyncio.to_thread(
                     lambda: supabase_service.table('games_pgn').upsert(
                         pgn_rows,
                         on_conflict='user_id,platform,provider_game_id'
                     ).execute()
                 )
-                print('[import_games] pgn upsert response: count=', getattr(pgn_response, 'count', None))
+                logger.info('[import_games] pgn upsert response: count=', getattr(pgn_response, 'count', None))
                 if pgn_response.data:
-                    print(f'[import_games] pgn upsert successful, {len(pgn_response.data)} rows affected')
+                    logger.info(f'pgn upsert successful, {len(pgn_response.data)} rows affected')
         except Exception as exc:
             error_msg = f"games_pgn upsert failed: {exc}"
-            print(f'[import_games] ERROR: {error_msg}')
+            logger.error(f'ERROR: {error_msg}')
             errors.append(error_msg)
             # Note: We don't return here because games were imported successfully
             # The PGN failure is logged but not critical
@@ -7360,7 +7374,7 @@ async def import_games(payload: BulkGameImportRequest, _auth: Optional[bool] = g
                 on_conflict='user_id,platform'
             ).execute()
         )
-        print('[import_games] profile upsert response:', getattr(profile_response, 'data', None))
+        logger.info('[import_games] profile upsert response:', getattr(profile_response, 'data', None))
     except Exception as exc:
         errors.append(f"profile update failed: {exc}")
 
@@ -7426,7 +7440,7 @@ async def discover_games(request: Dict[str, Any]):
             "capped_at_5000": import_limit >= 5000
         }
     except Exception as e:
-        print(f"Error in discover_games: {e}")
+        logger.info(f"Error in discover_games: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -7479,7 +7493,7 @@ def _log_task_error(task: asyncio.Task, key: str) -> None:
     try:
         task.result()
     except Exception as e:
-        print(f"[large_import] Background task error for {key}: {e}")
+        logger.info(f"Background task error for {key}: {e}")
         if get_import_progress(key):
             update_import_progress(key, {
                 "status": "error",
@@ -7494,15 +7508,15 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
     until_timestamp = None  # For Lichess pagination
     oldest_game_month = None  # For Chess.com pagination
 
-    print(f"[large_import] ===== STARTING LARGE IMPORT =====")
-    print(f"[large_import] User: {user_id}, Platform: {platform}, Limit: {limit}")
-    print(f"[large_import] Canonical User ID: {canonical_user_id}, Key: {key}")
+    logger.info(f"===== STARTING LARGE IMPORT =====")
+    logger.info(f"User: {user_id}, Platform: {platform}, Limit: {limit}")
+    logger.info(f"Canonical User ID: {canonical_user_id}, Key: {key}")
 
     # Check if we can acquire semaphore (respects concurrent import limit)
     semaphore_acquired = False
     if import_semaphore.locked():
         # Semaphore is at capacity - inform user they're queued
-        print(f"[large_import] Import semaphore at capacity, waiting for slot...")
+        logger.info(f"Import semaphore at capacity, waiting for slot...")
         update_import_progress(key, {
             "status": "queued",
             "message": f"Import queued - {import_semaphore._value} of {MAX_CONCURRENT_IMPORTS} import slots available"
@@ -7511,7 +7525,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
     # Acquire semaphore to limit concurrent imports
     async with import_semaphore:
         semaphore_acquired = True
-        print(f"[large_import] Semaphore acquired - starting import (available slots: {import_semaphore._value}/{MAX_CONCURRENT_IMPORTS})")
+        logger.info(f"Semaphore acquired - starting import (available slots: {import_semaphore._value}/{MAX_CONCURRENT_IMPORTS})")
         update_import_progress(key, {
             "status": "importing",
             "message": "Import slot acquired - starting..."
@@ -7529,14 +7543,14 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     "current_phase": "error",
                     "message": error_msg
                 })
-                print(f"[large_import] ERROR: {error_msg}")
+                logger.error(f"ERROR: {error_msg}")
                 return
 
-            print(f"[large_import] Database client available: supabase_service={supabase_service is not None}, supabase={supabase is not None}")
+            logger.info(f"Database client available: supabase_service={supabase_service is not None}, supabase={supabase is not None}")
 
             # Get existing game IDs with error handling (paginated for memory efficiency)
             try:
-                print(f"[large_import] Fetching existing games from database (paginated)...")
+                logger.info(f"Fetching existing games from database (paginated)...")
                 existing_ids = set()  # Use set for O(1) lookup and memory efficiency
                 offset = 0
 
@@ -7563,17 +7577,17 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     # Allow other tasks to run
                     await asyncio.sleep(0.01)
 
-                print(f"[large_import] Found {len(existing_ids)} existing games in database")
+                logger.info(f"Found {len(existing_ids)} existing games in database")
             except Exception as e:
                 error_msg = f"Failed to query existing games: {str(e)}"
-                print(f"[large_import] ERROR: {error_msg}")
+                logger.error(f"ERROR: {error_msg}")
                 update_import_progress(key, {
                     "status": "error",
                     "message": error_msg
                 })
                 return
 
-            print(f"[large_import] Starting import for {user_id}, existing games: {len(existing_ids)}")
+            logger.info(f"Starting import for {user_id}, existing games: {len(existing_ids)}")
 
             # Smart pagination with TWO-PHASE approach:
             # PHASE 1: Check for NEW games (after newest imported game)
@@ -7600,9 +7614,9 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     from datetime import datetime, timedelta
                     oldest_played_at = oldest_game_query.data[0]['played_at']
                     newest_played_at = newest_game_query.data[0]['played_at']
-                    print(f"[large_import] Found existing games:")
-                    print(f"[large_import]   Oldest: {oldest_played_at}")
-                    print(f"[large_import]   Newest: {newest_played_at}")
+                    logger.info(f"Found existing games:")
+                    logger.info(f"Oldest: {oldest_played_at}")
+                    logger.info(f"Newest: {newest_played_at}")
 
                     # PHASE 1: Check for new games first (after newest game)
                     newest_dt = datetime.fromisoformat(newest_played_at.replace('Z', '+00:00'))
@@ -7610,11 +7624,11 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
 
                     if platform == 'lichess':
                         since_timestamp = int(check_new_from.timestamp() * 1000)  # milliseconds
-                        print(f"[large_import] PHASE 1: Checking for NEW games after {check_new_from.isoformat()}")
-                        print(f"[large_import]   Using since_timestamp: {since_timestamp}")
+                        logger.info(f"PHASE 1: Checking for NEW games after {check_new_from.isoformat()}")
+                        logger.info(f"Using since_timestamp: {since_timestamp}")
                     elif platform == 'chess.com':
                         newest_game_month = (newest_dt.year, newest_dt.month)
-                        print(f"[large_import] PHASE 1: Checking for NEW games from {newest_game_month[0]}/{newest_game_month[1]:02d} onwards")
+                        logger.info(f"PHASE 1: Checking for NEW games from {newest_game_month[0]}/{newest_game_month[1]:02d} onwards")
 
                     import_phase = "new_games"
 
@@ -7627,10 +7641,10 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     elif platform == 'chess.com':
                         backfill_oldest_month = (backfill_dt.year, backfill_dt.month)
                 else:
-                    print(f"[large_import] No existing games found - starting from most recent")
+                    logger.info(f"No existing games found - starting from most recent")
                     import_phase = "first_import"
             except Exception as resume_error:
-                print(f"[large_import] WARNING: Could not determine resume point: {resume_error}")
+                logger.warning(f"WARNING: Could not determine resume point: {resume_error}")
                 import_phase = "first_import"
                 # Continue with default (most recent)
 
@@ -7642,7 +7656,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
             total_games_checked = 0  # Track total games fetched from platform
             skip_count = 0  # Track how many times we've skipped ahead
             phase_switched = False  # Track if we've switched from phase 1 to phase 2
-            print(f"[large_import] Will stop after {max_consecutive_no_new} consecutive batches with no new games")
+            logger.info(f"Will stop after {max_consecutive_no_new} consecutive batches with no new games")
 
             # For Chess.com, use larger batches to get all games from multiple months at once
             batch_size_adjusted = limit if platform == 'chess.com' else batch_size
@@ -7654,21 +7668,21 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                         "status": "cancelled",
                         "message": f"Import cancelled. {total_imported} games imported."
                     })
-                    print("[large_import] Import cancelled by user")
+                    logger.info("Import cancelled by user")
                     return
 
                 # Phase switching logic: If PHASE 1 (new games) found nothing, switch to PHASE 2 (backfill old games)
                 if import_phase == "new_games" and consecutive_no_new_games >= 3 and not phase_switched:
-                    print(f"[large_import] PHASE 1 complete - No new games found after 3 batches")
-                    print(f"[large_import] Switching to PHASE 2: Backfilling OLD games...")
+                    logger.info(f"PHASE 1 complete - No new games found after 3 batches")
+                    logger.info(f"Switching to PHASE 2: Backfilling OLD games...")
 
                     if platform == 'lichess' and 'backfill_until_timestamp' in locals():
                         until_timestamp = backfill_until_timestamp
                         since_timestamp = None  # Clear since for backfill
-                        print(f"[large_import] PHASE 2: Backfilling from timestamp {until_timestamp}")
+                        logger.info(f"PHASE 2: Backfilling from timestamp {until_timestamp}")
                     elif platform == 'chess.com' and 'backfill_oldest_month' in locals():
                         oldest_game_month = backfill_oldest_month
-                        print(f"[large_import] PHASE 2: Backfilling from {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
+                        logger.info(f"PHASE 2: Backfilling from {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
 
                     import_phase = "backfill_old"
                     consecutive_no_new_games = 0  # Reset counter for phase 2
@@ -7688,32 +7702,32 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                 # Fetch batch with pagination support
                 batch_limit = batch_size_adjusted if platform == 'chess.com' else min(current_batch_size, limit - batch_start)
                 batch_num = batch_start // batch_size + 1
-                print(f"[large_import] ===== BATCH {batch_num} =====")
+                logger.info(f"===== BATCH {batch_num} =====")
                 if current_batch_size != batch_size:
-                    print(f"[large_import] Using adaptive batch size: {current_batch_size} (reduced from {batch_size}) due to large import ({total_imported} games already imported)")
-                print(f"[large_import] Fetching games (batch limit: {batch_limit}, offset: {batch_start}/{limit})")
-                print(f"[large_import] Pagination state - until_timestamp: {until_timestamp}, since_timestamp: {since_timestamp if 'since_timestamp' in locals() else None}, oldest_game_month: {oldest_game_month}")
+                    logger.info(f"Using adaptive batch size: {current_batch_size} (reduced from {batch_size}) due to large import ({total_imported} games already imported)")
+                logger.info(f"Fetching games (batch limit: {batch_limit}, offset: {batch_start}/{limit})")
+                logger.info(f"Pagination state - until_timestamp: {until_timestamp}, since_timestamp: {since_timestamp if 'since_timestamp' in locals() else None}, oldest_game_month: {oldest_game_month}")
 
                 # Stagger requests when multiple imports are running to prevent resource contention
                 active_imports = MAX_CONCURRENT_IMPORTS - import_semaphore._value
                 if active_imports >= 2:
                     await asyncio.sleep(0.5)  # 500ms delay reduces CPU/memory spikes and prevents connection pool exhaustion
-                    print(f"[large_import] {active_imports} concurrent imports active - added 0.5s delay for stability")
+                    logger.info(f"{active_imports} concurrent imports active - added 0.5s delay for stability")
 
                 # ALWAYS add a small delay between batches to avoid Lichess rate limiting (429 errors)
                 # Lichess allows roughly 50-60 requests per minute for authenticated users
                 if platform == 'lichess':
                     await asyncio.sleep(1.2)  # 1.2 seconds = ~50 requests/minute (safe rate)
-                    print(f"[large_import] Added 1.2s delay to respect Lichess API rate limits")
+                    logger.info(f"Added 1.2s delay to respect Lichess API rate limits")
 
                 try:
                     games_data = await _fetch_games_from_platform(
                         user_id, platform, batch_limit, until_timestamp, from_date, to_date, oldest_game_month, since_timestamp
                     )
-                    print(f"[large_import] Fetch completed. Received {len(games_data) if games_data else 0} games")
+                    logger.info(f"Fetch completed. Received {len(games_data) if games_data else 0} games")
                 except Exception as e:
                     error_msg = f"Failed to fetch games (batch {batch_num}): {str(e)}"
-                    print(f"[large_import] ERROR: {error_msg}")
+                    logger.error(f"ERROR: {error_msg}")
                     update_import_progress(key, {
                         "status": "error",
                         "message": error_msg,
@@ -7722,25 +7736,25 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     return
 
                 if not games_data:
-                    print(f"[large_import] No games fetched in this batch")
+                    logger.info(f"No games fetched in this batch")
 
                     # Don't break immediately - allow phase switching if in Phase 1
                     if import_phase == "new_games" and not phase_switched:
                         consecutive_no_new_games += 1
-                        print(f"[large_import] PHASE 1: Empty batch #{consecutive_no_new_games} - will check for phase switch")
+                        logger.info(f"PHASE 1: Empty batch #{consecutive_no_new_games} - will check for phase switch")
 
                         # If we've had 1 empty batch in Phase 1, switch to Phase 2
                         if consecutive_no_new_games >= 1:
-                            print(f"[large_import] PHASE 1 complete - No new games found")
-                            print(f"[large_import] Switching to PHASE 2: Backfilling OLD games...")
+                            logger.info(f"PHASE 1 complete - No new games found")
+                            logger.info(f"Switching to PHASE 2: Backfilling OLD games...")
 
                             if platform == 'lichess' and 'backfill_until_timestamp' in locals():
                                 until_timestamp = backfill_until_timestamp
                                 since_timestamp = None  # Clear since for backfill
-                                print(f"[large_import] PHASE 2: Backfilling from timestamp {until_timestamp}")
+                                logger.info(f"PHASE 2: Backfilling from timestamp {until_timestamp}")
                             elif platform == 'chess.com' and 'backfill_oldest_month' in locals():
                                 oldest_game_month = backfill_oldest_month
-                                print(f"[large_import] PHASE 2: Backfilling from {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
+                                logger.info(f"PHASE 2: Backfilling from {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
 
                             import_phase = "backfill_old"
                             consecutive_no_new_games = 0  # Reset counter for phase 2
@@ -7748,7 +7762,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                             continue  # Continue to next batch with Phase 2 settings
 
                     # If in Phase 2 or first_import and no games, stop
-                    print(f"[large_import] No more games to fetch, stopping")
+                    logger.info(f"No more games to fetch, stopping")
                     break
 
                 # Track total games checked
@@ -7756,7 +7770,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
 
                 # Filter new games
                 new_games = [g for g in games_data if g.get('id') not in existing_ids]
-                print(f"[large_import] Batch {batch_num}: fetched {len(games_data)}, new: {len(new_games)}, total checked: {total_games_checked}")
+                logger.info(f"Batch {batch_num}: fetched {len(games_data)}, new: {len(new_games)}, total checked: {total_games_checked}")
 
                 # Track consecutive batches with no new games
                 if len(new_games) == 0:
@@ -7765,12 +7779,12 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                     # Skip-ahead logic: Jump past duplicate ranges to find older games
                     if consecutive_no_new_games == 5 and skip_count < 3:
                         skip_count += 1
-                        print(f"[large_import] Hit 5 empty batches, jumping ahead to skip duplicate range (skip #{skip_count})...")
+                        logger.info(f"Hit 5 empty batches, jumping ahead to skip duplicate range (skip #{skip_count})...")
 
                         # Lichess: Jump back 30 days in time
                         if until_timestamp and platform == 'lichess':
                             until_timestamp -= (86400000 * 30)  # 30 days in milliseconds
-                            print(f"[large_import] Skipped back 30 days, new timestamp: {until_timestamp}")
+                            logger.info(f"Skipped back 30 days, new timestamp: {until_timestamp}")
 
                         # Chess.com: Skip back 2 months
                         elif platform == 'chess.com' and oldest_game_month:
@@ -7780,11 +7794,11 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                                 month += 12
                                 year -= 1
                             oldest_game_month = (year, month)
-                            print(f"[large_import] Skipped back 2 months, new date: {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
+                            logger.info(f"Skipped back 2 months, new date: {oldest_game_month[0]}/{oldest_game_month[1]:02d}")
 
                     # Stop after 100 consecutive empty batches (5000 games checked with no new ones)
                     if consecutive_no_new_games >= max_consecutive_no_new:
-                        print(f"[large_import] No new games in {max_consecutive_no_new} consecutive batches (~{max_consecutive_no_new * 50} games checked), stopping")
+                        logger.info(f"No new games in {max_consecutive_no_new} consecutive batches (~{max_consecutive_no_new * 50} games checked), stopping")
                         break
                 else:
                     consecutive_no_new_games = 0  # Reset counter
@@ -7802,7 +7816,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                                     until_timestamp = int(dt.timestamp() * 1000)  # Convert to milliseconds
                                 break
                             except Exception as e:
-                                print(f"[large_import] Error parsing timestamp: {e}")
+                                logger.info(f"Error parsing timestamp: {e}")
                 elif platform == 'chess.com' and games_data:
                     # Update oldest_game_month for Chess.com pagination
                     for game in reversed(games_data):
@@ -7815,11 +7829,11 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                                     oldest_game_month = (dt.year, dt.month)
                                 break
                             except Exception as e:
-                                print(f"[large_import] Error parsing Chess.com timestamp: {e}")
+                                logger.info(f"Error parsing Chess.com timestamp: {e}")
 
                 if new_games:
                     # Import batch
-                    print(f"[large_import] Processing {len(new_games)} new games for import...")
+                    logger.info(f"Processing {len(new_games)} new games for import...")
                     parsed_games = []
                     for game in new_games:
                         parsed_games.append({
@@ -7843,17 +7857,17 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                             platform=platform,
                             games=parsed_games
                         )
-                        print(f"[large_import] Calling import_games with {len(parsed_games)} games...")
+                        logger.info(f"Calling import_games with {len(parsed_games)} games...")
                         await import_games(bulk_request)
-                        print(f"[large_import] Import successful!")
+                        logger.info(f"Import successful!")
 
                         total_imported += len(new_games)
                         existing_ids.update({g.get('id') for g in new_games})
-                        print(f"[large_import] Imported {len(new_games)} games, total: {total_imported}")
+                        logger.info(f"Imported {len(new_games)} games, total: {total_imported}")
 
                         # Hard limit: Stop at 5000 games per import session
                         if total_imported >= 5000:
-                            print(f"[large_import] Reached maximum import limit of 5000 games. Stopping.")
+                            logger.info(f"Reached maximum import limit of 5000 games. Stopping.")
                             update_import_progress(key, {
                                 "status": "completed",
                                 "imported_games": total_imported,
@@ -7863,7 +7877,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                             return
                     except Exception as e:
                         error_msg = f"Failed to import batch: {str(e)}"
-                        print(f"[large_import] ERROR: {error_msg}")
+                        logger.error(f"ERROR: {error_msg}")
                         update_import_progress(key, {
                             "status": "error",
                             "message": error_msg,
@@ -7886,7 +7900,7 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
 
                 # For Chess.com, we fetched all games in one go, so break after first batch
                 if platform == 'chess.com':
-                    print(f"[large_import] Chess.com: All available games fetched in batch 1, exiting loop")
+                    logger.info(f"Chess.com: All available games fetched in batch 1, exiting loop")
                     break
 
                 # Memory optimization: More aggressive cleanup for large imports
@@ -7898,11 +7912,11 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                         new_games = None
                         parsed_games = None
                         gc.collect()
-                        print(f"[large_import] Memory cleanup performed at {total_imported} games")
+                        logger.info(f"Memory cleanup performed at {total_imported} games")
 
                     # For very large imports (500+), add extra progress updates
                     if total_imported >= 500 and total_imported % 50 == 0:
-                        print(f"[large_import] Progress update: {total_imported} games imported, still processing...")
+                        logger.info(f"Progress update: {total_imported} games imported, still processing...")
 
                 # Adaptive delay: longer delay for large imports to reduce system pressure
                 if total_imported < 500:
@@ -7923,10 +7937,10 @@ async def _perform_large_import(user_id: str, platform: str, limit: int, from_da
                 "message": message,
                 "trigger_refresh": True
             })
-            print(f"[large_import] Import completed successfully: {total_imported} new games, {total_games_checked} total checked")
+            logger.info(f"Import completed successfully: {total_imported} new games, {total_games_checked} total checked")
 
         except Exception as e:
-            print(f"[large_import] Error during import: {e}")
+            logger.info(f"Error during import: {e}")
             update_import_progress(key, {
                 "status": "error",
                 "message": f"Import failed: {str(e)}"
@@ -7979,7 +7993,7 @@ async def get_import_status(user_id: str, platform: str):
             "user_id": user_id
         }
     except Exception as e:
-        print(f"[import_status] Error: {e}")
+        logger.error(f"Error: {e}")
         return {
             "total_games": 0,
             "oldest_game": None,
@@ -8055,7 +8069,7 @@ async def proxy_chess_com_user(username: str):
     try:
         canonical_username = username.strip().lower()
         url = f"https://api.chess.com/pub/player/{canonical_username}"
-        print(f"Proxying user request to: {url}")
+        logger.info(f"Proxying user request to: {url}")
 
         # Chess.com API requires User-Agent header
         headers = {
@@ -8067,11 +8081,11 @@ async def proxy_chess_com_user(username: str):
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"Chess.com API returned status {response.status_code}")
+                logger.info(f"Chess.com API returned status {response.status_code}")
                 return {"success": False, "message": f"User not found or API returned status {response.status_code}"}
 
     except Exception as e:
-        print(f"Error proxying Chess.com user request: {e}")
+        logger.info(f"Error proxying Chess.com user request: {e}")
         return {"success": False, "message": str(e)}
 
 @app.post("/api/v1/validate-user")
@@ -8153,7 +8167,7 @@ async def validate_user(request: dict):
         # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
-        print(f"Unexpected error validating user: {e}")
+        logger.info(f"Unexpected error validating user: {e}")
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
@@ -8204,7 +8218,7 @@ async def check_user_exists(request: dict):
         return {"exists": len(result.data) > 0}
 
     except Exception as e:
-        print(f"Error checking user existence: {e}")
+        logger.info(f"Error checking user existence: {e}")
         return {"exists": False}
 
 @app.post("/api/v1/profiles")
@@ -8220,6 +8234,9 @@ async def get_or_create_profile(request: dict):
 
         if platform not in ["lichess", "chess.com"]:
             raise HTTPException(status_code=400, detail="Platform must be 'lichess' or 'chess.com'")
+
+        # Rate limit profile operations
+        _enforce_rate_limit(f"profile:{user_id}:{platform}", PROFILE_RATE_LIMIT)
 
         # Canonicalize user ID for database operations
         canonical_user_id = _canonical_user_id(user_id, platform)
@@ -8243,11 +8260,11 @@ async def get_or_create_profile(request: dict):
                 result = None
         except Exception as query_error:
             # Profile doesn't exist yet, will create it below
-            print(f"Profile query returned no results for {canonical_user_id}: {query_error}")
+            logger.info(f"Profile query returned no results for {canonical_user_id}: {query_error}")
             result = None
 
         if DEBUG:
-            print(f"[get_or_create_profile] Query result: has_result={result is not None}, has_data={bool(result.data if result else False)}")
+            logger.info(f"Query result: has_result={result is not None}, has_data={bool(result.data if result else False)}")
 
         # If profile exists, update last_accessed and return it
         if result and result.data:
@@ -8278,7 +8295,7 @@ async def get_or_create_profile(request: dict):
         )
 
         if DEBUG:
-            print(f"[get_or_create_profile] Create result: has_result={create_result is not None}, has_data={bool(create_result.data if create_result else False)}")
+            logger.info(f"Create result: has_result={create_result is not None}, has_data={bool(create_result.data if create_result else False)}")
 
         if not create_result or not create_result.data or len(create_result.data) == 0:
             raise HTTPException(status_code=500, detail="Failed to create profile")
@@ -8288,7 +8305,7 @@ async def get_or_create_profile(request: dict):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error in get_or_create_profile: {e}")
+        logger.info(f"Error in get_or_create_profile: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
@@ -8360,13 +8377,13 @@ def get_analysis_engine() -> ChessAnalysisEngine:
     # Pass stockfish path from config to ensure production paths are checked
     stockfish_path = config.stockfish.path
     if stockfish_path:
-        print(f"[ENGINE] Using Stockfish from config: {stockfish_path}")
+        logger.info(f"Using Stockfish from config: {stockfish_path}")
     else:
-        print(f"[ENGINE] Warning: No Stockfish path found in config")
+        logger.warning(f"Warning: No Stockfish path found in config")
 
-    print("[ENGINE] Initializing ChessAnalysisEngine (this will also initialize AI comment generator)...")
+    logger.info("Initializing ChessAnalysisEngine (this will also initialize AI comment generator)...")
     analysis_engine = ChessAnalysisEngine(stockfish_path=stockfish_path)
-    print("[ENGINE] ✅ ChessAnalysisEngine initialized successfully")
+    logger.info("✅ ChessAnalysisEngine initialized successfully")
     return analysis_engine
 
 async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> UnifiedAnalysisResponse:
@@ -8409,10 +8426,10 @@ async def _handle_single_game_analysis(request: UnifiedAnalysisRequest) -> Unifi
             success = await _save_stockfish_analysis(game_analysis)
             if success:
                 # Queue background task for AI comment generation
-                print(f"[SINGLE GAME ANALYSIS] 🔄 Creating background task for AI comments...")
+                logger.info(f"🔄 Creating background task for AI comments...")
                 task = asyncio.create_task(_generate_ai_comments_background(game_analysis))
-                print(f"[SINGLE GAME ANALYSIS] ✅ Background task created: {task}")
-                print(f"[SINGLE GAME ANALYSIS] Queued background AI comment generation for game_id: {game_analysis.game_id}")
+                logger.info(f"✅ Background task created: {task}")
+                logger.info(f"Queued background AI comment generation for game_id: {game_analysis.game_id}")
 
                 return UnifiedAnalysisResponse(
                     success=True,
@@ -8438,7 +8455,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         # Validate request parameters
         is_valid, error_message = _validate_single_game_analysis_request(request)
         if not is_valid:
-            print(f"[SINGLE GAME ANALYSIS] ERROR Validation failed: {error_message}")
+            logger.error(f"ERROR Validation failed: {error_message}")
             return UnifiedAnalysisResponse(
                 success=False,
                 message=f"Request validation failed: {error_message}"
@@ -8448,7 +8465,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         try:
             canonical_user_id = _canonical_user_id(request.user_id, request.platform)
         except ValueError as e:
-            print(f"[SINGLE GAME ANALYSIS] ERROR User ID canonicalization failed: {e}")
+            logger.error(f"ERROR User ID canonicalization failed: {e}")
             return UnifiedAnalysisResponse(
                 success=False,
                 message=f"User ID validation failed: {str(e)}"
@@ -8456,7 +8473,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
 
         # Get the game_id to search for
         game_id = request.game_id or request.provider_game_id
-        print(f"[SINGLE GAME ANALYSIS] Starting analysis for game_id: {game_id}, user: {canonical_user_id} (original: {request.user_id})")
+        logger.info(f"Starting analysis for game_id: {game_id}, user: {canonical_user_id} (original: {request.user_id})")
 
         # Fetch PGN data from database
         if not supabase:
@@ -8468,8 +8485,8 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         db_client = supabase_service or supabase  # Use service role to bypass RLS
 
         # Try to find the game by provider_game_id first
-        print(f"[SINGLE GAME ANALYSIS] Querying games_pgn by provider_game_id: {game_id}")
-        print(f"[SINGLE GAME ANALYSIS] Query params: user_id={canonical_user_id}, platform={request.platform}")
+        logger.info(f"Querying games_pgn by provider_game_id: {game_id}")
+        logger.info(f"Query params: user_id={canonical_user_id}, platform={request.platform}")
 
         # First, let's see what's actually in the database for this user
         try:
@@ -8478,10 +8495,10 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                     'user_id', canonical_user_id
                 ).eq('platform', request.platform).limit(5).execute()
             )
-            print(f"[SINGLE GAME ANALYSIS] Sample games for this user: {all_games.data if all_games else 'None'}")
+            logger.info(f"Sample games for this user: {all_games.data if all_games else 'None'}")
         except Exception as debug_error:
             if os.getenv("DEBUG", "false").lower() == "true":
-                print(f"[SINGLE GAME ANALYSIS] Debug query failed: {debug_error}")
+                logger.error(f"Debug query failed: {debug_error}")
 
         try:
             game_response = await asyncio.to_thread(
@@ -8489,16 +8506,16 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                     'provider_game_id', game_id
                 ).eq('user_id', canonical_user_id).eq('platform', request.platform).limit(1).execute()
             )
-            print(f"[SINGLE GAME ANALYSIS] Query result: {game_response}")
-            print(f"[SINGLE GAME ANALYSIS] Has data: {game_response is not None and hasattr(game_response, 'data')}")
+            logger.info(f"Query result: {game_response}")
+            logger.info(f"Has data: {game_response is not None and hasattr(game_response, 'data')}")
             if game_response and hasattr(game_response, 'data'):
-                print(f"[SINGLE GAME ANALYSIS] Data value: {game_response.data}")
+                logger.info(f"Data value: {game_response.data}")
                 if game_response.data and len(game_response.data) > 0:
                     game_response.data = game_response.data[0]
                 else:
                     game_response.data = None
         except Exception as query_error:
-            print(f"[SINGLE GAME ANALYSIS] ERROR Database query error: {query_error}")
+            logger.error(f"ERROR Database query error: {query_error}")
             return UnifiedAnalysisResponse(
                 success=False,
                 message=f"Database query failed: {str(query_error)}"
@@ -8508,7 +8525,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
 
         # If still not found in database, try fetching from chess platform
         if not game_response or not hasattr(game_response, 'data') or not game_response.data:
-            print(f"[SINGLE GAME ANALYSIS] Game not found in database, attempting to fetch from {request.platform}")
+            logger.info(f"Game not found in database, attempting to fetch from {request.platform}")
 
             pgn_from_platform = None
             if request.platform == 'lichess':
@@ -8517,13 +8534,13 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 pgn_from_platform = await _fetch_single_chesscom_game(request.user_id, game_id)
 
             if not pgn_from_platform:
-                print(f"[SINGLE GAME ANALYSIS] ERROR Game not found in database or on {request.platform}: {game_id}")
+                logger.info(f"ERROR Game not found in database or on {request.platform}: {game_id}")
                 return UnifiedAnalysisResponse(
                     success=False,
                     message=f"Game not found: {game_id}. Unable to fetch from {request.platform}. Please ensure the game ID is correct and the game exists."
                 )
 
-            print(f"[SINGLE GAME ANALYSIS] OK Successfully fetched PGN from {request.platform}, saving to database")
+            logger.info(f"OK Successfully fetched PGN from {request.platform}, saving to database")
 
             # Save the PGN to database for future use
             try:
@@ -8537,15 +8554,15 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         'created_at': datetime.utcnow().isoformat()
                     }, on_conflict='user_id,platform,provider_game_id').execute()
                 )
-                print(f"[SINGLE GAME ANALYSIS] OK Saved PGN to database")
+                logger.info(f"OK Saved PGN to database")
             except Exception as save_error:
-                print(f"[SINGLE GAME ANALYSIS] WARNING Warning: Failed to save PGN to database: {save_error}")
+                logger.error(f"WARNING Warning: Failed to save PGN to database: {save_error}")
                 # Continue anyway - we have the PGN in memory
 
             # Use the fetched PGN
             pgn_data = pgn_from_platform
         else:
-            print(f"[SINGLE GAME ANALYSIS] Extracting PGN data from response")
+            logger.info(f"Extracting PGN data from response")
             pgn_data = game_response.data.get('pgn') if isinstance(game_response.data, dict) else None
             if not pgn_data:
                 return UnifiedAnalysisResponse(
@@ -8555,7 +8572,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
 
         # Ensure the game exists in the games table for foreign key constraint
         # Check if game exists in games table
-        print(f"[SINGLE GAME ANALYSIS] Checking if game exists in games table: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
+        logger.info(f"Checking if game exists in games table: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
         games_check = None
         try:
             games_check_result = await asyncio.to_thread(
@@ -8568,13 +8585,13 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 games_check = MockSingleResult(games_check_result.data[0])
             else:
                 games_check = None
-            print(f"[SINGLE GAME ANALYSIS] Games table check result: {games_check.data if (games_check and hasattr(games_check, 'data')) else 'None'}")
+            logger.info(f"Games table check result: {games_check.data if (games_check and hasattr(games_check, 'data')) else 'None'}")
         except Exception as check_error:
-            print(f"[SINGLE GAME ANALYSIS] ERROR Error checking games table: {check_error}")
+            logger.info(f"ERROR Error checking games table: {check_error}")
             games_check = None
 
         if not games_check or not hasattr(games_check, 'data') or not games_check.data:
-            print(f"[SINGLE GAME ANALYSIS] Game {game_id} not found in games table, creating basic record...")
+            logger.info(f"Game {game_id} not found in games table, creating basic record...")
             # Parse PGN to extract basic game info
             import chess.pgn
             import io
@@ -8641,17 +8658,17 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 }
 
                 try:
-                    print(f"[SINGLE GAME ANALYSIS] Creating game record with canonical user_id: {canonical_user_id}")
+                    logger.info(f"Creating game record with canonical user_id: {canonical_user_id}")
                     games_response = await asyncio.to_thread(
                         lambda: db_client.table('games').upsert(
                             game_record,
                             on_conflict='user_id,platform,provider_game_id'
                         ).execute()
                     )
-                    print(f"[SINGLE GAME ANALYSIS] ✅ Created game record: {game_id}")
-                    print(f"[SINGLE GAME ANALYSIS] Game record: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
+                    logger.info(f"✅ Created game record: {game_id}")
+                    logger.info(f"Game record: user_id={canonical_user_id}, platform={request.platform}, game_id={game_id}")
                 except Exception as e:
-                    print(f"[SINGLE GAME ANALYSIS] Failed to create game record: {e}")
+                    logger.error(f"Failed to create game record: {e}")
                     return UnifiedAnalysisResponse(
                         success=False,
                         message=f"Failed to create game record: {e}"
@@ -8681,7 +8698,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
         analysis_game_id = game_id  # This should be the provider_game_id
 
         # Analyze game
-        print(f"[SINGLE GAME ANALYSIS] Starting engine analysis for game_id: {analysis_game_id}")
+        logger.info(f"Starting engine analysis for game_id: {analysis_game_id}")
         game_analysis = await engine.analyze_game(
             pgn_data,
             canonical_user_id,  # Use canonicalized user ID
@@ -8692,7 +8709,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
 
         if game_analysis:
             # Validate foreign key constraint before saving
-            print(f"[SINGLE GAME ANALYSIS] Validating foreign key constraint before saving...")
+            logger.info(f"Validating foreign key constraint before saving...")
             try:
                 fk_validation_result = await asyncio.to_thread(
                     lambda: db_client.table('games').select('id').eq(
@@ -8705,12 +8722,12 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 else:
                     fk_validation = None
             except Exception as fk_error:
-                print(f"[SINGLE GAME ANALYSIS] ERROR Error during FK validation: {fk_error}")
+                logger.info(f"ERROR Error during FK validation: {fk_error}")
                 fk_validation = None
 
             if not fk_validation or not hasattr(fk_validation, 'data') or not fk_validation.data:
-                print(f"[SINGLE GAME ANALYSIS] ERROR CRITICAL: Foreign key validation failed - game not found in games table!")
-                print(f"[SINGLE GAME ANALYSIS] Attempting to create missing game record...")
+                logger.info(f"ERROR CRITICAL: Foreign key validation failed - game not found in games table!")
+                logger.info(f"Attempting to create missing game record...")
 
                 # Try to create the game record again with more robust error handling
                 try:
@@ -8798,7 +8815,7 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         )
 
                         if games_response.data:
-                            print(f"[SINGLE GAME ANALYSIS] SUCCESS Successfully created/updated game record: {analysis_game_id}")
+                            logger.info(f"SUCCESS Successfully created/updated game record: {analysis_game_id}")
 
                             # Re-validate foreign key constraint
                             fk_validation_result = await asyncio.to_thread(
@@ -8814,47 +8831,47 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                                 fk_validation = None
 
                             if fk_validation and hasattr(fk_validation, 'data') and fk_validation.data:
-                                print(f"[SINGLE GAME ANALYSIS] SUCCESS Foreign key validation passed after creating game record")
+                                logger.info(f"SUCCESS Foreign key validation passed after creating game record")
                             else:
-                                print(f"[SINGLE GAME ANALYSIS] ERROR Foreign key validation still failed after creating game record")
+                                logger.info(f"ERROR Foreign key validation still failed after creating game record")
                                 return UnifiedAnalysisResponse(
                                     success=False,
                                     message=f"Failed to create valid game record for analysis save"
                                 )
                         else:
-                            print(f"[SINGLE GAME ANALYSIS] ERROR Failed to create game record - no data returned")
+                            logger.error(f"ERROR Failed to create game record - no data returned")
                             return UnifiedAnalysisResponse(
                                 success=False,
                                 message=f"Failed to create game record for analysis save"
                             )
                     else:
-                        print(f"[SINGLE GAME ANALYSIS] ERROR Failed to parse PGN for game record creation")
+                        logger.error(f"ERROR Failed to parse PGN for game record creation")
                         return UnifiedAnalysisResponse(
                             success=False,
                             message=f"Failed to parse PGN for game record creation"
                         )
 
                 except Exception as create_error:
-                    print(f"[SINGLE GAME ANALYSIS] ERROR Failed to create game record: {create_error}")
+                    logger.error(f"ERROR Failed to create game record: {create_error}")
                     return UnifiedAnalysisResponse(
                         success=False,
                         message=f"Failed to create game record: {str(create_error)}"
                     )
             else:
-                print(f"[SINGLE GAME ANALYSIS] SUCCESS Foreign key validation passed - game exists in games table")
+                logger.info(f"SUCCESS Foreign key validation passed - game exists in games table")
 
             # Save to database with comprehensive error handling
             try:
                 success = await _save_stockfish_analysis(game_analysis)
                 if success:
-                    print(f"[SINGLE GAME ANALYSIS] SUCCESS Analysis completed and saved for game_id: {analysis_game_id}")
-                    print(f"[SINGLE GAME ANALYSIS] This was a SINGLE game analysis - NOT starting batch analysis")
+                    logger.info(f"SUCCESS Analysis completed and saved for game_id: {analysis_game_id}")
+                    logger.info(f"This was a SINGLE game analysis - NOT starting batch analysis")
 
                     # Queue background task for AI comment generation
-                    print(f"[SINGLE GAME ANALYSIS] 🔄 Creating background task for AI comments...")
+                    logger.info(f"🔄 Creating background task for AI comments...")
                     task = asyncio.create_task(_generate_ai_comments_background(game_analysis))
-                    print(f"[SINGLE GAME ANALYSIS] ✅ Background task created: {task}")
-                    print(f"[SINGLE GAME ANALYSIS] Queued background AI comment generation for game_id: {analysis_game_id}")
+                    logger.info(f"✅ Background task created: {task}")
+                    logger.info(f"Queued background AI comment generation for game_id: {analysis_game_id}")
 
                     return UnifiedAnalysisResponse(
                         success=True,
@@ -8863,13 +8880,13 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                         data={"game_id": game_analysis.game_id}
                     )
                 else:
-                    print(f"[SINGLE GAME ANALYSIS] ERROR Analysis completed but failed to save to database")
+                    logger.error(f"ERROR Analysis completed but failed to save to database")
                     return UnifiedAnalysisResponse(
                         success=False,
                         message="Game analysis completed but failed to save to database"
                     )
             except Exception as save_error:
-                print(f"[SINGLE GAME ANALYSIS] ERROR CRITICAL ERROR during save: {save_error}")
+                logger.info(f"ERROR CRITICAL ERROR during save: {save_error}")
                 return UnifiedAnalysisResponse(
                     success=False,
                     message=f"Critical error during analysis save: {str(save_error)}"
@@ -8880,9 +8897,9 @@ async def _handle_single_game_by_id(request: UnifiedAnalysisRequest) -> UnifiedA
                 message="Failed to analyze game"
             )
     except Exception as e:
-        print(f"[SINGLE GAME ANALYSIS] ERROR CRITICAL ERROR in _handle_single_game_by_id: {e}")
-        print(f"[SINGLE GAME ANALYSIS] Error type: {type(e).__name__}")
-        print(f"[SINGLE GAME ANALYSIS] Error details: {str(e)}")
+        logger.info(f"ERROR CRITICAL ERROR in _handle_single_game_by_id: {e}")
+        logger.info(f"Error type: {type(e).__name__}")
+        logger.info(f"Error details: {str(e)}")
 
         # Return a structured error response instead of raising HTTPException
         return UnifiedAnalysisResponse(
@@ -9022,13 +9039,13 @@ def _validate_game_chronological_order(games: list, context: str) -> None:
         raise TypeError(f"Games must be a list, got {type(games)}")
 
     if not games or len(games) < 2:
-        print(f"[VALIDATION] Skipping validation for {context}: insufficient games ({len(games) if games else 0})")
+        logger.info(f"Skipping validation for {context}: insufficient games ({len(games) if games else 0})")
         return
 
     played_dates = []
     for i, game in enumerate(games):
         if not isinstance(game, dict):
-            print(f"[WARNING] Skipping non-dict game at index {i} in {context}")
+            logger.warning(f"Skipping non-dict game at index {i} in {context}")
             continue
 
         played_at = game.get('played_at')
@@ -9041,11 +9058,11 @@ def _validate_game_chronological_order(games: list, context: str) -> None:
                     datetime.fromisoformat(played_at.replace('Z', '+00:00'))
                 played_dates.append((i, played_at, game.get('provider_game_id', 'unknown')))
             except (ValueError, TypeError) as e:
-                print(f"[WARNING] Skipping game at index {i} in {context}: invalid played_at '{played_at}' ({e})")
+                logger.warning(f"Skipping game at index {i} in {context}: invalid played_at '{played_at}' ({e})")
                 continue
 
     if len(played_dates) < 2:
-        print(f"[VALIDATION] Skipping validation for {context}: insufficient valid games with played_at ({len(played_dates)})")
+        logger.info(f"Skipping validation for {context}: insufficient valid games with played_at ({len(played_dates)})")
         return
 
     # Check if games are in descending order (most recent first)
@@ -9071,15 +9088,15 @@ def _validate_game_chronological_order(games: list, context: str) -> None:
                     f"Games must be ordered by played_at DESC (most recent first).\n"
                     f"Total games checked: {len(played_dates)}"
                 )
-                print(f"[ERROR] {error_msg}")
+                logger.error(f"{error_msg}")
                 raise ValueError(error_msg)
         except Exception as e:
-            print(f"[ERROR] Failed to compare dates in {context}: {e}")
-            print(f"[ERROR] Current date: {played_dates[i][1]} (type: {type(played_dates[i][1])})")
-            print(f"[ERROR] Next date: {played_dates[i+1][1]} (type: {type(played_dates[i+1][1])})")
+            logger.error(f"Failed to compare dates in {context}: {e}")
+            logger.error(f"Current date: {played_dates[i][1]} (type: {type(played_dates[i][1])})")
+            logger.error(f"Next date: {played_dates[i+1][1]} (type: {type(played_dates[i+1][1])})")
             raise
 
-    print(f"[VALIDATION] SUCCESS Games in {context} are correctly ordered chronologically (most recent first) - {len(played_dates)} games validated")
+    logger.info(f"SUCCESS Games in {context} are correctly ordered chronologically (most recent first) - {len(played_dates)} games validated")
 async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str, analysis_type: str, limit: int) -> list:
     """
     Filter out games that are already analyzed, returning only unanalyzed games up to the limit.
@@ -9123,7 +9140,7 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
             analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
 
     except Exception as e:
-        print(f"[warn] Could not check analyzed games: {e}")
+        logger.warning(f"Could not check analyzed games: {e}")
         # If we can't check, assume no games are analyzed to be safe
         analyzed_game_ids = set()
 
@@ -9140,8 +9157,8 @@ async def _filter_unanalyzed_games(all_games: list, user_id: str, platform: str,
                 if len(unanalyzed_games) >= limit:
                     break
 
-    print(f"[info] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
-    print(f"[info] Skipped {analyzed_count} already-analyzed games")
+    logger.info(f"Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
+    logger.info(f"Skipped {analyzed_count} already-analyzed games")
     return unanalyzed_games
 async def _update_all_move_comments_in_db(
     game_id: str,
@@ -9159,7 +9176,7 @@ async def _update_all_move_comments_in_db(
 
         # Use module-level service client
         if not supabase_service:
-            print(f"[AI_COMMENTS] No database client available, cannot update comments for game {game_id}")
+            logger.info(f"No database client available, cannot update comments for game {game_id}")
             return False
 
         db_client = supabase_service
@@ -9172,8 +9189,8 @@ async def _update_all_move_comments_in_db(
             # For now, we'll just update the moves_analysis JSONB
         }
 
-        print(f"[AI_COMMENTS] Updating database for game_id: {game_id}")
-        print(f"[AI_COMMENTS] Moves to update: {len(moves_analysis)}")
+        logger.info(f"Updating database for game_id: {game_id}")
+        logger.info(f"Moves to update: {len(moves_analysis)}")
 
         response = await asyncio.to_thread(
             lambda: db_client.table('move_analyses')
@@ -9184,23 +9201,23 @@ async def _update_all_move_comments_in_db(
             .execute()
         )
 
-        print(f"[AI_COMMENTS] Database update response: {type(response)}")
-        print(f"[AI_COMMENTS] Response has data: {hasattr(response, 'data')}")
+        logger.info(f"Database update response: {type(response)}")
+        logger.info(f"Response has data: {hasattr(response, 'data')}")
         if hasattr(response, 'data'):
-            print(f"[AI_COMMENTS] Response data: {response.data}")
+            logger.info(f"Response data: {response.data}")
 
         success = bool(getattr(response, 'data', None))
         if success:
-            print(f"[AI_COMMENTS] ✅ Successfully updated AI comments for game_id: {game_id}")
+            logger.info(f"✅ Successfully updated AI comments for game_id: {game_id}")
             # Invalidate cache to ensure fresh data
             _invalidate_cache(canonical_user_id, platform)
         else:
-            print(f"[AI_COMMENTS] ❌ Failed to update AI comments for game_id: {game_id}")
+            logger.error(f"❌ Failed to update AI comments for game_id: {game_id}")
 
         return success
 
     except Exception as e:
-        print(f"[AI_COMMENTS] Error updating AI comments in database: {e}")
+        logger.info(f"Error updating AI comments in database: {e}")
         traceback.print_exc()
         return False
 
@@ -9212,13 +9229,13 @@ async def _generate_ai_comments_background(game_analysis: GameAnalysis) -> None:
     This runs in the background and doesn't block the analysis response.
     """
     try:
-        print(f"[AI_COMMENTS] ========================================")
-        print(f"[AI_COMMENTS] 🚀 Starting background AI comment generation")
-        print(f"[AI_COMMENTS] Game ID: {game_analysis.game_id}")
-        print(f"[AI_COMMENTS] User ID: {game_analysis.user_id}")
-        print(f"[AI_COMMENTS] Platform: {game_analysis.platform}")
-        print(f"[AI_COMMENTS] Total moves: {len(game_analysis.moves_analysis)}")
-        print(f"[AI_COMMENTS] ========================================")
+        logger.info(f"========================================")
+        logger.info(f"🚀 Starting background AI comment generation")
+        logger.info(f"Game ID: {game_analysis.game_id}")
+        logger.info(f"User ID: {game_analysis.user_id}")
+        logger.info(f"Platform: {game_analysis.platform}")
+        logger.info(f"Total moves: {len(game_analysis.moves_analysis)}")
+        logger.info(f"========================================")
 
         from .ai_comment_service import generate_comments_parallel, CommentGenerationConfig
 
@@ -9283,17 +9300,17 @@ async def _generate_ai_comments_background(game_analysis: GameAnalysis) -> None:
         )
 
         if success:
-            print(f"[AI_COMMENTS] ✅ Background AI comment generation completed for game_id: {game_analysis.game_id}")
+            logger.info(f"✅ Background AI comment generation completed for game_id: {game_analysis.game_id}")
         else:
-            print(f"[AI_COMMENTS] ⚠️  Background AI comment generation completed but database update failed for game_id: {game_analysis.game_id}")
+            logger.info(f"⚠️  Background AI comment generation completed but database update failed for game_id: {game_analysis.game_id}")
 
     except Exception as e:
-        print(f"[AI_COMMENTS] ❌❌❌ ERROR in background AI comment generation ❌❌❌")
-        print(f"[AI_COMMENTS] Error type: {type(e).__name__}")
-        print(f"[AI_COMMENTS] Error message: {str(e)}")
-        print(f"[AI_COMMENTS] Full traceback:")
+        logger.info(f"❌❌❌ ERROR in background AI comment generation ❌❌❌")
+        logger.info(f"Error type: {type(e).__name__}")
+        logger.info(f"Error message: {str(e)}")
+        logger.info(f"Full traceback:")
         traceback.print_exc()
-        print(f"[AI_COMMENTS] ❌❌❌ END ERROR ❌❌❌")
+        logger.info(f"❌❌❌ END ERROR ❌❌❌")
         # Don't raise - this is a background task, errors shouldn't crash the server
 
 
@@ -9308,7 +9325,7 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
                 # Invalidate cache for this user/platform to ensure fresh stats
                 _invalidate_cache(canonical_user_id, analysis.platform)
                 if DEBUG:
-                    print(f"[CACHE] Invalidated cache for {canonical_user_id}:{analysis.platform} after successful analysis save")
+                    logger.debug(f"Invalidated cache for {canonical_user_id}:{analysis.platform} after successful analysis save")
             return result.success
 
         moves_analysis_dict = []
@@ -9394,9 +9411,9 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
             'ai_comments_status': 'pending'  # Will be updated to 'completed' when AI comments are generated
         }
 
-        print(f"[SAVE ANALYSIS] Attempting to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
-        print(f"[SAVE ANALYSIS] Data keys: {list(data.keys())}")
-        print(f"[SAVE ANALYSIS] Number of moves: {len(moves_analysis_dict)}")
+        logger.info(f"Attempting to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+        logger.info(f"Data keys: {list(data.keys())}")
+        logger.info(f"Number of moves: {len(moves_analysis_dict)}")
 
         response = await asyncio.to_thread(
             lambda: supabase_service.table('move_analyses').upsert(
@@ -9407,26 +9424,26 @@ async def _save_stockfish_analysis(analysis: GameAnalysis) -> bool:
 
         success = bool(getattr(response, 'data', None))
         if success:
-            print(f"[SAVE ANALYSIS] ✅ Successfully saved analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
-            print(f"[SAVE ANALYSIS] Saved data game_id: {data.get('game_id')}")
-            print(f"[SAVE ANALYSIS] Response data exists: {bool(response.data)}")
+            logger.info(f"✅ Successfully saved analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+            logger.info(f"Saved data game_id: {data.get('game_id')}")
+            logger.info(f"Response data exists: {bool(response.data)}")
             if response.data:
-                print(f"[SAVE ANALYSIS] Response data game_id: {response.data[0].get('game_id') if isinstance(response.data, list) and len(response.data) > 0 else 'N/A'}")
+                logger.info(f"Response data game_id: {response.data[0].get('game_id') if isinstance(response.data, list) and len(response.data) > 0 else 'N/A'}")
             # Invalidate cache for this user/platform to ensure fresh stats
             _invalidate_cache(canonical_user_id, analysis.platform)
         else:
-            print(f"[SAVE ANALYSIS] ❌ Failed to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
-            print(f"[SAVE ANALYSIS] Response type: {type(response)}")
-            print(f"[SAVE ANALYSIS] Response has data attr: {hasattr(response, 'data')}")
+            logger.error(f"❌ Failed to save analysis for game_id: {analysis.game_id}, user: {canonical_user_id}, platform: {analysis.platform}")
+            logger.info(f"Response type: {type(response)}")
+            logger.info(f"Response has data attr: {hasattr(response, 'data')}")
             if hasattr(response, 'data'):
-                print(f"[SAVE ANALYSIS] Response.data: {response.data}")
-            print(f"[SAVE ANALYSIS] Response str: {str(response)[:500]}")
+                logger.info(f"Response.data: {response.data}")
+            logger.info(f"Response str: {str(response)[:500]}")
             if DEBUG:
-                print(f"[CACHE] Invalidated cache for {canonical_user_id}:{analysis.platform} after successful analysis save (fallback path)")
+                logger.debug(f"Invalidated cache for {canonical_user_id}:{analysis.platform} after successful analysis save (fallback path)")
         return success
 
     except Exception as e:
-        print(f"Error saving Stockfish analysis: {e}")
+        logger.info(f"Error saving Stockfish analysis: {e}")
         return False
 
 
@@ -9916,6 +9933,9 @@ async def check_usage(
     if not auth_user_id or auth_user_id != request.user_id:
         raise HTTPException(status_code=403, detail="Cannot check usage for other users")
 
+    # Rate limit auth operations
+    _enforce_rate_limit(f"auth:{auth_user_id}", AUTH_RATE_LIMIT)
+
     try:
         stats = await usage_tracker.get_usage_stats(request.user_id)
         return stats
@@ -9989,6 +10009,9 @@ async def get_user_profile(token_data: Annotated[dict, Depends(verify_token)]):
             status_code=401,
             content={"success": False, "message": "Invalid token"}
         )
+
+    # Rate limit profile reads
+    _enforce_rate_limit(f"auth:{user_id}", AUTH_RATE_LIMIT)
 
     try:
         # Get user profile
@@ -10082,6 +10105,9 @@ async def link_chess_account(
     user_id = token_data.get('sub')
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Rate limit account linking operations
+    _enforce_rate_limit(f"auth:{user_id}", AUTH_RATE_LIMIT)
 
     username = request.username.strip()
     platform = request.platform
@@ -10464,7 +10490,7 @@ async def complete_onboarding(
 @app.post("/api/v1/payments/create-checkout")
 async def create_checkout_session(
     request: CreateCheckoutRequest,
-    token_data: Annotated[dict, Depends(verify_token)]
+    token_data: Annotated[dict, Depends(verify_token_required)]
 ):
     """
     Create a Stripe checkout session for subscription or credit purchase.
@@ -10554,7 +10580,7 @@ async def stripe_webhook(request: Request):
         )
 
 @app.get("/api/v1/payments/subscription")
-async def get_subscription(token_data: Annotated[dict, Depends(verify_token)]):
+async def get_subscription(token_data: Annotated[dict, Depends(verify_token_required)]):
     """
     Get user's current subscription status.
     Requires authentication to prevent unauthorized access to subscription info.
@@ -10590,7 +10616,7 @@ async def get_subscription(token_data: Annotated[dict, Depends(verify_token)]):
 @app.post("/api/v1/payments/verify-session")
 async def verify_stripe_session(
     request: VerifySessionRequest,
-    token_data: Annotated[dict, Depends(verify_token)]
+    token_data: Annotated[dict, Depends(verify_token_required)]
 ):
     """
     Verify a Stripe checkout session and update user subscription if needed.
@@ -10635,7 +10661,7 @@ async def verify_stripe_session(
         )
 
 @app.post("/api/v1/payments/cancel")
-async def cancel_subscription(token_data: Annotated[dict, Depends(verify_token)]):
+async def cancel_subscription(token_data: Annotated[dict, Depends(verify_token_required)]):
     """
     Cancel user's subscription (at end of billing period).
     Requires authentication to prevent unauthorized cancellations.
@@ -11595,6 +11621,9 @@ async def get_engine_move(
             status_code=401,
             detail="Authentication required. Please log in to access coach features."
         )
+
+    # Rate limit coach play-move operations
+    _enforce_rate_limit(f"coach:{auth_user_id}", COACH_RATE_LIMIT)
 
     if not await _check_premium_access(auth_user_id):
         raise HTTPException(
@@ -13700,17 +13729,17 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    print(f"Starting Unified Chess Analysis API Server v3.0 on {args.host}:{args.port}")
-    print("This server provides a single, comprehensive API for all chess analysis operations!")
-    print("Available analysis types: stockfish, deep")
-    print("Unified endpoints:")
-    print("  - POST /api/v1/analyze (handles all analysis types)")
-    print("  - GET /api/v1/results/{user_id}/{platform}")
-    print("  - GET /api/v1/stats/{user_id}/{platform}")
-    print("  - GET /api/v1/analyses/{user_id}/{platform}")
-    print("  - GET /api/v1/progress/{user_id}/{platform}")
-    print("  - GET /api/v1/deep-analysis/{user_id}/{platform}")
-    print("  - POST /api/v1/auth/* (authentication endpoints)")
-    print("  - POST /api/v1/payments/* (payment endpoints)")
+    logger.info(f"Starting Unified Chess Analysis API Server v3.0 on {args.host}:{args.port}")
+    logger.info("This server provides a single, comprehensive API for all chess analysis operations!")
+    logger.info("Available analysis types: stockfish, deep")
+    logger.info("Unified endpoints:")
+    logger.info("  - POST /api/v1/analyze (handles all analysis types)")
+    logger.info("  - GET /api/v1/results/{user_id}/{platform}")
+    logger.info("  - GET /api/v1/stats/{user_id}/{platform}")
+    logger.info("  - GET /api/v1/analyses/{user_id}/{platform}")
+    logger.info("  - GET /api/v1/progress/{user_id}/{platform}")
+    logger.info("  - GET /api/v1/deep-analysis/{user_id}/{platform}")
+    logger.info("  - POST /api/v1/auth/* (authentication endpoints)")
+    logger.info("  - POST /api/v1/payments/* (payment endpoints)")
 
     uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)

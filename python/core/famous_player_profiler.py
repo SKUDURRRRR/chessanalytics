@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 #!/usr/bin/env python3
 """
 Famous Player Profiler
@@ -204,7 +208,7 @@ class FamousPlayerProfiler:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(profiles_dict, f, indent=2, ensure_ascii=False)
 
-        print(f"Saved {len(profiles)} profiles to {output_path}")
+        logger.info(f"Saved {len(profiles)} profiles to {output_path}")
 
     def load_profiles(self, input_path: str) -> List[FamousPlayerProfile]:
         """Load profiles from JSON file."""
@@ -242,7 +246,7 @@ def load_famous_player_database(database_path: str = None) -> List[Dict[str, Any
         )
 
     if not os.path.exists(database_path):
-        print(f"Warning: Famous player database not found at {database_path}")
+        logger.warning(f"Warning: Famous player database not found at {database_path}")
         return []
 
     profiler = FamousPlayerProfiler()

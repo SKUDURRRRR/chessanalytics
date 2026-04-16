@@ -361,19 +361,19 @@ def can_analyze_batch(num_games: int) -> tuple[bool, str]:
 
 if __name__ == "__main__":
     # Test configuration
-    print("\n=== Configuration Test ===\n")
+    logger.info("\n=== Configuration Test ===\n")
 
     config = get_current_config()
 
-    print(f"\nEstimated analysis times:")
+    logger.info(f"\nEstimated analysis times:")
     for moves in [20, 40, 60, 80]:
         time = get_estimated_analysis_time(moves)
         can_analyze, reason = can_analyze_game(moves)
         status = "✓" if can_analyze else "✗"
-        print(f"  {status} {moves} moves: {time:.1f}s - {reason}")
+        logger.info(f"  {status} {moves} moves: {time:.1f}s - {reason}")
 
-    print(f"\nBatch analysis limits:")
+    logger.info(f"\nBatch analysis limits:")
     for batch_size in [1, 3, 5, 10]:
         can_analyze, reason = can_analyze_batch(batch_size)
         status = "✓" if can_analyze else "✗"
-        print(f"  {status} {batch_size} games: {reason}")
+        logger.info(f"  {status} {batch_size} games: {reason}")

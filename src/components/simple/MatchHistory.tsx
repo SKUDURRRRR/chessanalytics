@@ -1,5 +1,5 @@
 // Match History Component - Shows recent games in a table format
-import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { memo, useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { getOpeningNameWithFallback } from '../../utils/openingIdentification'
 import { normalizeOpeningName } from '../../utils/openingUtils'
@@ -62,7 +62,7 @@ const mapGameRow = (raw: any, overridePlatform?: 'lichess' | 'chess.com'): Game 
   }
 }
 
-export function MatchHistory({ userId, platform, openingFilter, opponentFilter, onClearFilter, onGameSelect, onAnalyzedGamesChange, viewMode = 'single', secondaryUserId, secondaryPlatform }: MatchHistoryProps) {
+export const MatchHistory = memo(function MatchHistory({ userId, platform, openingFilter, opponentFilter, onClearFilter, onGameSelect, onAnalyzedGamesChange, viewMode = 'single', secondaryUserId, secondaryPlatform }: MatchHistoryProps) {
   const [games, setGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -970,4 +970,4 @@ export function MatchHistory({ userId, platform, openingFilter, opponentFilter, 
       />
     </div>
   )
-}
+})

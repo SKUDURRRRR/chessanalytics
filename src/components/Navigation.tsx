@@ -140,6 +140,8 @@ export function Navigation() {
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                     className="p-2 rounded-md text-gray-500 hover:text-gray-400 hover:bg-white/[0.03] transition-colors"
                     aria-label="Menu"
+                    aria-expanded={isDropdownOpen}
+                    aria-haspopup="true"
                   >
                     {isDropdownOpen ? <X size={18} /> : <Menu size={18} />}
                   </button>
@@ -147,6 +149,7 @@ export function Navigation() {
                   {isDropdownOpen && (
                     <div
                       className="absolute right-0 mt-2 w-48 bg-surface-1 shadow-modal rounded-lg z-40 overflow-hidden"
+                      role="menu"
                     >
                       <div className="py-1">
                         <Link
@@ -271,6 +274,8 @@ export function Navigation() {
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                     className="p-2 rounded-md text-gray-500 hover:text-gray-400 hover:bg-white/[0.03] transition-colors"
                     aria-label="Menu"
+                    aria-expanded={isDropdownOpen}
+                    aria-haspopup="true"
                   >
                     {isDropdownOpen ? <X size={18} /> : <Menu size={18} />}
                   </button>
@@ -278,6 +283,7 @@ export function Navigation() {
                   {isDropdownOpen && (
                     <div
                       className="absolute right-0 mt-2 w-48 bg-surface-1 shadow-modal rounded-lg z-40 overflow-hidden"
+                      role="menu"
                     >
                       <div className="py-1">
                         <Link

@@ -170,7 +170,7 @@ function parseAiStyleAnalysis(aiStyleAnalysis: unknown): DeepAnalysisData['ai_st
         }
       }
     } catch (e) {
-      console.warn('Failed to parse ai_style_analysis as JSON:', e)
+      logger.warn('Failed to parse ai_style_analysis as JSON:', e)
     }
   }
 
@@ -314,8 +314,8 @@ export class UnifiedAnalysisService {
     useParallel: boolean = true
   ): Promise<AnalysisResponse> {
     try {
-      console.log('🔧 startBatchAnalysis called with:', { userId, platform, analysisType, limit })
-      console.log('🔧 User ID type:', typeof userId, 'Value:', JSON.stringify(userId))
+      logger.log('🔧 startBatchAnalysis called with:', { userId, platform, analysisType, limit })
+      logger.log('🔧 User ID type:', typeof userId, 'Value:', JSON.stringify(userId))
       const response = await this.analyze({
         user_id: userId,
         platform: platform,
@@ -331,7 +331,7 @@ export class UnifiedAnalysisService {
         analysis_id: response.analysis_id
       }
     } catch (error) {
-      console.error('Error starting batch analysis:', error)
+      logger.error('Error starting batch analysis:', error)
       throw new Error('Failed to start batch analysis')
     }
   }
@@ -356,7 +356,7 @@ export class UnifiedAnalysisService {
         depth: depth
       })
     } catch (error) {
-      console.error('Error analyzing game:', error)
+      logger.error('Error analyzing game:', error)
       throw new Error('Failed to analyze game')
     }
   }
@@ -379,7 +379,7 @@ export class UnifiedAnalysisService {
         depth: depth
       })
     } catch (error) {
-      console.error('Error analyzing position:', error)
+      logger.error('Error analyzing position:', error)
       throw new Error('Failed to analyze position')
     }
   }
@@ -404,7 +404,7 @@ export class UnifiedAnalysisService {
         depth: depth
       })
     } catch (error) {
-      console.error('Error analyzing move:', error)
+      logger.error('Error analyzing move:', error)
       throw new Error('Failed to analyze move')
     }
   }
@@ -431,7 +431,7 @@ export class UnifiedAnalysisService {
       const data = await response.json()
       return data
     } catch (error) {
-      console.error('Error fetching analysis results:', error)
+      logger.error('Error fetching analysis results:', error)
       return []
     }
   }
@@ -455,20 +455,20 @@ export class UnifiedAnalysisService {
     return withCache(cacheKey, async () => {
       try {
         const url = `${UNIFIED_API_URL}/api/v1/stats/${userId}/${platform}?analysis_type=${analysisType}`
-        console.log(`Fetching analysis stats from: ${url}`)
+        logger.log(`Fetching analysis stats from: ${url}`)
 
         const response = await fetch(url)
 
         if (!response.ok) {
-          console.error(`HTTP error! status: ${response.status} for user ${userId}`)
+          logger.error(`HTTP error! status: ${response.status} for user ${userId}`)
           throw new Error(`HTTP error! status: ${response.status}`)
         }
 
         const data = await response.json()
-        console.log(`Analysis stats response for ${userId}:`, data)
+        logger.log(`Analysis stats response for ${userId}:`, data)
         return data
       } catch (error) {
-        console.error('Error fetching analysis stats:', error)
+        logger.error('Error fetching analysis stats:', error)
         return null
       }
     }, 60 * 60 * 1000, statsValidator) // 60 minute cache for stats (was 10 min - backend is very slow, cache aggressively)
@@ -495,20 +495,20 @@ export class UnifiedAnalysisService {
     return withCache(cacheKey, async () => {
       try {
         const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}?analysis_type=${analysisType}&limit=${limit}&offset=${offset}`
-        console.log(`Fetching game analyses from: ${url}`)
+        logger.log(`Fetching game analyses from: ${url}`)
 
         const response = await fetch(url)
 
         if (!response.ok) {
-          console.error(`HTTP error! status: ${response.status} for user ${userId}`)
+          logger.error(`HTTP error! status: ${response.status} for user ${userId}`)
           throw new Error(`HTTP error! status: ${response.status}`)
         }
 
         const data = await response.json()
-        console.log(`Game analyses response for ${userId}: ${Array.isArray(data) ? data.length : 0} records`)
+        logger.log(`Game analyses response for ${userId}: ${Array.isArray(data) ? data.length : 0} records`)
         return Array.isArray(data) ? data : []
       } catch (error) {
-        console.error('Error fetching game analyses:', error)
+        logger.error('Error fetching game analyses:', error)
         return []
       }
     }, 15 * 60 * 1000, analysesValidator) // 15 minute cache for game analyses (was 5 min - increased for better performance)
@@ -524,19 +524,19 @@ export class UnifiedAnalysisService {
   ): Promise<number> {
     try {
       const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}/count?analysis_type=${analysisType}`
-      console.log(`Fetching game analyses count from: ${url}`)
+      logger.log(`Fetching game analyses count from: ${url}`)
 
       const response = await fetch(url)
 
       if (!response.ok) {
-        console.error(`HTTP error! status: ${response.status} for user ${userId}`)
+        logger.error(`HTTP error! status: ${response.status} for user ${userId}`)
         return 0
       }
 
       const data = await response.json()
       return data.count || 0
     } catch (error) {
-      console.error('Error fetching game analyses count:', error)
+      logger.error('Error fetching game analyses count:', error)
       return 0
     }
   }
@@ -558,7 +558,7 @@ export class UnifiedAnalysisService {
 
     try {
       const url = `${UNIFIED_API_URL}/api/v1/analyses/${userId}/${platform}/check?analysis_type=${analysisType}`
-      console.log(`Checking analyzed games from: ${url}`)
+      logger.log(`Checking analyzed games from: ${url}`)
 
       const response = await fetch(url, {
         method: 'POST',
@@ -567,7 +567,7 @@ export class UnifiedAnalysisService {
       })
 
       if (!response.ok) {
-        console.error(`HTTP error! status: ${response.status} for user ${userId}`)
+        logger.error(`HTTP error! status: ${response.status} for user ${userId}`)
         return new Map()
       }
 
@@ -592,10 +592,10 @@ export class UnifiedAnalysisService {
         }
       })
 
-      console.log(`Found ${analyzedGames.length} analyzed games out of ${gameIds.length} requested`)
+      logger.log(`Found ${analyzedGames.length} analyzed games out of ${gameIds.length} requested`)
       return resultMap
     } catch (error) {
-      console.error('Error checking analyzed games:', error)
+      logger.error('Error checking analyzed games:', error)
       return new Map()
     }
   }
@@ -624,7 +624,7 @@ export class UnifiedAnalysisService {
       const data = await response.json()
       return data.ai_comments_status || 'pending'
     } catch (error) {
-      console.error('Error fetching AI comments status:', error)
+      logger.error('Error fetching AI comments status:', error)
       return null
     }
   }
@@ -666,21 +666,21 @@ export class UnifiedAnalysisService {
           if (typeof window !== 'undefined' && win.toast) {
             win.toast.success('AI insights ready!')
           } else {
-            console.log('✅ AI insights ready!')
+            logger.log('✅ AI insights ready!')
           }
           return
         }
 
         if (attempts >= maxAttempts) {
           // Max attempts reached, stop polling
-          console.log(`⏱️ AI comments polling stopped after ${attempts} attempts`)
+          logger.log(`⏱️ AI comments polling stopped after ${attempts} attempts`)
           return
         }
 
         // Continue polling
         setTimeout(poll, pollInterval)
       } catch (error) {
-        console.error('Error polling for AI comments:', error)
+        logger.error('Error polling for AI comments:', error)
         if (onError) {
           onError(error as Error)
         }
@@ -704,12 +704,12 @@ export class UnifiedAnalysisService {
     const url = `${UNIFIED_API_URL}/api/v1/progress/${sanitizedUserId}/${sanitizedPlatform}`
 
     try {
-      console.log('Fetching analysis progress from:', url)
+      logger.log('Fetching analysis progress from:', url)
       const response = await fetch(url)
 
       if (!response.ok) {
         if (response.status === 404) {
-          console.warn('Analysis progress endpoint not found. Backend may not be running.')
+          logger.warn('Analysis progress endpoint not found. Backend may not be running.')
           return null
         }
         throw new Error(`HTTP error! status: ${response.status}`)
@@ -718,7 +718,7 @@ export class UnifiedAnalysisService {
       const data = await response.json()
       return data
     } catch (error) {
-      console.error('Error fetching analysis progress:', error)
+      logger.error('Error fetching analysis progress:', error)
       return null
     }
   }
@@ -733,19 +733,19 @@ export class UnifiedAnalysisService {
     const progressUrl = `${UNIFIED_API_URL}/api/v1/progress-realtime/${sanitizedUserId}/${sanitizedPlatform}?analysis_type=${analysisType}`
 
     try {
-      console.log('Fetching realtime analysis progress from:', progressUrl)
+      logger.log('Fetching realtime analysis progress from:', progressUrl)
       const response = await fetch(progressUrl)
       if (response.ok) {
         const realtimeData = await response.json()
-        console.log('Realtime progress response:', realtimeData)
+        logger.log('Realtime progress response:', realtimeData)
         return realtimeData
       }
 
-      console.warn('Realtime progress request failed, status:', response.status)
+      logger.warn('Realtime progress request failed, status:', response.status)
       const errorText = await response.text()
-      console.warn('Error response:', errorText)
+      logger.warn('Error response:', errorText)
     } catch (error) {
-      console.error('Error fetching realtime analysis progress:', error)
+      logger.error('Error fetching realtime analysis progress:', error)
     }
 
     // Fall back to the persisted progress endpoint so the UI still shows activity
@@ -780,7 +780,7 @@ export class UnifiedAnalysisService {
     // If forceRefresh is true, skip cache and fetch directly
     if (forceRefresh) {
       if (import.meta.env.DEV) {
-        console.log('[DeepAnalysis] Force refresh - bypassing cache')
+        logger.log('[DeepAnalysis] Force refresh - bypassing cache')
       }
       apiCache.delete(cacheKey)
     }
@@ -811,7 +811,7 @@ export class UnifiedAnalysisService {
 
         return validatedData
       } catch (error) {
-        console.error('Error fetching deep analysis:', error)
+        logger.error('Error fetching deep analysis:', error)
 
       // Return fallback data with neutral personality scores
       return {
@@ -872,14 +872,14 @@ export class UnifiedAnalysisService {
       })
 
       if (!response.ok) {
-        console.error(`Failed to clear backend cache: ${response.status}`)
+        logger.error(`Failed to clear backend cache: ${response.status}`)
         return
       }
 
       const data = await response.json()
-      console.log('[Cache] Backend cache cleared:', data)
+      logger.log('[Cache] Backend cache cleared:', data)
     } catch (error) {
-      console.error('Error clearing backend cache:', error)
+      logger.error('Error clearing backend cache:', error)
     }
   }
 
@@ -898,7 +898,7 @@ export class UnifiedAnalysisService {
     total_games: number
   }> {
     if (!validateUserId(userId) || !validatePlatform(platform)) {
-      console.error('Invalid userId or platform for getEloStats')
+      logger.error('Invalid userId or platform for getEloStats')
       return {
         highest_elo: null,
         time_control: null,
@@ -917,7 +917,7 @@ export class UnifiedAnalysisService {
       })
 
       if (!response.ok) {
-        console.error(`Failed to fetch ELO stats: ${response.status}`)
+        logger.error(`Failed to fetch ELO stats: ${response.status}`)
         return {
           highest_elo: null,
           time_control: null,
@@ -930,7 +930,7 @@ export class UnifiedAnalysisService {
       const data = await response.json()
       return data
     } catch (error) {
-      console.error('Error fetching ELO stats:', error)
+      logger.error('Error fetching ELO stats:', error)
       return {
         highest_elo: null,
         time_control: null,
@@ -955,7 +955,7 @@ export class UnifiedAnalysisService {
     [key: string]: unknown
   }> {
     if (!validateUserId(userId) || !validatePlatform(platform)) {
-      console.error('Invalid userId or platform for getComprehensiveAnalytics')
+      logger.error('Invalid userId or platform for getComprehensiveAnalytics')
       return {
         total_games: 0,
         games: [],
@@ -992,7 +992,7 @@ export class UnifiedAnalysisService {
         )
 
         if (!response.ok) {
-          console.error(`Failed to fetch comprehensive analytics: ${response.status}`)
+          logger.error(`Failed to fetch comprehensive analytics: ${response.status}`)
           return {
             total_games: 0,
             games: [],
@@ -1003,7 +1003,7 @@ export class UnifiedAnalysisService {
         const data = await response.json()
         return data
       } catch (error) {
-        console.error('Error fetching comprehensive analytics:', error)
+        logger.error('Error fetching comprehensive analytics:', error)
         return {
           total_games: 0,
           games: [],
@@ -1022,7 +1022,7 @@ export class UnifiedAnalysisService {
     limit: number = 10000
   ): Promise<Record<string, unknown>[]> {
     if (!validateUserId(userId) || !validatePlatform(platform)) {
-      console.error('Invalid userId or platform for getEloHistory')
+      logger.error('Invalid userId or platform for getEloHistory')
       return []
     }
 
@@ -1038,14 +1038,14 @@ export class UnifiedAnalysisService {
       )
 
       if (!response.ok) {
-        console.error(`Failed to fetch ELO history: ${response.status}`)
+        logger.error(`Failed to fetch ELO history: ${response.status}`)
         return []
       }
 
       const data = await response.json()
       return data
     } catch (error) {
-      console.error('Error fetching ELO history:', error)
+      logger.error('Error fetching ELO history:', error)
       return []
     }
   }
@@ -1066,7 +1066,7 @@ export class UnifiedAnalysisService {
     validation_issues: string[]
   }> {
     if (!validateUserId(userId) || !validatePlatform(platform)) {
-      console.error('Invalid userId or platform for getPlayerStats')
+      logger.error('Invalid userId or platform for getPlayerStats')
       return {
         highest_elo: null,
         time_control_with_highest_elo: null,
@@ -1086,7 +1086,7 @@ export class UnifiedAnalysisService {
       )
 
       if (!response.ok) {
-        console.error(`Failed to fetch player stats: ${response.status}`)
+        logger.error(`Failed to fetch player stats: ${response.status}`)
         return {
           highest_elo: null,
           time_control_with_highest_elo: null,
@@ -1097,7 +1097,7 @@ export class UnifiedAnalysisService {
       const data = await response.json()
       return data
     } catch (error) {
-      console.error('Error fetching player stats:', error)
+      logger.error('Error fetching player stats:', error)
       return {
         highest_elo: null,
         time_control_with_highest_elo: null,
@@ -1121,7 +1121,7 @@ export class UnifiedAnalysisService {
     }
   ): Promise<Record<string, unknown>[]> {
     if (!validateUserId(userId) || !validatePlatform(platform)) {
-      console.error('Invalid userId or platform for getMatchHistory')
+      logger.error('Invalid userId or platform for getMatchHistory')
       return []
     }
 
@@ -1152,14 +1152,14 @@ export class UnifiedAnalysisService {
       )
 
       if (!response.ok) {
-        console.error(`Failed to fetch match history: ${response.status}`)
+        logger.error(`Failed to fetch match history: ${response.status}`)
         return []
       }
 
       const data = await response.json()
       return data
     } catch (error) {
-      console.error('Error fetching match history:', error)
+      logger.error('Error fetching match history:', error)
       return []
     }
   }
@@ -1170,12 +1170,12 @@ export class UnifiedAnalysisService {
    */
   static async checkHealth(): Promise<boolean> {
     try {
-      console.log('🔍 Health check URL:', `${UNIFIED_API_URL}/health`)
+      logger.log('🔍 Health check URL:', `${UNIFIED_API_URL}/health`)
       const response = await fetch(`${UNIFIED_API_URL}/health`)
-      console.log('🔍 Health check response status:', response.status)
+      logger.log('🔍 Health check response status:', response.status)
       return response.ok
     } catch (error) {
-      console.error('Analysis API not available:', error)
+      logger.error('Analysis API not available:', error)
       return false
     }
   }
@@ -1189,7 +1189,7 @@ export class UnifiedAnalysisService {
       const response = await fetch(`${UNIFIED_API_URL}/`)
       return await response.json()
     } catch (error) {
-      console.error('Error fetching API info:', error)
+      logger.error('Error fetching API info:', error)
       return null
     }
   }
@@ -1232,7 +1232,7 @@ export class UnifiedAnalysisService {
         progress
       }
     } catch (error) {
-      console.error('Error getting comprehensive analysis:', error)
+      logger.error('Error getting comprehensive analysis:', error)
       throw new Error('Failed to get comprehensive analysis')
     }
   }

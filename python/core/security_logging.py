@@ -48,57 +48,57 @@ class SecurityLogEntry:
     message: str
     details: Dict[str, Any]
     severity: int  # 1-10 scale
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
 
 class SecurityLogger:
     """Secure logging system with audit trails."""
-    
+
     def __init__(self, log_file: Optional[str] = None, log_level: LogLevel = LogLevel.INFO):
         self.log_file = log_file or os.getenv("SECURITY_LOG_FILE", "security.log")
         self.log_level = log_level
         self.logger = self._setup_logger()
-        
+
         # Security settings
         self.audit_enabled = os.getenv("AUDIT_ENABLED", "true").lower() == "true"
         self.encrypt_logs = os.getenv("ENCRYPT_LOGS", "false").lower() == "true"
         self.log_retention_days = int(os.getenv("LOG_RETENTION_DAYS", "30"))
-        
+
         # Rate limiting for security events
         self.rate_limit_window = 300  # 5 minutes
         self.rate_limit_max_events = 100
         self.event_counts = {}
-    
+
     def _setup_logger(self) -> logging.Logger:
         """Setup structured logger."""
         logger = logging.getLogger("security")
         logger.setLevel(self.log_level.value)
-        
+
         # Clear existing handlers
         logger.handlers.clear()
-        
+
         # File handler for security logs
         file_handler = logging.FileHandler(self.log_file)
         file_handler.setLevel(self.log_level.value)
-        
+
         # Console handler for critical events
         console_handler = logging.StreamHandler()
         console_handler.setLevel(LogLevel.WARNING.value)
-        
+
         # JSON formatter for structured logging
         json_formatter = JSONFormatter()
         file_handler.setFormatter(json_formatter)
         console_handler.setFormatter(logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         ))
-        
+
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)
-        
+
         return logger
-    
+
     def log_security_event(
         self,
         event_type: SecurityEvent,
@@ -113,11 +113,11 @@ class SecurityLogger:
         """Log a security event with structured data."""
         if not self.audit_enabled:
             return
-        
+
         # Check rate limiting
         if self._is_rate_limited(event_type, user_id, ip_address):
             return
-        
+
         # Create log entry
         log_entry = SecurityLogEntry(
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -131,39 +131,39 @@ class SecurityLogger:
             details=details or {},
             severity=severity
         )
-        
+
         # Log the event
         self.logger.log(
             getattr(logging, log_entry.level.value),
             json.dumps(log_entry.to_dict(), default=str)
         )
-        
+
         # Alert on high severity events
         if severity >= 8:
             self._send_security_alert(log_entry)
-    
+
     def _is_rate_limited(self, event_type: SecurityEvent, user_id: Optional[str], ip_address: Optional[str]) -> bool:
         """Check if event should be rate limited."""
         key = f"{event_type.value}:{user_id}:{ip_address}"
         now = datetime.now(timezone.utc).timestamp()
-        
+
         if key not in self.event_counts:
             self.event_counts[key] = []
-        
+
         # Clean old events
         self.event_counts[key] = [
             timestamp for timestamp in self.event_counts[key]
             if now - timestamp < self.rate_limit_window
         ]
-        
+
         # Check if rate limit exceeded
         if len(self.event_counts[key]) >= self.rate_limit_max_events:
             return True
-        
+
         # Add current event
         self.event_counts[key].append(now)
         return False
-    
+
     def _get_log_level(self, severity: int) -> LogLevel:
         """Convert severity to log level."""
         if severity >= 9:
@@ -176,14 +176,14 @@ class SecurityLogger:
             return LogLevel.INFO
         else:
             return LogLevel.DEBUG
-    
+
     def _send_security_alert(self, log_entry: SecurityLogEntry):
         """Send security alert for high severity events."""
         # In production, this would integrate with alerting systems
-        print(f"🚨 SECURITY ALERT: {log_entry.event_type.value} - {log_entry.message}")
-        print(f"   User: {log_entry.user_id}, IP: {log_entry.ip_address}")
-        print(f"   Severity: {log_entry.severity}/10")
-    
+        logger.info(f"🚨 SECURITY ALERT: {log_entry.event_type.value} - {log_entry.message}")
+        logger.info(f"   User: {log_entry.user_id}, IP: {log_entry.ip_address}")
+        logger.info(f"   Severity: {log_entry.severity}/10")
+
     def log_authentication_success(self, user_id: str, ip_address: str, user_agent: str, request_id: str):
         """Log successful authentication."""
         self.log_security_event(
@@ -195,7 +195,7 @@ class SecurityLogger:
             request_id=request_id,
             severity=3
         )
-    
+
     def log_authentication_failure(self, user_id: str, ip_address: str, user_agent: str, request_id: str, reason: str):
         """Log failed authentication attempt."""
         self.log_security_event(
@@ -208,7 +208,7 @@ class SecurityLogger:
             details={"reason": reason},
             severity=6
         )
-    
+
     def log_authorization_denied(self, user_id: str, resource: str, action: str, ip_address: str, request_id: str):
         """Log authorization denial."""
         self.log_security_event(
@@ -220,7 +220,7 @@ class SecurityLogger:
             details={"resource": resource, "action": action},
             severity=7
         )
-    
+
     def log_data_access(self, user_id: str, table: str, operation: str, record_count: int, ip_address: str, request_id: str):
         """Log data access operations."""
         self.log_security_event(
@@ -232,7 +232,7 @@ class SecurityLogger:
             details={"table": table, "operation": operation, "record_count": record_count},
             severity=4
         )
-    
+
     def log_data_modification(self, user_id: str, table: str, operation: str, record_count: int, ip_address: str, request_id: str):
         """Log data modification operations."""
         self.log_security_event(
@@ -244,7 +244,7 @@ class SecurityLogger:
             details={"table": table, "operation": operation, "record_count": record_count},
             severity=5
         )
-    
+
     def log_system_error(self, error: Exception, context: str, user_id: Optional[str] = None, request_id: Optional[str] = None):
         """Log system errors with context."""
         self.log_security_event(
@@ -259,7 +259,7 @@ class SecurityLogger:
             },
             severity=8
         )
-    
+
     def log_suspicious_activity(self, activity: str, user_id: Optional[str] = None, ip_address: Optional[str] = None, details: Optional[Dict[str, Any]] = None):
         """Log suspicious activity."""
         self.log_security_event(
@@ -273,7 +273,7 @@ class SecurityLogger:
 
 class JSONFormatter(logging.Formatter):
     """JSON formatter for structured logging."""
-    
+
     def format(self, record):
         """Format log record as JSON."""
         log_data = {
@@ -285,16 +285,16 @@ class JSONFormatter(logging.Formatter):
             "function": record.funcName,
             "line": record.lineno
         }
-        
+
         # Add extra fields if present
         if hasattr(record, 'extra_data'):
             log_data.update(record.extra_data)
-        
+
         return json.dumps(log_data, default=str)
 
 class SecurityValidator:
     """Security validation utilities."""
-    
+
     @staticmethod
     def validate_user_id(user_id: str) -> bool:
         """Validate user ID format."""
@@ -302,12 +302,12 @@ class SecurityValidator:
             return False
         # Allow alphanumeric, underscore, hyphen
         return user_id.replace('_', '').replace('-', '').isalnum()
-    
+
     @staticmethod
     def validate_platform(platform: str) -> bool:
         """Validate platform value."""
         return platform in ['lichess', 'chess.com']
-    
+
     @staticmethod
     def validate_ip_address(ip_address: str) -> bool:
         """Basic IP address validation."""
@@ -320,7 +320,7 @@ class SecurityValidator:
             return all(0 <= int(part) <= 255 for part in parts)
         except ValueError:
             return False
-    
+
     @staticmethod
     def sanitize_input(input_str: str) -> str:
         """Sanitize user input."""
@@ -365,7 +365,7 @@ def log_api_request(user_id: str, endpoint: str, method: str, ip_address: str, r
 if __name__ == "__main__":
     # Test security logging
     logger = get_security_logger()
-    
+
     logger.log_authentication_success("testuser", "192.168.1.1", "Mozilla/5.0", "req123")
     logger.log_authentication_failure("testuser", "192.168.1.1", "Mozilla/5.0", "req124", "Invalid token")
     logger.log_data_access("testuser", "games", "SELECT", 10, "192.168.1.1", "req125")

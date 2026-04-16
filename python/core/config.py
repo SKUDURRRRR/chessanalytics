@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 #!/usr/bin/env python3
 """
 Configuration Management for Chess Analysis System
@@ -53,7 +57,7 @@ class StockfishConfig:
             "railway_hobby": "Railway Hobby",
             "railway_pro": "Railway Pro"
         }.get(self.tier, self.tier.title())
-        print(f"[CONFIG] {tier_display}: depth={self.depth}, skill={self.skill_level}, time={self.time_limit}s")
+        logger.info(f"{tier_display}: depth={self.depth}, skill={self.skill_level}, time={self.time_limit}s")
 
 @dataclass
 class AnalysisConfig:
@@ -132,7 +136,7 @@ class ChessAnalysisConfig:
         time_limit = float(os.getenv("STOCKFISH_TIME_LIMIT", str(tier_config.time_limit)))
         max_concurrent = int(os.getenv("STOCKFISH_MAX_CONCURRENT", str(tier_config.max_concurrent_analyses)))
 
-        print(f"[DEBUG] _load_stockfish_config: tier={tier}, depth={depth}, skill={skill_level}, time={time_limit}")
+        logger.debug(f"_load_stockfish_config: tier={tier}, depth={depth}, skill={skill_level}, time={time_limit}")
 
         return StockfishConfig(
             path=stockfish_path,
@@ -195,16 +199,16 @@ class ChessAnalysisConfig:
         """Find the best available Stockfish executable."""
         # Check environment variable first
         env_path = os.getenv("STOCKFISH_PATH")
-        print(f"[STOCKFISH] Environment STOCKFISH_PATH: {env_path}")
+        logger.info(f"Environment STOCKFISH_PATH: {env_path}")
 
         if env_path:
             # If it's just "stockfish", check if it exists in PATH
             if env_path == "stockfish" and self._check_command_exists(env_path):
-                print(f"[STOCKFISH] Found stockfish in PATH via env var")
+                logger.info(f"Found stockfish in PATH via env var")
                 return env_path
             # If it's a full path, check if file exists
             elif os.path.exists(env_path):
-                print(f"[STOCKFISH] Found stockfish at env path: {env_path}")
+                logger.info(f"Found stockfish at env path: {env_path}")
                 return env_path
 
         # Try common paths - prioritize based on environment
@@ -234,34 +238,34 @@ class ChessAnalysisConfig:
 
             # Force check the Railway path first
             if os.path.exists("/usr/games/stockfish"):
-                print(f"[STOCKFISH] Found Stockfish at /usr/games/stockfish (Railway path)")
+                logger.info(f"Found Stockfish at /usr/games/stockfish (Railway path)")
                 return "/usr/games/stockfish"
 
-        print(f"[STOCKFISH] Checking possible paths: {possible_paths}")
+        logger.info(f"Checking possible paths: {possible_paths}")
 
         for path in possible_paths:
             exists = os.path.exists(path)
             in_path = path in ["stockfish", "stockfish.exe"] and self._check_command_exists(path)
-            print(f"[STOCKFISH] Path {path}: exists={exists}, in_path={in_path}")
+            logger.info(f"Path {path}: exists={exists}, in_path={in_path}")
 
             if exists or in_path:
-                print(f"[STOCKFISH] Found stockfish at: {path}")
+                logger.info(f"Found stockfish at: {path}")
                 return path
 
-        print(f"[STOCKFISH] No stockfish executable found")
+        logger.info(f"No stockfish executable found")
         return None
 
     def _check_command_exists(self, command: str) -> bool:
         """Check if a command exists in the system PATH."""
         try:
             import subprocess
-            print(f"[STOCKFISH] Checking if command '{command}' exists in PATH")
+            logger.info(f"Checking if command '{command}' exists in PATH")
             result = subprocess.run([command, "--version"],
                                  capture_output=True, timeout=5, check=False)
-            print(f"[STOCKFISH] Command '{command}' result: returncode={result.returncode}, stdout={result.stdout.decode()[:100] if result.stdout else 'None'}")
+            logger.info(f"Command '{command}' result: returncode={result.returncode}, stdout={result.stdout.decode()[:100] if result.stdout else 'None'}")
             return result.returncode == 0
         except Exception as e:
-            print(f"[STOCKFISH] Exception checking command '{command}': {e}")
+            logger.error(f"Exception checking command '{command}': {e}")
             return False
 
     def save_to_file(self, file_path: Optional[str] = None) -> bool:
@@ -279,10 +283,10 @@ class ChessAnalysisConfig:
             with open(file_path, 'w') as f:
                 json.dump(config_dict, f, indent=2)
 
-            print(f"Configuration saved to {file_path}")
+            logger.info(f"Configuration saved to {file_path}")
             return True
         except Exception as e:
-            print(f"Error saving configuration: {e}")
+            logger.info(f"Error saving configuration: {e}")
             return False
 
     def load_from_file(self, file_path: Optional[str] = None) -> bool:
@@ -290,7 +294,7 @@ class ChessAnalysisConfig:
         try:
             file_path = file_path or self.config_file
             if not os.path.exists(file_path):
-                print(f"Configuration file {file_path} not found")
+                logger.info(f"Configuration file {file_path} not found")
                 return False
 
             with open(file_path, 'r') as f:
@@ -308,10 +312,10 @@ class ChessAnalysisConfig:
             if "logging" in config_dict:
                 self.logging = LoggingConfig(**config_dict["logging"])
 
-            print(f"Configuration loaded from {file_path}")
+            logger.info(f"Configuration loaded from {file_path}")
             return True
         except Exception as e:
-            print(f"Error loading configuration: {e}")
+            logger.info(f"Error loading configuration: {e}")
             return False
 
     def validate(self) -> bool:
@@ -340,9 +344,9 @@ class ChessAnalysisConfig:
             errors.append("Invalid API port")
 
         if errors:
-            print("Configuration validation errors:")
+            logger.info("Configuration validation errors:")
             for error in errors:
-                print(f"  - {error}")
+                logger.info(f"  - {error}")
             return False
 
         return True
@@ -388,9 +392,9 @@ class ChessAnalysisConfig:
             return
         SUMMARY_PRINTED = True
 
-        print("\n" + "="*50)
-        print("CHESS ANALYSIS CONFIGURATION")
-        print("="*50)
+        logger.info("\n" + "="*50)
+        logger.info("CHESS ANALYSIS CONFIGURATION")
+        logger.info("="*50)
 
         # Show detected tier
         tier = get_deployment_tier()
@@ -401,44 +405,44 @@ class ChessAnalysisConfig:
             "railway_hobby": "Railway Hobby",
             "railway_pro": "Railway Pro"
         }.get(tier, tier.title())
-        print(f"\nDeployment Tier: {tier_display}")
+        logger.info(f"\nDeployment Tier: {tier_display}")
 
-        print(f"\nDatabase:")
+        logger.info(f"\nDatabase:")
         # Mask hosted URLs when pointing to Supabase cloud
         if "supabase.co" in self.database.url:
-            print(f"  URL: [HOSTED SUPABASE URL]")
+            logger.info(f"  URL: [HOSTED SUPABASE URL]")
         else:
-            print(f"  URL: {self.database.url[:50]}..." if len(self.database.url) > 50 else f"  URL: {self.database.url}")
-        print(f"  Anon Key: {'*' * 20}...{self.database.anon_key[-4:]}" if self.database.anon_key else "  Anon Key: Not set")
-        print(f"  Timeout: {self.database.timeout}s")
+            logger.info(f"  URL: {self.database.url[:50]}..." if len(self.database.url) > 50 else f"  URL: {self.database.url}")
+        logger.info(f"  Anon Key: {'*' * 20}...{self.database.anon_key[-4:]}" if self.database.anon_key else "  Anon Key: Not set")
+        logger.info(f"  Timeout: {self.database.timeout}s")
 
-        print(f"\nStockfish:")
-        print(f"  Path: {self.stockfish.path or 'Not found'}")
-        print(f"  Depth: {self.stockfish.depth}")
-        print(f"  Skill Level: {self.stockfish.skill_level}")
-        print(f"  Time Limit: {self.stockfish.time_limit}s")
-        print(f"  Max Concurrent: {self.stockfish.max_concurrent}")
+        logger.info(f"\nStockfish:")
+        logger.info(f"  Path: {self.stockfish.path or 'Not found'}")
+        logger.info(f"  Depth: {self.stockfish.depth}")
+        logger.info(f"  Skill Level: {self.stockfish.skill_level}")
+        logger.info(f"  Time Limit: {self.stockfish.time_limit}s")
+        logger.info(f"  Max Concurrent: {self.stockfish.max_concurrent}")
 
-        print(f"\nAnalysis:")
-        print(f"  Default Type: {self.analysis.default_type}")
-        print(f"  Batch Size: {self.analysis.batch_size}")
-        print(f"  Max Games: {self.analysis.max_games_per_request}")
-        print(f"  Parallel: {self.analysis.parallel_processing}")
-        print(f"  Cache: {self.analysis.cache_results}")
-        print(f"  Deep Mode: {self.analysis.enable_deep_mode}")
-        print(f"  Rate Limit: {self.analysis.rate_limit_per_hour}/hour")
+        logger.info(f"\nAnalysis:")
+        logger.info(f"  Default Type: {self.analysis.default_type}")
+        logger.info(f"  Batch Size: {self.analysis.batch_size}")
+        logger.info(f"  Max Games: {self.analysis.max_games_per_request}")
+        logger.info(f"  Parallel: {self.analysis.parallel_processing}")
+        logger.info(f"  Cache: {self.analysis.cache_results}")
+        logger.info(f"  Deep Mode: {self.analysis.enable_deep_mode}")
+        logger.info(f"  Rate Limit: {self.analysis.rate_limit_per_hour}/hour")
 
-        print(f"\nAPI:")
-        print(f"  Host: {self.api.host}")
-        print(f"  Port: {self.api.port}")
-        print(f"  Workers: {self.api.workers}")
-        print(f"  Timeout: {self.api.timeout}s")
+        logger.info(f"\nAPI:")
+        logger.info(f"  Host: {self.api.host}")
+        logger.info(f"  Port: {self.api.port}")
+        logger.info(f"  Workers: {self.api.workers}")
+        logger.info(f"  Timeout: {self.api.timeout}s")
 
-        print(f"\nLogging:")
-        print(f"  Level: {self.logging.level}")
-        print(f"  File: {self.logging.file_path or 'Console only'}")
+        logger.info(f"\nLogging:")
+        logger.info(f"  Level: {self.logging.level}")
+        logger.info(f"  File: {self.logging.file_path or 'Console only'}")
 
-        print("="*50)
+        logger.info("="*50)
 
 # Global configuration instance
 _config = None
@@ -461,7 +465,7 @@ def reload_config(config_file: Optional[str] = None) -> ChessAnalysisConfig:
 
 # Example usage and testing
 if __name__ == "__main__":
-    print("Testing Chess Analysis Configuration...")
+    logger.info("Testing Chess Analysis Configuration...")
 
     # Create configuration
     config = ChessAnalysisConfig()
@@ -471,11 +475,11 @@ if __name__ == "__main__":
 
     # Validate configuration
     if config.validate():
-        print("\n✅ Configuration is valid!")
+        logger.info("\n✅ Configuration is valid!")
     else:
-        print("\n❌ Configuration has errors!")
+        logger.info("\n❌ Configuration has errors!")
 
     # Save configuration
     config.save_to_file("example_config.json")
 
-    print("\n🎉 Configuration testing complete!")
+    logger.info("\n🎉 Configuration testing complete!")

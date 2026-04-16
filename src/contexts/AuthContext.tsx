@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useMemo, u
 import { supabase } from '../lib/supabase'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { logger } from '../utils/logger'
+import config from '../lib/config'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
 import { useToast } from './ToastContext'
 
@@ -63,7 +64,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
+const API_URL = config.getApi().baseUrl
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { showToast } = useToast()

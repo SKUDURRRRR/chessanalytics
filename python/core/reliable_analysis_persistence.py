@@ -17,7 +17,7 @@ from supabase import Client
 from .analysis_engine import GameAnalysis, AnalysisType
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+# logging configured via setup_logging()
 logger = logging.getLogger(__name__)
 
 class PersistenceStatus(Enum):
@@ -164,9 +164,9 @@ class ReliableAnalysisPersistence:
         except Exception as e:
             logger.error(f"Error in atomic save: {str(e)}")
             logger.error(traceback.format_exc())
-            print(f"[PERSISTENCE] ❌ ATOMIC SAVE ERROR: {str(e)}")
-            print(f"[PERSISTENCE] Error type: {type(e).__name__}")
-            print(f"[PERSISTENCE] Traceback: {traceback.format_exc()}")
+            logger.error(f"❌ ATOMIC SAVE ERROR: {str(e)}")
+            logger.info(f"Error type: {type(e).__name__}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
             return False, None
 
     async def _save_to_both_tables(self, analysis_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -183,14 +183,14 @@ class ReliableAnalysisPersistence:
                 )
 
                 if not game_check.data:
-                    print(f"[PERSISTENCE] ❌ Game not found in games table:")
-                    print(f"[PERSISTENCE]    user_id: {analysis_data['user_id']}")
-                    print(f"[PERSISTENCE]    platform: {analysis_data['platform']}")
-                    print(f"[PERSISTENCE]    game_id: {analysis_data['game_id']}")
-                    print(f"[PERSISTENCE] This game must be imported first before analysis can be saved.")
+                    logger.info(f"❌ Game not found in games table:")
+                    logger.info(f"user_id: {analysis_data['user_id']}")
+                    logger.info(f"platform: {analysis_data['platform']}")
+                    logger.info(f"game_id: {analysis_data['game_id']}")
+                    logger.info(f"This game must be imported first before analysis can be saved.")
                     return False, None
             except Exception as check_error:
-                print(f"[PERSISTENCE] ⚠️  Warning: Could not verify game existence: {check_error}")
+                logger.warning(f"⚠️  Warning: Could not verify game existence: {check_error}")
                 # Continue anyway - let the database constraint catch it
 
             game_analyses_data = {
@@ -233,7 +233,7 @@ class ReliableAnalysisPersistence:
                 'stockfish_depth': analysis_data['stockfish_depth']
             }
 
-            print(f"[PERSISTENCE] Saving to game_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, type={analysis_data['analysis_type']}")
+            logger.info(f"Saving to game_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, type={analysis_data['analysis_type']}")
 
             try:
                 game_response = await asyncio.to_thread(
@@ -243,7 +243,7 @@ class ReliableAnalysisPersistence:
                     ).execute()
                 )
 
-                print(f"[PERSISTENCE] game_analyses response: data={getattr(game_response, 'data', None)}, error={getattr(game_response, 'error', None)}")
+                logger.info(f"game_analyses response: data={getattr(game_response, 'data', None)}, error={getattr(game_response, 'error', None)}")
 
                 # Check for database constraint violations
                 if hasattr(game_response, 'error') and game_response.error:
@@ -251,46 +251,46 @@ class ReliableAnalysisPersistence:
 
                     # Check for unique constraint violation (needs database migration)
                     if 'idx_game_analyses_user_platform_game' in error_msg and 'duplicate key' in error_msg.lower():
-                        print(f"[PERSISTENCE] ❌ DATABASE CONSTRAINT ERROR: {error_msg}")
-                        print(f"[PERSISTENCE] ⚠️  DATABASE MIGRATION REQUIRED!")
-                        print(f"[PERSISTENCE] The database constraint needs to be updated to support reanalysis.")
-                        print(f"[PERSISTENCE] Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
-                        print(f"[PERSISTENCE] See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
+                        logger.error(f"❌ DATABASE CONSTRAINT ERROR: {error_msg}")
+                        logger.info(f"⚠️  DATABASE MIGRATION REQUIRED!")
+                        logger.info(f"The database constraint needs to be updated to support reanalysis.")
+                        logger.info(f"Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
+                        logger.info(f"See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
                         return False, None
 
                     # Check for foreign key constraint violations
                     if 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
-                        print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
-                        print(f"[PERSISTENCE] This means the game record doesn't exist in the games table")
-                        print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
-                        print(f"[PERSISTENCE] The game must be imported first before it can be analyzed.")
+                        logger.info(f"❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
+                        logger.info(f"This means the game record doesn't exist in the games table")
+                        logger.info(f"Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
+                        logger.info(f"The game must be imported first before it can be analyzed.")
                         return False, None
 
             except Exception as db_error:
                 error_msg = str(db_error)
-                print(f"[PERSISTENCE] ❌ DATABASE ERROR during game_analyses save: {error_msg}")
+                logger.info(f"❌ DATABASE ERROR during game_analyses save: {error_msg}")
 
                 # Check for unique constraint violation (needs database migration)
                 if 'idx_game_analyses_user_platform_game' in error_msg and 'duplicate key' in error_msg.lower():
-                    print(f"[PERSISTENCE] ⚠️  DATABASE MIGRATION REQUIRED!")
-                    print(f"[PERSISTENCE] The database constraint needs to be updated to support reanalysis.")
-                    print(f"[PERSISTENCE] Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
-                    print(f"[PERSISTENCE] See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
+                    logger.info(f"⚠️  DATABASE MIGRATION REQUIRED!")
+                    logger.info(f"The database constraint needs to be updated to support reanalysis.")
+                    logger.info(f"Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
+                    logger.info(f"See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
                     return False, None
 
                 # Check for foreign key constraint violations
                 if 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
-                    print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
-                    print(f"[PERSISTENCE] This means the game record doesn't exist in the games table")
-                    print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
-                    print(f"[PERSISTENCE] The game must be imported first before it can be analyzed.")
+                    logger.info(f"❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
+                    logger.info(f"This means the game record doesn't exist in the games table")
+                    logger.info(f"Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
+                    logger.info(f"The game must be imported first before it can be analyzed.")
                 return False, None
 
             game_analysis_id = None
             response_data = getattr(game_response, 'data', None)
             if response_data:
                 game_analysis_id = response_data[0].get('id')
-                print(f"[PERSISTENCE] game_analyses record ID: {game_analysis_id}")
+                logger.info(f"game_analyses record ID: {game_analysis_id}")
 
             if game_analysis_id is None:
                 fetch_response = await asyncio.to_thread(
@@ -345,7 +345,7 @@ class ReliableAnalysisPersistence:
                 len(analysis_data.get('moves_analysis') or [])
             )
 
-            print(f"[PERSISTENCE] Saving to move_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, method={analysis_data['analysis_type']}")
+            logger.info(f"Saving to move_analyses table: user={analysis_data['user_id']}, game={analysis_data['game_id']}, method={analysis_data['analysis_type']}")
 
             move_response = await asyncio.to_thread(
                 lambda: self.supabase_service.table('move_analyses').upsert(
@@ -358,7 +358,7 @@ class ReliableAnalysisPersistence:
             move_error = getattr(move_response, 'error', None)
             move_count = len(move_data) if isinstance(move_data, list) else 0
 
-            print(f"[PERSISTENCE] move_analyses response: rows={move_count}, error={move_error}")
+            logger.info(f"move_analyses response: rows={move_count}, error={move_error}")
 
             logger.info(
                 "move_analyses upsert result rows=%s error=%s",
@@ -367,15 +367,15 @@ class ReliableAnalysisPersistence:
             )
             if not move_data:
                 logger.debug("move_analyses raw response: %s", getattr(move_response, '__dict__', {}))
-                print(f"[PERSISTENCE] move_analyses raw response: {getattr(move_response, '__dict__', {})}")
+                logger.info(f"move_analyses raw response: {getattr(move_response, '__dict__', {})}")
 
             return game_analysis_id is not None, game_analysis_id
 
         except Exception as e:
             logger.error(f"Error saving to both tables: {str(e)}")
-            print(f"[PERSISTENCE] ❌ ERROR SAVING TO BOTH TABLES: {str(e)}")
-            print(f"[PERSISTENCE] Error type: {type(e).__name__}")
-            print(f"[PERSISTENCE] Traceback: {traceback.format_exc()}")
+            logger.info(f"❌ ERROR SAVING TO BOTH TABLES: {str(e)}")
+            logger.info(f"Error type: {type(e).__name__}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
             return False, None
 
     async def _save_to_game_analyses(self, analysis_data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -392,14 +392,14 @@ class ReliableAnalysisPersistence:
                 )
 
                 if not game_check.data:
-                    print(f"[PERSISTENCE] ❌ Game not found in games table:")
-                    print(f"[PERSISTENCE]    user_id: {analysis_data['user_id']}")
-                    print(f"[PERSISTENCE]    platform: {analysis_data['platform']}")
-                    print(f"[PERSISTENCE]    game_id: {analysis_data['game_id']}")
-                    print(f"[PERSISTENCE] This game must be imported first before analysis can be saved.")
+                    logger.info(f"❌ Game not found in games table:")
+                    logger.info(f"user_id: {analysis_data['user_id']}")
+                    logger.info(f"platform: {analysis_data['platform']}")
+                    logger.info(f"game_id: {analysis_data['game_id']}")
+                    logger.info(f"This game must be imported first before analysis can be saved.")
                     return False, None
             except Exception as check_error:
-                print(f"[PERSISTENCE] ⚠️  Warning: Could not verify game existence: {check_error}")
+                logger.warning(f"⚠️  Warning: Could not verify game existence: {check_error}")
                 # Continue anyway - let the database constraint catch it
 
             game_analyses_data = {
@@ -470,16 +470,16 @@ class ReliableAnalysisPersistence:
 
             # Check for unique constraint violation (needs database migration)
             if 'idx_game_analyses_user_platform_game' in error_msg and 'duplicate key' in error_msg.lower():
-                print(f"[PERSISTENCE] ❌ DATABASE CONSTRAINT ERROR: {error_msg}")
-                print(f"[PERSISTENCE] ⚠️  DATABASE MIGRATION REQUIRED!")
-                print(f"[PERSISTENCE] The database constraint needs to be updated to support reanalysis.")
-                print(f"[PERSISTENCE] Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
-                print(f"[PERSISTENCE] See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
+                logger.error(f"❌ DATABASE CONSTRAINT ERROR: {error_msg}")
+                logger.info(f"⚠️  DATABASE MIGRATION REQUIRED!")
+                logger.info(f"The database constraint needs to be updated to support reanalysis.")
+                logger.info(f"Please run the migration: supabase/migrations/20250111000001_fix_game_analyses_constraint.sql")
+                logger.info(f"See FIX_REANALYSIS_ISSUE.md for detailed instructions.")
             elif 'foreign key' in error_msg.lower() or 'constraint' in error_msg.lower():
-                print(f"[PERSISTENCE] ❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
-                print(f"[PERSISTENCE] This means the game record doesn't exist in the games table")
-                print(f"[PERSISTENCE] Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
-                print(f"[PERSISTENCE] The game must be imported first before it can be analyzed.")
+                logger.info(f"❌ FOREIGN KEY CONSTRAINT VIOLATION: {error_msg}")
+                logger.info(f"This means the game record doesn't exist in the games table")
+                logger.info(f"Game ID: {analysis_data['game_id']}, User: {analysis_data['user_id']}, Platform: {analysis_data['platform']}")
+                logger.info(f"The game must be imported first before it can be analyzed.")
 
             return False, None
 

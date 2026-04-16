@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+# logging configured via setup_logging()
 logger = logging.getLogger(__name__)
 
 class DatabaseConfig(BaseModel):

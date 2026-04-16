@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 ﻿"""
 AI-Powered Chess Comment Generator using Claude (Anthropic)
 
@@ -40,15 +44,15 @@ except ImportError:
 try:
     import google.generativeai as genai
     GEMINI_AVAILABLE = True
-    print(f"[AI] Google Generative AI package is available (version {genai.__version__})")
+    logger.info(f"Google Generative AI package is available (version {genai.__version__})")
 except ImportError as e:
     GEMINI_AVAILABLE = False
     genai = None  # type: ignore
-    print(f"[AI] Error importing google.generativeai: {e}")
+    logger.info(f"Error importing google.generativeai: {e}")
 except Exception as e:
     GEMINI_AVAILABLE = False
     genai = None  # type: ignore
-    print(f"[AI] Unexpected error importing google.generativeai: {e}")
+    logger.info(f"Unexpected error importing google.generativeai: {e}")
 
 # Load environment variables from .env.local files
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -94,7 +98,7 @@ class AIConfig(BaseSettings):
         direct_provider = os.getenv("AI_PROVIDER")
         if direct_provider:
             self.ai_provider = direct_provider.lower()
-            print(f"[AI] Using AI_PROVIDER from environment: {self.ai_provider}")
+            logger.info(f"Using AI_PROVIDER from environment: {self.ai_provider}")
 
         # Set provider-specific default model if not explicitly set
         if not os.getenv("AI_MODEL"):
@@ -107,7 +111,7 @@ class AIConfig(BaseSettings):
         direct_model = os.getenv("AI_MODEL")
         if direct_model:
             self.ai_model = direct_model
-            print(f"[AI] Using AI_MODEL from environment: {direct_model}")
+            logger.info(f"Using AI_MODEL from environment: {direct_model}")
 
         # Check for API keys from environment (support both prefixed and non-prefixed)
         if not self.anthropic_api_key:
@@ -156,10 +160,10 @@ class AIChessCommentGenerator:
     """
 
     def __init__(self):
-        print("[AI] Initializing AIChessCommentGenerator...")
+        logger.info("Initializing AIChessCommentGenerator...")
         self.config = AIConfig()
         self.provider = self.config.ai_provider.lower()
-        print(f"[AI] Config loaded - Provider: {self.provider}, Model: {self.config.ai_model}, Enabled: {self.config.ai_enabled}")
+        logger.info(f"Config loaded - Provider: {self.provider}, Model: {self.config.ai_model}, Enabled: {self.config.ai_enabled}")
         self.client = None
         self.enabled = False
 
@@ -167,9 +171,9 @@ class AIChessCommentGenerator:
         try:
             from .chess_knowledge_retriever import ChessKnowledgeRetriever
             self.knowledge_retriever = ChessKnowledgeRetriever()
-            print("[AI] Chess knowledge retriever initialized - enhanced teaching enabled")
+            logger.info("Chess knowledge retriever initialized - enhanced teaching enabled")
         except Exception as e:
-            print(f"[AI] Could not initialize knowledge retriever: {e}")
+            logger.info(f"Could not initialize knowledge retriever: {e}")
             self.knowledge_retriever = None
 
         # Rate limiting: track last API call time to prevent overwhelming the API
@@ -186,13 +190,13 @@ class AIChessCommentGenerator:
                 capacity = 15
                 refill_rate = 15.0  # 15 requests per second
                 max_concurrent = 10  # Lower for Gemini
-                print(f"[AI] Async rate limiter initialized for Gemini (15 req/sec, 10 concurrent)")
+                logger.info(f"Async rate limiter initialized for Gemini (15 req/sec, 10 concurrent)")
             else:
                 # Anthropic limit: 50 requests per minute
                 capacity = 50
                 refill_rate = 50.0 / 60.0  # Refill at 50/60 requests per second
                 max_concurrent = 15  # Max 15 concurrent calls
-                print(f"[AI] Async rate limiter initialized for Anthropic (50 req/min, 15 concurrent)")
+                logger.info(f"Async rate limiter initialized for Anthropic (50 req/min, 15 concurrent)")
 
             self._async_rate_limiter = RateLimiter(
                 capacity=capacity,
@@ -203,7 +207,7 @@ class AIChessCommentGenerator:
         except ImportError:
             self._async_rate_limiter = None
             self._api_semaphore = None
-            print("[AI] RateLimiter not available, async parallel calls disabled")
+            logger.info("RateLimiter not available, async parallel calls disabled")
 
         # Initialize comment cache to avoid regenerating identical comments
         # Cache key: hash of (FEN + move + quality + ELO_range)
@@ -212,11 +216,11 @@ class AIChessCommentGenerator:
         try:
             from .cache_manager import LRUCache
             self._comment_cache = LRUCache(maxsize=500, ttl=86400, name="ai_comment_cache")
-            print("[AI] Comment cache initialized (500 entries, 24h TTL)")
+            logger.info("Comment cache initialized (500 entries, 24h TTL)")
         except ImportError:
             # Fallback to simple dict if cache_manager not available
             self._comment_cache = {}
-            print("[AI] Cache manager not available, using simple dict cache")
+            logger.info("Cache manager not available, using simple dict cache")
 
         # Initialize provider-specific client
         if self.provider == AIProvider.GEMINI.value:
@@ -229,26 +233,26 @@ class AIChessCommentGenerator:
         """Initialize Anthropic (Claude) client."""
         # Check if Anthropic package is available
         if not ANTHROPIC_AVAILABLE:
-            print("[AI] Warning: Anthropic package not installed. AI comments will be disabled.")
-            print("[AI] Install with: pip install anthropic>=0.18.0")
+            logger.warning("Warning: Anthropic package not installed. AI comments will be disabled.")
+            logger.info("Install with: pip install anthropic>=0.18.0")
             return
 
-        print("[AI] Anthropic package is available")
+        logger.info("Anthropic package is available")
 
         # Get API key
         api_key = self.config.anthropic_api_key
         if not api_key:
-            print("[AI] No Anthropic API key found, AI comments will be disabled")
-            print("[AI] Check your .env.local file for ANTHROPIC_API_KEY or AI_ANTHROPIC_API_KEY")
+            logger.info("No Anthropic API key found, AI comments will be disabled")
+            logger.info("Check your .env.local file for ANTHROPIC_API_KEY or AI_ANTHROPIC_API_KEY")
             return
 
         try:
             # Mask API key for logging
             masked_key = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***"
-            print(f"[AI] Attempting to initialize Anthropic client with key: {masked_key}")
-            print(f"[AI] Model from config: {self.config.ai_model}")
-            print(f"[AI] AI_ENABLED from config: {self.config.ai_enabled}")
-            print(f"[AI] API timeout: {self.config.api_timeout}s")
+            logger.info(f"Attempting to initialize Anthropic client with key: {masked_key}")
+            logger.info(f"Model from config: {self.config.ai_model}")
+            logger.info(f"AI_ENABLED from config: {self.config.ai_enabled}")
+            logger.info(f"API timeout: {self.config.api_timeout}s")
 
             # Initialize Anthropic client with httpx timeout configuration
             try:
@@ -271,10 +275,10 @@ class AIChessCommentGenerator:
                         api_key=api_key,
                         http_client=http_client
                     )
-                print(f"[AI] Anthropic client initialized with httpx timeout: {self.config.api_timeout}s, max_retries=0")
+                logger.info(f"Anthropic client initialized with httpx timeout: {self.config.api_timeout}s, max_retries=0")
             except (ImportError, TypeError) as e:
-                print(f"[AI] Could not configure custom http_client: {e}")
-                print(f"[AI] Using default client (timeout may not be configurable)")
+                logger.info(f"Could not configure custom http_client: {e}")
+                logger.info(f"Using default client (timeout may not be configurable)")
                 try:
                     self.client = Anthropic(api_key=api_key, max_retries=0)
                 except TypeError:
@@ -282,43 +286,43 @@ class AIChessCommentGenerator:
 
             self.enabled = self.config.ai_enabled
             if self.enabled:
-                print(f"[AI] Anthropic client initialized successfully!")
-                print(f"[AI] Model: {self.config.ai_model}")
-                print(f"[AI] AI enabled: {self.enabled}")
-                print(f"[AI] Ready to generate comments with model: {self.config.ai_model}")
+                logger.info(f"Anthropic client initialized successfully!")
+                logger.info(f"Model: {self.config.ai_model}")
+                logger.info(f"AI enabled: {self.enabled}")
+                logger.info(f"Ready to generate comments with model: {self.config.ai_model}")
             else:
-                print(f"[AI] Anthropic client initialized but AI is disabled (AI_ENABLED={self.config.ai_enabled})")
-                print(f"[AI] Set AI_ENABLED=true in your .env file to enable AI comments")
+                logger.info(f"Anthropic client initialized but AI is disabled (AI_ENABLED={self.config.ai_enabled})")
+                logger.info(f"Set AI_ENABLED=true in your .env file to enable AI comments")
         except Exception as e:
-            print(f"[AI] Warning: Failed to initialize Anthropic client: {e}")
+            logger.error(f"Warning: Failed to initialize Anthropic client: {e}")
             import traceback
-            print(f"[AI] Traceback: {traceback.format_exc()}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
             self.enabled = False
 
     def _init_gemini_client(self):
         """Initialize Google Gemini client."""
         # Check if Gemini package is available
         if not GEMINI_AVAILABLE:
-            print("[AI] Warning: Google Generative AI package not installed. AI comments will be disabled.")
-            print("[AI] Install with: pip install google-generativeai>=0.8.0")
+            logger.warning("Warning: Google Generative AI package not installed. AI comments will be disabled.")
+            logger.info("Install with: pip install google-generativeai>=0.8.0")
             return
 
-        print("[AI] Google Generative AI package is available")
+        logger.info("Google Generative AI package is available")
 
         # Get API key
         api_key = self.config.gemini_api_key
         if not api_key:
-            print("[AI] No Gemini API key found, AI comments will be disabled")
-            print("[AI] Check your .env.local file for GEMINI_API_KEY, AI_GEMINI_API_KEY, or GOOGLE_AI_API_KEY")
+            logger.info("No Gemini API key found, AI comments will be disabled")
+            logger.info("Check your .env.local file for GEMINI_API_KEY, AI_GEMINI_API_KEY, or GOOGLE_AI_API_KEY")
             return
 
         try:
             # Mask API key for logging
             masked_key = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***"
-            print(f"[AI] Attempting to initialize Gemini client with key: {masked_key}")
-            print(f"[AI] Model from config: {self.config.ai_model}")
-            print(f"[AI] AI_ENABLED from config: {self.config.ai_enabled}")
-            print(f"[AI] API timeout: {self.config.api_timeout}s")
+            logger.info(f"Attempting to initialize Gemini client with key: {masked_key}")
+            logger.info(f"Model from config: {self.config.ai_model}")
+            logger.info(f"AI_ENABLED from config: {self.config.ai_enabled}")
+            logger.info(f"API timeout: {self.config.api_timeout}s")
 
             # Configure Gemini API
             genai.configure(api_key=api_key)
@@ -328,17 +332,17 @@ class AIChessCommentGenerator:
 
             self.enabled = self.config.ai_enabled
             if self.enabled:
-                print(f"[AI] Gemini client initialized successfully!")
-                print(f"[AI] Model: {self.config.ai_model}")
-                print(f"[AI] AI enabled: {self.enabled}")
-                print(f"[AI] Ready to generate comments with model: {self.config.ai_model}")
+                logger.info(f"Gemini client initialized successfully!")
+                logger.info(f"Model: {self.config.ai_model}")
+                logger.info(f"AI enabled: {self.enabled}")
+                logger.info(f"Ready to generate comments with model: {self.config.ai_model}")
             else:
-                print(f"[AI] Gemini client initialized but AI is disabled (AI_ENABLED={self.config.ai_enabled})")
-                print(f"[AI] Set AI_ENABLED=true in your .env file to enable AI comments")
+                logger.info(f"Gemini client initialized but AI is disabled (AI_ENABLED={self.config.ai_enabled})")
+                logger.info(f"Set AI_ENABLED=true in your .env file to enable AI comments")
         except Exception as e:
-            print(f"[AI] Warning: Failed to initialize Gemini client: {e}")
+            logger.error(f"Warning: Failed to initialize Gemini client: {e}")
             import traceback
-            print(f"[AI] Traceback: {traceback.format_exc()}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
             self.enabled = False
 
     def generate_comment(
@@ -363,11 +367,11 @@ class AIChessCommentGenerator:
             Generated comment string, or None if AI is disabled/failed
         """
         if not self.enabled:
-            print("[AI] Generator is not enabled")
+            logger.info("Generator is not enabled")
             return None
 
         if not self.client:
-            print("[AI] Anthropic client is not initialized")
+            logger.info("Anthropic client is not initialized")
             return None
 
         try:
@@ -376,18 +380,18 @@ class AIChessCommentGenerator:
             if hasattr(self._comment_cache, 'get'):
                 cached_comment = self._comment_cache.get(cache_key)
                 if cached_comment:
-                    print(f"[AI] ✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
+                    logger.info(f"✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
                     return cached_comment
             elif isinstance(self._comment_cache, dict) and cache_key in self._comment_cache:
                 cached_comment = self._comment_cache[cache_key]
-                print(f"[AI] ✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
+                logger.info(f"✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
                 return cached_comment
 
-            print(f"[AI] Building prompt for move {move_analysis.get('move_san', 'unknown')}, ELO: {player_elo}")
+            logger.info(f"Building prompt for move {move_analysis.get('move_san', 'unknown')}, ELO: {player_elo}")
             # Prepare prompt with move context
             prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
 
-            print(f"[AI] Calling Anthropic API with model {self.config.ai_model}")
+            logger.info(f"Calling Anthropic API with model {self.config.ai_model}")
             # Simplified system prompt focused on technical/educational content
             base_system_prompt = """You are Mikhail Tal teaching chess. Your focus is on clear, educational explanations.
 
@@ -456,7 +460,7 @@ Write clear, educational comments that teach chess concepts."""
                 comment = self._clean_comment(comment, is_user_move, player_color)
                 comment = self._ensure_grammar_consistency(comment)
                 comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
-                print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
+                logger.info(f"Generated comment ({len(comment)} chars): {comment[:100]}...")
 
                 # Cache the comment for future use
                 if hasattr(self._comment_cache, 'set'):
@@ -466,13 +470,13 @@ Write clear, educational comments that teach chess concepts."""
 
                 return comment
 
-            print("[AI] Response had no content")
+            logger.info("Response had no content")
             return None
 
         except Exception as e:
             import traceback
-            print(f"[AI] Error generating AI comment: {e}")
-            print(f"[AI] Full traceback: {traceback.format_exc()}")
+            logger.info(f"Error generating AI comment: {e}")
+            logger.info(f"Full traceback: {traceback.format_exc()}")
             return None
 
     async def generate_comment_async(
@@ -506,7 +510,7 @@ Write clear, educational comments that teach chess concepts."""
         # Check if async rate limiter is available
         if not self._async_rate_limiter or not self._api_semaphore:
             # Fallback to synchronous version if rate limiter not available
-            print("[AI] Async rate limiter not available, falling back to sync")
+            logger.info("Async rate limiter not available, falling back to sync")
             return self.generate_comment(move_analysis, board, move, is_user_move, player_elo)
 
         try:
@@ -515,25 +519,25 @@ Write clear, educational comments that teach chess concepts."""
             if hasattr(self._comment_cache, 'get'):
                 cached_comment = self._comment_cache.get(cache_key)
                 if cached_comment:
-                    print(f"[AI] ✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
+                    logger.info(f"✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
                     return cached_comment
             elif isinstance(self._comment_cache, dict) and cache_key in self._comment_cache:
                 cached_comment = self._comment_cache[cache_key]
-                print(f"[AI] ✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
+                logger.info(f"✅ Cache hit! Reusing comment for {move_analysis.get('move_san', 'unknown')}")
                 return cached_comment
 
             # Wait for rate limiter token (respects 50/minute limit, non-blocking)
             token_acquired = await self._async_rate_limiter.wait_for_token(tokens=1, timeout=30.0)
             if not token_acquired:
-                print(f"[AI] ⚠️  Rate limiter timeout for {move_analysis.get('move_san', 'unknown')}, skipping AI comment")
+                logger.info(f"⚠️  Rate limiter timeout for {move_analysis.get('move_san', 'unknown')}, skipping AI comment")
                 return None
 
             # Use semaphore to limit concurrent calls
             async with self._api_semaphore:
-                print(f"[AI] Building prompt for move {move_analysis.get('move_san', 'unknown')}, ELO: {player_elo}")
+                logger.info(f"Building prompt for move {move_analysis.get('move_san', 'unknown')}, ELO: {player_elo}")
                 prompt = self._build_prompt(move_analysis, board, move, is_user_move, player_elo)
 
-                print(f"[AI] Calling Anthropic API (async) with model {self.config.ai_model}")
+                logger.info(f"Calling Anthropic API (async) with model {self.config.ai_model}")
                 # Get enhanced system prompt with chess teaching methodology and Tal's authentic style
                 base_system_prompt = """You are Mikhail Tal, the Magician from Riga. You teach chess with the energy and passion that made you a World Champion. Your style is direct, engaging, and enthusiastic-you see the beauty in tactics and the power in creative play.
 
@@ -593,7 +597,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                     comment = self._clean_comment(comment, is_user_move, player_color)
                     comment = self._ensure_grammar_consistency(comment)
                     comment = self._validate_comment(comment, move_san, is_capture, is_user_move, captured_piece_name)
-                    print(f"[AI] Generated comment ({len(comment)} chars): {comment[:100]}...")
+                    logger.info(f"Generated comment ({len(comment)} chars): {comment[:100]}...")
 
                     # Cache the comment
                     if hasattr(self._comment_cache, 'set'):
@@ -603,13 +607,13 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
 
                     return comment
 
-            print("[AI] Response had no content")
+            logger.info("Response had no content")
             return None
 
         except Exception as e:
             import traceback
-            print(f"[AI] Error generating AI comment (async): {e}")
-            print(f"[AI] Full traceback: {traceback.format_exc()}")
+            logger.info(f"Error generating AI comment (async): {e}")
+            logger.info(f"Full traceback: {traceback.format_exc()}")
             return None
 
     async def _call_api_async(self, prompt: str, system: str) -> Optional[str]:
@@ -669,14 +673,14 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                     if "content" in data and len(data["content"]) > 0:
                         return data["content"][0].get("text", "")
                 elif response.status_code == 429:
-                    print(f"[AI] Rate limit exceeded (429), skipping AI comment")
+                    logger.info(f"Rate limit exceeded (429), skipping AI comment")
                     return None
                 else:
-                    print(f"[AI] API call failed with status {response.status_code}: {response.text}")
+                    logger.info(f"API call failed with status {response.status_code}: {response.text}")
                     return None
 
         except Exception as e:
-            print(f"[AI] Error in async Anthropic API call: {e}")
+            logger.info(f"Error in async Anthropic API call: {e}")
             return None
 
     async def _call_gemini_api_async(self, prompt: str, system: str) -> Optional[str]:
@@ -703,18 +707,18 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
             if response and hasattr(response, 'text'):
                 return response.text.strip()
             else:
-                print(f"[AI] Response from Gemini had no text content")
+                logger.info(f"Response from Gemini had no text content")
                 return None
 
         except Exception as e:
             error_msg = str(e)
-            print(f"[AI] Gemini async API call failed: {error_msg}")
+            logger.error(f"Gemini async API call failed: {error_msg}")
 
             # Handle Gemini-specific errors
             if "429" in error_msg or "rate_limit" in error_msg.lower() or "quota" in error_msg.lower():
-                print(f"[AI] Rate limit/quota exceeded for Gemini. Skipping AI comment.")
+                logger.info(f"Rate limit/quota exceeded for Gemini. Skipping AI comment.")
             elif "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-                print(f"[AI] API call timeout for Gemini. Skipping to prevent blocking.")
+                logger.info(f"API call timeout for Gemini. Skipping to prevent blocking.")
 
             return None
 
@@ -732,20 +736,20 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
             The AI response text, or None if generation failed.
         """
         if not self.enabled:
-            print("[AI CHAT] Generator not enabled, skipping")
+            logger.info("Generator not enabled, skipping")
             return None
         if not self.client:
-            print("[AI CHAT] No client initialized, skipping")
+            logger.info("No client initialized, skipping")
             return None
 
-        print(f"[AI CHAT] Generating response via {self.provider}...")
+        logger.info(f"Generating response via {self.provider}...")
 
         try:
             # Apply rate limiting
             if self._async_rate_limiter:
                 acquired = await self._async_rate_limiter.wait_for_token(timeout=10.0)
                 if not acquired:
-                    print("[AI CHAT] Rate limit: could not acquire token")
+                    logger.info("Rate limit: could not acquire token")
                     return None
 
             # For chat, use a dedicated Gemini call that handles system_instruction
@@ -758,13 +762,13 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                 result = await self._call_chat_api_async(prompt, system_prompt)
 
             if result:
-                print(f"[AI CHAT] Got response ({len(result)} chars)")
+                logger.info(f"Got response ({len(result)} chars)")
             else:
-                print("[AI CHAT] API returned None")
+                logger.info("API returned None")
             return result
 
         except Exception as e:
-            print(f"[AI CHAT] Error generating chat response: {e}")
+            logger.info(f"Error generating chat response: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -806,9 +810,9 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
             if response and response.candidates:
                 candidate = response.candidates[0]
                 finish_reason = getattr(candidate, 'finish_reason', None)
-                print(f"[AI CHAT] Gemini finish_reason={finish_reason}")
+                logger.info(f"Gemini finish_reason={finish_reason}")
                 if finish_reason and str(finish_reason) not in ('1', 'STOP', 'FinishReason.STOP'):
-                    print(f"[AI CHAT] Warning: non-STOP finish reason: {finish_reason}")
+                    logger.warning(f"Warning: non-STOP finish reason: {finish_reason}")
                 if hasattr(response, 'text') and response.text:
                     return response.text.strip()
                 # Try extracting from candidate parts if .text fails
@@ -816,11 +820,11 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                     text = ''.join(p.text for p in candidate.content.parts if hasattr(p, 'text'))
                     if text:
                         return text.strip()
-            print("[AI CHAT] Gemini response had no text content")
+            logger.info("Gemini response had no text content")
             return None
 
         except Exception as e:
-            print(f"[AI CHAT] Gemini API call failed: {e}")
+            logger.error(f"Gemini API call failed: {e}")
             return None
 
     def _filter_insights_for_move(self, insights: list, move_san: str, is_capture: bool, is_user_move: bool) -> list:
@@ -886,7 +890,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
 
                 if piece is None:
                     # No piece at this square - remove the reference
-                    print(f"[AI VALIDATION] ❌ Hallucination detected: '{full_match}' - no piece on {square_str}")
+                    logger.info(f"❌ Hallucination detected: '{full_match}' - no piece on {square_str}")
                     return ""
 
                 expected_piece_type = piece_names_map.get(piece_type_str)
@@ -896,7 +900,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                         chess.PAWN: 'pawn', chess.KNIGHT: 'knight', chess.BISHOP: 'bishop',
                         chess.ROOK: 'rook', chess.QUEEN: 'queen', chess.KING: 'king'
                     }.get(piece.piece_type, 'piece')
-                    print(f"[AI VALIDATION] ❌ Wrong piece: '{full_match}' - actually a {actual_piece_name} on {square_str}")
+                    logger.info(f"❌ Wrong piece: '{full_match}' - actually a {actual_piece_name} on {square_str}")
                     return ""
 
                 # Check color if specified
@@ -904,17 +908,17 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                     is_white_ref = 'white' in color_str.lower()
                     is_black_ref = 'black' in color_str.lower()
                     if is_white_ref and piece.color != chess.WHITE:
-                        print(f"[AI VALIDATION] ❌ Wrong color: '{full_match}' - piece is Black")
+                        logger.info(f"❌ Wrong color: '{full_match}' - piece is Black")
                         return ""
                     if is_black_ref and piece.color != chess.BLACK:
-                        print(f"[AI VALIDATION] ❌ Wrong color: '{full_match}' - piece is White")
+                        logger.info(f"❌ Wrong color: '{full_match}' - piece is White")
                         return ""
 
                 # Reference is valid
                 return full_match
 
             except Exception as e:
-                print(f"[AI VALIDATION] Warning: Could not validate '{full_match}': {e}")
+                logger.warning(f"Warning: Could not validate '{full_match}': {e}")
                 return full_match
 
         # Apply validation
@@ -1221,7 +1225,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
             time_since_last_call = current_time - self._last_api_call_time
             if time_since_last_call < self._rate_limit_delay:
                 sleep_time = self._rate_limit_delay - time_since_last_call
-                print(f"[AI] Rate limiting: waiting {sleep_time:.2f}s before API call")
+                logger.info(f"Rate limiting: waiting {sleep_time:.2f}s before API call")
                 time.sleep(sleep_time)
             self._last_api_call_time = time.time()
 
@@ -1254,7 +1258,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
             Generated text or None if failed
         """
         try:
-            print(f"[AI] Attempting Gemini API call with model: {self.config.ai_model}")
+            logger.info(f"Attempting Gemini API call with model: {self.config.ai_model}")
 
             generation_config = {
                 "max_output_tokens": max_tokens,
@@ -1271,20 +1275,20 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
             if response and hasattr(response, 'text'):
                 return response.text.strip()
             else:
-                print(f"[AI] Response from Gemini had no text content")
+                logger.info(f"Response from Gemini had no text content")
                 return None
 
         except Exception as e:
             error_msg = str(e)
-            print(f"[AI] Gemini API call failed: {error_msg}")
+            logger.error(f"Gemini API call failed: {error_msg}")
 
             # Handle Gemini-specific errors
             if "429" in error_msg or "rate_limit" in error_msg.lower() or "quota" in error_msg.lower():
-                print(f"[AI] Rate limit/quota exceeded for Gemini. Skipping AI comment.")
+                logger.info(f"Rate limit/quota exceeded for Gemini. Skipping AI comment.")
             elif "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-                print(f"[AI] API call timeout for Gemini. Skipping to prevent blocking.")
+                logger.info(f"API call timeout for Gemini. Skipping to prevent blocking.")
             else:
-                print(f"[AI] Please check your Gemini API key and account status.")
+                logger.info(f"Please check your Gemini API key and account status.")
 
             return None
 
@@ -1358,7 +1362,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
 
         for model in unique_models:
             try:
-                print(f"[AI] Attempting API call with model: {model} (timeout: {self.config.api_timeout}s)")
+                logger.info(f"Attempting API call with model: {model} (timeout: {self.config.api_timeout}s)")
 
                 # The httpx timeout is already configured in the client initialization
                 # This will automatically timeout after api_timeout seconds
@@ -1371,17 +1375,17 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                 )
 
                 if not response:
-                    print(f"[AI] ⚠️  Empty response from model {model}")
+                    logger.info(f"⚠️  Empty response from model {model}")
                     continue
 
                 if response.content and len(response.content) > 0:
                     comment = response.content[0].text.strip()
                     if model != self.config.ai_model:
-                        print(f"[AI] ✅ Successfully generated using model: {model} (configured model was {self.config.ai_model})")
-                        print(f"[AI] 💡 Update your .env.local: AI_MODEL={model}")
+                        logger.info(f"✅ Successfully generated using model: {model} (configured model was {self.config.ai_model})")
+                        logger.info(f"💡 Update your .env.local: AI_MODEL={model}")
                     return comment
                 else:
-                    print(f"[AI] ⚠️  Response from {model} had no content")
+                    logger.info(f"⚠️  Response from {model} had no content")
                     continue
 
             except Exception as e:
@@ -1390,37 +1394,37 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
 
                 # Check for timeout errors - fail fast to prevent blocking
                 if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-                    print(f"[AI] ⚠️  API call timeout ({self.config.api_timeout}s) for model {model}. Skipping to prevent blocking analysis.")
-                    print(f"[AI] 💡 This is expected if API is slow. Analysis will continue with template comments.")
+                    logger.info(f"⚠️  API call timeout ({self.config.api_timeout}s) for model {model}. Skipping to prevent blocking analysis.")
+                    logger.info(f"💡 This is expected if API is slow. Analysis will continue with template comments.")
                     # Don't try other models if we're timing out - likely API issue
                     break
 
                 # If it's a 404 (model not found), try next model immediately (no need to wait)
                 if "404" in error_msg or "not_found" in error_msg.lower():
                     if model == self.config.ai_model:
-                        print(f"[AI] ❌ Model {model} not found (404). Trying alternatives...")
+                        logger.info(f"❌ Model {model} not found (404). Trying alternatives...")
                     else:
-                        print(f"[AI]   Model {model} also not found (404). Trying next...")
+                        logger.info(f"Model {model} also not found (404). Trying next...")
                     continue
                 elif "429" in error_msg or "rate_limit" in error_msg.lower() or "too many requests" in error_msg.lower():
                     # Rate limit error - fail fast to prevent blocking
-                    print(f"[AI] ⚠️  Rate limit exceeded (429) for model {model}. Skipping AI comment to prevent blocking analysis.")
-                    print(f"[AI] 💡 Analysis will continue with template comments. This is expected when analyzing many games.")
+                    logger.info(f"⚠️  Rate limit exceeded (429) for model {model}. Skipping AI comment to prevent blocking analysis.")
+                    logger.info(f"💡 Analysis will continue with template comments. This is expected when analyzing many games.")
                     # Don't try other models if we're rate limited - likely too many concurrent requests
                     break
                 else:
                     # For other errors, log but continue trying
-                    print(f"[AI]   Model {model} failed with error: {error_msg}")
+                    logger.error(f"Model {model} failed with error: {error_msg}")
                     continue
 
         # All models failed
-        print(f"[AI] ❌ All model attempts failed.")
+        logger.info(f"❌ All model attempts failed.")
         if last_error:
-            print(f"[AI] Last error: {last_error}")
-        print(f"[AI] Please check:")
-        print(f"[AI]   1. Your API key has access to Claude models")
-        print(f"[AI]   2. Your Anthropic account is active")
-        print(f"[AI]   3. Try logging into console.anthropic.com to verify access")
+            logger.error(f"Last error: {last_error}")
+        logger.info(f"Please check:")
+        logger.info(f"1. Your API key has access to Claude models")
+        logger.info(f"2. Your Anthropic account is active")
+        logger.info(f"3. Try logging into console.anthropic.com to verify access")
         return None
 
     def _build_prompt(
@@ -1506,7 +1510,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                 if captured_piece:
                     # Board shows a piece on target square
                     if not has_capture_notation:
-                        print(f"[AI WARNING] board_before shows piece on {chess.square_name(move.to_square)} but move_san '{move_san}' has no 'x' - possible board corruption")
+                        logger.info(f"board_before shows piece on {chess.square_name(move.to_square)} but move_san '{move_san}' has no 'x' - possible board corruption")
                         # Treat as non-capture to avoid false information
                         is_capture = False
                         captured_piece = None
@@ -1525,7 +1529,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                         captured_piece_name = f"{color} {piece_name}"
 
                         # Log successful capture detection
-                        print(f"[AI CAPTURE VALIDATED] {move_san} captures {color} {piece_name} on {chess.square_name(move.to_square)}")
+                        logger.info(f"{move_san} captures {color} {piece_name} on {chess.square_name(move.to_square)}")
 
                 if captured_piece and is_capture:
                     # Check if this is a sacrifice (using SEE score or heuristic_details)
@@ -1546,7 +1550,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
 - This move ({move_san}) captures the {color} {piece_name} on {chess.square_name(move.to_square)}
 - This is the ONLY capture in this move
 - Do NOT mention any other captures or sacrifices"""
-                        print(f"[AI PROMPT] CAPTURE INFO for {move_san}: captures {color} {piece_name} on {chess.square_name(move.to_square)}")
+                        logger.info(f"CAPTURE INFO for {move_san}: captures {color} {piece_name} on {chess.square_name(move.to_square)}")
                 else:
                     # Explicitly state when it's NOT a capture to prevent AI hallucination
                     capture_info = f"""
@@ -1555,7 +1559,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
 - Do NOT mention captures, sacrifices, or material exchanges
 - Focus on the move's positional or tactical purpose"""
             except Exception as e:
-                print(f"[AI] Warning: Could not extract capture info: {e}")
+                logger.warning(f"Warning: Could not extract capture info: {e}")
 
         # Determine complexity level based on ELO
         if player_elo < 900:
@@ -1709,7 +1713,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
 
             except Exception as e:
                 # Could not generate board state context - continue without it
-                print(f"[AI] Warning: Could not build move context: {e}")
+                logger.warning(f"Warning: Could not build move context: {e}")
 
         # Build Stockfish analysis context
         stockfish_context = ""
@@ -1748,7 +1752,7 @@ Never start comments with 'Ah,' 'Oh,' or similar interjections-begin directly wi
                         stockfish_context += f"- Best continuation (Principal Variation): {pv_line}\n"
                         stockfish_context += f"  (This shows Stockfish's calculated best line from this position)\n"
                 except Exception as e:
-                    print(f"[AI] Warning: Could not convert PV to SAN: {e}")
+                    logger.warning(f"Warning: Could not convert PV to SAN: {e}")
 
         # Add opening context if available (only for early moves to save tokens)
         opening_context = ""
@@ -1802,11 +1806,11 @@ Write the comment now:"""
 
                 # Validate knowledge quality
                 if chess_knowledge and len(chess_knowledge) > 20:
-                    print(f"[AI] ✅ Retrieved chess knowledge ({len(chess_knowledge)} chars)")
+                    logger.info(f"✅ Retrieved chess knowledge ({len(chess_knowledge)} chars)")
                 elif not chess_knowledge or len(chess_knowledge) < 20:
                     # Fallback: If no useful knowledge detected but move is poor quality, add common mistakes
                     if move_quality in [MoveQuality.MISTAKE, MoveQuality.BLUNDER, MoveQuality.INACCURACY]:
-                        print(f"[AI] ⚠️  Limited knowledge retrieved for {move_quality.value} move, adding common mistakes context")
+                        logger.info(f"⚠️  Limited knowledge retrieved for {move_quality.value} move, adding common mistakes context")
                         skill_level = self.knowledge_retriever.knowledge_base.get_skill_level_from_elo(player_elo)
                         common_mistakes = self.knowledge_retriever.knowledge_base.get_common_mistakes_context(
                             move_quality.value,
@@ -1817,12 +1821,12 @@ Write the comment now:"""
                                 common_mistakes=common_mistakes,
                                 max_chars=200
                             )
-                            print(f"[AI] ✅ Added common mistakes fallback knowledge ({len(chess_knowledge)} chars)")
+                            logger.info(f"✅ Added common mistakes fallback knowledge ({len(chess_knowledge)} chars)")
                     else:
-                        print(f"[AI] ⚠️  No relevant knowledge detected for this position")
+                        logger.info(f"⚠️  No relevant knowledge detected for this position")
 
             except Exception as e:
-                print(f"[AI] ⚠️  Could not retrieve chess knowledge: {e}")
+                logger.info(f"⚠️  Could not retrieve chess knowledge: {e}")
                 chess_knowledge = ""
 
         # Route to appropriate prompt builder based on move type
@@ -2070,15 +2074,15 @@ RULES:
             Dictionary with style analysis fields, or None if AI is disabled/failed
         """
         if not self.enabled:
-            print("[AI] Generator is not enabled for style analysis")
+            logger.info("Generator is not enabled for style analysis")
             return None
 
         if not self.client:
-            print("[AI] Anthropic client is not initialized for style analysis")
+            logger.info("Anthropic client is not initialized for style analysis")
             return None
 
         try:
-            print(f"[AI] Generating style analysis for {player_level} player with {total_games} games")
+            logger.info(f"Generating style analysis for {player_level} player with {total_games} games")
 
             # Build comprehensive prompt with all player data
             prompt = self._build_style_analysis_prompt(
@@ -2111,13 +2115,13 @@ Focus on teaching chess concepts and helping players understand their playing st
                 # Parse the AI response into structured format
                 return self._parse_style_analysis_response(result, personality_scores, player_style, player_level, total_games, average_accuracy, phase_accuracies)
 
-            print("[AI] Style analysis response had no content")
+            logger.info("Style analysis response had no content")
             return None
 
         except Exception as e:
             import traceback
-            print(f"[AI] Error generating style analysis: {e}")
-            print(f"[AI] Full traceback: {traceback.format_exc()}")
+            logger.info(f"Error generating style analysis: {e}")
+            logger.info(f"Full traceback: {traceback.format_exc()}")
             return None
 
     def _build_style_analysis_prompt(
@@ -2247,18 +2251,18 @@ Do not include any text outside the JSON. Start directly with {{."""
                     # Validate required fields
                     required_fields = ['style_summary', 'characteristics', 'strengths', 'playing_patterns', 'improvement_focus']
                     if all(field in parsed for field in required_fields):
-                        print("[AI] ✅ Successfully parsed style analysis response")
+                        logger.info("✅ Successfully parsed style analysis response")
                         return parsed
 
-                    print("[AI] ⚠️  Style analysis response missing required fields")
+                    logger.info("⚠️  Style analysis response missing required fields")
 
             # If JSON parsing failed, try to extract fields manually
-            print("[AI] ⚠️  Could not parse JSON, attempting fallback parsing")
+            logger.info("⚠️  Could not parse JSON, attempting fallback parsing")
 
         except json.JSONDecodeError as e:
-            print(f"[AI] ⚠️  JSON parsing error: {e}")
+            logger.error(f"⚠️  JSON parsing error: {e}")
         except Exception as e:
-            print(f"[AI] ⚠️  Error parsing style analysis: {e}")
+            logger.info(f"⚠️  Error parsing style analysis: {e}")
 
         # Fallback: Return structured response with AI text in first field
         # This allows the system to still use the AI-generated content even if parsing fails
