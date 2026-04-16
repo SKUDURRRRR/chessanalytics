@@ -84,10 +84,26 @@ Deno.serve(async req => {
       })
     }
 
-    const { userId, platform, fromDate, toDate, color }: AnalyticsRequest = await req.json()
+    const body = await req.json()
+    const { userId, platform, fromDate, toDate, color }: AnalyticsRequest = body
 
-    if (!userId) {
+    // Input validation
+    if (!userId || typeof userId !== 'string') {
       return new Response(JSON.stringify({ error: 'userId is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (userId.length > 100) {
+      return new Response(JSON.stringify({ error: 'userId too long' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (platform && !['lichess', 'chess.com'].includes(platform)) {
+      return new Response(JSON.stringify({ error: 'Invalid platform' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -159,7 +175,7 @@ Deno.serve(async req => {
     })
   } catch (error) {
     console.error('Analytics error:', error)
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 """
 Chess Knowledge Retriever
 
@@ -137,7 +141,7 @@ class ChessKnowledgeRetriever:
             if heuristic_details.get('new_hanging_pieces', []):
                 patterns.append('hanging_pieces')
         except Exception as e:
-            print(f"[KNOWLEDGE] Warning: Direct pattern detection failed: {e}")
+            logger.error(f"Warning: Direct pattern detection failed: {e}")
 
         # PRIORITY 2: Use advanced analyzer to detect patterns
         try:
@@ -179,7 +183,7 @@ class ChessKnowledgeRetriever:
                 unique_patterns.append(pattern)
 
         if unique_patterns:
-            print(f"[KNOWLEDGE] Detected tactical patterns: {', '.join(unique_patterns)}")
+            logger.info(f"Detected tactical patterns: {', '.join(unique_patterns)}")
 
         return unique_patterns
 
@@ -221,7 +225,7 @@ class ChessKnowledgeRetriever:
             if self._detect_piece_activity(board, move):
                 concepts.append('piece_activity')
         except Exception as e:
-            print(f"[KNOWLEDGE] Warning: Direct concept detection failed: {e}")
+            logger.error(f"Warning: Direct concept detection failed: {e}")
 
         # PRIORITY 2: Use advanced analyzer to detect concepts
         try:
@@ -261,7 +265,7 @@ class ChessKnowledgeRetriever:
                 unique_concepts.append(concept)
 
         if unique_concepts:
-            print(f"[KNOWLEDGE] Detected positional concepts: {', '.join(unique_concepts)}")
+            logger.info(f"Detected positional concepts: {', '.join(unique_concepts)}")
 
         return unique_concepts
 

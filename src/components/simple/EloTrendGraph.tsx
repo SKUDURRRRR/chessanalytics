@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { memo, useState, useEffect, useMemo } from 'react'
 import { UnifiedAnalysisService } from '../../services/unifiedAnalysisService'
 import { getTimeControlCategory } from '../../utils/timeControlUtils'
 import { ResponsiveTrendChart } from './ResponsiveTrendChart'

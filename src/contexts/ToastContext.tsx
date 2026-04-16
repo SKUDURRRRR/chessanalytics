@@ -38,7 +38,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {/* Toast container */}
       {toasts.length > 0 && (
-        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none" role="status" aria-live="polite">
           {toasts.map(toast => (
             <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
           ))}

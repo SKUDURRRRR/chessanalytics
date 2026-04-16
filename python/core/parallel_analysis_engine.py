@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 #!/usr/bin/env python3
 """
 Parallel analysis engine using multiprocessing for true parallel game analysis.
@@ -28,7 +32,7 @@ async def _save_analysis_to_database(analysis, analysis_type_enum):
         # Save analysis to move_analyses table (all analysis types now use Stockfish)
         return await _save_stockfish_analysis(analysis)
     except Exception as e:
-        print(f"Error saving analysis to database: {e}")
+        logger.info(f"Error saving analysis to database: {e}")
         return False
 
 def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -44,7 +48,7 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
     depth = game_data.get('depth', 14)
     skill_level = game_data.get('skill_level', 20)
 
-    print(f"[Game {game_id}] Starting parallel analysis at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
+    logger.info(f"[Game {game_id}] Starting parallel analysis at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
 
     try:
         # Create engine in this process with config stockfish path
@@ -74,7 +78,7 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
                 'success': False,
                 'error': f'Invalid PGN: too short or no moves (length: {len(pgn) if pgn else 0})'
             }
-            print(f"Warning: [Game {game_id}] Skipped - Invalid PGN")
+            logger.warning(f"Warning: [Game {game_id}] Skipped - Invalid PGN")
             return result
 
         # Run analysis (this is synchronous within the worker)
@@ -109,18 +113,18 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
                 },
                 'saved_to_db': save_success
             }
-            print(f"[Game {game_id}] Completed - Accuracy: {analysis.accuracy:.1f}% at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
+            logger.info(f"[Game {game_id}] Completed - Accuracy: {analysis.accuracy:.1f}% at {datetime.now().strftime('%H:%M:%S.%f')[:-3]} (PID: {os.getpid()})")
             if save_success:
-                print(f"   Saved to database successfully")
+                logger.info(f"   Saved to database successfully")
             else:
-                print(f"   Failed to save to database")
+                logger.error(f"   Failed to save to database")
         else:
             result = {
                 'game_id': game_id,
                 'success': False,
                 'error': 'Analysis returned None'
             }
-            print(f"[Game {game_id}] Failed - No analysis result")
+            logger.info(f"[Game {game_id}] Failed - No analysis result")
 
         loop.close()
 
@@ -130,7 +134,7 @@ def analyze_game_worker(game_data: Dict[str, Any]) -> Dict[str, Any]:
             'success': False,
             'message': str(e)
         }
-        print(f"[Game {game_id}] Error: {e}")
+        logger.error(f"[Game {game_id}] Error: {e}")
 
     return result
 
@@ -179,10 +183,10 @@ class ParallelAnalysisEngine:
         Returns:
             Dictionary with analysis results and statistics
         """
-        print(f"PARALLEL ANALYSIS: Starting analysis for {user_id} on {platform}")
-        print(f"   Max workers: {self.max_workers}")
-        print(f"   Analysis type: {analysis_type}")
-        print(f"   Limit: {limit}")
+        logger.info(f"PARALLEL ANALYSIS: Starting analysis for {user_id} on {platform}")
+        logger.info(f"   Max workers: {self.max_workers}")
+        logger.info(f"   Analysis type: {analysis_type}")
+        logger.info(f"   Limit: {limit}")
 
         start_time = datetime.now()
 
@@ -191,7 +195,7 @@ class ParallelAnalysisEngine:
             try:
                 progress_callback(0, 0, 0)  # Signal that we're starting to fetch
             except Exception as e:
-                print(f"[PARALLEL ENGINE] Warning: Could not update progress at fetch start: {e}")
+                logger.warning(f"Warning: Could not update progress at fetch start: {e}")
 
         # Get games from database
         games = await self._fetch_games(user_id, platform, limit)
@@ -206,14 +210,14 @@ class ParallelAnalysisEngine:
                 'total_time': 0
             }
 
-        print(f"Found {len(games)} games to analyze")
+        logger.info(f"Found {len(games)} games to analyze")
 
         # Update progress with total games found - this moves us past "starting" phase
         if progress_callback:
             try:
                 progress_callback(0, len(games), 0)  # Update total_games, phase will change to "analyzing"
             except Exception as e:
-                print(f"[PARALLEL ENGINE] Warning: Could not update progress after fetch: {e}")
+                logger.warning(f"Warning: Could not update progress after fetch: {e}")
 
         # Prepare game data for parallel processing
         game_data_list = []
@@ -261,11 +265,11 @@ class ParallelAnalysisEngine:
             'results': results
         }
 
-        print(f"PARALLEL ANALYSIS COMPLETE:")
-        print(f"   Total time: {total_time:.1f}s")
-        print(f"   Games analyzed: {len(successful_analyses)}/{len(games)}")
-        print(f"   Average accuracy: {avg_accuracy:.1f}%")
-        print(f"   Speedup: {result['speedup']:.1f}x")
+        logger.info(f"PARALLEL ANALYSIS COMPLETE:")
+        logger.info(f"   Total time: {total_time:.1f}s")
+        logger.info(f"   Games analyzed: {len(successful_analyses)}/{len(games)}")
+        logger.info(f"   Average accuracy: {avg_accuracy:.1f}%")
+        logger.info(f"   Speedup: {result['speedup']:.1f}x")
 
         return result
 
@@ -288,7 +292,7 @@ class ParallelAnalysisEngine:
 
             # Fetch more games than needed to account for already-analyzed games
             fetch_limit = max(limit * 10, 100)
-            print(f"[PARALLEL ENGINE] Fetching up to {fetch_limit} most recent games to find {limit} unanalyzed games for {user_id} on {platform}")
+            logger.info(f"Fetching up to {fetch_limit} most recent games to find {limit} unanalyzed games for {user_id} on {platform}")
 
             # First get game IDs from games table ordered by played_at (most recent first)
             games_list_response = await asyncio.to_thread(
@@ -296,13 +300,13 @@ class ParallelAnalysisEngine:
             )
 
             if not games_list_response.data:
-                print(f"[PARALLEL ENGINE] No games found in games table")
+                logger.info(f"No games found in games table")
                 return []
 
             # Get provider_game_ids in order with their played_at dates
             ordered_games = games_list_response.data
             provider_game_ids = [g['provider_game_id'] for g in ordered_games]
-            print(f"[PARALLEL ENGINE] Found {len(provider_game_ids)} games in database (ordered by most recent)")
+            logger.info(f"Found {len(provider_game_ids)} games in database (ordered by most recent)")
 
             # Now fetch PGN data for these games
             pgn_response = await asyncio.to_thread(
@@ -310,7 +314,7 @@ class ParallelAnalysisEngine:
             )
 
             if not pgn_response.data:
-                print(f"[PARALLEL ENGINE] No PGN data found for games")
+                logger.info(f"No PGN data found for games")
                 return []
 
             # Re-order PGN data to match the games table order and add played_at info
@@ -323,7 +327,7 @@ class ParallelAnalysisEngine:
                     pgn_data['played_at'] = game_info['played_at']  # Add played_at to PGN data
                     all_games.append(pgn_data)
 
-            print(f"[PARALLEL ENGINE] Found {len(all_games)} games with PGN data (ordered by most recent played_at)")
+            logger.info(f"Found {len(all_games)} games with PGN data (ordered by most recent played_at)")
 
             # Filter out already-analyzed games
             # Get game IDs that are already analyzed (from both move_analyses and game_analyses tables)
@@ -345,7 +349,7 @@ class ParallelAnalysisEngine:
                     analyzed_game_ids.update(row['game_id'] for row in game_analyses_response.data)
 
             except Exception as e:
-                print(f"[PARALLEL ENGINE] Warning: Could not check analyzed games: {e}")
+                logger.warning(f"Warning: Could not check analyzed games: {e}")
                 # If we can't check, assume no games are analyzed to be safe
                 analyzed_game_ids = set()
 
@@ -362,19 +366,19 @@ class ParallelAnalysisEngine:
                         if len(unanalyzed_games) >= limit:
                             break
 
-            print(f"[PARALLEL ENGINE] Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
-            print(f"[PARALLEL ENGINE] Skipped {analyzed_count} already-analyzed games from the fetched set")
+            logger.info(f"Found {len(unanalyzed_games)} unanalyzed games out of {len(all_games)} total games")
+            logger.info(f"Skipped {analyzed_count} already-analyzed games from the fetched set")
 
             if unanalyzed_games:
-                print(f"[PARALLEL ENGINE] First unanalyzed game played_at: {unanalyzed_games[0].get('played_at')} | provider_game_id: {unanalyzed_games[0].get('provider_game_id')}")
+                logger.info(f"First unanalyzed game played_at: {unanalyzed_games[0].get('played_at')} | provider_game_id: {unanalyzed_games[0].get('provider_game_id')}")
                 if len(unanalyzed_games) > 1:
-                    print(f"[PARALLEL ENGINE] Last unanalyzed game played_at: {unanalyzed_games[-1].get('played_at')} | provider_game_id: {unanalyzed_games[-1].get('provider_game_id')}")
+                    logger.info(f"Last unanalyzed game played_at: {unanalyzed_games[-1].get('played_at')} | provider_game_id: {unanalyzed_games[-1].get('provider_game_id')}")
             else:
-                print(f"[PARALLEL ENGINE] No unanalyzed games found - all recent games have been analyzed already!")
+                logger.info(f"No unanalyzed games found - all recent games have been analyzed already!")
 
             return unanalyzed_games
         except Exception as e:
-            print(f"[PARALLEL ENGINE] Error fetching games: {e}")
+            logger.info(f"Error fetching games: {e}")
             import traceback
             traceback.print_exc()
             return []
@@ -383,11 +387,11 @@ class ParallelAnalysisEngine:
         """Analyze games in parallel using ProcessPoolExecutor with async execution to avoid blocking."""
         results = []
 
-        print(f"PARALLEL PROCESSING: Starting with {len(game_data_list)} games using {self.max_workers} workers")
+        logger.info(f"PARALLEL PROCESSING: Starting with {len(game_data_list)} games using {self.max_workers} workers")
 
         # Use ProcessPoolExecutor for true parallel processing
         # CRITICAL FIX: Run ProcessPoolExecutor operations asynchronously to prevent blocking other API requests
-        print(f"Starting ProcessPoolExecutor with {self.max_workers} workers...")
+        logger.info(f"Starting ProcessPoolExecutor with {self.max_workers} workers...")
         try:
             # Get the current event loop
             loop = asyncio.get_event_loop()
@@ -397,7 +401,7 @@ class ParallelAnalysisEngine:
 
             try:
                 # Submit all tasks to ProcessPoolExecutor
-                print(f"Submitting {len(game_data_list)} tasks to ProcessPoolExecutor...")
+                logger.info(f"Submitting {len(game_data_list)} tasks to ProcessPoolExecutor...")
                 concurrent_futures = {}
 
                 for game_data in game_data_list:
@@ -405,11 +409,11 @@ class ParallelAnalysisEngine:
                     concurrent_future = executor.submit(analyze_game_worker, game_data)
                     concurrent_futures[concurrent_future] = game_data
 
-                print(f"All {len(concurrent_futures)} tasks submitted successfully")
+                logger.info(f"All {len(concurrent_futures)} tasks submitted successfully")
 
                 # Collect results as they complete using polling with asyncio
                 # This allows other async tasks (like API requests) to run concurrently
-                print(f"Waiting for {len(concurrent_futures)} tasks to complete...")
+                logger.info(f"Waiting for {len(concurrent_futures)} tasks to complete...")
                 completed_count = 0
                 total_tasks = len(concurrent_futures)
 
@@ -425,22 +429,22 @@ class ParallelAnalysisEngine:
                             result = await loop.run_in_executor(None, future.result)
                             results.append(result)
                             completed_count += 1
-                            print(f"[PARALLEL ENGINE] Task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{total_tasks})")
+                            logger.info(f"Task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{total_tasks})")
 
                             # Update progress if callback provided
                             if progress_callback:
                                 try:
                                     progress_percentage = 20 + int((completed_count / total_tasks) * 70)  # 20-90%
-                                    print(f"[PARALLEL ENGINE] Calling progress callback: {completed_count}/{total_tasks} ({progress_percentage}%)")
+                                    logger.info(f"Calling progress callback: {completed_count}/{total_tasks} ({progress_percentage}%)")
                                     progress_callback(completed_count, total_tasks, progress_percentage)
-                                    print(f"[PARALLEL ENGINE] Progress callback completed successfully")
+                                    logger.info(f"Progress callback completed successfully")
                                 except Exception as callback_error:
-                                    print(f"[PARALLEL ENGINE] ERROR in progress callback: {callback_error}")
+                                    logger.info(f"ERROR in progress callback: {callback_error}")
                                     import traceback
                                     traceback.print_exc()
                         except Exception as e:
                             completed_count += 1
-                            print(f"[PARALLEL ENGINE] Error getting result for game {game_data.get('id', 'unknown')}: {e}")
+                            logger.info(f"Error getting result for game {game_data.get('id', 'unknown')}: {e}")
                             results.append({
                                 'game_id': game_data.get('id', 'unknown'),
                                 'success': False,
@@ -451,10 +455,10 @@ class ParallelAnalysisEngine:
                             if progress_callback:
                                 try:
                                     progress_percentage = 20 + int((completed_count / total_tasks) * 70)  # 20-90%
-                                    print(f"[PARALLEL ENGINE] Calling progress callback for failed game: {completed_count}/{total_tasks} ({progress_percentage}%)")
+                                    logger.info(f"Calling progress callback for failed game: {completed_count}/{total_tasks} ({progress_percentage}%)")
                                     progress_callback(completed_count, total_tasks, progress_percentage)
                                 except Exception as callback_error:
-                                    print(f"[PARALLEL ENGINE] ERROR in progress callback (failed game): {callback_error}")
+                                    logger.info(f"ERROR in progress callback (failed game): {callback_error}")
                                     import traceback
                                     traceback.print_exc()
 
@@ -465,15 +469,15 @@ class ParallelAnalysisEngine:
 
             finally:
                 # Clean up executor
-                print("Shutting down ProcessPoolExecutor...")
+                logger.info("Shutting down ProcessPoolExecutor...")
                 executor.shutdown(wait=False)
 
         except Exception as e:
-            print(f"ProcessPoolExecutor failed: {e}")
+            logger.error(f"ProcessPoolExecutor failed: {e}")
             import traceback
             traceback.print_exc()
             # Fallback to sequential processing
-            print("Falling back to sequential processing...")
+            logger.info("Falling back to sequential processing...")
             loop = asyncio.get_event_loop()
             for i, game_data in enumerate(game_data_list):
                 try:
@@ -481,7 +485,7 @@ class ParallelAnalysisEngine:
                     result = await loop.run_in_executor(None, analyze_game_worker, game_data)
                     results.append(result)
                     completed_count = i + 1
-                    print(f"Sequential task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{len(game_data_list)})")
+                    logger.info(f"Sequential task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{len(game_data_list)})")
 
                     # Update progress if callback provided
                     if progress_callback:
@@ -491,7 +495,7 @@ class ParallelAnalysisEngine:
                         await asyncio.sleep(0.05)
 
                 except Exception as e:
-                    print(f"Error in sequential analysis of game {game_data['id']}: {e}")
+                    logger.info(f"Error in sequential analysis of game {game_data['id']}: {e}")
                     results.append({
                         'game_id': game_data['id'],
                         'success': False,

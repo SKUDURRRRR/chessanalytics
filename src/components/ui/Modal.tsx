@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -10,22 +10,59 @@ interface ModalProps {
   children: React.ReactNode;
 }
 
+const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
 export function Modal({ open, onClose, icon, title, children }: ModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      // Focus trap: cycle Tab within dialog
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusableElements = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+        if (focusableElements.length === 0) return;
+
+        const first = focusableElements[0];
+        const last = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     },
     [onClose],
   );
 
   useEffect(() => {
     if (open) {
+      // Save current focus to restore on close
+      previousFocusRef.current = document.activeElement as HTMLElement;
       document.addEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'hidden';
+
+      // Auto-focus first focusable element in dialog
+      requestAnimationFrame(() => {
+        if (dialogRef.current) {
+          const first = dialogRef.current.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+          first?.focus();
+        }
+      });
     }
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
+      // Restore focus to trigger element
+      previousFocusRef.current?.focus();
     };
   }, [open, handleKeyDown]);
 
@@ -41,6 +78,7 @@ export function Modal({ open, onClose, icon, title, children }: ModalProps) {
 
       {/* Dialog */}
       <div
+        ref={dialogRef}
         className="relative w-full max-w-sm mx-4 bg-surface-1 shadow-modal rounded-lg p-6 animate-scale-in"
         role="dialog"
         aria-modal="true"

@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 """
 Opening Utilities - Normalize opening names and families
 Python port of src/utils/openingUtils.ts for consistent opening normalization
@@ -832,5 +836,5 @@ def identify_opening_from_pgn_moves(pgn: str, user_color: str = 'white') -> tupl
         return "Unknown Opening", None
 
     except Exception as e:
-        print(f"Error identifying opening from moves: {e}")
+        logger.error(f"Error identifying opening from moves: {e}")
         return "Unknown Opening", None

@@ -659,42 +659,33 @@ export interface TrendPoint {
 
 export interface RepertoireAnalysis {
   diversityScore: number
-  diversity_score?: number // snake_case from API
   whiteOpenings: string[]
-  white_openings?: string[] // snake_case from API
   blackOpenings: string[]
-  black_openings?: string[] // snake_case from API
   mostSuccessful: {
     opening: string
     winRate: number
     win_rate?: number // snake_case from API
     games: number
   }
-  most_successful?: any // snake_case from API
   needsWork: {
     opening: string
     winRate: number
     win_rate?: number // snake_case from API
     games: number
   }
-  needs_work?: any // snake_case from API
   styleMatchScore: number
-  style_match_score?: number // snake_case from API
 }
 
 export interface EnhancedOpeningAnalysis {
   openingWinRate: number
-  opening_win_rate?: number // snake_case from API
+  opening_win_rate?: number // snake_case from API (actively read)
   specificMistakes: OpeningMistake[]
-  specific_mistakes?: OpeningMistake[] // snake_case from API
+  specific_mistakes?: OpeningMistake[] // snake_case from API (actively read)
   styleRecommendations: StyleRecommendation[]
-  style_recommendations?: StyleRecommendation[] // snake_case from API
+  style_recommendations?: StyleRecommendation[] // snake_case from API (actively read)
   actionableInsights: string[]
-  actionable_insights?: string[] // snake_case from API
   improvementTrend: TrendPoint[]
-  improvement_trend?: TrendPoint[] // snake_case from API
   repertoireAnalysis: RepertoireAnalysis
-  repertoire_analysis?: RepertoireAnalysis // snake_case from API
 }
 
 // Legacy types for backward compatibility

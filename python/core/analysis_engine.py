@@ -32,7 +32,7 @@ try:
     STOCKFISH_PACKAGE_AVAILABLE = True
 except ImportError:
     STOCKFISH_PACKAGE_AVAILABLE = False
-    print("Warning: stockfish package not available, using chess.engine only")
+    logger.warning("Warning: stockfish package not available, using chess.engine only")
 
 # Heuristic evaluation constants for fallback analysis
 PIECE_VALUES = {
@@ -88,7 +88,7 @@ class SyncEnginePool:
                     self._pool.append(engine)
                     self._in_use.add(engine)
                 except Exception as e:
-                    print(f"⚠️  Failed to create engine: {e}")
+                    logger.error(f"⚠️  Failed to create engine: {e}")
                     raise
 
         # Wait for available engine if at capacity
@@ -474,7 +474,7 @@ class ChessAnalysisEngine:
         with a custom_path override for direct specification.
         """
         if custom_path and os.path.exists(custom_path):
-            print(f"[ENGINE] Using custom Stockfish path: {custom_path}")
+            logger.info(f"Using custom Stockfish path: {custom_path}")
             return custom_path
 
         # Delegate to config.py for path discovery
@@ -482,12 +482,12 @@ class ChessAnalysisEngine:
             from .config import get_config
             config_path = get_config().stockfish.path
             if config_path:
-                print(f"[ENGINE] Using Stockfish from config: {config_path}")
+                logger.info(f"Using Stockfish from config: {config_path}")
                 return config_path
         except Exception as e:
-            print(f"[ENGINE] Config-based path lookup failed: {e}")
+            logger.error(f"Config-based path lookup failed: {e}")
 
-        print(f"[ENGINE] No Stockfish executable found")
+        logger.info(f"No Stockfish executable found")
         return None
 
     def clear_caches(self) -> dict:
@@ -872,7 +872,7 @@ class ChessAnalysisEngine:
             return await self._analyze_position_stockfish(fen, analysis_type)
         finally:
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
-            print(f"Position analysis completed in {processing_time:.1f}ms")
+            logger.info(f"Position analysis completed in {processing_time:.1f}ms")
 
     async def analyze_move(self, board: chess.Board, move: chess.Move,
                           analysis_type: Optional[AnalysisType] = None,
@@ -893,7 +893,7 @@ class ChessAnalysisEngine:
             return await self._analyze_move_stockfish(board, move, analysis_type, fullmove_number, is_user_move, ply_index, force_engine=force_engine)
         finally:
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
-            print(f"Move analysis completed in {processing_time:.1f}ms")
+            logger.info(f"Move analysis completed in {processing_time:.1f}ms")
 
     async def analyze_game(self, pgn: str, user_id: str, platform: str,
                           analysis_type: Optional[AnalysisType] = None,
@@ -904,13 +904,13 @@ class ChessAnalysisEngine:
 
         try:
             # Parse PGN
-            print(f"[GAME ANALYSIS] Parsing PGN for game_id: {game_id}, user: {user_id}, platform: {platform}")
-            print(f"[GAME ANALYSIS] PGN preview (first 200 chars): {pgn[:200] if pgn else 'None'}...")
+            logger.info(f"Parsing PGN for game_id: {game_id}, user: {user_id}, platform: {platform}")
+            logger.info(f"PGN preview (first 200 chars): {pgn[:200] if pgn else 'None'}...")
             pgn_io = io.StringIO(pgn)
             game = chess.pgn.read_game(pgn_io)
 
             if not game:
-                print(f"[GAME ANALYSIS] ❌ Failed to parse PGN - chess.pgn.read_game() returned None")
+                logger.error(f"❌ Failed to parse PGN - chess.pgn.read_game() returned None")
                 return None
 
             # Use provided game_id or extract from PGN headers
@@ -939,7 +939,7 @@ class ChessAnalysisEngine:
                 # Last resort: generate a unique game ID
                 if not game_id:
                     game_id = f"game_{int(datetime.now().timestamp() * 1000)}"
-                    print(f"[GAME ANALYSIS] ⚠️  Warning: Could not extract game_id from PGN headers. Site: '{site}'. Generated ID: {game_id}")
+                    logger.warning(f"⚠️  Warning: Could not extract game_id from PGN headers. Site: '{site}'. Generated ID: {game_id}")
 
             # Analyze each move
             moves_analysis = []
@@ -968,10 +968,10 @@ class ChessAnalysisEngine:
                             user_is_white = False
                         else:
                             # If both match or neither match, default to white and log warning
-                            print(f"Warning: Could not determine user color for {user_id}. White: '{white_player}', Black: '{black_player}'. Defaulting to white.")
+                            logger.warning(f"Warning: Could not determine user color for {user_id}. White: '{white_player}', Black: '{black_player}'. Defaulting to white.")
                             user_is_white = True
                 else:
-                    print(f"Warning: Missing player names in PGN headers. Defaulting to white.")
+                    logger.warning(f"Warning: Missing player names in PGN headers. Defaulting to white.")
                     user_is_white = True
 
             # Collect all moves and board states first
@@ -979,8 +979,8 @@ class ChessAnalysisEngine:
             for ply_index, move in enumerate(game.mainline_moves(), start=1):
                 # Validate move is legal before adding to move_data
                 if not board.is_legal(move):
-                    print(f"⚠️  WARNING: Illegal move detected during PGN parsing: {move.uci()} at ply {ply_index} in position {board.fen()}")
-                    print(f"   This indicates a corrupted or invalid PGN. Skipping this move.")
+                    logger.warning(f"⚠️  WARNING: Illegal move detected during PGN parsing: {move.uci()} at ply {ply_index} in position {board.fen()}")
+                    logger.info(f"   This indicates a corrupted or invalid PGN. Skipping this move.")
                     continue
 
                 player_color = 'white' if board.turn == chess.WHITE else 'black'
@@ -997,10 +997,10 @@ class ChessAnalysisEngine:
                 })
                 board.push(move)
 
-            print(f"[GAME ANALYSIS] Successfully parsed {len(move_data)} moves from PGN")
+            logger.info(f"Successfully parsed {len(move_data)} moves from PGN")
 
             if not move_data:
-                print(f"[GAME ANALYSIS] ❌ No valid moves found in PGN")
+                logger.info(f"❌ No valid moves found in PGN")
                 return None
 
             # Analyze moves in parallel for better performance
@@ -1047,7 +1047,7 @@ class ChessAnalysisEngine:
             return game_analysis
 
         except Exception as e:
-            print(f"Error analyzing game: {e}")
+            logger.info(f"Error analyzing game: {e}")
             return None
 
     async def _analyze_position_basic(self, fen: str) -> Dict:
@@ -1122,7 +1122,7 @@ class ChessAnalysisEngine:
                 }
 
         except Exception as e:
-            print(f"Stockfish analysis failed: {e}")
+            logger.error(f"Stockfish analysis failed: {e}")
             # Fallback to heuristic analysis
             return await self._analyze_position_basic(fen)
 
@@ -1132,7 +1132,7 @@ class ChessAnalysisEngine:
         # CRITICAL: Try to reconstruct move from board if it's not legal
         # This handles cases where the move object might be from a different board context
         if not board.is_legal(move):
-            print(f"⚠️  Move {move.uci()} not legal in basic analysis: position {board.fen()}")
+            logger.info(f"⚠️  Move {move.uci()} not legal in basic analysis: position {board.fen()}")
 
             # Try to find the move in legal moves - maybe it's just a promotion or castling issue
             legal_moves = list(board.legal_moves)
@@ -1145,12 +1145,12 @@ class ChessAnalysisEngine:
                     if move.promotion is not None:
                         if legal_move.promotion == move.promotion:
                             matching_move = legal_move
-                            print(f"   Found matching legal move: {legal_move.uci()} (promotion: {legal_move.promotion})")
+                            logger.info(f"   Found matching legal move: {legal_move.uci()} (promotion: {legal_move.promotion})")
                             break
                     else:
                         # Non-promotion move - found match
                         matching_move = legal_move
-                        print(f"   Found matching legal move: {legal_move.uci()}")
+                        logger.info(f"   Found matching legal move: {legal_move.uci()}")
                         break
 
             if matching_move:
@@ -1158,7 +1158,7 @@ class ChessAnalysisEngine:
                 move = matching_move
             else:
                 # Move truly doesn't exist - return illegal move analysis
-                print(f"   Move {move.uci()} truly illegal - returning illegal move analysis")
+                logger.info(f"   Move {move.uci()} truly illegal - returning illegal move analysis")
                 return MoveAnalysis(
                     move=move.uci(),
                     move_san="illegal",
@@ -1187,9 +1187,9 @@ class ChessAnalysisEngine:
         if is_capture_move:
             captured_square = chess.square_name(move.to_square)
             captured_piece = board.piece_at(move.to_square)
-            print(f"[MOVE_SAN DEBUG] Move {move.uci()} -> SAN: {move_san}, is_capture: {is_capture_move}, captured on {captured_square}: {captured_piece}")
+            logger.info(f"Move {move.uci()} -> SAN: {move_san}, is_capture: {is_capture_move}, captured on {captured_square}: {captured_piece}")
             if 'x' not in move_san:
-                print(f"[MOVE_SAN ERROR] Capture move but no 'x' in SAN! move_san={move_san}, should include 'x'")
+                logger.info(f"Capture move but no 'x' in SAN! move_san={move_san}, should include 'x'")
 
         # Store FEN position before the move
         fen_before = board.fen()
@@ -1245,9 +1245,9 @@ class ChessAnalysisEngine:
 
         # DEBUG: Log hanging piece detection
         if new_hanging:
-            print(f"[HANGING DEBUG] Move {move_san}: Detected {len(new_hanging)} new hanging pieces:")
+            logger.info(f"Move {move_san}: Detected {len(new_hanging)} new hanging pieces:")
             for h in new_hanging:
-                print(f"  - {h['piece']} on {h['square']} (attackers={h.get('attackers', 0)}, defenders={h.get('defenders', 0)})")
+                logger.info(f"  - {h['piece']} on {h['square']} (attackers={h.get('attackers', 0)}, defenders={h.get('defenders', 0)})")
 
         if color_to_move == chess.WHITE:
             delta = after_score - before_score
@@ -1659,7 +1659,7 @@ class ChessAnalysisEngine:
 
             # Validate boards are different (catch bugs)
             if board_before.fen() == board_after.fen():
-                print(f"[WARNING] board_before == board_after for {move_analysis.move_san}! This indicates a bug.")
+                logger.warning(f"board_before == board_after for {move_analysis.move_san}! This indicates a bug.")
 
             # Prepare enhanced move analysis data with CORRECT board positions
             enhanced_move_data = move_analysis.__dict__.copy()
@@ -1674,7 +1674,7 @@ class ChessAnalysisEngine:
                 if captured:
                     piece_names = {chess.PAWN: 'pawn', chess.KNIGHT: 'knight', chess.BISHOP: 'bishop',
                                    chess.ROOK: 'rook', chess.QUEEN: 'queen', chess.KING: 'king'}
-                    print(f"[CAPTURE DEBUG] {move_analysis.move_san}: Captured {piece_names.get(captured.piece_type, 'piece')} on {chess.square_name(move.to_square)}")
+                    logger.info(f"{move_analysis.move_san}: Captured {piece_names.get(captured.piece_type, 'piece')} on {chess.square_name(move.to_square)}")
 
             # Safely access heuristic_details with null checks
             heuristic_details = move_analysis.heuristic_details or {}
@@ -1691,7 +1691,7 @@ class ChessAnalysisEngine:
             is_single_move_coaching = force_engine  # force_engine=True only from single-move coaching endpoint
             skip_ai_comments = not is_single_move_coaching
 
-            print(f"[COACHING] Checking AI comments: move_number={move_number}, is_user_move={is_user_move}, force_engine={force_engine}, skip_ai_comments={skip_ai_comments}")
+            logger.info(f"Checking AI comments: move_number={move_number}, is_user_move={is_user_move}, force_engine={force_engine}, skip_ai_comments={skip_ai_comments}")
 
             # INSTANT GREETING: Always add instant Tal greeting for player's first move
             # This shows immediately, even before AI comments are generated
@@ -1723,11 +1723,11 @@ class ChessAnalysisEngine:
                 move_analysis.move_quality = "good"  # Default quality for greeting
                 move_analysis.game_phase = game_phase.value
                 move_analysis.encouragement_level = 5  # High encouragement for greeting
-                print(f"[INSTANT_GREETING] ✅ Added instant Tal greeting for first move (ply={ply_index}, fullmove={move_number}, is_user_move={is_user_move}, move_san={move_analysis.move_san}): {instant_greeting[:50]}...")
+                logger.info(f"✅ Added instant Tal greeting for first move (ply={ply_index}, fullmove={move_number}, is_user_move={is_user_move}, move_san={move_analysis.move_san}): {instant_greeting[:50]}...")
             else:
                 # Only log if it's a user move with fullmove_number == 1 (to avoid spam)
                 if is_user_move and move_number == 1:
-                    print(f"[INSTANT_GREETING] ⚠️ Skipped greeting: is_user_move={is_user_move}, move_number={move_number}, ply_index={ply_index}, move_san={move_analysis.move_san}")
+                    logger.info(f"⚠️ Skipped greeting: is_user_move={is_user_move}, move_number={move_number}, ply_index={ply_index}, move_san={move_analysis.move_san}")
 
             # Always generate coaching comments using templates.
             # For batch analysis (skip_ai_comments=True), temporarily disable the AI
@@ -1770,11 +1770,11 @@ class ChessAnalysisEngine:
             return move_analysis
 
         except Exception as e:
-            print(f"Error generating coaching comment: {e}")
-            print(f"Move analysis details: move={move_analysis.move_san}, heuristic_details={type(move_analysis.heuristic_details)}")
-            print(f"Board state: {board.fen()}")
+            logger.info(f"Error generating coaching comment: {e}")
+            logger.info(f"Move analysis details: move={move_analysis.move_san}, heuristic_details={type(move_analysis.heuristic_details)}")
+            logger.info(f"Board state: {board.fen()}")
             import traceback
-            print(f"Traceback: {traceback.format_exc()}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
             # Return original analysis if coaching fails
             return move_analysis
 
@@ -2052,7 +2052,7 @@ class ChessAnalysisEngine:
 
                 # Enhance with coaching comments (including instant Tal greeting for first move)
                 actual_is_user_move = is_user_move if is_user_move is not None else True
-                print(f"[OPENING_BOOK] Calling _enhance_move_analysis_with_coaching with fullmove_number={fullmove_number}, is_user_move={actual_is_user_move}")
+                logger.info(f"Calling _enhance_move_analysis_with_coaching with fullmove_number={fullmove_number}, is_user_move={actual_is_user_move}")
                 return self._enhance_move_analysis_with_coaching(book_move_analysis, board, move, fullmove_number, is_user_move=actual_is_user_move, force_engine=force_engine)
 
         # Use adaptive depth based on position complexity (30% speedup on average)
@@ -2141,15 +2141,15 @@ class ChessAnalysisEngine:
                         # Store in cache for future transpositions
                         self._position_cache.set(cache_key, (eval_before, best_move_before, best_move_pv))
 
-                    print(f"[PV DEBUG] Captured {len(best_move_pv)} moves in best_move_pv for position")
+                    logger.info(f"Captured {len(best_move_pv)} moves in best_move_pv for position")
                     player_color = board.turn
 
                     # Validate move is legal before proceeding
                     # CRITICAL: Try to reconstruct move from board if it's not legal
                     # This handles cases where the move object might be from a different board context
                     if not board.is_legal(current_move):
-                        print(f"⚠️  Move {current_move.uci()} not legal in position {board.fen()}")
-                        print(f"   Board turn: {board.turn}, Move from: {chess.square_name(current_move.from_square)}, to: {chess.square_name(current_move.to_square)}")
+                        logger.info(f"⚠️  Move {current_move.uci()} not legal in position {board.fen()}")
+                        logger.info(f"   Board turn: {board.turn}, Move from: {chess.square_name(current_move.from_square)}, to: {chess.square_name(current_move.to_square)}")
 
                         # Try to find the move in legal moves - maybe it's just a promotion or castling issue
                         legal_moves = list(board.legal_moves)
@@ -2162,12 +2162,12 @@ class ChessAnalysisEngine:
                                 if current_move.promotion is not None:
                                     if legal_move.promotion == current_move.promotion:
                                         matching_move = legal_move
-                                        print(f"   Found matching legal move: {legal_move.uci()} (promotion: {legal_move.promotion})")
+                                        logger.info(f"   Found matching legal move: {legal_move.uci()} (promotion: {legal_move.promotion})")
                                         break
                                 else:
                                     # Non-promotion move - found match
                                     matching_move = legal_move
-                                    print(f"   Found matching legal move: {legal_move.uci()}")
+                                    logger.info(f"   Found matching legal move: {legal_move.uci()}")
                                     break
 
                         if matching_move:
@@ -2175,7 +2175,7 @@ class ChessAnalysisEngine:
                             current_move = matching_move
                         else:
                             # Move truly doesn't exist - fallback to basic analysis
-                            print(f"   Move {current_move.uci()} truly illegal - falling back to basic analysis")
+                            logger.info(f"   Move {current_move.uci()} truly illegal - falling back to basic analysis")
                             import asyncio
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
@@ -2300,7 +2300,7 @@ class ChessAnalysisEngine:
                         pass
 
                     # DEBUG: Always log centipawn loss for ALL moves (before the check)
-                    print(f"[BRILLIANT DEBUG] {move_san_debug} ({move_uci_debug}): centipawn_loss={centipawn_loss:.1f}, best_cp={best_cp:.1f}, actual_cp={actual_cp:.1f}")
+                    logger.info(f"{move_san_debug} ({move_uci_debug}): centipawn_loss={centipawn_loss:.1f}, best_cp={best_cp:.1f}, actual_cp={actual_cp:.1f}")
                     try:
                         with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                             f.write(f"[BRILLIANT DEBUG] {move_san_debug} ({move_uci_debug}): centipawn_loss={centipawn_loss:.1f}, best_cp={best_cp:.1f}, actual_cp={actual_cp:.1f}\n")
@@ -2347,7 +2347,7 @@ class ChessAnalysisEngine:
                                             tactical_sacrifice_threshold = 75  # Allow up to 75cp loss for clear tactical sacrifices (matches Nxe6 with 69cp loss)
 
                                             debug_msg = f"[BRILLIANT DEBUG] {move_san_debug}: DETECTED CLEAR TACTICAL SACRIFICE (sacrifice_value={sacrifice_value}, can_be_captured=True) - allowing higher centipawn_loss threshold (75cp)"
-                                            print(debug_msg)
+                                            logger.info(debug_msg)
                                             try:
                                                 with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                     f.write(debug_msg + "\n")
@@ -2372,13 +2372,13 @@ class ChessAnalysisEngine:
                     if centipawn_loss <= tactical_sacrifice_threshold:  # Dynamic threshold: 10cp default, 60cp for clear tactical sacrifices
                         optimal_cp = best_cp
                         threshold_msg = f"WITHIN RANGE (threshold={tactical_sacrifice_threshold}cp)" if not is_potential_clear_tactical else f"WITHIN TACTICAL SACRIFICE RANGE (threshold={tactical_sacrifice_threshold}cp)"
-                        print(f"[BRILLIANT DEBUG] Checking {move_san_debug}: {threshold_msg}")
+                        logger.info(f"Checking {move_san_debug}: {threshold_msg}")
 
                         # Get rating-adjusted thresholds (default to 1500 if not available)
                         # NOTE: Player rating context would improve threshold accuracy (future enhancement)
                         rating_thresholds = get_rating_adjusted_brilliant_threshold(player_rating=None)
                     else:
-                        print(f"[BRILLIANT DEBUG] {move_san_debug} SKIPPED: centipawn_loss={centipawn_loss:.1f} > {tactical_sacrifice_threshold} (too high for brilliant)")
+                        logger.info(f"{move_san_debug} SKIPPED: centipawn_loss={centipawn_loss:.1f} > {tactical_sacrifice_threshold} (too high for brilliant)")
                         try:
                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                 f.write(f"[BRILLIANT DEBUG] {move_san_debug} SKIPPED: centipawn_loss too high ({centipawn_loss:.1f} > {tactical_sacrifice_threshold})\n")
@@ -2425,16 +2425,16 @@ class ChessAnalysisEngine:
 
                         is_king_move = (moving_piece_type == chess.KING)
                         if is_king_move:
-                            print(f"[BRILLIANT DEBUG] {move_san_debug}: King move detected - rarely brilliant unless it's a sacrifice")
+                            logger.info(f"{move_san_debug}: King move detected - rarely brilliant unless it's a sacrifice")
 
                         if move_gives_check:
-                            print(f"[BRILLIANT DEBUG] {move_san_debug}: Move gives check detected - will block if not a sacrifice")
+                            logger.info(f"{move_san_debug}: Move gives check detected - will block if not a sacrifice")
 
                         if move_is_checkmate:
-                            print(f"[BRILLIANT DEBUG] {move_san_debug}: Move is immediate checkmate - will block unless it's a sacrifice")
+                            logger.info(f"{move_san_debug}: Move is immediate checkmate - will block unless it's a sacrifice")
 
                         if is_forced_move:
-                            print(f"[BRILLIANT DEBUG] {move_san_debug}: Move appears forced (only {num_legal_moves_before} legal moves)")
+                            logger.info(f"{move_san_debug}: Move appears forced (only {num_legal_moves_before} legal moves)")
 
                         # -----------------------------------------------------------------------
                         # CRITERION 1: Non-Obvious Move Detection
@@ -2517,7 +2517,7 @@ class ChessAnalysisEngine:
                                 is_non_obvious = is_non_obvious and num_legal_moves >= min_moves_required
 
                         except Exception as e:
-                            print(f"[BRILLIANT] Error in non-obvious detection: {e}")
+                            logger.info(f"Error in non-obvious detection: {e}")
                             # Fallback: assume non-obvious if position is complex
                             num_legal_moves = len(list(board.legal_moves))
                             is_non_obvious = num_legal_moves >= rating_thresholds['non_obvious_threshold']
@@ -2559,7 +2559,7 @@ class ChessAnalysisEngine:
                                                 if mate_in_moves <= rating_thresholds['mate_in_moves']:
                                                     pv_contains_mate = True
                                                     mate_found = True
-                                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Found mate in PV at move {mate_in_moves} (PV line shows mate)")
+                                                    logger.info(f"{move_san_debug}: Found mate in PV at move {mate_in_moves} (PV line shows mate)")
                                                     break
                                     except Exception:
                                         continue
@@ -2567,7 +2567,7 @@ class ChessAnalysisEngine:
                                 # High evaluation alone could just be winning material, not brilliant
                                 # Only check PV for actual mate sequences, not just high evaluations
                             except Exception as e:
-                                print(f"[BRILLIANT DEBUG] Error checking PV for mate: {e}")
+                                logger.info(f"Error checking PV for mate: {e}")
 
                         forcing_mate_trigger = immediate_mate or pv_contains_mate
 
@@ -2674,7 +2674,7 @@ class ChessAnalysisEngine:
                                             reason.append("piece can't be captured (not a sacrifice, just winning material)")
                                         if sacrifice_value < 3:
                                             reason.append(f"insufficient sacrifice value ({sacrifice_value} < 3)")
-                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: NOT clear tactical sacrifice - {', '.join(reason)}")
+                                        logger.info(f"{move_san_debug}: NOT clear tactical sacrifice - {', '.join(reason)}")
 
                                     # DEBUG: Log sacrifice detection
                                     if board.is_capture(move):
@@ -2683,7 +2683,7 @@ class ChessAnalysisEngine:
                                               f"sacrifice_value={sacrifice_value}, "
                                               f"is_clear_tactical_sacrifice={is_clear_tactical_sacrifice}, "
                                               f"sacrifice_detected={sacrifice_detected}")
-                                        print(debug_msg)
+                                        logger.info(debug_msg)
                                         try:
                                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                 f.write(debug_msg + "\n")
@@ -2765,7 +2765,7 @@ class ChessAnalysisEngine:
                                               f"not_already_crushing={not_already_crushing}, optimal_cp={optimal_cp:.1f}, "
                                               f"has_compensation={has_compensation}, actual_cp={actual_cp:.1f}, "
                                               f"compensation_threshold={compensation_threshold:.1f})")
-                                        print(debug_msg)
+                                        logger.info(debug_msg)
                                         try:
                                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                 f.write(debug_msg + "\n")
@@ -2819,7 +2819,7 @@ class ChessAnalysisEngine:
                                                 other_pieces_hanging_value = max(other_pieces_hanging_value, piece_value)
                                                 was_hanging_before = square in pieces_hanging_before
                                                 status = "became hanging" if not was_hanging_before else "already hanging"
-                                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Piece on {chess.square_name(square)} ({piece.symbol()}) is {status} after move")
+                                                logger.info(f"{move_san_debug}: Piece on {chess.square_name(square)} ({piece.symbol()}) is {status} after move")
 
                                 board.pop()
 
@@ -2859,11 +2859,11 @@ class ChessAnalysisEngine:
                                             # In crushing positions (+400cp), require at least Rook (5 points) hanging for brilliant
                                             # Knight/Bishop hanging in crushing positions is likely just a good move, not brilliant
                                             not_already_crushing = False
-                                            print(f"[BRILLIANT DEBUG] {move_san_debug}: Position too winning (+{optimal_cp:.0f}cp) with only {other_pieces_hanging_value} points hanging - not brilliant")
+                                            logger.info(f"{move_san_debug}: Position too winning (+{optimal_cp:.0f}cp) with only {other_pieces_hanging_value} points hanging - not brilliant")
                                         else:
                                             # The brilliance is in the tactical calculation, not whether position was already winning
                                             not_already_crushing = True  # Always allow if leaving significant pieces hanging with strong threat
-                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Leaving pieces hanging with strong threat - optimal_cp={optimal_cp:.1f}, pieces_value={other_pieces_hanging_value}")
+                                        logger.info(f"{move_san_debug}: Leaving pieces hanging with strong threat - optimal_cp={optimal_cp:.1f}, pieces_value={other_pieces_hanging_value}")
                                     else:
                                         not_already_crushing = optimal_cp < rating_thresholds['max_position_cp']
 
@@ -2875,7 +2875,7 @@ class ChessAnalysisEngine:
                                     )
 
                                     # Debug output
-                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Sacrifice check - is_leaving_pieces_hanging={is_leaving_pieces_hanging}, move_creates_strong_threat={move_creates_strong_threat}, not_already_crushing={not_already_crushing}, has_compensation={has_compensation}, optimal_cp={optimal_cp:.1f}, actual_cp={actual_cp:.1f}")
+                                    logger.info(f"{move_san_debug}: Sacrifice check - is_leaving_pieces_hanging={is_leaving_pieces_hanging}, move_creates_strong_threat={move_creates_strong_threat}, not_already_crushing={not_already_crushing}, has_compensation={has_compensation}, optimal_cp={optimal_cp:.1f}, actual_cp={actual_cp:.1f}")
 
                                     sacrifice_trigger = (
                                         not_already_crushing and
@@ -2883,20 +2883,20 @@ class ChessAnalysisEngine:
                                     )
 
                                     if sacrifice_trigger:
-                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture sacrifice detected - moving_piece_sacrifice={is_moving_piece_sacrifice}, leaving_pieces_hanging={is_leaving_pieces_hanging}, creates_strong_threat={move_creates_strong_threat}")
+                                        logger.info(f"{move_san_debug}: Non-capture sacrifice detected - moving_piece_sacrifice={is_moving_piece_sacrifice}, leaving_pieces_hanging={is_leaving_pieces_hanging}, creates_strong_threat={move_creates_strong_threat}")
                                     else:
-                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture sacrifice FAILED - not_already_crushing={not_already_crushing}, has_compensation={has_compensation}")
+                                        logger.info(f"{move_san_debug}: Non-capture sacrifice FAILED - not_already_crushing={not_already_crushing}, has_compensation={has_compensation}")
                                 else:
                                     # Piece can't be captured or doesn't hang - not a sacrifice
                                     sacrifice_trigger = False
                                     if not is_moving_piece_sacrifice and not is_leaving_pieces_hanging:
-                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture move - piece can't be captured (attackers={len(attackers)}, defenders={len(defenders)}), no other pieces hanging, not a sacrifice")
+                                        logger.info(f"{move_san_debug}: Non-capture move - piece can't be captured (attackers={len(attackers)}, defenders={len(defenders)}), no other pieces hanging, not a sacrifice")
                                     elif is_leaving_pieces_hanging and not move_creates_strong_threat:
-                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture move - pieces hanging but no strong threat created, not a sacrifice")
+                                        logger.info(f"{move_san_debug}: Non-capture move - pieces hanging but no strong threat created, not a sacrifice")
                             else:
                                 # Piece value too low to be a sacrifice
                                 sacrifice_trigger = False
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Moving piece value ({moving_value}) < min_sacrifice_value ({rating_thresholds['min_sacrifice_value']}), not a sacrifice")
+                                logger.info(f"{move_san_debug}: Moving piece value ({moving_value}) < min_sacrifice_value ({rating_thresholds['min_sacrifice_value']}), not a sacrifice")
 
                         # Restore board state
                         board.push(move)
@@ -2946,7 +2946,7 @@ class ChessAnalysisEngine:
                                         # For brilliant moves, require 3+ points net sacrifice (per Chess.com standards)
                                         # This prevents routine exchanges like Rxf2 (rook for knight = 2 points) from being marked brilliant
                                         sacrifice_points = moving_value - captured_value
-                                        print(f"[BRILLIANT DEBUG] {move_san_debug}: checking clear_tactical - moving_value={moving_value}, captured_value={captured_value}, sacrifice_points={sacrifice_points}")
+                                        logger.info(f"{move_san_debug}: checking clear_tactical - moving_value={moving_value}, captured_value={captured_value}, sacrifice_points={sacrifice_points}")
                                         if moving_value > captured_value and sacrifice_points >= 3:
                                             board.push(move)
                                             to_square = move.to_square
@@ -2957,12 +2957,12 @@ class ChessAnalysisEngine:
                                                 # Piece can be captured if it's attacked (even if defended)
                                                 # For tactical sacrifices, equal attackers/defenders still counts as tactical
                                                 clear_tactical_sacrifice = len(attackers) > 0
-                                                print(f"[BRILLIANT DEBUG] {move_san_debug}: after checking attackers - attackers={len(attackers)}, clear_tactical_sacrifice={clear_tactical_sacrifice}")
+                                                logger.info(f"{move_san_debug}: after checking attackers - attackers={len(attackers)}, clear_tactical_sacrifice={clear_tactical_sacrifice}")
                                             else:
-                                                print(f"[BRILLIANT DEBUG] {move_san_debug}: no piece at to_square after push")
+                                                logger.info(f"{move_san_debug}: no piece at to_square after push")
                                             board.pop()
                                         else:
-                                            print(f"[BRILLIANT DEBUG] {move_san_debug}: not a sacrifice - moving_value={moving_value} <= captured_value={captured_value} OR sacrifice_points={sacrifice_points} < 3")
+                                            logger.info(f"{move_san_debug}: not a sacrifice - moving_value={moving_value} <= captured_value={captured_value} OR sacrifice_points={sacrifice_points} < 3")
                             else:
                                 # Non-capture move - check if it leaves pieces hanging (like Bf6 leaving queen)
                                 # We already calculated this earlier in the non-capture sacrifice section
@@ -2995,7 +2995,7 @@ class ChessAnalysisEngine:
                                 # The key is: pieces hanging + strong threat = tactical sacrifice candidate
                                 if other_pieces_hanging_value >= 3 and move_creates_strong_threat_here:
                                     non_capture_hanging_pieces = True
-                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Non-capture leaves pieces hanging (value={other_pieces_hanging_value}) with strong threat - treating as clear tactical")
+                                    logger.info(f"{move_san_debug}: Non-capture leaves pieces hanging (value={other_pieces_hanging_value}) with strong threat - treating as clear tactical")
                                 board.pop()
                             board.push(move)
 
@@ -3004,8 +3004,7 @@ class ChessAnalysisEngine:
                         # KEY: Must be TRUE SACRIFICE - piece must be capturable (not just winning material)
                         # Queen captures that win material are NOT brilliant unless piece can also be captured
 
-                        # DEBUG: Log clear tactical sacrifice detection
-                        print(f"[BRILLIANT DEBUG] {move_san_debug}: clear_tactical_sacrifice={clear_tactical_sacrifice}, "
+                        logger.debug(f"{move_san_debug}: clear_tactical_sacrifice={clear_tactical_sacrifice}, "
                               f"non_capture_hanging_pieces={non_capture_hanging_pieces}, "
                               f"centipawn_loss={centipawn_loss:.1f}")
 
@@ -3096,7 +3095,7 @@ class ChessAnalysisEngine:
                                         # Very lenient - even if there are only 2 moves, if one is a brilliant tactical sacrifice, mark it brilliant
                                         # Chess.com is lenient for tactical sacrifices
                                         debug_msg = f"[BRILLIANT DEBUG] {move_san_debug}: non-obvious check - num_legal={num_legal}"
-                                        print(debug_msg)
+                                        logger.info(debug_msg)
                                         try:
                                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                 f.write(debug_msg + "\n")
@@ -3105,7 +3104,7 @@ class ChessAnalysisEngine:
                                         if num_legal < 2:
                                             brilliant_via_sacrifice = False
                                             debug_msg = f"[BRILLIANT DEBUG] {move_san_debug}: BLOCKED by non-obvious check (num_legal={num_legal} < 2)"
-                                            print(debug_msg)
+                                            logger.info(debug_msg)
                                             try:
                                                 with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                     f.write(debug_msg + "\n")
@@ -3113,7 +3112,7 @@ class ChessAnalysisEngine:
                                                 pass
                                     except Exception as e:
                                         debug_msg = f"[BRILLIANT DEBUG] {move_san_debug}: error in non-obvious check: {e}"
-                                        print(debug_msg)
+                                        logger.info(debug_msg)
                                         try:
                                             with open("brilliant_debug.log", "a", encoding="utf-8") as f:
                                                 f.write(debug_msg + "\n")
@@ -3123,7 +3122,7 @@ class ChessAnalysisEngine:
                                 # Piece can't be captured - this is just winning material, not a sacrifice
                                 # Not brilliant (even if it's a fork/pin)
                                 brilliant_via_sacrifice = False
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Piece can't be captured after move - not a sacrifice, just winning material (fork/pin)")
+                                logger.info(f"{move_san_debug}: Piece can't be captured after move - not a sacrifice, just winning material (fork/pin)")
                         elif forcing_mate_trigger:
                             # Forced mate: must be best move (0-5cp) AND non-obvious
                             # Only mark as brilliant if:
@@ -3136,20 +3135,20 @@ class ChessAnalysisEngine:
                             if move_gives_check and not sacrifice_trigger:
                                 # Check that just wins material (fork/pin) - not brilliant even if it finds mate
                                 brilliant_via_sacrifice = False
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: BLOCKED - check that just wins material (fork/pin), not brilliant even if finds mate")
+                                logger.info(f"{move_san_debug}: BLOCKED - check that just wins material (fork/pin), not brilliant even if finds mate")
                             elif sacrifice_trigger:
                                 # Sacrifice leading to mate is always brilliant (if non-obvious)
                                 brilliant_via_sacrifice = True
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Sacrifice leading to mate detected - marking as brilliant")
+                                logger.info(f"{move_san_debug}: Sacrifice leading to mate detected - marking as brilliant")
                             elif is_non_obvious and centipawn_loss <= 5:
                                 # Finding mate when there wasn't one before - but only if non-obvious
                                 # BUT: Must not be a check that just wins material
                                 if not move_gives_check:
                                     brilliant_via_sacrifice = True
-                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: Found forced mate (non-obvious) - marking as brilliant")
+                                    logger.info(f"{move_san_debug}: Found forced mate (non-obvious) - marking as brilliant")
                                 else:
                                     brilliant_via_sacrifice = False
-                                    print(f"[BRILLIANT DEBUG] {move_san_debug}: BLOCKED - check without sacrifice, not brilliant")
+                                    logger.info(f"{move_san_debug}: BLOCKED - check without sacrifice, not brilliant")
                             else:
                                 brilliant_via_sacrifice = False
                         else:
@@ -3159,7 +3158,7 @@ class ChessAnalysisEngine:
                             if move_gives_check and not sacrifice_trigger:
                                 # Check that just wins material (fork/pin) - not brilliant
                                 brilliant_via_sacrifice = False
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: BLOCKED - check that just wins material (fork/pin), not brilliant")
+                                logger.info(f"{move_san_debug}: BLOCKED - check that just wins material (fork/pin), not brilliant")
                             else:
                                 brilliant_via_sacrifice = sacrifice_trigger and centipawn_loss <= 5
 
@@ -3171,7 +3170,7 @@ class ChessAnalysisEngine:
                             # Only allow if it's a sacrifice leading to mate
                             if not (sacrifice_trigger and forcing_mate_trigger):
                                 is_brilliant = False
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: OVERRIDE - king move without sacrifice, not brilliant")
+                                logger.info(f"{move_san_debug}: OVERRIDE - king move without sacrifice, not brilliant")
 
                         if brilliant_via_sacrifice and forcing_mate_trigger:
                             # Sacrifice for mate is brilliant even if slightly forced (3-4 legal moves)
@@ -3179,7 +3178,7 @@ class ChessAnalysisEngine:
                             if not is_brilliant:  # Only set if not already blocked
                                 is_brilliant = not is_forced_move and not (is_king_move and not sacrifice_trigger)
                             if is_brilliant:
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Sacrifice for mate - allowing even with {num_legal_moves_before} legal moves")
+                                logger.info(f"{move_san_debug}: Sacrifice for mate - allowing even with {num_legal_moves_before} legal moves")
                         else:
                             # For other brilliant moves, require non-obvious AND not forced AND not a king move
                             if not is_brilliant:  # Only set if not already blocked
@@ -3187,7 +3186,7 @@ class ChessAnalysisEngine:
 
                         if is_forced_move:
                             is_brilliant = False
-                            print(f"[BRILLIANT DEBUG] {move_san_debug}: OVERRIDE - forced move (only {num_legal_moves_before} legal moves), not brilliant")
+                            logger.info(f"{move_san_debug}: OVERRIDE - forced move (only {num_legal_moves_before} legal moves), not brilliant")
 
                         # Final safety check: If move is a check that just wins material (not a sacrifice), it's not brilliant
                         # CRITICAL: Checks that fork/pin (win material) without sacrifice are NOT brilliant
@@ -3203,8 +3202,8 @@ class ChessAnalysisEngine:
                         if move_is_checkmate:
                             # Immediate checkmate is NOT brilliant - it's just the winning move
                             is_brilliant = False
-                            print(f"[BRILLIANT DEBUG] {move_san_debug}: FINAL OVERRIDE - immediate checkmate is not brilliant (just the winning move)")
-                            print(f"[BRILLIANT DEBUG] {move_san_debug}: move_is_checkmate={move_is_checkmate}, sacrifice_trigger={sacrifice_trigger}")
+                            logger.info(f"{move_san_debug}: FINAL OVERRIDE - immediate checkmate is not brilliant (just the winning move)")
+                            logger.info(f"{move_san_debug}: move_is_checkmate={move_is_checkmate}, sacrifice_trigger={sacrifice_trigger}")
 
                         if move_gives_check:
                             if not sacrifice_trigger:
@@ -3213,19 +3212,19 @@ class ChessAnalysisEngine:
                                 # moves but NOT brilliant sacrifices, regardless of whether they lead to mate
                                 # CRITICAL OVERRIDE: This must be the final word - checks without sacrifice are NEVER brilliant
                                 is_brilliant = False
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: FINAL OVERRIDE - check without sacrifice is not brilliant (even if finds mate)")
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: move_gives_check={move_gives_check}, sacrifice_trigger={sacrifice_trigger}, forcing_mate_trigger={forcing_mate_trigger}")
+                                logger.info(f"{move_san_debug}: FINAL OVERRIDE - check without sacrifice is not brilliant (even if finds mate)")
+                                logger.info(f"{move_san_debug}: move_gives_check={move_gives_check}, sacrifice_trigger={sacrifice_trigger}, forcing_mate_trigger={forcing_mate_trigger}")
                             else:
-                                print(f"[BRILLIANT DEBUG] {move_san_debug}: Check move allowed - it's a sacrifice (sacrifice_trigger={sacrifice_trigger})")
+                                logger.info(f"{move_san_debug}: Check move allowed - it's a sacrifice (sacrifice_trigger={sacrifice_trigger})")
 
                         # DEBUG: Final result with clear summary
                         status = "🌟 BRILLIANT! 🌟" if is_brilliant else "❌ NOT BRILLIANT"
-                        print(f"\n{'='*80}")
-                        print(f"[BRILLIANT SUMMARY] {move_san_debug} ({move_uci_debug}): {status}")
-                        print(f"  centipawn_loss={centipawn_loss:.1f}, actual_cp={actual_cp:.1f}")
-                        print(f"  brilliant_via_mate={brilliant_via_mate}, brilliant_via_sacrifice={brilliant_via_sacrifice}")
-                        print(f"  sacrifice_trigger={sacrifice_trigger}, clear_tactical_sacrifice={clear_tactical_sacrifice}")
-                        print(f"{'='*80}\n")
+                        logger.info(f"\n{'='*80}")
+                        logger.info(f"{move_san_debug} ({move_uci_debug}): {status}")
+                        logger.info(f"  centipawn_loss={centipawn_loss:.1f}, actual_cp={actual_cp:.1f}")
+                        logger.info(f"  brilliant_via_mate={brilliant_via_mate}, brilliant_via_sacrifice={brilliant_via_sacrifice}")
+                        logger.info(f"  sacrifice_trigger={sacrifice_trigger}, clear_tactical_sacrifice={clear_tactical_sacrifice}")
+                        logger.info(f"{'='*80}\n")
 
                         # Write summary to log file
                         try:
@@ -3329,16 +3328,16 @@ class ChessAnalysisEngine:
                     # DO NOT push the move here - _enhance_move_analysis_with_coaching expects board BEFORE the move
                     # Use captured is_user_move if provided, otherwise default to True
                     actual_is_user_move = captured_is_user_move if captured_is_user_move is not None else True
-                    print(f"[REGULAR_PATH] Calling _enhance_move_analysis_with_coaching with move_number={move_number}, is_user_move={actual_is_user_move}")
+                    logger.info(f"Calling _enhance_move_analysis_with_coaching with move_number={move_number}, is_user_move={actual_is_user_move}")
                     return self._enhance_move_analysis_with_coaching(move_analysis, board, current_move, move_number, is_user_move=actual_is_user_move, force_engine=captured_force_engine)
             except Exception as e:
                 error_msg = str(e)
                 if "exit code: -9" in error_msg or "died unexpectedly" in error_msg:
-                    print(f"⚠️  Stockfish move analysis failed (likely OOM): {e}")
-                    print(f"   This is usually caused by memory constraints on Railway free tier.")
-                    print(f"   Falling back to basic heuristic analysis...")
+                    logger.info(f"⚠️  Stockfish move analysis failed (likely OOM): {e}")
+                    logger.info(f"   This is usually caused by memory constraints on Railway free tier.")
+                    logger.info(f"   Falling back to basic heuristic analysis...")
                 else:
-                    print(f"Stockfish move analysis failed: {e}")
+                    logger.error(f"Stockfish move analysis failed: {e}")
                 # Fallback to heuristic analysis - run in thread pool since this is not async
                 import asyncio
                 loop = asyncio.new_event_loop()
@@ -3358,10 +3357,10 @@ class ChessAnalysisEngine:
         except Exception as e:
             error_msg = str(e)
             if "exit code: -9" in error_msg or "died unexpectedly" in error_msg:
-                print(f"⚠️  Thread pool execution failed (likely OOM): {e}")
-                print(f"   Stockfish process was killed by system. Falling back to basic analysis...")
+                logger.info(f"⚠️  Thread pool execution failed (likely OOM): {e}")
+                logger.info(f"   Stockfish process was killed by system. Falling back to basic analysis...")
             else:
-                print(f"Thread pool execution failed: {e}")
+                logger.error(f"Thread pool execution failed: {e}")
             # Fallback to heuristic analysis
             return await self._analyze_move_basic(board, move)
 
@@ -3756,28 +3755,28 @@ class ChessAnalysisEngine:
 if __name__ == "__main__":
     async def test_analysis_engine():
         """Test the analysis engine with different configurations."""
-        print("Testing Chess Analysis Engine...")
+        logger.info("Testing Chess Analysis Engine...")
 
         # Test heuristic fallback analysis
-        print("\n=== Testing Heuristic Fallback Analysis ===")
+        logger.info("\n=== Testing Heuristic Fallback Analysis ===")
         heuristic_config = AnalysisConfig(analysis_type=AnalysisType.STOCKFISH)
         heuristic_engine = ChessAnalysisEngine(config=heuristic_config)
 
         starting_position = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
         heuristic_result = await heuristic_engine.analyze_position(starting_position)
-        print(f"Heuristic fallback analysis result: {heuristic_result}")
+        logger.info(f"Heuristic fallback analysis result: {heuristic_result}")
 
         # Test Stockfish analysis (if available)
         if heuristic_engine.stockfish_path:
-            print("\n=== Testing Stockfish Analysis ===")
+            logger.info("\n=== Testing Stockfish Analysis ===")
             stockfish_config = AnalysisConfig(analysis_type=AnalysisType.STOCKFISH, depth=10)
             stockfish_engine = ChessAnalysisEngine(config=stockfish_config, stockfish_path=heuristic_engine.stockfish_path)
 
             stockfish_result = await stockfish_engine.analyze_position(starting_position)
-            print(f"Stockfish analysis result: {stockfish_result}")
+            logger.info(f"Stockfish analysis result: {stockfish_result}")
         else:
-            print("Stockfish not available, skipping Stockfish tests")
+            logger.info("Stockfish not available, skipping Stockfish tests")
 
-        print("\nðŸŽ‰ Analysis engine testing complete!")
+        logger.info("\nðŸŽ‰ Analysis engine testing complete!")
 
     asyncio.run(test_analysis_engine())

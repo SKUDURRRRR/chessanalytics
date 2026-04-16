@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 #!/usr/bin/env python3
 """
 Memory Monitoring System
@@ -104,10 +108,10 @@ class MemoryMonitor:
         self._baseline = self._take_snapshot()
         self._peak = self._baseline
         self._snapshots.append(self._baseline)
-        print(f"[MEMORY] Baseline: {self._baseline}")
+        logger.info(f"Baseline: {self._baseline}")
 
         async def monitor_loop():
-            print(f"[MEMORY] Starting monitor (interval: {self.interval}s, warning: {self.warning_threshold*100}%, critical: {self.critical_threshold*100}%)")
+            logger.warning(f"Starting monitor (interval: {self.interval}s, warning: {self.warning_threshold*100}%, critical: {self.critical_threshold*100}%)")
 
             while True:
                 try:
@@ -130,20 +134,20 @@ class MemoryMonitor:
 
                     if usage_ratio >= self.critical_threshold:
                         self._critical_count += 1
-                        print(f"[MEMORY] 🔴 CRITICAL: {snapshot}")
+                        logger.info(f"🔴 CRITICAL: {snapshot}")
                     elif usage_ratio >= self.warning_threshold:
                         self._warning_count += 1
-                        print(f"[MEMORY] ⚠️  WARNING: {snapshot}")
+                        logger.warning(f"⚠️  WARNING: {snapshot}")
                     else:
                         # Log periodically even when healthy (every 10 minutes)
                         if len(self._snapshots) % 10 == 0:
-                            print(f"[MEMORY] ✅ Healthy: {snapshot}")
+                            logger.info(f"✅ Healthy: {snapshot}")
 
                 except asyncio.CancelledError:
-                    print("[MEMORY] Monitor task cancelled")
+                    logger.info("Monitor task cancelled")
                     break
                 except Exception as e:
-                    print(f"[MEMORY] Error in monitor: {e}")
+                    logger.info(f"Error in monitor: {e}")
 
         self._task = asyncio.create_task(monitor_loop())
 
@@ -159,9 +163,9 @@ class MemoryMonitor:
 
         # Final snapshot
         final = self._take_snapshot()
-        print(f"[MEMORY] Final snapshot: {final}")
-        print(f"[MEMORY] Peak process memory: {self._peak.process_mb:.0f}MB" if self._peak else "")
-        print(f"[MEMORY] Warnings: {self._warning_count}, Critical: {self._critical_count}")
+        logger.info(f"Final snapshot: {final}")
+        logger.info(f"Peak process memory: {self._peak.process_mb:.0f}MB" if self._peak else "")
+        logger.info(f"Warnings: {self._warning_count}, Critical: {self._critical_count}")
 
     def get_current(self) -> MemorySnapshot:
         """Get current memory snapshot."""
@@ -253,7 +257,7 @@ def get_memory_monitor(
             warning_threshold=warning_threshold,
             critical_threshold=critical_threshold
         )
-        print(f"[MEMORY] Initialized global monitor (interval={interval}s)")
+        logger.info(f"Initialized global monitor (interval={interval}s)")
 
     return _memory_monitor
 

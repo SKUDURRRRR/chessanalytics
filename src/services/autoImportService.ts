@@ -1,6 +1,7 @@
 // Auto Import Service - Handles importing games from external platforms
 import { config } from '../lib/config'
 import { sanitizeErrorMessage } from '../utils/errorSanitizer'
+import { logger } from '../utils/logger'
 
 const API_URL = config.getApi().baseUrl
 
@@ -90,7 +91,7 @@ export class AutoImportService {
           throw new Error(`${platform === 'chess.com' ? 'Chess.com' : 'Lichess'} is taking too long to respond. Please try again.`)
         } else if (response.status >= 500) {
           // Server error - don't expose internal error details in production
-          console.error('Server error details:', errorMessage)
+          logger.error('Server error details:', errorMessage)
           throw new Error(`We're experiencing technical difficulties. Please try again later.`)
         } else {
           throw new Error(errorMessage || `HTTP error! status: ${response.status}`)
@@ -101,7 +102,7 @@ export class AutoImportService {
       return data
     } catch (error) {
       // Log the error for debugging
-      console.error('Error validating user:', error)
+      logger.error('Error validating user:', error)
 
       // If it's already a structured error, re-throw it
       if (error instanceof Error) {
@@ -139,7 +140,7 @@ export class AutoImportService {
       const data = await response.json()
       return data.exists || false
     } catch (error) {
-      console.error('Error checking user existence:', error)
+      logger.error('Error checking user existence:', error)
       return false
     }
   }
@@ -176,7 +177,7 @@ export class AutoImportService {
           errorMessage = errorText
         }
 
-        console.error('Import error details:', errorMessage)
+        logger.error('Import error details:', errorMessage)
         throw new Error(response.status >= 500 ? 'Server error' : errorMessage)
       }
 
@@ -197,7 +198,7 @@ export class AutoImportService {
         importedGames: data.imported_games || 0,
       }
     } catch (error) {
-      console.error('Error importing games:', error)
+      logger.error('Error importing games:', error)
       const sanitizedMessage = sanitizeErrorMessage(error)
 
       if (onProgress) {
@@ -258,7 +259,7 @@ export class AutoImportService {
           errorMessage = errorText
         }
 
-        console.error('Import error details:', errorMessage)
+        logger.error('Import error details:', errorMessage)
         throw new Error(response.status >= 500 ? 'Server error' : errorMessage)
       }
 
@@ -307,7 +308,7 @@ export class AutoImportService {
         newGamesCount: data.new_games_count,
       }
     } catch (error) {
-      console.error('Error importing games:', error)
+      logger.error('Error importing games:', error)
       const sanitizedMessage = sanitizeErrorMessage(error)
 
       if (onProgress) {
@@ -352,7 +353,7 @@ export class AutoImportService {
 
       return await response.json()
     } catch (error) {
-      console.error('Error discovering games:', error)
+      logger.error('Error discovering games:', error)
       throw error
     }
   }
@@ -385,7 +386,7 @@ export class AutoImportService {
 
       return await response.json()
     } catch (error) {
-      console.error('Error importing more games:', error)
+      logger.error('Error importing more games:', error)
       throw error
     }
   }
@@ -406,7 +407,7 @@ export class AutoImportService {
 
       return await response.json()
     } catch (error) {
-      console.error('Error getting import progress:', error)
+      logger.error('Error getting import progress:', error)
       throw error
     }
   }
@@ -431,7 +432,7 @@ export class AutoImportService {
 
       return await response.json()
     } catch (error) {
-      console.error('Error cancelling import:', error)
+      logger.error('Error cancelling import:', error)
       throw error
     }
   }

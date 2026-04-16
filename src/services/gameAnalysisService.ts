@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase'
 import UnifiedAnalysisService from './unifiedAnalysisService'
+import config from '../lib/config'
 import type { Platform } from '../types'
+import { logger } from '../utils/logger'
 
 export interface GameAnalysisFetchResult {
   game: any | null
@@ -66,7 +68,7 @@ export async function fetchGameAnalysisData(
 
   try {
     // Try backend API first - handles both UUID and username-based queries
-    const baseUrl = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
+    const baseUrl = config.getApi().baseUrl
     const response = await fetch(
       `${baseUrl}/api/v1/game/${encodeURIComponent(userId)}/${platform}/${encodeURIComponent(normalizedGameId)}`
     )
@@ -98,7 +100,7 @@ export async function fetchGameAnalysisData(
     } else {
       // Backend API failed - fall back to direct Supabase queries
       // This only works for authenticated users with UUID-based user_ids
-      console.warn('Backend API failed, falling back to direct Supabase queries')
+      logger.warn('Backend API failed, falling back to direct Supabase queries')
 
       const [primaryGameResult, fallbackGameResult] = await Promise.all([
         supabase
@@ -224,7 +226,7 @@ export async function fetchGameAnalysisData(
       }
     }
   } catch (error) {
-    console.error('Failed to fetch game analysis data', error)
+    logger.error('Failed to fetch game analysis data', error)
   }
 
   const result: GameAnalysisFetchResult = {

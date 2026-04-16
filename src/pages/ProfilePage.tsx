@@ -5,9 +5,10 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { logger } from '../utils/logger'
 import { fetchWithTimeout, TIMEOUT_CONFIG } from '../utils/fetchWithTimeout'
+import config from '../lib/config'
 import { CheckCircle2, Loader2 } from 'lucide-react'
 
-const API_URL = import.meta.env.VITE_ANALYSIS_API_URL || 'http://localhost:8002'
+const API_URL = config.getApi().baseUrl
 
 export default function ProfilePage() {
   const { user, usageStats, refreshUsageStats, signOut, linkChessAccount, unlinkChessAccount } = useAuth()

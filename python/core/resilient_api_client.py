@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 #!/usr/bin/env python3
 """
 Resilient API Client for External Chess Platform APIs
@@ -93,7 +97,7 @@ class CircuitBreaker:
         if self.state == CircuitState.HALF_OPEN:
             self.success_count += 1
             if self.success_count >= self.success_threshold:
-                print(f"[CIRCUIT] Closing circuit, service recovered")
+                logger.info(f"Closing circuit, service recovered")
                 self.state = CircuitState.CLOSED
                 self.failure_count = 0
                 self.success_count = 0
@@ -107,14 +111,14 @@ class CircuitBreaker:
 
         if self.state == CircuitState.HALF_OPEN:
             # Failed while testing, go back to open
-            print(f"[CIRCUIT] Half-open test failed, reopening circuit")
+            logger.info(f"Half-open test failed, reopening circuit")
             self.state = CircuitState.OPEN
             self.success_count = 0
             self.failure_count += 1
         elif self.state == CircuitState.CLOSED:
             self.failure_count += 1
             if self.failure_count >= self.failure_threshold:
-                print(f"[CIRCUIT] Opening circuit after {self.failure_count} failures")
+                logger.info(f"Opening circuit after {self.failure_count} failures")
                 self.state = CircuitState.OPEN
 
     def can_attempt(self) -> bool:
@@ -127,7 +131,7 @@ class CircuitBreaker:
             if self.last_failure_time:
                 elapsed = time.time() - self.last_failure_time
                 if elapsed >= self.recovery_timeout:
-                    print(f"[CIRCUIT] Moving to half-open state for testing")
+                    logger.info(f"Moving to half-open state for testing")
                     self.state = CircuitState.HALF_OPEN
                     self.success_count = 0
                     return True
@@ -210,7 +214,7 @@ class ResilientAPIClient:
         if cache_key in self.cache:
             entry = self.cache[cache_key]
             if datetime.now() < entry.expires_at:
-                print(f"[CACHE] Cache hit for {cache_key[:8]}...")
+                logger.debug(f"Cache hit for {cache_key[:8]}...")
                 return entry.data
             else:
                 # Expired, remove
@@ -229,7 +233,7 @@ class ResilientAPIClient:
             data=data,
             expires_at=datetime.now() + self.cache_ttl
         )
-        print(f"[CACHE] Cached response for {cache_key[:8]}...")
+        logger.debug(f"Cached response for {cache_key[:8]}...")
 
     def _clean_expired_cache(self):
         """Remove expired cache entries"""
@@ -243,7 +247,7 @@ class ResilientAPIClient:
         if self._aiohttp_session is None or self._aiohttp_session.closed:
             timeout = aiohttp.ClientTimeout(total=10, connect=5)
             self._aiohttp_session = aiohttp.ClientSession(timeout=timeout)
-            print("[SESSION] Created new aiohttp session")
+            logger.info("Created new aiohttp session")
         return self._aiohttp_session
 
     async def get_httpx_client(self) -> httpx.AsyncClient:
@@ -253,18 +257,18 @@ class ResilientAPIClient:
                 timeout=10.0,
                 follow_redirects=True  # Explicitly follow redirects (e.g., 301, 302)
             )
-            print("[SESSION] Created new httpx client")
+            logger.info("Created new httpx client")
         return self._httpx_client
 
     async def close(self):
         """Close all HTTP sessions"""
         if self._aiohttp_session and not self._aiohttp_session.closed:
             await self._aiohttp_session.close()
-            print("[SESSION] Closed aiohttp session")
+            logger.info("Closed aiohttp session")
 
         if self._httpx_client:
             await self._httpx_client.aclose()
-            print("[SESSION] Closed httpx client")
+            logger.info("Closed httpx client")
 
     async def _make_request_with_retry(
         self,
@@ -296,7 +300,7 @@ class ResilientAPIClient:
                 circuit_breaker.record_failure()
                 if attempt < max_retries:
                     backoff = (2 ** attempt) * 0.5  # 0.5s, 1s, 2s
-                    print(f"[RETRY] Timeout on attempt {attempt + 1}, retrying in {backoff}s...")
+                    logger.info(f"Timeout on attempt {attempt + 1}, retrying in {backoff}s...")
                     await asyncio.sleep(backoff)
 
             except (aiohttp.ClientError, httpx.RequestError) as e:
@@ -304,7 +308,7 @@ class ResilientAPIClient:
                 circuit_breaker.record_failure()
                 if attempt < max_retries:
                     backoff = (2 ** attempt) * 0.5
-                    print(f"[RETRY] Error on attempt {attempt + 1}: {e}, retrying in {backoff}s...")
+                    logger.info(f"Error on attempt {attempt + 1}: {e}, retrying in {backoff}s...")
                     await asyncio.sleep(backoff)
 
             except Exception as e:
@@ -331,7 +335,7 @@ class ResilientAPIClient:
 
         # Check for duplicate in-flight request
         if cache_key in self.pending_requests:
-            print(f"[DEDUP] Waiting for existing Lichess validation for {username}")
+            logger.info(f"Waiting for existing Lichess validation for {username}")
             return await self.pending_requests[cache_key]
 
         # Create future for deduplication
@@ -400,7 +404,7 @@ class ResilientAPIClient:
 
         # Check for duplicate in-flight request
         if cache_key in self.pending_requests:
-            print(f"[DEDUP] Waiting for existing Chess.com validation for {username}")
+            logger.info(f"Waiting for existing Chess.com validation for {username}")
             return await self.pending_requests[cache_key]
 
         # Create future for deduplication
@@ -488,7 +492,7 @@ def get_api_client() -> ResilientAPIClient:
             cache_ttl_seconds=300,  # 5 minutes
             max_retries=3
         )
-        print("[CLIENT] Created resilient API client")
+        logger.info("Created resilient API client")
     return _api_client
 
 
@@ -498,4 +502,4 @@ async def cleanup_api_client():
     if _api_client:
         await _api_client.close()
         _api_client = None
-        print("[CLIENT] Cleaned up API client")
+        logger.info("Cleaned up API client")

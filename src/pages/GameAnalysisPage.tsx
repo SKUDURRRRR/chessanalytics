@@ -31,6 +31,7 @@ import {
 import type { MatchHistoryGameSummary, Platform, ChatPositionContext } from '../types'
 import LoadingModal from '../components/LoadingModal'
 import LimitReachedModal from '../components/LimitReachedModal'
+import { logger } from '../utils/logger'
 
 // ProcessedMove, MoveClassification, EvaluationInfo imported from '../utils/moveProcessor'
 export type { ProcessedMove, MoveClassification, EvaluationInfo } from '../utils/moveProcessor'
@@ -232,7 +233,7 @@ export default function GameAnalysisPage() {
     } catch (error) {
       // Extract just the error message to avoid any circular reference issues
       const errorMessage = error instanceof Error ? error.message : 'Failed to request analysis.'
-      console.error('Failed to request analysis:', errorMessage)
+      logger.error('Failed to request analysis:', errorMessage)
       setAnalysisError(errorMessage)
       setAutoAnalyzing(false)
     }
@@ -276,7 +277,7 @@ export default function GameAnalysisPage() {
         setTimeout(poll, 10000) // Poll every 10 seconds
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error)
-        console.error('Error polling for analysis:', errorMessage)
+        logger.error('Error polling for analysis:', errorMessage)
         if (!isCancelled) {
           setAnalysisError('Error checking analysis status.')
           setAutoAnalyzing(false)
@@ -306,17 +307,17 @@ export default function GameAnalysisPage() {
     setIsLoadingAIComments(true)
 
     // Wait 5 seconds before starting to poll (give AI generation time to start)
-    console.log('⏳ Waiting 5 seconds before starting AI comment polling...')
+    logger.log('⏳ Waiting 5 seconds before starting AI comment polling...')
 
     const poll = async () => {
       if (isCancelled || attempts >= maxAttempts) {
-        console.log(`🛑 Polling stopped. Attempts: ${attempts}, Cancelled: ${isCancelled}`)
+        logger.log(`🛑 Polling stopped. Attempts: ${attempts}, Cancelled: ${isCancelled}`)
         setIsLoadingAIComments(false)
         return
       }
 
       attempts++
-      console.log(`🔄 Polling attempt ${attempts}/${maxAttempts} for AI comments...`)
+      logger.log(`🔄 Polling attempt ${attempts}/${maxAttempts} for AI comments...`)
 
       try {
         // Force fresh data fetch by invalidating cache
@@ -339,14 +340,14 @@ export default function GameAnalysisPage() {
 
           if (hasComments) {
             // AI comments are ready!
-            console.log(`✅ AI comments ready! Found ${movesWithComments.length} moves with comments out of ${userMoves.length} user moves. Refreshing data...`)
+            logger.log(`✅ AI comments ready! Found ${movesWithComments.length} moves with comments out of ${userMoves.length} user moves. Refreshing data...`)
 
             // Log sample comments for debugging
             const sampleComments = movesWithComments.slice(0, 3).map((m: any) => ({
               move: m.move_san,
               comment: m.coaching_comment?.substring(0, 50)
             }))
-            console.log('Sample comments:', sampleComments)
+            logger.log('Sample comments:', sampleComments)
 
             // Hide loading indicator
             setIsLoadingAIComments(false)
@@ -356,7 +357,7 @@ export default function GameAnalysisPage() {
               (window as any).toast.success('AI insights ready!')
             } else {
               // Fallback notification
-              console.log('✅ AI insights ready!')
+              logger.log('✅ AI insights ready!')
             }
 
             // Force a complete state update with new data
@@ -365,8 +366,8 @@ export default function GameAnalysisPage() {
             setAnalysisRecord(result.analysis) // Set fresh analysis data
             setPgn(result.pgn ?? null)
 
-            console.log('📝 Updated analysis record with AI comments')
-            console.log('🔄 Triggering re-render...')
+            logger.log('📝 Updated analysis record with AI comments')
+            logger.log('🔄 Triggering re-render...')
 
             // Force a small delay to ensure state propagates, then stop polling
             setTimeout(() => {
@@ -379,7 +380,7 @@ export default function GameAnalysisPage() {
         // Continue polling
         setTimeout(poll, 5000) // Poll every 5 seconds
       } catch (error) {
-        console.error('Error polling for AI comments:', error)
+        logger.error('Error polling for AI comments:', error)
         setIsLoadingAIComments(false)
         isCancelled = true
       }
@@ -438,10 +439,10 @@ export default function GameAnalysisPage() {
 
           if (!hasComments) {
             // Analysis exists but no AI comments yet - start polling
-            console.log(`📊 Analysis loaded with ${movesWithComments.length} commented moves out of ${userMoves.length} user moves, starting polling for AI comments...`)
+            logger.log(`📊 Analysis loaded with ${movesWithComments.length} commented moves out of ${userMoves.length} user moves, starting polling for AI comments...`)
             pollForAIComments()
           } else {
-            console.log(`✅ Analysis already has ${movesWithComments.length} moves with AI comments, no polling needed`)
+            logger.log(`✅ Analysis already has ${movesWithComments.length} moves with AI comments, no polling needed`)
           }
         }
 
@@ -450,7 +451,7 @@ export default function GameAnalysisPage() {
         // Only "Analyze My Games" button should trigger batch analysis
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err)
-        console.error('Unable to load game analysis', errorMessage)
+        logger.error('Unable to load game analysis', errorMessage)
         if (isMounted) {
           setError('Unable to load analysis for this game.')
         }
@@ -549,7 +550,7 @@ export default function GameAnalysisPage() {
       // Return the opponent's name based on player color
       return playerColor === 'white' ? blackPlayer : whitePlayer
     } catch (error) {
-      console.error('Error extracting opponent name from PGN:', error)
+      logger.error('Error extracting opponent name from PGN:', error)
       return null
     }
   }
@@ -602,7 +603,7 @@ export default function GameAnalysisPage() {
       try {
         chess = new Chess(currentMove.fenBefore)
       } catch (err) {
-        console.warn('[GameAnalysisPage] Invalid fenBefore, falling back to replay:', err)
+        logger.warn('[GameAnalysisPage] Invalid fenBefore, falling back to replay:', err)
         // Fallback to replaying moves if fenBefore is invalid
         chess = new Chess()
         for (let i = 0; i < moveIndex; i++) {
@@ -611,7 +612,7 @@ export default function GameAnalysisPage() {
             try {
               chess.move(move.san)
             } catch (err) {
-              console.warn('Failed to apply move for arrow generation:', move.san, err)
+              logger.warn('Failed to apply move for arrow generation:', move.san, err)
             }
           }
         }
@@ -625,7 +626,7 @@ export default function GameAnalysisPage() {
           try {
             chess.move(move.san)
           } catch (err) {
-            console.warn('Failed to apply move for arrow generation:', move.san, err)
+            logger.warn('Failed to apply move for arrow generation:', move.san, err)
           }
         }
       }
@@ -635,7 +636,7 @@ export default function GameAnalysisPage() {
     const expectedTurn = currentMove.player
     const actualTurn = chess.turn() === 'w' ? 'white' : 'black'
     if (expectedTurn !== actualTurn) {
-      console.warn('[GameAnalysisPage] Position turn mismatch for move:', currentMove.san)
+      logger.warn('[GameAnalysisPage] Position turn mismatch for move:', currentMove.san)
     }
 
     // Generate modern arrows for the current move
@@ -848,7 +849,7 @@ export default function GameAnalysisPage() {
           }
         } catch (fetchError) {
           // If we can't verify, show the error
-          console.error('Could not verify analysis completion:', fetchError)
+          logger.error('Could not verify analysis completion:', fetchError)
         }
       }
 
@@ -959,7 +960,7 @@ export default function GameAnalysisPage() {
 
         return game.fen()
       } catch (err) {
-        console.warn('Error calculating exploration position:', err)
+        logger.warn('Error calculating exploration position:', err)
         return processedData.positions[currentIndex]
       }
     }
@@ -1090,12 +1091,12 @@ export default function GameAnalysisPage() {
           errorReason = `Illegal move pattern for ${sourcePiece.type} from ${sourceSquare} to ${targetSquare}`
         }
 
-        console.error(`❌ Invalid exploration move: ${sourceSquare} → ${targetSquare}. ${errorReason}`)
-        console.error(`   Current position: ${game.fen()}`)
-        console.error(`   Turn: ${game.turn() === 'w' ? 'White' : 'Black'}`)
+        logger.error(`❌ Invalid exploration move: ${sourceSquare} → ${targetSquare}. ${errorReason}`)
+        logger.error(`   Current position: ${game.fen()}`)
+        logger.error(`   Turn: ${game.turn() === 'w' ? 'White' : 'Black'}`)
       }
     } catch (err) {
-      console.error('❌ Invalid exploration move:', err)
+      logger.error('❌ Invalid exploration move:', err)
     }
 
     return false

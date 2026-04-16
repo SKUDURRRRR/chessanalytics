@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 ﻿"""
 AI Coaching Comment Generator for Chess Move Analysis
 
@@ -90,24 +94,24 @@ class ChessCoachingGenerator:
         self.advanced_analyzer = AdvancedChessAnalyzer()
         self.contextual_generator = ContextualExplanationGenerator()
         # Initialize AI comment generator (will be None if API key not configured)
-        print("[COACHING] Initializing ChessCoachingGenerator...")
+        logger.info("Initializing ChessCoachingGenerator...")
         try:
-            print("[COACHING] Attempting to initialize AI comment generator...")
+            logger.info("Attempting to initialize AI comment generator...")
             self.ai_generator = AIChessCommentGenerator()
             if self.ai_generator and self.ai_generator.enabled:
-                print(f"[COACHING] [OK] AI comment generator initialized successfully!")
-                print(f"[COACHING] [OK] Model: {self.ai_generator.config.ai_model}")
-                print(f"[COACHING] [OK] Ready to generate Tal-style comments")
+                logger.info(f"[OK] AI comment generator initialized successfully!")
+                logger.info(f"[OK] Model: {self.ai_generator.config.ai_model}")
+                logger.info(f"[OK] Ready to generate Tal-style comments")
             elif self.ai_generator:
-                print("[COACHING] [WARNING] AI comment generator created but disabled")
-                print(f"[COACHING] [WARNING] Check: AI_ENABLED={self.ai_generator.config.ai_enabled}")
-                print(f"[COACHING] [WARNING] Check: API key present={bool(self.ai_generator.config.anthropic_api_key)}")
+                logger.warning("[WARNING] AI comment generator created but disabled")
+                logger.warning(f"[WARNING] Check: AI_ENABLED={self.ai_generator.config.ai_enabled}")
+                logger.warning(f"[WARNING] Check: API key present={bool(self.ai_generator.config.anthropic_api_key)}")
             else:
-                print("[COACHING] [ERROR] AI comment generator not available")
+                logger.error("[ERROR] AI comment generator not available")
         except Exception as e:
             import traceback
-            print(f"[COACHING] [ERROR] AI comment generator not available: {e}")
-            print(f"[COACHING] Traceback: {traceback.format_exc()}")
+            logger.error(f"[ERROR] AI comment generator not available: {e}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
             self.ai_generator = None
         self.encouragement_templates = {
             MoveQuality.BRILLIANT: [
@@ -376,7 +380,7 @@ class ChessCoachingGenerator:
 
         # Check for capture notation in SAN
         if 'x' in move_san:
-            print(f"[CAPTURE DETECTION] {move_san} is a capture - will use AI commentary")
+            logger.info(f"{move_san} is a capture - will use AI commentary")
             return True
 
         # Double-check with board state if available
@@ -388,10 +392,10 @@ class ChessCoachingGenerator:
                 # Check if there's a piece on the target square
                 captured_piece = board_before.piece_at(move.to_square)
                 if captured_piece:
-                    print(f"[CAPTURE DETECTION] {move_san} captures piece on {chess.square_name(move.to_square)} - will use AI commentary")
+                    logger.info(f"{move_san} captures piece on {chess.square_name(move.to_square)} - will use AI commentary")
                     return True
             except Exception as e:
-                print(f"[CAPTURE DETECTION] Error checking capture: {e}")
+                logger.info(f"Error checking capture: {e}")
 
         return False
 
@@ -476,7 +480,7 @@ class ChessCoachingGenerator:
         # (not generic position descriptions)
         move_san = move_analysis.get('move_san', '')
         if 'x' in move_san:
-            print(f"[CRITICAL_TACTICAL] {move_san} is a CAPTURE - must use move-specific commentary, not position description")
+            logger.info(f"{move_san} is a CAPTURE - must use move-specific commentary, not position description")
             return True
 
         # Check for significant evaluation drop (>100cp loss = inaccuracy threshold)
@@ -758,21 +762,21 @@ CRITICAL:
                 # Remove leading/trailing punctuation artifacts
                 comment = re.sub(r'^[,\s\.]+', '', comment)
                 comment = re.sub(r'[,\s\.]+$', '', comment)
-                print(f"[AI] ✅ Generated move 1 welcome comment: {comment[:50]}...")
+                logger.info(f"✅ Generated move 1 welcome comment: {comment[:50]}...")
                 return comment
             else:
                 # AI generation failed, fallback to instant Tal greeting
                 if is_user_move:
-                    print(f"[AI] ⚠️ AI generation returned empty, using instant Tal greeting")
+                    logger.info(f"⚠️ AI generation returned empty, using instant Tal greeting")
                     return random.choice(TAL_GREETINGS)
                 return None
         except Exception as e:
-            print(f"[AI] Failed to generate move 1 welcome: {e}")
+            logger.error(f"Failed to generate move 1 welcome: {e}")
             import traceback
-            print(f"[AI] Traceback: {traceback.format_exc()}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
             # Fallback to instant Tal greeting on error
             if is_user_move:
-                print(f"[AI] ⚠️ Using instant Tal greeting as fallback")
+                logger.info(f"⚠️ Using instant Tal greeting as fallback")
                 return random.choice(TAL_GREETINGS)
             return None
 
@@ -830,12 +834,12 @@ Write the position description now:"""
 
             if comment:
                 comment = self.ai_generator._clean_comment(comment)
-                print(f"[AI] ✅ Generated position description for move {move_number}: {comment[:50]}...")
+                logger.info(f"✅ Generated position description for move {move_number}: {comment[:50]}...")
                 return comment
         except Exception as e:
-            print(f"[AI] Failed to generate position description: {e}")
+            logger.error(f"Failed to generate position description: {e}")
             import traceback
-            print(f"[AI] Traceback: {traceback.format_exc()}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
 
         return None
 
@@ -896,12 +900,12 @@ Write the phase transition comment now:"""
 
             if comment:
                 comment = self.ai_generator._clean_comment(comment)
-                print(f"[AI] ✅ Generated {new_phase} transition comment: {comment[:50]}...")
+                logger.info(f"✅ Generated {new_phase} transition comment: {comment[:50]}...")
                 return comment
         except Exception as e:
-            print(f"[AI] Failed to generate phase transition comment: {e}")
+            logger.error(f"Failed to generate phase transition comment: {e}")
             import traceback
-            print(f"[AI] Traceback: {traceback.format_exc()}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
 
         return None
 
@@ -930,23 +934,23 @@ Write the phase transition comment now:"""
                         else:
                             move = chess.Move.from_uci(str(move_raw))
                     except Exception as e:
-                        print(f"[AI] Warning: Could not convert move to chess.Move: {e}, move={move_raw}")
+                        logger.warning(f"Warning: Could not convert move to chess.Move: {e}, move={move_raw}")
                         move = None
 
                 # Debug logging
                 if not board:
-                    print("[AI] Warning: board_after not found in move_analysis, skipping AI generation")
+                    logger.warning("Warning: board_after not found in move_analysis, skipping AI generation")
                 elif not move:
-                    print("[AI] Warning: move not found or invalid in move_analysis, skipping AI generation")
+                    logger.warning("Warning: move not found or invalid in move_analysis, skipping AI generation")
                 elif board and move:
                     # Check if AI comment was pre-generated in parallel
                     pre_generated = move_analysis.get('_pre_generated_ai_comment')
                     if pre_generated:
-                        print(f"[AI] ✅ Using pre-generated AI comment for {move_analysis.get('move_san', 'unknown')}")
+                        logger.info(f"✅ Using pre-generated AI comment for {move_analysis.get('move_san', 'unknown')}")
                         return self._limit_comment_length(pre_generated)
 
                     # Otherwise generate synchronously (fallback for non-parallel path)
-                    print(f"[AI] ✅ Attempting to generate AI comment for move {move_analysis.get('move_san', 'unknown')}, quality: {move_quality}, is_user_move: {is_user_move}")
+                    logger.info(f"✅ Attempting to generate AI comment for move {move_analysis.get('move_san', 'unknown')}, quality: {move_quality}, is_user_move: {is_user_move}")
                     ai_comment = self.ai_generator.generate_comment(
                         move_analysis=move_analysis,
                         board=board,
@@ -955,20 +959,20 @@ Write the phase transition comment now:"""
                         player_elo=player_elo
                     )
                     if ai_comment:
-                        print(f"[AI] ✅ Successfully generated AI comment ({len(ai_comment)} chars): {ai_comment[:100]}...")
+                        logger.info(f"✅ Successfully generated AI comment ({len(ai_comment)} chars): {ai_comment[:100]}...")
                         return self._limit_comment_length(ai_comment)
                     else:
-                        print(f"[AI] ❌ AI generator returned None for {move_analysis.get('move_san', 'unknown')}, falling back to templates")
+                        logger.info(f"❌ AI generator returned None for {move_analysis.get('move_san', 'unknown')}, falling back to templates")
             except Exception as e:
                 import traceback
-                print(f"[AI] AI comment generation failed, falling back to templates: {e}")
-                print(f"[AI] Traceback: {traceback.format_exc()}")
+                logger.info(f"AI comment generation failed, falling back to templates: {e}")
+                logger.info(f"Traceback: {traceback.format_exc()}")
                 # Fall through to template-based generation
         elif should_use_ai:
             if not self.ai_generator:
-                print("[AI] AI generator not available (not initialized), using templates")
+                logger.info("AI generator not available (not initialized), using templates")
             elif not self.ai_generator.enabled:
-                print("[AI] AI generator is disabled, using templates")
+                logger.info("AI generator is disabled, using templates")
 
         # Fallback to template-based generation
         # Check if this is an opening move and handle it specially
@@ -1143,7 +1147,7 @@ Write the phase transition comment now:"""
                 )
                 return contextual_explanation.main_explanation
             except Exception as e:
-                print(f"Error in contextual analysis: {e}")
+                logger.info(f"Error in contextual analysis: {e}")
                 # Fall back to enhanced explanation
 
         # Fallback to enhanced explanation if contextual analysis fails
@@ -1901,9 +1905,9 @@ Write the phase transition comment now:"""
                     piece_name = piece_names.get(captured_piece.piece_type, "piece")
                     color = "white" if captured_piece.color == chess.WHITE else "black"
                     capture_prefix = f"By capturing the {color} {piece_name}, "
-                    print(f"[TEMPLATE FALLBACK] Adding capture info to template comment: {capture_prefix}")
+                    logger.info(f"Adding capture info to template comment: {capture_prefix}")
             except Exception as e:
-                print(f"[TEMPLATE FALLBACK] Error adding capture info: {e}")
+                logger.info(f"Error adding capture info: {e}")
 
         if move_quality == MoveQuality.BEST:
             if is_opening:

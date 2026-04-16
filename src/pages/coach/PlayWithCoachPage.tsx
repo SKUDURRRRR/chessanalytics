@@ -25,6 +25,7 @@ import { useChessSoundSettings } from '../../contexts/ChessSoundContext'
 import { getMoveSoundSimple } from '../../utils/chessSounds'
 import { getMoveClassificationBgColor } from '../../utils/chessColors'
 import { InlineCoachChat } from '../../components/coach/InlineCoachChat'
+import { logger } from '../../utils/logger'
 
 type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'resignation'
 
@@ -252,7 +253,7 @@ export default function PlayWithCoachPage() {
         setError('Engine move failed')
       }
     } catch (err) {
-      console.error('Error getting engine move:', err)
+      logger.error('Error getting engine move:', err)
       setError(err instanceof Error ? err.message : 'Failed to get engine move')
     } finally {
       setIsEngineThinking(false)
@@ -349,7 +350,7 @@ export default function PlayWithCoachPage() {
       }
       return false
     } catch (error) {
-      console.error('Move error:', error)
+      logger.error('Move error:', error)
       return false
     }
   }
@@ -492,10 +493,10 @@ export default function PlayWithCoachPage() {
           }
         }
       } else {
-        console.error('[TAL_COACH] API response not OK:', response.status, response.statusText)
+        logger.error('[TAL_COACH] API response not OK:', response.status, response.statusText)
       }
     } catch (err) {
-      console.error('[TAL_COACH] Error analyzing move for coaching:', err)
+      logger.error('[TAL_COACH] Error analyzing move for coaching:', err)
     } finally {
       if (analyzingMoveRef.current?.moveNumber === moveNumber &&
           analyzingMoveRef.current?.san === move.san) {
@@ -535,7 +536,7 @@ export default function PlayWithCoachPage() {
           delay = Math.min(delay * 1.5, 10000)
           attempts++
         } catch (err) {
-          console.error('Error fetching analysis:', err)
+          logger.error('Error fetching analysis:', err)
           attempts++
           if (attempts >= maxAttempts) break
           await new Promise(resolve => setTimeout(resolve, delay))
@@ -568,7 +569,7 @@ export default function PlayWithCoachPage() {
                   moveResult = chess.move(move.move_san)
                   san = move.move_san
                 } catch (sanErr) {
-                  console.warn(`Failed to apply move ${move.move} (SAN: ${move.move_san}):`, sanErr)
+                  logger.warn(`Failed to apply move ${move.move} (SAN: ${move.move_san}):`, sanErr)
                 }
               }
             }
@@ -623,15 +624,15 @@ export default function PlayWithCoachPage() {
               }
             }
           } catch (err) {
-            console.warn('Error processing move for coaching:', err)
+            logger.warn('Error processing move for coaching:', err)
           }
         })
 
-        console.log(`[COACHING] Loaded ${commentsMap.size} coaching comments for game ${gameId}`)
+        logger.log(`[COACHING] Loaded ${commentsMap.size} coaching comments for game ${gameId}`)
         setCoachingComments(commentsMap)
       }
     } catch (err) {
-      console.error('Error fetching coaching comments:', err)
+      logger.error('Error fetching coaching comments:', err)
     }
   }, [user?.id, playerColor])
 
@@ -649,20 +650,20 @@ export default function PlayWithCoachPage() {
     try {
       const fullGame = new Chess()
 
-      console.log('[REVIEW] Move history state:', moveHistory)
-      console.log('[REVIEW] Rebuilding game from', moveHistory.length, 'moves')
+      logger.log('[REVIEW] Move history state:', moveHistory)
+      logger.log('[REVIEW] Rebuilding game from', moveHistory.length, 'moves')
 
       let reconstructionFailed = false
       for (let i = 0; i < moveHistory.length; i++) {
         try {
           const result = fullGame.move(moveHistory[i])
           if (!result) {
-            console.error(`[REVIEW] Move returned null at index ${i}: ${moveHistory[i]}`)
+            logger.error(`[REVIEW] Move returned null at index ${i}: ${moveHistory[i]}`)
             reconstructionFailed = true
             break
           }
         } catch (err) {
-          console.error(`[REVIEW] Failed to apply move ${i}: ${moveHistory[i]}`, err)
+          logger.error(`[REVIEW] Failed to apply move ${i}: ${moveHistory[i]}`, err)
           reconstructionFailed = true
           break
         }
@@ -679,9 +680,9 @@ export default function PlayWithCoachPage() {
         newline: '\n'
       })
 
-      console.log('[REVIEW] Reconstructed game history:', fullGame.history())
-      console.log('[REVIEW] Generated PGN:', pgn)
-      console.log('[REVIEW] Full game has', fullGame.history().length, 'moves')
+      logger.log('[REVIEW] Reconstructed game history:', fullGame.history())
+      logger.log('[REVIEW] Generated PGN:', pgn)
+      logger.log('[REVIEW] Full game has', fullGame.history().length, 'moves')
 
       const playerName = user.email?.split('@')[0] || 'Player'
       const engineName = 'Tal Coach'
@@ -731,7 +732,7 @@ ${pgn} ${result}`
 
       const parseDate = (dateStr: string | undefined): string => {
         if (!dateStr || dateStr.includes('?') || dateStr.trim() === '') {
-          console.warn(`[REVIEW] Invalid date string: "${dateStr}", using current time`)
+          logger.warn(`[REVIEW] Invalid date string: "${dateStr}", using current time`)
           return new Date().toISOString()
         }
 
@@ -751,7 +752,7 @@ ${pgn} ${result}`
           // Fall through to warning
         }
 
-        console.warn(`[REVIEW] Could not parse date: "${dateStr}", using current time`)
+        logger.warn(`[REVIEW] Could not parse date: "${dateStr}", using current time`)
         return new Date().toISOString()
       }
 
@@ -779,7 +780,7 @@ ${pgn} ${result}`
         })
 
       if (gameError) {
-        console.error('Failed to create game record:', gameError)
+        logger.error('Failed to create game record:', gameError)
         throw new Error(`Failed to create game record: ${gameError.message}`)
       }
 
@@ -795,7 +796,7 @@ ${pgn} ${result}`
         })
 
       if (pgnError) {
-        console.error('Failed to save PGN:', pgnError)
+        logger.error('Failed to save PGN:', pgnError)
         throw new Error(`Failed to save PGN: ${pgnError.message}`)
       }
 
@@ -811,13 +812,13 @@ ${pgn} ${result}`
 
       if (analysisResponse.analysis_id || analysisResponse.success !== false) {
         const analysisId = analysisResponse.analysis_id || gameId
-        console.log(`[REVIEW] Navigating to analysis page: /analysis/lichess/${user.id}/${analysisId}`)
+        logger.log(`[REVIEW] Navigating to analysis page: /analysis/lichess/${user.id}/${analysisId}`)
         navigate(`/analysis/lichess/${user.id}/${analysisId}`)
       } else {
         throw new Error(analysisResponse.message || 'Failed to analyze game')
       }
     } catch (err) {
-      console.error('Error reviewing game:', err)
+      logger.error('Error reviewing game:', err)
       setError(err instanceof Error ? err.message : 'Failed to analyze game')
       setShowResultModal(true)
     } finally {

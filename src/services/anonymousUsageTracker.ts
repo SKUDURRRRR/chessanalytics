@@ -1,4 +1,5 @@
 /**
+import { logger } from '../utils/logger'
  * Anonymous Usage Tracker
  * Tracks anonymous user usage in localStorage with 24-hour rolling window
  *
@@ -52,7 +53,7 @@ export class AnonymousUsageTracker {
 
       if (now >= resetTime) {
         // Reset both limits when window expires
-        console.log('Anonymous usage limits reset (24 hours passed)')
+        logger.log('Anonymous usage limits reset (24 hours passed)')
         const newResetAt = new Date()
         newResetAt.setHours(newResetAt.getHours() + RESET_WINDOW_HOURS)
         return { imports: 0, analyses: 0, resetAt: newResetAt.toISOString() }
@@ -60,7 +61,7 @@ export class AnonymousUsageTracker {
 
       return usage
     } catch (error) {
-      console.error('Error reading anonymous usage:', error)
+      logger.error('Error reading anonymous usage:', error)
       const resetAt = new Date()
       resetAt.setHours(resetAt.getHours() + RESET_WINDOW_HOURS)
       return { imports: 0, analyses: 0, resetAt: resetAt.toISOString() }
@@ -74,7 +75,7 @@ export class AnonymousUsageTracker {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(usage))
     } catch (error) {
-      console.error('Error saving anonymous usage:', error)
+      logger.error('Error saving anonymous usage:', error)
     }
   }
 
@@ -102,7 +103,7 @@ export class AnonymousUsageTracker {
     const usage = this.getUsage()
     usage.imports += count
     this.saveUsage(usage)
-    console.log(`Anonymous usage: ${usage.imports}/${IMPORT_LIMIT} imports used today`)
+    logger.log(`Anonymous usage: ${usage.imports}/${IMPORT_LIMIT} imports used today`)
   }
 
   /**
@@ -112,7 +113,7 @@ export class AnonymousUsageTracker {
     const usage = this.getUsage()
     usage.analyses += 1
     this.saveUsage(usage)
-    console.log(`Anonymous usage: ${usage.analyses}/${ANALYSIS_LIMIT} analyses used today`)
+    logger.log(`Anonymous usage: ${usage.analyses}/${ANALYSIS_LIMIT} analyses used today`)
   }
 
   /**
@@ -150,7 +151,7 @@ export class AnonymousUsageTracker {
    */
   static reset(): void {
     localStorage.removeItem(STORAGE_KEY)
-    console.log('Anonymous usage reset')
+    logger.log('Anonymous usage reset')
   }
 
   /**

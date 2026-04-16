@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { Chess } from 'chess.js'
 import { analyzeExplorationPosition } from '../../utils/explorationAnalysis'
+import { logger } from '../../utils/logger'
 
 interface ProcessedMove {
   index: number
@@ -74,7 +75,7 @@ export function FollowUpExplorer({
     // Debug logging for inaccuracies without follow-up
     if (import.meta.env.DEV && !hasDifferentBestMove &&
         ['inaccuracy', 'mistake', 'blunder'].includes(currentMove.classification)) {
-      console.log(`[FollowUpExplorer] Move ${currentMove.san} (${currentMove.classification}) - No follow-up button:`, {
+      logger.log(`[FollowUpExplorer] Move ${currentMove.san} (${currentMove.classification}) - No follow-up button:`, {
         bestMoveSan: currentMove.bestMoveSan,
         actualMove: currentMove.san,
         sameAsBest: currentMove.bestMoveSan === currentMove.san,
@@ -121,7 +122,7 @@ export function FollowUpExplorer({
         currentMove.moveNumber
       )
     } catch (err) {
-      console.warn('Error analyzing exploration position:', err)
+      logger.warn('Error analyzing exploration position:', err)
       return null
     }
   }, [isExploring, currentMove, explorationMoves])
@@ -149,7 +150,7 @@ export function FollowUpExplorer({
 
   // Auto-play function
   const startAutoPlay = useCallback(() => {
-    console.log('🔍 DEBUG: startAutoPlay called with currentMove:', {
+    logger.log('🔍 DEBUG: startAutoPlay called with currentMove:', {
       san: currentMove.san,
       bestMoveSan: currentMove.bestMoveSan,
       hasPvMoves: !!currentMove.pvMoves,
@@ -160,7 +161,7 @@ export function FollowUpExplorer({
     })
 
     if (!onAddExplorationMove || !currentMove.pvMoves || currentMove.pvMoves.length === 0) {
-      console.warn('⚠️ Cannot start auto-play:', {
+      logger.warn('⚠️ Cannot start auto-play:', {
         hasCallback: !!onAddExplorationMove,
         hasPvMoves: !!currentMove.pvMoves,
         pvLength: currentMove.pvMoves?.length || -1,
@@ -169,7 +170,7 @@ export function FollowUpExplorer({
       return
     }
 
-    console.log('🎬 Starting auto-play!', {
+    logger.log('🎬 Starting auto-play!', {
       pvMoves: currentMove.pvMoves,
       pvLength: currentMove.pvMoves.length
     })
@@ -187,7 +188,7 @@ export function FollowUpExplorer({
       // explorationMoves.length tells us how many moves we've played
       const nextMoveIndex = currentExplorationMoves.length + 1 // +1 because pvMoves[0] is best move
 
-      console.log('🎮 Auto-play state:', {
+      logger.log('🎮 Auto-play state:', {
         explorationMovesCount: currentExplorationMoves.length,
         explorationMoves: currentExplorationMoves,
         nextMoveIndex,
@@ -199,46 +200,46 @@ export function FollowUpExplorer({
       if (nextMoveIndex < pvMoves.length) {
         const moveToPlay = pvMoves[nextMoveIndex]
 
-        console.log(`🎮 [${nextMoveIndex}/${pvMoves.length}] Will play: "${moveToPlay}"`)
+        logger.log(`🎮 [${nextMoveIndex}/${pvMoves.length}] Will play: "${moveToPlay}"`)
 
         // Try to apply the move
         try {
           const game = new Chess(currentMove.fenBefore)
 
-          console.log('🎮 Starting from fenBefore:', currentMove.fenBefore)
+          logger.log('🎮 Starting from fenBefore:', currentMove.fenBefore)
 
           // Apply best move first (pvMoves[0])
           if (currentMove.bestMoveSan) {
             const bestMoveResult = game.move(currentMove.bestMoveSan)
-            console.log('🎮 Applied best move:', currentMove.bestMoveSan, '→', bestMoveResult?.san)
+            logger.log('🎮 Applied best move:', currentMove.bestMoveSan, '→', bestMoveResult?.san)
           }
 
           // Apply all previous exploration moves
-          console.log('🎮 Applying', currentExplorationMoves.length, 'previous exploration moves:', currentExplorationMoves)
+          logger.log('🎮 Applying', currentExplorationMoves.length, 'previous exploration moves:', currentExplorationMoves)
           for (let i = 0; i < currentExplorationMoves.length; i++) {
             const prevMove = currentExplorationMoves[i]
             const result = game.move(prevMove)
-            console.log(`🎮   [${i}] Applied: ${prevMove} →`, result?.san)
+            logger.log(`🎮   [${i}] Applied: ${prevMove} →`, result?.san)
           }
 
           const currentFen = game.fen()
-          console.log('🎮 Current position:', currentFen)
-          console.log('🎮 Attempting to play:', moveToPlay)
+          logger.log('🎮 Current position:', currentFen)
+          logger.log('🎮 Attempting to play:', moveToPlay)
 
           // Try to apply the next move
           const result = game.move(moveToPlay)
 
           if (result && onAddExplorationMove) {
-            console.log('✅ Successfully played:', moveToPlay, '→', result.san)
-            console.log('🎮 Adding to exploration moves...')
+            logger.log('✅ Successfully played:', moveToPlay, '→', result.san)
+            logger.log('🎮 Adding to exploration moves...')
             onAddExplorationMove(moveToPlay)
-            console.log('🎮 Scheduling next move in 700ms...')
+            logger.log('🎮 Scheduling next move in 700ms...')
 
             // Schedule next move
             autoPlayTimerRef.current = setTimeout(playNextMove, 700) // 0.7 second delay
           } else {
             // Move failed, stop auto-play
-            console.warn('❌ Move failed:', {
+            logger.warn('❌ Move failed:', {
               moveToPlay,
               result,
               hasCallback: !!onAddExplorationMove
@@ -246,7 +247,7 @@ export function FollowUpExplorer({
             setIsAutoPlaying(false)
           }
         } catch (error) {
-          console.error('❌ Auto-play move failed with exception:', {
+          logger.error('❌ Auto-play move failed with exception:', {
             error,
             moveToPlay,
             nextMoveIndex
@@ -255,13 +256,13 @@ export function FollowUpExplorer({
         }
       } else {
         // Reached end of PV
-        console.log('🏁 Reached end of PV line!')
+        logger.log('🏁 Reached end of PV line!')
         setIsAutoPlaying(false)
       }
     }
 
     // Start playing after initial delay
-    console.log('🎮 Scheduling first move in 700ms...')
+    logger.log('🎮 Scheduling first move in 700ms...')
     autoPlayTimerRef.current = setTimeout(playNextMove, 700)
   }, [currentMove, onAddExplorationMove]) // Removed explorationMoves from dependencies
 

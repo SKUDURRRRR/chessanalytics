@@ -27,8 +27,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: TypeScript type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
       - name: Build application
         run: npm run build
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate || true
 
   python-backend:
     runs-on: ubuntu-latest
@@ -51,3 +63,13 @@ jobs:
         run: |
           cd python
           python -m py_compile core/*.py || echo "Python syntax check completed"
+
+      - name: Run Python tests
+        run: |
+          cd python
+          python -m pytest tests/ -v || true
+
+      - name: Lint Python code
+        run: |
+          cd python
+          python -m flake8 core/ --max-line-length=120 --count --show-source --statistics || true
