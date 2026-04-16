@@ -8,6 +8,7 @@ Replaces multiple redundant endpoints with a clean, unified interface.
 # Load environment variables from .env.local in python/ directory
 from dotenv import load_dotenv
 import os
+import threading
 
 load_dotenv('.env.local')  # Load .env.local from python/ directory
 load_dotenv()  # Also try .env as fallback
@@ -232,41 +233,49 @@ def _get_sync_engine_pool():
     return None
 
 _ai_generator = None
-
-def _get_ai_generator():
-    """Get or create a singleton AIChessCommentGenerator instance."""
-    global _ai_generator
-    if _ai_generator is None:
-        from .ai_comment_generator import AIChessCommentGenerator
-        _ai_generator = AIChessCommentGenerator()
-    return _ai_generator
-
 _study_plan_generator = None
 _opening_repertoire_analyzer = None
 _progress_analyzer = None
+_singleton_lock = threading.Lock()
+
+def _get_ai_generator():
+    """Get or create a singleton AIChessCommentGenerator instance (thread-safe)."""
+    global _ai_generator
+    if _ai_generator is None:
+        with _singleton_lock:
+            if _ai_generator is None:
+                from .ai_comment_generator import AIChessCommentGenerator
+                _ai_generator = AIChessCommentGenerator()
+    return _ai_generator
 
 def _get_study_plan_generator():
-    """Get or create a singleton StudyPlanGenerator instance."""
+    """Get or create a singleton StudyPlanGenerator instance (thread-safe)."""
     global _study_plan_generator
     if _study_plan_generator is None:
-        from .study_plan_generator import StudyPlanGenerator
-        _study_plan_generator = StudyPlanGenerator(supabase_service)
+        with _singleton_lock:
+            if _study_plan_generator is None:
+                from .study_plan_generator import StudyPlanGenerator
+                _study_plan_generator = StudyPlanGenerator(supabase_service)
     return _study_plan_generator
 
 def _get_opening_repertoire_analyzer():
-    """Get or create a singleton OpeningRepertoireAnalyzer instance."""
+    """Get or create a singleton OpeningRepertoireAnalyzer instance (thread-safe)."""
     global _opening_repertoire_analyzer
     if _opening_repertoire_analyzer is None:
-        from .opening_repertoire import OpeningRepertoireAnalyzer
-        _opening_repertoire_analyzer = OpeningRepertoireAnalyzer(supabase_service)
+        with _singleton_lock:
+            if _opening_repertoire_analyzer is None:
+                from .opening_repertoire import OpeningRepertoireAnalyzer
+                _opening_repertoire_analyzer = OpeningRepertoireAnalyzer(supabase_service)
     return _opening_repertoire_analyzer
 
 def _get_progress_analyzer():
-    """Get or create a singleton ProgressAnalyzer instance."""
+    """Get or create a singleton ProgressAnalyzer instance (thread-safe)."""
     global _progress_analyzer
     if _progress_analyzer is None:
-        from .progress_analyzer import ProgressAnalyzer
-        _progress_analyzer = ProgressAnalyzer(supabase_service)
+        with _singleton_lock:
+            if _progress_analyzer is None:
+                from .progress_analyzer import ProgressAnalyzer
+                _progress_analyzer = ProgressAnalyzer(supabase_service)
     return _progress_analyzer
 
 # Initialize Supabase clients with fallback for missing config

@@ -150,6 +150,7 @@ export function Navigation() {
                     <div
                       className="absolute right-0 mt-2 w-48 bg-surface-1 shadow-modal rounded-lg z-40 overflow-hidden"
                       role="menu"
+                      onKeyDown={(e) => { if (e.key === 'Escape') setIsDropdownOpen(false) }}
                     >
                       <div className="py-1">
                         <Link
@@ -284,6 +285,7 @@ export function Navigation() {
                     <div
                       className="absolute right-0 mt-2 w-48 bg-surface-1 shadow-modal rounded-lg z-40 overflow-hidden"
                       role="menu"
+                      onKeyDown={(e) => { if (e.key === 'Escape') setIsDropdownOpen(false) }}
                     >
                       <div className="py-1">
                         <Link

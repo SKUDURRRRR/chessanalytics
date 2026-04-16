@@ -3004,8 +3004,7 @@ class ChessAnalysisEngine:
                         # KEY: Must be TRUE SACRIFICE - piece must be capturable (not just winning material)
                         # Queen captures that win material are NOT brilliant unless piece can also be captured
 
-                        # DEBUG: Log clear tactical sacrifice detection
-                        print(f"[BRILLIANT DEBUG] {move_san_debug}: clear_tactical_sacrifice={clear_tactical_sacrifice}, "
+                        logger.debug(f"{move_san_debug}: clear_tactical_sacrifice={clear_tactical_sacrifice}, "
                               f"non_capture_hanging_pieces={non_capture_hanging_pieces}, "
                               f"centipawn_loss={centipawn_loss:.1f}")
 

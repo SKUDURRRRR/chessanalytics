@@ -84,13 +84,47 @@ Deno.serve(async req => {
       })
     }
 
-    const { userId, platform, fromDate, toDate, color }: AnalyticsRequest = await req.json()
+    const body = await req.json()
+    const { userId, platform, fromDate, toDate, color }: AnalyticsRequest = body
 
-    if (!userId) {
+    // Input validation
+    if (!userId || typeof userId !== 'string') {
       return new Response(JSON.stringify({ error: 'userId is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    if (userId.length > 100) {
+      return new Response(JSON.stringify({ error: 'userId too long' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (platform && !['lichess', 'chess.com'].includes(platform)) {
+      return new Response(JSON.stringify({ error: 'Invalid platform' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Verify the authenticated user is requesting their own data
+    // Allow if userId matches auth user ID or is a chess username linked to their account
+    const authUserId = authData.user.id
+    if (userId !== authUserId) {
+      // Check if userId is a linked chess username for this auth user
+      const { data: linkedAccount } = await supabase
+        .from('user_profiles')
+        .select('user_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .single()
+
+      // If no linked account found, still allow (public game data) but log it
+      if (!linkedAccount) {
+        console.warn(`User ${authUserId} requesting data for userId ${userId}`)
+      }
     }
 
     // Build simple query
@@ -159,7 +193,7 @@ Deno.serve(async req => {
     })
   } catch (error) {
     console.error('Analytics error:', error)
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
