@@ -22,14 +22,6 @@ else:
     # Logger not available yet, but avoid printing sensitive info
     pass
 
-# Check if stripe library is available
-try:
-    import stripe as stripe_lib
-    logger.info(f"Stripe library imported successfully (version: {stripe_lib.VERSION if hasattr(stripe_lib, 'VERSION') else 'unknown'})")
-except ImportError as e:
-    logger.error(f"Stripe library import failed: {e}")
-    logger.info("   Run: pip install stripe>=7.0.0")
-
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, Request, Depends
 from fastapi.responses import JSONResponse
@@ -56,6 +48,14 @@ setup_logging()
 
 # Set up logger
 logger = logging.getLogger(__name__)
+
+# Check if stripe library is available
+try:
+    import stripe as stripe_lib
+    logger.info(f"Stripe library imported successfully (version: {stripe_lib.VERSION if hasattr(stripe_lib, 'VERSION') else 'unknown'})")
+except ImportError as e:
+    logger.error(f"Stripe library import failed: {e}")
+    logger.info("   Run: pip install stripe>=7.0.0")
 
 # Import our unified analysis engine
 from .analysis_engine import ChessAnalysisEngine, AnalysisConfig, AnalysisType, GameAnalysis

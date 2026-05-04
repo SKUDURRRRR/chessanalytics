@@ -2,7 +2,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-﻿"""
+"""
 AI-Powered Chess Comment Generator using Claude (Anthropic)
 
 This module uses Anthropic's Claude models to generate human-like,

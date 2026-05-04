@@ -2,7 +2,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-﻿"""
+"""
 AI Coaching Comment Generator for Chess Move Analysis
 
 This module provides comprehensive coaching comments that help players learn from their moves,
