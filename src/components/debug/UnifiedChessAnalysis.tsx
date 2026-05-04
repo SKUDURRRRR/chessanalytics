@@ -1287,9 +1287,9 @@ export function UnifiedChessAnalysis({
           {currentMove && (
             <div className="h-[40px] mb-4"></div>
           )}
-          <div className="rounded-lg bg-surface-1 shadow-card overflow-hidden" style={{ height: `${boardWidth + 2}px` }}>
+          <div className="rounded-lg bg-surface-1 shadow-card overflow-hidden flex flex-col" style={{ height: `${boardWidth + 2}px` }}>
             {/* Tab Header */}
-            <div className="flex" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+            <div className="flex flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <button
                 onClick={() => setRightPanelTab('analysis')}
                 className={`flex-1 px-4 py-2.5 text-[12px] font-medium transition-colors ${
@@ -1316,11 +1316,11 @@ export function UnifiedChessAnalysis({
 
             {/* Tab Content */}
             {rightPanelTab === 'coach' && positionContext ? (
-              <div style={{ minHeight: 400 }}>
+              <div className="flex-1 overflow-hidden">
                 <InlineCoachChat positionContext={positionContext} />
               </div>
             ) : (
-            <div className="p-6">
+            <div className="flex-1 overflow-y-auto p-6">
             {/* Current Move Analysis Section */}
             <div className="mb-6">
               <div className="flex items-start justify-between gap-3 mb-4">
