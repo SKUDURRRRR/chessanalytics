@@ -861,7 +861,7 @@ export function UnifiedChessAnalysis({
 
               {/* Tab content */}
               {mobileTab === 'coach' && positionContext ? (
-                <div style={{ minHeight: 300 }}>
+                <div style={{ height: 'min(70vh, 600px)' }}>
                   <InlineCoachChat positionContext={positionContext} />
                 </div>
               ) : (
@@ -1316,7 +1316,7 @@ export function UnifiedChessAnalysis({
 
             {/* Tab Content */}
             {rightPanelTab === 'coach' && positionContext ? (
-              <div style={{ minHeight: 400 }}>
+              <div style={{ height: 'calc(100% - 41px)' }}>
                 <InlineCoachChat positionContext={positionContext} />
               </div>
             ) : (

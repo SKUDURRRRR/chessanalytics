@@ -116,7 +116,7 @@ export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
       </div>
 
       {/* Messages */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+      <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2.5">
         {messages.length === 0 && !isLoading && (
           <div className="text-center py-8">
             <div className="mb-3 flex justify-center">
