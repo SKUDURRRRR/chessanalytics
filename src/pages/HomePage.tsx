@@ -169,20 +169,12 @@ export default function HomePage() {
           }}
         />
       <div ref={searchRef} className="relative px-6 pt-20 pb-16 sm:pt-28 sm:pb-20 text-center max-w-2xl mx-auto">
-        {/* Badge */}
-        <div
-          className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-6 bg-surface-1 shadow-card"
-        >
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span className="text-caption text-gray-400">Now with AI coaching powered by Claude & Gemini</span>
-        </div>
-
         <h1 className="text-title sm:text-[2rem] md:text-[2.5rem] font-semibold text-[#f0f0f0] tracking-heading leading-[1.1] mb-5">
           Understand your chess.
         </h1>
 
         <p className="text-gray-400 text-body leading-relaxed mb-10 max-w-lg mx-auto">
-          AI-powered analysis that tells you why you lose &mdash; and exactly how to improve.
+          AI-powered analysis that tells you why you lose - and exactly how to improve.
         </p>
 
         {/* Inline search */}
@@ -193,9 +185,10 @@ export default function HomePage() {
 
       {/* ===== Social proof bar ===== */}
       <div
-        className="px-6 py-8 flex flex-wrap items-center justify-center gap-x-16 gap-y-4"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
-      >
+        className="relative h-px -mt-[10px]"
+        style={{ background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.07), transparent)' }}
+      />
+      <div className="px-6 py-8 flex flex-wrap items-center justify-center gap-x-16 gap-y-4">
         <div className="text-center">
           <p className="text-title font-semibold text-white tracking-heading">12,400+</p>
           <p className="text-caption text-gray-500 uppercase tracking-label mt-1">Games Analyzed</p>
@@ -217,7 +210,7 @@ export default function HomePage() {
       <div className="px-6 py-16 sm:py-20" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
-            <div className="label text-gray-500 mb-3">FEATURES</div>
+            <div className="label text-gray-500 mb-3 text-[13px]">FEATURES</div>
             <h2 className="text-title font-semibold text-[#f0f0f0] tracking-heading">Everything you need to improve</h2>
           </div>
 
@@ -272,7 +265,7 @@ export default function HomePage() {
       >
         {/* Section header */}
         <div className="px-6 pt-12 pb-6 text-center">
-          <div className="label text-amber-300/60 mb-3 flex items-center justify-center gap-2">
+          <div className="label text-amber-300/60 mb-3 flex items-center justify-center gap-2 text-[13px]">
             <Brain size={14} />
             <span>Your Chess Coach</span>
           </div>
@@ -323,7 +316,7 @@ export default function HomePage() {
       >
         {/* Section header */}
         <div className="px-6 pt-12 pb-6 text-center">
-          <div className="label text-gray-400 mb-3 flex items-center justify-center gap-2">
+          <div className="label text-gray-400 mb-3 flex items-center justify-center gap-2 text-[13px]">
             <BarChart3 size={14} />
             <span>Know Your Style</span>
           </div>
@@ -374,7 +367,7 @@ export default function HomePage() {
       >
         {/* Section header */}
         <div className="px-6 pt-12 pb-6 text-center">
-          <div className="label text-gray-400 mb-3 flex items-center justify-center gap-2">
+          <div className="label text-gray-400 mb-3 flex items-center justify-center gap-2 text-[13px]">
             <TrendingUp size={14} />
             <span>Track Your Progress</span>
           </div>
