@@ -883,6 +883,7 @@ ${pgn} ${result}`
     const pm = lastUserComment?.processedMove
     const ctx: ChatPositionContext = {
       fen: gamePosition,
+      fenBefore: pm?.fenBefore,
       moveHistory,
       playerColor,
       moveNumber: Math.floor(moveHistory.length / 2) + 1,

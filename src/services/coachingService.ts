@@ -208,6 +208,7 @@ export class CoachingService {
           message,
           position_context: {
             fen: positionContext.fen,
+            fen_before: positionContext.fenBefore,
             move_history: positionContext.moveHistory,
             player_color: positionContext.playerColor,
             move_number: positionContext.moveNumber,

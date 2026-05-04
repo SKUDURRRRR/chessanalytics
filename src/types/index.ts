@@ -932,6 +932,9 @@ export interface RecommendationProfile {
 /** Context about the current chess position for coach chat */
 export interface ChatPositionContext {
   fen: string
+  /** FEN of the position BEFORE lastUserMove was played. Used by the backend to anchor
+   *  hypothetical-line discussions (e.g. "why was c3 best?") to the correct starting state. */
+  fenBefore?: string
   moveHistory: string[]
   playerColor?: 'white' | 'black'
   moveNumber?: number

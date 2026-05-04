@@ -11712,6 +11712,11 @@ async def get_engine_move(
 class ChatPositionContext(BaseModel):
     """Chess position context for coach chat."""
     fen: str = Field(..., description="FEN string of current position")
+    fen_before: Optional[str] = Field(
+        None,
+        description="FEN of the position BEFORE last_user_move was played. Used to anchor "
+                    "hypothetical-line discussions to the correct starting state.",
+    )
     move_history: List[str] = Field(default_factory=list, description="Move history in SAN")
     player_color: Optional[str] = Field(None, description="Player's color")
     move_number: Optional[int] = Field(None, description="Current move number")
@@ -11925,6 +11930,7 @@ CRITICAL RULES:
 - When the student is wrong, be direct but kind: "That loses material because of Bxf7+. Look at your knight instead - where can it go to create a double attack?"
 - PERSPECTIVE: The student's color is given in the position context (the side tagged STUDENT). Only suggest moves for THEIR color. Use correct notation from their perspective (e.g. if student is White and can capture on d5, say "exd5", not "dxe4" which would be Black's move)
 - ANTI-HALLUCINATION: Before claiming a piece is on a square, verify it appears in the WHITE pieces or BLACK pieces lists. NEVER invent pieces or place them on squares they don't occupy. If unsure what's on a square, re-read the piece list before answering. Wrong piece claims destroy student trust faster than any other mistake
+- HYPOTHETICAL LINES: When the student asks about the engine's best move or any alternative to their played move, that alternative is evaluated from the ALTERNATIVE-LINE STARTING POSITION (provided when relevant) — NOT from the current position. In the alternative line, the student's last move never happened, so the pieces that moved during it are NOT in their current squares. Use the ALTERNATIVE-LINE piece list (not the main piece list) when describing the alternative. Example: student played b5-b4 and asks why c3 was best. Evaluate c3 from the alternative-line state where the b-pawn is still on b5, NOT the current state where the b-pawn is on b4
 - LEGAL MOVES: A list of legal moves is provided in the position context. ONLY suggest or reference moves from that list. If a move is not in the list, it is illegal - do not suggest it
 - ENGINE GUIDANCE: Stockfish engine evaluations of top moves are provided. Base your recommendations on these evaluations - they are objectively correct. Explain the engine's top choice in human-friendly terms
 - NEVER USE ENGINE JARGON: Never say "centipawn", "centipawn loss", "cp", "eval", "engine evaluation", "Stockfish says", or quote numeric evaluations like "+1.2". These are internal data for YOUR understanding only. Instead describe move quality in human terms: "slight inaccuracy", "loses a small edge", "gives away your advantage", "serious mistake", "this throws the game away". The student should feel like they're learning from a grandmaster, not reading a computer printout
@@ -11987,6 +11993,37 @@ def _build_chat_user_prompt(
         black_tag = " (STUDENT)" if context.player_color == "black" else ""
         position_info += f"\nWHITE pieces{white_tag}: {white_pieces_str}"
         position_info += f"\nBLACK pieces{black_tag}: {black_pieces_str}"
+
+    # Alternative-line anchor: when fen_before is provided alongside last_user_move,
+    # supply the piece list for the position BEFORE the student's last move.
+    # The model should use this (not the current piece list) when discussing engine
+    # alternatives or any hypothetical where last_user_move did not occur.
+    if context.fen_before and context.last_user_move:
+        try:
+            import chess as _chess
+            board_before = _chess.Board(context.fen_before)
+            piece_names_b = {
+                _chess.PAWN: "Pawn", _chess.KNIGHT: "Knight", _chess.BISHOP: "Bishop",
+                _chess.ROOK: "Rook", _chess.QUEEN: "Queen", _chess.KING: "King",
+            }
+            wb, bb = [], []
+            for ptype in (_chess.KING, _chess.QUEEN, _chess.ROOK, _chess.BISHOP, _chess.KNIGHT, _chess.PAWN):
+                for sq in _chess.SQUARES:
+                    p = board_before.piece_at(sq)
+                    if p and p.piece_type == ptype:
+                        entry = f"{piece_names_b[ptype]} {_chess.square_name(sq)}"
+                        (wb if p.color == _chess.WHITE else bb).append(entry)
+            alt_label = context.best_move_san or "an alternative move"
+            position_info += (
+                f"\n\nALTERNATIVE-LINE STARTING POSITION (use this for hypothetical lines, "
+                f"e.g. \"why was {alt_label} best?\"). In this state, your move "
+                f"{context.last_user_move} has NOT been played:"
+                f"\n  FEN: {context.fen_before}"
+                f"\n  WHITE pieces: {', '.join(wb)}"
+                f"\n  BLACK pieces: {', '.join(bb)}"
+            )
+        except Exception:
+            pass
 
     if legal_moves_san:
         position_info += f"\nLegal moves in this position: {', '.join(sorted(legal_moves_san))}"

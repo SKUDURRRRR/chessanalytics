@@ -907,6 +907,7 @@ export default function GameAnalysisPage() {
       || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
     const ctx: ChatPositionContext = {
       fen: analysisfen,
+      fenBefore: currentMove?.fenBefore,
       moveHistory: processedData.moves.slice(0, currentIndex).map(m => m.san),
       playerColor,
       moveNumber: currentMove?.moveNumber,
