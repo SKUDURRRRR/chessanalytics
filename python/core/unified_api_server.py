@@ -11921,9 +11921,10 @@ CRITICAL RULES:
 - NEVER respond with only questions and no concrete advice. Every response MUST contain at least one clear, actionable insight about the position
 - When the student asks about a specific move, give your opinion on THAT MOVE first, then teach
 - Keep responses SHORT. If you're writing more than 4 sentences, stop and trim
-- Always relate advice to the CURRENT POSITION (the FEN provided)
+- Always relate advice to the CURRENT POSITION (FEN + WHITE pieces / BLACK pieces lists provided)
 - When the student is wrong, be direct but kind: "That loses material because of Bxf7+. Look at your knight instead - where can it go to create a double attack?"
-- PERSPECTIVE: The student's color is given in the position context. Only suggest moves for THEIR color. Use correct notation from their perspective (e.g. if student is White and can capture on d5, say "exd5", not "dxe4" which would be Black's move)
+- PERSPECTIVE: The student's color is given in the position context (the side tagged STUDENT). Only suggest moves for THEIR color. Use correct notation from their perspective (e.g. if student is White and can capture on d5, say "exd5", not "dxe4" which would be Black's move)
+- ANTI-HALLUCINATION: Before claiming a piece is on a square, verify it appears in the WHITE pieces or BLACK pieces lists. NEVER invent pieces or place them on squares they don't occupy. If unsure what's on a square, re-read the piece list before answering. Wrong piece claims destroy student trust faster than any other mistake
 - LEGAL MOVES: A list of legal moves is provided in the position context. ONLY suggest or reference moves from that list. If a move is not in the list, it is illegal - do not suggest it
 - ENGINE GUIDANCE: Stockfish engine evaluations of top moves are provided. Base your recommendations on these evaluations - they are objectively correct. Explain the engine's top choice in human-friendly terms
 - NEVER USE ENGINE JARGON: Never say "centipawn", "centipawn loss", "cp", "eval", "engine evaluation", "Stockfish says", or quote numeric evaluations like "+1.2". These are internal data for YOUR understanding only. Instead describe move quality in human terms: "slight inaccuracy", "loses a small edge", "gives away your advantage", "serious mistake", "this throws the game away". The student should feel like they're learning from a grandmaster, not reading a computer printout
@@ -11944,12 +11945,29 @@ def _build_chat_user_prompt(
     """Build the user prompt including position context and conversation history."""
     position_info = f"Current position (FEN): {context.fen}"
 
-    # Compute legal moves from the FEN to prevent hallucinated moves
+    # Compute legal moves and explicit piece positions from FEN.
+    # Raw FEN is hard for LLMs to parse reliably; an explicit piece list
+    # prevents hallucinations like "your bishop on b3" when no bishop is there.
     legal_moves_san = []
+    white_pieces_str = ""
+    black_pieces_str = ""
     try:
         import chess as _chess
         board = _chess.Board(context.fen)
         legal_moves_san = [board.san(m) for m in board.legal_moves]
+        piece_names = {
+            _chess.PAWN: "Pawn", _chess.KNIGHT: "Knight", _chess.BISHOP: "Bishop",
+            _chess.ROOK: "Rook", _chess.QUEEN: "Queen", _chess.KING: "King",
+        }
+        white_pieces, black_pieces = [], []
+        for ptype in (_chess.KING, _chess.QUEEN, _chess.ROOK, _chess.BISHOP, _chess.KNIGHT, _chess.PAWN):
+            for sq in _chess.SQUARES:
+                piece = board.piece_at(sq)
+                if piece and piece.piece_type == ptype:
+                    entry = f"{piece_names[ptype]} {_chess.square_name(sq)}"
+                    (white_pieces if piece.color == _chess.WHITE else black_pieces).append(entry)
+        white_pieces_str = ", ".join(white_pieces)
+        black_pieces_str = ", ".join(black_pieces)
     except Exception:
         pass
 
@@ -11963,6 +11981,12 @@ def _build_chat_user_prompt(
             is_student_turn = side_to_move == context.player_color
             turn_label = "student's turn" if is_student_turn else "opponent's turn"
             position_info += f"\nSide to move: {side_to_move} ({turn_label})"
+
+    if white_pieces_str or black_pieces_str:
+        white_tag = " (STUDENT)" if context.player_color == "white" else ""
+        black_tag = " (STUDENT)" if context.player_color == "black" else ""
+        position_info += f"\nWHITE pieces{white_tag}: {white_pieces_str}"
+        position_info += f"\nBLACK pieces{black_tag}: {black_pieces_str}"
 
     if legal_moves_san:
         position_info += f"\nLegal moves in this position: {', '.join(sorted(legal_moves_san))}"
@@ -12003,7 +12027,13 @@ def _build_chat_user_prompt(
     if context.last_opponent_move:
         position_info += f"\nOpponent's last move (NOT the student's): {context.last_opponent_move}"
     elif context.last_move:
-        position_info += f"\nLast move played: {context.last_move}"
+        # Attribute via FEN side-to-move: whoever just moved is the opposite of side-to-move.
+        last_player_tag = ""
+        fen_parts_lm = context.fen.split()
+        if len(fen_parts_lm) >= 2 and context.player_color:
+            stm = "white" if fen_parts_lm[1] == "w" else "black"
+            last_player_tag = " (by student)" if stm != context.player_color else " (by opponent)"
+        position_info += f"\nLast move played: {context.last_move}{last_player_tag}"
     if context.game_phase:
         position_info += f"\nGame phase: {context.game_phase}"
     if context.puzzle_theme:
@@ -12039,13 +12069,18 @@ def _build_chat_user_prompt(
             conv_lines.append(f"{speaker}: {msg.content}")
         conv_text = "\n--- Conversation so far ---\n" + "\n".join(conv_lines) + "\n---\n"
 
+    student_reminder = (
+        f" Remember: the student is {context.player_color.upper()}; only suggest moves for them."
+        if context.player_color else ""
+    )
+
     return f"""[POSITION CONTEXT]
 {position_info}
 
 {conv_text}
 Student's message: {user_message}
 
-Respond as Coach Tal. Be direct and helpful - give a clear opinion with a brief reason. Only suggest moves for the student's color. Max 4 sentences."""
+Respond as Coach Tal.{student_reminder} Be direct and helpful - give a clear opinion with a brief reason. Max 4 sentences."""
 
 
 @app.post("/api/v1/coach/chat", response_model=CoachChatResponse)
