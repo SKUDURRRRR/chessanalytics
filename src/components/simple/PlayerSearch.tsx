@@ -570,32 +570,32 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
       )}
 
       {/* Quick Access to Recent Players */}
-      <div className="mt-6 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }}>
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-caption font-medium text-gray-500" style={{ letterSpacing: '0.06em', fontVariant: 'all-small-caps' }}>
-            Quick Access
-          </span>
-          {recentPlayers.length > 0 && (
+      {recentPlayers.length > 0 && (
+        <div className="mt-6 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }}>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-caption font-medium text-gray-500" style={{ letterSpacing: '0.06em', fontVariant: 'all-small-caps' }}>
+              Quick Access
+            </span>
             <button
               onClick={() => setShowClearConfirm(true)}
               className="text-caption font-medium text-gray-500 hover:text-gray-400 transition-colors"
             >
               Clear All
             </button>
-          )}
-        </div>
+          </div>
 
-        {recentPlayers.length === 0 ? (
-          <div>
-            <p className="text-small text-gray-500 mb-3">
-              Try it out - click any player to see their analysis instantly
-            </p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {[
-                { userId: 'hikaru', platform: 'chess.com' as const, displayName: 'Hikaru Nakamura', rating: 3228 },
-                { userId: 'DrNykterstein', platform: 'lichess' as const, displayName: 'Magnus Carlsen', rating: 2830 },
-                { userId: 'DanielNaroditsky', platform: 'chess.com' as const, displayName: 'Daniel Naroditsky', rating: 3004 },
-              ].map(player => (
+          <div className="text-center mb-3">
+            <button
+              onClick={() => setShowRecentPlayers(!showRecentPlayers)}
+              className="text-[13px] font-medium text-gray-400 hover:text-gray-300 transition-colors"
+            >
+              {showRecentPlayers ? 'Hide' : 'Show'} Recent Players ({recentPlayers.length})
+            </button>
+          </div>
+
+          {showRecentPlayers && (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {recentPlayers.map(player => (
                 <div
                   key={`${player.userId}-${player.platform}`}
                   onClick={() => handlePlayerSelect(player.userId, player.platform, player.displayName, player.rating)}
@@ -604,61 +604,23 @@ export function PlayerSearch({ onPlayerSelect }: PlayerSearchProps) {
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-md bg-surface-3 flex items-center justify-center text-caption text-gray-400 flex-shrink-0">
-                      {player.displayName.charAt(0)}
+                      {(player.displayName || player.userId).charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="truncate text-[13px] font-medium text-[#f0f0f0]">
-                        {player.displayName}
+                        {player.displayName || player.userId}
                       </div>
                       <div className="truncate text-caption text-gray-500">
-                        {player.platform} &middot; {player.rating}
+                        {player.platform}{player.rating ? ` \u00b7 ${player.rating}` : ''}
                       </div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-        ) : (
-          <>
-            <div className="text-center mb-3">
-              <button
-                onClick={() => setShowRecentPlayers(!showRecentPlayers)}
-                className="text-[13px] font-medium text-gray-400 hover:text-gray-300 transition-colors"
-              >
-                {showRecentPlayers ? 'Hide' : 'Show'} Recent Players ({recentPlayers.length})
-              </button>
-            </div>
-
-            {showRecentPlayers && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {recentPlayers.map(player => (
-                  <div
-                    key={`${player.userId}-${player.platform}`}
-                    onClick={() => handlePlayerSelect(player.userId, player.platform, player.displayName, player.rating)}
-                    className="cursor-pointer rounded-md p-3 transition-colors hover:bg-white/[0.03]"
-                    style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)' }}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-md bg-surface-3 flex items-center justify-center text-caption text-gray-400 flex-shrink-0">
-                        {(player.displayName || player.userId).charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate text-[13px] font-medium text-[#f0f0f0]">
-                          {player.displayName || player.userId}
-                        </div>
-                        <div className="truncate text-caption text-gray-500">
-                          {player.platform}{player.rating ? ` \u00b7 ${player.rating}` : ''}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
       </div>
 
       {/* Usage Limit Modal */}
