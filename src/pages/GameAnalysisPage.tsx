@@ -912,6 +912,8 @@ export default function GameAnalysisPage() {
       playerColor,
       moveNumber: currentMove?.moveNumber,
       lastMove: currentMove?.san,
+      lastUserMove: currentMove?.isUserMove ? currentMove?.san : undefined,
+      lastOpponentMove: currentMove && !currentMove.isUserMove ? currentMove.san : undefined,
       gamePhase: currentMove?.gamePhase?.toLowerCase() as ChatPositionContext['gamePhase'],
       contextType: 'analysis',
       moveClassification: currentMove?.classification,
