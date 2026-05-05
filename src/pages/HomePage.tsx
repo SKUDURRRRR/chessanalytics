@@ -423,7 +423,7 @@ export default function HomePage() {
             </div>
             <div className="text-center pt-3">
               <p className="text-body text-gray-300 leading-relaxed italic mb-4">
-                &ldquo;I went from 1042 to 1411 in two months. The coaching comments on my blunders were more useful than hours of YouTube tutorials.&rdquo;
+                &ldquo;I went from 1042 to 1411 in two months. Chating with a coach about positions is quite helpful.&rdquo;
               </p>
               <p className="text-small text-gray-500">&ndash; skudurrrrr, Chess.com rapid player</p>
             </div>
