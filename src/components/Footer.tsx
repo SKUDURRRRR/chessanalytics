@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export function Footer() {
   return (
     <footer className="bg-surface-1 mt-auto" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
@@ -9,10 +11,14 @@ export function Footer() {
             <span className="text-small font-medium text-gray-400">chessdata.app</span>
           </div>
 
-          {/* Copyright */}
-          <span className="text-caption text-gray-600">
-            &copy; {new Date().getFullYear()} chessdata.app
-          </span>
+          {/* Legal links + copyright */}
+          <div className="flex items-center gap-3 text-caption text-gray-600">
+            <Link to="/terms" className="hover:text-gray-400 transition-colors">Terms</Link>
+            <span aria-hidden="true">·</span>
+            <Link to="/privacy" className="hover:text-gray-400 transition-colors">Privacy</Link>
+            <span aria-hidden="true">·</span>
+            <span>&copy; {new Date().getFullYear()} chessdata.app</span>
+          </div>
 
           {/* Discord Link */}
           <a
