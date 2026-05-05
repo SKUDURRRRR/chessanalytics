@@ -185,7 +185,7 @@ export default function HomePage() {
 
       {/* ===== Social proof bar ===== */}
       <div
-        className="relative h-px -mt-[10px]"
+        className="relative h-px -mt-[10px] hidden sm:block"
         style={{ background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.07), transparent)' }}
       />
       <div className="px-6 py-8 flex flex-wrap items-center justify-center gap-x-16 gap-y-4">
