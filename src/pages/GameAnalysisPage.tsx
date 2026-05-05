@@ -916,6 +916,7 @@ export default function GameAnalysisPage() {
       lastOpponentMove: currentMove && !currentMove.isUserMove ? currentMove.san : undefined,
       gamePhase: currentMove?.gamePhase?.toLowerCase() as ChatPositionContext['gamePhase'],
       contextType: 'analysis',
+      gameId: gameRecord?.provider_game_id || decodedGameId || undefined,
       moveClassification: currentMove?.classification,
       evaluation: currentMove?.displayEvaluation,
       bestMoveSan: currentMove?.bestMoveSan ?? undefined,
@@ -926,7 +927,7 @@ export default function GameAnalysisPage() {
       learningPoints: currentMove?.learningPoints,
     }
     setLocalPositionContext(ctx)
-  }, [currentIndex, processedData, playerColor, currentMove])
+  }, [currentIndex, processedData, playerColor, currentMove, gameRecord?.provider_game_id, decodedGameId])
 
   const evaluationContainerRef = useRef<HTMLDivElement | null>(null)
 

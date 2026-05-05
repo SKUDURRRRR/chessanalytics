@@ -943,6 +943,8 @@ export interface ChatPositionContext {
   lastOpponentMove?: string
   gamePhase?: 'opening' | 'middlegame' | 'endgame'
   contextType: 'play' | 'puzzle' | 'analysis' | 'game-review'
+  /** Identifier of the analyzed game. Used to gate free-tier chat to one game. */
+  gameId?: string
   puzzleTheme?: string
   puzzleCategory?: string
   moveClassification?: string

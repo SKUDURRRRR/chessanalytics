@@ -34,6 +34,18 @@ import { supabase } from '../lib/supabase'
 const API_URL = config.getApi().baseUrl
 const COACH_CACHE_TTL = 3 * 60 * 1000 // 3 minutes for coach data
 
+/**
+ * Thrown by coachFetch when the backend returns the structured
+ * COACH_CHAT_UPGRADE_REQUIRED detail. UI should render an upgrade CTA.
+ */
+export class CoachChatUpgradeRequiredError extends Error {
+  readonly code = 'COACH_CHAT_UPGRADE_REQUIRED' as const
+  constructor(message: string) {
+    super(message)
+    this.name = 'CoachChatUpgradeRequiredError'
+  }
+}
+
 interface CoachFetchOptions {
   method?: string
   body?: unknown
@@ -79,12 +91,16 @@ export class CoachingService {
     )
 
     if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error('Coach features require premium subscription')
-      }
       const errorBody = await response.json().catch(() => null)
-      const detail = errorBody?.detail || response.statusText
-      throw new Error(`HTTP error! status: ${response.status} - ${detail}`)
+      const detail = errorBody?.detail
+      if (response.status === 403) {
+        if (detail && typeof detail === 'object' && detail.code === 'COACH_CHAT_UPGRADE_REQUIRED') {
+          throw new CoachChatUpgradeRequiredError(detail.message)
+        }
+        throw new Error(typeof detail === 'string' ? detail : 'Coach features require premium subscription')
+      }
+      const detailText = typeof detail === 'string' ? detail : response.statusText
+      throw new Error(`HTTP error! status: ${response.status} - ${detailText}`)
     }
 
     return await response.json() as T
@@ -217,6 +233,7 @@ export class CoachingService {
             last_opponent_move: positionContext.lastOpponentMove,
             game_phase: positionContext.gamePhase,
             context_type: positionContext.contextType,
+            game_id: positionContext.gameId,
             puzzle_theme: positionContext.puzzleTheme,
             puzzle_category: positionContext.puzzleCategory,
             move_classification: positionContext.moveClassification,

@@ -11115,6 +11115,75 @@ async def _check_premium_access(user_id: str, platform: Optional[str] = None) ->
         return False
 
 
+# Structured detail used by the frontend to render an inline upgrade CTA
+# instead of the generic error toast. Chat-specific so other 403s keep
+# their existing string contract.
+COACH_CHAT_UPGRADE_DETAIL = {
+    "code": "COACH_CHAT_UPGRADE_REQUIRED",
+    "message": "You've used your free coach chat. Upgrade to Premium to chat about every game.",
+}
+
+
+async def _authorize_coach_chat(auth_user_id: str, game_id: Optional[str]) -> None:
+    """
+    Gate the coach chat endpoint.
+
+    Premium users: always allowed.
+    Free users: allowed for a single game. The first chat pins
+    `coach_chat_unlocked_game_id` to the request's game_id; subsequent
+    chats must match it.
+
+    Raises HTTPException(403) with COACH_CHAT_UPGRADE_DETAIL for free users
+    who have already used their one game.
+    """
+    if await _check_premium_access(auth_user_id):
+        return
+
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    if not game_id:
+        # Without a game_id we can't pin the free-tier credit, so we fail
+        # closed rather than leak unlimited chat.
+        raise HTTPException(status_code=403, detail=COACH_CHAT_UPGRADE_DETAIL)
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users')
+            .select('coach_chat_unlocked_game_id')
+            .eq('id', auth_user_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.error(f"[COACH_CHAT_AUTH] Lookup failed for {auth_user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Could not verify chat access")
+
+    if not result.data:
+        raise HTTPException(status_code=403, detail=COACH_CHAT_UPGRADE_DETAIL)
+
+    unlocked = result.data[0].get('coach_chat_unlocked_game_id')
+
+    if unlocked is None:
+        try:
+            await asyncio.to_thread(
+                lambda: supabase_service.table('authenticated_users')
+                .update({'coach_chat_unlocked_game_id': game_id})
+                .eq('id', auth_user_id)
+                .is_('coach_chat_unlocked_game_id', 'null')
+                .execute()
+            )
+        except Exception as e:
+            logger.error(f"[COACH_CHAT_AUTH] Failed to pin game_id for {auth_user_id}: {e}")
+            raise HTTPException(status_code=500, detail="Could not unlock chat")
+        return
+
+    if unlocked == game_id:
+        return
+
+    raise HTTPException(status_code=403, detail=COACH_CHAT_UPGRADE_DETAIL)
+
+
 @app.post("/api/v1/coach/game-review/use")
 async def record_game_review_usage(
     auth_user_id: Optional[str] = Depends(get_coach_user_id)
@@ -12052,6 +12121,7 @@ class ChatPositionContext(BaseModel):
     last_opponent_move: Optional[str] = Field(None, description="Opponent/engine's last move in SAN")
     game_phase: Optional[str] = Field(None, description="opening/middlegame/endgame")
     context_type: str = Field("play", description="play/puzzle/analysis")
+    game_id: Optional[str] = Field(None, description="Identifier of the analyzed game, used to gate free-tier chat to one game")
     puzzle_theme: Optional[str] = Field(None, description="Puzzle tactical theme")
     puzzle_category: Optional[str] = Field(None, description="Puzzle category")
     move_classification: Optional[str] = Field(None, description="Move classification from analysis")
@@ -12455,20 +12525,16 @@ async def coach_chat(
 ):
     """
     Interactive chat with Tal Coach about the current chess position.
-    Premium-only endpoint with rate limiting.
+    Premium for unlimited use; free users get one analyzed game.
     """
-    # 1. Premium check
+    # 1. Auth + tier check (free users get coach chat for one game)
     if not auth_user_id:
         raise HTTPException(
             status_code=401,
             detail="Authentication required. Please log in to chat with Coach Tal."
         )
 
-    if not await _check_premium_access(auth_user_id):
-        raise HTTPException(
-            status_code=403,
-            detail="Coach chat requires premium subscription. Please upgrade to access."
-        )
+    await _authorize_coach_chat(auth_user_id, request.position_context.game_id)
 
     # 2. Rate limiting
     can_chat, chat_stats = _check_chat_rate_limit(auth_user_id)

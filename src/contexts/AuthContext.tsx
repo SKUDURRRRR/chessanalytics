@@ -35,6 +35,7 @@ interface UsageStats {
   coach_lessons?: UsageBucket
   coach_puzzles?: UsageBucket
   coach_game_reviews?: UsageBucket
+  coach_chat_unlocked_game_id?: string | null
   chess_com_username?: string
   lichess_username?: string
   primary_platform?: string

@@ -4,10 +4,10 @@
  * Used on the Coach Dashboard for the integrated board+chat experience.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { ChatMessage, ChatPositionContext, CoachChatResponse } from '../../types'
-import { CoachingService } from '../../services/coachingService'
+import { CoachingService, CoachChatUpgradeRequiredError } from '../../services/coachingService'
 import { useAuth } from '../../contexts/AuthContext'
 import { TalCoachIcon } from '../ui/TalCoachIcon'
 
@@ -22,13 +22,36 @@ interface InlineCoachChatProps {
 }
 
 export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
-  const { user } = useAuth()
+  const { user, usageStats, refreshUsageStats } = useAuth()
+  const navigate = useNavigate()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [upgradeRequired, setUpgradeRequired] = useState<string | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Derive premium status (mirrors PremiumGate logic — backend is source of truth)
+  const isPremium = useMemo(() => {
+    const tier = usageStats?.account_tier?.toLowerCase() || ''
+    const status = usageStats?.subscription_status?.toLowerCase() || ''
+    const tierOk = tier.includes('pro') || tier.includes('enterprise')
+    const statusOk = status === 'active' || status === 'trialing'
+    return tierOk && statusOk
+  }, [usageStats])
+
+  // For free users, predict whether the next chat will be blocked so we
+  // can render the upgrade card up front instead of after a failed request.
+  const predictedBlocked = useMemo(() => {
+    if (isPremium || !positionContext?.gameId) return false
+    const unlocked = usageStats?.coach_chat_unlocked_game_id
+    return Boolean(unlocked) && unlocked !== positionContext.gameId
+  }, [isPremium, usageStats, positionContext?.gameId])
+
+  const showUpgrade = upgradeRequired ?? (predictedBlocked
+    ? "You've used your free coach chat. Upgrade to Premium to chat about every game."
+    : null)
 
   const scrollToBottom = useCallback(() => {
     const container = messagesContainerRef.current
@@ -83,8 +106,21 @@ export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
       }
 
       setMessages(prev => [...prev, coachMessage])
+      // First chat by a free user pins the game_id server-side; refresh
+      // so predictedBlocked stays accurate on subsequent renders.
+      if (!isPremium) {
+        refreshUsageStats()
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get response')
+      if (err instanceof CoachChatUpgradeRequiredError) {
+        setUpgradeRequired(err.message)
+        // Drop the optimistic user message — we don't want it sitting
+        // above an upgrade card with no answer.
+        setMessages(prev => prev.filter(m => m.id !== userMessage.id))
+        refreshUsageStats()
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to get response')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -188,8 +224,28 @@ export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
         </div>
       )}
 
+      {/* Upgrade card — shown when free user has used their one free chat */}
+      {user && showUpgrade && (
+        <div
+          className="px-4 py-3"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
+        >
+          <div className="rounded-md p-3 bg-white/[0.02] shadow-input">
+            <p className="text-[11px] text-gray-300 leading-relaxed mb-2.5">
+              {showUpgrade}
+            </p>
+            <button
+              onClick={() => navigate('/pricing')}
+              className="text-[11px] font-medium rounded px-3 py-1.5 bg-cta hover:bg-cta-hover text-surface-base transition-colors"
+            >
+              Upgrade to Premium
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Suggestions */}
-      {user && messages.length === 0 && !isLoading && (
+      {user && !showUpgrade && messages.length === 0 && !isLoading && (
         <div
           className="px-4 py-2 flex flex-wrap gap-1.5"
           style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
@@ -210,44 +266,46 @@ export function InlineCoachChat({ positionContext }: InlineCoachChatProps) {
         </div>
       )}
 
-      {/* Input */}
-      <div
-        className="px-4 py-2.5"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
-      >
+      {/* Input — hidden when upgrade card is showing */}
+      {!showUpgrade && (
         <div
-          className="flex items-center rounded-md px-3 py-2"
-          style={{
-            background: '#1c1d20',
-            boxShadow: '0 0 0 1px rgba(255,255,255,0.04)',
-          }}
+          className="px-4 py-2.5"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
         >
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={e => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={!user ? 'Log in to chat with Coach Tal' : 'Ask about this position...'}
-            maxLength={500}
-            disabled={isLoading || !user || !positionContext}
-            className="flex-1 bg-transparent text-[11px] text-white placeholder-gray-600 focus:outline-none disabled:opacity-50"
-          />
-          <button
-            onClick={() => sendMessage()}
-            disabled={!inputValue.trim() || isLoading || !user || !positionContext}
-            className="text-gray-400 hover:text-white disabled:opacity-30 transition-colors ml-2"
-            title="Send"
+          <div
+            className="flex items-center rounded-md px-3 py-2"
+            style={{
+              background: '#1c1d20',
+              boxShadow: '0 0 0 1px rgba(255,255,255,0.04)',
+            }}
           >
-            <span
-              className="text-[11px] rounded px-1.5 py-0.5"
-              style={{ background: 'rgba(255,255,255,0.06)' }}
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={e => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={!user ? 'Log in to chat with Coach Tal' : 'Ask about this position...'}
+              maxLength={500}
+              disabled={isLoading || !user || !positionContext}
+              className="flex-1 bg-transparent text-[11px] text-white placeholder-gray-600 focus:outline-none disabled:opacity-50"
+            />
+            <button
+              onClick={() => sendMessage()}
+              disabled={!inputValue.trim() || isLoading || !user || !positionContext}
+              className="text-gray-400 hover:text-white disabled:opacity-30 transition-colors ml-2"
+              title="Send"
             >
-              &#8593;
-            </span>
-          </button>
+              <span
+                className="text-[11px] rounded px-1.5 py-0.5"
+                style={{ background: 'rgba(255,255,255,0.06)' }}
+              >
+                &#8593;
+              </span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

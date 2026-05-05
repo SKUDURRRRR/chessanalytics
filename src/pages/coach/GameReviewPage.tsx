@@ -433,6 +433,7 @@ function GameReviewContent() {
       lastMove: isRevealed ? m.san : undefined,
       gamePhase: m.gamePhase?.toLowerCase() as ChatPositionContext['gamePhase'],
       contextType: 'game-review',
+      gameId: gameId || undefined,
       moveClassification: isRevealed ? m.classification : undefined,
       evaluation: isRevealed ? m.displayEvaluation : undefined,
       bestMoveSan: isRevealed ? (m.bestMoveSan ?? undefined) : undefined,
@@ -451,7 +452,7 @@ function GameReviewContent() {
     }
 
     setLocalPositionContext(ctx)
-  }, [phase, currentMoment, currentMomentIndex, keyMoments.length, processedData.moves, playerColor, currentPosition, gameMeta, isRevealed, userAttemptSan])
+  }, [phase, currentMoment, currentMomentIndex, keyMoments.length, processedData.moves, playerColor, currentPosition, gameMeta, isRevealed, userAttemptSan, gameId])
 
   // ---- Mistake stats for summary ----
   const mistakeStats = useMemo(() => {

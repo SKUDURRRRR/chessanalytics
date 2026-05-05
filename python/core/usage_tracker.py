@@ -190,7 +190,7 @@ class UsageTracker:
             # Get user's account tier and linked accounts
             user_result = await asyncio.to_thread(
                 lambda: self.supabase.table('authenticated_users').select(
-                    'account_tier, subscription_status, subscription_end_date, chess_com_username, lichess_username, primary_platform, onboarding_completed, game_reviews_used'
+                    'account_tier, subscription_status, subscription_end_date, chess_com_username, lichess_username, primary_platform, onboarding_completed, game_reviews_used, coach_chat_unlocked_game_id'
                 ).eq('id', user_id).execute()
             )
 
@@ -208,6 +208,7 @@ class UsageTracker:
             lichess_username = user.get('lichess_username')
             primary_platform = user.get('primary_platform')
             game_reviews_used = user.get('game_reviews_used', 0)
+            coach_chat_unlocked_game_id = user.get('coach_chat_unlocked_game_id')
             onboarding_completed = user.get('onboarding_completed', False)
 
             # Debug logging for subscription end date
@@ -345,6 +346,7 @@ class UsageTracker:
                     'remaining': coach_game_reviews_remaining,
                     'unlimited': coach_game_reviews_limit is None
                 },
+                'coach_chat_unlocked_game_id': coach_chat_unlocked_game_id,
                 'chess_com_username': chess_com_username,
                 'lichess_username': lichess_username,
                 'primary_platform': primary_platform,
