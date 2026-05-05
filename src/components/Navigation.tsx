@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 import { useState, useRef, useEffect } from 'react'
 import { Menu, X } from 'lucide-react'
 
@@ -11,6 +12,7 @@ interface LastVisitedPlayer {
 
 export function Navigation() {
   const { user, signOut, usageStats, loading } = useAuth()
+  const { isAdmin } = useIsAdmin()
   const location = useLocation()
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -203,6 +205,15 @@ export function Navigation() {
                         >
                           Pricing
                         </Link>
+                        {isAdmin && (
+                          <Link
+                            to="/admin"
+                            className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                            onClick={() => setIsDropdownOpen(false)}
+                          >
+                            Admin
+                          </Link>
+                        )}
                         <div className="divider my-1" />
                         <button
                           onClick={() => {
@@ -255,6 +266,11 @@ export function Navigation() {
                   <Link to="/pricing" className={navLinkClass('/pricing')}>
                     Pricing
                   </Link>
+                  {isAdmin && (
+                    <Link to="/admin" className={navLinkClass('/admin')}>
+                      Admin
+                    </Link>
+                  )}
                   <button
                     onClick={handleSignOut}
                     className="ml-2 px-3.5 py-1.5 rounded-md text-body font-medium text-rose-300/80 hover:text-rose-200 hover:bg-rose-500/10 transition-colors"

@@ -1337,6 +1337,333 @@ async def get_memory_metrics():
         }
 
 
+async def verify_admin(token_data: Annotated[dict, Depends(verify_token)]) -> dict:
+    """Verify the authenticated user's email is in app_admins. Returns the JWT payload."""
+    email = (token_data.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=403, detail="Admin access requires an email-bearing token")
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Admin checks unavailable: database not configured")
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('app_admins').select('email').eq('email', email).limit(1).execute()
+        )
+    except Exception as e:
+        logger.warning(f"app_admins lookup failed for {email}: {e}")
+        raise HTTPException(status_code=503, detail="Admin check failed")
+    if not result.data:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return token_data
+
+
+@app.get("/api/v1/admin/check")
+async def admin_check(token_data: Annotated[dict, Depends(verify_token)]):
+    """Lightweight check: is the current user an admin? Returns {is_admin: bool}."""
+    email = (token_data.get("email") or "").strip().lower()
+    if not email or not supabase_service:
+        return {"is_admin": False}
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase_service.table('app_admins').select('email').eq('email', email).limit(1).execute()
+        )
+        return {"is_admin": bool(result.data)}
+    except Exception as e:
+        logger.warning(f"admin_check failed for {email}: {e}")
+        return {"is_admin": False}
+
+
+@app.get("/api/v1/admin/overview")
+async def admin_overview(_admin: Annotated[dict, Depends(verify_admin)]):
+    """Admin-only platform overview: users, activity, queue, system, subscriptions."""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    iso_24h = (now - timedelta(hours=24)).isoformat()
+    iso_7d = (now - timedelta(days=7)).isoformat()
+    iso_30d = (now - timedelta(days=30)).isoformat()
+
+    overview: Dict[str, Any] = {
+        "generated_at": now.isoformat(),
+        "users": {},
+        "activity": {},
+        "queue": {},
+        "system": {},
+        "subscriptions": {},
+        "errors": [],
+    }
+
+    # --- Users ---
+    try:
+        if supabase_service:
+            total = await asyncio.to_thread(
+                lambda: supabase_service.table('authenticated_users').select('id', count='exact').limit(1).execute()
+            )
+            new_7d = await asyncio.to_thread(
+                lambda: supabase_service.table('authenticated_users').select('id', count='exact')
+                .gte('created_at', iso_7d).limit(1).execute()
+            )
+            tier_rows = await asyncio.to_thread(
+                lambda: supabase_service.table('authenticated_users').select('account_tier').execute()
+            )
+            by_tier: Dict[str, int] = {}
+            for row in (tier_rows.data or []):
+                t = row.get('account_tier') or 'unknown'
+                by_tier[t] = by_tier.get(t, 0) + 1
+            overview["users"] = {
+                "total": total.count or 0,
+                "new_7d": new_7d.count or 0,
+                "by_tier": by_tier,
+            }
+    except Exception as e:
+        overview["errors"].append(f"users: {e}")
+
+    # --- Activity (games + analyses) + Active users ---
+    try:
+        if supabase_service:
+            games_total = await asyncio.to_thread(
+                lambda: supabase_service.table('games').select('id', count='exact').limit(1).execute()
+            )
+            games_24h = await asyncio.to_thread(
+                lambda: supabase_service.table('games').select('id', count='exact')
+                .gte('created_at', iso_24h).limit(1).execute()
+            )
+            games_7d = await asyncio.to_thread(
+                lambda: supabase_service.table('games').select('id', count='exact')
+                .gte('created_at', iso_7d).limit(1).execute()
+            )
+            analyses_total = await asyncio.to_thread(
+                lambda: supabase_service.table('game_analyses').select('id', count='exact').limit(1).execute()
+            )
+            analyses_24h = await asyncio.to_thread(
+                lambda: supabase_service.table('game_analyses').select('id', count='exact')
+                .gte('created_at', iso_24h).limit(1).execute()
+            )
+            analyses_7d = await asyncio.to_thread(
+                lambda: supabase_service.table('game_analyses').select('id', count='exact')
+                .gte('created_at', iso_7d).limit(1).execute()
+            )
+            # Active users: distinct user_ids with analyses in window
+            active_rows = await asyncio.to_thread(
+                lambda: supabase_service.table('game_analyses').select('user_id')
+                .gte('created_at', iso_30d).execute()
+            )
+            seen_30d: set = set()
+            seen_7d: set = set()
+            cutoff_7d = iso_7d
+            for row in (active_rows.data or []):
+                uid = row.get('user_id')
+                if uid:
+                    seen_30d.add(uid)
+            # Re-query 7d distinct (small enough; alternative: include created_at and filter in memory)
+            active_7d_rows = await asyncio.to_thread(
+                lambda: supabase_service.table('game_analyses').select('user_id')
+                .gte('created_at', cutoff_7d).execute()
+            )
+            for row in (active_7d_rows.data or []):
+                uid = row.get('user_id')
+                if uid:
+                    seen_7d.add(uid)
+            overview["activity"] = {
+                "games_total": games_total.count or 0,
+                "games_24h": games_24h.count or 0,
+                "games_7d": games_7d.count or 0,
+                "analyses_total": analyses_total.count or 0,
+                "analyses_24h": analyses_24h.count or 0,
+                "analyses_7d": analyses_7d.count or 0,
+                "active_users_7d": len(seen_7d),
+                "active_users_30d": len(seen_30d),
+            }
+    except Exception as e:
+        overview["errors"].append(f"activity: {e}")
+
+    # --- Queue ---
+    try:
+        from .analysis_queue import get_analysis_queue
+        queue = get_analysis_queue()
+        overview["queue"] = queue.get_queue_stats()
+    except Exception as e:
+        overview["errors"].append(f"queue: {e}")
+
+    # --- System (Stockfish + AI + caches + engine pool + memory) ---
+    try:
+        engine = get_analysis_engine()
+        stockfish_available = engine.stockfish_path is not None
+    except Exception:
+        stockfish_available = False
+
+    ai_status = {"available": False, "enabled": False, "model": None}
+    try:
+        ai_check = _get_ai_generator()
+        if ai_check:
+            ai_status["available"] = True
+            ai_status["enabled"] = bool(getattr(ai_check, 'enabled', False))
+            cfg = getattr(ai_check, 'config', None)
+            if cfg is not None:
+                ai_status["model"] = getattr(cfg, 'ai_model', None)
+    except Exception:
+        pass
+
+    memory_stats: Dict[str, Any] = {}
+    cache_stats: Dict[str, Any] = {}
+    engine_stats: Dict[str, Any] = {}
+    try:
+        if _memory_monitor_instance:
+            memory_stats = _memory_monitor_instance.get_stats()
+    except Exception as e:
+        overview["errors"].append(f"memory: {e}")
+    try:
+        cache_stats = get_all_cache_stats()
+    except Exception as e:
+        overview["errors"].append(f"caches: {e}")
+    try:
+        if _engine_pool_instance:
+            engine_stats = _engine_pool_instance.stats()
+    except Exception as e:
+        overview["errors"].append(f"engine_pool: {e}")
+
+    overview["system"] = {
+        "stockfish_available": stockfish_available,
+        "database_connected": supabase_service is not None,
+        "ai": ai_status,
+        "memory": memory_stats,
+        "caches": cache_stats,
+        "engine_pool": engine_stats,
+    }
+
+    # --- Subscriptions (paying users by tier + status) ---
+    try:
+        if supabase_service:
+            sub_rows = await asyncio.to_thread(
+                lambda: supabase_service.table('authenticated_users').select(
+                    'account_tier, subscription_status'
+                ).neq('account_tier', 'free').execute()
+            )
+            paying = 0
+            by_status: Dict[str, int] = {}
+            paying_by_tier: Dict[str, int] = {}
+            for row in (sub_rows.data or []):
+                status = row.get('subscription_status') or 'unknown'
+                tier = row.get('account_tier') or 'unknown'
+                by_status[status] = by_status.get(status, 0) + 1
+                if status in ('active', 'trialing'):
+                    paying += 1
+                    paying_by_tier[tier] = paying_by_tier.get(tier, 0) + 1
+            overview["subscriptions"] = {
+                "paying_active": paying,
+                "by_status": by_status,
+                "paying_by_tier": paying_by_tier,
+            }
+    except Exception as e:
+        overview["errors"].append(f"subscriptions: {e}")
+
+    return overview
+
+
+@app.get("/api/v1/admin/users")
+async def admin_users(
+    _admin: Annotated[dict, Depends(verify_admin)],
+    limit: int = 50,
+    offset: int = 0,
+    search: Optional[str] = None,
+):
+    """Admin-only paginated user list with linked accounts and last activity."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    # 1. Pull authenticated_users page
+    try:
+        query = supabase_service.table('authenticated_users').select(
+            'id, account_tier, subscription_status, chess_com_username, lichess_username, '
+            'primary_platform, created_at',
+            count='exact',
+        ).order('created_at', desc=True)
+        if search:
+            term = search.strip().lower()
+            if term:
+                query = query.or_(
+                    f"chess_com_username.ilike.%{term}%,lichess_username.ilike.%{term}%"
+                )
+        rows_resp = await asyncio.to_thread(
+            lambda: query.range(offset, offset + limit - 1).execute()
+        )
+    except Exception as e:
+        logger.error(f"admin_users: failed to fetch authenticated_users: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch users: {e}")
+
+    rows = rows_resp.data or []
+    total = rows_resp.count or 0
+    if not rows:
+        return {"users": [], "total": total, "limit": limit, "offset": offset}
+
+    user_ids = {r['id'] for r in rows}
+
+    # 2. Pull emails for these IDs from auth.users via admin API
+    emails: Dict[str, str] = {}
+    try:
+        page_size = 1000
+        for page in range(1, 6):
+            resp = await asyncio.to_thread(
+                lambda p=page: supabase_service.auth.admin.list_users(
+                    page=p, per_page=page_size
+                )
+            )
+            users_list = resp if isinstance(resp, list) else getattr(resp, 'users', None) or []
+            if not users_list:
+                break
+            for u in users_list:
+                uid = getattr(u, 'id', None) or (u.get('id') if isinstance(u, dict) else None)
+                em = getattr(u, 'email', None) or (u.get('email') if isinstance(u, dict) else None)
+                if uid in user_ids and em:
+                    emails[uid] = em
+            if len(users_list) < page_size:
+                break
+    except Exception as e:
+        logger.warning(f"admin_users: failed to fetch emails: {e}")
+
+    # 3. Latest analysis time per user (for "last active")
+    last_active: Dict[str, str] = {}
+    try:
+        analyses_resp = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('user_id, created_at')
+            .order('created_at', desc=True)
+            .limit(2000)
+            .execute()
+        )
+        for row in (analyses_resp.data or []):
+            uid = row.get('user_id')
+            ts = row.get('created_at')
+            if uid and ts and uid not in last_active:
+                last_active[uid] = ts
+    except Exception as e:
+        logger.warning(f"admin_users: failed to fetch last_active: {e}")
+
+    users = []
+    for r in rows:
+        uid = r['id']
+        users.append({
+            "id": uid,
+            "email": emails.get(uid),
+            "account_tier": r.get('account_tier'),
+            "subscription_status": r.get('subscription_status'),
+            "chess_com_username": r.get('chess_com_username'),
+            "lichess_username": r.get('lichess_username'),
+            "primary_platform": r.get('primary_platform'),
+            "created_at": r.get('created_at'),
+            "last_active_at": last_active.get(uid),
+        })
+
+    return {
+        "users": users,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 @app.post("/api/v1/analyze-position-quick", response_model=QuickPositionAnalysisResponse)
 async def analyze_position_quick(request: QuickPositionAnalysisRequest):
     """

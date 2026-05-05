@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { useIsAdmin } from './hooks/useIsAdmin'
 import { ChessSoundProvider } from './contexts/ChessSoundContext'
 import { ToastProvider } from './contexts/ToastContext'
 import { PageErrorBoundary, ComponentErrorBoundary } from './components/ErrorBoundaries'
@@ -64,6 +65,7 @@ const PositionLibraryPage = lazyWithRetry(() => import('./pages/coach/PositionLi
 // const OpeningsPage = lazyWithRetry(() => import('./pages/coach/OpeningsPage'))
 // const StudyPlanPage = lazyWithRetry(() => import('./pages/coach/StudyPlanPage'))
 const GameReviewPage = lazyWithRetry(() => import('./pages/coach/GameReviewPage'))
+const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'))
 
 // Loading component shown while pages load
 function PageLoader() {
@@ -80,6 +82,16 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
   if (loading) return <PageLoader />
   if (!user) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+// Route guard: requires admin (verified server-side via app_admins table)
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { user, loading: authLoading } = useAuth()
+  const { isAdmin, loading: adminLoading } = useIsAdmin()
+  if (authLoading || adminLoading) return <PageLoader />
+  if (!user) return <Navigate to="/login" replace />
+  if (!isAdmin) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
@@ -128,6 +140,7 @@ function App() {
                   {/* <Route path="/coach/study-plan" element={<ComponentErrorBoundary><StudyPlanPage /></ComponentErrorBoundary>} /> */}
                   <Route path="/coach/puzzles" element={<ComponentErrorBoundary><PuzzlesPage /></ComponentErrorBoundary>} />
                   <Route path="/coach/puzzles/solve" element={<ComponentErrorBoundary><PuzzleSolvePage /></ComponentErrorBoundary>} />
+                  <Route path="/admin" element={<ComponentErrorBoundary><AdminRoute><AdminDashboardPage /></AdminRoute></ComponentErrorBoundary>} />
                   <Route path="*" element={<ComponentErrorBoundary><NotFoundPage /></ComponentErrorBoundary>} />
                 </Routes>
               </Suspense>
