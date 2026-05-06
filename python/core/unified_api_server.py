@@ -1559,55 +1559,158 @@ async def admin_overview(_admin: Annotated[dict, Depends(verify_admin)]):
     return overview
 
 
-@app.get("/api/v1/admin/users")
-async def admin_users(
-    _admin: Annotated[dict, Depends(verify_admin)],
-    limit: int = 50,
-    offset: int = 0,
-    search: Optional[str] = None,
-):
-    """Admin-only paginated user list with linked accounts and last activity."""
-    if not supabase_service:
-        raise HTTPException(status_code=503, detail="Database not configured")
+# Cache for cross-user activity aggregates. Keyed by lower-cased (platform, username).
+_admin_counts_cache: Dict[str, Any] = {"ts": 0.0, "games": {}, "analyses": {}, "last_active": {}}
+_ADMIN_COUNTS_TTL = 60.0
 
-    limit = max(1, min(limit, 200))
-    offset = max(0, offset)
 
-    # 1. Pull authenticated_users page
-    try:
-        query = supabase_service.table('authenticated_users').select(
-            'id, account_tier, subscription_status, chess_com_username, lichess_username, '
-            'primary_platform, created_at',
-            count='exact',
-        ).order('created_at', desc=True)
-        if search:
-            term = search.strip().lower()
-            if term:
-                query = query.or_(
-                    f"chess_com_username.ilike.%{term}%,lichess_username.ilike.%{term}%"
-                )
-        rows_resp = await asyncio.to_thread(
-            lambda: query.range(offset, offset + limit - 1).execute()
+async def _get_admin_activity_aggregates() -> Tuple[
+    Dict[Tuple[str, str], int],
+    Dict[Tuple[str, str], int],
+    Dict[Tuple[str, str], str],
+]:
+    """Return (games_count, analyses_count, last_active_at) keyed by (platform, lower(user_id)).
+
+    Cached for _ADMIN_COUNTS_TTL seconds. analyses_count uses the analysis_summary view when
+    available; falls back to row-level aggregation. last_active_at = most recent game_analyses
+    timestamp for that (platform, username).
+    """
+    now = time.time()
+    if now - _admin_counts_cache["ts"] < _ADMIN_COUNTS_TTL and _admin_counts_cache["games"]:
+        return (
+            _admin_counts_cache["games"],
+            _admin_counts_cache["analyses"],
+            _admin_counts_cache["last_active"],
         )
-    except Exception as e:
-        logger.error(f"admin_users: failed to fetch authenticated_users: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch users: {e}")
 
-    rows = rows_resp.data or []
-    total = rows_resp.count or 0
-    if not rows:
-        return {"users": [], "total": total, "limit": limit, "offset": offset}
+    games_count: Dict[Tuple[str, str], int] = {}
+    analyses_count: Dict[Tuple[str, str], int] = {}
+    last_active: Dict[Tuple[str, str], str] = {}
 
-    user_ids = {r['id'] for r in rows}
+    if not supabase_service:
+        return games_count, analyses_count, last_active
 
-    # 2. Pull emails for these IDs from auth.users via admin API
-    emails: Dict[str, str] = {}
+    # PostgREST defaults to a 1000-row cap per request; loop until we get a partial page.
+    page_size = 1000
+
+    # 1. Games counts — paginate over all rows (cheap: 2 columns).
     try:
-        page_size = 1000
+        page = 0
+        while True:
+            resp = await asyncio.to_thread(
+                lambda p=page: supabase_service.table('games')
+                .select('user_id, platform')
+                .range(p * page_size, (p + 1) * page_size - 1)
+                .execute()
+            )
+            rows = resp.data or []
+            if not rows:
+                break
+            for r in rows:
+                uid = (r.get('user_id') or '').strip().lower()
+                plat = (r.get('platform') or '').strip()
+                if uid and plat:
+                    key = (plat, uid)
+                    games_count[key] = games_count.get(key, 0) + 1
+            if len(rows) < page_size:
+                break
+            page += 1
+    except Exception as e:
+        logger.warning(f"_get_admin_activity_aggregates: games count failed: {e}")
+
+    # 2. Analyses counts — prefer the pre-aggregated analysis_summary view.
+    summary_loaded = False
+    try:
+        resp = await asyncio.to_thread(
+            lambda: supabase_service.table('analysis_summary')
+            .select('user_id, platform, total_games_analyzed')
+            .execute()
+        )
+        for r in (resp.data or []):
+            uid = (r.get('user_id') or '').strip().lower()
+            plat = (r.get('platform') or '').strip()
+            cnt = r.get('total_games_analyzed') or 0
+            if uid and plat:
+                analyses_count[(plat, uid)] = int(cnt)
+        summary_loaded = True
+    except Exception as e:
+        logger.warning(f"_get_admin_activity_aggregates: analysis_summary failed, falling back: {e}")
+
+    if not summary_loaded:
+        try:
+            page = 0
+            while True:
+                resp = await asyncio.to_thread(
+                    lambda p=page: supabase_service.table('game_analyses')
+                    .select('user_id, platform')
+                    .range(p * page_size, (p + 1) * page_size - 1)
+                    .execute()
+                )
+                rows = resp.data or []
+                if not rows:
+                    break
+                for r in rows:
+                    uid = (r.get('user_id') or '').strip().lower()
+                    plat = (r.get('platform') or '').strip()
+                    if uid and plat:
+                        key = (plat, uid)
+                        analyses_count[key] = analyses_count.get(key, 0) + 1
+                if len(rows) < page_size:
+                    break
+                page += 1
+        except Exception as e:
+            logger.warning(f"_get_admin_activity_aggregates: game_analyses fallback failed: {e}")
+
+    # 3. last_active per (platform, user) — most recent game_analyses timestamp.
+    try:
+        resp = await asyncio.to_thread(
+            lambda: supabase_service.table('game_analyses')
+            .select('user_id, platform, created_at')
+            .order('created_at', desc=True)
+            .limit(5000)
+            .execute()
+        )
+        for row in (resp.data or []):
+            uid = (row.get('user_id') or '').strip().lower()
+            plat = (row.get('platform') or '').strip()
+            ts = row.get('created_at')
+            if uid and plat and ts:
+                key = (plat, uid)
+                if key not in last_active:
+                    last_active[key] = ts
+    except Exception as e:
+        logger.warning(f"_get_admin_activity_aggregates: last_active failed: {e}")
+
+    _admin_counts_cache["ts"] = now
+    _admin_counts_cache["games"] = games_count
+    _admin_counts_cache["analyses"] = analyses_count
+    _admin_counts_cache["last_active"] = last_active
+    return games_count, analyses_count, last_active
+
+
+def _user_platform_pairs(row: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """Return [(platform, lower-username), ...] for an authenticated_users row."""
+    pairs: List[Tuple[str, str]] = []
+    cu = (row.get('chess_com_username') or '').strip().lower()
+    if cu:
+        pairs.append(('chess.com', cu))
+    lu = (row.get('lichess_username') or '').strip().lower()
+    if lu:
+        pairs.append(('lichess', lu))
+    return pairs
+
+
+async def _fetch_admin_user_emails(user_ids: set) -> Dict[str, str]:
+    """Map auth UUIDs to emails via auth.admin.list_users (paginated)."""
+    emails: Dict[str, str] = {}
+    if not user_ids or not supabase_service:
+        return emails
+    try:
+        per_page = 1000
         for page in range(1, 6):
             resp = await asyncio.to_thread(
                 lambda p=page: supabase_service.auth.admin.list_users(
-                    page=p, per_page=page_size
+                    page=p, per_page=per_page
                 )
             )
             users_list = resp if isinstance(resp, list) else getattr(resp, 'users', None) or []
@@ -1618,49 +1721,180 @@ async def admin_users(
                 em = getattr(u, 'email', None) or (u.get('email') if isinstance(u, dict) else None)
                 if uid in user_ids and em:
                     emails[uid] = em
-            if len(users_list) < page_size:
+            if len(users_list) < per_page:
                 break
     except Exception as e:
-        logger.warning(f"admin_users: failed to fetch emails: {e}")
+        logger.warning(f"_fetch_admin_user_emails failed: {e}")
+    return emails
 
-    # 3. Latest analysis time per user (for "last active")
-    last_active: Dict[str, str] = {}
+
+@app.get("/api/v1/admin/users")
+async def admin_users(
+    _admin: Annotated[dict, Depends(verify_admin)],
+    limit: int = 25,
+    offset: int = 0,
+    search: Optional[str] = None,
+    sort: str = "last_active",
+    order: str = "desc",
+):
+    """Admin-only user list with computed activity counts.
+
+    Sorts: last_active, joined, games_imported, games_analyzed, email.
+    Search matches email, chess.com username, or lichess username (case-insensitive).
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    sort = sort if sort in {"last_active", "joined", "games_imported", "games_analyzed", "email"} else "last_active"
+    desc = order != "asc"
+
+    # 1. Pull all authenticated_users (small table; sorting requires the full set).
     try:
-        analyses_resp = await asyncio.to_thread(
-            lambda: supabase_service.table('game_analyses')
-            .select('user_id, created_at')
-            .order('created_at', desc=True)
-            .limit(2000)
-            .execute()
+        rows_resp = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').select(
+                'id, account_tier, subscription_status, chess_com_username, lichess_username, '
+                'primary_platform, created_at'
+            ).execute()
         )
-        for row in (analyses_resp.data or []):
-            uid = row.get('user_id')
-            ts = row.get('created_at')
-            if uid and ts and uid not in last_active:
-                last_active[uid] = ts
     except Exception as e:
-        logger.warning(f"admin_users: failed to fetch last_active: {e}")
+        logger.error(f"admin_users: failed to fetch authenticated_users: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch users: {e}")
+    all_rows = rows_resp.data or []
 
-    users = []
-    for r in rows:
-        uid = r['id']
-        users.append({
-            "id": uid,
-            "email": emails.get(uid),
+    # 2. Activity aggregates (cached) and emails (per-call).
+    games_count, analyses_count, last_active_map = await _get_admin_activity_aggregates()
+    emails = await _fetch_admin_user_emails({r['id'] for r in all_rows})
+
+    # 3. Compose enriched user records.
+    enriched: List[Dict[str, Any]] = []
+    for r in all_rows:
+        pairs = _user_platform_pairs(r)
+        g = sum(games_count.get(p, 0) for p in pairs)
+        a = sum(analyses_count.get(p, 0) for p in pairs)
+        last_active_at: Optional[str] = None
+        for p in pairs:
+            ts = last_active_map.get(p)
+            if ts and (last_active_at is None or ts > last_active_at):
+                last_active_at = ts
+        enriched.append({
+            "id": r['id'],
+            "email": emails.get(r['id']),
             "account_tier": r.get('account_tier'),
             "subscription_status": r.get('subscription_status'),
             "chess_com_username": r.get('chess_com_username'),
             "lichess_username": r.get('lichess_username'),
             "primary_platform": r.get('primary_platform'),
             "created_at": r.get('created_at'),
-            "last_active_at": last_active.get(uid),
+            "last_active_at": last_active_at,
+            "games_imported": g,
+            "games_analyzed": a,
         })
 
+    # 4. Search filter (email + chess.com + lichess username).
+    if search:
+        term = search.strip().lower()
+        if term:
+            def matches(u: Dict[str, Any]) -> bool:
+                fields = [
+                    u.get('email'),
+                    u.get('chess_com_username'),
+                    u.get('lichess_username'),
+                ]
+                return any(f and term in f.lower() for f in fields)
+            enriched = [u for u in enriched if matches(u)]
+
+    # 5. Sort.
+    sort_keys = {
+        "last_active": lambda u: u.get('last_active_at') or '',
+        "joined": lambda u: u.get('created_at') or '',
+        "games_imported": lambda u: u.get('games_imported') or 0,
+        "games_analyzed": lambda u: u.get('games_analyzed') or 0,
+        "email": lambda u: (u.get('email') or '').lower(),
+    }
+    enriched.sort(key=sort_keys[sort], reverse=desc)
+
+    # 6. Paginate.
+    total = len(enriched)
+    page = enriched[offset:offset + limit]
+
     return {
-        "users": users,
+        "users": page,
         "total": total,
         "limit": limit,
         "offset": offset,
+        "sort": sort,
+        "order": "desc" if desc else "asc",
+    }
+
+
+@app.get("/api/v1/admin/users/{user_id}")
+async def admin_user_detail(
+    user_id: str,
+    _admin: Annotated[dict, Depends(verify_admin)],
+):
+    """Per-user admin view: profile, linked accounts, activity totals + per-platform breakdown."""
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        resp = await asyncio.to_thread(
+            lambda: supabase_service.table('authenticated_users').select(
+                'id, account_tier, subscription_status, subscription_end_date, '
+                'chess_com_username, lichess_username, primary_platform, created_at, updated_at'
+            ).eq('id', user_id).limit(1).execute()
+        )
+    except Exception as e:
+        logger.error(f"admin_user_detail: lookup failed for {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Lookup failed")
+
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    row = resp.data[0]
+
+    games_count, analyses_count, last_active_map = await _get_admin_activity_aggregates()
+    emails = await _fetch_admin_user_emails({user_id})
+
+    pairs = _user_platform_pairs(row)
+    per_platform: List[Dict[str, Any]] = []
+    total_games = 0
+    total_analyses = 0
+    last_active_at: Optional[str] = None
+    for plat, uname in pairs:
+        g = games_count.get((plat, uname), 0)
+        a = analyses_count.get((plat, uname), 0)
+        la = last_active_map.get((plat, uname))
+        total_games += g
+        total_analyses += a
+        if la and (last_active_at is None or la > last_active_at):
+            last_active_at = la
+        per_platform.append({
+            "platform": plat,
+            "username": uname,
+            "is_primary": row.get('primary_platform') == plat,
+            "games_imported": g,
+            "games_analyzed": a,
+            "last_active_at": la,
+        })
+
+    return {
+        "id": row['id'],
+        "email": emails.get(user_id),
+        "account_tier": row.get('account_tier'),
+        "subscription_status": row.get('subscription_status'),
+        "subscription_end_date": row.get('subscription_end_date'),
+        "chess_com_username": row.get('chess_com_username'),
+        "lichess_username": row.get('lichess_username'),
+        "primary_platform": row.get('primary_platform'),
+        "created_at": row.get('created_at'),
+        "updated_at": row.get('updated_at'),
+        "last_active_at": last_active_at,
+        "totals": {
+            "games_imported": total_games,
+            "games_analyzed": total_analyses,
+        },
+        "per_platform": per_platform,
     }
 
 

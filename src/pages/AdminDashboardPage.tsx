@@ -10,9 +10,17 @@ import {
   Users,
   UserCog,
   Wallet,
+  X,
   type LucideIcon,
 } from 'lucide-react'
-import { AdminService, type AdminOverviewResponse, type AdminUserRow } from '../services/adminService'
+import {
+  AdminService,
+  type AdminOverviewResponse,
+  type AdminSortOrder,
+  type AdminUserDetailResponse,
+  type AdminUserRow,
+  type AdminUsersSort,
+} from '../services/adminService'
 import { logger } from '../utils/logger'
 
 const CARD_SHADOW = '0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2)'
@@ -361,6 +369,16 @@ function SubscriptionsSection({ data }: { data: AdminOverviewResponse }) {
   )
 }
 
+type SortKey = AdminUsersSort
+
+const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
+  { key: 'last_active', label: 'Last active' },
+  { key: 'games_analyzed', label: 'Most analyzed' },
+  { key: 'games_imported', label: 'Most imported' },
+  { key: 'joined', label: 'Newest' },
+  { key: 'email', label: 'Email A–Z' },
+]
+
 function UsersTableSection({ enabled }: { enabled: boolean }) {
   const [rows, setRows] = useState<AdminUserRow[]>([])
   const [total, setTotal] = useState(0)
@@ -369,6 +387,9 @@ function UsersTableSection({ enabled }: { enabled: boolean }) {
   const [search, setSearch] = useState('')
   const [submitted, setSubmitted] = useState('')
   const [offset, setOffset] = useState(0)
+  const [sort, setSort] = useState<SortKey>('last_active')
+  const [order, setOrder] = useState<AdminSortOrder>('desc')
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const limit = 25
 
   useEffect(() => {
@@ -376,7 +397,7 @@ function UsersTableSection({ enabled }: { enabled: boolean }) {
     let cancelled = false
     setLoading(true)
     setErr(null)
-    AdminService.users({ limit, offset, search: submitted || undefined })
+    AdminService.users({ limit, offset, search: submitted || undefined, sort, order })
       .then(resp => {
         if (cancelled) return
         setRows(resp.users)
@@ -392,12 +413,22 @@ function UsersTableSection({ enabled }: { enabled: boolean }) {
     return () => {
       cancelled = true
     }
-  }, [enabled, offset, submitted])
+  }, [enabled, offset, submitted, sort, order])
 
   const onSearch = (e: React.FormEvent) => {
     e.preventDefault()
     setOffset(0)
     setSubmitted(search.trim())
+  }
+
+  const handleSortClick = (key: SortKey) => {
+    if (sort === key) {
+      setOrder(order === 'desc' ? 'asc' : 'desc')
+    } else {
+      setSort(key)
+      setOrder(key === 'email' ? 'asc' : 'desc')
+    }
+    setOffset(0)
   }
 
   const showingFrom = total === 0 ? 0 : offset + 1
@@ -409,38 +440,58 @@ function UsersTableSection({ enabled }: { enabled: boolean }) {
     <div>
       <SectionHeader icon={UserCog} title="User Directory" />
       <Card>
-        <form onSubmit={onSearch} className="flex items-center gap-2 mb-3">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search chess.com / lichess username..."
-              className="w-full pl-8 pr-3 py-1.5 rounded-md bg-[#151618] text-xs text-gray-200 placeholder:text-gray-500 outline-none"
-              style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)' }}
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-3 py-1.5 rounded-md bg-[#1c1d20] text-gray-300 text-xs font-medium hover:bg-[#232428] transition-colors"
-          >
-            Search
-          </button>
-          {submitted && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <form onSubmit={onSearch} className="flex items-center gap-2 flex-1">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by email or username..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-md bg-[#151618] text-xs text-gray-200 placeholder:text-gray-500 outline-none"
+                style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)' }}
+              />
+            </div>
             <button
-              type="button"
-              onClick={() => {
-                setSearch('')
-                setSubmitted('')
+              type="submit"
+              className="px-3 py-1.5 rounded-md bg-[#1c1d20] text-gray-300 text-xs font-medium hover:bg-[#232428] transition-colors"
+            >
+              Search
+            </button>
+            {submitted && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('')
+                  setSubmitted('')
+                  setOffset(0)
+                }}
+                className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </form>
+
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-gray-500 uppercase tracking-wider mr-1">Sort</span>
+            <select
+              value={sort}
+              onChange={e => {
+                setSort(e.target.value as SortKey)
+                setOrder(e.target.value === 'email' ? 'asc' : 'desc')
                 setOffset(0)
               }}
-              className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              className="px-2 py-1.5 rounded-md bg-[#151618] text-xs text-gray-200 outline-none"
+              style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.04)' }}
             >
-              Clear
-            </button>
-          )}
-        </form>
+              {SORT_OPTIONS.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         {err ? (
           <div className="text-xs text-rose-300 font-mono py-3">{err}</div>
@@ -456,19 +507,27 @@ function UsersTableSection({ enabled }: { enabled: boolean }) {
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wider text-gray-500">
-                  <th className="py-2 pr-3 font-medium">Email</th>
+                  <SortableTh label="Email" sortKey="email" current={sort} order={order} onClick={handleSortClick} />
                   <th className="py-2 pr-3 font-medium">Tier</th>
                   <th className="py-2 pr-3 font-medium">Chess.com</th>
                   <th className="py-2 pr-3 font-medium">Lichess</th>
-                  <th className="py-2 pr-3 font-medium">Joined</th>
-                  <th className="py-2 pr-0 font-medium">Last active</th>
+                  <SortableTh label="Imported" sortKey="games_imported" current={sort} order={order} onClick={handleSortClick} align="right" />
+                  <SortableTh label="Analyzed" sortKey="games_analyzed" current={sort} order={order} onClick={handleSortClick} align="right" />
+                  <SortableTh label="Joined" sortKey="joined" current={sort} order={order} onClick={handleSortClick} />
+                  <SortableTh label="Last active" sortKey="last_active" current={sort} order={order} onClick={handleSortClick} last />
                 </tr>
               </thead>
               <tbody>
                 {rows.map(u => (
                   <tr key={u.id} className="border-t border-white/[0.04]">
-                    <td className="py-2 pr-3 text-gray-200">
-                      {u.email ?? <span className="text-gray-500">—</span>}
+                    <td className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUserId(u.id)}
+                        className="text-gray-200 hover:text-white underline-offset-2 hover:underline transition-colors text-left"
+                      >
+                        {u.email ?? <span className="text-gray-500">{u.id.slice(0, 8)}…</span>}
+                      </button>
                     </td>
                     <td className="py-2 pr-3">
                       <TierBadge tier={u.account_tier} status={u.subscription_status} />
@@ -484,6 +543,12 @@ function UsersTableSection({ enabled }: { enabled: boolean }) {
                       {u.primary_platform === 'lichess' && u.lichess_username && (
                         <span className="ml-1 text-[10px] text-gray-500">primary</span>
                       )}
+                    </td>
+                    <td className="py-2 pr-3 text-gray-300 tabular-nums text-right">
+                      {formatNumber(u.games_imported)}
+                    </td>
+                    <td className="py-2 pr-3 text-gray-300 tabular-nums text-right">
+                      {formatNumber(u.games_analyzed)}
                     </td>
                     <td className="py-2 pr-3 text-gray-400 tabular-nums">
                       {formatDate(u.created_at)}
@@ -522,6 +587,193 @@ function UsersTableSection({ enabled }: { enabled: boolean }) {
           </div>
         </div>
       </Card>
+
+      {selectedUserId && (
+        <UserDetailModal userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
+      )}
+    </div>
+  )
+}
+
+function SortableTh({
+  label,
+  sortKey,
+  current,
+  order,
+  onClick,
+  align,
+  last,
+}: {
+  label: string
+  sortKey: SortKey
+  current: SortKey
+  order: AdminSortOrder
+  onClick: (k: SortKey) => void
+  align?: 'right'
+  last?: boolean
+}) {
+  const isActive = current === sortKey
+  return (
+    <th className={`py-2 ${last ? 'pr-0' : 'pr-3'} font-medium ${align === 'right' ? 'text-right' : ''}`}>
+      <button
+        type="button"
+        onClick={() => onClick(sortKey)}
+        className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-gray-300 transition-colors ${
+          isActive ? 'text-gray-300' : ''
+        }`}
+      >
+        {label}
+        {isActive && (
+          <span className="text-[9px]">{order === 'desc' ? '▼' : '▲'}</span>
+        )}
+      </button>
+    </th>
+  )
+}
+
+function UserDetailModal({ userId, onClose }: { userId: string; onClose: () => void }) {
+  const [data, setData] = useState<AdminUserDetailResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setErr(null)
+    AdminService.userDetail(userId)
+      .then(d => { if (!cancelled) setData(d) })
+      .catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Failed to load') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [userId])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/60"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="w-full max-w-xl rounded-lg bg-[#0c0d0f] p-5"
+        style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.06), 0 12px 32px rgba(0,0,0,0.5)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <div className="text-[11px] text-gray-500 uppercase tracking-wider">User detail</div>
+            <h3 className="text-base font-semibold text-white tabular-nums mt-0.5 break-all">
+              {data?.email ?? (loading ? '—' : userId)}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-white/[0.04] transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center text-xs text-gray-500 py-6">
+            <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+            Loading...
+          </div>
+        ) : err ? (
+          <div className="text-xs text-rose-300 font-mono py-3">{err}</div>
+        ) : data ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <StatTile label="Games imported" value={formatNumber(data.totals.games_imported)} />
+              <StatTile label="Games analyzed" value={formatNumber(data.totals.games_analyzed)} />
+              <StatTile
+                label="Last active"
+                value={formatDate(data.last_active_at)}
+              />
+            </div>
+
+            <div>
+              <div className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">
+                Connected accounts
+              </div>
+              {data.per_platform.length === 0 ? (
+                <div className="text-xs text-gray-500">No linked chess accounts.</div>
+              ) : (
+                <div className="space-y-2">
+                  {data.per_platform.map(pp => (
+                    <div
+                      key={pp.platform}
+                      className="rounded-md p-3 bg-[#151618] flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="text-sm text-gray-200">
+                          {pp.username}
+                          {pp.is_primary && (
+                            <span className="ml-2 text-[10px] text-gray-500">primary</span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-0.5">
+                          {pp.platform} · last active {formatDate(pp.last_active_at)}
+                        </div>
+                      </div>
+                      <div className="text-right text-xs tabular-nums">
+                        <div className="text-gray-300">
+                          {formatNumber(pp.games_analyzed)} <span className="text-gray-500">analyzed</span>
+                        </div>
+                        <div className="text-gray-400">
+                          {formatNumber(pp.games_imported)} <span className="text-gray-500">imported</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">
+                Account
+              </div>
+              <dl className="text-xs space-y-1.5">
+                <DetailRow label="Tier">
+                  <TierBadge tier={data.account_tier} status={data.subscription_status} />
+                </DetailRow>
+                <DetailRow label="Subscription status">
+                  <span className="text-gray-300">{data.subscription_status ?? '—'}</span>
+                </DetailRow>
+                {data.subscription_end_date && (
+                  <DetailRow label="Subscription ends">
+                    <span className="text-gray-300 tabular-nums">{formatDate(data.subscription_end_date)}</span>
+                  </DetailRow>
+                )}
+                <DetailRow label="Joined">
+                  <span className="text-gray-300 tabular-nums">{formatDate(data.created_at)}</span>
+                </DetailRow>
+                <DetailRow label="User ID">
+                  <span className="text-gray-500 font-mono text-[10px] break-all">{data.id}</span>
+                </DetailRow>
+              </dl>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-gray-500">{label}</dt>
+      <dd className="text-right">{children}</dd>
     </div>
   )
 }

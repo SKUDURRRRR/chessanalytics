@@ -78,6 +78,9 @@ async function authHeaders(): Promise<Record<string, string>> {
   }
 }
 
+export type AdminUsersSort = 'last_active' | 'joined' | 'games_imported' | 'games_analyzed' | 'email'
+export type AdminSortOrder = 'asc' | 'desc'
+
 export interface AdminUserRow {
   id: string
   email: string | null
@@ -88,6 +91,8 @@ export interface AdminUserRow {
   primary_platform: string | null
   created_at: string | null
   last_active_at: string | null
+  games_imported: number
+  games_analyzed: number
 }
 
 export interface AdminUsersResponse {
@@ -95,6 +100,36 @@ export interface AdminUsersResponse {
   total: number
   limit: number
   offset: number
+  sort: AdminUsersSort
+  order: AdminSortOrder
+}
+
+export interface AdminUserPerPlatform {
+  platform: 'chess.com' | 'lichess' | string
+  username: string
+  is_primary: boolean
+  games_imported: number
+  games_analyzed: number
+  last_active_at: string | null
+}
+
+export interface AdminUserDetailResponse {
+  id: string
+  email: string | null
+  account_tier: string | null
+  subscription_status: string | null
+  subscription_end_date: string | null
+  chess_com_username: string | null
+  lichess_username: string | null
+  primary_platform: string | null
+  created_at: string | null
+  updated_at: string | null
+  last_active_at: string | null
+  totals: {
+    games_imported: number
+    games_analyzed: number
+  }
+  per_platform: AdminUserPerPlatform[]
 }
 
 export const AdminService = {
@@ -129,12 +164,22 @@ export const AdminService = {
     return response.json()
   },
 
-  async users(params: { limit?: number; offset?: number; search?: string } = {}): Promise<AdminUsersResponse> {
+  async users(
+    params: {
+      limit?: number
+      offset?: number
+      search?: string
+      sort?: AdminUsersSort
+      order?: AdminSortOrder
+    } = {}
+  ): Promise<AdminUsersResponse> {
     const headers = await authHeaders()
     const qs = new URLSearchParams()
     if (params.limit) qs.set('limit', String(params.limit))
     if (params.offset) qs.set('offset', String(params.offset))
     if (params.search) qs.set('search', params.search)
+    if (params.sort) qs.set('sort', params.sort)
+    if (params.order) qs.set('order', params.order)
     const url = `${API_URL}/api/v1/admin/users${qs.toString() ? '?' + qs.toString() : ''}`
     const response = await fetchWithTimeout(
       url,
@@ -144,6 +189,20 @@ export const AdminService = {
     if (!response.ok) {
       const detail = await response.text().catch(() => '')
       throw new Error(`Admin users failed (${response.status}): ${detail}`)
+    }
+    return response.json()
+  },
+
+  async userDetail(userId: string): Promise<AdminUserDetailResponse> {
+    const headers = await authHeaders()
+    const response = await fetchWithTimeout(
+      `${API_URL}/api/v1/admin/users/${encodeURIComponent(userId)}`,
+      { method: 'GET', headers },
+      TIMEOUT_CONFIG.DEFAULT
+    )
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      throw new Error(`User detail failed (${response.status}): ${detail}`)
     }
     return response.json()
   },
