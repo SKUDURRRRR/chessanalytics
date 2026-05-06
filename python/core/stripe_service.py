@@ -245,46 +245,55 @@ class StripeService:
             Stripe customer ID or None
         """
         try:
-            # Check if user already has Stripe customer ID
-            # Query to join with auth.users to get email
-            query = """
-                SELECT
-                    au.id,
-                    au.username,
-                    au.stripe_customer_id,
-                    u.email
-                FROM authenticated_users au
-                JOIN auth.users u ON u.id = au.id
-                WHERE au.id = %s
-            """
+            # Use the database function to get user info including email
+            # This function joins authenticated_users with auth.users
+            try:
+                user_result = await asyncio.to_thread(
+                    lambda: self.supabase.rpc(
+                        'get_user_with_email',
+                        {'p_user_id': user_id}
+                    ).execute()
+                )
 
-            # Using Supabase, we need to use rpc or direct query
-            # Let's try with a direct select and get email from Supabase auth
-            user_result = await asyncio.to_thread(
-                lambda: self.supabase.table('authenticated_users').select(
-                    'stripe_customer_id, username'
-                ).eq('id', user_id).execute()
-            )
+                if not user_result.data or len(user_result.data) == 0:
+                    logger.error(f"User {user_id} not found in database (via get_user_with_email function)")
+                    return None
 
-            if not user_result.data:
-                logger.error(f"User {user_id} not found")
-                return None
+                user = user_result.data[0]
+            except Exception as rpc_error:
+                # Fallback: try direct query if RPC fails
+                logger.warning(f"RPC call failed, trying fallback method: {rpc_error}")
+                # Only select columns that definitely exist (not username)
+                user_result = await asyncio.to_thread(
+                    lambda: self.supabase.table('authenticated_users').select(
+                        'stripe_customer_id'
+                    ).eq('id', user_id).execute()
+                )
 
-            user = user_result.data[0]
+                if not user_result.data:
+                    logger.error(f"User {user_id} not found in database (fallback method)")
+                    return None
 
+                user = user_result.data[0]
+                # Try to get email using admin API as fallback
+                try:
+                    auth_result = self.supabase.auth.admin.get_user_by_id(user_id)
+                    email = auth_result.user.email if auth_result and auth_result.user else None
+                    if email:
+                        user['email'] = email
+                except Exception as email_error:
+                    logger.warning(f"Could not get email via admin API: {email_error}")
+                    user['email'] = None
+                # Username doesn't exist in schema, set to None
+                user['username'] = None
+
+            # Check if user already has a Stripe customer ID
             if user.get('stripe_customer_id'):
+                logger.info(f"Found existing Stripe customer {user['stripe_customer_id']} for user {user_id}")
                 return user['stripe_customer_id']
 
-            # Get email from Supabase auth.users using service client
-            try:
-                from supabase import create_client
-                import os
-                # Get email from Supabase Admin API
-                auth_result = self.supabase.auth.admin.get_user_by_id(user_id)
-                email = auth_result.user.email if auth_result and auth_result.user else None
-            except Exception as e:
-                logger.warning(f"Could not get email from auth.users: {e}")
-                email = None
+            # Get email from the function result
+            email = user.get('email')
 
             # Create new Stripe customer with email
             customer_data = {
@@ -294,32 +303,51 @@ class StripeService:
             # Add email if available
             if email:
                 customer_data['email'] = email
+            else:
+                logger.warning(f"No email found for user {user_id}, creating Stripe customer without email")
 
-            # Add name if available
-            if user.get('username'):
-                customer_data['name'] = user['username']
+            # Add name if available (username may not exist in schema)
+            username = user.get('username')
+            if username:
+                customer_data['name'] = username
             elif email:
                 customer_data['name'] = email
             else:
                 customer_data['name'] = f'User {user_id[:8]}'
 
-            customer = await asyncio.to_thread(
-                stripe.Customer.create,
-                **customer_data
-            )
+            # Create Stripe customer
+            try:
+                customer = await asyncio.to_thread(
+                    stripe.Customer.create,
+                    **customer_data
+                )
+                logger.info(f"Created Stripe customer {customer.id} for user {user_id}")
+            except stripe.error.StripeError as e:
+                logger.error(f"Stripe API error creating customer: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"Unexpected error creating Stripe customer: {e}")
+                return None
 
             # Save customer ID to database
-            await asyncio.to_thread(
-                lambda: self.supabase.table('authenticated_users').update({
-                    'stripe_customer_id': customer.id
-                }).eq('id', user_id).execute()
-            )
+            try:
+                await asyncio.to_thread(
+                    lambda: self.supabase.table('authenticated_users').update({
+                        'stripe_customer_id': customer.id
+                    }).eq('id', user_id).execute()
+                )
+                logger.info(f"Saved Stripe customer ID {customer.id} to database for user {user_id}")
+            except Exception as e:
+                logger.error(f"Error saving Stripe customer ID to database: {e}")
+                # Customer was created in Stripe, so we can still return it
+                # The ID will be saved on next attempt
 
-            logger.info(f"Created Stripe customer {customer.id} for user {user_id} with email {customer_data.get('email', 'N/A')}")
             return customer.id
 
         except Exception as e:
             logger.error(f"Error getting/creating Stripe customer: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return None
 
     async def handle_webhook(self, payload: bytes, sig_header: str) -> Dict:

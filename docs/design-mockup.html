@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChessData.app — Design Proposal</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        // Proposed semantic palette
+        brand: {
+          50: '#ecfeff',
+          100: '#cffafe',
+          200: '#a5f3fc',
+          300: '#67e8f9',
+          400: '#22d3ee',
+          500: '#06b6d4',
+          600: '#0891b2',
+          700: '#0e7490',
+          800: '#155e75',
+          900: '#164e63',
+        },
+        surface: {
+          0: '#0a0e14',
+          1: '#111827',
+          2: '#1a2233',
+          3: '#243044',
+        },
+      }
+    }
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .section-divider { border-top: 1px solid rgba(255,255,255,0.06); }
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+  @media (max-width: 900px) { .compare-grid { grid-template-columns: 1fr; } }
+  .label-tag {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .before-tag { background: #7f1d1d; color: #fca5a5; }
+  .after-tag { background: #064e3b; color: #6ee7b7; }
+</style>
+</head>
+<body class="dark bg-[#0a0e14] text-gray-200 min-h-screen">
+
+<!-- Header -->
+<div class="max-w-6xl mx-auto px-6 py-12">
+  <div class="text-center mb-16">
+    <h1 class="text-4xl font-bold text-white mb-3">ChessData.app — Design Proposal</h1>
+    <p class="text-gray-400 text-lg max-w-2xl mx-auto">Clean, minimal, vibrant. Here's what the redesigned UI would look like.</p>
+    <p class="text-gray-500 text-sm mt-4">Open this file in your browser to preview. Nothing is coded into the app yet.</p>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- SECTION 1: COLOR PALETTE -->
+  <!-- ============================================ -->
+  <section class="mb-20">
+    <h2 class="text-2xl font-semibold text-white mb-2">1. Color Palette</h2>
+    <p class="text-gray-400 mb-8">From 10+ competing palettes → 5 semantic colors. One brand cyan, the rest purely functional.</p>
+
+    <div class="compare-grid mb-8">
+      <!-- BEFORE -->
+      <div>
+        <span class="label-tag before-tag">Before — Color Chaos</span>
+        <div class="mt-3 rounded-xl bg-[#111827] border border-white/10 p-5">
+          <p class="text-xs text-gray-500 mb-3">4 different "blues" across the app:</p>
+          <div class="flex gap-2 mb-4 flex-wrap">
+            <div class="w-12 h-12 rounded-lg bg-sky-400 flex items-center justify-center text-[10px] text-black font-medium">sky</div>
+            <div class="w-12 h-12 rounded-lg bg-cyan-400 flex items-center justify-center text-[10px] text-black font-medium">cyan</div>
+            <div class="w-12 h-12 rounded-lg bg-indigo-600 flex items-center justify-center text-[10px] text-white font-medium">indigo</div>
+            <div class="w-12 h-12 rounded-lg bg-blue-500 flex items-center justify-center text-[10px] text-white font-medium">blue</div>
+          </div>
+          <p class="text-xs text-gray-500 mb-3">Rainbow nav buttons:</p>
+          <div class="flex gap-2 flex-wrap">
+            <span class="px-3 py-1.5 rounded-2xl border border-emerald-400/40 bg-emerald-500/20 text-emerald-100 text-xs">Analysis</span>
+            <span class="px-3 py-1.5 rounded-2xl border border-sky-400/40 bg-sky-500/20 text-sky-100 text-xs">Deep</span>
+            <span class="px-3 py-1.5 rounded-2xl border border-amber-400/40 bg-amber-500/20 text-amber-100 text-xs">Coach</span>
+            <span class="px-3 py-1.5 rounded-2xl border border-rose-400/40 bg-rose-500/20 text-rose-100 text-xs">Sign Out</span>
+          </div>
+          <p class="text-xs text-gray-500 mt-4 mb-2">7 move classification colors (rainbow):</p>
+          <div class="flex gap-1 flex-wrap">
+            <span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-200 text-[10px]">brilliant</span>
+            <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200 text-[10px]">best</span>
+            <span class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 text-[10px]">great</span>
+            <span class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-200 text-[10px]">good</span>
+            <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 text-[10px]">inaccuracy</span>
+            <span class="px-2 py-0.5 rounded bg-orange-500/20 text-orange-200 text-[10px]">mistake</span>
+            <span class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-200 text-[10px]">blunder</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- AFTER -->
+      <div>
+        <span class="label-tag after-tag">After — Unified Palette</span>
+        <div class="mt-3 rounded-xl bg-[#111827] border border-white/10 p-5">
+          <p class="text-xs text-gray-500 mb-3">5 semantic colors only:</p>
+          <div class="flex gap-2 mb-4">
+            <div class="flex flex-col items-center gap-1">
+              <div class="w-12 h-12 rounded-lg bg-cyan-400"></div>
+              <span class="text-[10px] text-gray-500">Brand</span>
+            </div>
+            <div class="flex flex-col items-center gap-1">
+              <div class="w-12 h-12 rounded-lg bg-emerald-400"></div>
+              <span class="text-[10px] text-gray-500">Success</span>
+            </div>
+            <div class="flex flex-col items-center gap-1">
+              <div class="w-12 h-12 rounded-lg bg-amber-400"></div>
+              <span class="text-[10px] text-gray-500">Warning</span>
+            </div>
+            <div class="flex flex-col items-center gap-1">
+              <div class="w-12 h-12 rounded-lg bg-rose-400"></div>
+              <span class="text-[10px] text-gray-500">Danger</span>
+            </div>
+            <div class="flex flex-col items-center gap-1">
+              <div class="w-12 h-12 rounded-lg bg-gray-400"></div>
+              <span class="text-[10px] text-gray-500">Neutral</span>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mb-3">Clean nav — brand color only:</p>
+          <div class="flex gap-2 flex-wrap">
+            <span class="px-3 py-1.5 rounded-lg bg-cyan-500/15 text-cyan-300 text-xs font-medium">Analysis</span>
+            <span class="px-3 py-1.5 rounded-lg text-gray-400 text-xs font-medium hover:text-white">Deep</span>
+            <span class="px-3 py-1.5 rounded-lg text-gray-400 text-xs font-medium">Coach</span>
+            <span class="px-3 py-1.5 rounded-lg text-gray-500 text-xs font-medium">Sign Out</span>
+          </div>
+          <p class="text-xs text-gray-500 mt-4 mb-2">Move classifications — 3 semantic colors:</p>
+          <div class="flex gap-1 flex-wrap">
+            <span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px]">brilliant</span>
+            <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300/80 text-[10px]">best</span>
+            <span class="px-2 py-0.5 rounded bg-emerald-500/5 text-emerald-300/60 text-[10px]">great</span>
+            <span class="px-2 py-0.5 rounded bg-gray-500/10 text-gray-400 text-[10px]">good</span>
+            <span class="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px]">inaccuracy</span>
+            <span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-300/80 text-[10px]">mistake</span>
+            <span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 text-[10px]">blunder</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Surface colors -->
+    <div class="rounded-xl bg-[#111827] border border-white/10 p-5">
+      <p class="text-xs text-gray-500 mb-3">Surface scale (backgrounds) — 4 levels of elevation:</p>
+      <div class="flex gap-3">
+        <div class="flex flex-col items-center gap-2">
+          <div class="w-20 h-16 rounded-lg bg-[#0a0e14] border border-white/5"></div>
+          <span class="text-[10px] text-gray-500">Base (page)</span>
+        </div>
+        <div class="flex flex-col items-center gap-2">
+          <div class="w-20 h-16 rounded-lg bg-[#111827] border border-white/5"></div>
+          <span class="text-[10px] text-gray-500">Surface 1</span>
+        </div>
+        <div class="flex flex-col items-center gap-2">
+          <div class="w-20 h-16 rounded-lg bg-[#1a2233] border border-white/5"></div>
+          <span class="text-[10px] text-gray-500">Surface 2</span>
+        </div>
+        <div class="flex flex-col items-center gap-2">
+          <div class="w-20 h-16 rounded-lg bg-[#243044] border border-white/5"></div>
+          <span class="text-[10px] text-gray-500">Surface 3</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SECTION 2: NAVIGATION -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-2">2. Navigation</h2>
+    <p class="text-gray-400 mb-8">From rainbow pill buttons with glow animations → clean, quiet nav with active indicator.</p>
+
+    <div class="compare-grid">
+      <!-- BEFORE NAV -->
+      <div>
+        <span class="label-tag before-tag">Before</span>
+        <div class="mt-3 rounded-xl overflow-hidden" style="background: linear-gradient(135deg, rgba(34,211,238,0.15), rgba(6,182,212,0.25), rgba(8,145,178,0.2));">
+          <div class="p-4 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-full bg-cyan-400/30 border border-cyan-400/50" style="box-shadow: 0 0 15px rgba(34,211,238,0.4), 0 0 30px rgba(34,211,238,0.2);"></div>
+              <span class="text-cyan-100 font-bold text-sm" style="text-shadow: 0 0 20px rgba(34,211,238,0.5);">ChessData</span>
+            </div>
+            <div class="flex gap-2">
+              <span class="px-4 py-2 rounded-2xl border border-emerald-400/40 bg-emerald-500/20 text-emerald-100 text-xs font-semibold shadow-xl">✓ Analysis</span>
+              <span class="px-4 py-2 rounded-2xl border border-sky-400/40 bg-sky-500/20 text-sky-100 text-xs font-semibold shadow-xl">Deep</span>
+              <span class="px-4 py-2 rounded-2xl border border-amber-400/40 bg-amber-500/20 text-amber-100 text-xs font-semibold shadow-xl">Coach</span>
+            </div>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">Gradient bg + glowing logo + 3 animation keyframes + rainbow buttons + shadows</p>
+      </div>
+
+      <!-- AFTER NAV -->
+      <div>
+        <span class="label-tag after-tag">After</span>
+        <div class="mt-3 rounded-xl overflow-hidden bg-[#111827] border border-white/[0.06]">
+          <div class="p-4 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <div class="w-7 h-7 rounded-lg bg-cyan-500 flex items-center justify-center text-black font-bold text-xs">C</div>
+              <span class="text-white font-semibold text-sm">ChessData</span>
+            </div>
+            <div class="flex gap-1">
+              <span class="px-3 py-1.5 rounded-lg bg-cyan-500/10 text-cyan-300 text-sm font-medium">Analysis</span>
+              <span class="px-3 py-1.5 rounded-lg text-gray-400 text-sm font-medium">Deep</span>
+              <span class="px-3 py-1.5 rounded-lg text-gray-400 text-sm font-medium">Coach</span>
+            </div>
+          </div>
+        </div>
+        <p class="text-xs text-emerald-400/70 mt-2">Solid bg, no animations, single accent color, quiet inactive states</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SECTION 3: BUTTONS -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-2">3. Buttons</h2>
+    <p class="text-gray-400 mb-8">From 15+ unique button styles → 4 variants from one reusable component.</p>
+
+    <div class="compare-grid">
+      <!-- BEFORE -->
+      <div>
+        <span class="label-tag before-tag">Before — Each a unique snowflake</span>
+        <div class="mt-3 rounded-xl bg-[#111827] border border-white/10 p-6 space-y-3">
+          <button class="px-6 py-2.5 rounded-2xl border border-emerald-400/40 bg-emerald-500/20 text-emerald-100 text-sm font-semibold shadow-xl shadow-black/40">Emerald pill</button>
+          <br>
+          <button class="px-6 py-2.5 rounded-2xl border border-sky-400/40 bg-sky-500/20 text-sky-100 text-sm font-semibold shadow-xl shadow-black/40">Sky pill</button>
+          <br>
+          <button class="px-5 py-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-sm">Emerald ghost</button>
+          <br>
+          <button class="px-5 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white text-sm font-semibold shadow-2xl">Gradient CTA</button>
+          <br>
+          <button class="px-5 py-2 rounded-2xl border border-rose-400/40 bg-rose-500/20 text-rose-100 text-sm font-semibold">Rose pill</button>
+        </div>
+      </div>
+
+      <!-- AFTER -->
+      <div>
+        <span class="label-tag after-tag">After — 4 variants only</span>
+        <div class="mt-3 rounded-xl bg-[#111827] border border-white/10 p-6 space-y-4">
+          <div class="flex items-center gap-3">
+            <button class="px-4 py-2 rounded-lg bg-cyan-500 text-black text-sm font-semibold hover:bg-cyan-400 transition-colors">Primary</button>
+            <span class="text-xs text-gray-500">Main actions</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="px-4 py-2 rounded-lg bg-white/[0.08] text-gray-200 text-sm font-medium border border-white/[0.08] hover:bg-white/[0.12] transition-colors">Secondary</button>
+            <span class="text-xs text-gray-500">Alternative actions</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="px-4 py-2 rounded-lg text-gray-400 text-sm font-medium hover:text-white hover:bg-white/[0.05] transition-colors">Ghost</button>
+            <span class="text-xs text-gray-500">Tertiary / nav</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="px-4 py-2 rounded-lg bg-rose-500/15 text-rose-300 text-sm font-medium hover:bg-rose-500/25 transition-colors">Danger</button>
+            <span class="text-xs text-gray-500">Destructive only</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SECTION 4: CARDS -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-2">4. Cards</h2>
+    <p class="text-gray-400 mb-8">From mixed borders, shadows, radiuses, and glassmorphism → one consistent card style.</p>
+
+    <div class="compare-grid">
+      <!-- BEFORE -->
+      <div>
+        <span class="label-tag before-tag">Before — 4+ card styles</span>
+        <div class="mt-3 space-y-3">
+          <div class="rounded-3xl bg-white/[0.04] border border-white/10 p-5 shadow-xl shadow-black/40">
+            <p class="text-sm text-gray-300">Card style A: rounded-3xl, white/[0.04], shadow-xl</p>
+          </div>
+          <div class="rounded-2xl bg-slate-800 border-2 border-slate-700 p-5">
+            <p class="text-sm text-gray-300">Card style B: rounded-2xl, slate-800, border-2</p>
+          </div>
+          <div class="rounded-xl bg-slate-900/80 border border-slate-700/50 p-5 shadow-2xl shadow-black/50" style="backdrop-filter: blur(20px) saturate(150%);">
+            <p class="text-sm text-gray-300">Card style C: glassmorphism, blur, saturate</p>
+          </div>
+          <div class="rounded-2xl p-5" style="background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(34,211,238,0.04)); box-shadow: 0 0 8px rgba(16,185,129,0.15);">
+            <p class="text-sm text-gray-300">Card style D: gradient bg + custom glow shadow</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- AFTER -->
+      <div>
+        <span class="label-tag after-tag">After — 1 card, 2 elevations</span>
+        <div class="mt-3 space-y-3">
+          <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-5">
+            <p class="text-sm text-gray-300 font-medium mb-1">Default card</p>
+            <p class="text-xs text-gray-500">Surface 1 bg, subtle border, rounded-xl, no shadow</p>
+          </div>
+          <div class="rounded-xl bg-[#1a2233] border border-white/[0.06] p-5">
+            <p class="text-sm text-gray-300 font-medium mb-1">Elevated card</p>
+            <p class="text-xs text-gray-500">Surface 2 bg, same border, used for emphasis or nesting</p>
+          </div>
+          <div class="rounded-xl bg-[#111827] border border-cyan-500/20 p-5">
+            <p class="text-sm text-cyan-300 font-medium mb-1">Highlighted card</p>
+            <p class="text-xs text-gray-500">Brand border only — for active/selected states</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SECTION 5: FULL PAGE MOCKUP — DASHBOARD -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-2">5. Dashboard Layout — Coach Page</h2>
+    <p class="text-gray-400 mb-8">Clean, breathable layout with consistent card style and restrained color.</p>
+
+    <!-- Mock page -->
+    <div class="rounded-2xl overflow-hidden border border-white/[0.06] bg-[#0a0e14]">
+      <!-- Nav -->
+      <div class="bg-[#111827] border-b border-white/[0.06] px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-lg bg-cyan-500 flex items-center justify-center text-black font-bold text-xs">C</div>
+          <span class="text-white font-semibold text-sm">ChessData</span>
+        </div>
+        <div class="flex gap-1">
+          <span class="px-3 py-1.5 rounded-lg text-gray-400 text-sm font-medium">Analysis</span>
+          <span class="px-3 py-1.5 rounded-lg text-gray-400 text-sm font-medium">Deep</span>
+          <span class="px-3 py-1.5 rounded-lg bg-cyan-500/10 text-cyan-300 text-sm font-medium">Coach</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-gray-300">M</div>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="max-w-5xl mx-auto px-6 py-8">
+        <!-- Page header -->
+        <div class="mb-8">
+          <h1 class="text-2xl font-semibold text-white mb-1">Your Coach</h1>
+          <p class="text-gray-500 text-sm">Personalized training based on your recent games</p>
+        </div>
+
+        <!-- Stats row -->
+        <div class="grid grid-cols-4 gap-4 mb-8">
+          <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-4">
+            <p class="text-xs text-gray-500 mb-1">Rating</p>
+            <p class="text-2xl font-semibold text-white">1,247</p>
+            <p class="text-xs text-emerald-400 mt-1">+23 this week</p>
+          </div>
+          <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-4">
+            <p class="text-xs text-gray-500 mb-1">Accuracy</p>
+            <p class="text-2xl font-semibold text-white">72.4%</p>
+            <p class="text-xs text-gray-500 mt-1">Last 20 games</p>
+          </div>
+          <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-4">
+            <p class="text-xs text-gray-500 mb-1">Streak</p>
+            <p class="text-2xl font-semibold text-white">5 days</p>
+            <p class="text-xs text-cyan-400 mt-1">Personal best</p>
+          </div>
+          <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-4">
+            <p class="text-xs text-gray-500 mb-1">Puzzles</p>
+            <p class="text-2xl font-semibold text-white">84</p>
+            <p class="text-xs text-gray-500 mt-1">Completed</p>
+          </div>
+        </div>
+
+        <!-- Main content grid -->
+        <div class="grid grid-cols-3 gap-4">
+          <!-- Lesson card -->
+          <div class="col-span-2 rounded-xl bg-[#111827] border border-white/[0.06] p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-base font-semibold text-white">Today's Lesson</h2>
+              <span class="text-xs text-cyan-400 font-medium">Endgames</span>
+            </div>
+            <div class="rounded-lg bg-[#1a2233] p-4 mb-4">
+              <p class="text-sm text-gray-300 font-medium mb-2">Rook Endgame Fundamentals</p>
+              <p class="text-xs text-gray-500 leading-relaxed">You've struggled with rook endgames in 3 of your last 5 losses. This lesson covers the Lucena and Philidor positions — the two patterns that would have saved those games.</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <button class="px-4 py-2 rounded-lg bg-cyan-500 text-black text-sm font-semibold">Start Lesson</button>
+              <button class="px-4 py-2 rounded-lg text-gray-400 text-sm font-medium hover:text-white">Skip</button>
+            </div>
+          </div>
+
+          <!-- Side panel -->
+          <div class="space-y-4">
+            <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-5">
+              <h3 class="text-sm font-semibold text-white mb-3">Weaknesses</h3>
+              <div class="space-y-2.5">
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-gray-400">Endgames</span>
+                    <span class="text-rose-400">38%</span>
+                  </div>
+                  <div class="h-1.5 rounded-full bg-white/[0.06]">
+                    <div class="h-1.5 rounded-full bg-rose-400/60 w-[38%]"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-gray-400">Tactics</span>
+                    <span class="text-amber-400">52%</span>
+                  </div>
+                  <div class="h-1.5 rounded-full bg-white/[0.06]">
+                    <div class="h-1.5 rounded-full bg-amber-400/60 w-[52%]"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-gray-400">Openings</span>
+                    <span class="text-emerald-400">78%</span>
+                  </div>
+                  <div class="h-1.5 rounded-full bg-white/[0.06]">
+                    <div class="h-1.5 rounded-full bg-emerald-400/60 w-[78%]"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-5">
+              <h3 class="text-sm font-semibold text-white mb-3">Recent Games</h3>
+              <div class="space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-gray-300">vs opponent123</span>
+                  <span class="text-emerald-400 font-medium">W</span>
+                </div>
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-gray-300">vs grandmaster99</span>
+                  <span class="text-rose-400 font-medium">L</span>
+                </div>
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-gray-300">vs chessfan42</span>
+                  <span class="text-gray-500 font-medium">D</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SECTION 6: GAME ANALYSIS MOCKUP -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-2">6. Game Analysis View</h2>
+    <p class="text-gray-400 mb-8">Board gets breathing room. Move list is clean. Eval bar is simple.</p>
+
+    <div class="rounded-2xl overflow-hidden border border-white/[0.06] bg-[#0a0e14]">
+      <!-- Nav (compact) -->
+      <div class="bg-[#111827] border-b border-white/[0.06] px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-lg bg-cyan-500 flex items-center justify-center text-black font-bold text-xs">C</div>
+          <span class="text-white font-semibold text-sm">ChessData</span>
+        </div>
+        <div class="flex gap-1">
+          <span class="px-3 py-1.5 rounded-lg bg-cyan-500/10 text-cyan-300 text-sm font-medium">Analysis</span>
+          <span class="px-3 py-1.5 rounded-lg text-gray-400 text-sm font-medium">Deep</span>
+          <span class="px-3 py-1.5 rounded-lg text-gray-400 text-sm font-medium">Coach</span>
+        </div>
+        <div class="w-7 h-7 rounded-full bg-gray-700"></div>
+      </div>
+
+      <!-- Analysis layout -->
+      <div class="flex gap-0">
+        <!-- Board area -->
+        <div class="flex-1 p-8 flex items-start justify-center">
+          <div class="flex gap-2">
+            <!-- Eval bar -->
+            <div class="w-5 rounded-lg overflow-hidden bg-gray-800 h-80 flex flex-col">
+              <div class="bg-white transition-all" style="height: 62%"></div>
+              <div class="flex-1 bg-gray-900"></div>
+            </div>
+            <!-- Board placeholder -->
+            <div class="w-80 h-80 rounded-lg overflow-hidden">
+              <div class="w-full h-full grid grid-cols-8 grid-rows-8">
+                <script>
+                  // Generate chess board squares
+                  document.addEventListener('DOMContentLoaded', function() {
+                    const board = document.querySelector('.grid-cols-8');
+                    if (board && board.children.length === 0) {
+                      for (let i = 0; i < 64; i++) {
+                        const row = Math.floor(i / 8);
+                        const col = i % 8;
+                        const div = document.createElement('div');
+                        div.className = (row + col) % 2 === 0
+                          ? 'bg-[#b8c6db]'
+                          : 'bg-[#6a89af]';
+                        board.appendChild(div);
+                      }
+                    }
+                  });
+                </script>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Analysis panel -->
+        <div class="w-80 bg-[#111827] border-l border-white/[0.06] flex flex-col">
+          <!-- Game info -->
+          <div class="p-4 border-b border-white/[0.06]">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm text-white font-medium">player1 (1247)</span>
+              <span class="text-xs text-emerald-400 font-medium">1-0</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-400">opponent2 (1198)</span>
+              <span class="text-xs text-gray-500">Blitz 5+0</span>
+            </div>
+          </div>
+
+          <!-- Move list -->
+          <div class="flex-1 overflow-y-auto p-4">
+            <div class="space-y-0.5 text-xs font-mono">
+              <div class="flex items-center gap-2 py-1 px-2 rounded">
+                <span class="text-gray-600 w-6">1.</span>
+                <span class="text-gray-300 w-16">e4</span>
+                <span class="text-gray-300 w-16">e5</span>
+              </div>
+              <div class="flex items-center gap-2 py-1 px-2 rounded">
+                <span class="text-gray-600 w-6">2.</span>
+                <span class="text-gray-300 w-16">Nf3</span>
+                <span class="text-gray-300 w-16">Nc6</span>
+              </div>
+              <div class="flex items-center gap-2 py-1 px-2 rounded">
+                <span class="text-gray-600 w-6">3.</span>
+                <span class="text-gray-300 w-16">Bb5</span>
+                <span class="text-gray-300 w-16">a6</span>
+              </div>
+              <div class="flex items-center gap-2 py-1 px-2 rounded bg-cyan-500/10">
+                <span class="text-gray-600 w-6">4.</span>
+                <span class="text-cyan-300 w-16">Ba4</span>
+                <span class="text-gray-300 w-16">Nf6</span>
+              </div>
+              <div class="flex items-center gap-2 py-1 px-2 rounded">
+                <span class="text-gray-600 w-6">5.</span>
+                <span class="text-gray-300 w-16">O-O</span>
+                <span class="text-rose-300 w-16 flex items-center gap-1">Nxe4 <span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-400"></span></span>
+              </div>
+              <div class="flex items-center gap-2 py-1 px-2 rounded">
+                <span class="text-gray-600 w-6">6.</span>
+                <span class="text-emerald-300 w-16 flex items-center gap-1">d4 <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span></span>
+                <span class="text-gray-300 w-16">b5</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI Comment -->
+          <div class="p-4 border-t border-white/[0.06]">
+            <div class="rounded-lg bg-[#1a2233] p-3">
+              <p class="text-xs text-gray-500 mb-1">Move 5 ... Nxe4</p>
+              <p class="text-xs text-gray-300 leading-relaxed">This captures the pawn but opens the position when you're behind in development. Consider <span class="text-cyan-300">Be7</span> to complete kingside development first.</p>
+            </div>
+          </div>
+
+          <!-- Controls -->
+          <div class="p-4 border-t border-white/[0.06] flex justify-center gap-2">
+            <button class="w-8 h-8 rounded-lg bg-white/[0.06] text-gray-400 flex items-center justify-center text-xs hover:bg-white/[0.1]">⟨⟨</button>
+            <button class="w-8 h-8 rounded-lg bg-white/[0.06] text-gray-400 flex items-center justify-center text-xs hover:bg-white/[0.1]">⟨</button>
+            <button class="w-8 h-8 rounded-lg bg-white/[0.06] text-gray-400 flex items-center justify-center text-xs hover:bg-white/[0.1]">⟩</button>
+            <button class="w-8 h-8 rounded-lg bg-white/[0.06] text-gray-400 flex items-center justify-center text-xs hover:bg-white/[0.1]">⟩⟩</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SECTION 7: MODALS -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-2">7. Modal</h2>
+    <p class="text-gray-400 mb-8">From 4 unique modal styles with gradients → one clean, reusable modal.</p>
+
+    <div class="compare-grid">
+      <!-- BEFORE -->
+      <div>
+        <span class="label-tag before-tag">Before — Gradient overload</span>
+        <div class="mt-3 rounded-xl bg-black/40 p-8 flex items-center justify-center" style="min-height: 300px;">
+          <div class="rounded-3xl shadow-2xl shadow-black/50 border border-slate-700/50 overflow-hidden max-w-sm w-full" style="background: linear-gradient(135deg, rgba(34,211,238,0.15), rgba(6,182,212,0.25), rgba(8,145,178,0.2));">
+            <div class="p-6">
+              <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 mb-4 flex items-center justify-center text-white text-lg">★</div>
+              <h3 class="text-xl font-bold text-white mb-2" style="text-shadow: 0 0 20px rgba(34,211,238,0.3);">Upgrade to Pro!</h3>
+              <p class="text-sm text-gray-300 mb-4">Get unlimited analysis and AI coaching comments.</p>
+              <button class="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white text-sm font-semibold shadow-xl">Upgrade Now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AFTER -->
+      <div>
+        <span class="label-tag after-tag">After — Clean and direct</span>
+        <div class="mt-3 rounded-xl bg-black/40 p-8 flex items-center justify-center" style="min-height: 300px;">
+          <div class="rounded-xl bg-[#111827] border border-white/[0.06] max-w-sm w-full">
+            <div class="p-6">
+              <div class="w-10 h-10 rounded-lg bg-cyan-500/15 mb-4 flex items-center justify-center text-cyan-400 text-sm">↑</div>
+              <h3 class="text-lg font-semibold text-white mb-2">Upgrade to Pro</h3>
+              <p class="text-sm text-gray-400 mb-5">Unlimited analysis and AI coaching comments.</p>
+              <div class="flex gap-2">
+                <button class="flex-1 py-2.5 rounded-lg bg-cyan-500 text-black text-sm font-semibold">Upgrade</button>
+                <button class="flex-1 py-2.5 rounded-lg bg-white/[0.06] text-gray-300 text-sm font-medium">Not now</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SECTION 8: TYPOGRAPHY SCALE -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-2">8. Typography Scale</h2>
+    <p class="text-gray-400 mb-8">Inter font. 4 sizes. 2 weights. Consistent hierarchy.</p>
+
+    <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-8 space-y-6">
+      <div class="flex items-baseline gap-6">
+        <span class="text-xs text-gray-600 w-24 shrink-0">Page title</span>
+        <span class="text-2xl font-semibold text-white">Your Analysis</span>
+      </div>
+      <div class="flex items-baseline gap-6">
+        <span class="text-xs text-gray-600 w-24 shrink-0">Section head</span>
+        <span class="text-base font-semibold text-white">Opening Statistics</span>
+      </div>
+      <div class="flex items-baseline gap-6">
+        <span class="text-xs text-gray-600 w-24 shrink-0">Body</span>
+        <span class="text-sm text-gray-300">You scored 72.4% accuracy across 20 rapid games this week.</span>
+      </div>
+      <div class="flex items-baseline gap-6">
+        <span class="text-xs text-gray-600 w-24 shrink-0">Caption</span>
+        <span class="text-xs text-gray-500">Last updated 2 hours ago</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SECTION 9: MOVE CLASSIFICATION -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-2">9. Move Classification Badges</h2>
+    <p class="text-gray-400 mb-8">From 7 rainbow colors → 3-color semantic scale (good / neutral / bad).</p>
+
+    <div class="compare-grid">
+      <div>
+        <span class="label-tag before-tag">Before — Rainbow</span>
+        <div class="mt-3 rounded-xl bg-[#111827] border border-white/10 p-5 flex flex-wrap gap-2">
+          <span class="px-2.5 py-1 rounded-lg border border-purple-400/40 bg-purple-500/20 text-purple-200 text-xs">Brilliant</span>
+          <span class="px-2.5 py-1 rounded-lg border border-emerald-400/40 bg-emerald-500/20 text-emerald-200 text-xs">Best</span>
+          <span class="px-2.5 py-1 rounded-lg border border-cyan-400/40 bg-cyan-500/20 text-cyan-200 text-xs">Great</span>
+          <span class="px-2.5 py-1 rounded-lg border border-sky-400/40 bg-sky-500/20 text-sky-200 text-xs">Good</span>
+          <span class="px-2.5 py-1 rounded-lg border border-amber-400/40 bg-amber-500/20 text-amber-200 text-xs">Inaccuracy</span>
+          <span class="px-2.5 py-1 rounded-lg border border-orange-400/40 bg-orange-500/20 text-orange-200 text-xs">Mistake</span>
+          <span class="px-2.5 py-1 rounded-lg border border-rose-400/40 bg-rose-500/20 text-rose-200 text-xs">Blunder</span>
+        </div>
+      </div>
+      <div>
+        <span class="label-tag after-tag">After — Semantic</span>
+        <div class="mt-3 rounded-xl bg-[#111827] border border-white/10 p-5 flex flex-wrap gap-2">
+          <span class="px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-300 text-xs font-medium">Brilliant</span>
+          <span class="px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-300/80 text-xs">Best</span>
+          <span class="px-2.5 py-1 rounded-md bg-emerald-500/5 text-emerald-300/60 text-xs">Great</span>
+          <span class="px-2.5 py-1 rounded-md bg-white/[0.04] text-gray-400 text-xs">Good</span>
+          <span class="px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-300/80 text-xs">Inaccuracy</span>
+          <span class="px-2.5 py-1 rounded-md bg-rose-500/10 text-rose-300/80 text-xs">Mistake</span>
+          <span class="px-2.5 py-1 rounded-md bg-rose-500/15 text-rose-300 text-xs font-medium">Blunder</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SECTION 10: HOMEPAGE HERO -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-2">10. Homepage Hero</h2>
+    <p class="text-gray-400 mb-8">Clean, confident, no emoji icons. Let the product speak.</p>
+
+    <div class="rounded-2xl overflow-hidden border border-white/[0.06] bg-[#0a0e14]">
+      <!-- Nav -->
+      <div class="bg-[#111827] border-b border-white/[0.06] px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-lg bg-cyan-500 flex items-center justify-center text-black font-bold text-xs">C</div>
+          <span class="text-white font-semibold text-sm">ChessData</span>
+        </div>
+        <div class="flex gap-3">
+          <button class="text-gray-400 text-sm font-medium">Sign in</button>
+          <button class="px-4 py-1.5 rounded-lg bg-cyan-500 text-black text-sm font-semibold">Get Started</button>
+        </div>
+      </div>
+
+      <!-- Hero -->
+      <div class="px-6 py-24 text-center max-w-2xl mx-auto">
+        <h1 class="text-4xl font-bold text-white mb-4 leading-tight">Understand your chess.<br>Not just your rating.</h1>
+        <p class="text-gray-400 text-lg mb-8 max-w-lg mx-auto">AI-powered analysis that tells you why you lose — and exactly how to improve.</p>
+        <div class="flex justify-center gap-3">
+          <button class="px-6 py-3 rounded-lg bg-cyan-500 text-black font-semibold">Analyze Free</button>
+          <button class="px-6 py-3 rounded-lg bg-white/[0.06] text-gray-300 font-medium border border-white/[0.06]">See Demo</button>
+        </div>
+      </div>
+
+      <!-- Feature cards -->
+      <div class="max-w-4xl mx-auto px-6 pb-16">
+        <div class="grid grid-cols-3 gap-4">
+          <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-5">
+            <div class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 mb-3 text-sm">♛</div>
+            <h3 class="text-sm font-semibold text-white mb-1">Game Analysis</h3>
+            <p class="text-xs text-gray-500 leading-relaxed">Stockfish-powered move-by-move analysis with AI coaching comments on critical positions.</p>
+          </div>
+          <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-5">
+            <div class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 mb-3 text-sm">⚡</div>
+            <h3 class="text-sm font-semibold text-white mb-1">Deep Insights</h3>
+            <p class="text-xs text-gray-500 leading-relaxed">Personality profiling, opening repertoire analysis, and long-term improvement tracking.</p>
+          </div>
+          <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-5">
+            <div class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 mb-3 text-sm">♟</div>
+            <h3 class="text-sm font-semibold text-white mb-1">AI Coach</h3>
+            <p class="text-xs text-gray-500 leading-relaxed">Personalized lessons, targeted puzzles, and training plans tailored to your weaknesses.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SUMMARY -->
+  <!-- ============================================ -->
+  <section class="mb-20 section-divider pt-16">
+    <h2 class="text-2xl font-semibold text-white mb-6">Design Principles Summary</h2>
+    <div class="grid grid-cols-2 gap-4">
+      <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-5">
+        <h3 class="text-sm font-semibold text-rose-300 mb-2">Remove</h3>
+        <ul class="text-xs text-gray-400 space-y-1.5">
+          <li>• All gradients (nav, modals, buttons, cards)</li>
+          <li>• All custom animations (liquid-glow, shimmer, bubble)</li>
+          <li>• Glassmorphism effects</li>
+          <li>• Multiple shadow depths</li>
+          <li>• Rainbow color coding</li>
+          <li>• Emoji as UI icons</li>
+          <li>• 140 lines of dead CSS</li>
+        </ul>
+      </div>
+      <div class="rounded-xl bg-[#111827] border border-white/[0.06] p-5">
+        <h3 class="text-sm font-semibold text-emerald-300 mb-2">Add</h3>
+        <ul class="text-xs text-gray-400 space-y-1.5">
+          <li>• Design tokens (5 colors, 4 surfaces, 4 text sizes)</li>
+          <li>• Reusable Button component (4 variants)</li>
+          <li>• Reusable Card component (2 elevations)</li>
+          <li>• Reusable Modal wrapper</li>
+          <li>• Consistent border-radius (rounded-lg, rounded-xl)</li>
+          <li>• Inter font via Google Fonts</li>
+          <li>• More whitespace everywhere</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer class="text-center py-8 text-xs text-gray-600">
+    This is a design mockup only — no changes have been made to the app.
+  </footer>
+</div>
+
+</body>
+</html>

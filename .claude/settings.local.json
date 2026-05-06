@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npx tsc:*)",
+      "Bash(python -c:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(find:*)",
+      "Bash(npx --yes image-size-cli:*)",
+      "Bash(npm run build:*)",
+      "Bash(supabase --experimental --help:*)",
+      "Bash(where:*)",
+      "Bash(cd:*)",
+      "Bash(grep:*)",
+      "Bash(npx vite:*)",
+      "Bash(npm run lint:*)"
+    ]
+  }
+}

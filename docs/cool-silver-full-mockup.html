@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChessData — Cool Silver Premium — Full App Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  body { font-family: 'Inter', system-ui, sans-serif; scroll-behavior: smooth; }
+
+  /* Design tokens */
+  :root {
+    --bg-base: #0c0d0f;
+    --bg-surface-1: #151618;
+    --bg-surface-2: #1c1d20;
+    --bg-surface-3: #232428;
+    --border: rgba(255,255,255,0.04);
+    --border-hover: rgba(255,255,255,0.08);
+    --cta: #e4e8ed;
+    --cta-hover: #f0f2f5;
+    --text-primary: #f0f0f0;
+    --text-secondary: #9ca3af;
+    --text-tertiary: #6b7280;
+    --text-muted: #4b5563;
+  }
+
+  .card {
+    background: var(--bg-surface-1);
+    box-shadow: 0 0 0 1px var(--border), 0 2px 4px rgba(0,0,0,0.2);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+  .card-highlight::before {
+    content: '';
+    display: block;
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(255,255,255,0.06), transparent);
+  }
+  .btn-primary {
+    background: var(--cta);
+    color: #111;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 24px;
+    border-radius: 6px;
+    letter-spacing: -0.01em;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3);
+    transition: background 0.15s;
+  }
+  .btn-primary:hover { background: var(--cta-hover); }
+  .btn-secondary {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 20px;
+    border-radius: 6px;
+    color: #9ca3af;
+    border: 1px solid rgba(255,255,255,0.15);
+    letter-spacing: -0.01em;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+  }
+  .btn-secondary:hover { color: #e5e7eb; border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.04); }
+  .btn-ghost {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 6px;
+    color: #6b7280;
+    transition: all 0.15s;
+  }
+  .btn-ghost:hover { color: #9ca3af; background: rgba(255,255,255,0.03); }
+  .label {
+    font-size: 11px;
+    color: #6b7280;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+    font-variant: all-small-caps;
+  }
+  .stat-number {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.03em;
+  }
+  .divider { height: 1px; background: rgba(255,255,255,0.03); }
+  .page-break {
+    border-top: 3px solid rgba(255,255,255,0.06);
+    margin: 4rem 0;
+    position: relative;
+  }
+  .page-break::after {
+    content: attr(data-label);
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-base);
+    padding: 0 16px;
+    font-size: 11px;
+    color: #4b5563;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  /* Page navigation */
+  .page-nav {
+    position: fixed;
+    top: 50%;
+    right: 20px;
+    transform: translateY(-50%);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .page-nav a {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    transition: all 0.2s;
+  }
+  .page-nav a:hover { background: rgba(255,255,255,0.3); transform: scale(1.3); }
+  .page-nav .nav-label {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: #6b7280;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  .page-nav a:hover .nav-label { opacity: 1; }
+
+  /* Mobile hamburger menu */
+  .mobile-menu-btn { display: none; cursor: pointer; padding: 6px; }
+  .mobile-menu-btn span { display: block; width: 18px; height: 2px; background: #9ca3af; margin: 4px 0; transition: all 0.2s; }
+  .mobile-menu { display: none; padding: 12px 24px 16px; border-top: 1px solid var(--border); background: var(--bg-surface-1); }
+  .mobile-menu a, .mobile-menu button { display: block; width: 100%; text-align: left; padding: 8px 0; }
+
+  @media (max-width: 767px) {
+    .desktop-nav { display: none !important; }
+    .mobile-menu-btn { display: block; }
+    .mobile-menu.open { display: block; }
+    .page-nav { display: none; }
+    .stat-row { flex-direction: column !important; gap: 16px !important; }
+    .stat-row .stat-divider { display: none; }
+    .feature-grid-3 { grid-template-columns: 1fr !important; }
+    .feature-grid-2 { grid-template-columns: 1fr !important; }
+    .hero-section { padding: 4rem 1.5rem 3rem !important; }
+    .hero-section h1 { font-size: 2rem !important; }
+    .pricing-grid { grid-template-columns: 1fr !important; }
+    .stats-5-grid { grid-template-columns: 1fr 1fr !important; }
+    .dashboard-grid { grid-template-columns: 1fr !important; }
+  }
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .feature-grid-3 { grid-template-columns: 1fr 1fr !important; }
+    .stats-5-grid { grid-template-columns: repeat(3, 1fr) !important; }
+  }
+</style>
+</head>
+<body style="background: var(--bg-base); color: #e5e7eb;">
+
+<!-- Side nav dots -->
+<nav class="page-nav">
+  <a href="#landing" title="Landing"><span class="nav-label">Landing</span></a>
+  <a href="#pricing" title="Pricing"><span class="nav-label">Pricing</span></a>
+  <a href="#login" title="Login"><span class="nav-label">Login</span></a>
+  <a href="#dashboard" title="Dashboard"><span class="nav-label">Dashboard</span></a>
+  <a href="#analysis" title="Analysis"><span class="nav-label">Analysis</span></a>
+  <a href="#game-review" title="Game Review"><span class="nav-label">Game Review</span></a>
+  <a href="#coach" title="Coach"><span class="nav-label">Coach</span></a>
+  <a href="#lesson" title="Lesson"><span class="nav-label">Lesson</span></a>
+  <a href="#deep" title="Deep Analysis"><span class="nav-label">Deep</span></a>
+  <a href="#modal" title="Modals"><span class="nav-label">Modals</span></a>
+</nav>
+
+<div class="max-w-6xl mx-auto px-6 py-8">
+  <div class="text-center mb-8">
+    <p class="label">Cool Silver Premium — Full App Mockup</p>
+    <p class="text-[11px] text-gray-600 mt-1">Scroll to see all pages. Use dots on the right to jump.</p>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 1: LANDING PAGE -->
+  <!-- ============================================================ -->
+  <section id="landing" class="mb-8">
+    <div class="rounded-2xl overflow-hidden" style="background: var(--bg-base); box-shadow: 0 0 0 1px var(--border);">
+
+      <!-- Landing Nav -->
+      <div class="px-6 py-3.5 flex items-center justify-between" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-white font-semibold text-sm tracking-[-0.01em]">ChessData</span>
+        </div>
+        <div class="desktop-nav flex items-center gap-6">
+          <a href="#" class="text-[13px] text-gray-500 hover:text-gray-300 transition-colors">Features</a>
+          <a href="#" class="text-[13px] text-gray-500 hover:text-gray-300 transition-colors">Pricing</a>
+          <a href="#" class="text-[13px] text-gray-500 hover:text-gray-300 transition-colors">About</a>
+          <div class="h-4 w-px bg-white/[0.06]"></div>
+          <a href="#" class="text-[13px] text-gray-400 hover:text-white transition-colors">Sign in</a>
+          <button class="btn-primary">Get Started</button>
+        </div>
+        <div class="mobile-menu-btn" onclick="this.nextElementSibling?.classList.toggle('open'); this.closest('.rounded-2xl')?.querySelector('.mobile-menu')?.classList.toggle('open')">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+      <div class="mobile-menu">
+        <a href="#" class="text-[13px] text-gray-400 hover:text-gray-300 transition-colors">Features</a>
+        <a href="#" class="text-[13px] text-gray-400 hover:text-gray-300 transition-colors">Pricing</a>
+        <a href="#" class="text-[13px] text-gray-400 hover:text-gray-300 transition-colors">About</a>
+        <a href="#" class="text-[13px] text-gray-400 hover:text-white transition-colors">Sign in</a>
+        <button class="btn-primary mt-2" style="width: 100%; text-align: center;">Get Started</button>
+      </div>
+
+      <!-- Hero -->
+      <div class="hero-section px-6 pt-28 pb-20 text-center max-w-2xl mx-auto">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-6" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span class="text-[11px] text-gray-400">Now with AI coaching powered by Claude & Gemini</span>
+        </div>
+        <h1 class="text-5xl font-semibold text-white tracking-[-0.04em] leading-[1.1] mb-5">
+          Understand your chess.<br>Not just your rating.
+        </h1>
+        <p class="text-gray-400 text-[17px] leading-relaxed mb-10 max-w-lg mx-auto">
+          AI-powered analysis that tells you why you lose — and exactly how to improve.
+        </p>
+        <div class="flex justify-center gap-3">
+          <button class="btn-primary" style="padding: 10px 28px; font-size: 14px;">Analyze Free</button>
+          <button class="btn-secondary" style="padding: 10px 28px; font-size: 14px;">See Demo</button>
+        </div>
+      </div>
+
+      <!-- Social proof bar -->
+      <div class="stat-row px-6 py-5 flex items-center justify-center gap-12" style="border-top: 1px solid var(--border);">
+        <div class="text-center">
+          <p class="stat-number text-lg">12,400+</p>
+          <p class="text-[11px] text-gray-400">Games analyzed</p>
+        </div>
+        <div class="stat-divider w-px h-8 bg-white/[0.10]"></div>
+        <div class="text-center">
+          <p class="stat-number text-lg">2,100+</p>
+          <p class="text-[11px] text-gray-400">Players</p>
+        </div>
+        <div class="stat-divider w-px h-8 bg-white/[0.10]"></div>
+        <div class="text-center">
+          <p class="stat-number text-lg">Chess.com & Lichess</p>
+          <p class="text-[11px] text-gray-400">Supported platforms</p>
+        </div>
+      </div>
+
+      <!-- Features section -->
+      <div class="px-8 py-20" style="border-top: 1px solid var(--border);">
+        <div class="max-w-4xl mx-auto">
+          <div class="text-center mb-12">
+            <p class="label mb-3">Features</p>
+            <h2 class="text-2xl font-semibold text-white tracking-[-0.03em]">Everything you need to improve</h2>
+          </div>
+
+          <div class="feature-grid-3 grid grid-cols-3 gap-3">
+            <div class="card card-highlight" style="min-height: 160px;">
+              <div class="p-6">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
+                  <span class="text-gray-300 text-sm">&#9813;</span>
+                </div>
+                <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Game Analysis</h3>
+                <p class="text-[12px] text-gray-500 leading-[1.7]">Stockfish-powered move-by-move analysis with AI coaching comments on your critical positions.</p>
+              </div>
+            </div>
+            <div class="card card-highlight" style="min-height: 160px;">
+              <div class="p-6">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
+                  <span class="text-gray-300 text-sm">&#9733;</span>
+                </div>
+                <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Deep Insights</h3>
+                <p class="text-[12px] text-gray-500 leading-[1.7]">Personality profiling, opening repertoire analysis, and long-term improvement tracking across thousands of games.</p>
+              </div>
+            </div>
+            <div class="card card-highlight" style="min-height: 160px;">
+              <div class="p-6">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
+                  <span class="text-gray-300 text-sm">&#9823;</span>
+                </div>
+                <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">AI Coach</h3>
+                <p class="text-[12px] text-gray-500 leading-[1.7]">Personalized lessons, targeted puzzles, and training plans tailored to your specific weaknesses.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Second row features — same 3-col grid, 2 items centered -->
+          <div class="feature-grid-3 grid grid-cols-3 gap-3 mt-3">
+            <div class="card card-highlight" style="min-height: 160px;">
+              <div class="p-6">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
+                  <span class="text-gray-300 text-sm">&#8644;</span>
+                </div>
+                <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Auto Import</h3>
+                <p class="text-[12px] text-gray-500 leading-[1.7]">Connect your Chess.com or Lichess account. Games import automatically — no PGN uploads needed.</p>
+              </div>
+            </div>
+            <div class="card card-highlight" style="min-height: 160px;">
+              <div class="p-6">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
+                  <span class="text-gray-300 text-sm">&#9670;</span>
+                </div>
+                <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Game Review</h3>
+                <p class="text-[12px] text-gray-500 leading-[1.7]">Think First mode challenges you to find the best move before revealing the engine's answer.</p>
+              </div>
+            </div>
+            <div class="card card-highlight" style="min-height: 160px;">
+              <div class="p-6">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
+                  <span class="text-gray-300 text-sm">&#128172;</span>
+                </div>
+                <h3 class="text-[14px] font-semibold text-white mb-2 tracking-[-0.01em]">Talk with Coach</h3>
+                <p class="text-[12px] text-gray-500 leading-[1.7]">Chat with an AI coach who answers your chess questions, explains concepts, and gives personalized advice.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Testimonial / quote -->
+      <div class="px-8 py-12" style="border-top: 1px solid var(--border);">
+        <div class="max-w-2xl mx-auto">
+          <div class="card" style="padding: 32px 40px; position: relative;">
+            <div style="position: absolute; top: 16px; left: 24px; font-size: 48px; line-height: 1; color: rgba(228,232,237,0.1); font-family: Georgia, serif;">&ldquo;</div>
+            <div class="text-center" style="padding-top: 12px;">
+              <p class="text-[16px] text-gray-300 leading-relaxed italic mb-4">"I went from 1042 to 1411 in two months. The coaching comments on my blunders were more useful than hours of YouTube tutorials."</p>
+              <p class="text-[12px] text-gray-500">— skudurrrrr, Chess.com rapid player</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CTA section -->
+      <div class="px-8 py-16" style="border-top: 1px solid var(--border); background: var(--bg-surface-2);">
+        <div class="max-w-lg mx-auto text-center">
+          <h2 class="text-xl font-semibold text-white tracking-[-0.02em] mb-3">Ready to improve?</h2>
+          <p class="text-[13px] text-gray-500 mb-6">Free tier includes 5 game analyses per day. No credit card required.</p>
+          <button class="btn-primary" style="padding: 10px 32px; font-size: 14px;">Start Analyzing</button>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-5 flex items-center justify-between" style="border-top: 1px solid var(--border);">
+        <div class="flex items-center gap-2">
+          <div class="w-5 h-5 rounded flex items-center justify-center text-[9px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-[12px] text-gray-600">ChessData</span>
+        </div>
+        <div class="flex gap-6">
+          <a href="#" class="text-[12px] text-gray-600 hover:text-gray-400 transition-colors">Privacy</a>
+          <a href="#" class="text-[12px] text-gray-600 hover:text-gray-400 transition-colors">Terms</a>
+          <a href="#" class="text-[12px] text-gray-600 hover:text-gray-400 transition-colors">Discord</a>
+          <a href="#" class="text-[12px] text-gray-600 hover:text-gray-400 transition-colors">GitHub</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break" data-label="Pricing"></div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 2: PRICING -->
+  <!-- ============================================================ -->
+  <section id="pricing" class="mb-8">
+    <div class="rounded-2xl overflow-hidden" style="background: var(--bg-base); box-shadow: 0 0 0 1px var(--border);">
+
+      <!-- Nav (same as landing) -->
+      <div class="px-6 py-3.5 flex items-center justify-between" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-white font-semibold text-sm tracking-[-0.01em]">ChessData</span>
+        </div>
+        <div class="flex items-center gap-6">
+          <a href="#" class="text-[13px] text-gray-500">Features</a>
+          <a href="#" class="text-[13px] text-white">Pricing</a>
+          <a href="#" class="text-[13px] text-gray-500">About</a>
+          <div class="h-4 w-px bg-white/[0.06]"></div>
+          <a href="#" class="text-[13px] text-gray-400">Sign in</a>
+          <button class="btn-primary">Get Started</button>
+        </div>
+      </div>
+
+      <div class="px-8 py-20">
+        <div class="max-w-4xl mx-auto">
+          <div class="text-center mb-14">
+            <h1 class="text-3xl font-semibold text-white tracking-[-0.03em] mb-3">Simple pricing</h1>
+            <p class="text-[15px] text-gray-500">Start free. Upgrade when you're ready.</p>
+          </div>
+
+          <div class="pricing-grid grid grid-cols-3 gap-4">
+            <!-- Free -->
+            <div class="card card-highlight">
+              <div class="p-6">
+                <p class="label mb-3">Free</p>
+                <div class="flex items-baseline gap-1 mb-1">
+                  <span class="text-3xl font-semibold text-white tracking-[-0.03em]">$0</span>
+                  <span class="text-[12px] text-gray-600">/month</span>
+                </div>
+                <p class="text-[12px] text-gray-500 mb-6">For casual players</p>
+                <button class="btn-secondary w-full text-center mb-6">Get Started</button>
+                <div class="space-y-3">
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">5 game analyses / day</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Basic move classification</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Opening statistics</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-700 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-600">AI coaching comments</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-700 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-600">Deep personality analysis</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pro (highlighted) -->
+            <div class="rounded-lg overflow-hidden" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px rgba(228,232,237,0.15), 0 4px 12px rgba(0,0,0,0.3);">
+              <div class="h-px" style="background: linear-gradient(to right, transparent, rgba(228,232,237,0.2), transparent);"></div>
+              <div class="p-6">
+                <div class="flex items-center gap-2 mb-3">
+                  <p class="label">Pro</p>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded font-medium" style="background: rgba(228,232,237,0.08); color: #c0c7d0;">Popular</span>
+                </div>
+                <div class="flex items-baseline gap-1 mb-1">
+                  <span class="text-3xl font-semibold text-white tracking-[-0.03em]">$9</span>
+                  <span class="text-[12px] text-gray-600">/month</span>
+                </div>
+                <p class="text-[12px] text-gray-500 mb-6">For serious improvers</p>
+                <button class="btn-primary w-full text-center mb-6">Subscribe</button>
+                <div class="space-y-3">
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Unlimited analyses</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">AI coaching comments</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Deep personality analysis</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Personalized lessons</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Targeted puzzles</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Team -->
+            <div class="card card-highlight">
+              <div class="p-6">
+                <p class="label mb-3">Team</p>
+                <div class="flex items-baseline gap-1 mb-1">
+                  <span class="text-3xl font-semibold text-white tracking-[-0.03em]">$29</span>
+                  <span class="text-[12px] text-gray-600">/month</span>
+                </div>
+                <p class="text-[12px] text-gray-500 mb-6">For coaches & clubs</p>
+                <button class="btn-secondary w-full text-center mb-6">Contact Us</button>
+                <div class="space-y-3">
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Everything in Pro</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Up to 10 players</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Coach dashboard</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Progress reports</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-emerald-400/60 text-[11px] mt-0.5">&#10003;</span>
+                    <span class="text-[12px] text-gray-400">Priority support</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break" data-label="Login"></div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 3: LOGIN -->
+  <!-- ============================================================ -->
+  <section id="login" class="mb-8">
+    <div class="rounded-2xl overflow-hidden" style="background: var(--bg-base); box-shadow: 0 0 0 1px var(--border);">
+      <div class="px-6 py-3.5 flex items-center justify-center" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-white font-semibold text-sm tracking-[-0.01em]">ChessData</span>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-center py-24">
+        <div class="w-full max-w-sm">
+          <div class="text-center mb-8">
+            <h1 class="text-xl font-semibold text-white tracking-[-0.02em] mb-1">Sign in to ChessData</h1>
+            <p class="text-[13px] text-gray-500">Welcome back</p>
+          </div>
+
+          <div class="card card-highlight">
+            <div class="p-6 space-y-4">
+              <div>
+                <label class="label block mb-2">Email</label>
+                <div class="rounded-md px-3.5 py-2.5" style="background: var(--bg-surface-2); box-shadow: 0 0 0 1px var(--border);">
+                  <span class="text-[13px] text-gray-500">you@example.com</span>
+                </div>
+              </div>
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <label class="label">Password</label>
+                  <a href="#" class="text-[11px] text-gray-500 hover:text-gray-300 transition-colors">Forgot?</a>
+                </div>
+                <div class="rounded-md px-3.5 py-2.5" style="background: var(--bg-surface-2); box-shadow: 0 0 0 1px var(--border);">
+                  <span class="text-[13px] text-gray-500">••••••••</span>
+                </div>
+              </div>
+              <button class="btn-primary w-full text-center" style="padding: 10px 24px;">Sign in</button>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 my-5">
+            <div class="flex-1 h-px bg-white/[0.04]"></div>
+            <span class="text-[11px] text-gray-600">or</span>
+            <div class="flex-1 h-px bg-white/[0.04]"></div>
+          </div>
+
+          <button class="btn-secondary w-full text-center" style="padding: 10px 24px;">Continue with Google</button>
+
+          <p class="text-center text-[12px] text-gray-600 mt-5">
+            Don't have an account? <a href="#" class="text-gray-400 hover:text-white transition-colors">Sign up</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break" data-label="Dashboard"></div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 4: MAIN DASHBOARD (Analysis) -->
+  <!-- ============================================================ -->
+  <section id="dashboard" class="mb-8">
+    <div class="rounded-2xl overflow-hidden" style="background: var(--bg-base); box-shadow: 0 0 0 1px var(--border);">
+
+      <!-- App Nav -->
+      <div class="px-6 py-3 flex items-center justify-between" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-white font-semibold text-sm tracking-[-0.01em]">ChessData</span>
+        </div>
+        <div class="flex gap-0.5">
+          <span class="px-3.5 py-1.5 rounded-md text-white text-[13px] font-medium" style="background: rgba(255,255,255,0.06);">Analysis</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Deep</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Coach</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-[12px] text-gray-500">player1</span>
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] text-gray-400" style="background: var(--bg-surface-3);">M</div>
+        </div>
+      </div>
+
+      <!-- Search bar area -->
+      <div class="max-w-5xl mx-auto px-8 py-10">
+        <div class="mb-10">
+          <h1 class="text-2xl font-semibold text-white tracking-[-0.03em] mb-5">Analyze Games</h1>
+
+          <!-- Search input -->
+          <div class="flex gap-3">
+            <div class="flex-1 card" style="border-radius: 6px;">
+              <div class="flex items-center px-4 py-3 gap-3">
+                <span class="text-gray-600 text-sm">&#128269;</span>
+                <span class="text-[13px] text-gray-500">Enter Chess.com or Lichess username...</span>
+              </div>
+            </div>
+            <button class="btn-primary">Analyze</button>
+          </div>
+
+          <!-- Platform toggle -->
+          <div class="flex gap-2 mt-3">
+            <span class="px-3 py-1 rounded-md text-[12px] font-medium text-white" style="background: rgba(255,255,255,0.06);">Chess.com</span>
+            <span class="px-3 py-1 rounded-md text-[12px] font-medium text-gray-600">Lichess</span>
+          </div>
+        </div>
+
+        <!-- Stats overview -->
+        <div class="stats-5-grid grid grid-cols-5 gap-3 mb-8">
+          <div class="card card-highlight">
+            <div class="p-4">
+              <p class="label mb-1.5">Games</p>
+              <p class="text-xl font-semibold text-white tracking-[-0.02em]">847</p>
+            </div>
+          </div>
+          <div class="card card-highlight">
+            <div class="p-4">
+              <p class="label mb-1.5">Win Rate</p>
+              <p class="text-xl font-semibold text-white tracking-[-0.02em]">54.3%</p>
+            </div>
+          </div>
+          <div class="card card-highlight">
+            <div class="p-4">
+              <p class="label mb-1.5">Avg Accuracy</p>
+              <p class="text-xl font-semibold text-white tracking-[-0.02em]">72.4%</p>
+            </div>
+          </div>
+          <div class="card card-highlight">
+            <div class="p-4">
+              <p class="label mb-1.5">Blunder Rate</p>
+              <p class="text-xl font-semibold text-white tracking-[-0.02em]">3.1%</p>
+            </div>
+          </div>
+          <div class="card card-highlight">
+            <div class="p-4">
+              <p class="label mb-1.5">Rapid Elo</p>
+              <p class="text-xl font-semibold text-white tracking-[-0.02em]">1,247</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main content: Charts + Game list -->
+        <div class="dashboard-grid grid grid-cols-3 gap-3">
+          <!-- Elo chart area -->
+          <div class="col-span-2 card card-highlight">
+            <div class="p-5">
+              <div class="flex items-center justify-between mb-5">
+                <h2 class="text-[14px] font-semibold text-white tracking-[-0.01em]">Rating History</h2>
+                <div class="flex gap-1">
+                  <span class="px-2.5 py-1 rounded text-[11px] font-medium text-white" style="background: rgba(255,255,255,0.06);">Rapid</span>
+                  <span class="px-2.5 py-1 rounded text-[11px] font-medium text-gray-600">Blitz</span>
+                  <span class="px-2.5 py-1 rounded text-[11px] font-medium text-gray-600">Bullet</span>
+                </div>
+              </div>
+              <!-- Chart placeholder -->
+              <div class="h-48 flex items-end gap-1 px-2">
+                <div class="flex-1 rounded-t" style="height: 60%; background: rgba(228,232,237,0.08);"></div>
+                <div class="flex-1 rounded-t" style="height: 65%; background: rgba(228,232,237,0.08);"></div>
+                <div class="flex-1 rounded-t" style="height: 55%; background: rgba(228,232,237,0.08);"></div>
+                <div class="flex-1 rounded-t" style="height: 70%; background: rgba(228,232,237,0.08);"></div>
+                <div class="flex-1 rounded-t" style="height: 68%; background: rgba(228,232,237,0.08);"></div>
+                <div class="flex-1 rounded-t" style="height: 75%; background: rgba(228,232,237,0.08);"></div>
+                <div class="flex-1 rounded-t" style="height: 72%; background: rgba(228,232,237,0.08);"></div>
+                <div class="flex-1 rounded-t" style="height: 80%; background: rgba(228,232,237,0.08);"></div>
+                <div class="flex-1 rounded-t" style="height: 78%; background: rgba(228,232,237,0.08);"></div>
+                <div class="flex-1 rounded-t" style="height: 85%; background: rgba(228,232,237,0.12);"></div>
+                <div class="flex-1 rounded-t" style="height: 82%; background: rgba(228,232,237,0.12);"></div>
+                <div class="flex-1 rounded-t" style="height: 88%; background: rgba(228,232,237,0.15);"></div>
+              </div>
+              <div class="flex justify-between mt-2 px-2">
+                <span class="text-[10px] text-gray-700">Jan</span>
+                <span class="text-[10px] text-gray-700">Mar</span>
+                <span class="text-[10px] text-gray-700">Jun</span>
+                <span class="text-[10px] text-gray-700">Sep</span>
+                <span class="text-[10px] text-gray-700">Dec</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Opening stats -->
+          <div class="card card-highlight">
+            <div class="p-5">
+              <h2 class="text-[14px] font-semibold text-white tracking-[-0.01em] mb-4">Top Openings</h2>
+              <div class="space-y-3">
+                <div>
+                  <div class="flex justify-between text-[12px] mb-1">
+                    <span class="text-gray-300">Sicilian Defense</span>
+                    <span class="text-emerald-400/80 font-medium">62%</span>
+                  </div>
+                  <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);">
+                    <div class="h-1 rounded-full bg-emerald-400/40" style="width: 62%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-[12px] mb-1">
+                    <span class="text-gray-300">Italian Game</span>
+                    <span class="text-emerald-400/80 font-medium">58%</span>
+                  </div>
+                  <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);">
+                    <div class="h-1 rounded-full bg-emerald-400/40" style="width: 58%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-[12px] mb-1">
+                    <span class="text-gray-300">Queen's Gambit</span>
+                    <span class="text-amber-400/80 font-medium">45%</span>
+                  </div>
+                  <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);">
+                    <div class="h-1 rounded-full bg-amber-400/40" style="width: 45%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-[12px] mb-1">
+                    <span class="text-gray-300">King's Indian</span>
+                    <span class="text-rose-400/80 font-medium">38%</span>
+                  </div>
+                  <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);">
+                    <div class="h-1 rounded-full bg-rose-400/40" style="width: 38%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-[12px] mb-1">
+                    <span class="text-gray-300">French Defense</span>
+                    <span class="text-emerald-400/80 font-medium">55%</span>
+                  </div>
+                  <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);">
+                    <div class="h-1 rounded-full bg-emerald-400/40" style="width: 55%;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Games List -->
+        <div class="card card-highlight mt-3">
+          <div class="p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-[14px] font-semibold text-white tracking-[-0.01em]">Recent Games</h2>
+              <button class="btn-ghost text-[12px]">View all</button>
+            </div>
+            <div>
+              <div class="flex items-center justify-between py-2.5">
+                <div class="flex items-center gap-4">
+                  <span class="w-5 text-center text-emerald-400/80 text-[12px] font-medium">W</span>
+                  <span class="text-[13px] text-gray-300">vs opponent123</span>
+                  <span class="text-[11px] text-gray-600">Italian Game</span>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-[11px] text-gray-600">Rapid 10+0</span>
+                  <span class="text-[11px] text-gray-600">2 hours ago</span>
+                  <button class="btn-ghost text-[11px] px-2 py-1">Review</button>
+                </div>
+              </div>
+              <div class="divider"></div>
+              <div class="flex items-center justify-between py-2.5">
+                <div class="flex items-center gap-4">
+                  <span class="w-5 text-center text-rose-400/80 text-[12px] font-medium">L</span>
+                  <span class="text-[13px] text-gray-300">vs grandmaster99</span>
+                  <span class="text-[11px] text-gray-600">Sicilian Defense</span>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-[11px] text-gray-600">Blitz 5+0</span>
+                  <span class="text-[11px] text-gray-600">5 hours ago</span>
+                  <button class="btn-ghost text-[11px] px-2 py-1">Review</button>
+                </div>
+              </div>
+              <div class="divider"></div>
+              <div class="flex items-center justify-between py-2.5">
+                <div class="flex items-center gap-4">
+                  <span class="w-5 text-center text-emerald-400/80 text-[12px] font-medium">W</span>
+                  <span class="text-[13px] text-gray-300">vs chessfan42</span>
+                  <span class="text-[11px] text-gray-600">Queen's Gambit</span>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-[11px] text-gray-600">Rapid 15+10</span>
+                  <span class="text-[11px] text-gray-600">Yesterday</span>
+                  <button class="btn-ghost text-[11px] px-2 py-1">Review</button>
+                </div>
+              </div>
+              <div class="divider"></div>
+              <div class="flex items-center justify-between py-2.5">
+                <div class="flex items-center gap-4">
+                  <span class="w-5 text-center text-gray-500 text-[12px] font-medium">D</span>
+                  <span class="text-[13px] text-gray-300">vs speedking88</span>
+                  <span class="text-[11px] text-gray-600">King's Indian</span>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-[11px] text-gray-600">Blitz 3+2</span>
+                  <span class="text-[11px] text-gray-600">Yesterday</span>
+                  <button class="btn-ghost text-[11px] px-2 py-1">Review</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break" data-label="Game Analysis"></div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 5: GAME ANALYSIS VIEW -->
+  <!-- ============================================================ -->
+  <section id="analysis" class="mb-8">
+    <div class="rounded-2xl overflow-hidden" style="background: var(--bg-base); box-shadow: 0 0 0 1px var(--border);">
+
+      <!-- Compact nav -->
+      <div class="px-6 py-2.5 flex items-center justify-between" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+        <div class="flex items-center gap-3">
+          <div class="w-6 h-6 rounded flex items-center justify-center text-[10px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-white font-semibold text-[13px] tracking-[-0.01em]">ChessData</span>
+          <span class="text-gray-600 text-[13px]">/</span>
+          <span class="text-gray-400 text-[13px]">Game Analysis</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="btn-ghost text-[11px] px-2 py-1">Share</button>
+          <button class="btn-secondary text-[11px] px-3 py-1">Export PGN</button>
+        </div>
+      </div>
+
+      <!-- Analysis layout -->
+      <div class="flex" style="min-height: 580px;">
+        <!-- Board area -->
+        <div class="flex-1 p-8 flex items-start justify-center">
+          <div class="flex gap-3">
+            <!-- Eval bar -->
+            <div class="w-4 rounded-md overflow-hidden flex flex-col" style="height: 360px; background: var(--bg-surface-3);">
+              <div class="bg-gray-200 transition-all" style="height: 62%;"></div>
+              <div class="flex-1" style="background: #2a2b2e;"></div>
+            </div>
+            <!-- Board -->
+            <div>
+              <!-- Black player -->
+              <div class="flex items-center gap-2 mb-2">
+                <div class="w-5 h-5 rounded-full" style="background: var(--bg-surface-3);"></div>
+                <span class="text-[12px] text-gray-400">opponent123</span>
+                <span class="text-[11px] text-gray-600">(1198)</span>
+              </div>
+              <div class="rounded-md overflow-hidden" style="width: 360px; height: 360px;">
+                <div class="w-full h-full grid grid-cols-8 grid-rows-8" id="board1">
+                </div>
+              </div>
+              <!-- White player -->
+              <div class="flex items-center gap-2 mt-2">
+                <div class="w-5 h-5 rounded-full" style="background: var(--cta);"></div>
+                <span class="text-[12px] text-white">player1</span>
+                <span class="text-[11px] text-gray-600">(1247)</span>
+                <span class="text-[11px] text-emerald-400/80 ml-auto font-medium">1-0</span>
+              </div>
+              <!-- Controls -->
+              <div class="flex justify-center gap-1.5 mt-4">
+                <button class="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 text-[11px] transition-colors" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">&#171;</button>
+                <button class="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 text-[11px] transition-colors" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">&#8249;</button>
+                <button class="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 text-[11px] transition-colors" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">&#9654;</button>
+                <button class="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 text-[11px] transition-colors" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">&#8250;</button>
+                <button class="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 text-[11px] transition-colors" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">&#187;</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Side panel -->
+        <div class="w-80 flex flex-col" style="background: var(--bg-surface-1); border-left: 1px solid var(--border);">
+          <!-- Game summary -->
+          <div class="p-4" style="border-bottom: 1px solid var(--border);">
+            <div class="flex items-center justify-between mb-3">
+              <span class="label">Game Summary</span>
+              <span class="text-[11px] text-gray-600">Rapid 10+0</span>
+            </div>
+            <!-- Move classification summary bar -->
+            <div class="flex rounded-md overflow-hidden h-2 mb-3">
+              <div class="bg-emerald-400/50" style="width: 35%;"></div>
+              <div class="bg-emerald-400/30" style="width: 25%;"></div>
+              <div style="width: 20%; background: rgba(255,255,255,0.04);"></div>
+              <div class="bg-amber-400/40" style="width: 10%;"></div>
+              <div class="bg-rose-400/50" style="width: 10%;"></div>
+            </div>
+            <div class="flex justify-between text-[10px] text-gray-600">
+              <span>Brilliant 3</span>
+              <span>Best 8</span>
+              <span>Good 12</span>
+              <span>Inaccuracy 4</span>
+              <span>Blunder 2</span>
+            </div>
+          </div>
+
+          <!-- Move list -->
+          <div class="flex-1 overflow-y-auto p-4">
+            <div class="space-y-0" style="font-family: 'SF Mono', 'Fira Code', monospace;">
+              <div class="flex items-center gap-2 py-1.5 px-2 rounded-md">
+                <span class="text-gray-700 w-5 text-[11px]">1.</span>
+                <span class="text-gray-300 w-14 text-[12px]">e4</span>
+                <span class="text-gray-300 w-14 text-[12px]">e5</span>
+              </div>
+              <div class="flex items-center gap-2 py-1.5 px-2 rounded-md">
+                <span class="text-gray-700 w-5 text-[11px]">2.</span>
+                <span class="text-gray-300 w-14 text-[12px]">Nf3</span>
+                <span class="text-gray-300 w-14 text-[12px]">Nc6</span>
+              </div>
+              <div class="flex items-center gap-2 py-1.5 px-2 rounded-md">
+                <span class="text-gray-700 w-5 text-[11px]">3.</span>
+                <span class="text-gray-300 w-14 text-[12px]">Bb5</span>
+                <span class="text-gray-300 w-14 text-[12px]">a6</span>
+              </div>
+              <div class="flex items-center gap-2 py-1.5 px-2 rounded-md" style="background: rgba(228,232,237,0.04);">
+                <span class="text-gray-700 w-5 text-[11px]">4.</span>
+                <span class="text-gray-200 w-14 text-[12px] font-medium">Ba4</span>
+                <span class="text-gray-300 w-14 text-[12px]">Nf6</span>
+              </div>
+              <div class="flex items-center gap-2 py-1.5 px-2 rounded-md">
+                <span class="text-gray-700 w-5 text-[11px]">5.</span>
+                <span class="text-gray-300 w-14 text-[12px]">O-O</span>
+                <span class="text-rose-300/80 w-14 text-[12px] flex items-center gap-1">Nxe4 <span class="w-1.5 h-1.5 rounded-full bg-rose-400/60"></span></span>
+              </div>
+              <div class="flex items-center gap-2 py-1.5 px-2 rounded-md">
+                <span class="text-gray-700 w-5 text-[11px]">6.</span>
+                <span class="text-emerald-300/80 w-14 text-[12px] flex items-center gap-1">d4 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400/60"></span></span>
+                <span class="text-gray-300 w-14 text-[12px]">b5</span>
+              </div>
+              <div class="flex items-center gap-2 py-1.5 px-2 rounded-md">
+                <span class="text-gray-700 w-5 text-[11px]">7.</span>
+                <span class="text-gray-300 w-14 text-[12px]">Bb3</span>
+                <span class="text-gray-300 w-14 text-[12px]">d5</span>
+              </div>
+              <div class="flex items-center gap-2 py-1.5 px-2 rounded-md">
+                <span class="text-gray-700 w-5 text-[11px]">8.</span>
+                <span class="text-emerald-300/80 w-14 text-[12px] flex items-center gap-1">dxe5 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400/60"></span></span>
+                <span class="text-amber-300/80 w-14 text-[12px] flex items-center gap-1">Be6 <span class="w-1.5 h-1.5 rounded-full bg-amber-400/60"></span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI Comment -->
+          <div class="p-4" style="border-top: 1px solid var(--border);">
+            <div class="rounded-md p-3.5" style="background: var(--bg-surface-2);">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-rose-400/60"></span>
+                <p class="text-[11px] text-gray-500">Move 5 ... Nxe4</p>
+              </div>
+              <p class="text-[12px] text-gray-400 leading-[1.6]">This captures the pawn but opens the position when you're behind in development. Consider <span class="text-gray-200 font-medium">Be7</span> to complete kingside development first.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break" data-label="Game Review"></div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 6: GAME REVIEW (Think First mode) -->
+  <!-- ============================================================ -->
+  <section id="game-review" class="mb-8">
+    <div class="rounded-2xl overflow-hidden" style="background: var(--bg-base); box-shadow: 0 0 0 1px var(--border);">
+
+      <div class="px-6 py-2.5 flex items-center justify-between" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+        <div class="flex items-center gap-3">
+          <div class="w-6 h-6 rounded flex items-center justify-center text-[10px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-gray-400 text-[13px]">Game Review</span>
+          <span class="px-2 py-0.5 rounded text-[10px] font-medium" style="background: rgba(228,232,237,0.06); color: #9ca3af;">Think First</span>
+        </div>
+        <button class="btn-ghost text-[11px]">Exit Review</button>
+      </div>
+
+      <div class="flex" style="min-height: 520px;">
+        <!-- Board -->
+        <div class="flex-1 p-8 flex items-start justify-center">
+          <div class="flex gap-3">
+            <div class="w-4 rounded-md overflow-hidden flex flex-col" style="height: 340px; background: var(--bg-surface-3);">
+              <div class="bg-gray-200" style="height: 45%;"></div>
+              <div class="flex-1" style="background: #2a2b2e;"></div>
+            </div>
+            <div>
+              <div class="rounded-md overflow-hidden" style="width: 340px; height: 340px; background: var(--bg-surface-2);">
+                <div class="w-full h-full grid grid-cols-8 grid-rows-8" id="board2"></div>
+              </div>
+              <div class="flex justify-center gap-1.5 mt-4">
+                <button class="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 text-[11px]" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">&#8249;</button>
+                <button class="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 text-[11px]" style="background: var(--bg-surface-1); box-shadow: 0 0 0 1px var(--border);">&#8250;</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Think First panel -->
+        <div class="w-80 flex flex-col" style="background: var(--bg-surface-1); border-left: 1px solid var(--border);">
+          <div class="p-5" style="border-bottom: 1px solid var(--border);">
+            <p class="label mb-2">Position 4 of 12</p>
+            <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);">
+              <div class="h-1 rounded-full" style="width: 33%; background: rgba(228,232,237,0.2);"></div>
+            </div>
+          </div>
+
+          <div class="flex-1 p-5">
+            <h3 class="text-[14px] font-semibold text-white tracking-[-0.01em] mb-3">What would you play?</h3>
+            <p class="text-[12px] text-gray-500 leading-[1.6] mb-6">White has just played d4, attacking your center. You need to respond to the tension. Think about what your priorities are in this position.</p>
+
+            <div class="space-y-2 mb-6">
+              <div class="rounded-md px-4 py-3 cursor-pointer transition-colors" style="background: var(--bg-surface-2); box-shadow: 0 0 0 1px var(--border);">
+                <span class="text-[13px] text-gray-300">exd4</span>
+              </div>
+              <div class="rounded-md px-4 py-3 cursor-pointer transition-colors" style="background: var(--bg-surface-2); box-shadow: 0 0 0 1px rgba(228,232,237,0.1);">
+                <span class="text-[13px] text-gray-200 font-medium">d5</span>
+              </div>
+              <div class="rounded-md px-4 py-3 cursor-pointer transition-colors" style="background: var(--bg-surface-2); box-shadow: 0 0 0 1px var(--border);">
+                <span class="text-[13px] text-gray-300">Bd6</span>
+              </div>
+            </div>
+
+            <button class="btn-primary w-full text-center">Reveal Answer</button>
+          </div>
+
+          <div class="p-5" style="border-top: 1px solid var(--border);">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-gray-600">Score: 3/4 correct</span>
+              <span class="text-emerald-400/80 font-medium">75%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break" data-label="Coach Dashboard"></div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 7: COACH DASHBOARD -->
+  <!-- ============================================================ -->
+  <section id="coach" class="mb-8">
+    <div class="rounded-2xl overflow-hidden" style="background: var(--bg-base); box-shadow: 0 0 0 1px var(--border);">
+
+      <!-- Nav -->
+      <div class="px-6 py-3 flex items-center justify-between" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-white font-semibold text-sm tracking-[-0.01em]">ChessData</span>
+        </div>
+        <div class="flex gap-0.5">
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Analysis</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Deep</span>
+          <span class="px-3.5 py-1.5 rounded-md text-white text-[13px] font-medium" style="background: rgba(255,255,255,0.06);">Coach</span>
+        </div>
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] text-gray-400" style="background: var(--bg-surface-3);">M</div>
+      </div>
+
+      <div class="max-w-5xl mx-auto px-8 py-10">
+        <div class="mb-10">
+          <h1 class="text-2xl font-semibold text-white tracking-[-0.03em] mb-1">Your Coach</h1>
+          <p class="text-[13px] text-gray-500">Personalized training based on your recent games</p>
+        </div>
+
+        <!-- Stats row -->
+        <div class="grid grid-cols-4 gap-3 mb-8">
+          <div class="card card-highlight"><div class="p-5"><p class="label mb-1.5">Rating</p><p class="stat-number">1,247</p><p class="text-[11px] text-emerald-400/80 mt-2 font-medium">+23 this week</p></div></div>
+          <div class="card card-highlight"><div class="p-5"><p class="label mb-1.5">Accuracy</p><p class="stat-number">72.4%</p><p class="text-[11px] text-gray-600 mt-2">Last 20 games</p></div></div>
+          <div class="card card-highlight"><div class="p-5"><p class="label mb-1.5">Streak</p><p class="stat-number">5 days</p><p class="text-[11px] text-gray-600 mt-2">Personal best</p></div></div>
+          <div class="card card-highlight"><div class="p-5"><p class="label mb-1.5">Lessons Done</p><p class="stat-number">12</p><p class="text-[11px] text-gray-600 mt-2">This month</p></div></div>
+        </div>
+
+        <!-- Main grid -->
+        <div class="grid grid-cols-3 gap-3">
+          <!-- Today's lesson -->
+          <div class="col-span-2 card card-highlight">
+            <div class="p-6">
+              <div class="flex items-center justify-between mb-5">
+                <h2 class="text-[15px] font-semibold text-white tracking-[-0.01em]">Today's Lesson</h2>
+                <span class="label">Endgames</span>
+              </div>
+              <div class="rounded-md p-4 mb-5" style="background: var(--bg-surface-2);">
+                <p class="text-[13px] text-gray-200 font-medium mb-2">Rook Endgame Fundamentals</p>
+                <p class="text-[12px] text-gray-500 leading-[1.6]">You've struggled with rook endgames in 3 of your last 5 losses. This lesson covers the Lucena and Philidor positions — the two patterns that would have saved those games.</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <button class="btn-primary">Start Lesson</button>
+                <button class="btn-secondary">Skip</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sidebar -->
+          <div class="space-y-3">
+            <!-- Weaknesses -->
+            <div class="card card-highlight">
+              <div class="p-5">
+                <h3 class="text-[13px] font-semibold text-white mb-4 tracking-[-0.01em]">Focus Areas</h3>
+                <div class="space-y-3.5">
+                  <div>
+                    <div class="flex justify-between text-[11px] mb-1.5"><span class="text-gray-400">Endgames</span><span class="text-rose-400/80 font-medium">38%</span></div>
+                    <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);"><div class="h-1 rounded-full bg-rose-400/50" style="width:38%;"></div></div>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-[11px] mb-1.5"><span class="text-gray-400">Tactics</span><span class="text-amber-400/80 font-medium">52%</span></div>
+                    <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);"><div class="h-1 rounded-full bg-amber-400/50" style="width:52%;"></div></div>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-[11px] mb-1.5"><span class="text-gray-400">Openings</span><span class="text-emerald-400/80 font-medium">78%</span></div>
+                    <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);"><div class="h-1 rounded-full bg-emerald-400/50" style="width:78%;"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick actions -->
+            <div class="card card-highlight">
+              <div class="p-5 space-y-2">
+                <h3 class="text-[13px] font-semibold text-white mb-3 tracking-[-0.01em]">Quick Actions</h3>
+                <button class="btn-secondary w-full text-left text-[12px]">Daily Puzzles (3 new)</button>
+                <button class="btn-secondary w-full text-left text-[12px]">Review Last Game</button>
+                <button class="btn-secondary w-full text-left text-[12px]">Opening Trainer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break" data-label="Lesson View"></div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 8: LESSON VIEW -->
+  <!-- ============================================================ -->
+  <section id="lesson" class="mb-8">
+    <div class="rounded-2xl overflow-hidden" style="background: var(--bg-base); box-shadow: 0 0 0 1px var(--border);">
+      <div class="px-6 py-2.5 flex items-center justify-between" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+        <div class="flex items-center gap-3">
+          <div class="w-6 h-6 rounded flex items-center justify-center text-[10px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-gray-400 text-[13px]">Coach</span>
+          <span class="text-gray-600 text-[13px]">/</span>
+          <span class="text-gray-300 text-[13px]">Rook Endgame Fundamentals</span>
+        </div>
+        <button class="btn-ghost text-[11px]">Exit Lesson</button>
+      </div>
+
+      <div class="flex" style="min-height: 520px;">
+        <!-- Board -->
+        <div class="flex-1 p-8 flex items-start justify-center">
+          <div class="rounded-md overflow-hidden" style="width: 360px; height: 360px;">
+            <div class="w-full h-full grid grid-cols-8 grid-rows-8" id="board3"></div>
+          </div>
+        </div>
+
+        <!-- Lesson content -->
+        <div class="w-96 flex flex-col" style="background: var(--bg-surface-1); border-left: 1px solid var(--border);">
+          <div class="p-5" style="border-bottom: 1px solid var(--border);">
+            <div class="flex items-center justify-between mb-2">
+              <p class="label">Step 3 of 8</p>
+              <span class="text-[11px] text-gray-600">Endgames</span>
+            </div>
+            <div class="h-1 rounded-full" style="background: rgba(255,255,255,0.04);">
+              <div class="h-1 rounded-full" style="width: 37.5%; background: rgba(228,232,237,0.2);"></div>
+            </div>
+          </div>
+
+          <div class="flex-1 p-6 overflow-y-auto">
+            <h2 class="text-[17px] font-semibold text-white tracking-[-0.02em] mb-4">The Lucena Position</h2>
+            <p class="text-[13px] text-gray-400 leading-[1.7] mb-4">
+              This is the most important rook endgame position to know. White's goal is to promote the pawn. The key technique is the "bridge" — using the rook to shield the king from checks.
+            </p>
+            <div class="rounded-md p-3.5 mb-4" style="background: var(--bg-surface-2);">
+              <p class="text-[12px] text-gray-300 leading-[1.6]">
+                <span class="font-medium text-gray-200">Key idea:</span> Play Rd1+ to drive the enemy king away, then advance your king. Your rook will "build a bridge" by blocking checks from the side.
+              </p>
+            </div>
+            <p class="text-[13px] text-gray-400 leading-[1.7]">
+              Try to find the winning move on the board. Move the rook to the correct square.
+            </p>
+          </div>
+
+          <div class="p-5 flex gap-3" style="border-top: 1px solid var(--border);">
+            <button class="btn-secondary flex-1 text-center">Previous</button>
+            <button class="btn-primary flex-1 text-center">Next Step</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break" data-label="Deep Analysis"></div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 9: DEEP ANALYSIS -->
+  <!-- ============================================================ -->
+  <section id="deep" class="mb-8">
+    <div class="rounded-2xl overflow-hidden" style="background: var(--bg-base); box-shadow: 0 0 0 1px var(--border);">
+      <div class="px-6 py-3 flex items-center justify-between" style="background: var(--bg-surface-1); border-bottom: 1px solid var(--border);">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-semibold" style="background: var(--cta); color: #111;">C</div>
+          <span class="text-white font-semibold text-sm">ChessData</span>
+        </div>
+        <div class="flex gap-0.5">
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Analysis</span>
+          <span class="px-3.5 py-1.5 rounded-md text-white text-[13px] font-medium" style="background: rgba(255,255,255,0.06);">Deep</span>
+          <span class="px-3.5 py-1.5 rounded-md text-gray-500 text-[13px] font-medium">Coach</span>
+        </div>
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] text-gray-400" style="background: var(--bg-surface-3);">M</div>
+      </div>
+
+      <div class="max-w-5xl mx-auto px-8 py-10">
+        <div class="mb-10">
+          <h1 class="text-2xl font-semibold text-white tracking-[-0.03em] mb-1">Deep Analysis</h1>
+          <p class="text-[13px] text-gray-500">player1 — 847 games analyzed on Chess.com</p>
+        </div>
+
+        <!-- Personality radar placeholder -->
+        <div class="grid grid-cols-3 gap-3 mb-3">
+          <div class="card card-highlight">
+            <div class="p-6">
+              <h2 class="text-[14px] font-semibold text-white tracking-[-0.01em] mb-4">Player Personality</h2>
+              <!-- Radar chart placeholder -->
+              <div class="flex items-center justify-center" style="height: 200px;">
+                <div class="relative" style="width: 180px; height: 180px;">
+                  <!-- Pentagon shapes (simplified) -->
+                  <svg viewBox="0 0 200 200" class="w-full h-full">
+                    <polygon points="100,20 180,75 155,160 45,160 20,75" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+                    <polygon points="100,45 155,85 140,140 60,140 45,85" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+                    <polygon points="100,70 130,95 125,120 75,120 70,95" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+                    <polygon points="100,35 165,80 145,155 55,155 35,80" fill="rgba(228,232,237,0.06)" stroke="rgba(228,232,237,0.2)" stroke-width="1.5"/>
+                  </svg>
+                  <span class="absolute top-0 left-1/2 -translate-x-1/2 text-[10px] text-gray-400">Tactical</span>
+                  <span class="absolute top-1/4 right-0 text-[10px] text-gray-400">Aggressive</span>
+                  <span class="absolute bottom-2 right-4 text-[10px] text-gray-400">Endgame</span>
+                  <span class="absolute bottom-2 left-4 text-[10px] text-gray-400">Positional</span>
+                  <span class="absolute top-1/4 left-0 text-[10px] text-gray-400">Opening</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Score cards -->
+          <div class="col-span-2 grid grid-cols-2 gap-3">
+            <div class="card card-highlight">
+              <div class="p-5">
+                <p class="label mb-1.5">Playing Style</p>
+                <p class="text-lg font-semibold text-white tracking-[-0.02em] mb-2">Tactical Attacker</p>
+                <p class="text-[12px] text-gray-500 leading-[1.6]">You prefer sharp positions with tactical complications. You're at your best in open games with piece activity.</p>
+              </div>
+            </div>
+            <div class="card card-highlight">
+              <div class="p-5">
+                <p class="label mb-1.5">Biggest Strength</p>
+                <p class="text-lg font-semibold text-emerald-400/80 tracking-[-0.02em] mb-2">Opening Preparation</p>
+                <p class="text-[12px] text-gray-500 leading-[1.6]">Your opening accuracy is in the top 20% for your rating range. You consistently reach good middlegame positions.</p>
+              </div>
+            </div>
+            <div class="card card-highlight">
+              <div class="p-5">
+                <p class="label mb-1.5">Biggest Weakness</p>
+                <p class="text-lg font-semibold text-rose-400/80 tracking-[-0.02em] mb-2">Endgame Conversion</p>
+                <p class="text-[12px] text-gray-500 leading-[1.6]">You lose 23% of games from winning positions in the endgame. Focus on basic rook and pawn endings.</p>
+              </div>
+            </div>
+            <div class="card card-highlight">
+              <div class="p-5">
+                <p class="label mb-1.5">Time Management</p>
+                <p class="text-lg font-semibold text-amber-400/80 tracking-[-0.02em] mb-2">Needs Work</p>
+                <p class="text-[12px] text-gray-500 leading-[1.6]">You use 40% of your time in the first 15 moves. This leaves you in time trouble for critical decisions.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Improvement plan -->
+        <div class="card card-highlight">
+          <div class="p-6">
+            <h2 class="text-[14px] font-semibold text-white tracking-[-0.01em] mb-5">30-Day Improvement Plan</h2>
+            <div class="grid grid-cols-3 gap-4">
+              <div>
+                <p class="label mb-3">Week 1-2</p>
+                <div class="space-y-2">
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-600 text-[11px] mt-0.5">&#9679;</span>
+                    <span class="text-[12px] text-gray-400">Master Lucena & Philidor positions</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-600 text-[11px] mt-0.5">&#9679;</span>
+                    <span class="text-[12px] text-gray-400">10 endgame puzzles daily</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-600 text-[11px] mt-0.5">&#9679;</span>
+                    <span class="text-[12px] text-gray-400">Review 3 lost endgames</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p class="label mb-3">Week 3</p>
+                <div class="space-y-2">
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-600 text-[11px] mt-0.5">&#9679;</span>
+                    <span class="text-[12px] text-gray-400">Time management exercises</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-600 text-[11px] mt-0.5">&#9679;</span>
+                    <span class="text-[12px] text-gray-400">Practice 15+10 rapid games</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-600 text-[11px] mt-0.5">&#9679;</span>
+                    <span class="text-[12px] text-gray-400">Clock awareness drills</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p class="label mb-3">Week 4</p>
+                <div class="space-y-2">
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-600 text-[11px] mt-0.5">&#9679;</span>
+                    <span class="text-[12px] text-gray-400">Combined practice games</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-600 text-[11px] mt-0.5">&#9679;</span>
+                    <span class="text-[12px] text-gray-400">Full game review sessions</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <span class="text-gray-600 text-[11px] mt-0.5">&#9679;</span>
+                    <span class="text-[12px] text-gray-400">Progress assessment</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break" data-label="Modals"></div>
+
+  <!-- ============================================================ -->
+  <!-- PAGE 10: MODALS & OVERLAYS -->
+  <!-- ============================================================ -->
+  <section id="modal" class="mb-8">
+    <h2 class="text-xl font-semibold text-white mb-6 tracking-[-0.02em]">Modals & Overlays</h2>
+
+    <div class="grid grid-cols-2 gap-4">
+      <!-- Upgrade modal -->
+      <div class="rounded-xl p-10 flex items-center justify-center" style="background: rgba(0,0,0,0.5); min-height: 350px;">
+        <div class="card card-highlight w-full max-w-sm">
+          <div class="p-6">
+            <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(228,232,237,0.06);">
+              <span class="text-gray-300 text-sm">&#8593;</span>
+            </div>
+            <h3 class="text-[16px] font-semibold text-white mb-2 tracking-[-0.01em]">Upgrade to Pro</h3>
+            <p class="text-[13px] text-gray-500 mb-6 leading-relaxed">Unlimited analysis, AI coaching comments, and personalized lessons.</p>
+            <div class="flex gap-2">
+              <button class="btn-primary flex-1 text-center">Upgrade — $9/mo</button>
+              <button class="btn-secondary flex-1 text-center">Not now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Game result modal -->
+      <div class="rounded-xl p-10 flex items-center justify-center" style="background: rgba(0,0,0,0.5); min-height: 350px;">
+        <div class="card card-highlight w-full max-w-sm">
+          <div class="p-6 text-center">
+            <p class="text-3xl font-semibold text-white tracking-[-0.03em] mb-1">Victory</p>
+            <p class="text-[13px] text-gray-500 mb-6">You won by checkmate</p>
+            <div class="grid grid-cols-3 gap-3 mb-6">
+              <div>
+                <p class="label mb-1">Accuracy</p>
+                <p class="text-lg font-semibold text-white">86.2%</p>
+              </div>
+              <div>
+                <p class="label mb-1">Best Moves</p>
+                <p class="text-lg font-semibold text-white">12</p>
+              </div>
+              <div>
+                <p class="label mb-1">Blunders</p>
+                <p class="text-lg font-semibold text-white">0</p>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn-primary flex-1 text-center">Review Game</button>
+              <button class="btn-secondary flex-1 text-center">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading state -->
+      <div class="rounded-xl p-10 flex items-center justify-center" style="background: rgba(0,0,0,0.5); min-height: 350px;">
+        <div class="card card-highlight w-full max-w-sm">
+          <div class="p-8 text-center">
+            <div class="w-8 h-8 border-2 border-gray-700 border-t-gray-300 rounded-full mx-auto mb-5" style="animation: spin 0.8s linear infinite;"></div>
+            <p class="text-[14px] text-white font-medium mb-2">Analyzing game...</p>
+            <p class="text-[12px] text-gray-500 mb-4">Evaluating 34 positions with Stockfish</p>
+            <div class="h-1 rounded-full mx-8" style="background: rgba(255,255,255,0.04);">
+              <div class="h-1 rounded-full transition-all" style="width: 65%; background: rgba(228,232,237,0.2);"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Limit reached -->
+      <div class="rounded-xl p-10 flex items-center justify-center" style="background: rgba(0,0,0,0.5); min-height: 350px;">
+        <div class="card card-highlight w-full max-w-sm">
+          <div class="p-6">
+            <div class="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style="background: rgba(251,191,36,0.08);">
+              <span class="text-amber-400/80 text-sm">!</span>
+            </div>
+            <h3 class="text-[16px] font-semibold text-white mb-2 tracking-[-0.01em]">Daily limit reached</h3>
+            <p class="text-[13px] text-gray-500 mb-2 leading-relaxed">You've used 5 of 5 free analyses today. Resets in 14 hours.</p>
+            <p class="text-[12px] text-gray-600 mb-6">Upgrade for unlimited analyses and AI coaching.</p>
+            <div class="flex gap-2">
+              <button class="btn-primary flex-1 text-center">Upgrade</button>
+              <button class="btn-ghost flex-1 text-center">Wait</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="text-center py-12 text-[11px] text-gray-700">
+    Cool Silver Premium — Full App Design Mockup. No code changes made.
+  </footer>
+</div>
+
+<!-- Generate chess boards -->
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    ['board1','board2','board3'].forEach(function(id) {
+      const board = document.getElementById(id);
+      if (board) {
+        for (let i = 0; i < 64; i++) {
+          const row = Math.floor(i / 8);
+          const col = i % 8;
+          const div = document.createElement('div');
+          div.style.background = (row + col) % 2 === 0 ? '#c8cfd8' : '#7b8ca6';
+          board.appendChild(div);
+        }
+      }
+    });
+  });
+</script>
+
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+</body>
+</html>

@@ -186,6 +186,13 @@ class ParallelAnalysisEngine:
 
         start_time = datetime.now()
 
+        # Update progress to "fetching" phase before starting
+        if progress_callback:
+            try:
+                progress_callback(0, 0, 0)  # Signal that we're starting to fetch
+            except Exception as e:
+                print(f"[PARALLEL ENGINE] Warning: Could not update progress at fetch start: {e}")
+
         # Get games from database
         games = await self._fetch_games(user_id, platform, limit)
 
@@ -200,6 +207,13 @@ class ParallelAnalysisEngine:
             }
 
         print(f"Found {len(games)} games to analyze")
+
+        # Update progress with total games found - this moves us past "starting" phase
+        if progress_callback:
+            try:
+                progress_callback(0, len(games), 0)  # Update total_games, phase will change to "analyzing"
+            except Exception as e:
+                print(f"[PARALLEL ENGINE] Warning: Could not update progress after fetch: {e}")
 
         # Prepare game data for parallel processing
         game_data_list = []
@@ -382,54 +396,72 @@ class ParallelAnalysisEngine:
             executor = ProcessPoolExecutor(max_workers=self.max_workers)
 
             try:
-                # Submit all tasks and convert to asyncio futures immediately
+                # Submit all tasks to ProcessPoolExecutor
                 print(f"Submitting {len(game_data_list)} tasks to ProcessPoolExecutor...")
-                asyncio_futures = []
-                game_data_map = {}
+                concurrent_futures = {}
 
                 for game_data in game_data_list:
                     # Submit to ProcessPoolExecutor
                     concurrent_future = executor.submit(analyze_game_worker, game_data)
-                    # Wrap in asyncio future using run_in_executor for the result retrieval
-                    asyncio_future = loop.run_in_executor(None, concurrent_future.result)
-                    asyncio_futures.append(asyncio_future)
-                    game_data_map[asyncio_future] = game_data
+                    concurrent_futures[concurrent_future] = game_data
 
-                print(f"All {len(asyncio_futures)} tasks submitted successfully")
+                print(f"All {len(concurrent_futures)} tasks submitted successfully")
 
-                # Collect results as they complete using asyncio primitives
+                # Collect results as they complete using polling with asyncio
                 # This allows other async tasks (like API requests) to run concurrently
-                print(f"Waiting for {len(asyncio_futures)} tasks to complete...")
+                print(f"Waiting for {len(concurrent_futures)} tasks to complete...")
                 completed_count = 0
+                total_tasks = len(concurrent_futures)
 
-                # Process futures as they complete
-                for coro in asyncio.as_completed(asyncio_futures):
-                    try:
-                        result = await coro
-                        results.append(result)
-                        completed_count += 1
-                        print(f"Task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{len(asyncio_futures)})")
+                # Poll futures asynchronously until all complete
+                while concurrent_futures:
+                    # Check which futures are done
+                    done_futures = [f for f in concurrent_futures.keys() if f.done()]
 
-                        # Update progress if callback provided
-                        if progress_callback:
-                            progress_percentage = 20 + int((completed_count / len(asyncio_futures)) * 70)  # 20-90%
-                            progress_callback(completed_count, len(asyncio_futures), progress_percentage)
-                            # Small async sleep to yield control and make progress visible
-                            await asyncio.sleep(0.05)
+                    for future in done_futures:
+                        game_data = concurrent_futures.pop(future)
+                        try:
+                            # Get result in thread pool to avoid blocking
+                            result = await loop.run_in_executor(None, future.result)
+                            results.append(result)
+                            completed_count += 1
+                            print(f"[PARALLEL ENGINE] Task completed: {result.get('game_id', 'unknown')} - Success: {result.get('success', False)} ({completed_count}/{total_tasks})")
 
-                    except Exception as e:
-                        completed_count += 1
-                        print(f"Error analyzing game: {e}")
-                        results.append({
-                            'game_id': 'unknown',
-                            'success': False,
-                            'message': str(e)
-                        })
+                            # Update progress if callback provided
+                            if progress_callback:
+                                try:
+                                    progress_percentage = 20 + int((completed_count / total_tasks) * 70)  # 20-90%
+                                    print(f"[PARALLEL ENGINE] Calling progress callback: {completed_count}/{total_tasks} ({progress_percentage}%)")
+                                    progress_callback(completed_count, total_tasks, progress_percentage)
+                                    print(f"[PARALLEL ENGINE] Progress callback completed successfully")
+                                except Exception as callback_error:
+                                    print(f"[PARALLEL ENGINE] ERROR in progress callback: {callback_error}")
+                                    import traceback
+                                    traceback.print_exc()
+                        except Exception as e:
+                            completed_count += 1
+                            print(f"[PARALLEL ENGINE] Error getting result for game {game_data.get('id', 'unknown')}: {e}")
+                            results.append({
+                                'game_id': game_data.get('id', 'unknown'),
+                                'success': False,
+                                'message': str(e)
+                            })
 
-                        # Update progress even for failed games
-                        if progress_callback:
-                            progress_percentage = 20 + int((completed_count / len(asyncio_futures)) * 70)  # 20-90%
-                            progress_callback(completed_count, len(asyncio_futures), progress_percentage)
+                            # Update progress even for failed games
+                            if progress_callback:
+                                try:
+                                    progress_percentage = 20 + int((completed_count / total_tasks) * 70)  # 20-90%
+                                    print(f"[PARALLEL ENGINE] Calling progress callback for failed game: {completed_count}/{total_tasks} ({progress_percentage}%)")
+                                    progress_callback(completed_count, total_tasks, progress_percentage)
+                                except Exception as callback_error:
+                                    print(f"[PARALLEL ENGINE] ERROR in progress callback (failed game): {callback_error}")
+                                    import traceback
+                                    traceback.print_exc()
+
+                    # If no futures completed, wait a bit before checking again
+                    if not done_futures:
+                        await asyncio.sleep(0.1)  # Poll every 100ms
+
 
             finally:
                 # Clean up executor

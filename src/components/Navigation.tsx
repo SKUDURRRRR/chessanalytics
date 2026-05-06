@@ -1,12 +1,32 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 import { useState, useRef, useEffect } from 'react'
+import { Menu, X } from 'lucide-react'
+
+interface LastVisitedPlayer {
+  userId: string
+  platform: 'lichess' | 'chess.com'
+  timestamp: number
+}
 
 export function Navigation() {
   const { user, signOut, usageStats, loading } = useAuth()
+  const { isAdmin } = useIsAdmin()
   const location = useLocation()
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const [lastVisitedPlayer, setLastVisitedPlayer] = useState<LastVisitedPlayer | null>(null)
+
+  // Derive linked account info for navigation
+  const linkedUsername = user?.primaryPlatform === 'chess.com'
+    ? user.chessComUsername
+    : user?.primaryPlatform === 'lichess'
+      ? user.lichessUsername
+      : user?.chessComUsername || user?.lichessUsername
+  const linkedPlatform = user?.primaryPlatform
+    || (user?.chessComUsername ? 'chess.com' : user?.lichessUsername ? 'lichess' : null)
+  const hasLinkedAccount = !!(user?.chessComUsername || user?.lichessUsername)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -20,85 +40,95 @@ export function Navigation() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Load last visited player from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('lastVisitedPlayer')
+      if (stored) {
+        const parsed = JSON.parse(stored) as LastVisitedPlayer
+        if (parsed.userId && parsed.platform && ['lichess', 'chess.com'].includes(parsed.platform)) {
+          setLastVisitedPlayer(parsed)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load last visited player:', error)
+    }
+  }, [location.pathname])
+
   const handleSignOut = async () => {
     try {
       await signOut()
-      // Redirect to home page after sign out
       window.location.href = '/'
     } catch (error) {
       console.error('Sign out failed:', error)
-      // Show error to user - you might want to use a toast notification here
       alert('Failed to sign out. Please try again.')
-      // Don't redirect on error to prevent confusion about auth state
     }
   }
 
-  // Generate login/signup links with returnTo query param
   const getAuthUrl = (path: string) => {
-    // Don't include returnTo if already on login/signup pages
     if (location.pathname === '/login' || location.pathname === '/signup') {
       return path
     }
-    // Include the current path and search params as returnTo
     const fullPath = location.pathname + location.search
     return `${path}?returnTo=${encodeURIComponent(fullPath)}`
   }
 
-  // Helper function to determine if a nav button is active
   const isActive = (path: string) => {
+    if (path === '/simple-analytics') {
+      const isAnalyticsPage = location.pathname === '/simple-analytics' || location.pathname.startsWith('/profile/')
+      const tabParam = new URLSearchParams(location.search).get('tab')
+      return isAnalyticsPage && tabParam !== 'matchHistory'
+    }
+    if (path === '/simple-analytics-games') {
+      const isAnalyticsPage = location.pathname === '/simple-analytics'
+      const tabParam = new URLSearchParams(location.search).get('tab')
+      return isAnalyticsPage && tabParam === 'matchHistory'
+    }
+    if (path === '/coach') {
+      return location.pathname.startsWith('/coach')
+    }
     return location.pathname === path
   }
 
-  // Get button class based on active state
-  const getButtonClass = (path: string) => {
-    if (isActive(path)) {
-      // Green for active state
-      return "rounded-2xl border border-emerald-400/40 bg-emerald-500/20 px-6 py-2.5 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300/60 hover:bg-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
-    }
-    // Blue for default state
-    return "rounded-2xl border border-sky-400/40 bg-sky-500/20 px-6 py-2.5 text-sm font-semibold text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-500/30"
-  }
+  const navLinkClass = (path: string) =>
+    isActive(path)
+      ? 'px-3.5 py-1.5 rounded-md text-body font-medium bg-white/[0.06] text-white transition-colors'
+      : 'px-3.5 py-1.5 rounded-md text-body font-medium text-gray-500 hover:text-gray-400 hover:bg-white/[0.03] transition-colors'
 
   return (
-    <nav className="bg-slate-900 border-b border-slate-700">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex justify-between items-center h-16">
-          {/* Logo and App Name */}
-          <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <img
-              src="/logo.png"
-              alt="ChessData"
-              className="h-8 w-auto"
-            />
-            <span className="text-xl font-semibold text-white">ChessData</span>
+    <nav className="sticky top-0 z-30 bg-surface-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <div className="max-w-5xl mx-auto px-6">
+        <div className="flex justify-between items-center h-14">
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+            <img src="/logo.png" alt="chessdata.app" className="w-7 h-7 rounded-md" />
+            <span className="hidden sm:inline text-body font-medium text-gray-300">chessdata.app</span>
           </Link>
 
           {/* Navigation Links */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1">
             {loading ? (
-              // Show loading skeleton while auth state is being determined
-              <div className="flex items-center gap-3">
-                <div className="w-16 h-8 bg-slate-700 rounded animate-pulse"></div>
-                <div className="w-16 h-8 bg-slate-700 rounded animate-pulse"></div>
+              <div className="flex items-center gap-2">
+                <div className="w-14 h-7 bg-white/[0.04] rounded-md animate-pulse"></div>
+                <div className="w-14 h-7 bg-white/[0.04] rounded-md animate-pulse"></div>
               </div>
             ) : user ? (
-              // Authenticated user navigation
               <>
-                {/* Usage Stats Indicator */}
+                {/* Usage Stats */}
                 {usageStats && !usageStats.isUnlimited && (
-                  <div className="hidden md:flex items-center gap-4 text-xs text-slate-400">
+                  <div className="hidden md:flex items-center gap-3 mr-3 text-caption text-gray-500">
                     {usageStats.imports && !usageStats.imports.unlimited && (
                       <div className="flex flex-col items-end">
-                        <span className="text-slate-500">Imports</span>
-                        <span className={usageStats.imports.remaining === 0 ? 'text-red-400 font-semibold' : 'text-slate-300'}>
+                        <span className="label">Imports</span>
+                        <span className={usageStats.imports.remaining === 0 ? 'text-rose-400' : 'text-gray-400'}>
                           {usageStats.imports.remaining}/{usageStats.imports.limit}
                         </span>
                       </div>
                     )}
                     {usageStats.analyses && !usageStats.analyses.unlimited && (
                       <div className="flex flex-col items-end">
-                        <span className="text-slate-500">Analyses</span>
-                        <span className={usageStats.analyses.remaining === 0 ? 'text-red-400 font-semibold' : 'text-slate-300'}>
+                        <span className="label">Analyses</span>
+                        <span className={usageStats.analyses.remaining === 0 ? 'text-rose-400' : 'text-gray-400'}>
                           {usageStats.analyses.remaining}/{usageStats.analyses.limit}
                         </span>
                       </div>
@@ -106,59 +136,91 @@ export function Navigation() {
                   </div>
                 )}
 
-                {/* Mobile dropdown menu */}
+                {/* Mobile menu */}
                 <div className="relative md:hidden" ref={dropdownRef}>
                   <button
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/10 flex items-center gap-2"
+                    className="p-2 rounded-md text-gray-500 hover:text-gray-400 hover:bg-white/[0.03] transition-colors"
                     aria-label="Menu"
                   >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 6h16M4 12h16M4 18h16"
-                      />
-                    </svg>
-                    <span>Menu</span>
+                    {isDropdownOpen ? <X size={18} /> : <Menu size={18} />}
                   </button>
 
                   {isDropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-700 bg-slate-800 shadow-xl z-50">
-                      <div className="py-2">
+                    <div
+                      className="absolute right-0 mt-2 w-48 bg-surface-1 shadow-modal rounded-lg z-40 overflow-hidden"
+                    >
+                      <div className="py-1">
                         <Link
                           to="/"
-                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
                           onClick={() => setIsDropdownOpen(false)}
                         >
                           Home
                         </Link>
+                        {hasLinkedAccount && linkedUsername && linkedPlatform ? (
+                          <>
+                            <Link
+                              to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}`}
+                              className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                              onClick={() => setIsDropdownOpen(false)}
+                            >
+                              Analytics
+                            </Link>
+                            <Link
+                              to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}&tab=matchHistory`}
+                              className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                              onClick={() => setIsDropdownOpen(false)}
+                            >
+                              Games Analysis
+                            </Link>
+                          </>
+                        ) : (
+                          <Link
+                            to="/profile"
+                            className="block px-4 py-2.5 text-body text-amber-300/80 hover:bg-white/[0.04] transition-colors"
+                            onClick={() => setIsDropdownOpen(false)}
+                          >
+                            Connect Account
+                          </Link>
+                        )}
                         <Link
-                          to="/pricing"
-                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          to="/coach"
+                          className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
                           onClick={() => setIsDropdownOpen(false)}
                         >
-                          Pricing
+                          Coach
                         </Link>
                         <Link
                           to="/profile"
-                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
                           onClick={() => setIsDropdownOpen(false)}
                         >
                           Profile
                         </Link>
+                        <Link
+                          to="/pricing"
+                          className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Pricing
+                        </Link>
+                        {isAdmin && (
+                          <Link
+                            to="/admin"
+                            className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                            onClick={() => setIsDropdownOpen(false)}
+                          >
+                            Admin
+                          </Link>
+                        )}
+                        <div className="divider my-1" />
                         <button
                           onClick={() => {
                             setIsDropdownOpen(false)
                             handleSignOut()
                           }}
-                          className="block w-full text-left px-4 py-2.5 text-sm text-rose-100 hover:bg-slate-700 transition-colors"
+                          className="block w-full text-left px-4 py-2.5 text-body text-rose-300/80 hover:bg-white/[0.04] transition-colors"
                         >
                           Sign Out
                         </button>
@@ -167,87 +229,116 @@ export function Navigation() {
                   )}
                 </div>
 
-                {/* Desktop buttons */}
-                <div className="hidden md:flex items-center gap-4">
-                  <Link
-                    to="/"
-                    className={getButtonClass('/')}
-                  >
+                {/* Desktop nav */}
+                <div className="hidden md:flex items-center gap-1">
+                  <Link to="/" className={navLinkClass('/')}>
                     Home
                   </Link>
-                  <Link
-                    to="/pricing"
-                    className={getButtonClass('/pricing')}
-                  >
-                    Pricing
+                  {hasLinkedAccount && linkedUsername && linkedPlatform ? (
+                    <>
+                      <Link
+                        to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}`}
+                        className={navLinkClass('/simple-analytics')}
+                      >
+                        Analytics
+                      </Link>
+                      <Link
+                        to={`/simple-analytics?user=${encodeURIComponent(linkedUsername)}&platform=${encodeURIComponent(linkedPlatform)}&tab=matchHistory`}
+                        className={navLinkClass('/simple-analytics-games')}
+                      >
+                        Games Analysis
+                      </Link>
+                    </>
+                  ) : (
+                    <Link
+                      to="/profile"
+                      className="px-3.5 py-1.5 rounded-md text-body font-medium text-amber-300/80 hover:text-amber-200 hover:bg-white/[0.03] transition-colors"
+                    >
+                      Connect
+                    </Link>
+                  )}
+                  <Link to="/coach" className={navLinkClass('/coach')}>
+                    Coach
                   </Link>
-                  <Link
-                    to="/profile"
-                    className={getButtonClass('/profile')}
-                  >
+                  <Link to="/profile" className={navLinkClass('/profile')}>
                     Profile
                   </Link>
+                  <Link to="/pricing" className={navLinkClass('/pricing')}>
+                    Pricing
+                  </Link>
+                  {isAdmin && (
+                    <Link to="/admin" className={navLinkClass('/admin')}>
+                      Admin
+                    </Link>
+                  )}
                   <button
                     onClick={handleSignOut}
-                    className="rounded-2xl border border-rose-400/40 bg-rose-500/20 px-6 py-2.5 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/30"
+                    className="ml-2 px-3.5 py-1.5 rounded-md text-body font-medium text-rose-300/80 hover:text-rose-200 hover:bg-rose-500/10 transition-colors"
                   >
                     Sign Out
                   </button>
                 </div>
               </>
             ) : (
-              // Anonymous user navigation
               <>
-                {/* Mobile dropdown menu */}
+                {/* Mobile menu (anonymous) */}
                 <div className="relative md:hidden" ref={dropdownRef}>
                   <button
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-6 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/10 flex items-center gap-2"
+                    className="p-2 rounded-md text-gray-500 hover:text-gray-400 hover:bg-white/[0.03] transition-colors"
                     aria-label="Menu"
                   >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 6h16M4 12h16M4 18h16"
-                      />
-                    </svg>
-                    <span>Menu</span>
+                    {isDropdownOpen ? <X size={18} /> : <Menu size={18} />}
                   </button>
 
                   {isDropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-700 bg-slate-800 shadow-xl z-50">
-                      <div className="py-2">
+                    <div
+                      className="absolute right-0 mt-2 w-48 bg-surface-1 shadow-modal rounded-lg z-40 overflow-hidden"
+                    >
+                      <div className="py-1">
                         <Link
                           to="/"
-                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
                           onClick={() => setIsDropdownOpen(false)}
                         >
                           Home
                         </Link>
+                        {lastVisitedPlayer && (
+                          <>
+                            <Link
+                              to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                              className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                              onClick={() => setIsDropdownOpen(false)}
+                            >
+                              Analytics
+                            </Link>
+                            <Link
+                              to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}&tab=matchHistory`}
+                              className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
+                              onClick={() => setIsDropdownOpen(false)}
+                            >
+                              Games Analysis
+                            </Link>
+                          </>
+                        )}
                         <Link
                           to="/pricing"
-                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
                           onClick={() => setIsDropdownOpen(false)}
                         >
                           Pricing
                         </Link>
+                        <div className="divider my-1" />
                         <Link
                           to={getAuthUrl('/login')}
-                          className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                          className="block px-4 py-2.5 text-body text-gray-300 hover:bg-white/[0.04] transition-colors"
                           onClick={() => setIsDropdownOpen(false)}
                         >
                           Login
                         </Link>
                         <Link
                           to={getAuthUrl('/signup')}
-                          className="block px-4 py-2.5 text-sm text-blue-400 hover:bg-slate-700 transition-colors font-semibold"
+                          className="block px-4 py-2.5 text-body font-medium text-cta hover:bg-white/[0.04] transition-colors"
                           onClick={() => setIsDropdownOpen(false)}
                         >
                           Sign Up
@@ -257,29 +348,36 @@ export function Navigation() {
                   )}
                 </div>
 
-                {/* Desktop buttons */}
-                <div className="hidden md:flex items-center gap-4">
-                  <Link
-                    to="/"
-                    className={getButtonClass('/')}
-                  >
+                {/* Desktop nav (anonymous) */}
+                <div className="hidden md:flex items-center gap-1">
+                  <Link to="/" className={navLinkClass('/')}>
                     Home
                   </Link>
-                  <Link
-                    to="/pricing"
-                    className={getButtonClass('/pricing')}
-                  >
+                  {lastVisitedPlayer && (
+                    <>
+                      <Link
+                        to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}`}
+                        className={navLinkClass('/simple-analytics')}
+                      >
+                        Analytics
+                      </Link>
+                      <Link
+                        to={`/simple-analytics?user=${encodeURIComponent(lastVisitedPlayer.userId)}&platform=${encodeURIComponent(lastVisitedPlayer.platform)}&tab=matchHistory`}
+                        className={navLinkClass('/simple-analytics-games')}
+                      >
+                        Games Analysis
+                      </Link>
+                    </>
+                  )}
+                  <Link to="/pricing" className={navLinkClass('/pricing')}>
                     Pricing
                   </Link>
-                  <Link
-                    to={getAuthUrl('/login')}
-                    className={getButtonClass('/login')}
-                  >
+                  <Link to={getAuthUrl('/login')} className={navLinkClass('/login')}>
                     Login
                   </Link>
                   <Link
                     to={getAuthUrl('/signup')}
-                    className={getButtonClass('/signup')}
+                    className="ml-2 px-5 py-1.5 rounded-md text-body font-medium bg-cta text-[#111] shadow-btn-primary hover:bg-cta-hover transition-colors"
                   >
                     Sign Up
                   </Link>

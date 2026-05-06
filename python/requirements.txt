@@ -17,3 +17,5 @@ pytest>=7.4.0
 flake8>=6.0.0
 stripe>=7.0.0
 psutil>=5.9.0
+anthropic>=0.18.0
+google-generativeai>=0.8.0

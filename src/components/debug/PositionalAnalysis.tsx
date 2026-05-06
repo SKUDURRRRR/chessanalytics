@@ -396,84 +396,84 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
   return (
     <div className="space-y-6">
       {/* Positional Score Overview */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <h3 className="mb-6 text-lg font-semibold text-white">Positional Assessment</h3>
 
         {/* Header with Score */}
         <div className="mb-6 flex items-start gap-4">
           {/* Score Circle - Moved to left side */}
           <div className="flex flex-col items-center">
-            <div className={`inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 ${scoreInfo.bg.replace('bg-', 'bg-opacity-30 bg-')}`}>
-              <span className={`text-lg font-bold ${scoreInfo.color.replace('text-', 'text-')}`}>{scoreInfo.score}</span>
+            <div className={`inline-flex h-12 w-12 items-center justify-center rounded-full shadow-card ${scoreInfo.bg.replace('bg-', 'bg-opacity-30 bg-')}`}>
+              <span className={`text-lg font-semibold ${scoreInfo.color.replace('text-', 'text-')}`}>{scoreInfo.score}</span>
             </div>
-            <p className="mt-1 text-xs text-slate-400">out of 10</p>
-            <div className="text-xs text-slate-500">
+            <p className="mt-1 text-xs text-gray-500">out of 10</p>
+            <div className="text-xs text-gray-500">
               {scoreInfo.score >= 8 ? 'Strong' :
                scoreInfo.score >= 5 ? 'Average' : 'Needs work'}
             </div>
           </div>
 
           <div className="flex-1">
-            <h4 className="text-sm font-medium text-slate-300">Overall Positional Play</h4>
-            <p className="mt-1 text-xs text-slate-400">Based on piece activity, coordination, and strategic themes</p>
+            <h4 className="text-sm font-medium text-gray-400">Overall Positional Play</h4>
+            <p className="mt-1 text-xs text-gray-500">Based on piece activity, coordination, and strategic themes</p>
           </div>
         </div>
 
         {/* Improved Learning Metrics Grid */}
         <div className="mb-6">
           <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="rounded-lg bg-surface-1 shadow-card p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Positional Understanding</span>
+                  <span className="text-xs text-gray-500">Positional Understanding</span>
                   <span className="text-sm font-semibold text-emerald-300">{detailedMetrics.positionalUnderstanding}%</span>
                 </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
                   <div
-                    className="h-full bg-emerald-400 transition-all duration-500"
+                    className="h-full bg-emerald-400 transition-colors duration-500"
                     style={{ width: `${Math.min(100, detailedMetrics.positionalUnderstanding)}%` }}
                   />
                 </div>
-                <div className="mt-2 text-xs text-slate-500">
+                <div className="mt-2 text-xs text-gray-500">
                   How well you handle quiet positional moves
                 </div>
               </div>
 
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="rounded-lg bg-surface-1 shadow-card p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Tactical Awareness</span>
+                  <span className="text-xs text-gray-500">Tactical Awareness</span>
                   <span className="text-sm font-semibold text-sky-300">{detailedMetrics.tacticalAwareness}%</span>
                 </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
                   <div
-                    className="h-full bg-sky-400 transition-all duration-500"
+                    className="h-full bg-sky-400 transition-colors duration-500"
                     style={{ width: `${Math.min(100, detailedMetrics.tacticalAwareness)}%` }}
                   />
                 </div>
-                <div className="mt-2 text-xs text-slate-500">
+                <div className="mt-2 text-xs text-gray-500">
                   Your ability to spot and execute tactical patterns
                 </div>
               </div>
 
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="rounded-lg bg-surface-1 shadow-card p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Endgame Technique</span>
+                  <span className="text-xs text-gray-500">Endgame Technique</span>
                   <span className="text-sm font-semibold text-amber-300">
                     {detailedMetrics.endgameTechnique === null ? 'N/A' : `${detailedMetrics.endgameTechnique}%`}
                   </span>
                 </div>
                 {detailedMetrics.endgameTechnique !== null ? (
-                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
                     <div
-                      className="h-full bg-amber-400 transition-all duration-500"
+                      className="h-full bg-amber-400 transition-colors duration-500"
                       style={{ width: `${Math.min(100, detailedMetrics.endgameTechnique)}%` }}
                     />
                   </div>
                 ) : (
-                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
-                    <div className="h-full bg-slate-600" style={{ width: '100%' }} />
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+                    <div className="h-full bg-surface-3" style={{ width: '100%' }} />
                   </div>
                 )}
-                <div className="mt-2 text-xs text-slate-500">
+                <div className="mt-2 text-xs text-gray-500">
                   {detailedMetrics.endgameTechnique === null
                     ? 'Game ended before endgame phase'
                     : 'Your skill in the final phase of the game'
@@ -481,12 +481,12 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                 </div>
               </div>
 
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="rounded-lg bg-surface-1 shadow-card p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Learning Priority</span>
+                  <span className="text-xs text-gray-500">Learning Priority</span>
                   <span className="text-sm font-semibold text-purple-300">{detailedMetrics.learningPriority}</span>
                 </div>
-                <div className="mt-1 text-xs text-slate-500">
+                <div className="mt-1 text-xs text-gray-500">
                   {detailedMetrics.learningPriority === 'Maintain Current Level'
                     ? 'No major weaknesses detected - keep practicing!'
                     : 'The area that needs the most improvement'}
@@ -497,11 +497,11 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
       </div>
 
       {/* Positional Elements */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-4 text-slate-200 shadow-xl shadow-black/40">
-        <h3 className="mb-1 text-xl font-bold text-white">
+      <div className="rounded-lg bg-surface-1 p-4 text-gray-300 shadow-card">
+        <h3 className="mb-1 text-xl font-semibold text-white">
           Positional Elements
         </h3>
-        <p className="mb-4 text-xs text-slate-400">
+        <p className="mb-4 text-xs text-gray-500">
           Key chess concepts like king safety, piece activity, and pawn structure that shape your position
         </p>
         {positionalElements.length > 0 ? (
@@ -516,28 +516,28 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
               const isExplanationExpanded = explanationExpanded[elementKey] || false
 
               return (
-                <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-3 hover:bg-white/[0.07] transition-all duration-200">
+                <div key={index} className="rounded-lg bg-surface-1 shadow-card p-3 hover:bg-white/[0.04] transition-colors duration-200">
                   {/* Header Row: Everything on one line */}
                   <div className="flex items-center gap-3 mb-2">
-                    <h4 className="text-base font-bold text-white whitespace-nowrap">
+                    <h4 className="text-sm font-semibold text-white whitespace-nowrap">
                       {element.name}
                     </h4>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap ${
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${
                       element.strength === 'strong'
-                        ? 'bg-rose-500/30 text-rose-100 border border-rose-400/30'
+                        ? 'bg-rose-500/30 text-rose-100 shadow-card'
                         : element.strength === 'moderate'
-                          ? 'bg-sky-500/30 text-sky-100 border border-sky-400/30'
-                          : 'bg-slate-500/30 text-slate-100 border border-slate-400/30'
+                          ? 'bg-sky-500/30 text-sky-100 shadow-card'
+                          : 'bg-surface-1 text-gray-300 shadow-card'
                     }`}>
                       {element.strength === 'strong' ? 'CRITICAL' :
                        element.strength === 'moderate' ? 'IMPORTANT' : 'MINOR'}
                     </span>
-                    <span className="text-xs text-slate-400 whitespace-nowrap">
+                    <span className="text-xs text-gray-500 whitespace-nowrap">
                       {element.moves.length} {element.moves.length === 1 ? 'move' : 'moves'} • {topMoves.length} critical
                     </span>
-                    <span className="text-slate-400 text-xs">•</span>
-                    <p className="text-sm text-slate-300 flex-1 truncate">{element.description}</p>
-                    <div className={`flex-shrink-0 text-lg font-bold ${
+                    <span className="text-gray-500 text-xs">•</span>
+                    <p className="text-sm text-gray-400 flex-1 truncate">{element.description}</p>
+                    <div className={`flex-shrink-0 text-lg font-semibold ${
                       element.impact > 0 ? 'text-emerald-400' : 'text-rose-400'
                     }`}>
                       {element.impact > 0 ? '+' : '−'}
@@ -546,7 +546,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
 
                   {/* Moves and Actions Row: Everything on one line */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-medium text-slate-400 uppercase tracking-wide whitespace-nowrap">Moves:</span>
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">Moves:</span>
                     <div className="flex flex-wrap gap-2 flex-1">
                       {topMoves.map(m => {
                         const moveData = moves.find(mv => mv.index === m)
@@ -561,10 +561,10 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                                 setBoardVisibility(prev => ({ ...prev, [elementKey]: true }))
                               }
                             }}
-                            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-all duration-200 ${
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors duration-200 ${
                               isSelected
-                                ? 'bg-emerald-500/90 text-white shadow-lg shadow-emerald-500/30'
-                                : 'bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 hover:text-white'
+                                ? 'bg-emerald-500/90 text-white'
+                                : 'bg-surface-3/60 hover:bg-surface-3/70 text-gray-300 hover:text-white'
                             }`}
                           >
                             <span className="font-semibold">#{m + 1}</span>
@@ -584,7 +584,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                       {remainingMovesCount > 0 && (
                         <button
                           onClick={() => setMoveListExpanded(prev => ({ ...prev, [elementKey]: !prev[elementKey] }))}
-                          className="text-xs text-slate-400 hover:text-slate-200 transition-colors duration-200 whitespace-nowrap"
+                          className="text-xs text-gray-500 hover:text-gray-300 transition-colors duration-200 whitespace-nowrap"
                         >
                           {isMovesExpanded ? '▲ Hide' : `▼ Show All (${remainingMovesCount})`}
                         </button>
@@ -592,17 +592,17 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                       {currentElementState?.isElementMove && currentElementState.move && (
                         <button
                           onClick={() => setExplanationExpanded(prev => ({ ...prev, [elementKey]: !prev[elementKey] }))}
-                          className="text-xs text-slate-400 hover:text-slate-200 transition-colors duration-200 whitespace-nowrap"
+                          className="text-xs text-gray-500 hover:text-gray-300 transition-colors duration-200 whitespace-nowrap"
                         >
                           {isExplanationExpanded ? '▲ Learn Less' : '▼ Learn More'}
                         </button>
                       )}
                       <button
                         onClick={() => setBoardVisibility(prev => ({ ...prev, [elementKey]: !prev[elementKey] }))}
-                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 whitespace-nowrap ${
+                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors duration-200 whitespace-nowrap ${
                           isBoardVisible
-                            ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'
-                            : 'bg-slate-700/50 text-slate-300 border border-white/10 hover:bg-slate-600/70'
+                            ? 'bg-emerald-500/20 text-emerald-200 shadow-card'
+                            : 'bg-surface-3/50 text-gray-400 shadow-card hover:bg-surface-3/70'
                         }`}
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -616,7 +616,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                   {/* Collapsible: Show All Moves */}
                   {remainingMovesCount > 0 && isMovesExpanded && (
                     <div className="mb-2">
-                      <div className="bg-slate-800/50 rounded-lg px-3 py-2 max-h-32 overflow-y-auto">
+                      <div className="bg-surface-2/50 rounded-lg px-3 py-2 max-h-32 overflow-y-auto">
                         <div className="flex flex-wrap gap-1">
                           {element.moves.filter(m => !topMoves.includes(m)).map(m => {
                             const isSelected = selectedKeyMoves[elementKey] === m
@@ -629,10 +629,10 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                                     setBoardVisibility(prev => ({ ...prev, [elementKey]: true }))
                                   }
                                 }}
-                                className={`px-2 py-1 rounded text-xs transition-all duration-200 hover:scale-105 ${
+                                className={`px-2 py-1 rounded text-xs transition-colors duration-200 hover:scale-105 ${
                                   isSelected
-                                    ? 'bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/30'
-                                    : 'bg-slate-700/50 hover:bg-slate-600/70 hover:text-white'
+                                    ? 'bg-emerald-500/80 text-white'
+                                    : 'bg-surface-3/50 hover:bg-surface-3/70 hover:text-white'
                                 }`}
                               >
                                 #{m + 1}
@@ -647,9 +647,9 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                   {/* Collapsible Explanation */}
                   {currentElementState?.isElementMove && currentElementState.move && isExplanationExpanded && (
                     <div className="mb-2">
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                      <div className="rounded-lg bg-surface-1 shadow-card p-2">
                         <h5 className="text-xs font-semibold text-white mb-2">Move Explanation</h5>
-                        <p className="text-xs text-slate-200 leading-relaxed break-words">
+                        <p className="text-xs text-gray-300 leading-relaxed break-words">
                           {getMoveExplanation(element.name, currentElementState.move)}
                         </p>
                       </div>
@@ -658,7 +658,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
 
                   {/* Collapsible Chess Board */}
                   <div
-                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    className={`overflow-hidden transition-colors duration-300 ease-in-out ${
                       isBoardVisible ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'
                     }`}
                   >
@@ -686,7 +686,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
               <div className="flex justify-center pt-4">
                 <button
                   onClick={() => setShowAllPositionalElements(!showAllPositionalElements)}
-                  className="px-6 py-2.5 bg-slate-700/50 hover:bg-slate-600/70 text-white rounded-lg border border-white/10 hover:border-white/20 transition-all duration-200 hover:scale-105 font-medium text-sm"
+                  className="px-6 py-2.5 bg-surface-3/50 hover:bg-surface-3/70 text-white rounded-lg shadow-card transition-colors duration-200 hover:scale-105 font-medium text-sm"
                 >
                   {showAllPositionalElements ? 'See Less' : `See All (${positionalElements.length - 1} more)`}
                 </button>
@@ -695,17 +695,17 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
           </div>
         ) : (
           <div className="text-center py-8">
-            <p className="text-slate-300 text-lg">No significant positional elements identified.</p>
+            <p className="text-gray-400 text-lg">No significant positional elements identified.</p>
           </div>
         )}
       </div>
 
       {/* Strategic Themes */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-4 text-slate-200 shadow-xl shadow-black/40">
-        <h3 className="mb-1 text-xl font-bold text-white">
+      <div className="rounded-lg bg-surface-1 p-4 text-gray-300 shadow-card">
+        <h3 className="mb-1 text-xl font-semibold text-white">
           Strategic Themes
         </h3>
-        <p className="mb-4 text-xs text-slate-400">
+        <p className="mb-4 text-xs text-gray-500">
           Overarching patterns in your play such as attacking style, development speed, and central control
         </p>
         {strategicThemes.length > 0 ? (
@@ -720,27 +720,27 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
               const isExplanationExpanded = explanationExpanded[themeKey] || false
 
               return (
-                <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-3 hover:bg-white/[0.07] transition-all duration-200">
+                <div key={index} className="rounded-lg bg-surface-1 shadow-card p-3 hover:bg-white/[0.04] transition-colors duration-200">
                   {/* Header Row: Everything on one line */}
                   <div className="flex items-center gap-3 mb-2">
-                    <h4 className="text-base font-bold text-white whitespace-nowrap">
+                    <h4 className="text-sm font-semibold text-white whitespace-nowrap">
                       {theme.name}
                     </h4>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap ${
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${
                       theme.importance === 'critical'
-                        ? 'bg-rose-500/30 text-rose-100 border border-rose-400/30'
+                        ? 'bg-rose-500/30 text-rose-100 shadow-card'
                         : theme.importance === 'important'
-                          ? 'bg-sky-500/30 text-sky-100 border border-sky-400/30'
-                          : 'bg-slate-500/30 text-slate-100 border border-slate-400/30'
+                          ? 'bg-sky-500/30 text-sky-100 shadow-card'
+                          : 'bg-surface-1 text-gray-300 shadow-card'
                     }`}>
                       {theme.importance}
                     </span>
-                    <span className="text-xs text-slate-400 whitespace-nowrap">
+                    <span className="text-xs text-gray-500 whitespace-nowrap">
                       {theme.moves.length} {theme.moves.length === 1 ? 'move' : 'moves'} • {topMoves.length} critical
                     </span>
-                    <span className="text-slate-400 text-xs">•</span>
-                    <p className="text-sm text-slate-300 flex-1 truncate">{theme.description}</p>
-                    <div className={`flex-shrink-0 text-lg font-bold ${
+                    <span className="text-gray-500 text-xs">•</span>
+                    <p className="text-sm text-gray-400 flex-1 truncate">{theme.description}</p>
+                    <div className={`flex-shrink-0 text-lg font-semibold ${
                       theme.playerAdvantage ? 'text-emerald-400' : 'text-rose-400'
                     }`}>
                       {theme.playerAdvantage ? '+' : '−'}
@@ -749,7 +749,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
 
                   {/* Moves and Actions Row: Everything on one line */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-medium text-slate-400 uppercase tracking-wide whitespace-nowrap">Moves:</span>
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">Moves:</span>
                     <div className="flex flex-wrap gap-2 flex-1">
                       {topMoves.map(m => {
                         const moveData = moves.find(mv => mv.index === m)
@@ -764,10 +764,10 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                                 setBoardVisibility(prev => ({ ...prev, [themeKey]: true }))
                               }
                             }}
-                            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-all duration-200 ${
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors duration-200 ${
                               isSelected
-                                ? 'bg-emerald-500/90 text-white shadow-lg shadow-emerald-500/30'
-                                : 'bg-slate-700/60 hover:bg-slate-600/70 text-slate-200 hover:text-white'
+                                ? 'bg-emerald-500/90 text-white'
+                                : 'bg-surface-3/60 hover:bg-surface-3/70 text-gray-300 hover:text-white'
                             }`}
                           >
                             <span className="font-semibold">#{m + 1}</span>
@@ -787,7 +787,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                       {remainingMovesCount > 0 && (
                         <button
                           onClick={() => setMoveListExpanded(prev => ({ ...prev, [themeKey]: !prev[themeKey] }))}
-                          className="text-xs text-slate-400 hover:text-slate-200 transition-colors duration-200 whitespace-nowrap"
+                          className="text-xs text-gray-500 hover:text-gray-300 transition-colors duration-200 whitespace-nowrap"
                         >
                           {isMovesExpanded ? '▲ Hide' : `▼ Show All (${remainingMovesCount})`}
                         </button>
@@ -795,17 +795,17 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                       {currentThemeState?.isElementMove && currentThemeState.move && (
                         <button
                           onClick={() => setExplanationExpanded(prev => ({ ...prev, [themeKey]: !prev[themeKey] }))}
-                          className="text-xs text-slate-400 hover:text-slate-200 transition-colors duration-200 whitespace-nowrap"
+                          className="text-xs text-gray-500 hover:text-gray-300 transition-colors duration-200 whitespace-nowrap"
                         >
                           {isExplanationExpanded ? '▲ Learn Less' : '▼ Learn More'}
                         </button>
                       )}
                       <button
                         onClick={() => setBoardVisibility(prev => ({ ...prev, [themeKey]: !prev[themeKey] }))}
-                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 whitespace-nowrap ${
+                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors duration-200 whitespace-nowrap ${
                           isBoardVisible
-                            ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'
-                            : 'bg-slate-700/50 text-slate-300 border border-white/10 hover:bg-slate-600/70'
+                            ? 'bg-emerald-500/20 text-emerald-200 shadow-card'
+                            : 'bg-surface-3/50 text-gray-400 shadow-card hover:bg-surface-3/70'
                         }`}
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -819,7 +819,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                   {/* Collapsible: Show All Moves */}
                   {remainingMovesCount > 0 && isMovesExpanded && (
                     <div className="mb-2">
-                      <div className="bg-slate-800/50 rounded-lg px-3 py-2 max-h-32 overflow-y-auto">
+                      <div className="bg-surface-2/50 rounded-lg px-3 py-2 max-h-32 overflow-y-auto">
                         <div className="flex flex-wrap gap-1">
                           {theme.moves.filter(m => !topMoves.includes(m)).map(m => {
                             const isSelected = selectedKeyMoves[themeKey] === m
@@ -832,10 +832,10 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                                     setBoardVisibility(prev => ({ ...prev, [themeKey]: true }))
                                   }
                                 }}
-                                className={`px-2 py-1 rounded text-xs transition-all duration-200 hover:scale-105 ${
+                                className={`px-2 py-1 rounded text-xs transition-colors duration-200 hover:scale-105 ${
                                   isSelected
-                                    ? 'bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/30'
-                                    : 'bg-slate-700/50 hover:bg-slate-600/70 hover:text-white'
+                                    ? 'bg-emerald-500/80 text-white'
+                                    : 'bg-surface-3/50 hover:bg-surface-3/70 hover:text-white'
                                 }`}
                               >
                                 #{m + 1}
@@ -850,9 +850,9 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
                   {/* Collapsible Explanation */}
                   {currentThemeState?.isElementMove && currentThemeState.move && isExplanationExpanded && (
                     <div className="mb-2">
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                      <div className="rounded-lg bg-surface-1 shadow-card p-2">
                         <h5 className="text-xs font-semibold text-white mb-2">Move Explanation</h5>
-                        <p className="text-xs text-slate-200 leading-relaxed break-words">
+                        <p className="text-xs text-gray-300 leading-relaxed break-words">
                           {getMoveExplanation(theme.name, currentThemeState.move)}
                         </p>
                       </div>
@@ -861,7 +861,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
 
                   {/* Collapsible Chess Board */}
                   <div
-                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    className={`overflow-hidden transition-colors duration-300 ease-in-out ${
                       isBoardVisible ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'
                     }`}
                   >
@@ -889,7 +889,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
               <div className="flex justify-center pt-4">
                 <button
                   onClick={() => setShowAllStrategicThemes(!showAllStrategicThemes)}
-                  className="px-6 py-2.5 bg-slate-700/50 hover:bg-slate-600/70 text-white rounded-lg border border-white/10 hover:border-white/20 transition-all duration-200 hover:scale-105 font-medium text-sm"
+                  className="px-6 py-2.5 bg-surface-3/50 hover:bg-surface-3/70 text-white rounded-lg shadow-card transition-colors duration-200 hover:scale-105 font-medium text-sm"
                 >
                   {showAllStrategicThemes ? 'See Less' : `See All (${strategicThemes.length - 1} more)`}
                 </button>
@@ -898,17 +898,17 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
           </div>
         ) : (
           <div className="text-center py-8">
-            <p className="text-slate-300 text-lg">No clear strategic themes identified.</p>
+            <p className="text-gray-400 text-lg">No clear strategic themes identified.</p>
           </div>
         )}
       </div>
 
       {/* Positional Recommendations */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <h3 className="mb-4 text-lg font-semibold text-white">Positional Recommendations</h3>
         <div className="space-y-3">
           {scoreInfo.score < 6 && (
-            <div className="flex items-start gap-3 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4">
+            <div className="flex items-start gap-3 rounded-lg shadow-card bg-amber-500/10 p-4">
               <div>
                 <p className="text-sm font-semibold text-white">Improve Positional Understanding</p>
                 <p className="text-xs text-amber-100">Focus on piece coordination, pawn structure, and strategic planning</p>
@@ -917,7 +917,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
           )}
 
           {positionalElements.some(e => e.name === 'Piece Activity' && e.strength === 'weak') && (
-            <div className="flex items-start gap-3 rounded-2xl border border-sky-400/30 bg-sky-500/10 p-4">
+            <div className="flex items-start gap-3 rounded-lg shadow-card bg-sky-500/10 p-4">
               <div>
                 <p className="text-sm font-semibold text-white">Increase Piece Activity</p>
                 <p className="text-xs text-sky-100">Look for opportunities to activate your pieces and create threats</p>
@@ -926,7 +926,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
           )}
 
           {strategicThemes.some(t => t.name === 'Center Control') && (
-            <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4">
+            <div className="flex items-start gap-3 rounded-lg shadow-card bg-emerald-500/10 p-4">
               <div>
                 <p className="text-sm font-semibold text-white">Good Center Control</p>
                 <p className="text-xs text-emerald-100">Continue focusing on central squares and space control</p>
@@ -935,7 +935,7 @@ export function PositionalAnalysis({ moves, playerColor, currentMove }: Position
           )}
 
           {scoreInfo.score >= 8 && (
-            <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4">
+            <div className="flex items-start gap-3 rounded-lg shadow-card bg-emerald-500/10 p-4">
               <div>
                 <p className="text-sm font-semibold text-white">Excellent Positional Play</p>
                 <p className="text-xs text-emerald-100">Your positional understanding is strong - keep up the good work!</p>

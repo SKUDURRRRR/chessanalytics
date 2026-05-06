@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { Chess } from 'chess.js'
 import { identifyOpening } from '../../utils/openingIdentification'
+import { getPlayerPerspectiveOpeningShort } from '../../utils/playerPerspectiveOpening'
 import { EnhancedOpeningAnalysis, OpeningMistake, StudyRecommendation, PeerComparison, RepertoireAnalysis } from '../../types'
 import { calculateOpeningAccuracyChessCom } from '../../utils/accuracyCalculator'
 
@@ -20,6 +21,20 @@ interface ProcessedMove {
   explanation: string
   fenBefore: string
   fenAfter: string
+  gamePhase?: string
+
+  // Enhanced coaching fields
+  coachingComment?: string
+  whatWentRight?: string
+  whatWentWrong?: string
+  howToImprove?: string
+  tacticalInsights?: string[]
+  positionalInsights?: string[]
+  risks?: string[]
+  benefits?: string[]
+  learningPoints?: string[]
+  encouragementLevel?: number
+  moveQuality?: string
 }
 
 interface EnhancedOpeningAnalysisProps {
@@ -50,6 +65,10 @@ export function EnhancedOpeningAnalysis({
 
   const userMoves = moves.filter(move => move.isUserMove)
   const openingMoves = userMoves.slice(0, 10) // First 10 moves typically cover opening
+
+  // For opening identification, we need ALL moves (both colors) to properly detect openings
+  // The identification logic expects alternating White-Black move sequences
+  const allOpeningMoves = moves.slice(0, 20).map(m => m.san) // First ~20 moves (10 per player)
 
   // Use database values if available, otherwise calculate from moves
   const hasDbValues = analysisRecord?.middle_game_accuracy !== undefined || analysisRecord?.endgame_accuracy !== undefined
@@ -117,7 +136,34 @@ export function EnhancedOpeningAnalysis({
       }
     }
 
-    const identifiedVariation = identifyOpening(gameRecord, openingMoves.map(m => m.san), playerColor)
+    // Use the same opening identification function as Game Overview to ensure consistency
+    // This ensures both sections use the same source of truth for opening names
+    const openingInput = gameRecord?.opening_family ?? gameRecord?.opening ?? gameRecord?.opening_normalized
+    console.log('🔍 EnhancedOpeningAnalysis - Opening input:', {
+      opening_family: gameRecord?.opening_family,
+      opening: gameRecord?.opening,
+      opening_normalized: gameRecord?.opening_normalized,
+      selectedInput: openingInput,
+      playerColor,
+      userMovesOnly: openingMoves.map(m => m.san),
+      allMoves: allOpeningMoves,
+      movesCount: moves.length
+    })
+
+    // IMPORTANT: Pass ALL moves (both colors), not just user moves
+    // The opening detection logic needs to see the full move sequence
+    const openingName = getPlayerPerspectiveOpeningShort(
+      openingInput,
+      playerColor,
+      gameRecord,
+      allOpeningMoves // Use all moves instead of just user moves
+    )
+
+    console.log('🎯 EnhancedOpeningAnalysis - Computed opening name:', openingName)
+
+    // Also get the full identification result for additional metadata if needed
+    // Pass all moves for proper identification
+    const identifiedVariation = identifyOpening(gameRecord, allOpeningMoves, playerColor)
 
     // Calculate basic metrics using Chess.com method
     const openingAccuracy = calculateOpeningAccuracyChessCom(openingMoves)
@@ -155,14 +201,16 @@ export function EnhancedOpeningAnalysis({
     const { strengths, weaknesses } = identifyStrengthsAndWeaknesses(userMoves, specificMistakes)
 
     // Generate study recommendations
+    // Use the consistent opening name for user-facing content
     const studyRecommendations: StudyRecommendation[] = generateStudyRecommendations(
-      identifiedVariation.name,
+      openingName,
       specificMistakes,
       openingAccuracy
     )
 
     // Generate practice positions
-    const practicePositions = generatePracticePositions(identifiedVariation.name, specificMistakes)
+    // Use the consistent opening name for user-facing content
+    const practicePositions = generatePracticePositions(openingName, specificMistakes)
 
     // Calculate peer comparison
     const peerComparison: PeerComparison = calculatePeerComparison(openingAccuracy, totalGames)
@@ -178,8 +226,8 @@ export function EnhancedOpeningAnalysis({
     const focusAreas = generateFocusAreas(specificMistakes, commonPatterns)
 
     return {
-      openingName: identifiedVariation.name,
-      openingFamily: identifiedVariation.name,
+      openingName: openingName, // Use the same function as Game Overview for consistency
+      openingFamily: identifiedVariation.name, // Keep original for internal use
       accuracy: openingAccuracy,
       middlegameAccuracy,
       endgameAccuracy,
@@ -202,45 +250,45 @@ export function EnhancedOpeningAnalysis({
   return (
     <div className="space-y-6">
       {/* Enhanced Opening Overview */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-white mb-2">Opening Analysis</h3>
+          <h3 className="text-xl font-semibold text-white mb-2">Opening Analysis</h3>
           <h4 className="text-lg font-semibold text-sky-300">{enhancedAnalysis.openingName}</h4>
-          <p className="text-sm text-slate-300">Comprehensive analysis with actionable insights</p>
+          <p className="text-sm text-gray-400">Comprehensive analysis with actionable insights</p>
         </div>
 
         {/* Key Metrics Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-slate-800/50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-amber-300">{enhancedAnalysis.theoryKnowledge}/10</div>
-            <div className="text-xs text-slate-300">Theory Knowledge</div>
+          <div className="bg-surface-2/50 rounded-lg p-4">
+            <div className="text-2xl font-semibold text-amber-300">{enhancedAnalysis.theoryKnowledge}/10</div>
+            <div className="text-xs text-gray-400">Theory Knowledge</div>
           </div>
-          <div className="bg-slate-800/50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-sky-300">{Math.round(enhancedAnalysis.accuracy)}%</div>
-            <div className="text-xs text-slate-300">Opening Accuracy</div>
+          <div className="bg-surface-2/50 rounded-lg p-4">
+            <div className="text-2xl font-semibold text-sky-300">{Math.round(enhancedAnalysis.accuracy)}%</div>
+            <div className="text-xs text-gray-400">Opening Accuracy</div>
           </div>
-          <div className="bg-slate-800/50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-emerald-300">
+          <div className="bg-surface-2/50 rounded-lg p-4">
+            <div className="text-2xl font-semibold text-emerald-300">
               {middlegameMoves.length > 0 && enhancedAnalysis.middlegameAccuracy !== undefined
                 ? `${Math.round(enhancedAnalysis.middlegameAccuracy)}%`
                 : 'N/A'}
             </div>
-            <div className="text-xs text-slate-300">Middlegame Accuracy</div>
+            <div className="text-xs text-gray-400">Middlegame Accuracy</div>
           </div>
-          <div className="bg-slate-800/50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-purple-300">
+          <div className="bg-surface-2/50 rounded-lg p-4">
+            <div className="text-2xl font-semibold text-purple-300">
               {endgameMoves.length > 0 && enhancedAnalysis.endgameAccuracy !== undefined
                 ? `${Math.round(enhancedAnalysis.endgameAccuracy)}%`
                 : 'N/A'}
             </div>
-            <div className="text-xs text-slate-300">Endgame Accuracy</div>
+            <div className="text-xs text-gray-400">Endgame Accuracy</div>
           </div>
         </div>
 
         {/* Quick Assessment */}
-        <div className="bg-slate-800/30 rounded-xl p-4 mb-6">
+        <div className="bg-surface-2/30 rounded-lg p-4 mb-6">
           <h5 className="font-semibold text-white mb-2">Quick Assessment</h5>
-          <p className="text-sm text-slate-200 leading-relaxed">
+          <p className="text-sm text-gray-300 leading-relaxed">
             {generateQuickAssessment(enhancedAnalysis, openingMoves)}
           </p>
         </div>
@@ -248,7 +296,7 @@ export function EnhancedOpeningAnalysis({
 
       {/* Specific Mistakes Analysis - HIDDEN */}
       {false && enhancedAnalysis.specificMistakes.length > 0 && (
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
             <span className="mr-2">🎯</span>
             Specific Mistakes & Improvements
@@ -258,10 +306,10 @@ export function EnhancedOpeningAnalysis({
             {enhancedAnalysis.specificMistakes.map((mistake, index) => (
               <div
                 key={index}
-                className={`p-4 rounded-xl border cursor-pointer transition-all hover:bg-slate-800/30 ${
-                  mistake.severity === 'critical' ? 'border-red-400/50 bg-red-500/10' :
-                  mistake.severity === 'major' ? 'border-orange-400/50 bg-orange-500/10' :
-                  'border-yellow-400/50 bg-yellow-500/10'
+                className={`p-4 rounded-lg shadow-card cursor-pointer transition-colors hover:bg-surface-2/30 ${
+                  mistake.severity === 'critical' ? 'bg-red-500/10' :
+                  mistake.severity === 'major' ? 'bg-orange-500/10' :
+                  'bg-yellow-500/10'
                 }`}
                 onClick={() => setSelectedMistake(mistake)}
               >
@@ -270,7 +318,7 @@ export function EnhancedOpeningAnalysis({
                     <div className="font-semibold text-white">
                       Move {mistake.move}: {mistake.moveNotation}
                     </div>
-                    <div className="text-sm text-slate-300">
+                    <div className="text-sm text-gray-400">
                       {mistake.classification.charAt(0).toUpperCase() + mistake.classification.slice(1)} •
                       {mistake.centipawnLoss} point loss
                     </div>
@@ -279,7 +327,7 @@ export function EnhancedOpeningAnalysis({
                     <div className="text-sm font-medium text-sky-300">
                       Best: {mistake.correctMove}
                     </div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-gray-500">
                       Click for details
                     </div>
                   </div>
@@ -291,14 +339,14 @@ export function EnhancedOpeningAnalysis({
           {/* Mistake Detail Modal */}
           {selectedMistake && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-slate-800 rounded-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="bg-surface-2 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
                 <div className="flex justify-between items-start mb-4">
-                  <h4 className="text-xl font-bold text-white">
+                  <h4 className="text-xl font-semibold text-white">
                     Move {selectedMistake.move} Analysis
                   </h4>
                   <button
                     onClick={() => setSelectedMistake(null)}
-                    className="text-slate-400 hover:text-white"
+                    className="text-gray-500 hover:text-white"
                   >
                     ✕
                   </button>
@@ -307,23 +355,23 @@ export function EnhancedOpeningAnalysis({
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <div className="text-sm text-slate-400">Your Move</div>
+                      <div className="text-sm text-gray-500">Your Move</div>
                       <div className="text-lg font-semibold text-red-300">{selectedMistake.moveNotation}</div>
                     </div>
                     <div>
-                      <div className="text-sm text-slate-400">Best Move</div>
+                      <div className="text-sm text-gray-500">Best Move</div>
                       <div className="text-lg font-semibold text-green-300">{selectedMistake.correctMove}</div>
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-sm text-slate-400">Explanation</div>
-                    <div className="text-slate-200">{selectedMistake.explanation}</div>
+                    <div className="text-sm text-gray-500">Explanation</div>
+                    <div className="text-gray-300">{selectedMistake.explanation}</div>
                   </div>
 
-                  <div className="bg-slate-700/50 rounded-lg p-4">
-                    <div className="text-sm text-slate-400 mb-2">Learning Tip</div>
-                    <div className="text-slate-200">
+                  <div className="bg-surface-3/50 rounded-lg p-4">
+                    <div className="text-sm text-gray-500 mb-2">Learning Tip</div>
+                    <div className="text-gray-300">
                       {getLearningTip(selectedMistake.classification, selectedMistake.move)}
                     </div>
                   </div>
@@ -335,7 +383,7 @@ export function EnhancedOpeningAnalysis({
       )}
 
       {/* Study Recommendations */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white flex items-center">
             <span className="mr-2">📚</span>
@@ -353,7 +401,7 @@ export function EnhancedOpeningAnalysis({
           {enhancedAnalysis.studyRecommendations
             .filter(rec => showStudyResources || rec.priority === 'high')
             .map((rec, index) => (
-            <div key={index} className="bg-slate-800/50 rounded-xl p-4">
+            <div key={index} className="bg-surface-2/50 rounded-lg p-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
@@ -367,8 +415,8 @@ export function EnhancedOpeningAnalysis({
                       {rec.priority}
                     </span>
                   </div>
-                  <p className="text-sm text-slate-300 mb-2">{rec.description}</p>
-                  <div className="flex items-center gap-4 text-xs text-slate-400">
+                  <p className="text-sm text-gray-400 mb-2">{rec.description}</p>
+                  <div className="flex items-center gap-4 text-xs text-gray-500">
                     <span>⏱️ {rec.estimatedTime}</span>
                     <span>📊 {rec.difficulty}</span>
                     {rec.url && (
@@ -391,7 +439,7 @@ export function EnhancedOpeningAnalysis({
 
       {/* Strengths and Weaknesses */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
             <span className="mr-2 text-green-400">✅</span>
             Strengths
@@ -405,14 +453,14 @@ export function EnhancedOpeningAnalysis({
                 </div>
               ))
             ) : (
-              <div className="text-sm text-slate-400 italic">
+              <div className="text-sm text-gray-500 italic">
                 No analysis data available
               </div>
             )}
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+        <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
             <span className="mr-2 text-red-400">⚠️</span>
             Areas to Improve
@@ -426,7 +474,7 @@ export function EnhancedOpeningAnalysis({
                 </div>
               ))
             ) : (
-              <div className="text-sm text-slate-400 italic">
+              <div className="text-sm text-gray-500 italic">
                 No analysis data available
               </div>
             )}

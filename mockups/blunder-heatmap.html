@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blunder Frequency Heatmap — Mockup</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0c0d0f;
+      color: #f0f0f0;
+      min-height: 100vh;
+    }
+
+    /* ─── Page chrome (navbar + sidebar skeleton) ─── */
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .navbar {
+      height: 56px;
+      background: #151618;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 32px;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+    }
+    .navbar .logo {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: #e4e8ed;
+    }
+    .navbar .nav-links { display: flex; gap: 24px; }
+    .navbar .nav-link {
+      font-size: 13px;
+      color: #9ca3af;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .navbar .nav-link:hover { color: #e5e7eb; }
+    .navbar .nav-link.active { color: #f0f0f0; }
+
+    .page-tabs {
+      display: flex;
+      gap: 0;
+      background: #151618;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.04);
+      padding: 0 24px;
+    }
+    .page-tab {
+      font-size: 13px;
+      padding: 12px 16px;
+      color: #6b7280;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+    .page-tab:hover { color: #9ca3af; }
+    .page-tab.active {
+      color: #f0f0f0;
+      border-bottom-color: #e4e8ed;
+    }
+
+    /* ─── Main content ─── */
+    .main-content {
+      max-width: 1024px;
+      margin: 0 auto;
+      padding: 40px 32px;
+      width: 100%;
+    }
+
+    /* ─── Section header (mimics SimpleAnalytics sections) ─── */
+    .section-header {
+      margin-bottom: 20px;
+    }
+    .section-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #f0f0f0;
+      margin-bottom: 4px;
+    }
+    .section-subtitle {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    /* ─── Card ─── */
+    .card {
+      background: #151618;
+      border-radius: 8px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(to right, transparent, rgba(255,255,255,0.06), transparent);
+    }
+
+    /* ─── Heatmap layout ─── */
+    .heatmap-layout {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 24px;
+      padding: 24px;
+    }
+
+    /* ─── Board heatmap ─── */
+    .board-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .board-label {
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #6b7280;
+    }
+    .board-container {
+      aspect-ratio: 1;
+      max-width: 440px;
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .square {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.15s;
+    }
+    .square:hover { opacity: 0.85; }
+    .square .count {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.7);
+      z-index: 1;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .square:hover .count { opacity: 1; }
+
+    /* Light and dark squares base */
+    .sq-light { background: #3d3d3d; }
+    .sq-dark  { background: #2a2a2a; }
+
+    /* Heat overlays — additive red with increasing opacity */
+    .heat-0 { } /* no overlay */
+    .heat-1 { background-color: rgba(225, 29, 72, 0.08); }
+    .heat-2 { background-color: rgba(225, 29, 72, 0.16); }
+    .heat-3 { background-color: rgba(225, 29, 72, 0.26); }
+    .heat-4 { background-color: rgba(225, 29, 72, 0.38); }
+    .heat-5 { background-color: rgba(225, 29, 72, 0.52); }
+    .heat-6 { background-color: rgba(225, 29, 72, 0.68); }
+    .heat-7 { background-color: rgba(225, 29, 72, 0.82); }
+
+    .file-labels, .rank-labels {
+      display: contents;
+    }
+    .board-file-row {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      max-width: 440px;
+    }
+    .board-file-row span {
+      text-align: center;
+      font-size: 10px;
+      color: #4b5563;
+      padding-top: 4px;
+    }
+
+    /* ─── Right panel ─── */
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Stat mini-card */
+    .stat-card {
+      background: rgba(255,255,255,0.03);
+      border-radius: 8px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.04);
+      padding: 14px 16px;
+    }
+    .stat-label {
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #6b7280;
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 22px;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+    .stat-value.rose { color: #fda4af; }
+    .stat-value.emerald { color: #6ee7b7; }
+    .stat-value.amber { color: #fcd34d; }
+    .stat-detail {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+
+    /* Legend */
+    .legend-card {
+      background: rgba(255,255,255,0.03);
+      border-radius: 8px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.04);
+      padding: 14px 16px;
+    }
+    .legend-items { display: flex; flex-direction: column; gap: 8px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; }
+    .legend-swatch {
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .legend-text {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
+    /* Gradient bar legend */
+    .gradient-bar {
+      height: 8px;
+      border-radius: 4px;
+      background: linear-gradient(to right,
+        rgba(225, 29, 72, 0.05),
+        rgba(225, 29, 72, 0.2),
+        rgba(225, 29, 72, 0.5),
+        rgba(225, 29, 72, 0.82)
+      );
+      margin-top: 8px;
+    }
+    .gradient-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+    }
+    .gradient-labels span {
+      font-size: 10px;
+      color: #6b7280;
+    }
+
+    /* Insight callout */
+    .insight-box {
+      background: rgba(251, 191, 36, 0.08);
+      border-radius: 8px;
+      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.12);
+      padding: 14px 16px;
+      border-left: 2px solid rgba(251, 191, 36, 0.4);
+    }
+    .insight-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #fcd34d;
+      margin-bottom: 6px;
+    }
+    .insight-text {
+      font-size: 12px;
+      color: #9ca3af;
+      line-height: 1.5;
+    }
+
+    /* Filter pills */
+    .filters {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .filter-pill {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.04);
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+      color: #9ca3af;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+      border: none;
+    }
+    .filter-pill:hover { background: rgba(255,255,255,0.06); color: #d1d5db; }
+    .filter-pill.active {
+      background: rgba(228,232,237,0.1);
+      color: #e4e8ed;
+      box-shadow: 0 0 0 1px rgba(228,232,237,0.2);
+    }
+
+    /* ─── Top squares list ─── */
+    .top-squares-list { display: flex; flex-direction: column; gap: 6px; }
+    .top-square-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.02);
+    }
+    .top-square-rank {
+      font-size: 11px;
+      font-weight: 500;
+      color: #4b5563;
+      width: 14px;
+      text-align: right;
+    }
+    .top-square-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fda4af;
+      width: 24px;
+    }
+    .top-square-bar-bg {
+      flex: 1;
+      height: 6px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .top-square-bar {
+      height: 100%;
+      border-radius: 3px;
+      background: rgba(225, 29, 72, 0.5);
+    }
+    .top-square-count {
+      font-size: 11px;
+      color: #6b7280;
+      width: 20px;
+      text-align: right;
+    }
+
+    /* ─── Divider ─── */
+    .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.04);
+      margin: 32px 0;
+    }
+
+    /* ─── Placeholder cards (to show context) ─── */
+    .placeholder-card {
+      background: #151618;
+      border-radius: 8px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .placeholder-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      flex-shrink: 0;
+    }
+    .placeholder-lines {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .placeholder-line {
+      height: 10px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.04);
+    }
+    .placeholder-line.short { width: 40%; }
+    .placeholder-line.medium { width: 65%; }
+    .placeholder-line.long { width: 85%; }
+
+    .placeholder-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .placeholder-stat {
+      background: #151618;
+      border-radius: 8px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.04);
+      padding: 16px;
+      text-align: center;
+    }
+    .placeholder-stat .num {
+      font-size: 22px;
+      font-weight: 600;
+      color: #9ca3af;
+    }
+    .placeholder-stat .lbl {
+      font-size: 11px;
+      color: #4b5563;
+      margin-top: 4px;
+    }
+
+    /* ─── Annotation banner ─── */
+    .annotation {
+      position: relative;
+      margin: 40px 0 24px;
+      padding: 16px 20px;
+      background: rgba(99, 102, 241, 0.06);
+      border-radius: 8px;
+      border-left: 3px solid rgba(99, 102, 241, 0.4);
+    }
+    .annotation-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #818cf8;
+      margin-bottom: 6px;
+    }
+    .annotation-text {
+      font-size: 13px;
+      color: #9ca3af;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+
+    <!-- ─── Navbar ─── -->
+    <nav class="navbar">
+      <span class="logo">chessdata.app</span>
+      <div class="nav-links">
+        <a href="#" class="nav-link">Home</a>
+        <a href="#" class="nav-link active">Analytics</a>
+        <a href="#" class="nav-link">Coach</a>
+        <a href="#" class="nav-link">Pricing</a>
+      </div>
+    </nav>
+
+    <!-- ─── Page tabs (SimpleAnalyticsPage context) ─── -->
+    <div class="page-tabs">
+      <div class="page-tab active">Analytics</div>
+      <div class="page-tab">Match History</div>
+    </div>
+
+    <div class="main-content">
+
+      <!-- ─── Annotation: placement context ─── -->
+      <div class="annotation">
+        <span class="annotation-badge">Mockup — Placement</span>
+        <div class="annotation-text">
+          This feature lives on the <strong>Analytics page</strong> (<code>/profile/:userId/:platform</code>),
+          below the existing stat cards and charts. It appears as a new section alongside
+          Elo trends, opening stats, and move accuracy breakdowns.
+        </div>
+      </div>
+
+      <!-- ─── Existing content placeholders (above the heatmap) ─── -->
+      <div class="placeholder-grid" style="margin-bottom: 24px;">
+        <div class="placeholder-stat"><div class="num">1,247</div><div class="lbl">Games analyzed</div></div>
+        <div class="placeholder-stat"><div class="num">62%</div><div class="lbl">Win rate</div></div>
+        <div class="placeholder-stat"><div class="num">1,485</div><div class="lbl">Peak rating</div></div>
+        <div class="placeholder-stat"><div class="num">72.4</div><div class="lbl">Avg accuracy</div></div>
+      </div>
+
+      <div class="placeholder-card" style="margin-bottom: 12px;">
+        <div class="placeholder-icon"></div>
+        <div class="placeholder-lines">
+          <div class="placeholder-line medium"></div>
+          <div class="placeholder-line long"></div>
+          <div class="placeholder-line short"></div>
+        </div>
+      </div>
+      <div class="placeholder-card" style="margin-bottom: 12px;">
+        <div class="placeholder-icon"></div>
+        <div class="placeholder-lines">
+          <div class="placeholder-line long"></div>
+          <div class="placeholder-line medium"></div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- ════════════════════════════════════════════════════════
+           ██  BLUNDER FREQUENCY HEATMAP — NEW FEATURE
+           ════════════════════════════════════════════════════════ -->
+
+      <div class="section-header">
+        <div class="section-title">Blunder Frequency</div>
+        <div class="section-subtitle">Squares where you lose the most material across 1,247 games</div>
+      </div>
+
+      <!-- Filters -->
+      <div class="filters">
+        <button class="filter-pill active">All games</button>
+        <button class="filter-pill">As White</button>
+        <button class="filter-pill">As Black</button>
+        <button class="filter-pill">Blitz</button>
+        <button class="filter-pill">Rapid</button>
+        <button class="filter-pill">Last 100</button>
+      </div>
+
+      <div class="card">
+        <div class="heatmap-layout">
+
+          <!-- Left: Board heatmap -->
+          <div class="board-section">
+            <div class="board-label">Blunder destination squares</div>
+            <div class="board-container" id="heatmap-board"></div>
+            <div class="board-file-row">
+              <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+            </div>
+          </div>
+
+          <!-- Right: Stats & legend -->
+          <div class="right-panel">
+
+            <!-- Worst square -->
+            <div class="stat-card">
+              <div class="stat-label">Worst square</div>
+              <div class="stat-value rose">e5</div>
+              <div class="stat-detail">18 blunders — 34% involve center pawns</div>
+            </div>
+
+            <!-- Total blunders -->
+            <div class="stat-card">
+              <div class="stat-label">Total blunders</div>
+              <div class="stat-value amber">142</div>
+              <div class="stat-detail">0.11 per game · down 8% this month</div>
+            </div>
+
+            <!-- Safest zone -->
+            <div class="stat-card">
+              <div class="stat-label">Safest zone</div>
+              <div class="stat-value emerald">Queenside</div>
+              <div class="stat-detail">a–c files: only 12 blunders total</div>
+            </div>
+
+            <!-- Top 5 squares -->
+            <div class="stat-card">
+              <div class="stat-label">Top 5 squares</div>
+              <div class="top-squares-list" style="margin-top: 8px;">
+                <div class="top-square-row">
+                  <span class="top-square-rank">1</span>
+                  <span class="top-square-name">e5</span>
+                  <div class="top-square-bar-bg"><div class="top-square-bar" style="width: 100%"></div></div>
+                  <span class="top-square-count">18</span>
+                </div>
+                <div class="top-square-row">
+                  <span class="top-square-rank">2</span>
+                  <span class="top-square-name">f7</span>
+                  <div class="top-square-bar-bg"><div class="top-square-bar" style="width: 83%"></div></div>
+                  <span class="top-square-count">15</span>
+                </div>
+                <div class="top-square-row">
+                  <span class="top-square-rank">3</span>
+                  <span class="top-square-name">d5</span>
+                  <div class="top-square-bar-bg"><div class="top-square-bar" style="width: 72%"></div></div>
+                  <span class="top-square-count">13</span>
+                </div>
+                <div class="top-square-row">
+                  <span class="top-square-rank">4</span>
+                  <span class="top-square-name">e4</span>
+                  <div class="top-square-bar-bg"><div class="top-square-bar" style="width: 56%"></div></div>
+                  <span class="top-square-count">10</span>
+                </div>
+                <div class="top-square-row">
+                  <span class="top-square-rank">5</span>
+                  <span class="top-square-name">f6</span>
+                  <div class="top-square-bar-bg"><div class="top-square-bar" style="width: 44%"></div></div>
+                  <span class="top-square-count">8</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend-card">
+              <div class="stat-label">Intensity</div>
+              <div class="gradient-bar"></div>
+              <div class="gradient-labels">
+                <span>0 blunders</span>
+                <span>18+ blunders</span>
+              </div>
+            </div>
+
+            <!-- AI Insight -->
+            <div class="insight-box">
+              <div class="insight-title">Pattern detected</div>
+              <div class="insight-text">
+                67% of your blunders happen on central squares (d4–e5).
+                You tend to miscalculate piece exchanges in the center
+                during moves 15–25. Consider slowing down in the middlegame.
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- ─── More existing content below ─── -->
+      <div class="placeholder-card">
+        <div class="placeholder-icon"></div>
+        <div class="placeholder-lines">
+          <div class="placeholder-line long"></div>
+          <div class="placeholder-line medium"></div>
+          <div class="placeholder-line short"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── Generate heatmap board with JS ─── -->
+  <script>
+    // Simulated blunder frequency data (square -> count)
+    const blunderData = {
+      // Heavy center cluster
+      e5: 18, f7: 15, d5: 13, e4: 10, f6: 8,
+      d4: 7, e6: 7, f5: 6, d6: 5, c6: 5,
+      g5: 4, f4: 4, e3: 4, d3: 3, c5: 3,
+      g6: 3, h7: 3, g7: 2, b5: 2, c4: 2,
+      e7: 2, f3: 2, d7: 2, g4: 2,
+      a4: 1, b4: 1, c3: 1, h6: 1, h5: 1,
+      b6: 1, a5: 1, g3: 1, f2: 1, e2: 1,
+    };
+
+    const maxCount = Math.max(...Object.values(blunderData));
+
+    function getHeatLevel(count) {
+      if (!count) return 0;
+      const ratio = count / maxCount;
+      if (ratio > 0.85) return 7;
+      if (ratio > 0.65) return 6;
+      if (ratio > 0.48) return 5;
+      if (ratio > 0.33) return 4;
+      if (ratio > 0.2)  return 3;
+      if (ratio > 0.1)  return 2;
+      return 1;
+    }
+
+    const board = document.getElementById('heatmap-board');
+    const files = ['a','b','c','d','e','f','g','h'];
+    const ranks = [8,7,6,5,4,3,2,1]; // top to bottom
+
+    for (const rank of ranks) {
+      for (let fi = 0; fi < 8; fi++) {
+        const file = files[fi];
+        const sq = file + rank;
+        const isLight = (fi + rank) % 2 === 1;
+        const count = blunderData[sq] || 0;
+        const heat = getHeatLevel(count);
+
+        const div = document.createElement('div');
+        div.className = `square ${isLight ? 'sq-light' : 'sq-dark'} heat-${heat}`;
+        div.title = `${sq}: ${count} blunder${count !== 1 ? 's' : ''}`;
+
+        if (count > 0) {
+          const span = document.createElement('span');
+          span.className = 'count';
+          span.textContent = count;
+          div.appendChild(span);
+        }
+
+        board.appendChild(div);
+      }
+    }
+  </script>
+</body>
+</html>

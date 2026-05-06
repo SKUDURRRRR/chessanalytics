@@ -2,30 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes toast-slide-in {
+  from { opacity: 0; transform: translateX(1rem); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 @layer base {
   html {
-    /* Prevent zoom on double tap for iOS */
     touch-action: manipulation;
+    text-rendering: optimizeLegibility;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
     margin: 0;
-    font-family:
-      -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell',
-      'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* Prevent horizontal scroll on mobile */
     overflow-x: hidden;
+    will-change: scroll-position;
+    background-color: #0c0d0f;
+    color: #d1d5db;
+    font-size: 13px;
+    line-height: 1.25rem;
   }
 
   code {
-    font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  /* Design system label style - small-caps with wide tracking */
+  .label {
+    font-variant: all-small-caps;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+    font-size: 0.6875rem;
   }
 }
 
 @layer components {
-  /* Mobile-first responsive utilities */
+  /* ===== Layout containers ===== */
   .container-mobile {
     @apply w-full max-w-sm mx-auto px-4;
   }
@@ -35,41 +52,59 @@
   }
 
   .container-desktop {
-    @apply md:max-w-4xl lg:max-w-6xl xl:max-w-7xl;
+    @apply md:max-w-4xl lg:max-w-5xl;
   }
 
   .container-responsive {
     @apply container-mobile container-tablet container-desktop;
   }
 
-  /* Touch-friendly button styles */
+  /* ===== Touch-friendly button base (size targets only) ===== */
   .btn-touch {
-    @apply min-h-[44px] min-w-[44px] px-4 py-2 text-base font-medium;
+    @apply min-h-[44px] min-w-[44px] px-4 py-2 text-body font-medium;
   }
 
   .btn-touch-sm {
-    @apply min-h-[36px] min-w-[36px] px-3 py-1.5 text-sm font-medium;
+    @apply min-h-[36px] min-w-[36px] px-3 py-1.5 text-body font-medium;
   }
 
-  /* Mobile-optimized card styles */
+  /* ===== Card - Cool Silver ring shadow ===== */
   .card-mobile {
-    @apply rounded-xl border border-white/10 bg-white/[0.05] p-4 shadow-lg;
+    background: #151618;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.2);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    overflow: hidden;
   }
 
   .card-tablet {
-    @apply sm:rounded-2xl sm:p-6;
+    @apply sm:p-5;
   }
 
   .card-desktop {
-    @apply md:shadow-xl;
+    @apply md:p-6;
   }
 
   .card-responsive {
     @apply card-mobile card-tablet card-desktop;
   }
 
+  /* Top highlight line for important cards */
+  .card-highlight::before {
+    content: '';
+    display: block;
+    height: 1px;
+    margin: -1rem -1rem 1rem -1rem;
+    background: linear-gradient(to right, transparent, rgba(255,255,255,0.06), transparent);
+  }
 
-  /* Mobile-optimized table styles */
+  /* ===== Divider ===== */
+  .divider {
+    height: 1px;
+    background: rgba(255,255,255,0.03);
+  }
+
+  /* ===== Mobile-optimized table styles ===== */
   .table-mobile {
     @apply block overflow-x-auto whitespace-nowrap;
   }
@@ -82,13 +117,13 @@
     @apply table-mobile table-desktop;
   }
 
-  /* Mobile-optimized grid layouts */
+  /* ===== Mobile-optimized grid layouts ===== */
   .grid-mobile {
-    @apply grid grid-cols-1 gap-4;
+    @apply grid grid-cols-1 gap-3;
   }
 
   .grid-tablet {
-    @apply sm:grid-cols-2 sm:gap-6;
+    @apply sm:grid-cols-2;
   }
 
   .grid-desktop {
@@ -99,24 +134,7 @@
     @apply grid-mobile grid-tablet grid-desktop;
   }
 
-  /* Mobile-optimized text sizes */
-  .text-mobile {
-    @apply text-sm;
-  }
-
-  .text-tablet {
-    @apply sm:text-base;
-  }
-
-  .text-desktop {
-    @apply md:text-lg;
-  }
-
-  .text-responsive {
-    @apply text-mobile text-tablet text-desktop;
-  }
-
-  /* Mobile-optimized spacing */
+  /* ===== Mobile-optimized spacing ===== */
   .space-mobile {
     @apply space-y-4;
   }
@@ -135,19 +153,18 @@
 }
 
 @layer utilities {
-  /* Hide scrollbar while keeping scroll functionality */
+  /* ===== Scrollbar ===== */
   .scrollbar-hide {
-    -ms-overflow-style: none;  /* Internet Explorer 10+ */
-    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
   .scrollbar-hide::-webkit-scrollbar {
-    display: none;  /* Safari and Chrome */
+    display: none;
   }
 
-  /* Thin scrollbar with custom styling */
   .scrollbar-thin {
-    scrollbar-width: thin;  /* Firefox */
-    scrollbar-color: rgb(51 65 85) transparent;  /* Firefox: thumb and track colors */
+    scrollbar-width: thin;
+    scrollbar-color: #232428 transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
@@ -157,28 +174,14 @@
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: rgb(51 65 85);
+    background-color: #232428;
     border-radius: 3px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: rgb(71 85 105);
+    background-color: #2a2b30;
   }
 
-  .scrollbar-thumb-slate-700 {
-    scrollbar-color: rgb(51 65 85) transparent;
-  }
-  .scrollbar-thumb-slate-700::-webkit-scrollbar-thumb {
-    background-color: rgb(51 65 85);
-  }
-
-  .scrollbar-track-transparent {
-    scrollbar-color: rgb(51 65 85) transparent;
-  }
-  .scrollbar-track-transparent::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  /* Mobile-specific utilities */
+  /* ===== Mobile utilities ===== */
   .touch-manipulation {
     touch-action: manipulation;
   }
@@ -188,77 +191,61 @@
     padding-right: env(safe-area-inset-right);
   }
 
+  /* ===== Fluid text (kept for migration - will be removed in Phase 3) ===== */
+  .text-fluid-xs   { font-size: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem); }
+  .text-fluid-sm   { font-size: clamp(0.875rem, 0.8rem + 0.375vw, 1rem); }
+  .text-fluid-base { font-size: clamp(1rem, 0.9rem + 0.5vw, 1.125rem); }
+  .text-fluid-lg   { font-size: clamp(1.125rem, 1rem + 0.625vw, 1.25rem); }
+  .text-fluid-xl   { font-size: clamp(1.25rem, 1.1rem + 0.75vw, 1.5rem); }
+  .text-fluid-2xl  { font-size: clamp(1.5rem, 1.3rem + 1vw, 2rem); }
+  .text-fluid-3xl  { font-size: clamp(1.875rem, 1.6rem + 1.375vw, 2.5rem); }
+  .text-fluid-4xl  { font-size: clamp(2.25rem, 1.9rem + 1.75vw, 3rem); }
 
-  /* Responsive font sizes using clamp */
-  .text-fluid-xs {
-    font-size: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
-  }
-
-  .text-fluid-sm {
-    font-size: clamp(0.875rem, 0.8rem + 0.375vw, 1rem);
-  }
-
-  .text-fluid-base {
-    font-size: clamp(1rem, 0.9rem + 0.5vw, 1.125rem);
-  }
-
-  .text-fluid-lg {
-    font-size: clamp(1.125rem, 1rem + 0.625vw, 1.25rem);
-  }
-
-  .text-fluid-xl {
-    font-size: clamp(1.25rem, 1.1rem + 0.75vw, 1.5rem);
-  }
-
-  .text-fluid-2xl {
-    font-size: clamp(1.5rem, 1.3rem + 1vw, 2rem);
-  }
-
-  .text-fluid-3xl {
-    font-size: clamp(1.875rem, 1.6rem + 1.375vw, 2.5rem);
-  }
-
-  .text-fluid-4xl {
-    font-size: clamp(2.25rem, 1.9rem + 1.75vw, 3rem);
-  }
-
-  /* Responsive spacing using clamp */
-  .space-fluid-1 {
-    margin: clamp(0.25rem, 0.2rem + 0.25vw, 0.5rem);
-  }
-
-  .space-fluid-2 {
-    margin: clamp(0.5rem, 0.4rem + 0.5vw, 1rem);
-  }
-
-  .space-fluid-4 {
-    margin: clamp(1rem, 0.8rem + 1vw, 2rem);
-  }
-
-  .space-fluid-6 {
-    margin: clamp(1.5rem, 1.2rem + 1.5vw, 3rem);
-  }
-
-  .space-fluid-8 {
-    margin: clamp(2rem, 1.6rem + 2vw, 4rem);
-  }
-
-  /* Text wrapping utilities */
+  /* ===== Text wrapping ===== */
   .hyphens-auto {
     hyphens: auto;
     -webkit-hyphens: auto;
-    -ms-hyphens: auto;
   }
 
   .hyphens-none {
     hyphens: none;
     -webkit-hyphens: none;
-    -ms-hyphens: none;
   }
 
-  .hyphens-manual {
-    hyphens: manual;
-    -webkit-hyphens: manual;
-    -ms-hyphens: manual;
+  /* ===== Legacy animations (kept for migration - will be removed in Phase 2) ===== */
+  @keyframes liquid-shimmer {
+    0% { transform: translateX(-150%) skewX(-20deg); opacity: 0; }
+    50% { transform: translateX(0%) skewX(-15deg); opacity: 0.5; }
+    100% { transform: translateX(150%) skewX(-20deg); opacity: 0; }
+  }
+
+  @keyframes liquid-bubble {
+    0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.3; }
+    50% { transform: translate(15%, -10%) scale(1.1); opacity: 0.4; }
+  }
+
+  @keyframes liquid-glow {
+    0%, 100% {
+      box-shadow: 0 0 20px rgba(34, 211, 238, 0.3), 0 0 40px rgba(6, 182, 212, 0.15);
+    }
+    50% {
+      box-shadow: 0 0 30px rgba(34, 211, 238, 0.5), 0 0 60px rgba(6, 182, 212, 0.25);
+    }
+  }
+
+  /* ===== Hide react-chessboard native arrows (we use ModernChessArrows) ===== */
+  .react-chessboard > div > svg[style*="position: absolute"]:not(.modern-chess-arrows):has(path[stroke]),
+  .react-chessboard > div > svg[style*="position:absolute"]:not(.modern-chess-arrows):has(path[stroke]),
+  .react-chessboard > div > svg[style*="position: absolute"]:not(.modern-chess-arrows):has(polygon[fill]),
+  .react-chessboard > div > svg[style*="position:absolute"]:not(.modern-chess-arrows):has(polygon[fill]),
+  .react-chessboard > div > svg[style*="position: absolute"]:not(.modern-chess-arrows):has(line[stroke]),
+  .react-chessboard > div > svg[style*="position:absolute"]:not(.modern-chess-arrows):has(line[stroke]) {
+    display: none !important;
+  }
+
+  .react-chessboard path[stroke]:not(.modern-chess-arrows path),
+  .react-chessboard polygon[fill]:not(.modern-chess-arrows polygon),
+  .react-chessboard line[stroke]:not(.modern-chess-arrows line) {
+    display: none !important;
   }
 }

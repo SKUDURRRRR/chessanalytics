@@ -45,13 +45,13 @@ interface PlayerComparison {
 export function ComparativeAnalysis({ moves, playerColor, gameRecord }: ComparativeAnalysisProps) {
   // Filter user moves, with fallback logic if isUserMove is not set correctly
   let userMoves = moves.filter(move => move.isUserMove)
-  
+
   // Fallback: if no moves are marked as user moves, determine based on player color
   if (userMoves.length === 0) {
     console.warn('No moves marked as user moves, using fallback logic based on player color')
     userMoves = moves.filter(move => move.player === playerColor)
   }
-  
+
   // Final fallback: if still no moves, use every other move (assuming user plays one color)
   if (userMoves.length === 0 && moves.length > 0) {
     console.warn('Still no user moves found, using every other move as fallback')
@@ -60,12 +60,12 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
 
   const gameComparisons = useMemo(() => {
     const comparisons: GameComparison[] = []
-    
+
     // Calculate accuracy
-    const accuracy = userMoves.length > 0 
+    const accuracy = userMoves.length > 0
       ? (userMoves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length / userMoves.length) * 100
       : 0
-    
+
     comparisons.push({
       metric: 'Accuracy',
       thisGame: accuracy,
@@ -76,10 +76,10 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
     })
 
     // Calculate blunder rate
-    const blunderRate = userMoves.length > 0 
+    const blunderRate = userMoves.length > 0
       ? (userMoves.filter(m => m.classification === 'blunder').length / userMoves.length) * 100
       : 0
-    
+
     comparisons.push({
       metric: 'Blunder Rate',
       thisGame: blunderRate,
@@ -92,7 +92,7 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
     // Calculate tactical awareness
     const tacticalMoves = userMoves.filter(m => m.classification === 'brilliant').length
     const tacticalRate = userMoves.length > 0 ? (tacticalMoves / userMoves.length) * 100 : 0
-    
+
     comparisons.push({
       metric: 'Tactical Awareness',
       thisGame: tacticalRate,
@@ -103,10 +103,10 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
     })
 
     // Calculate consistency
-    const consistency = userMoves.length > 0 
+    const consistency = userMoves.length > 0
       ? 100 - (userMoves.filter(m => m.classification === 'inaccuracy' || m.classification === 'mistake' || m.classification === 'blunder').length / userMoves.length) * 100
       : 0
-    
+
     comparisons.push({
       metric: 'Consistency',
       thisGame: consistency,
@@ -121,7 +121,7 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
 
   const playerComparisons = useMemo(() => {
     const comparisons: PlayerComparison[] = []
-    
+
     // Analyze playing style to suggest similar players
     const blunderCount = userMoves.filter(m => m.classification === 'blunder').length
     const brilliantCount = userMoves.filter(m => m.classification === 'brilliant').length
@@ -129,11 +129,11 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
     const inaccuracyCount = userMoves.filter(m => m.classification === 'inaccuracy').length
     const goodMovesCount = userMoves.filter(m => m.classification === 'good').length
     const bestMovesCount = userMoves.filter(m => m.classification === 'best').length
-    
-    const accuracy = userMoves.length > 0 
+
+    const accuracy = userMoves.length > 0
       ? (userMoves.filter(m => m.classification === 'best' || m.classification === 'brilliant').length / userMoves.length) * 100
       : 0
-    
+
     const totalErrors = blunderCount + mistakeCount + inaccuracyCount
     const errorRate = userMoves.length > 0 ? (totalErrors / userMoves.length) * 100 : 0
     const tacticalRate = userMoves.length > 0 ? (brilliantCount / userMoves.length) * 100 : 0
@@ -355,7 +355,7 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
     }
 
     // More lenient matching criteria - try to match everyone to a famous player
-    
+
     // Match any tactical tendency
     if (comparisons.length === 0 && (brilliantCount > 0 || tacticalRate > 1)) {
       comparisons.push({
@@ -367,7 +367,7 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
         advice: 'Study Tal\'s games to improve your tactical combinations while working on positional understanding'
       })
     }
-    
+
     // Match solid play
     if (comparisons.length === 0 && (accuracy > 55 || blunderCount <= 2)) {
       comparisons.push({
@@ -379,7 +379,7 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
         advice: 'Study Karpov\'s games to enhance your positional play and consider being more active'
       })
     }
-    
+
     // Match universal style
     if (comparisons.length === 0 && accuracy > 50) {
       comparisons.push({
@@ -391,7 +391,7 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
         advice: 'Study Carlsen\'s games to develop a more universal playing style'
       })
     }
-    
+
     // ULTIMATE FALLBACK - if still no matches, use a thoughtful comparison
     if (comparisons.length === 0) {
       // Analyze overall tendency
@@ -435,7 +435,7 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
       const opponentRating = parseInt(gameRecord.opponent_rating)
       const gameResult = gameRecord.result.toLowerCase()
       const myRating = gameRecord.my_rating ? parseInt(gameRecord.my_rating) : 1200
-      
+
       // Base chess.com performance rating formula
       let basePerformanceRating: number
       if (gameResult === 'win') {
@@ -448,15 +448,15 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
         // Fallback to move-based calculation
         return calculateMoveBasedRating()
       }
-      
+
       // Calculate move-based adjustment to fine-tune the rating
       const moveBasedRating = calculateMoveBasedRating()
       const moveQualityAdjustment = calculateMoveQualityAdjustment()
-      
+
       // Hybrid approach: combine base performance rating with move quality adjustment
       // This accounts for chess.com's more sophisticated calculation that considers move quality
       const finalPerformanceRating = basePerformanceRating + moveQualityAdjustment
-      
+
       console.log('Hybrid Performance Rating Calculation:', {
         opponentRating,
         myRating,
@@ -472,10 +472,10 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
           result: gameRecord.result
         }
       })
-      
+
       return Math.max(800, Math.min(2400, Math.round(finalPerformanceRating)))
     }
-    
+
     // Fallback to move-based calculation if no opponent rating data
     console.log('No opponent rating data available, using move-based calculation')
     return calculateMoveBasedRating()
@@ -546,10 +546,10 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
 
     // Calculate accuracy percentage (best + brilliant moves)
     const accuracy = (bestMoves / totalMoves) * 100
-    
+
     // Calculate blunder rate
     const blunderRate = (blunders / totalMoves) * 100
-    
+
     // Calculate average centipawn loss for more precise rating
     const avgCentipawnLoss = userMoves.reduce((sum, move) => sum + (move.centipawnLoss || 0), 0) / totalMoves
 
@@ -570,28 +570,28 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
 
     // Improved rating estimation formula
     let estimatedRating = 1200 // Base rating
-    
+
     // Accuracy factor (more realistic scaling)
     estimatedRating += (accuracy - 60) * 15 // 60% accuracy = 1200 rating baseline
-    
+
     // Blunder penalty (harsh penalty for blunders)
     estimatedRating -= blunderRate * 40
-    
+
     // Centipawn loss factor (additional precision)
     if (avgCentipawnLoss > 0) {
       estimatedRating -= Math.min(200, avgCentipawnLoss * 0.5) // Cap penalty at 200 points
     }
-    
+
     // Bonus for good moves
     const goodMoveRate = (goodMoves / totalMoves) * 100
     estimatedRating += Math.min(100, goodMoveRate * 0.5)
-    
+
     // Penalty for too many inaccuracies
     const inaccuracyRate = (inaccuracies / totalMoves) * 100
     estimatedRating -= Math.min(100, inaccuracyRate * 0.3)
-    
+
     const finalRating = Math.max(800, Math.min(2400, Math.round(estimatedRating)))
-    
+
     console.log('Move-based rating calculation steps:', {
       baseRating: 1200,
       accuracyAdjustment: (accuracy - 60) * 15,
@@ -602,18 +602,18 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
       beforeClamp: estimatedRating,
       finalRating
     })
-    
+
     return finalRating
   }
 
   return (
     <div className="space-y-6">
       {/* Performance Metrics */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <h3 className="mb-4 text-lg font-semibold text-white">Performance Metrics</h3>
         <div className="space-y-4">
           {gameComparisons.map((comparison, index) => (
-            <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div key={index} className="rounded-lg shadow-card bg-white/5 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h4 className="font-medium text-white">{comparison.metric}</h4>
                 <span className="text-lg font-semibold text-white">
@@ -622,15 +622,15 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-slate-400">This Game:</span>
+                  <span className="text-gray-500">This Game:</span>
                   <span className="ml-2 font-medium text-white">{comparison.thisGame.toFixed(1)}{comparison.metric === 'Accuracy' || comparison.metric === 'Consistency' ? '%' : ''}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">Average:</span>
+                  <span className="text-gray-500">Average:</span>
                   <span className="ml-2 font-medium text-white">{comparison.average.toFixed(1)}{comparison.metric === 'Accuracy' || comparison.metric === 'Consistency' ? '%' : ''}</span>
                 </div>
               </div>
-              <p className="mt-2 text-sm text-slate-300">{comparison.description}</p>
+              <p className="mt-2 text-sm text-gray-400">{comparison.description}</p>
               <p className="mt-1 text-sm font-medium text-sky-300">{comparison.improvement}</p>
             </div>
           ))}
@@ -638,16 +638,16 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
       </div>
 
       {/* Rating Estimate */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <h3 className="mb-4 text-lg font-semibold text-white">Performance Rating</h3>
         <div className="text-center">
-          <div className="mb-2 text-4xl font-bold text-sky-300">
+          <div className="mb-2 text-4xl font-semibold text-sky-300">
             {getRatingEstimate()}
           </div>
-          <p className="text-sm text-slate-300">
+          <p className="text-sm text-gray-400">
             Estimated performance rating based on move quality
           </p>
-          <div className="mt-4 text-xs text-slate-400">
+          <div className="mt-4 text-xs text-gray-500">
             <p>This is an estimate based on accuracy, blunder rate, and tactical awareness.</p>
             <p>Actual rating depends on many factors including opponent strength and time control.</p>
           </div>
@@ -655,16 +655,16 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
       </div>
 
       {/* Player Comparisons */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <h3 className="mb-4 text-lg font-semibold text-white">Playing Style Comparison</h3>
         {playerComparisons.length > 0 ? (
           <div className="space-y-4">
             {playerComparisons.map((player, index) => (
-              <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div key={index} className="rounded-lg shadow-card bg-white/5 p-4">
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <h4 className="text-lg font-medium text-white">{player.name}</h4>
-                    <p className="text-sm text-slate-300">Peak Rating: {player.rating}</p>
+                    <p className="text-sm text-gray-400">Peak Rating: {player.rating}</p>
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-semibold text-sky-300">
@@ -672,11 +672,11 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4 mb-3">
                   <div>
                     <h5 className="mb-1 text-sm font-medium text-emerald-200">Strengths</h5>
-                    <ul className="space-y-1 text-sm text-slate-200">
+                    <ul className="space-y-1 text-sm text-gray-300">
                       {player.strengths.map((strength, i) => (
                         <li key={i} className="flex items-center">
                           <span className="mr-2 text-emerald-300">✓</span>
@@ -687,7 +687,7 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
                   </div>
                   <div>
                     <h5 className="mb-1 text-sm font-medium text-rose-200">Areas to Improve</h5>
-                    <ul className="space-y-1 text-sm text-slate-200">
+                    <ul className="space-y-1 text-sm text-gray-300">
                       {player.weaknesses.map((weakness, i) => (
                         <li key={i} className="flex items-center">
                           <span className="mr-2 text-rose-300">⚠</span>
@@ -697,27 +697,27 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
                     </ul>
                   </div>
                 </div>
-                
-                <div className="rounded-2xl border border-sky-400/30 bg-sky-500/10 p-3">
+
+                <div className="rounded-lg shadow-card bg-sky-500/10 p-3">
                   <p className="text-sm font-medium text-sky-200">Study Recommendation:</p>
-                  <p className="mt-1 text-sm text-slate-200">{player.advice}</p>
+                  <p className="mt-1 text-sm text-gray-300">{player.advice}</p>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="py-4 text-center text-sm text-slate-300">
+          <div className="py-4 text-center text-sm text-gray-400">
             Loading playing style analysis...
           </div>
         )}
       </div>
 
       {/* Improvement Suggestions */}
-      <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-6 text-slate-200 shadow-xl shadow-black/40">
+      <div className="rounded-lg bg-surface-1 p-6 text-gray-300 shadow-card">
         <h3 className="mb-4 text-lg font-semibold text-white">Personalized Improvement Plan</h3>
         <div className="space-y-3">
           {gameComparisons.some(c => c.percentile < 50) && (
-            <div className="flex items-start gap-3 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-3">
+            <div className="flex items-start gap-3 rounded-lg shadow-card bg-amber-500/10 p-3">
               <span className="text-lg">📈</span>
               <div>
                 <p className="text-sm font-semibold text-white">Focus Areas</p>
@@ -729,7 +729,7 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
           )}
 
           {gameComparisons.some(c => c.percentile >= 80) && (
-            <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-3">
+            <div className="flex items-start gap-3 rounded-lg shadow-card bg-emerald-500/10 p-3">
               <span className="text-lg">🏆</span>
               <div>
                 <p className="text-sm font-semibold text-white">Strengths</p>
@@ -740,11 +740,11 @@ export function ComparativeAnalysis({ moves, playerColor, gameRecord }: Comparat
             </div>
           )}
 
-          <div className="flex items-start gap-3 rounded-2xl border border-sky-400/30 bg-sky-500/10 p-3">
+          <div className="flex items-start gap-3 rounded-lg shadow-card bg-sky-500/10 p-3">
             <span className="text-lg">🎯</span>
             <div>
               <p className="text-sm font-semibold text-white">Next Steps</p>
-              <p className="text-xs text-slate-200">
+              <p className="text-xs text-gray-300">
                 Focus on the areas with lowest scores and study games of similar players to improve your overall game
               </p>
             </div>
